@@ -74,6 +74,26 @@ async def _phase_job(phase_num: int, round_id: int) -> None:
     await cb(round_id)
 
 
+async def _mystery_notice_job(round_id: int) -> None:
+    """Top-level APScheduler callable for Mystery round notices.
+
+    Follows the same module-level pattern as ``_phase_job`` to avoid closure
+    pickling issues with SQLAlchemyJobStore.
+    """
+    if _GLOBAL_SERVICE is None:
+        log.warning(
+            "_mystery_notice_job fired but _GLOBAL_SERVICE is None "
+            "(round=%s) — skipping",
+            round_id,
+        )
+        return
+    cb = _GLOBAL_SERVICE._mystery_notice_callback
+    if cb is None:
+        log.warning("No mystery notice callback registered; skipping round %s.", round_id)
+        return
+    await cb(round_id)
+
+
 class SchedulerService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -87,6 +107,8 @@ class SchedulerService:
         self._phase_callbacks: dict[int, Callable] = {}
         # Season-end callback injected after bot starts
         self._season_end_callback: "Callable | None" = None
+        # Mystery notice callback injected after bot starts
+        self._mystery_notice_callback: "Callable | None" = None
 
     def register_callbacks(
         self,
@@ -106,6 +128,14 @@ class SchedulerService:
         Called from bot.py on_ready after the scheduler is started.
         """
         self._season_end_callback = callback
+
+    def register_mystery_notice_callback(self, callback: Callable) -> None:
+        """Register the async callable invoked when a Mystery round notice fires.
+
+        The callable must accept ``(round_id: int)``.
+        Called from bot.py on_ready after the scheduler is started.
+        """
+        self._mystery_notice_callback = callback
 
     def start(self) -> None:
         global _GLOBAL_SERVICE
@@ -129,7 +159,20 @@ class SchedulerService:
         Jobs use replace_existing=True so re-scheduling an amended round is safe.
         """
         if rnd.format == RoundFormat.MYSTERY:
-            log.info("Round %s is MYSTERY — no weather phases scheduled.", rnd.id)
+            scheduled_at = rnd.scheduled_at
+            if scheduled_at.tzinfo is None:
+                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+            fire_at = scheduled_at - timedelta(days=5)
+            job_id = f"mystery_r{rnd.id}"
+            self._scheduler.add_job(
+                _mystery_notice_job,
+                trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
+                id=job_id,
+                replace_existing=True,
+                name=f"Mystery notice for round {rnd.id}",
+                kwargs={"round_id": rnd.id},
+            )
+            log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
             return
 
         scheduled_at = rnd.scheduled_at
@@ -159,14 +202,18 @@ class SchedulerService:
             log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
 
     def cancel_round(self, round_id: int) -> None:
-        """Remove all three phase jobs for *round_id*."""
-        for phase_num in (1, 2, 3):
-            job_id = f"phase{phase_num}_r{round_id}"
+        """Remove all phase jobs and the mystery-notice job for *round_id*."""
+        for job_id in (
+            f"phase1_r{round_id}",
+            f"phase2_r{round_id}",
+            f"phase3_r{round_id}",
+            f"mystery_r{round_id}",
+        ):
             try:
                 self._scheduler.remove_job(job_id)
                 log.info("Removed job %s", job_id)
             except Exception:
-                pass  # Job may not exist if it already fired
+                pass  # Job may not exist if it already fired or was never scheduled
 
     def schedule_all_rounds(self, rounds: list[Round]) -> None:
         """Schedule all rounds in *rounds*."""

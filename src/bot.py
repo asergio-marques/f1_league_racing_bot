@@ -75,6 +75,14 @@ async def main() -> None:
 
         bot.scheduler_service.register_callbacks(_p1, _p2, _p3)
 
+        # Register mystery round notice callback
+        from services.mystery_notice_service import run_mystery_notice
+
+        async def _mystery_notice_cb(round_id: int) -> None:
+            await run_mystery_notice(round_id, bot)
+
+        bot.scheduler_service.register_mystery_notice_callback(_mystery_notice_cb)
+
         # Register season-end callback (stored in _GLOBAL_SERVICE so the
         # module-level _season_end_job can reach it without pickling a closure)
         from services.season_end_service import execute_season_end as _execute_season_end

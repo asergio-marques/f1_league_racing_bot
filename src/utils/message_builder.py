@@ -124,6 +124,19 @@ def format_slots_for_log(slots: list[str]) -> str:
     return " → ".join(slots)
 
 
+def mystery_notice_message() -> str:
+    """Mystery round notice posted to the forecast channel at T−5 days.
+
+    No division role is tagged — conditions are unknown to all participants;
+    weather will be set by the game at race time, not pre-determined by the bot.
+    """
+    return (
+        "\U0001f3c1 **Weather Forecast**\n"
+        "**Track**: Mystery\n"
+        "Conditions are unknown to all \u2014 weather will be determined by the game at race time."
+    )
+
+
 def _slot_icon(slot: str) -> str:
     return {"rain": "🌧️", "mixed": "🌥️", "sunny": "☀️"}.get(slot, "❓")
 
