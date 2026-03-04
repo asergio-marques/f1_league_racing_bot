@@ -14,7 +14,7 @@
 
 **Purpose**: Confirm branch and scaffolding are in place.
 
-- [ ] T001 Confirm `specs/006-mystery-round-notice/` contains plan.md and spec.md on branch `006-mystery-round-notice`
+- [X] T001 Confirm `specs/006-mystery-round-notice/` contains plan.md and spec.md on branch `006-mystery-round-notice`
 
 ---
 
@@ -39,7 +39,7 @@ with a MYSTERY round creates exactly one APScheduler job keyed `mystery_r{id}`.
 
 ### Tests for User Story 1
 
-- [ ] T002 [P] [US1] Create `tests/unit/test_mystery_notice.py` with unit tests covering
+- [X] T002 [P] [US1] Create `tests/unit/test_mystery_notice.py` with unit tests covering
   all NFR-003 cases (write first — they will fail until implementation is complete):
   - `mystery_notice_message()` return value matches FR-003 exactly
     (no `<@&` substring; contains `🏁`, `**Weather Forecast**`, `**Track**: Mystery`,
@@ -54,7 +54,7 @@ with a MYSTERY round creates exactly one APScheduler job keyed `mystery_r{id}`.
 
 ### Implementation for User Story 1
 
-- [ ] T003 [P] [US1] Add `mystery_notice_message() -> str` to `src/utils/message_builder.py` (FR-004):
+- [X] T003 [P] [US1] Add `mystery_notice_message() -> str` to `src/utils/message_builder.py` (FR-004):
   - Returns exactly:
     ```
     🏁 **Weather Forecast**
@@ -62,7 +62,7 @@ with a MYSTERY round creates exactly one APScheduler job keyed `mystery_r{id}`.
     Conditions are unknown to all — weather will be determined by the game at race time.
     ```
   - No parameters; no role mention
-- [ ] T004 [P] [US1] Add mystery-notice scheduler support to `src/services/scheduler_service.py` (FR-001, FR-002, FR-006):
+- [X] T004 [P] [US1] Add mystery-notice scheduler support to `src/services/scheduler_service.py` (FR-001, FR-002, FR-006):
   - Add module-level `async def _mystery_notice_job(round_id: int)` callable following
     the `_phase_job` pattern (look up `_GLOBAL_SERVICE._mystery_notice_callback`)
   - Add `_mystery_notice_callback: Callable | None = None` instance attribute in `__init__`
@@ -73,7 +73,7 @@ with a MYSTERY round creates exactly one APScheduler job keyed `mystery_r{id}`.
     (no phase jobs scheduled)
   - Update `cancel_round`: add `mystery_r{round_id}` to the set of job ids to attempt
     removal (silently ignore `JobLookupError` / any exception, consistent with phase jobs)
-- [ ] T005 [US1] Create `src/services/mystery_notice_service.py` with `run_mystery_notice(round_id, bot)` (FR-005):
+- [X] T005 [US1] Create `src/services/mystery_notice_service.py` with `run_mystery_notice(round_id, bot)` (FR-005):
   - Look up round row + division `forecast_channel_id` via `get_connection`
   - Guard: if row is None or `row["format"] != "MYSTERY"`, log a warning and return
   - Build a `_Div` helper with `forecast_channel_id` and call
@@ -81,18 +81,18 @@ with a MYSTERY round creates exactly one APScheduler job keyed `mystery_r{id}`.
   - Log at INFO: `"Mystery notice posted for round %s"` with `round_id`
   - No `phase_results` write; no `post_log` call
   (depends on T003 for the import of `mystery_notice_message`)
-- [ ] T006 [US1] Update `src/services/amendment_service.py` amendment-to-MYSTERY path (FR-009):
+- [X] T006 [US1] Update `src/services/amendment_service.py` amendment-to-MYSTERY path (FR-009):
   - After calling `scheduler.cancel_round(round_id)`, check whether
     `round.scheduled_at − timedelta(days=5) > datetime.now(timezone.utc)`
   - If true: call `scheduler.schedule_round(updated_round)` to register the mystery-notice job
   - If false (T−5 already passed): do nothing — the invalidation notice already informs the channel
   (depends on T004 for `schedule_round` MYSTERY behaviour)
-- [ ] T007 [US1] Register mystery notice callback in `src/bot.py` inside `on_ready` (FR-007):
+- [X] T007 [US1] Register mystery notice callback in `src/bot.py` inside `on_ready` (FR-007):
   - Import `run_mystery_notice` from `services.mystery_notice_service`
   - Call `self.scheduler.register_mystery_notice_callback(run_mystery_notice_cb)`
     alongside the existing `register_callbacks(phase1_cb, phase2_cb, phase3_cb)` call
   (depends on T004, T005)
-- [ ] T008 [US1] Run full unit suite: `pytest tests/unit/` — all new tests pass, zero
+- [X] T008 [US1] Run full unit suite: `pytest tests/unit/` — all new tests pass, zero
   regressions in existing phase, message_builder, and scheduler tests (depends on T002–T007)
 
 **Checkpoint**: Mystery rounds now post a notice at T−5 days. The feature is fully
@@ -102,9 +102,9 @@ verifiable by running the unit suite without a running Discord bot.
 
 ## Final Phase: Polish & Cross-Cutting Concerns
 
-- [ ] T009 [P] Verify `mystery_notice_message()` output contains no `<@&` substring:
+- [X] T009 [P] Verify `mystery_notice_message()` output contains no `<@&` substring:
   `python -c "from utils.message_builder import mystery_notice_message; assert '<@&' not in mystery_notice_message()"`
-- [ ] T010 [P] Verify `schedule_round` for MYSTERY no longer logs the old
+- [X] T010 [P] Verify `schedule_round` for MYSTERY no longer logs the old
   `"no weather phases scheduled"` message (grep confirms updated log text in scheduler_service.py)
 
 ---

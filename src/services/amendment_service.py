@@ -126,7 +126,22 @@ class AmendmentService:
             return
 
         bot.scheduler_service.cancel_round(round_id)
-        bot.scheduler_service.schedule_round(updated_round)
+
+        scheduled_at = updated_round.scheduled_at
+        if scheduled_at.tzinfo is None:
+            from datetime import timezone as _tz
+            scheduled_at = scheduled_at.replace(tzinfo=_tz.utc)
+
+        from datetime import timedelta
+        p1_horizon = scheduled_at - timedelta(days=5)
+        p2_horizon = scheduled_at - timedelta(days=2)
+        p3_horizon = scheduled_at - timedelta(hours=2)
+
+        # For MYSTERY rounds, only register the notice job when T-5 is still in
+        # the future.  If T-5 has already passed the invalidation notice already
+        # informs drivers; no notice job should fire retroactively (FR-009).
+        if updated_round.format != RoundFormat.MYSTERY or now < p1_horizon:
+            bot.scheduler_service.schedule_round(updated_round)
 
         # 6. Invalidation broadcast
         if any_phase_done:
@@ -143,20 +158,10 @@ class AmendmentService:
                 f"from `{old_value}` to `{db_value}`",
             )
 
-        # 7. Re-run missed phases
+        # 7. Re-run missed phases (non-MYSTERY only)
         from services.phase1_service import run_phase1
         from services.phase2_service import run_phase2
         from services.phase3_service import run_phase3
-
-        scheduled_at = updated_round.scheduled_at
-        if scheduled_at.tzinfo is None:
-            from datetime import timezone as _tz
-            scheduled_at = scheduled_at.replace(tzinfo=_tz.utc)
-
-        from datetime import timedelta
-        p1_horizon = scheduled_at - timedelta(days=5)
-        p2_horizon = scheduled_at - timedelta(days=2)
-        p3_horizon = scheduled_at - timedelta(hours=2)
 
         if updated_round.format != RoundFormat.MYSTERY:
             if now >= p1_horizon:
