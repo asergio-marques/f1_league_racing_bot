@@ -2,7 +2,7 @@
 
 **Branch**: `004-round-add-amend`
 **Created**: 2026-03-04
-**Status**: In Progress
+**Status**: Complete
 **Source**: [plan.md](plan.md) · [spec.md](spec.md)
 
 ---
@@ -22,7 +22,7 @@
 
 ### T001 — Add `_get_pending_for_server()` helper to `SeasonCog`
 
-- [ ] T001 Add `_get_pending_for_server(server_id: int) -> PendingConfig | None` to `src/cogs/season_cog.py`
+- [x] T001 Add `_get_pending_for_server(server_id: int) -> PendingConfig | None` to `src/cogs/season_cog.py`
 - **Action**: Add a method to `SeasonCog` that scans `self._pending.values()` and returns the first `PendingConfig` whose `server_id` matches the argument, or `None` if no match. Pattern is identical to the existing `clear_pending_for_server()` scan on line 344.
 - **Why first**: `AmendmentCog.round_amend` (T002) must call this helper; it cannot be written until the method exists.
 
@@ -36,7 +36,7 @@
 
 ### T002 — Update `round_amend` with pending-config path
 
-- [ ] T002 [US1] Update `round_amend()` in `src/cogs/amendment_cog.py` to check pending config before DB
+- [x] T002 [US1] Update `round_amend()` in `src/cogs/amendment_cog.py` to check pending config before DB
 - **Action**: At the top of `round_amend()` (before the existing active-season DB lookup), add:
   1. `season_cog = self.bot.get_cog("SeasonCog")`
   2. `pending_cfg = season_cog._get_pending_for_server(interaction.guild_id) if season_cog else None`
@@ -66,7 +66,7 @@
 
 ### T003 — Add module-level mutation helpers
 
-- [ ] T003 [P] [US2] Add `_rounds_insert_before`, `_rounds_insert_after`, `_rounds_replace` to `src/cogs/season_cog.py`
+- [x] T003 [P] [US2] Add `_rounds_insert_before`, `_rounds_insert_after`, `_rounds_replace` to `src/cogs/season_cog.py`
 - **Action**: Add three module-level functions (not methods — pure, no I/O) immediately before the `SeasonCog` class definition:
 
   ```python
@@ -99,7 +99,7 @@
 
 ### T004 — Add `DuplicateRoundView` class
 
-- [ ] T004 [US2] Add `DuplicateRoundView(discord.ui.View)` class to `src/cogs/season_cog.py`
+- [x] T004 [US2] Add `DuplicateRoundView(discord.ui.View)` class to `src/cogs/season_cog.py`
 - **Action**: Add the class after the mutation helpers (before `SeasonCog`). It receives `div: PendingDivision` and `new_round: dict` in `__init__`. Store `self.message: discord.Message | None = None` for editing on timeout. Implement:
   - `@discord.ui.button(label="Insert Before", style=discord.ButtonStyle.primary)` → call `_rounds_insert_before(div.rounds, conflict_num, new_round)`, disable all buttons, edit message ✅.
   - `@discord.ui.button(label="Insert After", style=discord.ButtonStyle.secondary)` → call `_rounds_insert_after(...)`, disable all buttons, edit message ✅.
@@ -112,7 +112,7 @@
 
 ### T005 — Add duplicate guard to `round_add()`
 
-- [ ] T005 [US2] Update `round_add()` in `src/cogs/season_cog.py` to detect conflict and present `DuplicateRoundView`
+- [x] T005 [US2] Update `round_add()` in `src/cogs/season_cog.py` to detect conflict and present `DuplicateRoundView`
 - **Action**: After all existing validation (format, track, datetime, division lookup) and before the final `div.rounds.append(new_round)`, insert:
   ```python
   conflict = next((r for r in div.rounds if r["round_number"] == round_number), None)
@@ -137,7 +137,7 @@
 
 ### T006 — Unit tests: pending-config amendment (US1)
 
-- [ ] T006 [P] [US1] Create `tests/unit/test_amendment_cog_pending.py`
+- [x] T006 [P] [US1] Create `tests/unit/test_amendment_cog_pending.py`
 - **Action**: Create new file. Use `AsyncMock` / `MagicMock` for `interaction`, `SeasonCog`, and `SeasonService`. Cover:
   1. Happy path — track change: pending config found, div found, round found; track updated in-memory, ephemeral success returned, no DB call, no phase-invalidation call.
   2. Happy path — `scheduled_at` change: same as (1) but updating the date field.
@@ -152,7 +152,7 @@
 
 ### T007 — Unit tests: duplicate round guard (US2)
 
-- [ ] T007 [P] [US2] Create `tests/unit/test_season_cog_duplicate.py`
+- [x] T007 [P] [US2] Create `tests/unit/test_season_cog_duplicate.py`
 - **Action**: Create new file. Use isolated `PendingDivision` objects (no Discord mocks needed for pure helper tests). Cover:
   - **Mutation helpers** (no mocks required):
     1. `_rounds_insert_before`: rounds `[1,2,3,4]`, conflict=3 → result `[1,2,3,4,5]` with new round as 3.
@@ -176,7 +176,7 @@
 
 ### T008 — Run full test suite
 
-- [ ] T008 Run `python -m pytest tests/ -v` — all tests must pass (baseline: 69 + new tests)
+- [x] T008 Run `python -m pytest tests/ -v` — all tests must pass (baseline: 69 + new tests)
 - **Depends on**: T001–T007
 
 ---

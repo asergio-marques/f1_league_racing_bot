@@ -53,6 +53,112 @@ class AmendmentCog(commands.Cog):
             )
             return
 
+        # ------------------------------------------------------------------
+        # Pending-config path: check in-memory setup before the DB
+        # ------------------------------------------------------------------
+        season_cog = self.bot.get_cog("SeasonCog")
+        pending_cfg = (
+            season_cog._get_pending_for_server(interaction.guild_id)
+            if season_cog is not None
+            else None
+        )
+        if pending_cfg is not None:
+            # Locate the division and round in the in-memory config
+            pend_div = next(
+                (d for d in pending_cfg.divisions if d.name.lower() == division_name.lower()),
+                None,
+            )
+            if pend_div is None:
+                await interaction.response.send_message(
+                    f"❌ Division `{division_name}` not found in pending setup.",
+                    ephemeral=True,
+                )
+                return
+
+            pend_rnd = next(
+                (r for r in pend_div.rounds if r["round_number"] == round_number),
+                None,
+            )
+            if pend_rnd is None:
+                await interaction.response.send_message(
+                    f"❌ Round {round_number} not found in division `{division_name}` of the pending setup.",
+                    ephemeral=True,
+                )
+                return
+
+            # Validate and resolve track
+            new_track: str | None = ...
+            if track:
+                resolved = TRACK_IDS.get(track.zfill(2), track)
+                if resolved not in TRACKS:
+                    await interaction.response.send_message(
+                        f"❌ Unknown track `{track}`. Use autocomplete to pick a valid track.",
+                        ephemeral=True,
+                    )
+                    return
+                new_track = resolved
+            else:
+                new_track = ...  # sentinel — not supplied
+
+            # Validate scheduled_at
+            new_dt = ...
+            if scheduled_at:
+                try:
+                    new_dt = datetime.fromisoformat(scheduled_at)
+                except ValueError:
+                    await interaction.response.send_message(
+                        "❌ Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.",
+                        ephemeral=True,
+                    )
+                    return
+
+            # Validate format
+            new_fmt = ...
+            if format:
+                try:
+                    new_fmt = RoundFormat(format.upper())
+                except ValueError:
+                    await interaction.response.send_message(
+                        f"❌ Invalid format `{format}`. Use NORMAL, SPRINT, MYSTERY, or ENDURANCE.",
+                        ephemeral=True,
+                    )
+                    return
+
+            # Determine effective format after amendment
+            effective_fmt = new_fmt if new_fmt is not ... else pend_rnd["format"]
+            # Determine effective track for MYSTERY validation
+            effective_track = new_track if new_track is not ... else pend_rnd["track_name"]
+
+            if effective_fmt != RoundFormat.MYSTERY and not effective_track:
+                await interaction.response.send_message(
+                    f"❌ Format `{effective_fmt.value}` requires a track. "
+                    "Supply a `track` value or change format to MYSTERY.",
+                    ephemeral=True,
+                )
+                return
+
+            # Apply changes in-memory — no DB write, no phase-invalidation
+            if new_fmt is not ...:
+                pend_rnd["format"] = new_fmt
+            if new_dt is not ...:
+                pend_rnd["scheduled_at"] = new_dt
+            if new_track is not ...:
+                pend_rnd["track_name"] = new_track
+            # MYSTERY clears the track regardless of what was supplied
+            if pend_rnd["format"] == RoundFormat.MYSTERY:
+                pend_rnd["track_name"] = None
+
+            await interaction.response.send_message(
+                f"✅ Round {round_number} in **{pend_div.name}** updated in pending setup "
+                f"(no DB write — use `/season-approve` to commit).",
+                ephemeral=True,
+            )
+            return
+
+        # ------------------------------------------------------------------
+        # Active-season DB path (unchanged)
+        # ------------------------------------------------------------------
+
         # Resolve round
         season = await self.bot.season_service.get_active_season(interaction.guild_id)
         if season is None:

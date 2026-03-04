@@ -44,6 +44,150 @@ class PendingConfig:
 
 
 # ---------------------------------------------------------------------------
+# Duplicate round-number resolution helpers (pure, no I/O)
+# ---------------------------------------------------------------------------
+
+def _rounds_insert_before(
+    rounds: list[dict],
+    conflict_num: int,
+    new_round: dict,
+) -> None:
+    """Shift all rounds with round_number >= *conflict_num* up by 1, insert *new_round* at *conflict_num*."""
+    for r in rounds:
+        if r["round_number"] >= conflict_num:
+            r["round_number"] += 1
+    new_round = {**new_round, "round_number": conflict_num}
+    rounds.append(new_round)
+    rounds.sort(key=lambda r: r["round_number"])
+
+
+def _rounds_insert_after(
+    rounds: list[dict],
+    conflict_num: int,
+    new_round: dict,
+) -> None:
+    """Shift all rounds with round_number > *conflict_num* up by 1, insert *new_round* at *conflict_num* + 1."""
+    for r in rounds:
+        if r["round_number"] > conflict_num:
+            r["round_number"] += 1
+    new_round = {**new_round, "round_number": conflict_num + 1}
+    rounds.append(new_round)
+    rounds.sort(key=lambda r: r["round_number"])
+
+
+def _rounds_replace(
+    rounds: list[dict],
+    conflict_num: int,
+    new_round: dict,
+) -> None:
+    """Remove the existing round at *conflict_num* and insert *new_round* in its place."""
+    new_round = {**new_round, "round_number": conflict_num}
+    for i, r in enumerate(rounds):
+        if r["round_number"] == conflict_num:
+            rounds[i] = new_round
+            return
+
+
+# ---------------------------------------------------------------------------
+# Duplicate round-number resolution view
+# ---------------------------------------------------------------------------
+
+class DuplicateRoundView(discord.ui.View):
+    """Ephemeral 4-button prompt shown when /round-add detects a conflicting round number."""
+
+    message: discord.Message | None
+
+    def __init__(self, div: PendingDivision, new_round: dict) -> None:
+        super().__init__(timeout=60)
+        self._div = div
+        self._new_round = new_round
+        self._conflict_num: int = new_round["round_number"]
+        self.message = None
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _disable_all(self) -> None:
+        for item in self.children:
+            if hasattr(item, "disabled"):
+                item.disabled = True  # type: ignore[union-attr]
+
+    # ------------------------------------------------------------------
+    # Buttons
+    # ------------------------------------------------------------------
+
+    @discord.ui.button(label="Insert Before", style=discord.ButtonStyle.primary)
+    async def insert_before_cb(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        _rounds_insert_before(self._div.rounds, self._conflict_num, self._new_round)
+        self._disable_all()
+        self.stop()
+        await interaction.response.edit_message(
+            content=(
+                f"✅ Round inserted **before** round {self._conflict_num}. "
+                f"Rounds ≥ {self._conflict_num} have been renumbered."
+            ),
+            view=self,
+        )
+
+    @discord.ui.button(label="Insert After", style=discord.ButtonStyle.secondary)
+    async def insert_after_cb(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        _rounds_insert_after(self._div.rounds, self._conflict_num, self._new_round)
+        self._disable_all()
+        self.stop()
+        await interaction.response.edit_message(
+            content=(
+                f"✅ Round inserted **after** round {self._conflict_num} "
+                f"as round {self._conflict_num + 1}. "
+                f"Rounds > {self._conflict_num} have been renumbered."
+            ),
+            view=self,
+        )
+
+    @discord.ui.button(label="Replace", style=discord.ButtonStyle.danger)
+    async def replace_cb(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        _rounds_replace(self._div.rounds, self._conflict_num, self._new_round)
+        self._disable_all()
+        self.stop()
+        await interaction.response.edit_message(
+            content=f"✅ Round {self._conflict_num} has been **replaced**.",
+            view=self,
+        )
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_cb(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        self._disable_all()
+        self.stop()
+        await interaction.response.edit_message(
+            content="❌ Cancelled — round list unchanged.",
+            view=self,
+        )
+
+    # ------------------------------------------------------------------
+    # Timeout
+    # ------------------------------------------------------------------
+
+    async def on_timeout(self) -> None:
+        self._disable_all()
+        if self.message is not None:
+            try:
+                await self.message.edit(
+                    content="⏱ Timed out — round list unchanged.",
+                    view=self,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+
+# ---------------------------------------------------------------------------
 # Cog
 # ---------------------------------------------------------------------------
 
@@ -258,12 +402,38 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        div.rounds.append({
+        new_round = {
             "round_number": round_number,
             "format": fmt,
             "track_name": track_name,
             "scheduled_at": sched,
-        })
+        }
+
+        # Duplicate round-number guard
+        conflict = next((r for r in div.rounds if r["round_number"] == round_number), None)
+        if conflict is not None:
+            view = DuplicateRoundView(div, new_round)
+            existing_info = (
+                f"Existing round {conflict['round_number']}: "
+                f"{conflict['format'].value} @ {conflict['track_name'] or 'Mystery'} "
+                f"— {conflict['scheduled_at'].isoformat()}"
+            )
+            new_info = (
+                f"New round {new_round['round_number']}: "
+                f"{new_round['format'].value} @ {new_round['track_name'] or 'Mystery'} "
+                f"— {new_round['scheduled_at'].isoformat()}"
+            )
+            await interaction.response.send_message(
+                f"⚠️ **Round {round_number} already exists in {division_name}.**\n"
+                f"{existing_info}\n{new_info}\n\n"
+                "Choose how to resolve the conflict:",
+                view=view,
+                ephemeral=True,
+            )
+            view.message = await interaction.original_response()
+            return
+
+        div.rounds.append(new_round)
 
         await interaction.response.send_message(
             f"✅ Round {round_number} added to **{division_name}**.\n"
@@ -358,6 +528,19 @@ class SeasonCog(commands.Cog):
                 "Cleared %d pending season setup(s) for server %s",
                 len(stale_keys), server_id,
             )
+
+    def _get_pending_for_server(self, server_id: int) -> PendingConfig | None:
+        """Return the in-memory pending config for *server_id*, or None.
+
+        Scans by guild rather than user_id so any @admin_only user on the
+        server can amend the pending setup, not just the one who started it.
+        Since only one pending config per server is allowed at a time this
+        is guaranteed to return at most one result.
+        """
+        return next(
+            (cfg for cfg in self._pending.values() if cfg.server_id == server_id),
+            None,
+        )
 
     async def _do_approve(self, interaction: discord.Interaction) -> None:
         cfg = self._pending.get(interaction.user.id)
