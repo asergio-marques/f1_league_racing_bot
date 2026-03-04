@@ -81,6 +81,9 @@ async def main() -> None:
         # Recover any season-end jobs that were lost during a restart
         await _recover_season_end_jobs(bot)
 
+        # Restore in-memory pending setups from DB SETUP seasons
+        await _recover_pending_setups(bot)
+
         # Sync slash commands globally (may take up to 1 hour to propagate)
         try:
             synced = await bot.tree.sync()
@@ -170,6 +173,14 @@ async def _recover_season_end_jobs(bot: commands.Bot) -> None:
     for server_id in server_ids:
         log.info("Startup recovery: checking season-end status for server %s", server_id)
         await check_and_schedule_season_end(server_id, bot)
+
+
+async def _recover_pending_setups(bot: commands.Bot) -> None:
+    """Restore in-memory pending season configs from DB SETUP seasons."""
+    from cogs.season_cog import SeasonCog
+    season_cog: SeasonCog | None = bot.get_cog("SeasonCog")  # type: ignore[assignment]
+    if season_cog is not None:
+        await season_cog.recover_pending_setups()
 
 
 if __name__ == "__main__":

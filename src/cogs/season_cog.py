@@ -41,6 +41,158 @@ class PendingConfig:
     server_id: int = 0
     start_date: date = field(default_factory=date.today)
     divisions: list[PendingDivision] = field(default_factory=list)
+    season_id: int = 0  # set after first DB snapshot; 0 = not yet persisted
+
+
+# ---------------------------------------------------------------------------
+# Duplicate round-number resolution helpers (pure, no I/O)
+# ---------------------------------------------------------------------------
+
+def _rounds_insert_before(
+    rounds: list[dict],
+    conflict_num: int,
+    new_round: dict,
+) -> None:
+    """Shift all rounds with round_number >= *conflict_num* up by 1, insert *new_round* at *conflict_num*."""
+    for r in rounds:
+        if r["round_number"] >= conflict_num:
+            r["round_number"] += 1
+    new_round = {**new_round, "round_number": conflict_num}
+    rounds.append(new_round)
+    rounds.sort(key=lambda r: r["round_number"])
+
+
+def _rounds_insert_after(
+    rounds: list[dict],
+    conflict_num: int,
+    new_round: dict,
+) -> None:
+    """Shift all rounds with round_number > *conflict_num* up by 1, insert *new_round* at *conflict_num* + 1."""
+    for r in rounds:
+        if r["round_number"] > conflict_num:
+            r["round_number"] += 1
+    new_round = {**new_round, "round_number": conflict_num + 1}
+    rounds.append(new_round)
+    rounds.sort(key=lambda r: r["round_number"])
+
+
+def _rounds_replace(
+    rounds: list[dict],
+    conflict_num: int,
+    new_round: dict,
+) -> None:
+    """Remove the existing round at *conflict_num* and insert *new_round* in its place."""
+    new_round = {**new_round, "round_number": conflict_num}
+    for i, r in enumerate(rounds):
+        if r["round_number"] == conflict_num:
+            rounds[i] = new_round
+            return
+
+
+# ---------------------------------------------------------------------------
+# Duplicate round-number resolution view
+# ---------------------------------------------------------------------------
+
+class DuplicateRoundView(discord.ui.View):
+    """Ephemeral 4-button prompt shown when /round-add detects a conflicting round number."""
+
+    message: discord.Message | None
+
+    def __init__(self, div: PendingDivision, new_round: dict, post_mutation_cb=None) -> None:
+        super().__init__(timeout=60)
+        self._div = div
+        self._new_round = new_round
+        self._conflict_num: int = new_round["round_number"]
+        self._post_mutation_cb = post_mutation_cb
+        self.message = None
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _disable_all(self) -> None:
+        for item in self.children:
+            if hasattr(item, "disabled"):
+                item.disabled = True  # type: ignore[union-attr]
+
+    # ------------------------------------------------------------------
+    # Buttons
+    # ------------------------------------------------------------------
+
+    @discord.ui.button(label="Insert Before", style=discord.ButtonStyle.primary)
+    async def insert_before_cb(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        _rounds_insert_before(self._div.rounds, self._conflict_num, self._new_round)
+        self._disable_all()
+        self.stop()
+        if self._post_mutation_cb:
+            await self._post_mutation_cb()
+        await interaction.response.edit_message(
+            content=(
+                f"✅ Round inserted **before** round {self._conflict_num}. "
+                f"Rounds ≥ {self._conflict_num} have been renumbered."
+            ),
+            view=self,
+        )
+
+    @discord.ui.button(label="Insert After", style=discord.ButtonStyle.secondary)
+    async def insert_after_cb(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        _rounds_insert_after(self._div.rounds, self._conflict_num, self._new_round)
+        self._disable_all()
+        self.stop()
+        if self._post_mutation_cb:
+            await self._post_mutation_cb()
+        await interaction.response.edit_message(
+            content=(
+                f"✅ Round inserted **after** round {self._conflict_num} "
+                f"as round {self._conflict_num + 1}. "
+                f"Rounds > {self._conflict_num} have been renumbered."
+            ),
+            view=self,
+        )
+
+    @discord.ui.button(label="Replace", style=discord.ButtonStyle.danger)
+    async def replace_cb(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        _rounds_replace(self._div.rounds, self._conflict_num, self._new_round)
+        self._disable_all()
+        self.stop()
+        if self._post_mutation_cb:
+            await self._post_mutation_cb()
+        await interaction.response.edit_message(
+            content=f"✅ Round {self._conflict_num} has been **replaced**.",
+            view=self,
+        )
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_cb(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        self._disable_all()
+        self.stop()
+        await interaction.response.edit_message(
+            content="❌ Cancelled — round list unchanged.",
+            view=self,
+        )
+
+    # ------------------------------------------------------------------
+    # Timeout
+    # ------------------------------------------------------------------
+
+    async def on_timeout(self) -> None:
+        self._disable_all()
+        if self.message is not None:
+            try:
+                await self.message.edit(
+                    content="⏱ Timed out — round list unchanged.",
+                    view=self,
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -92,20 +244,20 @@ class SeasonCog(commands.Cog):
 
         server_id = interaction.guild_id
 
-        # Guard: reject if a DB season already exists for this server
-        if await self.bot.season_service.has_existing_season(server_id):
+        # Guard: reject if a pending in-memory setup already exists for this server
+        if self._get_pending_for_server(server_id) is not None:
             await interaction.response.send_message(
-                "❌ A season already exists for this server (active or pending "
-                "approval). Use `/bot-reset` to clear it first.",
+                "❌ A season setup is already in progress for this server. "
+                "Use `/season-review` to approve, or `/bot-reset` to cancel it first.",
                 ephemeral=True,
             )
             return
 
-        # Guard: reject if any user already has a pending in-memory setup
-        if any(p.server_id == server_id for p in self._pending.values()):
+        # Guard: reject if an active or completed season exists for this server
+        if await self.bot.season_service.has_active_or_completed_season(server_id):
             await interaction.response.send_message(
-                "❌ A season setup is already in progress for this server. "
-                "Use `/season-review` to approve or cancel it first.",
+                "❌ An active or completed season already exists for this server. "
+                "Use `/bot-reset` to clear it first.",
                 ephemeral=True,
             )
             return
@@ -116,6 +268,7 @@ class SeasonCog(commands.Cog):
             divisions=[PendingDivision() for _ in range(num_divisions)],
         )
         self._pending[interaction.user.id] = cfg
+        await self._snapshot_pending(cfg)
 
         await interaction.response.send_message(
             f"✅ Season setup started.\n"
@@ -148,7 +301,7 @@ class SeasonCog(commands.Cog):
         role: discord.Role,
         forecast_channel: discord.TextChannel,
     ) -> None:
-        cfg = self._pending.get(interaction.user.id)
+        cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
             await interaction.response.send_message(
                 "❌ No pending season setup. Run `/season-setup` first.",
@@ -169,6 +322,8 @@ class SeasonCog(commands.Cog):
             cfg.divisions[idx] = div
         else:
             cfg.divisions.append(div)
+
+        await self._snapshot_pending(cfg)
 
         await interaction.response.send_message(
             f"✅ Division **{name}** added.\n"
@@ -202,7 +357,7 @@ class SeasonCog(commands.Cog):
         scheduled_at: str,
         track: str = "",
     ) -> None:
-        cfg = self._pending.get(interaction.user.id)
+        cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
             await interaction.response.send_message(
                 "❌ No pending season setup. Run `/season-setup` first.",
@@ -258,12 +413,70 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        div.rounds.append({
+        # Date ordering validation: ensure chronological consistency with adjacent rounds
+        earlier_rounds = [r for r in div.rounds if r["round_number"] < round_number]
+        later_rounds   = [r for r in div.rounds if r["round_number"] > round_number]
+        if earlier_rounds:
+            latest_earlier = max(r["scheduled_at"] for r in earlier_rounds)
+            latest_earlier_num = max(
+                r["round_number"] for r in earlier_rounds if r["scheduled_at"] == latest_earlier
+            )
+            if sched < latest_earlier:
+                await interaction.response.send_message(
+                    f"❌ Round {round_number} must be scheduled on or after "
+                    f"round {latest_earlier_num} ({latest_earlier.isoformat()}).",
+                    ephemeral=True,
+                )
+                return
+        if later_rounds:
+            earliest_later = min(r["scheduled_at"] for r in later_rounds)
+            earliest_later_num = min(
+                r["round_number"] for r in later_rounds if r["scheduled_at"] == earliest_later
+            )
+            if sched > earliest_later:
+                await interaction.response.send_message(
+                    f"❌ Round {round_number} must be scheduled on or before "
+                    f"round {earliest_later_num} ({earliest_later.isoformat()}).",
+                    ephemeral=True,
+                )
+                return
+
+        new_round = {
             "round_number": round_number,
             "format": fmt,
             "track_name": track_name,
             "scheduled_at": sched,
-        })
+        }
+
+        # Duplicate round-number guard
+        conflict = next((r for r in div.rounds if r["round_number"] == round_number), None)
+        if conflict is not None:
+            async def _snapshot_cb() -> None:
+                await self._snapshot_pending(cfg)
+
+            view = DuplicateRoundView(div, new_round, post_mutation_cb=_snapshot_cb)
+            existing_info = (
+                f"Existing round {conflict['round_number']}: "
+                f"{conflict['format'].value} @ {conflict['track_name'] or 'Mystery'} "
+                f"— {conflict['scheduled_at'].isoformat()}"
+            )
+            new_info = (
+                f"New round {new_round['round_number']}: "
+                f"{new_round['format'].value} @ {new_round['track_name'] or 'Mystery'} "
+                f"— {new_round['scheduled_at'].isoformat()}"
+            )
+            await interaction.response.send_message(
+                f"⚠️ **Round {round_number} already exists in {division_name}.**\n"
+                f"{existing_info}\n{new_info}\n\n"
+                "Choose how to resolve the conflict:",
+                view=view,
+                ephemeral=True,
+            )
+            view.message = await interaction.original_response()
+            return
+
+        div.rounds.append(new_round)
+        await self._snapshot_pending(cfg)
 
         await interaction.response.send_message(
             f"✅ Round {round_number} added to **{division_name}**.\n"
@@ -295,7 +508,7 @@ class SeasonCog(commands.Cog):
     @channel_guard
     @admin_only
     async def season_review(self, interaction: discord.Interaction) -> None:
-        cfg = self._pending.get(interaction.user.id)
+        cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
             await interaction.response.send_message(
                 "❌ No pending season setup. Run `/season-setup` first.",
@@ -359,8 +572,60 @@ class SeasonCog(commands.Cog):
                 len(stale_keys), server_id,
             )
 
+    def _get_pending_for_server(self, server_id: int) -> PendingConfig | None:
+        """Return the in-memory pending config for *server_id*, or None.
+
+        Scans by guild rather than user_id so any @admin_only user on the
+        server can amend the pending setup, not just the one who started it.
+        Since only one pending config per server is allowed at a time this
+        is guaranteed to return at most one result.
+        """
+        return next(
+            (cfg for cfg in self._pending.values() if cfg.server_id == server_id),
+            None,
+        )
+
+    async def _snapshot_pending(self, cfg: PendingConfig) -> None:
+        """Write the current PendingConfig to DB (status=SETUP) and update cfg.season_id."""
+        divisions_data = [
+            {
+                "name": d.name,
+                "role_id": d.role_id,
+                "channel_id": d.channel_id,
+                "rounds": d.rounds,
+            }
+            for d in cfg.divisions
+            if d.name
+        ]
+        cfg.season_id = await self.bot.season_service.save_pending_snapshot(
+            cfg.server_id, cfg.start_date, cfg.season_id, divisions_data
+        )
+
+    async def recover_pending_setups(self) -> None:
+        """Restore in-memory _pending from DB SETUP seasons on bot startup."""
+        for s in await self.bot.season_service.load_all_setup_seasons():
+            if self._get_pending_for_server(s["server_id"]) is not None:
+                continue  # already in-memory (shouldn't happen at startup, but be safe)
+            cfg = PendingConfig(
+                server_id=s["server_id"],
+                start_date=s["start_date"],
+                season_id=s["season_id"],
+                divisions=[
+                    PendingDivision(
+                        name=d["name"],
+                        role_id=d["role_id"],
+                        channel_id=d["channel_id"],
+                        rounds=d["rounds"],
+                    )
+                    for d in s["divisions"]
+                ],
+            )
+            # Key by server_id for recovered configs (no user_id available)
+            self._pending[s["server_id"]] = cfg
+        log.info("Recovered %d pending setup(s) from DB", len(self._pending))
+
     async def _do_approve(self, interaction: discord.Interaction) -> None:
-        cfg = self._pending.get(interaction.user.id)
+        cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
             await interaction.response.send_message(
                 "❌ No pending season setup.",
@@ -368,38 +633,38 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season_svc = self.bot.season_service
-        season = await season_svc.create_season(cfg.server_id, cfg.start_date)
-
-        all_rounds = []
-        for div_cfg in cfg.divisions:
-            if not div_cfg.name:
-                continue
-            div = await season_svc.add_division(
-                season.id,
-                div_cfg.name,
-                div_cfg.role_id,
-                div_cfg.channel_id,
+        if cfg.season_id == 0:
+            await interaction.response.send_message(
+                "❌ Season setup state is incomplete. Use `/bot-reset` and start again.",
+                ephemeral=True,
             )
-            for r in div_cfg.rounds:
-                rnd = await season_svc.add_round(
-                    div.id,
-                    r["round_number"],
-                    r["format"],
-                    r["track_name"],
-                    r["scheduled_at"],
-                )
-                await season_svc.create_sessions_for_round(rnd.id, r["format"])
+            return
+
+        season_svc = self.bot.season_service
+
+        # Load divisions and rounds from the already-persisted SETUP season
+        divisions = await season_svc.get_divisions(cfg.season_id)
+        all_rounds = []
+        for div_db in divisions:
+            rounds_db = await season_svc.get_division_rounds(div_db.id)
+            for rnd in rounds_db:
+                await season_svc.create_sessions_for_round(rnd.id, rnd.format)
                 all_rounds.append(rnd)
 
-        await season_svc.transition_to_active(season.id)
+        # Schedule FIRST — if this fails the season stays SETUP in DB (fix #5)
         self.bot.scheduler_service.schedule_all_rounds(all_rounds)
 
-        del self._pending[interaction.user.id]
+        # Only transition to ACTIVE after scheduling succeeds
+        await season_svc.transition_to_active(cfg.season_id)
+
+        # Clear all in-memory pending entries for this server
+        stale_keys = [uid for uid, c in self._pending.items() if c.server_id == cfg.server_id]
+        for uid in stale_keys:
+            del self._pending[uid]
 
         msg = (
             f"✅ **Season approved and activated!**\n"
-            f"Season ID: {season.id} | "
+            f"Season ID: {cfg.season_id} | "
             f"Rounds scheduled: {len(all_rounds)}"
         )
         if interaction.response.is_done():
@@ -407,7 +672,7 @@ class SeasonCog(commands.Cog):
         else:
             await interaction.response.send_message(msg, ephemeral=True)
 
-        log.info("Season %s activated for server %s by %s", season.id, cfg.server_id, interaction.user)
+        log.info("Season %s activated for server %s by %s", cfg.season_id, cfg.server_id, interaction.user)
 
     # ------------------------------------------------------------------
     # /season-status
@@ -471,7 +736,8 @@ class _ApproveView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await interaction.response.send_message(
-            "Use `/division-add` or `/round-add` to make changes, then `/season-review` again.",
+            "Use `/round-amend` to correct a round, or `/division-add` / `/round-add` to add more. "
+            "Then run `/season-review` again.",
             ephemeral=True,
         )
         self.stop()

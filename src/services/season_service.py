@@ -63,6 +63,139 @@ class SeasonService:
             row = await cursor.fetchone()
         return row is not None
 
+    async def has_active_or_completed_season(self, server_id: int) -> bool:
+        """Return True if an ACTIVE or COMPLETED season exists for *server_id*."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT 1 FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'COMPLETED') LIMIT 1",
+                (server_id,),
+            )
+            row = await cursor.fetchone()
+        return row is not None
+
+    async def save_pending_snapshot(
+        self,
+        server_id: int,
+        start_date: date,
+        existing_season_id: int,
+        divisions: list[dict],
+    ) -> int:
+        """Atomically replace the SETUP season snapshot for *server_id* in the DB.
+
+        Deletes the previous SETUP season (if *existing_season_id* is non-zero)
+        and re-inserts the full pending config.  Sessions are NOT created here —
+        they are created at approve time.
+
+        Returns the new season_id so callers can update their in-memory state.
+        """
+        async with get_connection(self._db_path) as db:
+            if existing_season_id != 0:
+                # Cascade-delete the old SETUP season manually (no ON DELETE CASCADE)
+                cursor = await db.execute(
+                    "SELECT id FROM divisions WHERE season_id = ?",
+                    (existing_season_id,),
+                )
+                div_rows = await cursor.fetchall()
+                for div_row in div_rows:
+                    await db.execute(
+                        "DELETE FROM rounds WHERE division_id = ?", (div_row[0],)
+                    )
+                await db.execute(
+                    "DELETE FROM divisions WHERE season_id = ?", (existing_season_id,)
+                )
+                await db.execute(
+                    "DELETE FROM seasons WHERE id = ?", (existing_season_id,)
+                )
+
+            cursor = await db.execute(
+                "INSERT INTO seasons (server_id, start_date, status) VALUES (?, ?, 'SETUP')",
+                (server_id, start_date.isoformat()),
+            )
+            new_season_id: int = cursor.lastrowid  # type: ignore[assignment]
+
+            for div_data in divisions:
+                cursor = await db.execute(
+                    "INSERT INTO divisions "
+                    "(season_id, name, mention_role_id, forecast_channel_id) "
+                    "VALUES (?, ?, ?, ?)",
+                    (
+                        new_season_id,
+                        div_data["name"],
+                        div_data["role_id"],
+                        div_data["channel_id"],
+                    ),
+                )
+                div_db_id: int = cursor.lastrowid  # type: ignore[assignment]
+                for r in div_data["rounds"]:
+                    await db.execute(
+                        "INSERT INTO rounds "
+                        "(division_id, round_number, format, track_name, "
+                        " scheduled_at, phase1_done, phase2_done, phase3_done) "
+                        "VALUES (?, ?, ?, ?, ?, 0, 0, 0)",
+                        (
+                            div_db_id,
+                            r["round_number"],
+                            r["format"].value,
+                            r["track_name"],
+                            r["scheduled_at"].isoformat(),
+                        ),
+                    )
+
+            await db.commit()
+        return new_season_id
+
+    async def load_all_setup_seasons(self) -> list[dict]:
+        """Return raw data for every SETUP-status season to rebuild PendingConfig on startup."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, server_id, start_date FROM seasons WHERE status = 'SETUP'"
+            )
+            season_rows = await cursor.fetchall()
+
+            result: list[dict] = []
+            for s_row in season_rows:
+                season_id = s_row["id"]
+
+                cursor = await db.execute(
+                    "SELECT id, name, mention_role_id, forecast_channel_id "
+                    "FROM divisions WHERE season_id = ?",
+                    (season_id,),
+                )
+                div_rows = await cursor.fetchall()
+
+                divisions: list[dict] = []
+                for d_row in div_rows:
+                    cursor2 = await db.execute(
+                        "SELECT round_number, format, track_name, scheduled_at "
+                        "FROM rounds WHERE division_id = ? ORDER BY round_number",
+                        (d_row["id"],),
+                    )
+                    round_rows = await cursor2.fetchall()
+                    rounds = [
+                        {
+                            "round_number": r["round_number"],
+                            "format": RoundFormat(r["format"]),
+                            "track_name": r["track_name"],
+                            "scheduled_at": datetime.fromisoformat(r["scheduled_at"]),
+                        }
+                        for r in round_rows
+                    ]
+                    divisions.append({
+                        "name": d_row["name"],
+                        "role_id": d_row["mention_role_id"],
+                        "channel_id": d_row["forecast_channel_id"],
+                        "rounds": rounds,
+                    })
+
+                result.append({
+                    "season_id": season_id,
+                    "server_id": s_row["server_id"],
+                    "start_date": date.fromisoformat(s_row["start_date"]),
+                    "divisions": divisions,
+                })
+
+        return result
+
     async def get_last_scheduled_at(self, server_id: int) -> datetime | None:
         """Return the latest scheduled_at across all rounds for the active season."""
         async with get_connection(self._db_path) as db:

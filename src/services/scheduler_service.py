@@ -24,6 +24,31 @@ log = logging.getLogger(__name__)
 
 _GRACE_SECONDS = 300  # 5-minute misfire grace period
 
+# Module-level service reference so APScheduler can pickle the job callable.
+# Set in SchedulerService.start(); always non-None when jobs fire.
+_GLOBAL_SERVICE: "SchedulerService | None" = None
+
+
+async def _phase_job(phase_num: int, round_id: int) -> None:
+    """Top-level APScheduler callable — avoids closure pickling issues.
+
+    APScheduler with SQLAlchemyJobStore requires picklable callables.  Inner
+    closures are not picklable, so we use a module-level function that finds
+    the running service instance via the module-level sentinel.
+    """
+    if _GLOBAL_SERVICE is None:
+        log.warning(
+            "_phase_job fired but _GLOBAL_SERVICE is None "
+            "(phase=%s, round=%s) — skipping",
+            phase_num, round_id,
+        )
+        return
+    cb = _GLOBAL_SERVICE._phase_callbacks.get(phase_num)
+    if cb is None:
+        log.warning("No callback registered for phase %s; skipping.", phase_num)
+        return
+    await cb(round_id)
+
 
 class SchedulerService:
     def __init__(self, db_path: str) -> None:
@@ -49,6 +74,8 @@ class SchedulerService:
         self._phase_callbacks[3] = phase3_cb
 
     def start(self) -> None:
+        global _GLOBAL_SERVICE
+        _GLOBAL_SERVICE = self
         if not self._scheduler.running:
             self._scheduler.start()
             log.info("APScheduler started with SQLAlchemyJobStore at %s", self._db_path)
@@ -83,28 +110,17 @@ class SchedulerService:
 
         for phase_num, fire_at in horizons.items():
             job_id = f"phase{phase_num}_r{rnd.id}"
-            cb = self._phase_callbacks.get(phase_num)
-            if cb is None:
+            if self._phase_callbacks.get(phase_num) is None:
                 log.warning("No callback registered for phase %s; skipping job.", phase_num)
                 continue
 
-            # Capture round_id in the closure
-            round_id_captured = rnd.id
-            phase_num_captured = phase_num
-
-            async def _job(
-                _round_id: int = round_id_captured,
-                _phase_num: int = phase_num_captured,
-            ) -> None:
-                log.info("Scheduler firing Phase %s for round %s", _phase_num, _round_id)
-                await self._phase_callbacks[_phase_num](_round_id)
-
             self._scheduler.add_job(
-                _job,
+                _phase_job,
                 trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
                 id=job_id,
                 replace_existing=True,
                 name=f"Phase {phase_num} for round {rnd.id}",
+                kwargs={"phase_num": phase_num, "round_id": rnd.id},
             )
             log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
 
