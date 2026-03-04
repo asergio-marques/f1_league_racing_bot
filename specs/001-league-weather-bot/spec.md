@@ -59,6 +59,7 @@ and the correct computation log appears in the log channel for each phase.
 4. **Given** a round is configured as Mystery, **When** any phase horizon is reached, **Then** the bot performs no computation and posts no message to either channel for that round.
 5. **Given** a Sprint round, **When** Phase 3 fires, **Then** the output message correctly names all four sessions with their individual slot sequences.
 6. **Given** a mixed-type session in Phase 3, **When** all drawn slots happen to be wet-weather types, **Then** the output is posted as-is — no override — and the log records the draw faithfully.
+7. **Given** a session where Phase 3 draws multiple slots all of the same exact type (e.g., three Clear slots), **When** the Phase 3 output is posted, **Then** the forecast channel shows the single simplified type label (e.g., `Clear`) and the calculation log channel shows the simplified label followed by the full raw draw sequence in parentheses (e.g., `Clear (draws: Clear, Clear, Clear)`). A session with only one drawn slot is rendererd as its single draw with no simplification treatment.
 
 ---
 
@@ -164,7 +165,7 @@ a command from outside the channel or by a non-role holder is rejected.
 - **FR-021**: The bot MUST automatically execute Phase 3 exactly 2 hours before each non-Mystery round's scheduled start time.
 - **FR-022**: Phase 3 MUST determine a random `Nslots` for each session with a minimum of 1 (or 2 for mixed sessions) and a maximum equal to the session type's slot-count cap.
 - **FR-023**: Phase 3 MUST build a per-session weighted map of the five concrete weather types (Clear, Light Cloud, Overcast, Wet, Very Wet) using the formulas defined in the functional specification, with all map entries clamped to a minimum of 0. A separate map MUST be built and discarded for each session.
-- **FR-024**: After Phase 3 the bot MUST post a natural-language final weather layout message for all sessions in the round in the division's weather forecast channel; the weather slot sequence for each session MUST be rendered in a natural, readable form.
+- **FR-024**: After Phase 3 the bot MUST post a natural-language final weather layout message for all sessions in the round in the division's weather forecast channel; the weather slot sequence for each session MUST be rendered in a natural, readable form. When all drawn slots for a session are the exact same weather type (exact string match across the five canonical types: Clear, Light Cloud, Overcast, Wet, Very Wet), both the forecast channel post and the calculation log channel post MUST render that session's output as the single type label rather than listing each slot individually; the calculation log channel post MUST additionally append the full raw draw sequence in parentheses (e.g., `Clear (draws: Clear, Clear, Clear)`). Sessions where `Nslots = 1` are exempt from this rule and are rendered as their single draw without any simplification treatment.
 
 **Amendment Invalidation**
 
@@ -210,3 +211,11 @@ a command from outside the channel or by a non-role holder is rejected.
 - "Gap weeks" in the calendar are weeks where no round is scheduled in any division; the bot takes no action during gap weeks.
 - The bot is expected to operate continuously (always-on hosting). If downtime causes a phase to be missed, recovery behaviour (trigger immediately after restart if horizon has passed) is assumed per FR-012/FR-017/FR-021 semantics.
 - The interactive configuration session supports a single admin at a time per server; concurrent configuration sessions are not supported in this version.
+
+## Clarifications
+
+### Session 2026-03-04
+
+- Q: Should the Phase 3 slot-simplification apply to the forecast channel only, or also to the calculation log channel? → A: Both channels; forecast channel shows simplified label only, log channel shows simplified label + raw draw list in parentheses.
+- Q: Does slot-simplification trigger on exact weather-type string match or a broader family match (e.g., Wet + Very Wet)? → A: Exact string match only across the five canonical types (Clear, Light Cloud, Overcast, Wet, Very Wet).
+- Q: Should single-slot sessions (Nslots = 1) receive the simplified rendering? → A: No; single-slot sessions are exempt and rendered as their single draw with no special treatment.
