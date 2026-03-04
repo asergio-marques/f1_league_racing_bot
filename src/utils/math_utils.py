@@ -27,12 +27,12 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def compute_rpc(btrack: float, rand1: float, rand2: float) -> float:
-    """Compute Rpc = round((Btrack * R1 * R2) / 3.025, 2), clamped to [0.0, 1.0].
+    """Compute Rpc = round((Btrack * R1 * R2) / 3025, 2), clamped to [0.0, 1.0].
 
     rand1 and rand2 are expected in the range [1, 98] (integer dice).
     Intermediate calculation is unclamped; clamping occurs at the end.
     """
-    raw = (btrack * rand1 * rand2) / 3.025
+    raw = (btrack * rand1 * rand2) / 3025
     result = round(raw, 2)
     if result < 0.0 or result > 1.0:
         log.warning(

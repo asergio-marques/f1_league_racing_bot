@@ -34,8 +34,8 @@ description: "Task list for 001-fix-rpc-formula"
 
 **Independent Test**: Call `compute_rpc(0.25, 79, 4)` and assert the result is `0.03`. Call `compute_rpc(0.3, 98, 98)` and assert the result is `0.95`. Both should now be less than 1.0.
 
-- [ ] T001 [P] [US1] Fix divisor literal and docstring in `src/utils/math_utils.py` (`3.025` → `3025` on lines 30 and 35)
-- [ ] T002 [P] [US1] Update test comment and expected-value assertion in `tests/unit/test_math_utils.py` (`/ 3.025` → `/ 3025` on lines 30 and 32)
+- [X] T001 [P] [US1] Fix divisor literal and docstring in `src/utils/math_utils.py` (`3.025` → `3025` on lines 30 and 35)
+- [X] T002 [P] [US1] Update test comment and expected-value assertion in `tests/unit/test_math_utils.py` (`/ 3.025` → `/ 3025` on lines 30 and 32)
 
 **Checkpoint**: `compute_rpc(0.25, 79, 4)` returns `0.03`; `compute_rpc(0.3, 98, 98)` returns `0.95`; clamp test `compute_rpc(1.0, 98, 98)` still returns `1.0`.
 
@@ -47,7 +47,7 @@ description: "Task list for 001-fix-rpc-formula"
 
 **Independent Test**: Inspect the string returned by `phase1_message()`. It must contain `**Rain Probability**:` and must not contain `(Rpc)`.
 
-- [ ] T003 [P] [US2] Remove `(Rpc)` from the Rain Probability label in `src/utils/message_builder.py` (line 16: `"Rain Probability (Rpc):"` → `"Rain Probability:"`)
+- [X] T003 [P] [US2] Remove `(Rpc)` from the Rain Probability label in `src/utils/message_builder.py` (line 16: `"Rain Probability (Rpc):"` → `"Rain Probability:"`)
 
 **Checkpoint**: Phase 1 message contains `**Rain Probability**:` with no parenthetical notation; all other message content is unchanged.
 
@@ -57,7 +57,7 @@ description: "Task list for 001-fix-rpc-formula"
 
 **Purpose**: Verify no regressions across the full test suite after both fixes.
 
-- [ ] T004 Run `python -m pytest tests/ -q` and confirm all 91 tests pass
+- [X] T004 Run `python -m pytest tests/ -q` and confirm all 91 tests pass
 
 ---
 
