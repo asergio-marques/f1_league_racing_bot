@@ -125,6 +125,34 @@ class TestModeCog(commands.Cog):
 
         await runner(entry["round_id"], self.bot)
 
+        # After running this phase, check if the entire season is now complete
+        next_entry = await get_next_pending_phase(
+            interaction.guild_id,
+            self.bot.db_path,  # type: ignore[attr-defined]
+        )
+
+        if next_entry is None and phase_number == 3:
+            # This was the last phase of the last round — end the season now
+            from services.season_end_service import execute_season_end
+            season = await self.bot.season_service.get_active_season(  # type: ignore[attr-defined]
+                interaction.guild_id
+            )
+            if season is not None:
+                # Cancel any pending scheduled job (executing immediately)
+                self.bot.scheduler_service.cancel_season_end(  # type: ignore[attr-defined]
+                    interaction.guild_id
+                )
+                await execute_season_end(interaction.guild_id, season.id, self.bot)
+                await interaction.followup.send(
+                    f"⏩ Advanced **Phase {phase_number}** for "
+                    f"**{entry['division_name']}** — **{entry['track_name']}**. "
+                    f"That was the final phase.\n"
+                    f"🏁 **Season complete!** All data has been cleared. "
+                    f"Run `/season-setup` to begin a new season.",
+                    ephemeral=True,
+                )
+                return
+
         await interaction.followup.send(
             f"⏩ Advanced **Phase {phase_number}** for "
             f"**{entry['division_name']}** — **{entry['track_name']}**. "

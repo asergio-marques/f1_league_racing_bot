@@ -53,6 +53,52 @@ class SeasonService:
             return None
         return _row_to_season(row)
 
+    async def has_existing_season(self, server_id: int) -> bool:
+        """Return True if any season row exists for *server_id* (any status)."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT 1 FROM seasons WHERE server_id = ? LIMIT 1",
+                (server_id,),
+            )
+            row = await cursor.fetchone()
+        return row is not None
+
+    async def get_last_scheduled_at(self, server_id: int) -> datetime | None:
+        """Return the latest scheduled_at across all rounds for the active season."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT MAX(r.scheduled_at)
+                FROM rounds r
+                JOIN divisions d ON d.id = r.division_id
+                JOIN seasons   s ON s.id = d.season_id
+                WHERE s.server_id = ? AND s.status = 'ACTIVE'
+                """,
+                (server_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None or row[0] is None:
+            return None
+        return datetime.fromisoformat(row[0])
+
+    async def all_phases_complete(self, server_id: int) -> bool:
+        """True if every non-MYSTERY round in the active season has all 3 phases done."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT COUNT(*) FROM rounds r
+                JOIN divisions d ON d.id = r.division_id
+                JOIN seasons   s ON s.id = d.season_id
+                WHERE s.server_id = ?
+                  AND s.status    = 'ACTIVE'
+                  AND r.format   != 'MYSTERY'
+                  AND (r.phase1_done = 0 OR r.phase2_done = 0 OR r.phase3_done = 0)
+                """,
+                (server_id,),
+            )
+            row = await cursor.fetchone()
+        return row is not None and row[0] == 0
+
     async def transition_to_active(self, season_id: int) -> None:
         """Set season status to ACTIVE."""
         async with get_connection(self._db_path) as db:

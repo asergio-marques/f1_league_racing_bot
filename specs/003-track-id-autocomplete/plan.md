@@ -108,3 +108,80 @@ tests/
 
 > No additional Constitution violations.
 
+
+
+---
+
+## Addendum — Correctness Fixes (2026-03-04)
+
+### Summary
+
+Four existing-behaviour corrections and one new behaviour (season auto-deletion):
+
+| # | Change | Files |
+|---|--------|-------|
+| C-001 | `/round-add` rejects empty track for non-MYSTERY formats | `season_cog.py` |
+| C-002 | `/season-setup` blocks if an active or pending season already exists | `season_cog.py`, `season_service.py` |
+| C-003 | `/bot-reset` also clears in-memory pending season setups and the season-end scheduler job | `reset_cog.py`, `season_cog.py` |
+| C-004 | Season auto-deletion 7 days after last round; log message posted on completion | `season_end_service.py` (new), `phase3_service.py`, `scheduler_service.py`, `season_service.py` |
+| C-005 | `/test-mode advance` on the last phase triggers immediate season end | `test_mode_cog.py` |
+
+### New Source Files
+
+| File | Purpose |
+|------|---------|
+| `src/services/season_end_service.py` | `check_and_schedule_season_end()` and `execute_season_end()` |
+| `tests/unit/test_season_end_service.py` | 14 unit tests covering service helpers and end-to-end season completion |
+
+### New SeasonService Methods
+
+| Method | Purpose |
+|--------|---------|
+| `has_existing_season(server_id)` | True if any `seasons` row exists for this server |
+| `all_phases_complete(server_id)` | True if all non-MYSTERY rounds in the active season have all 3 phases done |
+| `get_last_scheduled_at(server_id)` | MAX `scheduled_at` across all rounds for the active season |
+
+### New SchedulerService Methods
+
+| Method | Purpose |
+|--------|---------|
+| `schedule_season_end(server_id, fire_at, callback)` | One-shot DateTrigger job; `replace_existing=True` |
+| `cancel_season_end(server_id)` | Remove `season_end_{server_id}` job; no-op if absent |
+
+### Season Auto-Deletion Flow (normal mode)
+
+```
+phase3_service.run_phase3()
+  └─ check_and_schedule_season_end(server_id, bot)
+       ├─ all_phases_complete()? No → return
+       └─ Yes → schedule_season_end at last_round.scheduled_at + 7 days
+                    ↓ (when job fires)
+            execute_season_end(server_id, season_id, bot)
+              ├─ idempotency guard (active season exists?)
+              ├─ cancel_season_end job
+              ├─ post_log "Season Complete" message
+              └─ reset_server_data(full=False)  ← reuses reset_service
+```
+
+### Season Auto-Deletion Flow (test mode)
+
+```
+TestModeCog.advance()
+  └─ run_phase3(round_id, bot)   ← also triggers check_and_schedule above
+  └─ get_next_pending_phase() → None AND phase_number == 3
+       └─ cancel_season_end (cancels the just-scheduled job)
+          execute_season_end(server_id, season_id, bot)
+          respond with "Season complete!" message
+```
+
+### Constitution Check (addendum)
+
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| I — Access tiers | Pass | C-001/C-002 are setup-flow guards, no tier changes |
+| II — Server isolation | Pass | All queries scoped by `server_id` |
+| III — Phase integrity | Pass | Season deletion only after all phases done |
+| IV — Scheduler contract | Pass | `cancel_round` + `cancel_season_end` called before data deletion |
+| V — Audit trail | Pass | `audit_entries` deleted last, same as in reset_service |
+| VI — Focused scope | Pass | No new slash commands; one new internal service |
+| VII — Output channels | Pass | Season-completion message goes to existing log channel only |

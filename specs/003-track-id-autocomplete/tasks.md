@@ -222,3 +222,132 @@
 | 4 — Documentation & polish | T010, T011 | ✅ Complete |
 | 5 — Validation | T012, T013 | ✅ Complete |
 | 6 — Bot reset command | T014–T019 | ✅ Complete |
+
+---
+
+## Phase 7 — Correctness Fixes (Addendum 2026-03-04)
+
+### T020 — Fix `/round-add`: require track for non-MYSTERY formats
+
+**Goal**: Reject `/round-add` immediately if format is not MYSTERY and track is empty.
+
+**Acceptance criteria**:
+- [X] Guard added after `fmt` is parsed, before any DB/state write
+- [X] Error message names the disallowed format and directs to MYSTERY for blank tracks
+- [X] MYSTERY rounds with no track still accepted as before
+
+**Status**: [X]
+
+---
+
+### T021 — Fix `/season-setup`: block duplicate seasons
+
+**Goal**: Prevent starting a new setup when an active or pending season already exists.
+
+**Acceptance criteria**:
+- [X] DB guard: `SeasonService.has_existing_season(server_id)` returns True for any existing season row
+- [X] In-memory guard: scan `_pending` for any config belonging to this server
+- [X] Both guards checked in `season_setup` before creating a new `PendingConfig`
+- [X] Descriptive error message returned ephemerally
+
+**Status**: [X]
+
+---
+
+### T022 — Fix `/bot-reset`: clear in-memory pending setups + season-end job
+
+**Goal**: Ensure a reset leaves no stale in-memory state or scheduled jobs.
+
+**Acceptance criteria**:
+- [X] `SeasonCog.clear_pending_for_server(server_id)` method added
+- [X] `ResetCog.handle_bot_reset()` calls `clear_pending_for_server` after successful reset
+- [X] `cancel_season_end(server_id)` called to remove any pending season-end APScheduler job
+
+**Status**: [X]
+
+---
+
+### T023 — Add `schedule_season_end` / `cancel_season_end` to SchedulerService
+
+**Goal**: Support one-shot season-end jobs in APScheduler.
+
+**Acceptance criteria**:
+- [X] `schedule_season_end(server_id, fire_at, callback)` adds job with `replace_existing=True`
+- [X] Job ID pattern: `season_end_{server_id}`
+- [X] `cancel_season_end(server_id)` silently swallows missing-job errors
+
+**Status**: [X]
+
+---
+
+### T024 — Create `src/services/season_end_service.py`
+
+**Goal**: Encapsulate all season-completion logic.
+
+**Acceptance criteria**:
+- [X] `check_and_schedule_season_end(server_id, bot)`: calls `all_phases_complete`, if True finds `get_last_scheduled_at + 7 days` and schedules job
+- [X] `execute_season_end(server_id, season_id, bot)`: idempotent guard, cancels job, posts log message, calls `reset_server_data(full=False)`
+- [X] Both functions are no-ops when no active season exists
+
+**Status**: [X]
+
+---
+
+### T025 — Hook season-end check into `phase3_service.run_phase3`
+
+**Goal**: Trigger auto-deletion scheduling after every real Phase 3 completion.
+
+**Acceptance criteria**:
+- [X] `check_and_schedule_season_end(server_id, bot)` called at end of `run_phase3`
+- [X] `server_id` sourced from the existing row query (no extra DB call)
+
+**Status**: [X]
+
+---
+
+### T026 — Test mode advance triggers immediate season end on last phase
+
+**Goal**: When all phases are exhausted by test-mode advance, the season ends immediately.
+
+**Acceptance criteria**:
+- [X] After running the phase, `get_next_pending_phase()` called again
+- [X] If result is None and `phase_number == 3`: cancel scheduled job, call `execute_season_end`, respond with "Season complete!" message
+- [X] Normal `followup.send` still executes for non-final advances
+
+**Status**: [X]
+
+---
+
+### T027 — Write `tests/unit/test_season_end_service.py`
+
+**Goal**: Unit test coverage for all new service helpers and end-to-end completion flow.
+
+**Acceptance criteria**:
+- [X] `test_has_existing_season_true/false`
+- [X] `test_all_phases_complete_false_when_pending / true_when_done`
+- [X] `test_get_last_scheduled_at_returns_latest / returns_none`
+- [X] `test_check_does_not_schedule_when_phases_incomplete`
+- [X] `test_check_schedules_when_all_phases_complete` (verifies fire_at = last + 7d)
+- [X] `test_check_is_noop_when_no_active_season`
+- [X] `test_execute_season_end_deletes_season`
+- [X] `test_execute_season_end_posts_log_message`
+- [X] `test_execute_season_end_is_idempotent`
+- [X] `test_execute_season_end_preserves_server_config`
+- [X] `test_execute_season_end_cancels_season_end_job`
+- [X] All 65 tests passing (51 existing + 14 new)
+
+**Status**: [X]
+
+---
+
+## Progress Summary (updated)
+
+| Phase | Tasks | Status |
+|-------|-------|--------|
+| 1 — Setup | T001–T003 | ✅ Complete |
+| 2 — Data model & service | T004, T005 | ✅ Complete |
+| 3 — Command layer | T006–T009 | ✅ Complete |
+| 4 — Documentation & polish | T010, T011 | ✅ Complete |
+| 5 — Validation | T012, T013 | ✅ Complete |
+| 6 — Bot reset command | T014–T019 | ✅ Complete |
+| 7 — Correctness fixes | T020–T027 | ✅ Complete |

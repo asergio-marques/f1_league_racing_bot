@@ -145,3 +145,7 @@ async def run_phase3(round_id: int, bot: "Bot") -> None:
         phase_log_message(3, round_id, track_name, payload),
     )
     log.info("Phase 3 complete for round %s", round_id)
+
+    # Check whether the whole season is now complete and schedule end if so
+    from services.season_end_service import check_and_schedule_season_end
+    await check_and_schedule_season_end(row["server_id"], bot)

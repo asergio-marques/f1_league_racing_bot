@@ -90,8 +90,28 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        server_id = interaction.guild_id
+
+        # Guard: reject if a DB season already exists for this server
+        if await self.bot.season_service.has_existing_season(server_id):
+            await interaction.response.send_message(
+                "❌ A season already exists for this server (active or pending "
+                "approval). Use `/bot-reset` to clear it first.",
+                ephemeral=True,
+            )
+            return
+
+        # Guard: reject if any user already has a pending in-memory setup
+        if any(p.server_id == server_id for p in self._pending.values()):
+            await interaction.response.send_message(
+                "❌ A season setup is already in progress for this server. "
+                "Use `/season-review` to approve or cancel it first.",
+                ephemeral=True,
+            )
+            return
+
         cfg = PendingConfig(
-            server_id=interaction.guild_id,
+            server_id=server_id,
             start_date=parsed_date,
             divisions=[PendingDivision() for _ in range(num_divisions)],
         )
@@ -200,6 +220,16 @@ class SeasonCog(commands.Cog):
             return
 
         track_name = track.strip() or None
+
+        # Non-Mystery rounds must have a track specified
+        if fmt != RoundFormat.MYSTERY and not track_name:
+            await interaction.response.send_message(
+                f"❌ A track is required for `{fmt.value}` rounds. "
+                "Leave track blank only for `MYSTERY` rounds.",
+                ephemeral=True,
+            )
+            return
+
         if track_name and track_name not in TRACKS:
             # Allow lookup by numeric ID (e.g. "27" → "United Kingdom")
             track_name = TRACK_IDS.get(track_name.zfill(2), track_name)
@@ -310,6 +340,24 @@ class SeasonCog(commands.Cog):
     @admin_only
     async def season_approve(self, interaction: discord.Interaction) -> None:
         await self._do_approve(interaction)
+
+    def clear_pending_for_server(self, server_id: int) -> None:
+        """Discard any in-memory pending setup belonging to *server_id*.
+
+        Called by ResetCog after a server reset so stale in-memory state
+        does not block subsequent /season-setup invocations.
+        """
+        stale_keys = [
+            uid for uid, cfg in self._pending.items()
+            if cfg.server_id == server_id
+        ]
+        for uid in stale_keys:
+            del self._pending[uid]
+        if stale_keys:
+            log.info(
+                "Cleared %d pending season setup(s) for server %s",
+                len(stale_keys), server_id,
+            )
 
     async def _do_approve(self, interaction: discord.Interaction) -> None:
         cfg = self._pending.get(interaction.user.id)

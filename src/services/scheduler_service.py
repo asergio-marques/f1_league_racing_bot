@@ -122,3 +122,37 @@ class SchedulerService:
         """Schedule all rounds in *rounds*."""
         for rnd in rounds:
             self.schedule_round(rnd)
+
+    # ------------------------------------------------------------------
+    # Season-end scheduling
+    # ------------------------------------------------------------------
+
+    def schedule_season_end(
+        self,
+        server_id: int,
+        fire_at: datetime,
+        callback: Callable,
+    ) -> None:
+        """Schedule a one-shot season-end job for *server_id* at *fire_at*.
+
+        Uses ``replace_existing=True`` so calling this a second time (e.g.
+        after a test-suite re-seed) simply moves the job forward.
+        """
+        job_id = f"season_end_{server_id}"
+        self._scheduler.add_job(
+            callback,
+            trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
+            id=job_id,
+            replace_existing=True,
+            name=f"Season end for server {server_id}",
+        )
+        log.info("Scheduled season_end_%s at %s", server_id, fire_at.isoformat())
+
+    def cancel_season_end(self, server_id: int) -> None:
+        """Remove the season-end job for *server_id* if it exists."""
+        job_id = f"season_end_{server_id}"
+        try:
+            self._scheduler.remove_job(job_id)
+            log.info("Removed season_end job for server %s", server_id)
+        except Exception:
+            pass  # Already fired or never scheduled

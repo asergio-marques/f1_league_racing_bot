@@ -79,6 +79,14 @@ class ResetCog(commands.Cog):
             )
             return
 
+        # Cancel any pending season-end scheduled job
+        self.bot.scheduler_service.cancel_season_end(server_id)  # type: ignore[attr-defined]
+
+        # Clear any in-memory pending season setups for this server
+        season_cog = self.bot.get_cog("SeasonCog")
+        if season_cog is not None:
+            season_cog.clear_pending_for_server(server_id)
+
         seasons = result["seasons_deleted"]
         divisions = result["divisions_deleted"]
         rounds = result["rounds_deleted"]
