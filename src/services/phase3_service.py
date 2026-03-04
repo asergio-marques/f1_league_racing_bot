@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from db.database import get_connection
 from models.session import MAX_SLOTS, SessionType
 from utils.math_utils import get_phase3_weights, draw_weighted
-from utils.message_builder import phase3_message, phase_log_message, session_type_label
+from utils.message_builder import phase3_message, phase_log_message, session_type_label, format_slots_for_log
 
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
@@ -107,6 +107,7 @@ async def run_phase3(round_id: int, bot: "Bot") -> None:
             "slot_type": slot_type,
             "n_slots": n_slots,
             "slots": slots,
+            "slots_display": format_slots_for_log(slots),
         })
 
     # Persist

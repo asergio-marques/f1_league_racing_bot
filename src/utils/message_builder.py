@@ -60,7 +60,7 @@ def phase3_message(
         "**Slot-by-Slot Forecast**:",
     ]
     for session_label, slots in session_weather:
-        slot_str = " → ".join(f"*{s}*" for s in slots)
+        slot_str = format_slots_for_forecast(slots)
         lines.append(f"  🏎️ **{session_label}**: {slot_str}")
     return "\n".join(lines)
 
@@ -90,6 +90,38 @@ def phase_log_message(
     )
     body = json.dumps(payload, indent=2, default=str)
     return f"{header}\n```json\n{body}\n```"
+
+
+def format_slots_for_forecast(slots: list[str]) -> str:
+    """Format a session's Phase 3 slot sequence for the forecast channel.
+
+    Rules (FR-024, amended 2026-03-04):
+    - Single slot (len == 1): return the bare label; no arrow, no simplification marker.
+    - All slots identical (len > 1, exact match): return the single type label.
+    - Otherwise: return slots joined by " → " with each entry in italics.
+    """
+    if len(slots) == 1:
+        return slots[0]
+    if len(set(slots)) == 1:
+        return slots[0]
+    return " → ".join(f"*{s}*" for s in slots)
+
+
+def format_slots_for_log(slots: list[str]) -> str:
+    """Format a session's Phase 3 slot sequence for the calculation log channel.
+
+    Rules (FR-024, amended 2026-03-04):
+    - Single slot (len == 1): return the bare label verbatim.
+    - All slots identical (len > 1, exact match): return
+      "<type> (draws: <slot>, <slot>, ...)".
+    - Otherwise: return slots joined by " → " (no italics needed for log).
+    """
+    if len(slots) == 1:
+        return slots[0]
+    if len(set(slots)) == 1:
+        raw = ", ".join(slots)
+        return f"{slots[0]} (draws: {raw})"
+    return " → ".join(slots)
 
 
 def _slot_icon(slot: str) -> str:
