@@ -75,6 +75,15 @@ async def main() -> None:
 
         bot.scheduler_service.register_callbacks(_p1, _p2, _p3)
 
+        # Register season-end callback (stored in _GLOBAL_SERVICE so the
+        # module-level _season_end_job can reach it without pickling a closure)
+        from services.season_end_service import execute_season_end as _execute_season_end
+
+        async def _season_end_cb(server_id: int, season_id: int) -> None:
+            await _execute_season_end(server_id, season_id, bot)
+
+        bot.scheduler_service.register_season_end_callback(_season_end_cb)
+
         # Recover any missed phases from before bot restart
         await _recover_missed_phases(bot)
 

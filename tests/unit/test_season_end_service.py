@@ -26,8 +26,8 @@ class _FakeScheduler:
         self.season_end_cancelled: list[int] = []
         self.cancelled_rounds: list[int] = []
 
-    def schedule_season_end(self, server_id, fire_at, callback) -> None:
-        self.season_end_scheduled.append((server_id, fire_at, callback))
+    def schedule_season_end(self, server_id, fire_at, season_id) -> None:
+        self.season_end_scheduled.append((server_id, fire_at, season_id))
 
     def cancel_season_end(self, server_id: int) -> None:
         self.season_end_cancelled.append(server_id)
@@ -213,7 +213,7 @@ async def test_check_schedules_when_all_phases_complete() -> None:
         bot = _FakeBot(db_path)
         await check_and_schedule_season_end(1, bot)
         assert len(bot.scheduler_service.season_end_scheduled) == 1
-        server_id, fire_at, _cb = bot.scheduler_service.season_end_scheduled[0]
+        server_id, fire_at, season_id = bot.scheduler_service.season_end_scheduled[0]
         assert server_id == 1
         # fire_at should be last round scheduled_at (2026-05-01) + 7 days
         assert fire_at.year == 2026

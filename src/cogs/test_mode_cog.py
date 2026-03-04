@@ -123,7 +123,20 @@ class TestModeCog(commands.Cog):
             entry["track_name"],
         )
 
-        await runner(entry["round_id"], self.bot)
+        try:
+            await runner(entry["round_id"], self.bot)
+        except Exception:
+            log.exception(
+                "Test mode advance: unhandled error in phase %d runner for round_id=%d",
+                phase_number, entry["round_id"],
+            )
+            await interaction.followup.send(
+                f"\u274c An internal error occurred while advancing Phase {phase_number} "
+                f"for **{entry['division_name']}** \u2014 **{entry['track_name']}**. "
+                "Check the bot logs for details.",
+                ephemeral=True,
+            )
+            return
 
         # After running this phase, check if the entire season is now complete
         next_entry = await get_next_pending_phase(

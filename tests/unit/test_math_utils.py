@@ -27,9 +27,9 @@ from utils.math_utils import (
 
 class TestComputeRpc:
     def test_basic_calculation(self) -> None:
-        # btrack=0.05, dice=1,1: (0.05 * 1 * 1) / 3.025 ≈ 0.0165 → rounds to 0.02
+        # btrack=0.05, dice=1,1: (0.05 * 1 * 1) / 3025 ≈ 0.0000165 → rounds to 0.0
         result = compute_rpc(0.05, 1, 1)
-        assert result == round((0.05 * 1 * 1) / 3.025, 2)
+        assert result == round((0.05 * 1 * 1) / 3025, 2)
 
     def test_clamps_to_zero(self) -> None:
         # Artificially: btrack extreme values that might push < 0

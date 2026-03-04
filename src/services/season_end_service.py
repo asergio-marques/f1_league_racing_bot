@@ -79,11 +79,8 @@ async def check_and_schedule_season_end(
         await execute_season_end(server_id, season_id_captured, bot)
         return
 
-    async def _cb() -> None:
-        await execute_season_end(server_id, season_id_captured, bot)
-
     bot.scheduler_service.schedule_season_end(  # type: ignore[attr-defined]
-        server_id, fire_at, _cb
+        server_id, fire_at, season_id_captured
     )
     log.info(
         "Season end for server %s (season %s) scheduled at %s",

@@ -13,7 +13,7 @@ def phase1_message(division_role_id: int, track: str, rpc_pct: float) -> str:
     return (
         f"{role_mention} 🏁 **Weather Forecast — Phase 1** (5 days out)\n"
         f"**Track**: {track}\n"
-        f"**Rain Probability (Rpc)**: {pct}%\n"
+        f"**Rain Probability**: {pct}%\n"
         f"A more detailed forecast will follow at T−2 days."
     )
 

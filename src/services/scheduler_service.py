@@ -29,6 +29,30 @@ _GRACE_SECONDS = 300  # 5-minute misfire grace period
 _GLOBAL_SERVICE: "SchedulerService | None" = None
 
 
+async def _season_end_job(server_id: int, season_id: int) -> None:
+    """Module-level APScheduler callable for season-end jobs — avoids closure
+    pickling issues with SQLAlchemyJobStore.
+
+    Mirrors the ``_phase_job`` pattern: looks up the running service instance
+    via ``_GLOBAL_SERVICE`` and delegates to the registered season-end callback.
+    """
+    if _GLOBAL_SERVICE is None:
+        log.warning(
+            "_season_end_job fired but _GLOBAL_SERVICE is None "
+            "(server_id=%s, season_id=%s) — skipping",
+            server_id, season_id,
+        )
+        return
+    cb = _GLOBAL_SERVICE._season_end_callback
+    if cb is None:
+        log.warning(
+            "_season_end_job: no callback registered (server_id=%s) — skipping",
+            server_id,
+        )
+        return
+    await cb(server_id, season_id)
+
+
 async def _phase_job(phase_num: int, round_id: int) -> None:
     """Top-level APScheduler callable — avoids closure pickling issues.
 
@@ -61,6 +85,8 @@ class SchedulerService:
         )
         # Phase callbacks injected after bot starts (to avoid circular imports)
         self._phase_callbacks: dict[int, Callable] = {}
+        # Season-end callback injected after bot starts
+        self._season_end_callback: "Callable | None" = None
 
     def register_callbacks(
         self,
@@ -72,6 +98,14 @@ class SchedulerService:
         self._phase_callbacks[1] = phase1_cb
         self._phase_callbacks[2] = phase2_cb
         self._phase_callbacks[3] = phase3_cb
+
+    def register_season_end_callback(self, callback: Callable) -> None:
+        """Register the async callable invoked by season-end APScheduler jobs.
+
+        The callable must accept ``(server_id: int, season_id: int)``.
+        Called from bot.py on_ready after the scheduler is started.
+        """
+        self._season_end_callback = callback
 
     def start(self) -> None:
         global _GLOBAL_SERVICE
@@ -147,20 +181,23 @@ class SchedulerService:
         self,
         server_id: int,
         fire_at: datetime,
-        callback: Callable,
+        season_id: int,
     ) -> None:
         """Schedule a one-shot season-end job for *server_id* at *fire_at*.
 
-        Uses ``replace_existing=True`` so calling this a second time (e.g.
-        after a test-suite re-seed) simply moves the job forward.
+        Uses the module-level ``_season_end_job`` callable (picklable by
+        SQLAlchemyJobStore) with ``server_id`` and ``season_id`` as kwargs.
+        Uses ``replace_existing=True`` so calling this a second time simply
+        moves the job forward.
         """
         job_id = f"season_end_{server_id}"
         self._scheduler.add_job(
-            callback,
+            _season_end_job,
             trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
             id=job_id,
             replace_existing=True,
             name=f"Season end for server {server_id}",
+            kwargs={"server_id": server_id, "season_id": season_id},
         )
         log.info("Scheduled season_end_%s at %s", server_id, fire_at.isoformat())
 
