@@ -8,10 +8,10 @@ description: "Task list for test mode bug fixes (branch 009-test-mode-bugfix)"
 **Input**: Design documents from `specs/009-test-mode-bugfix/`
 **Prerequisites**: plan.md ✅ spec.md ✅
 
-**Status**: All tasks complete — implementation committed on `009-test-mode-bugfix` (covers all 6 bugs).
+**Status**: Complete — all 15 tasks done; 166 tests passing; branch ready for PR.
 
-**Total tasks**: 12 (T001–T012) across 8 phases  
-**Parallel opportunities**: T002, T005, T008 (different files, no shared deps)  
+**Total tasks**: 15 (T001–T015) across 10 phases  
+**Parallel opportunities**: T002, T005, T008 (different files, no shared deps); T013, T014 (same file, independent test functions)  
 **MVP scope**: Phase 3 (US1) alone is independently deployable
 
 ---
@@ -46,8 +46,7 @@ division.
 - [x] T002 [P] [US1] Add `r.format != RoundFormat.MYSTERY` guard to the `next_round`
   generator expression inside `season_status` in `src/cogs/season_cog.py`
 
-**Checkpoint**: Bug 1 resolved — `/season-status` no longer cites Mystery rounds as
-pending.
+**Checkpoint**: Bug 1 resolved — `/season-status` no longer cites Mystery rounds as pending.
 
 ---
 
@@ -124,7 +123,7 @@ constraint error; `forecast_messages` is empty after reset.
 - [x] T008 [P] [US5] Add `DELETE FROM forecast_messages WHERE round_id IN ({ph})` after
   `phase_results` delete and before `rounds` delete in `src/services/reset_service.py`
 - [x] T009 [US5] Add `test_reset_deletes_forecast_messages` regression test in
-  `tests/unit/test_reset_service.py` — seeds a row, calls `reset_server_data`, asserts
+  `tests/unit/test_reset_service.py` — seeds a row, calls `execute_reset`, asserts
   no FK error and zero rows remain
 
 **Checkpoint**: Bug 5 resolved — reset transaction never raises FK constraint failed.
@@ -147,16 +146,43 @@ both `round=<N>` and `id=<M>`.
 
 ---
 
-## Final Phase: Polish & Cross-Cutting Concerns
+## Phase 9: Polish & Cross-Cutting Concerns
 
-**Purpose**: Confirm all fixes are consistent with the constitution and that the full
-test suite is green.
+**Purpose**: Confirm all fixes are consistent with the constitution and that the test
+suite is green at the 164-test milestone (Bugs 1–6 complete; deferred flush tests still
+pending at this point).
 
 - [x] T011 [P] Add Sync Impact Report entry to `.specify/memory/constitution.md`
   documenting all six bugs, their root causes, fixes, and which principles each restores
 - [x] T012 [P] Run `pytest tests/ -q` and verify all 164 tests pass with no regressions
 
-**Checkpoint**: Branch ready for PR — 164 tests passing, constitution updated.
+**Checkpoint**: 164 tests passing, constitution updated. T013–T015 outstanding before
+branch is PR-ready.
+
+---
+
+## Phase 10: Deferred Flush Model Tests
+
+**Purpose**: Add explicit test coverage for the deferred flush behavior documented in the
+spec's Non-Functional Requirements (clarification round 2): `delete_forecast_message`
+skips the Discord call in test mode and retains the DB row; `flush_pending_deletions`
+deletes all accumulated rows when called.
+
+**Independent test criteria**: Mock `_discord_delete` and `ServerConfig.test_mode_active`;
+assert call count and DB row presence match the spec guarantees. Both tests are independent
+of each other and can be written in parallel.
+
+- [x] T013 [P] Add `test_delete_forecast_message_skips_in_test_mode` to
+  `tests/unit/test_forecast_cleanup.py` — mock `test_mode_active = True`; assert
+  `_discord_delete` is NOT called and the `forecast_messages` row still exists after
+  `delete_forecast_message` returns
+- [x] T014 [P] Add `test_flush_pending_deletions_clears_accumulated_rows` to
+  `tests/unit/test_forecast_cleanup.py` — seed multiple rows across two divisions;
+  mock `_discord_delete` to succeed; call `flush_pending_deletions`; assert
+  `_discord_delete` called once per row and `forecast_messages` is empty
+- [x] T015 Run `pytest tests/ -q` and verify all 166 tests pass
+
+**Checkpoint**: 166 tests passing — branch ready for PR.
 
 ---
 
@@ -174,6 +200,7 @@ T001 (Setup)
   └─► T005 → T010 [US6]                        (T010 needs round_number from T005)
 
 T002–T010 all complete ──► T011, T012 (parallel)
+T011 + T012 complete ──► T013, T014 (parallel, both in test_forecast_cleanup.py) → T015
 ```
 
 ### Parallel execution examples per story
@@ -190,21 +217,13 @@ T007 after T005  |  T009 after T008
 
 # Quality gates in parallel once all implementation tasks done:
 T011 ║ T012
+
+# Deferred flush tests — parallel (independent test functions, same file):
+T013 ║ T014 → T015
 ```
 
 ### Implementation strategy
 
-MVP is US1 alone (T002) — independently testable and deployable.
-Recommended sequential order for single-developer work:
-
-1. T001 — feature docs
-2. T002 — `season_cog` mystery guard (simplest, fully isolated)
-3. T004 — `test_mode` Group permissions (class attribute, top of file)
-4. T003 — advance safety net (method body, same file)
-5. T005 — `PhaseEntry` + widened query (service layer, no cog deps)
-6. T006 — mystery dispatch in cog (depends on T005)
-7. T010 — log line update (depends on T005's `round_number` field)
-8. T008 — `reset_service` FK chain fix (fully isolated)
-9. T007 — service tests (T005 must be complete)
-10. T009 — reset regression test (T008 must be complete)
-11. T011 + T012 — constitution sync and test verification
+MVP is US1 alone (T002) — independently testable and deployable.  
+All six bug fixes (T002–T010) are complete. Remaining work is T013–T015 (deferred flush
+test coverage + final pytest run to confirm 166 tests passing).

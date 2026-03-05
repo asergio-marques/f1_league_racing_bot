@@ -15,6 +15,14 @@
 - Q: Should Bug 5 (reset + `forecast_messages` FK) have automated test coverage? → A: Yes — add a unit test requirement; the test must be written and passing before this spec is considered done.
 - Q: Should `plan.md` and `tasks.md` be updated to add entries for Bugs 4/5/6, all marked done? → A: Yes — update both files to keep spec/plan/tasks triad in sync per Principle VII.
 
+### Session 2026-03-05 (clarification round 2)
+
+- Q: What Discord permissions does the bot require for forecast message deletion (`_discord_delete`)? → A: Only `View Channel`, `Send Messages`, and `Read Message History` in the forecast channel; `Manage Messages` is NOT required because the bot always deletes its own messages.
+- Q: Should in-test-mode forecast message deletions (Phase 1, Phase 2, cross-round Phase 3) be executed immediately or deferred? → A: Deferred (intended behavior) — all deletions skipped during test-mode advances accumulate as DB rows and are executed in bulk by `flush_pending_deletions` when test mode is disabled.
+- Q: How should `_discord_delete` failures (`Forbidden`, `HTTPException`) be surfaced? → A: Log-only — deletion errors are recorded in bot logs and silently discarded at the application level; no user-facing signal is required.
+- Q: Should the deferred flush model have explicit test coverage in this spec? → A: Yes — add a unit test requirement: (1) `delete_forecast_message` skips the Discord call and retains the DB row when `test_mode_active = True`; (2) `flush_pending_deletions` deletes all accumulated rows; tests added to an appropriate existing test file.
+- Q: Should the spec Status and test count be updated to reflect the two new unwritten test requirements? → A: Yes — set `Status: In Progress`; raise target test count to 166; update `plan.md` and `tasks.md` with a task for the two new tests.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Mystery rounds must not appear as "next round" (Priority: P1)
@@ -203,6 +211,12 @@ making log triage faster and reducing support overhead.
 - What if multiple rounds' `forecast_messages` rows exist across divisions? The
   `forecast_messages` delete uses `WHERE round_id IN (...)` scoped to the reset server's
   round IDs only, leaving other servers' data untouched.
+- In test mode, forecast channel messages are NOT deleted between phases or between rounds
+  during `/test-mode advance`. The test-mode guard in `delete_forecast_message` silently
+  skips all Discord deletions and retains the DB row. All accumulated rows are bulk-deleted
+  by `flush_pending_deletions` when test mode is disabled via `/test-mode toggle`. This is
+  intentional: rapid test-mode advances would otherwise cause noisy delete/re-post cycles
+  in the forecast channel.
 
 ## Requirements *(mandatory)*
 
@@ -224,10 +238,16 @@ making log triage faster and reducing support overhead.
 ### Non-Functional Requirements
 
 - No new migrations, no new commands, no new dependencies.
+- The bot requires `View Channel`, `Send Messages`, and `Read Message History` in every configured forecast channel. `Manage Messages` is NOT required — `_discord_delete` calls `channel.get_partial_message(id).delete()` exclusively on messages the bot itself posted. A `Forbidden` error in the forecast channel indicates a missing `View Channel` overwrite for the bot's role, not a missing `Manage Messages` grant.
+- Forecast message deletion failures (`Forbidden`, `HTTPException`) are log-only. The DB row is removed regardless of Discord outcome (orphan-safe design: stale rows are not re-attempted). No user-facing error signal is emitted for deletion failures.
+- Two additional tests are required for the deferred flush model (target: 166 total):
+  - `test_delete_forecast_message_skips_in_test_mode` — asserts that when `test_mode_active = True`, `_discord_delete` is NOT called and the DB row is retained after `delete_forecast_message` returns.
+  - `test_flush_pending_deletions_clears_accumulated_rows` — asserts that after multiple skipped deletions, `flush_pending_deletions` calls `_discord_delete` for each accumulated row and leaves `forecast_messages` empty.
+  Both tests are added to `tests/unit/test_forecast_cleanup.py`.
 - The `phase1_done = 1` flag on Mystery rounds is reused as the "notice sent" proxy; this
   is safe because `all_phases_complete` and `build_review_summary` already filter
   `format != 'MYSTERY'`, so the flag has no side-effects on season-end or review logic.
-- All 164 unit tests must pass:
+- All 166 unit tests must pass:
   - 162 original
   - +1 for Bug 4: `test_mystery_round_notice_pending_returns_entry` (replaces the
     now-incorrect `test_mystery_rounds_excluded`)
@@ -235,7 +255,11 @@ making log triage faster and reducing support overhead.
   - +1 for Bug 5: `test_reset_deletes_forecast_messages` — verifies that calling
     `execute_reset` on a server with `forecast_messages` rows completes without error and
     leaves no matching rows in `forecast_messages` (guards against FK regression)
-- No new test files required; Bug 5 test added to `tests/unit/test_reset_service.py`.
+  - +1 for deferred flush: `test_delete_forecast_message_skips_in_test_mode` — asserts
+    `_discord_delete` is NOT called and the DB row is retained when `test_mode_active = True`
+  - +1 for deferred flush: `test_flush_pending_deletions_clears_accumulated_rows` — asserts
+    all accumulated rows are deleted and `forecast_messages` is empty after the call
+- No new test files required; deferred-flush tests added to `tests/unit/test_forecast_cleanup.py`.
 
 ### Glossary / Key Data Shapes
 

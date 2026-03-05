@@ -1,7 +1,7 @@
 # Implementation Plan: Test Mode Bug Fixes
 
 **Branch**: `009-test-mode-bugfix` | **Date**: 2026-03-05 | **Spec**: [spec.md](spec.md)
-**Input**: Bug reports from live test-mode usage; fixes to existing feature `002-test-mode`.
+**Input**: Bug reports from live test-mode usage; fixes to existing feature `002-test-mode`. Plan amended after clarification round 2 (2026-03-05) to add deferred flush model documentation, Discord permission statement, deletion-failure observability policy, and T013–T014 test requirements.
 
 **Reuses plan**: See [`specs/001-league-weather-bot/plan.md`](../001-league-weather-bot/plan.md)
 for the full tech stack, structural decisions, and base data model. Everything in that plan
@@ -9,10 +9,12 @@ applies unchanged. Only the files listed in the Scope table below require edits.
 
 ## Summary
 
-Six bugs in the `002-test-mode` implementation are corrected.
-
-Bugs 1–3 were identified and fixed first; Bugs 4–6 were discovered during live usage
-and fixed in the same branch session.
+Six bugs in the `002-test-mode` implementation are corrected. Bugs 1–3 were identified
+and fixed first; Bugs 4–6 were discovered during live usage and fixed in the same branch
+session. The spec was subsequently expanded in two clarification rounds to document the
+deferred forecast-message flush model, Discord permission requirements, deletion-failure
+observability policy, and to add two new test requirements (T013–T014) for the deferred
+flush behavior.
 
 1. **Mystery round "next round" leak** — `/season-status` cited Mystery rounds as pending
    next rounds. Fix: exclude `MYSTERY` from the `next_round` predicate in `season_cog`.
@@ -48,21 +50,21 @@ and fixed in the same branch session.
 **Project Type**: Discord bot (event-driven, async)
 **Performance Goals**: No new hot paths introduced
 **Constraints**: No new slash commands; no schema migrations; no new dependencies
-**Scale/Scope**: Five source files modified; two test files updated; no new files created
+**Scale/Scope**: Five source files modified; three test files updated; no new files created; 15 tasks (T001–T015) across 10 phases
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-checked post-implementation.*
+*GATE: Must pass before Phase 0 research. Re-checked post-implementation and post-clarification.*
 
 | Principle | Requirement | Status |
 |-----------|-------------|--------|
 | I — Trusted Configuration Authority | Bug 3 fix restores correct Tier-1 enforcement: interaction-role check in `channel_guard` gates all three `/test-mode` subcommands; no admin-only escalation | ✅ PASS |
-| II — Multi-Division Isolation | No cross-division logic touched | ✅ PASS |
+| II — Multi-Division Isolation | No cross-division logic touched; `flush_pending_deletions` scopes deletions by server, not globally | ✅ PASS |
 | III — Resilient Schedule Management | Season-end safety net follows existing `execute_season_end` atomicity; no partial-update path introduced. Mystery notice dispatch mirrors the scheduler path; `phase1_done` is set only after a successful send | ✅ PASS |
 | IV — Three-Phase Weather Pipeline | Mystery round exclusion aligns with the spec: Mystery rounds must never have phases executed or reported as pending. Mystery notice is a pre-pipeline signal, not a phase | ✅ PASS |
-| V — Observability & Change Audit Trail | Season-end safety net posts the existing completion message to the log channel. Advance log lines now include user-visible round number alongside DB id for triage | ✅ PASS |
-| VI — Simplicity & Focused Scope | All changes are minimal targeted corrections; no scope expansion | ✅ PASS |
-| VII — Output Channel Discipline | No new output channels used; season-end posts to the configured log channel only | ✅ PASS |
+| V — Observability & Change Audit Trail | Season-end safety net posts the existing completion message to the log channel. Advance log lines now include user-visible round number alongside DB id for triage. Deletion failures logged at ERROR level. Deferred flush logs each deletion skip at DEBUG | ✅ PASS |
+| VI — Simplicity & Focused Scope | All changes are minimal targeted corrections; no scope expansion. Deferred flush model explicitly documented; no new deletion path added | ✅ PASS |
+| VII — Output Channel Discipline | No new output channels used; season-end posts to the configured log channel only. Forecast message deletions are silent channel operations, not user-facing messages | ✅ PASS |
 
 **Constitution Check result: PASS — no violations, no Complexity Tracking entries required.**
 
@@ -85,6 +87,26 @@ established in `002-test-mode`. Key design decisions:
   on every connection. The correct deletion chain for this schema is:
   `sessions → phase_results → forecast_messages → rounds → divisions → seasons`.
 
+- **Deferred flush model** (clarification round 2): `delete_forecast_message` in
+  `forecast_cleanup_service` has an intentional test-mode guard — when `test_mode_active`
+  is `True` it skips the Discord call, retains the DB row, and logs at DEBUG. All
+  accumulated rows are bulk-deleted by `flush_pending_deletions` when test mode is
+  disabled. This is by design: rapid test-mode advances run at human speed and deferring
+  deletions avoids noisy delete/re-post cycles in the forecast channel during testing.
+  `run_post_race_cleanup` (APScheduler `cleanup_r{id}`) never fires in test mode — same
+  scheduler-bypass pattern as `mystery_r{id}`.
+
+- **Discord permissions** (clarification round 2): The bot always posts forecast messages
+  itself. `get_partial_message(id).delete()` on own messages does not require
+  `Manage Messages`. Required permissions in the forecast channel: `View Channel`,
+  `Send Messages`, `Read Message History`. A `Forbidden` error indicates a missing
+  `View Channel` channel-overwrite for the bot role.
+
+- **Deletion failure policy** (clarification round 2): `_discord_delete` catches
+  `Forbidden` and `HTTPException`, logs at ERROR, and returns `False`. The DB row is
+  removed regardless (orphan-safe: stale rows are not re-attempted). No user-facing
+  signal is emitted.
+
 ## Scope
 
 | File | Change |
@@ -95,6 +117,7 @@ established in `002-test-mode`. Key design decisions:
 | `src/services/reset_service.py` | Add `DELETE FROM forecast_messages` after `phase_results`, before `rounds` |
 | `tests/unit/test_test_mode_service.py` | Rename + rewrite mystery exclusion test; add `test_mystery_round_notice_done_excluded` |
 | `tests/unit/test_reset_service.py` | Add `test_reset_deletes_forecast_messages` regression test |
+| `tests/unit/test_forecast_cleanup.py` | Add `test_delete_forecast_message_skips_in_test_mode` and `test_flush_pending_deletions_clears_accumulated_rows` |
 | `.specify/memory/constitution.md` | Add Sync Impact Report entry documenting all six bugs and fixes |
 
 ## Project Structure
@@ -104,8 +127,8 @@ established in `002-test-mode`. Key design decisions:
 ```text
 specs/009-test-mode-bugfix/
 ├── plan.md    ← this file
-├── spec.md    ← bug specifications (covers all 6 bugs)
-└── tasks.md   ← task list (T001–T012 + quality gates)
+├── spec.md    ← bug specifications (covers all 6 bugs + clarification rounds 1–2)
+└── tasks.md   ← task list (T001–T015 across 10 phases)
 ```
 
 No `research.md`, `data-model.md`, `quickstart.md`, or `contracts/` — this is a
@@ -126,7 +149,8 @@ src/
 tests/
 └── unit/
     ├── test_test_mode_service.py  ← Updated tests for Bug 4
-    └── test_reset_service.py      ← Regression test for Bug 5
+    ├── test_reset_service.py      ← Regression test for Bug 5
+    └── test_forecast_cleanup.py   ← Deferred flush model tests (T013–T014)
 .specify/
 └── memory/
     └── constitution.md            ← Sync Impact Report entry
