@@ -5,6 +5,15 @@
 **Status**: Implemented
 **Input**: Bug reports from live test-mode usage of feature `002-test-mode`
 
+## Clarifications
+
+### Session 2026-03-05
+
+- Q: Should the spec expand to cover all 6 bugs fixed on this branch (original 3 + mystery-notice-in-advance, forecast_messages-on-reset, round_number-in-logs)? → A: Yes — expand spec with User Story 4/5/6, FR-007–FR-009, and acceptance scenarios for all 3 new bugs.
+- Q: Should a Glossary / Key Data Shapes subsection be added defining `PhaseEntry` fields, valid `phase_number` values, and the mystery-notice proxy? → A: Yes — add `### Glossary / Key Data Shapes` subsection.
+- Q: Should the spec explicitly address the scenario where `run_mystery_notice` raises after `phase1_done` is set (silent channel-send failure)? → A: Defer — current User Story 4 scenario 3 and the code-order guarantee (DB write only after successful notice send) are sufficient; no spec change needed.
+- Q: Should Bug 5 (reset + `forecast_messages` FK) have automated test coverage? → A: Yes — add a unit test requirement; the test must be written and passing before this spec is considered done.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Mystery rounds must not appear as "next round" (Priority: P1)
@@ -96,6 +105,89 @@ verify it is accepted.
 
 ---
 
+### User Story 4 — Mystery round notice is dispatched when advancing via test mode (Priority: P1)
+
+A user with the interaction role runs `/test-mode advance` on a server that has a Mystery
+round whose notice has not yet been sent (`phase1_done = 0`). The bot fires the mystery
+round notice to the division's forecast channel (identical to the APScheduler path) and
+marked the round as noticed (`phase1_done = 1`). Subsequent calls to `/test-mode advance`
+do not re-send the notice.
+
+**Why this priority**: Without this fix, Mystery rounds are silently skipped — the APScheduler
+job (`mystery_r{id}`) never fires in test mode and the notice is never sent. This leaves the
+league's participants without the teaser message the feature was designed to provide.
+
+**Independent Test**: Enable test mode; seed a Mystery round with `phase1_done = 0`; call
+`/test-mode advance`; confirm notice appears in the forecast channel and `phase1_done = 1`;
+call `/test-mode advance` again and confirm the Mystery round is not mentioned.
+
+**Acceptance Scenarios**:
+
+1. **Given** a Mystery round with `phase1_done = 0` is the next pending item, **When**
+   `/test-mode advance` is issued, **Then** `run_mystery_notice` is called with the correct
+   `round_id`, the round's `phase1_done` is set to `1`, and the bot replies with a success
+   ephemeral confirming the notice was posted.
+2. **Given** a Mystery round with `phase1_done = 1`, **When** `get_next_pending_phase` is
+   called, **Then** that round is excluded from the queue (not returned as `phase_number=0`).
+3. **Given** `run_mystery_notice` raises an exception, **When** `/test-mode advance` is
+   issued for that round, **Then** the bot replies with an error ephemeral, does NOT set
+   `phase1_done = 1`, and does NOT advance further.
+
+---
+
+### User Story 5 — Reset correctly removes all forecast messages (Priority: P1)
+
+A server administrator runs `/bot-reset` on a server that has had at least one Phase 1 run
+(which populates the `forecast_messages` table). The reset completes without FK constraint
+violation and the `forecast_messages` table is fully cleared for that server's rounds.
+
+**Why this priority**: Before this fix, any reset attempt on a server with Phase 1 data
+resulted in an unhandled database error (`FOREIGN KEY constraint failed`) because
+`forecast_messages` holds a `REFERENCES rounds(id)` FK but was not deleted before the
+rounds themselves were deleted.
+
+**Independent Test**: Run Phase 1 for at least one division; confirm rows exist in
+`forecast_messages`; issue `/bot-reset`; confirm the command succeeds and
+`forecast_messages` is empty for that server.
+
+**Acceptance Scenarios**:
+
+1. **Given** `forecast_messages` contains rows for a server's rounds, **When** `/bot-reset`
+   is issued, **Then** all matching `forecast_messages` rows are deleted before the `rounds`
+   rows, and the command completes without error.
+2. **Given** `forecast_messages` is empty (no Phase 1 has been run), **When** `/bot-reset`
+   is issued, **Then** the command still completes without error.
+3. **Given** the deletion order in `reset_service`, **Then** the order is:
+   sessions → phase_results → forecast_messages → rounds → divisions → seasons.
+
+---
+
+### User Story 6 — Test-mode advance log lines show user-visible round number (Priority: P3)
+
+A bot operator reviewing server logs after a `/test-mode advance` can identify which
+league round was advanced by the user-visible round number (e.g. `round=3`) rather than
+the internal database primary key. The internal DB id is also retained in the log for
+correlation with raw database queries.
+
+**Why this priority**: Internal IDs are meaningless to league managers reviewing logs;
+round numbers directly match what users see in `/season-status` and results messages,
+making log triage faster and reducing support overhead.
+
+**Independent Test**: Enable test mode; issue `/test-mode advance`; check log output;
+ confirm the line contains both `round=<round_number>` and `id=<db_id>`.
+
+**Acceptance Scenarios**:
+
+1. **Given** a pending phase entry, **When** `/test-mode advance` dispatches a phase runner,
+   **Then** the log line includes `round=<round_number>` (user-visible) and
+   `id=<db_id>` (internal).
+2. **Given** a Mystery notice dispatch, **When** logged, **Then** the log line includes
+   `round=<round_number>` and `round_id=<db_id>`.
+3. **Given** `PhaseEntry`, **Then** it exposes both `round_number: int` (user-visible) and
+   `round_id: int` (DB primary key).
+
+---
+
 ### Edge Cases
 
 - What if the season is deleted between `get_next_pending_phase` returning `None` and the
@@ -104,6 +196,12 @@ verify it is accepted.
 - What if Discord's tree sync has not yet propagated the updated `default_permissions`
   to all servers? Users may still see the old restriction until the next sync completes
   (up to 1 hour for global commands).
+- What if `run_mystery_notice` fails after `phase1_done` would have been set? The cog
+  updates `phase1_done` only AFTER a successful `run_mystery_notice` call, so a failure
+  leaves the round re-tryable on the next `/test-mode advance`.
+- What if multiple rounds' `forecast_messages` rows exist across divisions? The
+  `forecast_messages` delete uses `WHERE round_id IN (...)` scoped to the reset server's
+  round IDs only, leaving other servers' data untouched.
 
 ## Requirements *(mandatory)*
 
@@ -117,10 +215,57 @@ verify it is accepted.
 | FR-004 | The `test_mode` `app_commands.Group` MUST have `guild_only=True` | Bug 3 |
 | FR-005 | The `test_mode` `app_commands.Group` MUST have `default_permissions=None` so Discord applies no platform-level restriction | Bug 3 |
 | FR-006 | All `/test-mode` subcommands MUST remain gated by `channel_guard` (interaction role + interaction channel) | Bug 3 |
+| FR-007 | `get_next_pending_phase` MUST return a `PhaseEntry` with `phase_number=0` for a Mystery round whose `phase1_done = 0`; MUST skip (continue) if `phase1_done = 1` | Bug 4 |
+| FR-008 | When `/test-mode advance` receives a `phase_number=0` entry, it MUST call `run_mystery_notice`, set `phase1_done = 1` on success, and reply with a notice-sent confirmation; on failure it MUST reply with an error ephemeral and NOT set the flag | Bug 4 |
+| FR-009 | `reset_service` MUST delete `forecast_messages` rows (scoped to the server's round IDs) AFTER `phase_results` and BEFORE `rounds` in every reset transaction | Bug 5 |
+| FR-010 | `PhaseEntry` MUST expose `round_number: int` (user-visible); advance log lines MUST include `round=<round_number>` alongside `id=<round_id>` | Bug 6 |
 
 ### Non-Functional Requirements
 
 - No new migrations, no new commands, no new dependencies.
-- All existing 162 unit tests must continue to pass.
-- No new test files required (existing `test_test_mode_service.py` already covers
-  `get_next_pending_phase` mystery exclusion and the empty-queue path).
+- The `phase1_done = 1` flag on Mystery rounds is reused as the "notice sent" proxy; this
+  is safe because `all_phases_complete` and `build_review_summary` already filter
+  `format != 'MYSTERY'`, so the flag has no side-effects on season-end or review logic.
+- All 164 unit tests must pass:
+  - 162 original
+  - +1 for Bug 4: `test_mystery_round_notice_pending_returns_entry` (replaces the
+    now-incorrect `test_mystery_rounds_excluded`)
+  - +1 for Bug 4: `test_mystery_round_notice_done_excluded` (new)
+  - +1 for Bug 5: `test_reset_deletes_forecast_messages` — verifies that calling
+    `execute_reset` on a server with `forecast_messages` rows completes without error and
+    leaves no matching rows in `forecast_messages` (guards against FK regression)
+- No new test files required; Bug 5 test added to `tests/unit/test_reset_service.py`.
+
+### Glossary / Key Data Shapes
+
+#### `PhaseEntry` (TypedDict — `src/services/test_mode_service.py`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `round_id` | `int` | Database primary key (`rounds.id`) — for DB operations only |
+| `round_number` | `int` | User-visible round number (`rounds.round_number`) — for display and logging |
+| `division_id` | `int` | Database primary key of the owning division |
+| `phase_number` | `int` | See valid values below |
+| `track_name` | `str` | Human-readable track name; `"Mystery"` for mystery-notice entries |
+| `division_name` | `str` | Human-readable division name |
+
+**Valid `phase_number` values:**
+
+| Value | Meaning |
+|-------|---------|
+| `0` | Mystery round notice sentinel — triggers `run_mystery_notice`; not a real phase |
+| `1` | Phase 1 (forecast + weather roll) |
+| `2` | Phase 2 (results post) |
+| `3` | Phase 3 (standings update + cleanup) |
+
+#### Mystery-notice proxy (`phase1_done` flag)
+
+There is no dedicated `notice_sent` column. Instead, `rounds.phase1_done = 1` is reused as
+the "mystery notice sent" marker for `format = 'MYSTERY'` rounds. This is safe because:
+
+- `all_phases_complete` filters `format != 'MYSTERY'`, so the flag never counts toward
+  season-end detection.
+- `build_review_summary` shows "N/A" for all phases of mystery rounds regardless of flag
+  state.
+- `get_next_pending_phase` checks `format` first; `phase1_done` is only meaningful as an
+  exclusion signal within the mystery branch.
