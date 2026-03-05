@@ -45,6 +45,45 @@ SYNC IMPACT REPORT
                  which already satisfies Principle I Tier-1 access control.
     Principle  : I (interaction role gates all commands), VII (guild channel only).
 
+  Bug 4 — Mystery round notice never fires during test-mode advance
+    Root cause : APScheduler job `mystery_r{id}` fires on a real-time schedule;
+                 in test mode the scheduler never runs, so Mystery round player-
+                 facing notices were silently skipped. `get_next_pending_phase`
+                 also filtered out Mystery rounds entirely, making them invisible
+                 to the advance queue.
+    Fix        : src/services/test_mode_service.py — widened query to include all
+                 rounds; returns `PhaseEntry(phase_number=0)` sentinel when a
+                 Mystery round has `phase1_done=0`; skips if `phase1_done=1`.
+                 src/cogs/test_mode_cog.py — added `phase_number == 0` dispatch
+                 block: calls `run_mystery_notice`, then sets `phase1_done=1` on
+                 success. `phase1_done` reused as "notice sent" proxy; safe
+                 because `all_phases_complete` and `build_review_summary` already
+                 filter `format != 'MYSTERY'`.
+    Principle  : IV (mystery rounds have no phases but still have a pre-pipeline
+                 notice step), V (no silent skips of expected bot actions).
+
+  Bug 5 — Reset raises FOREIGN KEY constraint failed when forecast_messages exists
+    Root cause : `reset_service` deleted `sessions` and `phase_results` before
+                 `rounds`, but omitted `forecast_messages` which has
+                 `REFERENCES rounds(id)` with FK enforcement ON. Any reset after
+                 Phase 1 had run violated the FK and aborted the transaction.
+    Fix        : src/services/reset_service.py — added
+                 `DELETE FROM forecast_messages WHERE round_id IN (...)`
+                 after `phase_results` and before `rounds` in the FK-safe chain.
+                 Regression test added: `test_reset_deletes_forecast_messages`.
+    Principle  : III (reset must complete cleanly to allow a fresh season start),
+                 V (no silent data integrity failures).
+
+  Bug 6 — Advance logs use internal DB id instead of user-visible round number
+    Root cause : Log lines in the advance command emitted `entry["round_id"]`
+                 (the `rounds.id` primary key), which is meaningless to league
+                 managers reading logs. `PhaseEntry` had no `round_number` field.
+    Fix        : src/services/test_mode_service.py — added `round_number: int`
+                 field to `PhaseEntry`; SELECT now includes `r.round_number`.
+                 src/cogs/test_mode_cog.py — log line now emits
+                 `round=<round_number>` and `id=<round_id>` for all paths.
+    Principle  : V (observable, human-legible audit trail).
+
   Templates confirmed aligned (no changes needed):
     ✅ .specify/templates/plan-template.md
     ✅ .specify/templates/spec-template.md
@@ -52,8 +91,15 @@ SYNC IMPACT REPORT
     ✅ .specify/templates/agent-file-template.md
     ✅ .specify/templates/checklist-template.md
   Files modified:
-    ✅ src/cogs/season_cog.py        — next_round mystery exclusion
-    ✅ src/cogs/test_mode_cog.py     — advance safety net + Group permissions
+    ✅ src/cogs/season_cog.py            — next_round mystery exclusion (Bug 1)
+    ✅ src/cogs/test_mode_cog.py         — advance safety net + Group permissions
+                                           + mystery notice dispatch + round_number log
+                                           (Bugs 2, 3, 4, 6)
+    ✅ src/services/test_mode_service.py — PhaseEntry.round_number + phase_number=0
+                                           sentinel in get_next_pending_phase (Bugs 4, 6)
+    ✅ src/services/reset_service.py     — forecast_messages FK-safe delete (Bug 5)
+    ✅ tests/unit/test_test_mode_service.py — updated mystery tests (Bug 4)
+    ✅ tests/unit/test_reset_service.py  — regression test for FK reset (Bug 5)
   No deferred TODOs. Last Amended date remains 2026-03-03 (no principle changes).
 
 [2026-03-05 — New feature addition: constitution reuse pass]
