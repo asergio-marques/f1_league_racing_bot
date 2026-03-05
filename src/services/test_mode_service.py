@@ -103,6 +103,8 @@ async def get_next_pending_phase(server_id: int, db_path: str) -> PhaseEntry | N
             JOIN seasons   s ON s.id  = d.season_id
             WHERE s.server_id = ?
               AND s.status    = 'ACTIVE'
+              AND d.status   != 'CANCELLED'
+              AND r.status   != 'CANCELLED'
             ORDER BY r.scheduled_at ASC, d.id ASC
             """,
             (server_id,),

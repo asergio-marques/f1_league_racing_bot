@@ -1,4 +1,4 @@
-"""Unit tests: /round-amend pending-config path (US1, FR-001 – FR-005)."""
+"""Unit tests: /round amend pending-config path (US2, FR-001 – FR-005)."""
 
 from __future__ import annotations
 
@@ -7,8 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from cogs.amendment_cog import AmendmentCog
-from cogs.season_cog import PendingConfig, PendingDivision
+from cogs.season_cog import SeasonCog, PendingConfig, PendingDivision
 from models.round import RoundFormat
 
 
@@ -51,20 +50,15 @@ def _make_interaction(guild_id: int = 1) -> MagicMock:
     return interaction
 
 
-def _make_cog(pending_cfg: PendingConfig | None) -> tuple[AmendmentCog, MagicMock]:
-    """Return (cog, bot_mock) with SeasonCog stub returning *pending_cfg*."""
+def _make_cog(pending_cfg: PendingConfig | None) -> tuple[SeasonCog, MagicMock]:
+    """Return (cog, bot_mock) with SeasonCog having *pending_cfg* in _pending."""
     bot = MagicMock()
     bot.season_service.get_active_season = AsyncMock(return_value=None)
     bot.season_service.save_pending_snapshot = AsyncMock(return_value=42)
 
+    cog = SeasonCog(bot)
     if pending_cfg is not None:
-        season_cog_mock = MagicMock()
-        season_cog_mock._get_pending_for_server = MagicMock(return_value=pending_cfg)
-    else:
-        season_cog_mock = None
-
-    bot.get_cog = MagicMock(return_value=season_cog_mock)
-    cog = AmendmentCog(bot)
+        cog._pending[pending_cfg.server_id] = pending_cfg
     return cog, bot
 
 
@@ -95,7 +89,7 @@ async def test_pending_amend_track_change() -> None:
 
 
 async def test_pending_amend_scheduled_at_change() -> None:
-    """T006-2: scheduled_at amendment updates the datetime in-memory."""
+    """T006-2: scheduled_at amendment updates the datetime in-memory and renumbers by date."""
     pending = _make_pending()
     cog, _ = _make_cog(pending)
     interaction = _make_interaction()
@@ -108,8 +102,10 @@ async def test_pending_amend_scheduled_at_change() -> None:
     )
 
     div = pending.divisions[0]
-    rnd = next(r for r in div.rounds if r["round_number"] == 2)
-    assert rnd["scheduled_at"] == datetime.fromisoformat(new_dt)
+    # After renumbering by scheduled_at, the amended round may have a different round_number;
+    # verify that exactly one round now has the new scheduled_at.
+    amended = [r for r in div.rounds if r["scheduled_at"] == datetime.fromisoformat(new_dt)]
+    assert len(amended) == 1, "Exactly one round should have the new scheduled_at"
     interaction.response.send_message.assert_called_once()
 
 

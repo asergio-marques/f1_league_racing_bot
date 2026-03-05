@@ -21,3 +21,4 @@ class Round:
     phase1_done: bool = False
     phase2_done: bool = False
     phase3_done: bool = False
+    status: str = "ACTIVE"

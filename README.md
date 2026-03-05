@@ -92,18 +92,15 @@ Removes all season data for this server. Use `full:True` to also wipe the bot co
 
 ### Season Setup Workflow
 
-Season configuration is a multi-step flow: first run `/season-setup`, then add each division with `/division-add`, then add rounds with `/round-add`, then review and approve.
+Season configuration is a multi-step flow: run `/season setup`, add divisions with `/division add`, add rounds with `/round add`, then review with `/season review` and approve with `/season approve`.
 
-#### `/season-setup` — Start session wizard
+#### `/season setup` — Start season configuration
 *Access: Trusted admin*
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `start_date` | String | ✅ | Season start date in `YYYY-MM-DD` format |
-| `num_divisions` | Integer | ✅ | Number of divisions to configure (1–10) |
+No parameters. Creates a pending season tied to today's date and enables the `/division` and `/round` setup commands.
 
-#### `/division-add` — Add a division
-*Access: Trusted admin · Requires active `/season-setup` session*
+#### `/division add` — Add a division
+*Access: Trusted admin · Requires active `/season setup` session*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -111,48 +108,122 @@ Season configuration is a multi-step flow: first run `/season-setup`, then add e
 | `role` | Role | ✅ | Discord role mentioned in weather forecast messages for this division |
 | `forecast_channel` | Channel | ✅ | Channel where weather forecast messages are posted |
 
-#### `/round-add` — Add a round to a division
-*Access: Trusted admin · Requires active `/season-setup` session*
+#### `/division duplicate` — Copy a division with a datetime offset
+*Access: Trusted admin · Setup only*
+
+Clones all rounds from an existing division into a new one, shifting every scheduled_at by the given offset. Useful for multi-division season setups with staggered schedules.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `source_name` | String | ✅ | Name of the division to copy from |
+| `new_name` | String | ✅ | Name for the new division |
+| `role` | Role | ✅ | Discord role for the new division |
+| `forecast_channel` | Channel | ✅ | Forecast channel for the new division |
+| `day_offset` | Integer | ✅ | Days to shift all round datetimes (can be negative) |
+| `hour_offset` | Float | ✅ | Hours to shift all round datetimes (can be negative; decimals OK) |
+
+#### `/division delete` — Remove a division from setup
+*Access: Trusted admin · Setup only*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Name of the division to delete |
+
+Permanently removes the division and all its rounds from the pending setup.
+
+#### `/division rename` — Rename a division
+*Access: Trusted admin · Setup only*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `current_name` | String | ✅ | Current name of the division |
+| `new_name` | String | ✅ | New name for the division |
+
+#### `/round add` — Add a round to a division
+*Access: Trusted admin · Requires active `/season setup` session*
+
+Round numbers are **auto-assigned** by sorting all rounds in the division by `scheduled_at`; there is no manual `round_number` parameter.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `division_name` | String | ✅ | Exact name of the division this round belongs to |
-| `round_number` | Integer | ✅ | Round number within the division |
 | `format` | String | ✅ | Race format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE` |
 | `scheduled_at` | String | ✅ | Race date and time in ISO format: `YYYY-MM-DDTHH:MM:SS` (UTC) |
 | `track` | String | — | Track ID or name — use the autocomplete dropdown (e.g. `27` or `United Kingdom`). Omit for Mystery rounds. |
 
-#### `/season-review` — Review pending configuration
+#### `/round delete` — Remove a round from setup
+*Access: Trusted admin · Setup only*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division_name` | String | ✅ | Name of the division containing this round |
+| `round_number` | Integer | ✅ | Round number to delete |
+
+Deletes the round and renumbers remaining rounds by date.
+
+#### `/season review` — Review pending configuration
 *Access: Trusted admin*
 
 No parameters. Displays the pending season configuration with **Approve** and **Go Back to Edit** buttons.
 
-#### `/season-approve` — Commit the configuration
+#### `/season approve` — Commit the configuration
 *Access: Trusted admin*
 
-No parameters. Saves all pending divisions and rounds to the database and arms the weather scheduler. Equivalent to pressing Approve in `/season-review`.
+No parameters. Saves all pending divisions and rounds to the database and arms the weather scheduler. Equivalent to pressing Approve in `/season review`.
 
 ---
 
 ### Active Season Commands
 
-#### `/season-status` — Active season summary
+#### `/season status` — Active season summary
 *Access: Interaction role*
 
 No parameters. Shows active season overview: divisions, next scheduled round per division, and its track and datetime.
 
-#### `/round-amend` — Amend a round in the active season
+#### `/season cancel` — Delete the active season
 *Access: Trusted admin*
 
-At least one optional field must be provided.
+> ⚠️ **Destructive — irreversible.** All season data, rounds, and results are permanently deleted.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
+
+Posts a cancellation notice to each active division's forecast channel before deleting.
+
+#### `/round amend` — Amend a round in the active season
+*Access: Trusted admin*
+
+At least one optional field must be provided. Amending `scheduled_at` automatically re-sorts and renumbers all rounds in the division.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `division_name` | String | ✅ | Name of the division containing the round |
 | `round_number` | Integer | ✅ | The round number to amend |
 | `track` | String | — | New track — use the autocomplete dropdown (e.g. `05` or `Bahrain`). Amending invalidates prior weather phases. |
-| `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC). Amending re-triggers the scheduler. |
+| `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC). Amending re-triggers the scheduler and renumbers rounds. |
 | `format` | String | — | New format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE`. Amending invalidates prior weather phases. |
+
+#### `/round cancel` — Cancel a round in the active season
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division_name` | String | ✅ | Name of the division containing this round |
+| `round_number` | Integer | ✅ | The round number to cancel |
+| `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
+
+Cancels scheduled jobs for the round, sets its status to `CANCELLED`, and posts a notice to the division's forecast channel.
+
+#### `/division cancel` — Cancel a division in the active season
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Name of the division to cancel |
+| `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
+
+Cancels all scheduled rounds in the division (jobs + status flags) and posts a notice to the forecast channel.
 
 ---
 
@@ -212,7 +283,7 @@ Shows the effective μ and σ, whether they come from a server override or the b
 
 ### Track ID Reference
 
-Use these IDs in `/round-add` and `/round-amend` — autocomplete will show the full list as you type.
+Use these IDs in `/round add` and `/round amend` — autocomplete will show the full list as you type.
 
 | ID | Track | ID | Track | ID | Track |
 |----|-------|----|-------|----|-------|

@@ -1,22 +1,29 @@
-"""SeasonCog — /season, /division, /round command groups.
+# -*- coding: utf-8 -*-
+"""Generator script for the new season_cog.py (010-command-streamlining)."""
+import os, pathlib
+
+TARGET = pathlib.Path(__file__).parent.parent / "src" / "cogs" / "season_cog.py"
+
+CONTENT = """\
+\"\"\"SeasonCog \u2014 /season, /division, /round command groups.
 
 Commands:
-  /season setup    — start season configuration (admin only)
-  /season review   — view pending config with Approve/Amend actions
-  /season approve  — commit the pending config to the database
-  /season status   — read-only summary of active season
-  /season cancel   — delete the active season (admin only, destructive)
+  /season setup    \u2014 start season configuration (admin only)
+  /season review   \u2014 view pending config with Approve/Amend actions
+  /season approve  \u2014 commit the pending config to the database
+  /season status   \u2014 read-only summary of active season
+  /season cancel   \u2014 delete the active season (admin only, destructive)
 
-  /division add       — add a division to pending setup
-  /division duplicate — copy a division with datetime offset (setup only)
-  /division delete    — remove a division from pending setup
-  /division rename    — rename a division (setup only)
-  /division cancel    — cancel a division in the active season
+  /division add       \u2014 add a division to pending setup
+  /division duplicate \u2014 copy a division with datetime offset (setup only)
+  /division delete    \u2014 remove a division from pending setup
+  /division rename    \u2014 rename a division (setup only)
+  /division cancel    \u2014 cancel a division in the active season
 
-  /round add    — add a round to pending setup (auto-numbered by date)
-  /round delete — remove a round and renumber (setup only)
-  /round cancel — cancel a round in the active season
-"""
+  /round add    \u2014 add a round to pending setup (auto-numbered by date)
+  /round delete \u2014 remove a round and renumber (setup only)
+  /round cancel \u2014 cancel a round in the active season
+\"\"\"
 
 from __future__ import annotations
 
@@ -65,7 +72,7 @@ class PendingConfig:
 
 
 async def _get_setup_season_id(bot, guild_id: int) -> int | None:
-    """Return the season_id for a SETUP-status season for the guild, or None."""
+    \"\"\"Return the season_id for a SETUP-status season for the guild, or None.\"\"\"
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
             "SELECT id FROM seasons WHERE server_id = ? AND status = 'SETUP' LIMIT 1",
@@ -76,7 +83,7 @@ async def _get_setup_season_id(bot, guild_id: int) -> int | None:
 
 
 def _pending_to_division_models(cfg: PendingConfig) -> list[Division]:
-    """Convert PendingDivision entries to Division model objects for formatting."""
+    \"\"\"Convert PendingDivision entries to Division model objects for formatting.\"\"\"
     return [
         Division(
             id=0,
@@ -98,7 +105,7 @@ def _pending_to_division_models(cfg: PendingConfig) -> list[Division]:
 class SeasonCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        # Keyed by user_id (or server_id on recovery) \u2192 PendingConfig
+        # Keyed by user_id (or server_id on recovery) \\u2192 PendingConfig
         self._pending: dict[int, PendingConfig] = {}
 
     # ------------------------------------------------------------------
@@ -119,12 +126,12 @@ class SeasonCog(commands.Cog):
     @channel_guard
     @admin_only
     async def season_setup(self, interaction: discord.Interaction) -> None:
-        """Begin season setup \u2014 no parameters required."""
+        \"\"\"Begin season setup \\u2014 no parameters required.\"\"\"
         server_id = interaction.guild_id
 
         if self._get_pending_for_server(server_id) is not None:
             await interaction.response.send_message(
-                "\u274c A season setup is already in progress for this server. "
+                "\\u274c A season setup is already in progress for this server. "
                 "Use `/season review` to approve, or `/bot-reset` to cancel it first.",
                 ephemeral=True,
             )
@@ -132,7 +139,7 @@ class SeasonCog(commands.Cog):
 
         if await self.bot.season_service.has_existing_season(server_id):
             await interaction.response.send_message(
-                "\u274c A season already exists for this server. "
+                "\\u274c A season already exists for this server. "
                 "Use `/season cancel` to delete it, or `/bot-reset` to clear all data.",
                 ephemeral=True,
             )
@@ -143,8 +150,8 @@ class SeasonCog(commands.Cog):
         await self._snapshot_pending(cfg)
 
         await interaction.response.send_message(
-            "\u2705 Season setup started.\n\n"
-            "Use `/division add` for each division, then `/round add` for each round.\n"
+            "\\u2705 Season setup started.\\n\\n"
+            "Use `/division add` for each division, then `/round add` for each round.\\n"
             "When done, run `/season review` to review and approve.",
             ephemeral=True,
         )
@@ -159,7 +166,7 @@ class SeasonCog(commands.Cog):
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
             await interaction.response.send_message(
-                "\u274c No pending season setup. Run `/season setup` first.",
+                "\\u274c No pending season setup. Run `/season setup` first.",
                 ephemeral=True,
             )
             return
@@ -174,19 +181,19 @@ class SeasonCog(commands.Cog):
             if not div.name:
                 continue
             lines.append(
-                f"\U0001f4c2 **{div.name}** | "
+                f"\\U0001f4c2 **{div.name}** | "
                 f"Role <@&{div.role_id}> | "
                 f"Channel <#{div.channel_id}>"
             )
             for r in div.rounds:
                 lines.append(
                     f"  Round {r['round_number']}: {r['format'].value} "
-                    f"@ {r['track_name'] or 'Mystery'} \u2014 {r['scheduled_at'].isoformat()}"
+                    f"@ {r['track_name'] or 'Mystery'} \\u2014 {r['scheduled_at'].isoformat()}"
                 )
             lines.append("")
 
         view = _ApproveView(self)
-        await interaction.response.send_message("\n".join(lines), view=view, ephemeral=True)
+        await interaction.response.send_message("\\n".join(lines), view=view, ephemeral=True)
 
     @season.command(
         name="approve",
@@ -206,7 +213,7 @@ class SeasonCog(commands.Cog):
         season = await self.bot.season_service.get_active_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
-                "\u2139\ufe0f No active season found for this server.",
+                "\\u2139\\ufe0f No active season found for this server.",
                 ephemeral=True,
             )
             return
@@ -231,7 +238,7 @@ class SeasonCog(commands.Cog):
             )
             div_tag = " ~~[CANCELLED]~~" if div.status == "CANCELLED" else ""
             lines.append(
-                f"\U0001f4c2 **{div.name}**{div_tag} \u2014 "
+                f"\\U0001f4c2 **{div.name}**{div_tag} \\u2014 "
                 "Next round: "
                 + (
                     f"R{next_round.round_number} @ {next_round.track_name or 'Mystery'} "
@@ -241,7 +248,7 @@ class SeasonCog(commands.Cog):
                 )
             )
 
-        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+        await interaction.response.send_message("\\n".join(lines), ephemeral=True)
 
     @season.command(
         name="cancel",
@@ -257,7 +264,7 @@ class SeasonCog(commands.Cog):
     ) -> None:
         if confirm != "CONFIRM":
             await interaction.response.send_message(
-                "\u274c Type exactly `CONFIRM` in the `confirm` field to proceed.",
+                "\\u274c Type exactly `CONFIRM` in the `confirm` field to proceed.",
                 ephemeral=True,
             )
             return
@@ -265,7 +272,7 @@ class SeasonCog(commands.Cog):
         season = await self.bot.season_service.get_active_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
-                "\u274c No active season to cancel.",
+                "\\u274c No active season to cancel.",
                 ephemeral=True,
             )
             return
@@ -279,7 +286,7 @@ class SeasonCog(commands.Cog):
                 channel = interaction.guild.get_channel(div.forecast_channel_id)
                 if channel is not None:
                     await channel.send(
-                        "\U0001f4e2 **Season Cancelled**\n"
+                        "\\U0001f4e2 **Season Cancelled**\\n"
                         "The active season has been cancelled by an administrator. "
                         "All data has been deleted."
                     )
@@ -295,7 +302,7 @@ class SeasonCog(commands.Cog):
         await self.bot.season_service.delete_season(season.id)
 
         await interaction.followup.send(
-            "\u2705 Season cancelled and all data deleted.",
+            "\\u2705 Season cancelled and all data deleted.",
             ephemeral=True,
         )
 
@@ -331,14 +338,14 @@ class SeasonCog(commands.Cog):
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
             await interaction.response.send_message(
-                "\u274c No pending season setup. Run `/season setup` first.",
+                "\\u274c No pending season setup. Run `/season setup` first.",
                 ephemeral=True,
             )
             return
 
         if any(d.name.lower() == name.lower() for d in cfg.divisions if d.name):
             await interaction.response.send_message(
-                f"\u274c A division named **{name}** already exists in this setup.",
+                f"\\u274c A division named **{name}** already exists in this setup.",
                 ephemeral=True,
             )
             return
@@ -354,8 +361,8 @@ class SeasonCog(commands.Cog):
         await self._snapshot_pending(cfg)
 
         await interaction.response.send_message(
-            f"\u2705 Division **{name}** added.\n"
-            f"Role: {role.mention} | Channel: {forecast_channel.mention}\n\n"
+            f"\\u2705 Division **{name}** added.\\n"
+            f"Role: {role.mention} | Channel: {forecast_channel.mention}\\n\\n"
             + format_division_list(_pending_to_division_models(cfg)),
             ephemeral=True,
         )
@@ -387,7 +394,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/division duplicate` can only be used during season setup.",
+                "\\u274c `/division duplicate` can only be used during season setup.",
                 ephemeral=True,
             )
             return
@@ -396,14 +403,14 @@ class SeasonCog(commands.Cog):
         src_div = next((d for d in divisions if d.name.lower() == source_name.lower()), None)
         if src_div is None:
             await interaction.response.send_message(
-                f"\u274c Division `{source_name}` not found in pending setup.",
+                f"\\u274c Division `{source_name}` not found in pending setup.",
                 ephemeral=True,
             )
             return
 
         if any(d.name.lower() == new_name.lower() for d in divisions):
             await interaction.response.send_message(
-                f"\u274c A division named **{new_name}** already exists.",
+                f"\\u274c A division named **{new_name}** already exists.",
                 ephemeral=True,
             )
             return
@@ -418,12 +425,12 @@ class SeasonCog(commands.Cog):
         for dt in shifted:
             dt_aware = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
             if dt_aware < now:
-                warnings.append(f"\u26a0\ufe0f One or more shifted datetimes are in the past: {dt.isoformat()}")
+                warnings.append(f"\\u26a0\\ufe0f One or more shifted datetimes are in the past: {dt.isoformat()}")
                 break
         dt_counts = Counter(shifted)
         for dt, count in dt_counts.items():
             if count > 1:
-                warnings.append(f"\u26a0\ufe0f Multiple rounds share the same shifted datetime: {dt.isoformat()}")
+                warnings.append(f"\\u26a0\\ufe0f Multiple rounds share the same shifted datetime: {dt.isoformat()}")
                 break
 
         await interaction.response.defer(ephemeral=True)
@@ -444,13 +451,13 @@ class SeasonCog(commands.Cog):
         updated_divisions = await self.bot.season_service.get_divisions(season_id)
         new_rounds = await self.bot.season_service.get_division_rounds(new_div.id)
 
-        warn_block = ("\n" + "\n".join(warnings)) if warnings else ""
+        warn_block = ("\\n" + "\\n".join(warnings)) if warnings else ""
         await interaction.followup.send(
-            f"\u2705 Division **{new_name}** created from **{source_name}**"
-            f" (offset: {day_offset:+}d {hour_offset:+}h).\n\n"
+            f"\\u2705 Division **{new_name}** created from **{source_name}**"
+            f" (offset: {day_offset:+}d {hour_offset:+}h).\\n\\n"
             + format_division_list(updated_divisions)
-            + "\n\n"
-            + f"**{new_name} rounds:**\n"
+            + "\\n\\n"
+            + f"**{new_name} rounds:**\\n"
             + format_round_list(new_rounds)
             + warn_block,
             ephemeral=True,
@@ -471,7 +478,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/division delete` can only be used during season setup.",
+                "\\u274c `/division delete` can only be used during season setup.",
                 ephemeral=True,
             )
             return
@@ -480,7 +487,7 @@ class SeasonCog(commands.Cog):
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
             await interaction.response.send_message(
-                f"\u274c Division `{name}` not found.",
+                f"\\u274c Division `{name}` not found.",
                 ephemeral=True,
             )
             return
@@ -493,7 +500,7 @@ class SeasonCog(commands.Cog):
 
         remaining = await self.bot.season_service.get_divisions(season_id)
         await interaction.response.send_message(
-            f"\u2705 Division **{name}** deleted.\n\n"
+            f"\\u2705 Division **{name}** deleted.\\n\\n"
             + format_division_list(remaining),
             ephemeral=True,
         )
@@ -517,7 +524,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/division rename` can only be used during season setup.",
+                "\\u274c `/division rename` can only be used during season setup.",
                 ephemeral=True,
             )
             return
@@ -526,14 +533,14 @@ class SeasonCog(commands.Cog):
         div = next((d for d in divisions if d.name.lower() == current_name.lower()), None)
         if div is None:
             await interaction.response.send_message(
-                f"\u274c Division `{current_name}` not found.",
+                f"\\u274c Division `{current_name}` not found.",
                 ephemeral=True,
             )
             return
 
         if any(d.name.lower() == new_name.lower() for d in divisions if d.id != div.id):
             await interaction.response.send_message(
-                f"\u274c A division named **{new_name}** already exists.",
+                f"\\u274c A division named **{new_name}** already exists.",
                 ephemeral=True,
             )
             return
@@ -549,7 +556,7 @@ class SeasonCog(commands.Cog):
 
         remaining = await self.bot.season_service.get_divisions(season_id)
         await interaction.response.send_message(
-            f"\u2705 Division **{current_name}** renamed to **{new_name}**.\n\n"
+            f"\\u2705 Division **{current_name}** renamed to **{new_name}**.\\n\\n"
             + format_division_list(remaining),
             ephemeral=True,
         )
@@ -572,7 +579,7 @@ class SeasonCog(commands.Cog):
     ) -> None:
         if confirm != "CONFIRM":
             await interaction.response.send_message(
-                "\u274c Type exactly `CONFIRM` in the `confirm` field to proceed.",
+                "\\u274c Type exactly `CONFIRM` in the `confirm` field to proceed.",
                 ephemeral=True,
             )
             return
@@ -580,7 +587,7 @@ class SeasonCog(commands.Cog):
         season = await self.bot.season_service.get_active_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
-                "\u274c `/division cancel` requires an active season.",
+                "\\u274c `/division cancel` requires an active season.",
                 ephemeral=True,
             )
             return
@@ -589,14 +596,14 @@ class SeasonCog(commands.Cog):
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
             await interaction.response.send_message(
-                f"\u274c Division `{name}` not found.",
+                f"\\u274c Division `{name}` not found.",
                 ephemeral=True,
             )
             return
 
         if div.status == "CANCELLED":
             await interaction.response.send_message(
-                f"\u274c Division **{name}** is already cancelled.",
+                f"\\u274c Division **{name}** is already cancelled.",
                 ephemeral=True,
             )
             return
@@ -618,7 +625,7 @@ class SeasonCog(commands.Cog):
             channel = interaction.guild.get_channel(div.forecast_channel_id)
             if channel is not None:
                 await channel.send(
-                    f"\U0001f4e2 **Division Cancelled: {div.name}**\n"
+                    f"\\U0001f4e2 **Division Cancelled: {div.name}**\\n"
                     "This division has been cancelled by an administrator. "
                     "No further weather forecasts will be posted for this division."
                 )
@@ -626,7 +633,7 @@ class SeasonCog(commands.Cog):
             log.exception("Failed to post division cancel notice for %s", div.name)
 
         await interaction.followup.send(
-            f"\u2705 Division **{name}** cancelled.",
+            f"\\u2705 Division **{name}** cancelled.",
             ephemeral=True,
         )
 
@@ -664,7 +671,7 @@ class SeasonCog(commands.Cog):
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
             await interaction.response.send_message(
-                "\u274c No pending season setup. Run `/season setup` first.",
+                "\\u274c No pending season setup. Run `/season setup` first.",
                 ephemeral=True,
             )
             return
@@ -673,7 +680,7 @@ class SeasonCog(commands.Cog):
             fmt = RoundFormat(format.upper())
         except ValueError:
             await interaction.response.send_message(
-                f"\u274c Invalid format `{format}`. Choose from: NORMAL, SPRINT, MYSTERY, ENDURANCE.",
+                f"\\u274c Invalid format `{format}`. Choose from: NORMAL, SPRINT, MYSTERY, ENDURANCE.",
                 ephemeral=True,
             )
             return
@@ -682,7 +689,7 @@ class SeasonCog(commands.Cog):
 
         if fmt != RoundFormat.MYSTERY and not track_name:
             await interaction.response.send_message(
-                f"\u274c A track is required for `{fmt.value}` rounds. "
+                f"\\u274c A track is required for `{fmt.value}` rounds. "
                 "Leave track blank only for `MYSTERY` rounds.",
                 ephemeral=True,
             )
@@ -692,8 +699,8 @@ class SeasonCog(commands.Cog):
             track_name = TRACK_IDS.get(track_name.zfill(2), track_name)
         if track_name and track_name not in TRACK_DEFAULTS:
             await interaction.response.send_message(
-                f"\u274c Unknown track `{track_name}`.\n"
-                "Use `/round add` and type a number or name \u2014 autocomplete will guide you.",
+                f"\\u274c Unknown track `{track_name}`.\\n"
+                "Use `/round add` and type a number or name \\u2014 autocomplete will guide you.",
                 ephemeral=True,
             )
             return
@@ -702,7 +709,7 @@ class SeasonCog(commands.Cog):
             sched = datetime.fromisoformat(scheduled_at)
         except ValueError:
             await interaction.response.send_message(
-                "\u274c Invalid datetime. Use ISO format: `YYYY-MM-DDTHH:MM:SS`",
+                "\\u274c Invalid datetime. Use ISO format: `YYYY-MM-DDTHH:MM:SS`",
                 ephemeral=True,
             )
             return
@@ -710,7 +717,7 @@ class SeasonCog(commands.Cog):
         div = next((d for d in cfg.divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
             await interaction.response.send_message(
-                f"\u274c Division `{division_name}` not found in pending setup.",
+                f"\\u274c Division `{division_name}` not found in pending setup.",
                 ephemeral=True,
             )
             return
@@ -742,8 +749,8 @@ class SeasonCog(commands.Cog):
             for r in div.rounds
         ]
         await interaction.response.send_message(
-            f"\u2705 Round **{assigned_number}** added to **{div.name}**.\n"
-            f"Format: {fmt.value} | Track: {track_name or 'Mystery'} | {sched.isoformat()} UTC\n\n"
+            f"\\u2705 Round **{assigned_number}** added to **{div.name}**.\\n"
+            f"Format: {fmt.value} | Track: {track_name or 'Mystery'} | {sched.isoformat()} UTC\\n\\n"
             + format_round_list(round_models),
             ephemeral=True,
         )
@@ -756,223 +763,7 @@ class SeasonCog(commands.Cog):
     ) -> list[app_commands.Choice[str]]:
         results: list[app_commands.Choice[str]] = []
         for id_str, name in TRACK_IDS.items():
-            label = f"{id_str} \u2013 {name}"
-            if current.lower() in label.lower():
-                results.append(app_commands.Choice(name=label, value=name))
-        return results[:25]
-
-    @round.command(
-        name="amend",
-        description="Amend a round's configuration. Invalidates prior weather phases.",
-    )
-    @app_commands.describe(
-        division_name="Name of the division containing this round",
-        round_number="The round number to amend",
-        track="New track ID or name (leave blank to keep current)",
-        scheduled_at="New race datetime in ISO format YYYY-MM-DDTHH:MM:SS (leave blank to keep current)",
-        format="New format: NORMAL, SPRINT, MYSTERY, or ENDURANCE (leave blank to keep current)",
-    )
-    @channel_guard
-    @admin_only
-    async def round_amend(
-        self,
-        interaction: discord.Interaction,
-        division_name: str,
-        round_number: int,
-        track: str = "",
-        scheduled_at: str = "",
-        format: str = "",
-    ) -> None:
-        if not any([track, scheduled_at, format]):
-            await interaction.response.send_message(
-                "\u274c Provide at least one field to amend: `track`, `scheduled_at`, or `format`.",
-                ephemeral=True,
-            )
-            return
-
-        # Pending-config path
-        pending_cfg = self._get_pending_for_server(interaction.guild_id)
-        if pending_cfg is not None:
-            pend_div = next(
-                (d for d in pending_cfg.divisions if d.name.lower() == division_name.lower()),
-                None,
-            )
-            if pend_div is None:
-                await interaction.response.send_message(
-                    f"\u274c Division `{division_name}` not found in pending setup.",
-                    ephemeral=True,
-                )
-                return
-
-            pend_rnd = next(
-                (r for r in pend_div.rounds if r["round_number"] == round_number),
-                None,
-            )
-            if pend_rnd is None:
-                await interaction.response.send_message(
-                    f"\u274c Round {round_number} not found in division `{division_name}` of the pending setup.",
-                    ephemeral=True,
-                )
-                return
-
-            new_track: str | None = ...
-            if track:
-                resolved = TRACK_IDS.get(track.zfill(2), track)
-                if resolved not in TRACK_DEFAULTS:
-                    await interaction.response.send_message(
-                        f"\u274c Unknown track `{track}`. Use autocomplete to pick a valid track.",
-                        ephemeral=True,
-                    )
-                    return
-                new_track = resolved
-
-            new_dt = ...
-            if scheduled_at:
-                try:
-                    new_dt = datetime.fromisoformat(scheduled_at)
-                except ValueError:
-                    await interaction.response.send_message(
-                        "\u274c Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.",
-                        ephemeral=True,
-                    )
-                    return
-
-            new_fmt = ...
-            if format:
-                try:
-                    new_fmt = RoundFormat(format.upper())
-                except ValueError:
-                    await interaction.response.send_message(
-                        f"\u274c Invalid format `{format}`. Use NORMAL, SPRINT, MYSTERY, or ENDURANCE.",
-                        ephemeral=True,
-                    )
-                    return
-
-            effective_fmt = new_fmt if new_fmt is not ... else pend_rnd["format"]
-            effective_track = new_track if new_track is not ... else pend_rnd["track_name"]
-            if effective_fmt != RoundFormat.MYSTERY and not effective_track:
-                await interaction.response.send_message(
-                    f"\u274c Format `{effective_fmt.value}` requires a track. "
-                    "Supply a `track` value or change format to MYSTERY.",
-                    ephemeral=True,
-                )
-                return
-
-            if new_fmt is not ...:
-                pend_rnd["format"] = new_fmt
-            if new_dt is not ...:
-                pend_rnd["scheduled_at"] = new_dt
-            if new_track is not ...:
-                pend_rnd["track_name"] = new_track
-            if pend_rnd["format"] == RoundFormat.MYSTERY:
-                pend_rnd["track_name"] = None
-
-            # Re-sort rounds by scheduled_at and renumber
-            pend_div.rounds.sort(key=lambda r: r["scheduled_at"])
-            for i, r in enumerate(pend_div.rounds, start=1):
-                r["round_number"] = i
-
-            await self._snapshot_pending(pending_cfg)
-
-            from models.round import Round as RoundModel
-            round_models = [
-                RoundModel(
-                    id=0,
-                    division_id=0,
-                    round_number=r["round_number"],
-                    format=r["format"],
-                    track_name=r["track_name"],
-                    scheduled_at=r["scheduled_at"],
-                )
-                for r in pend_div.rounds
-            ]
-            await interaction.response.send_message(
-                f"\u2705 Round {round_number} in **{pend_div.name}** updated in pending setup "
-                f"(no DB write \u2014 use `/season approve` to commit).\n\n"
-                + format_round_list(round_models),
-                ephemeral=True,
-            )
-            return
-
-        # Active-season DB path
-        season = await self.bot.season_service.get_active_season(interaction.guild_id)
-        if season is None:
-            await interaction.response.send_message("\u274c No active season found.", ephemeral=True)
-            return
-
-        divisions = await self.bot.season_service.get_divisions(season.id)
-        div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
-        if div is None:
-            await interaction.response.send_message(
-                f"\u274c Division `{division_name}` not found.", ephemeral=True
-            )
-            return
-
-        rounds = await self.bot.season_service.get_division_rounds(div.id)
-        rnd = next((r for r in rounds if r.round_number == round_number), None)
-        if rnd is None:
-            await interaction.response.send_message(
-                f"\u274c Round {round_number} not found in division `{division_name}`.",
-                ephemeral=True,
-            )
-            return
-
-        amendments: list[tuple[str, object]] = []
-
-        if track:
-            resolved = TRACK_IDS.get(track.zfill(2), track)
-            if resolved not in TRACK_DEFAULTS:
-                await interaction.response.send_message(
-                    f"\u274c Unknown track `{track}`. Use autocomplete to pick a valid track.",
-                    ephemeral=True,
-                )
-                return
-            amendments.append(("track_name", resolved))
-
-        if scheduled_at:
-            try:
-                new_dt = datetime.fromisoformat(scheduled_at)
-            except ValueError:
-                await interaction.response.send_message(
-                    "\u274c Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.",
-                    ephemeral=True,
-                )
-                return
-            amendments.append(("scheduled_at", new_dt))
-
-        if format:
-            try:
-                new_fmt = RoundFormat(format.upper())
-            except ValueError:
-                await interaction.response.send_message(
-                    f"\u274c Invalid format `{format}`. Use NORMAL, SPRINT, MYSTERY, or ENDURANCE.",
-                    ephemeral=True,
-                )
-                return
-            amendments.append(("format", new_fmt))
-
-        summary_lines = [f"**Amend Round {rnd.round_number}** in division **{div.name}**:"]
-        for f_name, f_val in amendments:
-            summary_lines.append(f"  \u2022 `{f_name}` \u2192 `{f_val}`")
-        summary_lines.append("\n\u26a0\ufe0f This will invalidate all prior weather phases for this round.")
-
-        view = _ConfirmView(
-            cog=self,
-            interaction_user_id=interaction.user.id,
-            round_id=rnd.id,
-            amendments=amendments,
-        )
-        await interaction.response.send_message("\n".join(summary_lines), view=view, ephemeral=True)
-
-    @round_amend.autocomplete("track")
-    async def round_amend_track_autocomplete(
-        self,
-        interaction: discord.Interaction,
-        current: str,
-    ) -> list[app_commands.Choice[str]]:
-        results: list[app_commands.Choice[str]] = []
-        for id_str, name in TRACK_IDS.items():
-            label = f"{id_str} \u2013 {name}"
+            label = f"{id_str} \\u2013 {name}"
             if current.lower() in label.lower():
                 results.append(app_commands.Choice(name=label, value=name))
         return results[:25]
@@ -996,7 +787,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/round delete` can only be used during season setup.",
+                "\\u274c `/round delete` can only be used during season setup.",
                 ephemeral=True,
             )
             return
@@ -1005,7 +796,7 @@ class SeasonCog(commands.Cog):
         div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
             await interaction.response.send_message(
-                f"\u274c Division `{division_name}` not found.",
+                f"\\u274c Division `{division_name}` not found.",
                 ephemeral=True,
             )
             return
@@ -1014,7 +805,7 @@ class SeasonCog(commands.Cog):
         rnd = next((r for r in rounds if r.round_number == round_number), None)
         if rnd is None:
             await interaction.response.send_message(
-                f"\u274c Round {round_number} not found in division `{division_name}`.",
+                f"\\u274c Round {round_number} not found in division `{division_name}`.",
                 ephemeral=True,
             )
             return
@@ -1027,7 +818,7 @@ class SeasonCog(commands.Cog):
 
         remaining = await self.bot.season_service.get_division_rounds(div.id)
         await interaction.response.send_message(
-            f"\u2705 Round **{round_number}** deleted from **{division_name}** and rounds renumbered.\n\n"
+            f"\\u2705 Round **{round_number}** deleted from **{division_name}** and rounds renumbered.\\n\\n"
             + format_round_list(remaining),
             ephemeral=True,
         )
@@ -1052,7 +843,7 @@ class SeasonCog(commands.Cog):
     ) -> None:
         if confirm != "CONFIRM":
             await interaction.response.send_message(
-                "\u274c Type exactly `CONFIRM` in the `confirm` field to proceed.",
+                "\\u274c Type exactly `CONFIRM` in the `confirm` field to proceed.",
                 ephemeral=True,
             )
             return
@@ -1060,7 +851,7 @@ class SeasonCog(commands.Cog):
         season = await self.bot.season_service.get_active_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
-                "\u274c `/round cancel` requires an active season.",
+                "\\u274c `/round cancel` requires an active season.",
                 ephemeral=True,
             )
             return
@@ -1069,7 +860,7 @@ class SeasonCog(commands.Cog):
         div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
             await interaction.response.send_message(
-                f"\u274c Division `{division_name}` not found.",
+                f"\\u274c Division `{division_name}` not found.",
                 ephemeral=True,
             )
             return
@@ -1078,14 +869,14 @@ class SeasonCog(commands.Cog):
         rnd = next((r for r in rounds if r.round_number == round_number), None)
         if rnd is None:
             await interaction.response.send_message(
-                f"\u274c Round {round_number} not found in division `{division_name}`.",
+                f"\\u274c Round {round_number} not found in division `{division_name}`.",
                 ephemeral=True,
             )
             return
 
         if rnd.status == "CANCELLED":
             await interaction.response.send_message(
-                f"\u274c Round {round_number} in **{division_name}** is already cancelled.",
+                f"\\u274c Round {round_number} in **{division_name}** is already cancelled.",
                 ephemeral=True,
             )
             return
@@ -1105,7 +896,7 @@ class SeasonCog(commands.Cog):
             channel = interaction.guild.get_channel(div.forecast_channel_id)
             if channel is not None:
                 await channel.send(
-                    f"\U0001f4e2 **Round {round_number} Cancelled: {div.name}**\n"
+                    f"\\U0001f4e2 **Round {round_number} Cancelled: {div.name}**\\n"
                     f"Round {round_number} ({rnd.track_name or 'Mystery'}) has been cancelled by "
                     "an administrator. No weather forecast will be posted for this round."
                 )
@@ -1113,7 +904,7 @@ class SeasonCog(commands.Cog):
             log.exception("Failed to post round cancel notice for round %s in %s", round_number, div.name)
 
         await interaction.followup.send(
-            f"\u2705 Round **{round_number}** in **{division_name}** cancelled.",
+            f"\\u2705 Round **{round_number}** in **{division_name}** cancelled.",
             ephemeral=True,
         )
 
@@ -1122,7 +913,7 @@ class SeasonCog(commands.Cog):
     # ------------------------------------------------------------------
 
     def clear_pending_for_server(self, server_id: int) -> None:
-        """Discard any in-memory pending setup belonging to *server_id*."""
+        \"\"\"Discard any in-memory pending setup belonging to *server_id*.\"\"\"
         stale_keys = [
             uid for uid, cfg in self._pending.items()
             if cfg.server_id == server_id
@@ -1136,14 +927,14 @@ class SeasonCog(commands.Cog):
             )
 
     def _get_pending_for_server(self, server_id: int) -> PendingConfig | None:
-        """Return the in-memory pending config for *server_id*, or None."""
+        \"\"\"Return the in-memory pending config for *server_id*, or None.\"\"\"
         return next(
             (cfg for cfg in self._pending.values() if cfg.server_id == server_id),
             None,
         )
 
     async def _snapshot_pending(self, cfg: PendingConfig) -> None:
-        """Write the current PendingConfig to DB (status=SETUP) and update cfg.season_id."""
+        \"\"\"Write the current PendingConfig to DB (status=SETUP) and update cfg.season_id.\"\"\"
         divisions_data = [
             {
                 "name": d.name,
@@ -1159,7 +950,7 @@ class SeasonCog(commands.Cog):
         )
 
     async def _reload_pending_from_db(self, cfg: PendingConfig) -> None:
-        """Resync the in-memory PendingConfig.divisions from DB (after direct DB operations)."""
+        \"\"\"Resync the in-memory PendingConfig.divisions from DB (after direct DB operations).\"\"\"
         if cfg.season_id == 0:
             return
         db_divisions = await self.bot.season_service.get_divisions(cfg.season_id)
@@ -1182,7 +973,7 @@ class SeasonCog(commands.Cog):
             ))
 
     async def recover_pending_setups(self) -> None:
-        """Restore in-memory _pending from DB SETUP seasons on bot startup."""
+        \"\"\"Restore in-memory _pending from DB SETUP seasons on bot startup.\"\"\"
         for s in await self.bot.season_service.load_all_setup_seasons():
             if self._get_pending_for_server(s["server_id"]) is not None:
                 continue
@@ -1207,14 +998,14 @@ class SeasonCog(commands.Cog):
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
             await interaction.response.send_message(
-                "\u274c No pending season setup.",
+                "\\u274c No pending season setup.",
                 ephemeral=True,
             )
             return
 
         if cfg.season_id == 0:
             await interaction.response.send_message(
-                "\u274c Season setup state is incomplete. Use `/bot-reset` and start again.",
+                "\\u274c Season setup state is incomplete. Use `/bot-reset` and start again.",
                 ephemeral=True,
             )
             return
@@ -1229,7 +1020,7 @@ class SeasonCog(commands.Cog):
                 await season_svc.create_sessions_for_round(rnd.id, rnd.format)
                 all_rounds.append(rnd)
 
-        # Schedule FIRST \u2014 if this fails the season stays SETUP in DB (fix #5)
+        # Schedule FIRST \\u2014 if this fails the season stays SETUP in DB (fix #5)
         self.bot.scheduler_service.schedule_all_rounds(all_rounds)
 
         # Only transition to ACTIVE after scheduling succeeds
@@ -1240,7 +1031,7 @@ class SeasonCog(commands.Cog):
             del self._pending[uid]
 
         msg = (
-            f"\u2705 **Season approved and activated!**\n"
+            f"\\u2705 **Season approved and activated!**\\n"
             f"Season ID: {cfg.season_id} | "
             f"Rounds scheduled: {len(all_rounds)}"
         )
@@ -1262,14 +1053,14 @@ class _ApproveView(discord.ui.View):
         super().__init__(timeout=300)
         self._cog = cog
 
-    @discord.ui.button(label="\u2705 Approve", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="\\u2705 Approve", style=discord.ButtonStyle.success)
     async def approve(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self._cog._do_approve(interaction)
         self.stop()
 
-    @discord.ui.button(label="\u270f\ufe0f Go Back to Edit", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="\\u270f\\ufe0f Go Back to Edit", style=discord.ButtonStyle.secondary)
     async def amend(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -1279,79 +1070,7 @@ class _ApproveView(discord.ui.View):
             ephemeral=True,
         )
         self.stop()
+"""
 
-
-# ---------------------------------------------------------------------------
-# Round amendment confirm view
-# ---------------------------------------------------------------------------
-
-
-class _ConfirmView(discord.ui.View):
-    def __init__(
-        self,
-        cog: SeasonCog,
-        interaction_user_id: int,
-        round_id: int,
-        amendments: list[tuple[str, object]],
-    ) -> None:
-        super().__init__(timeout=120)
-        self._cog = cog
-        self._user_id = interaction_user_id
-        self._round_id = round_id
-        self._amendments = amendments
-
-    @discord.ui.button(label="\u2705 Confirm", style=discord.ButtonStyle.danger)
-    async def confirm(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        if interaction.user.id != self._user_id:
-            await interaction.response.send_message("\u26d4 Not your action.", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        scheduled_at_changed = any(f == "scheduled_at" for f, _ in self._amendments)
-        errors: list[str] = []
-        for field_name, new_value in self._amendments:
-            try:
-                await self._cog.bot.amendment_service.amend_round(
-                    self._round_id,
-                    interaction.user,
-                    field_name,
-                    new_value,
-                    self._cog.bot,
-                )
-            except Exception as exc:
-                log.exception("Amendment failed for %s: %s", field_name, exc)
-                errors.append(f"`{field_name}`: {exc}")
-
-        if errors:
-            await interaction.followup.send(
-                "\u26a0\ufe0f Some amendments failed:\n" + "\n".join(errors),
-                ephemeral=True,
-            )
-            self.stop()
-            return
-
-        rnd = await self._cog.bot.season_service.get_round(self._round_id)
-        if rnd is not None and scheduled_at_changed:
-            await self._cog.bot.season_service.renumber_rounds(rnd.division_id)
-
-        division_id = rnd.division_id if rnd is not None else None
-        rounds = (
-            await self._cog.bot.season_service.get_division_rounds(division_id)
-            if division_id is not None
-            else []
-        )
-        msg = "\u2705 Round amended successfully."
-        if rounds:
-            msg += "\n\n" + format_round_list(rounds)
-        await interaction.followup.send(msg, ephemeral=True)
-        self.stop()
-
-    @discord.ui.button(label="\u274c Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await interaction.response.send_message("Amendment cancelled.", ephemeral=True)
-        self.stop()
+TARGET.write_text(CONTENT, encoding="utf-8")
+print(f"Written {len(CONTENT)} chars, {len(CONTENT.splitlines())} lines to {TARGET}")

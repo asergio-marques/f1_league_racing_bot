@@ -9,3 +9,4 @@ class Division:
     name: str
     mention_role_id: int
     forecast_channel_id: int
+    status: str = "ACTIVE"

@@ -1,6 +1,28 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-03-05 — v1.1.0 → v1.2.0: UX streamlining command standards]
+  Version change    : 1.1.0 → 1.2.0
+  Bump rationale    : MINOR — materially expanded guidance on command naming and UX
+                      requirements. Added explicit subcommand-group mandate, command
+                      grouping rule, single-interaction preference rule, and
+                      hyphenated-command migration requirement to Bot Behavior
+                      Standards.
+  Modified sections :
+    - Bot Behavior Standards: command naming expanded from a one-line convention
+      to a multi-rule standard. Hyphenated top-level commands disallowed for new
+      features; migration required for existing ones. Command grouping requirement
+      added. Single-interaction preference rule added.
+  Added sections    : None
+  Removed sections  : None
+  Templates confirmed aligned (no structural changes required):
+    ✅ .specify/templates/plan-template.md      — generic; no hardcoded principle list.
+    ✅ .specify/templates/spec-template.md      — generic; no stale references.
+    ✅ .specify/templates/tasks-template.md     — generic; aligns with I–VII.
+    ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale refs.
+    ✅ .specify/templates/checklist-template.md  — not impacted.
+  Deferred TODOs    : None. All placeholders resolved.
+
 [2026-03-05 — Bug fix: test mode mystery-round completion + permission]
   - Session intent: fix two bugs in the existing test-mode feature.
   - Constitution reused as-is; no principle amendments required.
@@ -317,9 +339,21 @@ channels and makes it trivial for drivers and admins to find the right informati
 
 ## Bot Behavior Standards
 
-All Discord slash commands MUST follow the naming convention `/[domain] [action]`
-(e.g., `/season setup`, `/division add`, `/race postpone`, `/weather generate`).
+All Discord slash commands MUST follow the `/domain action` subcommand-group convention — a
+top-level slash command group (`/domain`) with named action subcommands. Hyphenated top-level
+commands (e.g. `/season-setup`, `/round-add`) are NOT permitted for new features. Any existing
+hyphenated command MUST be migrated to the subcommand-group form (e.g. `/season setup`,
+`/round add`) in the same change window as any UX-streamlining work targeting that domain.
 
+- **Command grouping**: Commands that share an operational domain (season lifecycle, track
+  configuration, round amendments) MUST be registered under a single command group so that
+  Discord's autocomplete surfaces all related actions together. Lone top-level commands for
+  domain-specific actions are not acceptable for new features.
+- **Single-interaction preference**: Every command MUST be completable in a single Discord
+  interaction where technically feasible. Multi-step wizard flows are permitted ONLY when
+  Discord's API cannot accommodate all required inputs in one command (e.g., more than
+  25 parameters); in such cases, each step MUST provide clear inline guidance on what the
+  user must do next.
 - Commands that mutate persistent state MUST present an ephemeral confirm/cancel prompt before
   executing, except where the change is trivially reversible within the same interaction.
 - Configuration command responses MUST be ephemeral (visible only to the invoking user).
@@ -391,4 +425,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 1.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-03
+**Version**: 1.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-05

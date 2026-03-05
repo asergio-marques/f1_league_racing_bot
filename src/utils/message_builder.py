@@ -5,6 +5,12 @@ All output is plain text (no embeds) per Constitution Principle VII.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from models.division import Division
+    from models.round import Round
+
 
 def phase1_message(division_role_id: int, track: str, rpc_pct: float) -> str:
     """Phase 1 forecast: rain probability preview (T−5 days)."""
@@ -152,3 +158,36 @@ def session_type_label(session_type_value: str) -> str:
         if label.startswith(prefix):
             return label[len(prefix):]
     return label
+
+
+def format_division_list(divisions: "list[Division]") -> str:
+    """Format a list of Division objects as a readable summary.
+
+    Returns one line per division showing name, role mention, and forecast channel.
+    """
+    if not divisions:
+        return "*(no divisions)*"
+    lines = ["**Divisions:**"]
+    for div in divisions:
+        lines.append(
+            f"  📂 **{div.name}** | <@&{div.mention_role_id}> | <#{div.forecast_channel_id}>"
+        )
+    return "\n".join(lines)
+
+
+def format_round_list(rounds: "list[Round]") -> str:
+    """Format a list of Round objects as a readable summary.
+
+    Returns one line per round showing number, format, track, and datetime.
+    """
+    if not rounds:
+        return "*(no rounds)*"
+    lines = ["**Rounds:**"]
+    for r in rounds:
+        track = r.track_name or "TBD"
+        status_tag = " ~~[CANCELLED]~~" if r.status == "CANCELLED" else ""
+        lines.append(
+            f"  Round {r.round_number}: {r.format.value} @ {track}"
+            f" — {r.scheduled_at.isoformat()} UTC{status_tag}"
+        )
+    return "\n".join(lines)

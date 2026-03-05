@@ -22,8 +22,10 @@ class SeasonService:
     # Season
     # ------------------------------------------------------------------
 
-    async def create_season(self, server_id: int, start_date: date) -> Season:
+    async def create_season(self, server_id: int, start_date: date | None = None) -> Season:
         """Insert a new SETUP season and return it."""
+        if start_date is None:
+            start_date = date.today()
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "INSERT INTO seasons (server_id, start_date, status) VALUES (?, ?, ?)",
@@ -197,7 +199,7 @@ class SeasonService:
         return result
 
     async def get_last_scheduled_at(self, server_id: int) -> datetime | None:
-        """Return the latest scheduled_at across all rounds for the active season."""
+        """Return the latest scheduled_at across all ACTIVE rounds for the active season."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 """
@@ -206,6 +208,8 @@ class SeasonService:
                 JOIN divisions d ON d.id = r.division_id
                 JOIN seasons   s ON s.id = d.season_id
                 WHERE s.server_id = ? AND s.status = 'ACTIVE'
+                  AND r.status   != 'CANCELLED'
+                  AND d.status   != 'CANCELLED'
                 """,
                 (server_id,),
             )
@@ -215,7 +219,7 @@ class SeasonService:
         return datetime.fromisoformat(row[0])
 
     async def all_phases_complete(self, server_id: int) -> bool:
-        """True if every non-MYSTERY round in the active season has all 3 phases done."""
+        """True if every non-MYSTERY, non-CANCELLED round in the active season has all 3 phases done."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 """
@@ -225,6 +229,8 @@ class SeasonService:
                 WHERE s.server_id = ?
                   AND s.status    = 'ACTIVE'
                   AND r.format   != 'MYSTERY'
+                  AND r.status   != 'CANCELLED'
+                  AND d.status   != 'CANCELLED'
                   AND (r.phase1_done = 0 OR r.phase2_done = 0 OR r.phase3_done = 0)
                 """,
                 (server_id,),
@@ -248,6 +254,38 @@ class SeasonService:
                 "UPDATE seasons SET status = ? WHERE id = ?",
                 (SeasonStatus.ACTIVE.value, season_id),
             )
+            await db.commit()
+
+    async def delete_season(self, season_id: int) -> None:
+        """FK-safe cascade delete of one season and all its child records."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id FROM divisions WHERE season_id = ?", (season_id,)
+            )
+            division_rows = await cursor.fetchall()
+            division_ids = [r[0] for r in division_rows]
+
+            round_ids: list[int] = []
+            if division_ids:
+                ph = ",".join("?" * len(division_ids))
+                cursor = await db.execute(
+                    f"SELECT id FROM rounds WHERE division_id IN ({ph})",
+                    division_ids,
+                )
+                round_ids = [r[0] for r in await cursor.fetchall()]
+
+            if round_ids:
+                ph = ",".join("?" * len(round_ids))
+                await db.execute(f"DELETE FROM forecast_messages WHERE round_id IN ({ph})", round_ids)
+                await db.execute(f"DELETE FROM phase_results WHERE round_id IN ({ph})", round_ids)
+                await db.execute(f"DELETE FROM sessions WHERE round_id IN ({ph})", round_ids)
+
+            if division_ids:
+                ph = ",".join("?" * len(division_ids))
+                await db.execute(f"DELETE FROM rounds WHERE division_id IN ({ph})", division_ids)
+
+            await db.execute("DELETE FROM divisions WHERE season_id = ?", (season_id,))
+            await db.execute("DELETE FROM seasons WHERE id = ?", (season_id,))
             await db.commit()
 
     # ------------------------------------------------------------------
@@ -286,12 +324,132 @@ class SeasonService:
         """Return all divisions for *season_id*."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, season_id, name, mention_role_id, forecast_channel_id "
+                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status "
                 "FROM divisions WHERE season_id = ?",
                 (season_id,),
             )
             rows = await cursor.fetchall()
         return [_row_to_division(r) for r in rows]
+
+    async def rename_division(self, division_id: int, new_name: str) -> None:
+        """Update a division's name."""
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE divisions SET name = ? WHERE id = ?",
+                (new_name, division_id),
+            )
+            await db.commit()
+
+    async def delete_division(self, division_id: int) -> None:
+        """Cascade-delete a division and all its child rows."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id FROM rounds WHERE division_id = ?", (division_id,)
+            )
+            round_rows = await cursor.fetchall()
+            round_ids = [r[0] for r in round_rows]
+
+            if round_ids:
+                ph = ",".join("?" * len(round_ids))
+                await db.execute(f"DELETE FROM forecast_messages WHERE round_id IN ({ph})", round_ids)
+                await db.execute(f"DELETE FROM phase_results WHERE round_id IN ({ph})", round_ids)
+                await db.execute(f"DELETE FROM sessions WHERE round_id IN ({ph})", round_ids)
+                await db.execute(f"DELETE FROM rounds WHERE division_id = ?", (division_id,))
+
+            await db.execute("DELETE FROM divisions WHERE id = ?", (division_id,))
+            await db.commit()
+
+    async def cancel_division(
+        self,
+        division_id: int,
+        server_id: int,
+        actor_id: int,
+        actor_name: str,
+    ) -> None:
+        """Mark a division CANCELLED and write an audit entry."""
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE divisions SET status = 'CANCELLED' WHERE id = ?",
+                (division_id,),
+            )
+            await db.execute(
+                """
+                INSERT INTO audit_entries
+                    (server_id, actor_id, actor_name, division_id, change_type,
+                     old_value, new_value, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    server_id,
+                    actor_id,
+                    actor_name,
+                    division_id,
+                    "division.status",
+                    "ACTIVE",
+                    "CANCELLED",
+                    now.isoformat(),
+                ),
+            )
+            await db.commit()
+
+    async def duplicate_division(
+        self,
+        division_id: int,
+        name: str,
+        role_id: int,
+        forecast_channel_id: int,
+        day_offset: int,
+        hour_offset: float,
+    ) -> Division:
+        """Copy a division (and all its rounds with shifted datetimes) into a new division."""
+        from datetime import timedelta
+        src_rounds = await self.get_division_rounds(division_id)
+        async with get_connection(self._db_path) as db:
+            # Find the season_id of the source division
+            cursor = await db.execute(
+                "SELECT season_id FROM divisions WHERE id = ?", (division_id,)
+            )
+            row = await cursor.fetchone()
+            season_id: int = row[0]
+
+            cursor = await db.execute(
+                "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id)"
+                " VALUES (?, ?, ?, ?)",
+                (season_id, name, role_id, forecast_channel_id),
+            )
+            await db.commit()
+            new_div_id: int = cursor.lastrowid  # type: ignore[assignment]
+
+            delta = timedelta(days=day_offset, hours=hour_offset)
+            for rnd in src_rounds:
+                new_dt = rnd.scheduled_at + delta
+                await db.execute(
+                    "INSERT INTO rounds"
+                    " (division_id, round_number, format, track_name, scheduled_at,"
+                    "  phase1_done, phase2_done, phase3_done)"
+                    " VALUES (?, ?, ?, ?, ?, 0, 0, 0)",
+                    (
+                        new_div_id,
+                        rnd.round_number,  # will be renumbered next
+                        rnd.format.value,
+                        rnd.track_name,
+                        new_dt.isoformat(),
+                    ),
+                )
+            await db.commit()
+
+        await self.renumber_rounds(new_div_id)
+
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status"
+                " FROM divisions WHERE id = ?",
+                (new_div_id,),
+            )
+            row = await cursor.fetchone()
+        return _row_to_division(row)
 
     # ------------------------------------------------------------------
     # Round
@@ -339,7 +497,7 @@ class SeasonService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
-                "phase1_done, phase2_done, phase3_done FROM rounds WHERE id = ?",
+                "phase1_done, phase2_done, phase3_done, status FROM rounds WHERE id = ?",
                 (round_id,),
             )
             row = await cursor.fetchone()
@@ -350,12 +508,87 @@ class SeasonService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
-                "phase1_done, phase2_done, phase3_done FROM rounds "
+                "phase1_done, phase2_done, phase3_done, status FROM rounds "
                 "WHERE division_id = ? ORDER BY round_number",
                 (division_id,),
             )
             rows = await cursor.fetchall()
         return [_row_to_round(r) for r in rows]
+
+    async def renumber_rounds(self, division_id: int) -> None:
+        """Rewrite round_number for all rounds in a division, sorted ascending by scheduled_at."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id FROM rounds WHERE division_id = ? ORDER BY scheduled_at",
+                (division_id,),
+            )
+            rows = await cursor.fetchall()
+            for i, row in enumerate(rows, start=1):
+                await db.execute(
+                    "UPDATE rounds SET round_number = ? WHERE id = ?",
+                    (i, row[0]),
+                )
+            await db.commit()
+
+    async def delete_round(self, round_id: int) -> None:
+        """Delete a round and renumber siblings."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT division_id FROM rounds WHERE id = ?", (round_id,)
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                return
+            division_id: int = row[0]
+
+            await db.execute("DELETE FROM forecast_messages WHERE round_id = ?", (round_id,))
+            await db.execute("DELETE FROM phase_results WHERE round_id = ?", (round_id,))
+            await db.execute("DELETE FROM sessions WHERE round_id = ?", (round_id,))
+            await db.execute("DELETE FROM rounds WHERE id = ?", (round_id,))
+            await db.commit()
+
+        await self.renumber_rounds(division_id)
+
+    async def cancel_round(
+        self,
+        round_id: int,
+        server_id: int,
+        actor_id: int,
+        actor_name: str,
+    ) -> None:
+        """Mark a round CANCELLED and write an audit entry."""
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT division_id FROM rounds WHERE id = ?", (round_id,)
+            )
+            row = await cursor.fetchone()
+            division_id = row[0] if row else None
+
+            await db.execute(
+                "UPDATE rounds SET status = 'CANCELLED' WHERE id = ?",
+                (round_id,),
+            )
+            await db.execute(
+                """
+                INSERT INTO audit_entries
+                    (server_id, actor_id, actor_name, division_id, change_type,
+                     old_value, new_value, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    server_id,
+                    actor_id,
+                    actor_name,
+                    division_id,
+                    "round.status",
+                    "ACTIVE",
+                    "CANCELLED",
+                    now.isoformat(),
+                ),
+            )
+            await db.commit()
 
     async def update_round_field(self, round_id: int, field: str, value: object) -> None:
         """Generic field updater used by amendment_service."""
@@ -449,6 +682,7 @@ def _row_to_division(row: object) -> Division:
         name=row["name"],
         mention_role_id=row["mention_role_id"],
         forecast_channel_id=row["forecast_channel_id"],
+        status=row["status"],
     )
 
 
@@ -463,6 +697,7 @@ def _row_to_round(row: object) -> Round:
         phase1_done=bool(row["phase1_done"]),
         phase2_done=bool(row["phase2_done"]),
         phase3_done=bool(row["phase3_done"]),
+        status=row["status"],
     )
 
 
