@@ -62,12 +62,17 @@ class TestModeCog(commands.Cog):
                 "Use `/test-mode advance` to step through phases, "
                 "or `/test-mode review` to inspect season status."
             )
+            await interaction.response.send_message(msg, ephemeral=True)
         else:
+            # Defer so the flush (multiple Discord API calls) has time to complete
+            await interaction.response.defer(ephemeral=True)
+            from services.forecast_cleanup_service import flush_pending_deletions
+            await flush_pending_deletions(interaction.guild_id, self.bot)  # type: ignore[attr-defined]
             msg = (
                 "✅ Test mode **disabled**. "
                 "The scheduler will resume normal operation for any remaining pending phases."
             )
-        await interaction.response.send_message(msg, ephemeral=True)
+            await interaction.followup.send(msg, ephemeral=True)
 
     # ------------------------------------------------------------------
     # /test-mode advance

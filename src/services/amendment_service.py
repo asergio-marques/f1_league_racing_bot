@@ -143,6 +143,15 @@ class AmendmentService:
         if updated_round.format != RoundFormat.MYSTERY or now < p1_horizon:
             bot.scheduler_service.schedule_round(updated_round)
 
+        # Erase stored forecast messages for all phases (FR-011).
+        # delete_forecast_message respects the test-mode guard; any skipped
+        # deletions will be handled by flush_pending_deletions on toggle-off.
+        if any_phase_done:
+            from services.forecast_cleanup_service import delete_forecast_message
+            division_id: int = row["division_id"]
+            for phase_num in (1, 2, 3):
+                await delete_forecast_message(round_id, division_id, phase_num, bot)
+
         # 6. Invalidation broadcast
         if any_phase_done:
             from utils.message_builder import invalidation_message
