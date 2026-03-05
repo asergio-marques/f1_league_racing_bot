@@ -702,7 +702,11 @@ class SeasonCog(commands.Cog):
         for div in divisions:
             rounds = await self.bot.season_service.get_division_rounds(div.id)
             next_round = next(
-                (r for r in rounds if not (r.phase1_done and r.phase2_done and r.phase3_done)),
+                (
+                    r for r in rounds
+                    if r.format != RoundFormat.MYSTERY
+                    and not (r.phase1_done and r.phase2_done and r.phase3_done)
+                ),
                 None,
             )
             lines.append(
