@@ -29,7 +29,7 @@ async def run_phase3(round_id: int, bot: "Bot") -> None:
     """Execute Phase 3 for *round_id*."""
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
-            "SELECT r.id, r.track_name, r.phase2_done, r.phase3_done, "
+            "SELECT r.id, r.track_name, r.phase2_done, r.phase3_done, r.division_id, "
             "       d.forecast_channel_id, d.mention_role_id, s.server_id "
             "FROM rounds r "
             "JOIN divisions d ON d.id = r.division_id "
@@ -137,10 +137,16 @@ async def run_phase3(round_id: int, bot: "Bot") -> None:
     class _Div:
         forecast_channel_id = row["forecast_channel_id"]
 
-    await bot.output_router.post_forecast(
+    from services.forecast_cleanup_service import delete_forecast_message, store_forecast_message
+    await delete_forecast_message(round_id, row["division_id"], phase_number=2, bot=bot)
+
+    msg = await bot.output_router.post_forecast(
         _Div(),
         phase3_message(row["mention_role_id"], track_name, session_weather),
     )
+    if msg is not None:
+        await store_forecast_message(round_id, row["division_id"], 3, msg, bot.db_path)
+
     await bot.output_router.post_log(
         row["server_id"],
         phase_log_message(3, round_id, track_name, payload),

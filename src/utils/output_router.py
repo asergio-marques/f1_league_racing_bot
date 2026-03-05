@@ -10,7 +10,7 @@ No other channel receives bot messages.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import discord
 
@@ -31,13 +31,16 @@ class OutputRouter:
     # Public API
     # ------------------------------------------------------------------
 
-    async def post_forecast(self, division: "Division", content: str) -> None:
+    async def post_forecast(
+        self, division: "Division", content: str
+    ) -> "Optional[discord.Message]":
         """Post *content* to the division's forecast channel.
 
+        Returns the ``discord.Message`` on success, or ``None`` on failure.
         On failure, attempts to surface an alert to the log channel.
         """
         channel_id = division.forecast_channel_id
-        await self._send(channel_id, content, fallback_label="forecast")
+        return await self._send(channel_id, content, fallback_label="forecast")
 
     async def post_log(self, server_id: int, content: str) -> None:
         """Post *content* to the server's calculation log channel.
@@ -50,9 +53,9 @@ class OutputRouter:
             return
 
         channel_id = config.log_channel_id
-        success = await self._send(channel_id, content, fallback_label="log")
+        msg = await self._send(channel_id, content, fallback_label="log")
 
-        if not success:
+        if msg is None:
             # Last resort: try interaction channel
             await self._send(
                 config.interaction_channel_id,
@@ -67,10 +70,11 @@ class OutputRouter:
 
     async def _send(
         self, channel_id: int, content: str, *, fallback_label: str = "unknown"
-    ) -> bool:
+    ) -> "Optional[discord.Message]":
         """Attempt to send *content* to *channel_id*.
 
-        Returns True on success, False on failure. Never raises.
+        Returns the last ``discord.Message`` sent on success, ``None`` on failure.
+        Never raises.
         """
         channel = self._bot.get_channel(channel_id)
         if channel is None:
@@ -81,20 +85,21 @@ class OutputRouter:
                     "_send: cannot fetch %s channel id=%s: %s",
                     fallback_label, channel_id, exc,
                 )
-                return False
+                return None
 
         if not isinstance(channel, discord.TextChannel):
             log.error(
                 "_send: channel id=%s is not a TextChannel (got %s)",
                 channel_id, type(channel).__name__,
             )
-            return False
+            return None
 
         try:
             # Discord messages have a 2000-char limit; chunk if needed
+            last_msg: Optional[discord.Message] = None
             for chunk in _chunk_message(content):
-                await channel.send(chunk)
-            return True
+                last_msg = await channel.send(chunk)
+            return last_msg
         except discord.Forbidden as exc:
             log.error(
                 "_send: missing permissions for %s channel id=%s: %s",
@@ -105,7 +110,7 @@ class OutputRouter:
                 "_send: HTTP error posting to %s channel id=%s: %s",
                 fallback_label, channel_id, exc,
             )
-        return False
+        return None
 
 
 def _chunk_message(content: str, limit: int = 1990) -> list[str]:

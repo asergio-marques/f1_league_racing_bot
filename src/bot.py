@@ -83,6 +83,14 @@ async def main() -> None:
 
         bot.scheduler_service.register_mystery_notice_callback(_mystery_notice_cb)
 
+        # Register post-race forecast cleanup callback
+        from services.forecast_cleanup_service import run_post_race_cleanup
+
+        async def _forecast_cleanup_cb(round_id: int) -> None:
+            await run_post_race_cleanup(round_id, bot)
+
+        bot.scheduler_service.register_forecast_cleanup_callback(_forecast_cleanup_cb)
+
         # Register season-end callback (stored in _GLOBAL_SERVICE so the
         # module-level _season_end_job can reach it without pickling a closure)
         from services.season_end_service import execute_season_end as _execute_season_end

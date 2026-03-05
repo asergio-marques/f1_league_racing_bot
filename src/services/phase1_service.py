@@ -89,10 +89,14 @@ async def run_phase1(round_id: int, bot: "Bot") -> None:
     class _Div:
         forecast_channel_id = row["forecast_channel_id"]
 
-    await bot.output_router.post_forecast(
+    msg = await bot.output_router.post_forecast(
         _Div(),
         phase1_message(row["mention_role_id"], track_name, rpc),
     )
+    if msg is not None:
+        from services.forecast_cleanup_service import store_forecast_message
+        await store_forecast_message(round_id, row["division_id"], 1, msg, bot.db_path)
+
     await bot.output_router.post_log(
         row["server_id"],
         phase_log_message(1, round_id, track_name, payload),

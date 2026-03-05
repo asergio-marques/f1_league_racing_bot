@@ -94,6 +94,29 @@ async def _mystery_notice_job(round_id: int) -> None:
     await cb(round_id)
 
 
+async def _forecast_cleanup_job(round_id: int) -> None:
+    """Top-level APScheduler callable for post-race Phase 3 message cleanup.
+
+    Fires 24 hours after round start.  Follows the same module-level pattern as
+    ``_mystery_notice_job`` to avoid closure pickling issues with
+    SQLAlchemyJobStore.
+    """
+    if _GLOBAL_SERVICE is None:
+        log.warning(
+            "_forecast_cleanup_job fired but _GLOBAL_SERVICE is None "
+            "(round=%s) — skipping",
+            round_id,
+        )
+        return
+    cb = _GLOBAL_SERVICE._forecast_cleanup_callback
+    if cb is None:
+        log.warning(
+            "No forecast cleanup callback registered; skipping round %s.", round_id
+        )
+        return
+    await cb(round_id)
+
+
 class SchedulerService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -109,6 +132,8 @@ class SchedulerService:
         self._season_end_callback: "Callable | None" = None
         # Mystery notice callback injected after bot starts
         self._mystery_notice_callback: "Callable | None" = None
+        # Post-race forecast cleanup callback injected after bot starts
+        self._forecast_cleanup_callback: "Callable | None" = None
 
     def register_callbacks(
         self,
@@ -136,6 +161,14 @@ class SchedulerService:
         Called from bot.py on_ready after the scheduler is started.
         """
         self._mystery_notice_callback = callback
+
+    def register_forecast_cleanup_callback(self, callback: Callable) -> None:
+        """Register the async callable invoked 24 h after a round start.
+
+        The callable must accept ``(round_id: int)``.
+        Called from bot.py on_ready after the scheduler is started.
+        """
+        self._forecast_cleanup_callback = callback
 
     def start(self) -> None:
         global _GLOBAL_SERVICE
@@ -201,13 +234,27 @@ class SchedulerService:
             )
             log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
 
+        # Schedule post-race Phase 3 cleanup: +24 h after round start
+        cleanup_fire_at = scheduled_at + timedelta(hours=24)
+        cleanup_job_id = f"cleanup_r{rnd.id}"
+        self._scheduler.add_job(
+            _forecast_cleanup_job,
+            trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
+            id=cleanup_job_id,
+            replace_existing=True,
+            name=f"Forecast cleanup for round {rnd.id}",
+            kwargs={"round_id": rnd.id},
+        )
+        log.info("Scheduled %s at %s", cleanup_job_id, cleanup_fire_at.isoformat())
+
     def cancel_round(self, round_id: int) -> None:
-        """Remove all phase jobs and the mystery-notice job for *round_id*."""
+        """Remove all phase jobs, the mystery-notice job, and the cleanup job for *round_id*."""
         for job_id in (
             f"phase1_r{round_id}",
             f"phase2_r{round_id}",
             f"phase3_r{round_id}",
             f"mystery_r{round_id}",
+            f"cleanup_r{round_id}",
         ):
             try:
                 self._scheduler.remove_job(job_id)
