@@ -22,8 +22,9 @@ log = logging.getLogger(__name__)
 
 class PhaseEntry(TypedDict):
     round_id: int
+    round_number: int
     division_id: int
-    phase_number: int
+    phase_number: int  # 1|2|3 for normal phases; 0 for mystery notice
     track_name: str
     division_name: str
 
@@ -63,14 +64,18 @@ async def toggle_test_mode(server_id: int, db_path: str) -> bool:
 # ---------------------------------------------------------------------------
 
 async def get_next_pending_phase(server_id: int, db_path: str) -> PhaseEntry | None:
-    """Return the earliest pending phase entry, or None when all are done.
+    """Return the earliest pending action entry, or None when all are done.
 
     Resolution order:
       1. rounds.scheduled_at ASC   (real-world trigger time — earliest first)
       2. divisions.id ASC          (insertion order; tie-breaks same-date rounds)
-      3. phase number ASC          (Phase 1 before 2 before 3 for the same round)
+      3. action type ASC           (mystery notice / Phase 1 before 2 before 3)
 
-    Mystery rounds are excluded entirely.
+    Mystery rounds are included: when their mystery notice has not yet been sent
+    (phase1_done = 0 for that round), phase_number=0 is returned as a sentinel
+    so the cog can call run_mystery_notice instead of a phase service.  After the
+    notice is sent the cog sets phase1_done = 1 on the round, which excludes it
+    from future calls.
 
     If there is no ACTIVE season for this server, returns None.
 
@@ -83,20 +88,21 @@ async def get_next_pending_phase(server_id: int, db_path: str) -> PhaseEntry | N
         cursor = await db.execute(
             """
             SELECT
-                r.id          AS round_id,
+                r.id           AS round_id,
+                r.round_number,
                 r.division_id,
+                r.format,
                 r.track_name,
                 r.scheduled_at,
                 r.phase1_done,
                 r.phase2_done,
                 r.phase3_done,
-                d.name        AS division_name
+                d.name         AS division_name
             FROM rounds r
             JOIN divisions d ON d.id  = r.division_id
             JOIN seasons   s ON s.id  = d.season_id
             WHERE s.server_id = ?
               AND s.status    = 'ACTIVE'
-              AND r.format   != 'MYSTERY'
             ORDER BY r.scheduled_at ASC, d.id ASC
             """,
             (server_id,),
@@ -104,9 +110,24 @@ async def get_next_pending_phase(server_id: int, db_path: str) -> PhaseEntry | N
         rows = await cursor.fetchall()
 
     for row in rows:
+        is_mystery = str(row["format"]).upper() == "MYSTERY"
+        if is_mystery:
+            # phase1_done = 1 means the mystery notice has already been posted
+            if not row["phase1_done"]:
+                return PhaseEntry(
+                    round_id=row["round_id"],
+                    round_number=row["round_number"],
+                    division_id=row["division_id"],
+                    phase_number=0,  # sentinel: mystery notice
+                    track_name=row["track_name"] or "Mystery",
+                    division_name=row["division_name"],
+                )
+            continue  # notice already sent — skip this round
+        # Non-mystery: check each phase in order
         if not row["phase1_done"]:
             return PhaseEntry(
                 round_id=row["round_id"],
+                round_number=row["round_number"],
                 division_id=row["division_id"],
                 phase_number=1,
                 track_name=row["track_name"] or "Unknown",
@@ -115,6 +136,7 @@ async def get_next_pending_phase(server_id: int, db_path: str) -> PhaseEntry | N
         if not row["phase2_done"]:
             return PhaseEntry(
                 round_id=row["round_id"],
+                round_number=row["round_number"],
                 division_id=row["division_id"],
                 phase_number=2,
                 track_name=row["track_name"] or "Unknown",
@@ -123,13 +145,14 @@ async def get_next_pending_phase(server_id: int, db_path: str) -> PhaseEntry | N
         if not row["phase3_done"]:
             return PhaseEntry(
                 round_id=row["round_id"],
+                round_number=row["round_number"],
                 division_id=row["division_id"],
                 phase_number=3,
                 track_name=row["track_name"] or "Unknown",
                 division_name=row["division_name"],
             )
 
-    # All non-Mystery rounds have all three phases done (or no active season / no rounds)
+    # All rounds fully actioned (or no active season / no rounds)
     return None
 
 

@@ -96,6 +96,10 @@ async def reset_server_data(
                 f"DELETE FROM phase_results WHERE round_id IN ({ph})",
                 round_ids,
             )
+            await db.execute(
+                f"DELETE FROM forecast_messages WHERE round_id IN ({ph})",
+                round_ids,
+            )
 
         if division_ids:
             ph = _ph(division_ids)

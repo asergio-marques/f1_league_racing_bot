@@ -1,6 +1,107 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-03-05 — Bug fix: test mode mystery-round completion + permission]
+  - Session intent: fix two bugs in the existing test-mode feature.
+  - Constitution reused as-is; no principle amendments required.
+  - Version 1.1.0 confirmed; no bump warranted (patch-level corrections to
+    existing implementation — no governance or principle changes).
+
+  Bug 1 — Mystery rounds incorrectly shown as "next round" in /season-status
+    Root cause : `season_status` used `not (phase1_done AND phase2_done AND
+                 phase3_done)` to find next pending round; mystery rounds have
+                 all three permanently False → always reported as "next."
+    Fix        : src/cogs/season_cog.py — added `r.format != RoundFormat.MYSTERY`
+                 guard to the `next_round` generator expression.
+    Principle  : IV (mystery rounds skip all phases), VI (focused output).
+
+  Bug 2 — Season not ending after advancing all non-mystery phases via test mode
+    Root cause : The "all phases done" early-return path in /test-mode advance
+                 returned "nothing to advance" without attempting season end,
+                 leaving the season active if the previous Phase-3 advance's
+                 internal execute_season_end call was skipped (e.g. past-dates
+                 fast-path cleared data before the cog's own check could run,
+                 or a Discord API error aborted the call mid-execution).
+    Fix        : src/cogs/test_mode_cog.py — replaced the bare followup.send
+                 early return with a check: if an active season still exists
+                 when the queue is empty, cancel any pending scheduled job and
+                 call execute_season_end immediately; otherwise send the
+                 "nothing to advance" message.
+    Principle  : IV (season lifecycle), V (no silent state mutations).
+
+  Bug 3 — Test-mode commands accessible only to server admins, not to
+           interaction-role holders configured via /bot-init
+    Root cause : app_commands.Group for /test-mode had no `default_permissions`
+                 specified (discord.py MISSING sentinel), leaving Discord to use
+                 any previously cached per-server permission that may have been
+                 set to manage_guild from an earlier sync. Also missing
+                 `guild_only=True`, meaning the group was technically usable in
+                 DMs where `channel_guard`'s Member check would block all users.
+    Fix        : src/cogs/test_mode_cog.py — added `guild_only=True` and
+                 `default_permissions=None` to the Group definition.
+                 `default_permissions=None` forces Discord to reset to
+                 "no Discord-level restriction" on next tree sync, leaving
+                 `channel_guard` (interaction_role_id check) as the sole gate,
+                 which already satisfies Principle I Tier-1 access control.
+    Principle  : I (interaction role gates all commands), VII (guild channel only).
+
+  Bug 4 — Mystery round notice never fires during test-mode advance
+    Root cause : APScheduler job `mystery_r{id}` fires on a real-time schedule;
+                 in test mode the scheduler never runs, so Mystery round player-
+                 facing notices were silently skipped. `get_next_pending_phase`
+                 also filtered out Mystery rounds entirely, making them invisible
+                 to the advance queue.
+    Fix        : src/services/test_mode_service.py — widened query to include all
+                 rounds; returns `PhaseEntry(phase_number=0)` sentinel when a
+                 Mystery round has `phase1_done=0`; skips if `phase1_done=1`.
+                 src/cogs/test_mode_cog.py — added `phase_number == 0` dispatch
+                 block: calls `run_mystery_notice`, then sets `phase1_done=1` on
+                 success. `phase1_done` reused as "notice sent" proxy; safe
+                 because `all_phases_complete` and `build_review_summary` already
+                 filter `format != 'MYSTERY'`.
+    Principle  : IV (mystery rounds have no phases but still have a pre-pipeline
+                 notice step), V (no silent skips of expected bot actions).
+
+  Bug 5 — Reset raises FOREIGN KEY constraint failed when forecast_messages exists
+    Root cause : `reset_service` deleted `sessions` and `phase_results` before
+                 `rounds`, but omitted `forecast_messages` which has
+                 `REFERENCES rounds(id)` with FK enforcement ON. Any reset after
+                 Phase 1 had run violated the FK and aborted the transaction.
+    Fix        : src/services/reset_service.py — added
+                 `DELETE FROM forecast_messages WHERE round_id IN (...)`
+                 after `phase_results` and before `rounds` in the FK-safe chain.
+                 Regression test added: `test_reset_deletes_forecast_messages`.
+    Principle  : III (reset must complete cleanly to allow a fresh season start),
+                 V (no silent data integrity failures).
+
+  Bug 6 — Advance logs use internal DB id instead of user-visible round number
+    Root cause : Log lines in the advance command emitted `entry["round_id"]`
+                 (the `rounds.id` primary key), which is meaningless to league
+                 managers reading logs. `PhaseEntry` had no `round_number` field.
+    Fix        : src/services/test_mode_service.py — added `round_number: int`
+                 field to `PhaseEntry`; SELECT now includes `r.round_number`.
+                 src/cogs/test_mode_cog.py — log line now emits
+                 `round=<round_number>` and `id=<round_id>` for all paths.
+    Principle  : V (observable, human-legible audit trail).
+
+  Templates confirmed aligned (no changes needed):
+    ✅ .specify/templates/plan-template.md
+    ✅ .specify/templates/spec-template.md
+    ✅ .specify/templates/tasks-template.md
+    ✅ .specify/templates/agent-file-template.md
+    ✅ .specify/templates/checklist-template.md
+  Files modified:
+    ✅ src/cogs/season_cog.py            — next_round mystery exclusion (Bug 1)
+    ✅ src/cogs/test_mode_cog.py         — advance safety net + Group permissions
+                                           + mystery notice dispatch + round_number log
+                                           (Bugs 2, 3, 4, 6)
+    ✅ src/services/test_mode_service.py — PhaseEntry.round_number + phase_number=0
+                                           sentinel in get_next_pending_phase (Bugs 4, 6)
+    ✅ src/services/reset_service.py     — forecast_messages FK-safe delete (Bug 5)
+    ✅ tests/unit/test_test_mode_service.py — updated mystery tests (Bug 4)
+    ✅ tests/unit/test_reset_service.py  — regression test for FK reset (Bug 5)
+  No deferred TODOs. Last Amended date remains 2026-03-03 (no principle changes).
+
 [2026-03-05 — New feature addition: constitution reuse pass]
   - Constitution reused as-is; no new principles required for incremental feature work.
   - Session intent: add a new feature to an already-existing SpecKit-driven codebase.

@@ -147,14 +147,30 @@ async def test_empty_queue_returns_none() -> None:
         os.unlink(db_path)
 
 
-async def test_mystery_rounds_excluded() -> None:
-    """Mystery rounds must not appear in the queue even if phases are pending."""
+async def test_mystery_round_notice_pending_returns_entry() -> None:
+    """Mystery round with notice unsent (phase1_done=0) returns a phase_number=0 entry."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
     try:
         await run_migrations(db_path)
         await _seed(db_path, [
             {"format": "MYSTERY", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
+        ])
+        result = await get_next_pending_phase(1, db_path)
+        assert result is not None
+        assert result["phase_number"] == 0
+    finally:
+        os.unlink(db_path)
+
+
+async def test_mystery_round_notice_done_excluded() -> None:
+    """Mystery round with notice already sent (phase1_done=1) must not appear in queue."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        await _seed(db_path, [
+            {"format": "MYSTERY", "phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
         ])
         result = await get_next_pending_phase(1, db_path)
         assert result is None

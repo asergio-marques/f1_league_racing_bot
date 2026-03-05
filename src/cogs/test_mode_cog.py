@@ -40,6 +40,8 @@ class TestModeCog(commands.Cog):
     test_mode = app_commands.Group(
         name="test-mode",
         description="Test mode commands for system verification",
+        guild_only=True,
+        default_permissions=None,
     )
 
     # ------------------------------------------------------------------
@@ -104,11 +106,30 @@ class TestModeCog(commands.Cog):
         )
 
         if entry is None:
-            await interaction.followup.send(
-                "ℹ️ All phases for all rounds and divisions have been executed. "
-                "There is nothing left to advance.",
-                ephemeral=True,
+            # Non-mystery phases exhausted.  If the season is still active its end
+            # was supposed to fire on the previous Phase-3 advance; trigger it now
+            # as a safety net (e.g. timing race or past-dates path left season open).
+            from services.season_end_service import execute_season_end
+            season = await self.bot.season_service.get_active_season(  # type: ignore[attr-defined]
+                interaction.guild_id
             )
+            if season is not None:
+                self.bot.scheduler_service.cancel_season_end(  # type: ignore[attr-defined]
+                    interaction.guild_id
+                )
+                await execute_season_end(interaction.guild_id, season.id, self.bot)
+                await interaction.followup.send(
+                    "🏁 **Season complete!** All phases have been executed and "
+                    "all data has been cleared.\n"
+                    "Run `/season-setup` to begin a new season.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    "ℹ️ All phases for all rounds and divisions have been executed. "
+                    "There is nothing left to advance.",
+                    ephemeral=True,
+                )
             return
 
         # Dispatch to the appropriate phase service
@@ -116,17 +137,53 @@ class TestModeCog(commands.Cog):
         from services.phase2_service import run_phase2
         from services.phase3_service import run_phase3
 
-        phase_runners = {1: run_phase1, 2: run_phase2, 3: run_phase3}
         phase_number = entry["phase_number"]
-        runner = phase_runners[phase_number]
 
         log.info(
-            "Test mode advance: Phase %d, round_id=%d, division=%s, track=%s",
-            phase_number,
+            "Test mode advance: Phase %s, round=%d (id=%d), division=%s, track=%s",
+            "mystery-notice" if phase_number == 0 else phase_number,
+            entry["round_number"],
             entry["round_id"],
             entry["division_name"],
             entry["track_name"],
         )
+
+        # ── Mystery round notice (phase_number=0) ──────────────────────────────
+        if phase_number == 0:
+            from services.mystery_notice_service import run_mystery_notice
+            from db.database import get_connection
+            try:
+                await run_mystery_notice(entry["round_id"], self.bot)
+            except Exception:
+                log.exception(
+                    "Test mode advance: unhandled error in mystery notice for round_id=%d",
+                    entry["round_id"],
+                )
+                await interaction.followup.send(
+                    f"❌ An internal error occurred while posting the Mystery Round notice "
+                    f"for **{entry['division_name']}** — **Round {entry['round_number']}**. "
+                    "Check the bot logs for details.",
+                    ephemeral=True,
+                )
+                return
+            # Mark notice as sent so this round is excluded from future advance calls
+            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                await db.execute(
+                    "UPDATE rounds SET phase1_done = 1 WHERE id = ?",
+                    (entry["round_id"],),
+                )
+                await db.commit()
+            await interaction.followup.send(
+                f"🔮 Posted **Mystery Round notice** for "
+                f"**{entry['division_name']}** — **Round {entry['round_number']}**. "
+                f"Notice posted to the division forecast channel.",
+                ephemeral=True,
+            )
+            return
+
+        # ── Normal phase dispatch ───────────────────────────────────────────────
+        phase_runners = {1: run_phase1, 2: run_phase2, 3: run_phase3}
+        runner = phase_runners[phase_number]
 
         try:
             await runner(entry["round_id"], self.bot)

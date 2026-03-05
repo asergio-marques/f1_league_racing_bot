@@ -239,3 +239,51 @@ async def test_transaction_rollback_on_error(monkeypatch: pytest.MonkeyPatch) ->
     finally:
         monkeypatch.undo()
         os.unlink(db_path)
+
+
+async def test_reset_deletes_forecast_messages() -> None:
+    """Reset must delete forecast_messages rows before rounds to avoid FK violations.
+
+    Bug 5 regression guard: if forecast_messages is not cleared before rounds are
+    deleted, SQLite raises 'FOREIGN KEY constraint failed' and the reset aborts.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        season_id, _, _ = await _seed_full(db_path, server_id=1)
+
+        # Retrieve a seeded round and division to use as FK targets
+        async with get_connection(db_path) as db:
+            cur = await db.execute(
+                "SELECT r.id, r.division_id FROM rounds r "
+                "JOIN divisions d ON d.id = r.division_id "
+                "JOIN seasons s ON s.id = d.season_id "
+                "WHERE s.server_id = 1 LIMIT 1"
+            )
+            round_id, division_id = await cur.fetchone()
+
+            # Seed a forecast_messages row
+            await db.execute(
+                "INSERT INTO forecast_messages "
+                "(round_id, division_id, phase_number, message_id, posted_at) "
+                "VALUES (?, ?, 1, 999888777, '2026-05-01T12:00:00')",
+                (round_id, division_id),
+            )
+            await db.commit()
+
+        # Confirm it exists before reset
+        assert await _row_count(db_path, "forecast_messages") == 1
+
+        sched = _FakeScheduler()
+        # Must not raise (previously raised FK constraint failed)
+        await reset_server_data(1, db_path, sched, full=False)
+
+        # forecast_messages must now be empty
+        assert await _row_count(db_path, "forecast_messages") == 0
+        # Season data deleted
+        assert await _row_count(db_path, "seasons", server_id=1) == 0
+        # Config preserved (partial reset)
+        assert await _row_count(db_path, "server_configs", server_id=1) == 1
+    finally:
+        os.unlink(db_path)

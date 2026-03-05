@@ -213,6 +213,28 @@ class TestDeleteForecastMessageTestModeGuard:
         assert row is not None
         assert row["message_id"] == 999
 
+    async def test_delete_forecast_message_skips_in_test_mode(self, tmp_path):
+        """T013: _discord_delete is never called and the DB row is retained
+        when test_mode_active is True."""
+        db_path = await _make_db(str(tmp_path))
+        await _seed_base(db_path, test_mode=1)
+        await store_forecast_message(1, 1, 2, _make_mock_message(42), db_path)
+
+        bot = _make_bot(db_path, test_mode_active=True)
+        with patch(
+            "services.forecast_cleanup_service._discord_delete",
+            new_callable=AsyncMock,
+        ) as mock_discord_delete:
+            await delete_forecast_message(round_id=1, division_id=1, phase_number=2, bot=bot)
+
+        # _discord_delete must not have been called at all
+        mock_discord_delete.assert_not_called()
+
+        # DB row must still exist
+        row = await _get_stored_row(db_path, 1, 1, 2)
+        assert row is not None
+        assert row["message_id"] == 42
+
 
 # ---------------------------------------------------------------------------
 # flush_pending_deletions (T013 / SC-004)
@@ -259,6 +281,53 @@ class TestFlushPendingDeletions:
         await flush_pending_deletions(server_id=1, bot=bot)  # should not raise
 
         bot.get_channel.assert_not_called()
+
+    async def test_flush_pending_deletions_clears_accumulated_rows(self, tmp_path):
+        """T014: all rows accumulated across two divisions are deleted and
+        _discord_delete is called exactly once per row."""
+        db_path = await _make_db(str(tmp_path))
+        await _seed_base(db_path, test_mode=0)
+
+        # Add a second division
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO divisions (id, season_id, name, forecast_channel_id, mention_role_id) "
+                "VALUES (2, 1, 'Div B', 888, 666)"
+            )
+            await db.commit()
+
+        # Simulate messages stored while test mode was active — two divisions, two rows each
+        async with get_connection(db_path) as db:
+            for div_id, phase, msg_id in (
+                (1, 1, 1001),
+                (1, 2, 1002),
+                (2, 1, 2001),
+                (2, 2, 2002),
+            ):
+                await db.execute(
+                    "INSERT INTO forecast_messages "
+                    "(round_id, division_id, phase_number, message_id, posted_at) "
+                    "VALUES (1, ?, ?, ?, '2026-06-01T12:00:00')",
+                    (div_id, phase, msg_id),
+                )
+            await db.commit()
+
+        bot = _make_bot(db_path, test_mode_active=False)
+        with patch(
+            "services.forecast_cleanup_service._discord_delete",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_discord_delete:
+            await flush_pending_deletions(server_id=1, bot=bot)
+
+        # _discord_delete called exactly once per accumulated row (4 total)
+        assert mock_discord_delete.call_count == 4
+
+        # All forecast_messages rows removed
+        async with get_connection(db_path) as db:
+            cursor = await db.execute("SELECT COUNT(*) FROM forecast_messages")
+            count = (await cursor.fetchone())[0]
+        assert count == 0
 
 
 # ---------------------------------------------------------------------------
