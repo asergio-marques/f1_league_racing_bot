@@ -31,15 +31,15 @@ SYNC IMPACT REPORT
 
   Bug 3 — Test-mode commands accessible only to server admins, not to
            interaction-role holders configured via /bot-init
-    Root cause : app_commands.Group for /test-mode had no `default_member_permissions`
+    Root cause : app_commands.Group for /test-mode had no `default_permissions`
                  specified (discord.py MISSING sentinel), leaving Discord to use
                  any previously cached per-server permission that may have been
                  set to manage_guild from an earlier sync. Also missing
                  `guild_only=True`, meaning the group was technically usable in
                  DMs where `channel_guard`'s Member check would block all users.
     Fix        : src/cogs/test_mode_cog.py — added `guild_only=True` and
-                 `default_member_permissions=None` to the Group definition.
-                 `default_member_permissions=None` forces Discord to reset to
+                 `default_permissions=None` to the Group definition.
+                 `default_permissions=None` forces Discord to reset to
                  "no Discord-level restriction" on next tree sync, leaving
                  `channel_guard` (interaction_role_id check) as the sole gate,
                  which already satisfies Principle I Tier-1 access control.

@@ -41,7 +41,7 @@ class TestModeCog(commands.Cog):
         name="test-mode",
         description="Test mode commands for system verification",
         guild_only=True,
-        default_member_permissions=None,
+        default_permissions=None,
     )
 
     # ------------------------------------------------------------------

@@ -84,7 +84,7 @@ admin/Manage Server permissions. The commands do not appear in DMs.
 non-admin user with the interaction role can issue `/test-mode toggle` successfully, and
 that an admin without the role is rejected by `channel_guard`.
 
-- [X] T004 [US3] Add `guild_only=True` and `default_member_permissions=None` to the
+- [X] T004 [US3] Add `guild_only=True` and `default_permissions=None` to the
   `test_mode = app_commands.Group(...)` class attribute in `src/cogs/test_mode_cog.py`
   so Discord resets any cached platform-level restriction on the next tree sync and
   `channel_guard` remains the sole enforcement gate
@@ -136,7 +136,7 @@ test suite remains green.
 ```text
 # T002 (season_cog.py) and T004 (test_mode_cog.py Group attr) are safe to parallelize:
 Task T002: next_round mystery guard in src/cogs/season_cog.py
-Task T004: guild_only + default_member_permissions in src/cogs/test_mode_cog.py
+Task T004: guild_only + default_permissions in src/cogs/test_mode_cog.py
 
 # T003 (test_mode_cog.py advance body) must be sequential with T004 (same file):
 Task T004 first → then Task T003

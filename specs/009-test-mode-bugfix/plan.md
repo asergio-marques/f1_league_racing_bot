@@ -25,10 +25,10 @@ Three bugs in the `002-test-mode` implementation are corrected:
    and an active season still exists, call `execute_season_end` as a safety net.
 
 3. **Test-mode commands gated to server admins instead of interaction-role holders** —
-   The `test_mode` `app_commands.Group` had no `default_member_permissions` value,
+   The `test_mode` `app_commands.Group` had no `default_permissions` value,
    leaving Discord to apply any previously cached per-server restriction (which could be
    `manage_guild`). Additionally, `guild_only` was not set, allowing the group to appear
-   usable in DMs. Fix: add `guild_only=True` and `default_member_permissions=None` to the
+   usable in DMs. Fix: add `guild_only=True` and `default_permissions=None` to the
    Group definition so Discord resets permissions on the next tree sync, leaving
    `channel_guard` (interaction-role check) as the sole gate.
 
@@ -63,7 +63,7 @@ Three bugs in the `002-test-mode` implementation are corrected:
 | File | Change |
 |------|--------|
 | `src/cogs/season_cog.py` | Add `r.format != RoundFormat.MYSTERY` guard to `next_round` generator in `season_status` |
-| `src/cogs/test_mode_cog.py` | Replace bare `entry is None` early-return with season-end safety net; add `guild_only=True` + `default_member_permissions=None` to `test_mode` Group |
+| `src/cogs/test_mode_cog.py` | Replace bare `entry is None` early-return with season-end safety net; add `guild_only=True` + `default_permissions=None` to `test_mode` Group |
 | `.specify/memory/constitution.md` | Add Sync Impact Report entry documenting the three bugs and fixes |
 
 ## Project Structure

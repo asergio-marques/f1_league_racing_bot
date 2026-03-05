@@ -101,7 +101,7 @@ verify it is accepted.
 - What if the season is deleted between `get_next_pending_phase` returning `None` and the
   safety-net `get_active_season` call? The `execute_season_end` idempotency guard handles
   this: if no active season is found it returns immediately.
-- What if Discord's tree sync has not yet propagated the updated `default_member_permissions`
+- What if Discord's tree sync has not yet propagated the updated `default_permissions`
   to all servers? Users may still see the old restriction until the next sync completes
   (up to 1 hour for global commands).
 
@@ -115,7 +115,7 @@ verify it is accepted.
 | FR-002 | When `/test-mode advance` yields an empty phase queue and an active season still exists, the bot MUST call `execute_season_end` and report season completion | Bug 2 |
 | FR-003 | When `/test-mode advance` yields an empty queue and no active season exists, the bot MUST report "nothing to advance" | Bug 2 |
 | FR-004 | The `test_mode` `app_commands.Group` MUST have `guild_only=True` | Bug 3 |
-| FR-005 | The `test_mode` `app_commands.Group` MUST have `default_member_permissions=None` so Discord applies no platform-level restriction | Bug 3 |
+| FR-005 | The `test_mode` `app_commands.Group` MUST have `default_permissions=None` so Discord applies no platform-level restriction | Bug 3 |
 | FR-006 | All `/test-mode` subcommands MUST remain gated by `channel_guard` (interaction role + interaction channel) | Bug 3 |
 
 ### Non-Functional Requirements
