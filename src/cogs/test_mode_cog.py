@@ -260,3 +260,57 @@ class TestModeCog(commands.Cog):
             self.bot.db_path,  # type: ignore[attr-defined]
         )
         await interaction.response.send_message(summary, ephemeral=True)
+
+    # ------------------------------------------------------------------
+    # /test-mode set-former-driver
+    # ------------------------------------------------------------------
+
+    @test_mode.command(
+        name="set-former-driver",
+        description="Manually set the former_driver flag on a driver profile (test mode only).",
+    )
+    @app_commands.describe(
+        user="The driver whose flag is being updated.",
+        value="The new value for the former_driver flag.",
+    )
+    @admin_only
+    async def set_former_driver(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+        value: bool,
+    ) -> None:
+        """Set former_driver flag — only available when test mode is active."""
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ This command is only available when test mode is enabled.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            old_val, new_val = await self.bot.driver_service.set_former_driver(  # type: ignore[attr-defined]
+                interaction.guild_id,
+                str(user.id),
+                value,
+                interaction.user.id,
+                str(interaction.user),
+            )
+        except ValueError as exc:
+            await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
+            return
+
+        await interaction.response.send_message(
+            f"✅ former_driver flag updated.\n"
+            f"   User     : {user.mention}\n"
+            f"   Old value: {old_val}\n"
+            f"   New value: {new_val}",
+            ephemeral=True,
+        )
+        log.info(
+            "set-former-driver on server %s: user=%s %s→%s by %s",
+            interaction.guild_id, user.id, old_val, new_val, interaction.user,
+        )

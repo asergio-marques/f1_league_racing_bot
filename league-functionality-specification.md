@@ -63,3 +63,21 @@ Beyond the aforementioned changes to seasons as a consequence of the implementat
     - Season approval will be blocked by the bot if all the divisions' tiers are not in sequential order. Furthermore, in the database, the divisions will be sorted in increasing tier order, for clarity, with tier 1 being the highest.
 
 Please clarify possible impacts of this implementation on performance and storage footprint of the bot.
+
+# Changes to bot initialization flow
+Bot initialization flow, right now, accounts only for the weather forecast functionality. There will be a change in approach to modularize and customize bot functionality, allowing users to enable and disable parts. As the division, round, team and driver flows are all foundational concepts, they may not be disabled; however, all other modules and functionality will be installed disabled by default. For this reason, the following considerations will be had regarding the weather forecast module:
+- <NEW COMMAND> A module enable weather command will be made available to server administrators to enable weather functionality.
+- <NEW COMMAND> A module disable weather command will be made available to server administrators to disable weather functionality.
+- Weather events shall only be scheduled if weather functionality is enabled.
+- Weather events shall be deleted when weather functionality is toggled off.
+- Weather events shall be created for all rounds yet to happen when weather functionality is toggled on. If any event is scheduled "in the past", then it shall be executed in order (meaning, if Phase 1 and Phase 2 must be triggered immediately, Phase 2 must be triggered after Phase 1).
+
+# Signup wizard and flow
+## Enabling signup flow
+- <NEW COMMAND> A module enable signup command will be made available to server administrators to enable signup functionality. This command will take a channel designated the "sign up channel", a user role which will be denominated the "base role", and a user which will be denominated the "signed up" role.
+- <NEW COMMAND> A module disable signup command will be made available to server administrators to disable signup functionality, clearing all settings from the previous enabling.
+- <NEW COMMAND> A signup time-type command will be made available to server administrators that provides two options via buttons: "Time Trial" or "Short Qualification". The option chosen will be recorded for use in the signup wizard.
+- <NEW COMMAND>
+
+
+The name of the commands is an example; the on

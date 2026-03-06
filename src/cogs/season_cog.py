@@ -34,7 +34,7 @@ from models.division import Division
 from models.round import RoundFormat
 from models.track import TRACK_DEFAULTS, TRACK_IDS
 from utils.channel_guard import channel_guard, admin_only
-from utils.message_builder import format_division_list, format_round_list
+from utils.message_builder import format_division_list, format_round_list, format_roster_block
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ class PendingDivision:
     name: str = ""
     role_id: int = 0
     channel_id: int = 0
+    tier: int = 0
     rounds: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -57,6 +58,7 @@ class PendingConfig:
     start_date: date = field(default_factory=date.today)
     divisions: list[PendingDivision] = field(default_factory=list)
     season_id: int = 0  # set after first DB snapshot; 0 = not yet persisted
+    season_number: int = 0  # set after first DB snapshot
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +86,7 @@ def _pending_to_division_models(cfg: PendingConfig) -> list[Division]:
             name=d.name,
             mention_role_id=d.role_id,
             forecast_channel_id=d.channel_id,
+            tier=d.tier,
         )
         for d in cfg.divisions
         if d.name
@@ -143,7 +146,7 @@ class SeasonCog(commands.Cog):
         await self._snapshot_pending(cfg)
 
         await interaction.response.send_message(
-            "\u2705 Season setup started.\n\n"
+            f"\u2705 Season setup started. **Season #{cfg.season_number}** is being configured.\n\n"
             "Use `/division add` for each division, then `/round add` for each round.\n"
             "When done, run `/season review` to review and approve.",
             ephemeral=True,
@@ -164,26 +167,52 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        season_num = f" (Season #{cfg.season_number})" if cfg.season_number > 0 else ""
         lines = [
-            "**Season Review**",
+            f"**Season Review{season_num}**",
             f"Start date: {cfg.start_date}",
             f"Server: {interaction.guild_id}",
             "",
         ]
-        for div in cfg.divisions:
-            if not div.name:
-                continue
-            lines.append(
-                f"\U0001f4c2 **{div.name}** | "
-                f"Role <@&{div.role_id}> | "
-                f"Channel <#{div.channel_id}>"
-            )
-            for r in div.rounds:
+
+        # Load from DB to get tier and team roster data
+        if cfg.season_id != 0:
+            db_divisions = await self.bot.season_service.get_divisions(cfg.season_id)
+            for div in db_divisions:
+                if not div.name:
+                    continue
+                tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
                 lines.append(
-                    f"  Round {r['round_number']}: {r['format'].value} "
-                    f"@ {r['track_name'] or 'Mystery'} \u2014 {r['scheduled_at'].isoformat()}"
+                    f"\U0001f4c2 **{div.name}**{tier_tag} | "
+                    f"Role <@&{div.mention_role_id}> | "
+                    f"Channel <#{div.forecast_channel_id}>"
                 )
-            lines.append("")
+                rounds_db = await self.bot.season_service.get_division_rounds(div.id)
+                for r in rounds_db:
+                    lines.append(
+                        f"  Round {r.round_number}: {r.format.value} "
+                        f"@ {r.track_name or 'Mystery'} \u2014 {r.scheduled_at.isoformat()}"
+                    )
+                teams = await self.bot.team_service.get_division_teams(div.id)
+                if teams:
+                    lines.append(format_roster_block(teams))
+                lines.append("")
+        else:
+            for div in cfg.divisions:
+                if not div.name:
+                    continue
+                tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
+                lines.append(
+                    f"\U0001f4c2 **{div.name}**{tier_tag} | "
+                    f"Role <@&{div.role_id}> | "
+                    f"Channel <#{div.channel_id}>"
+                )
+                for r in div.rounds:
+                    lines.append(
+                        f"  Round {r['round_number']}: {r['format'].value} "
+                        f"@ {r['track_name'] or 'Mystery'} \u2014 {r['scheduled_at'].isoformat()}"
+                    )
+                lines.append("")
 
         view = _ApproveView(self)
         await interaction.response.send_message("\n".join(lines), view=view, ephemeral=True)
@@ -294,6 +323,8 @@ class SeasonCog(commands.Cog):
 
         await self.bot.season_service.delete_season(season.id)
 
+        await self.bot.season_service.increment_previous_season_number(interaction.guild_id)
+
         await interaction.followup.send(
             "\u2705 Season cancelled and all data deleted.",
             ephemeral=True,
@@ -318,6 +349,7 @@ class SeasonCog(commands.Cog):
         name="Division name",
         role="The Discord role to mention for this division",
         forecast_channel="Channel where weather forecasts are posted",
+        tier="Tier number for this division (1 = top tier, must be sequential and unique)",
     )
     @channel_guard
     @admin_only
@@ -327,11 +359,19 @@ class SeasonCog(commands.Cog):
         name: str,
         role: discord.Role,
         forecast_channel: discord.TextChannel,
+        tier: int,
     ) -> None:
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
             await interaction.response.send_message(
                 "\u274c No pending season setup. Run `/season setup` first.",
+                ephemeral=True,
+            )
+            return
+
+        if tier < 1:
+            await interaction.response.send_message(
+                "\u26d4 Tier must be 1 or higher.",
                 ephemeral=True,
             )
             return
@@ -343,7 +383,14 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        div = PendingDivision(name=name, role_id=role.id, channel_id=forecast_channel.id)
+        if any(d.tier == tier for d in cfg.divisions if d.name):
+            await interaction.response.send_message(
+                f"\u26d4 A division with tier **{tier}** already exists in this setup.",
+                ephemeral=True,
+            )
+            return
+
+        div = PendingDivision(name=name, role_id=role.id, channel_id=forecast_channel.id, tier=tier)
         empty = [d for d in cfg.divisions if not d.name]
         if empty:
             idx = cfg.divisions.index(empty[0])
@@ -354,7 +401,7 @@ class SeasonCog(commands.Cog):
         await self._snapshot_pending(cfg)
 
         await interaction.response.send_message(
-            f"\u2705 Division **{name}** added.\n"
+            f"\u2705 Division **{name}** (Tier {tier}) added.\n"
             f"Role: {role.mention} | Channel: {forecast_channel.mention}\n\n"
             + format_division_list(_pending_to_division_models(cfg)),
             ephemeral=True,
@@ -369,6 +416,7 @@ class SeasonCog(commands.Cog):
         new_name="Name for the new division",
         role="The Discord role to mention for the new division",
         forecast_channel="Forecast channel for the new division",
+        tier="Tier number for the new division (must be unique within this season)",
         day_offset="Days to shift all round datetimes (can be negative)",
         hour_offset="Hours to shift all round datetimes (can be negative, decimals OK)",
     )
@@ -381,6 +429,7 @@ class SeasonCog(commands.Cog):
         new_name: str,
         role: discord.Role,
         forecast_channel: discord.TextChannel,
+        tier: int,
         day_offset: int,
         hour_offset: float,
     ) -> None:
@@ -388,6 +437,13 @@ class SeasonCog(commands.Cog):
         if season_id is None:
             await interaction.response.send_message(
                 "\u274c `/division duplicate` can only be used during season setup.",
+                ephemeral=True,
+            )
+            return
+
+        if tier < 1:
+            await interaction.response.send_message(
+                "\u26d4 Tier must be 1 or higher.",
                 ephemeral=True,
             )
             return
@@ -404,6 +460,13 @@ class SeasonCog(commands.Cog):
         if any(d.name.lower() == new_name.lower() for d in divisions):
             await interaction.response.send_message(
                 f"\u274c A division named **{new_name}** already exists.",
+                ephemeral=True,
+            )
+            return
+
+        if any(d.tier == tier for d in divisions):
+            await interaction.response.send_message(
+                f"\u26d4 A division with tier **{tier}** already exists in this season.",
                 ephemeral=True,
             )
             return
@@ -428,14 +491,22 @@ class SeasonCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        new_div = await self.bot.season_service.duplicate_division(
-            division_id=src_div.id,
-            name=new_name,
-            role_id=role.id,
-            forecast_channel_id=forecast_channel.id,
-            day_offset=day_offset,
-            hour_offset=hour_offset,
-        )
+        try:
+            new_div = await self.bot.season_service.duplicate_division(
+                division_id=src_div.id,
+                name=new_name,
+                role_id=role.id,
+                forecast_channel_id=forecast_channel.id,
+                day_offset=day_offset,
+                hour_offset=hour_offset,
+                tier=tier,
+            )
+        except ValueError as exc:
+            await interaction.followup.send(f"\u26d4 {exc}", ephemeral=True)
+            return
+
+        # Seed teams for the newly created division
+        await self.bot.team_service.seed_division_teams(new_div.id, interaction.guild_id)
 
         cfg = self._get_pending_for_server(interaction.guild_id)
         if cfg is not None:
@@ -446,7 +517,7 @@ class SeasonCog(commands.Cog):
 
         warn_block = ("\n" + "\n".join(warnings)) if warnings else ""
         await interaction.followup.send(
-            f"\u2705 Division **{new_name}** created from **{source_name}**"
+            f"\u2705 Division **{new_name}** (Tier {tier}) created from **{source_name}**"
             f" (offset: {day_offset:+}d {hour_offset:+}h).\n\n"
             + format_division_list(updated_divisions)
             + "\n\n"
@@ -1149,14 +1220,22 @@ class SeasonCog(commands.Cog):
                 "name": d.name,
                 "role_id": d.role_id,
                 "channel_id": d.channel_id,
+                "tier": d.tier,
                 "rounds": d.rounds,
             }
             for d in cfg.divisions
             if d.name
         ]
-        cfg.season_id = await self.bot.season_service.save_pending_snapshot(
+        new_season_id, season_number = await self.bot.season_service.save_pending_snapshot(
             cfg.server_id, cfg.start_date, cfg.season_id, divisions_data
         )
+        cfg.season_id = new_season_id
+        cfg.season_number = season_number
+
+        # Re-seed teams for all new divisions (old team_instances were cleaned up by snapshot)
+        new_divisions = await self.bot.season_service.get_divisions(cfg.season_id)
+        for div in new_divisions:
+            await self.bot.team_service.seed_division_teams(div.id, cfg.server_id)
 
     async def _reload_pending_from_db(self, cfg: PendingConfig) -> None:
         """Resync the in-memory PendingConfig.divisions from DB (after direct DB operations)."""
@@ -1170,6 +1249,7 @@ class SeasonCog(commands.Cog):
                 name=d.name,
                 role_id=d.mention_role_id,
                 channel_id=d.forecast_channel_id,
+                tier=d.tier,
                 rounds=[
                     {
                         "round_number": r.round_number,
@@ -1190,11 +1270,13 @@ class SeasonCog(commands.Cog):
                 server_id=s["server_id"],
                 start_date=s["start_date"],
                 season_id=s["season_id"],
+                season_number=s.get("season_number", 0),
                 divisions=[
                     PendingDivision(
                         name=d["name"],
                         role_id=d["role_id"],
                         channel_id=d["channel_id"],
+                        tier=d.get("tier", 0),
                         rounds=d["rounds"],
                     )
                     for d in s["divisions"]
@@ -1221,6 +1303,17 @@ class SeasonCog(commands.Cog):
 
         season_svc = self.bot.season_service
 
+        # Validate tier sequential integrity before committing
+        try:
+            await season_svc.validate_division_tiers(cfg.season_id)
+        except ValueError as exc:
+            msg = f"\u26d4 Season cannot be approved. {exc}"
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+            return
+
         divisions = await season_svc.get_divisions(cfg.season_id)
         all_rounds = []
         for div_db in divisions:
@@ -1241,7 +1334,7 @@ class SeasonCog(commands.Cog):
 
         msg = (
             f"\u2705 **Season approved and activated!**\n"
-            f"Season ID: {cfg.season_id} | "
+            f"Season #{cfg.season_number} (ID: {cfg.season_id}) | "
             f"Rounds scheduled: {len(all_rounds)}"
         )
         if interaction.response.is_done():

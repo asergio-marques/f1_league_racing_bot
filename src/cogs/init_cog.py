@@ -61,6 +61,9 @@ class InitCog(commands.Cog):
         )
         await self.bot.config_service.save_server_config(cfg)
 
+        # Seed default F1 teams + Reserve for this server if none exist yet
+        await self.bot.team_service.seed_default_teams_if_empty(server_id)  # type: ignore[attr-defined]
+
         action = "updated" if existing else "saved"
         await interaction.response.send_message(
             f"✅ Bot configuration {action}!\n"

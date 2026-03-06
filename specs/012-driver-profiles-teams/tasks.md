@@ -19,14 +19,14 @@
 **Purpose**: Create all new source files as stubs and the migration SQL. These must exist before
 any implementation work begins.
 
-- [ ] T001 Create `src/db/migrations/008_driver_profiles_teams.sql` with all DDL: CREATE TABLE for `driver_profiles`, `driver_season_assignments`, `driver_history_entries`, `default_teams`, `team_instances`, `team_seats`; and ALTER TABLE for `server_configs` (+`previous_season_number`), `seasons` (+`season_number`), `divisions` (+`tier`)
-- [ ] T002 [P] Create `src/models/driver_profile.py` containing the `DriverState` string-enum (all 8 states) and `DriverProfile`, `DriverSeasonAssignment`, `DriverHistoryEntry` dataclasses matching data-model.md
-- [ ] T003 [P] Create `src/models/team.py` containing `DefaultTeam`, `TeamInstance`, `TeamSeat` dataclasses matching data-model.md
-- [ ] T004 [P] Create `src/cogs/driver_cog.py` as a stub: `DriverCog(commands.Cog)` class with a single `driver = app_commands.Group(name="driver", …)` attribute; no commands yet
-- [ ] T005 [P] Create `src/cogs/team_cog.py` as a stub: `TeamCog(commands.Cog)` class with a single `team = app_commands.Group(name="team", …)` attribute; no commands yet
-- [ ] T006 [P] Create `src/services/driver_service.py` as a stub: `DriverService` class with `__init__(self, db)` and empty method signatures for all methods referenced in this task list
-- [ ] T007 [P] Create `src/services/team_service.py` as a stub: `TeamService` class with `__init__(self, db)` and empty method signatures for all methods referenced in this task list
-- [ ] T008 Register `DriverCog` and `TeamCog` in `src/bot.py` alongside the existing cog registrations; instantiate with appropriate service dependencies
+- [X] T001 Create `src/db/migrations/008_driver_profiles_teams.sql` with all DDL: CREATE TABLE for `driver_profiles`, `driver_season_assignments`, `driver_history_entries`, `default_teams`, `team_instances`, `team_seats`; and ALTER TABLE for `server_configs` (+`previous_season_number`), `seasons` (+`season_number`), `divisions` (+`tier`)
+- [X] T002 [P] Create `src/models/driver_profile.py` containing the `DriverState` string-enum (all 8 states) and `DriverProfile`, `DriverSeasonAssignment`, `DriverHistoryEntry` dataclasses matching data-model.md
+- [X] T003 [P] Create `src/models/team.py` containing `DefaultTeam`, `TeamInstance`, `TeamSeat` dataclasses matching data-model.md
+- [X] T004 [P] Create `src/cogs/driver_cog.py` as a stub: `DriverCog(commands.Cog)` class with a single `driver = app_commands.Group(name="driver", …)` attribute; no commands yet
+- [X] T005 [P] Create `src/cogs/team_cog.py` as a stub: `TeamCog(commands.Cog)` class with a single `team = app_commands.Group(name="team", …)` attribute; no commands yet
+- [X] T006 [P] Create `src/services/driver_service.py` as a stub: `DriverService` class with `__init__(self, db)` and empty method signatures for all methods referenced in this task list
+- [X] T007 [P] Create `src/services/team_service.py` as a stub: `TeamService` class with `__init__(self, db)` and empty method signatures for all methods referenced in this task list
+- [X] T008 Register `DriverCog` and `TeamCog` in `src/bot.py` alongside the existing cog registrations; instantiate with appropriate service dependencies
 
 **Checkpoint**: All new files exist; `python -c "from src.cogs.driver_cog import DriverCog"` succeeds with no import errors.
 
@@ -39,9 +39,9 @@ by US6 service logic and by integration tests that load DB rows into models.
 
 **⚠️ CRITICAL**: Must complete before US6 service work begins.
 
-- [ ] T009 [P] Add `tier: int = 0` field to the `Division` dataclass in `src/models/division.py` (append after existing fields; default 0 grandfathers pre-feature rows)
-- [ ] T010 [P] Add `season_number: int = 0` field to the `Season` dataclass in `src/models/season.py` (append after existing fields)
-- [ ] T011 [P] Add `previous_season_number: int = 0` field to the `ServerConfig` dataclass in `src/models/server_config.py` (append after existing fields)
+- [X] T009 [P] Add `tier: int = 0` field to the `Division` dataclass in `src/models/division.py` (append after existing fields; default 0 grandfathers pre-feature rows)
+- [X] T010 [P] Add `season_number: int = 0` field to the `Season` dataclass in `src/models/season.py` (append after existing fields)
+- [X] T011 [P] Add `previous_season_number: int = 0` field to the `ServerConfig` dataclass in `src/models/server_config.py` (append after existing fields)
 
 **Checkpoint**: Existing unit tests still pass; no `TypeError` on model construction.
 
@@ -58,9 +58,9 @@ service calls) to exercise every allowed and disallowed transition listed in the
 correct resulting state, assert profile row deleted when `former_driver=False` and target is
 `NOT_SIGNED_UP`, assert profile retained when `former_driver=True`.
 
-- [ ] T012 [US1] Implement `DriverService` DB helpers in `src/services/driver_service.py`: `get_profile(server_id, discord_user_id) -> DriverProfile | None` (SELECT), `_create_profile(server_id, discord_user_id, initial_state) -> DriverProfile` (INSERT), `_update_state(profile_id, new_state)` (UPDATE), `_clear_seat_references(profile_id)` (UPDATE team_seats SET driver_profile_id = NULL), `_delete_profile(profile_id)` (DELETE)
-- [ ] T013 [US1] Implement `ALLOWED_TRANSITIONS` constant dict and `DriverService.transition(server_id, discord_user_id, new_state, *, test_mode_active=False) -> DriverProfile` in `src/services/driver_service.py`: validate transition is in ALLOWED_TRANSITIONS[current_state], raise `ValueError` with descriptive message on invalid transition; if target is `NOT_SIGNED_UP` and `former_driver=False`, call `_clear_seat_references` then `_delete_profile`; otherwise persist the new state
-- [ ] T014 [US1] Add test-mode extended transitions in `DriverService.transition()` in `src/services/driver_service.py`: when `test_mode_active=True`, also permit `NOT_SIGNED_UP → UNASSIGNED` and `NOT_SIGNED_UP → ASSIGNED` (creating the profile row at the initial state if it does not exist); keep all standard transitions available regardless of test_mode
+- [X] T012 [US1] Implement `DriverService` DB helpers in `src/services/driver_service.py`: `get_profile(server_id, discord_user_id) -> DriverProfile | None` (SELECT), `_create_profile(server_id, discord_user_id, initial_state) -> DriverProfile` (INSERT), `_update_state(profile_id, new_state)` (UPDATE), `_clear_seat_references(profile_id)` (UPDATE team_seats SET driver_profile_id = NULL), `_delete_profile(profile_id)` (DELETE)
+- [X] T013 [US1] Implement `ALLOWED_TRANSITIONS` constant dict and `DriverService.transition(server_id, discord_user_id, new_state, *, test_mode_active=False) -> DriverProfile` in `src/services/driver_service.py`: validate transition is in ALLOWED_TRANSITIONS[current_state], raise `ValueError` with descriptive message on invalid transition; if target is `NOT_SIGNED_UP` and `former_driver=False`, call `_clear_seat_references` then `_delete_profile`; otherwise persist the new state
+- [X] T014 [US1] Add test-mode extended transitions in `DriverService.transition()` in `src/services/driver_service.py`: when `test_mode_active=True`, also permit `NOT_SIGNED_UP → UNASSIGNED` and `NOT_SIGNED_UP → ASSIGNED` (creating the profile row at the initial state if it does not exist); keep all standard transitions available regardless of test_mode
 
 **Checkpoint**: User Story 1 is fully functional. All 16 acceptance scenarios from spec.md US1 can be exercised via direct DriverService calls. Profile row observed absent/present as expected.
 
@@ -75,8 +75,8 @@ fully audited, with full profile data preserved.
 User ID → not found; look up by new User ID → full profile intact; audit log contains
 `DRIVER_USER_ID_REASSIGN` entry.
 
-- [ ] T015 [US2] Implement `DriverService.reassign_user_id(server_id, old_user_id: str, new_user_id: str) -> DriverProfile` in `src/services/driver_service.py`: verify profile exists for `old_user_id` (else raise), verify no profile exists for `new_user_id` (else raise), UPDATE `driver_profiles.discord_user_id`, INSERT into `audit_entries` with `change_type="DRIVER_USER_ID_REASSIGN"`, `old_value=old_user_id`, `new_value=new_user_id`
-- [ ] T016 [US2] Implement `/driver reassign` subcommand in `src/cogs/driver_cog.py`: `old_user` param accepts `discord.Member` or raw snowflake string (handle both), `new_user` param is `discord.Member`; decorate with `@admin_only` and `@channel_guard`; call `DriverService.reassign_user_id`; return ephemeral success response with old/new User ID, current state, and former_driver flag; map service errors to ephemeral `⛔` messages per contracts/commands.md
+- [X] T015 [US2] Implement `DriverService.reassign_user_id(server_id, old_user_id: str, new_user_id: str) -> DriverProfile` in `src/services/driver_service.py`: verify profile exists for `old_user_id` (else raise), verify no profile exists for `new_user_id` (else raise), UPDATE `driver_profiles.discord_user_id`, INSERT into `audit_entries` with `change_type="DRIVER_USER_ID_REASSIGN"`, `old_value=old_user_id`, `new_value=new_user_id`
+- [X] T016 [US2] Implement `/driver reassign` subcommand in `src/cogs/driver_cog.py`: `old_user` param accepts `discord.Member` or raw snowflake string (handle both), `new_user` param is `discord.Member`; decorate with `@admin_only` and `@channel_guard`; call `DriverService.reassign_user_id`; return ephemeral success response with old/new User ID, current state, and former_driver flag; map service errors to ephemeral `⛔` messages per contracts/commands.md
 
 **Checkpoint**: User Story 2 fully functional. Reassignment succeeds; old ID lookup returns nothing; new ID lookup returns intact profile; audit entry confirmed.
 
@@ -91,8 +91,8 @@ profile, enabling local testing of auto-deletion vs. retention logic.
 retained. Set flag false → transition to NOT_SIGNED_UP → profile deleted. Attempt command with
 test mode off → rejected.
 
-- [ ] T017 [US3] Implement `DriverService.set_former_driver(server_id, discord_user_id: str, value: bool) -> tuple[bool, bool]` in `src/services/driver_service.py` returning `(old_value, new_value)`: look up profile (raise if not found), UPDATE `driver_profiles.former_driver`, INSERT into `audit_entries` with `change_type="TEST_FORMER_DRIVER_FLAG_SET"`, `old_value=str(old)`, `new_value=str(value)`
-- [ ] T018 [US3] Implement `/test-mode set-former-driver` as a new subcommand of the existing `/test-mode` group in `src/cogs/test_mode_cog.py`: `user: discord.Member` and `value: bool` params; gate on `test_mode_active` (ephemeral error if off); decorate with `@admin_only`; call `DriverService.set_former_driver`; return ephemeral response showing old and new flag value per contracts/commands.md
+- [X] T017 [US3] Implement `DriverService.set_former_driver(server_id, discord_user_id: str, value: bool) -> tuple[bool, bool]` in `src/services/driver_service.py` returning `(old_value, new_value)`: look up profile (raise if not found), UPDATE `driver_profiles.former_driver`, INSERT into `audit_entries` with `change_type="TEST_FORMER_DRIVER_FLAG_SET"`, `old_value=str(old)`, `new_value=str(value)`
+- [X] T018 [US3] Implement `/test-mode set-former-driver` as a new subcommand of the existing `/test-mode` group in `src/cogs/test_mode_cog.py`: `user: discord.Member` and `value: bool` params; gate on `test_mode_active` (ephemeral error if off); decorate with `@admin_only`; call `DriverService.set_former_driver`; return ephemeral response showing old and new flag value per contracts/commands.md
 
 **Checkpoint**: User Story 3 fully functional. Flag toggling confirmed; retention/deletion behavior verified; command rejected when test mode off.
 
@@ -107,10 +107,10 @@ protected. New divisions seed their team instances from this list.
 instance present. Remove "Custom Team" from defaults; create another division; confirm absent.
 Attempt to modify Reserve → rejected.
 
-- [ ] T019 [US4] Implement `TeamService` default-team DB helpers in `src/services/team_service.py`: `get_default_teams(server_id) -> list[DefaultTeam]`, `add_default_team(server_id, name, max_seats) -> DefaultTeam` (check name uniqueness, not Reserve name), `rename_default_team(server_id, current_name, new_name)` (check is_reserve guard, check new_name uniqueness), `remove_default_team(server_id, name)` (check is_reserve guard); all mutating methods reject Reserve rows
-- [ ] T020 [US4] Implement `TeamService.seed_division_teams(division_id: int, server_id: int)` in `src/services/team_service.py`: SELECT all `default_teams` for server; for each non-Reserve row INSERT a `team_instances` row with `max_seats` from default, then INSERT 2 `team_seats` rows (seat_number 1 and 2, `driver_profile_id=NULL`); for the Reserve row INSERT a `team_instances` row with `max_seats=-1` (no seats pre-created)
-- [ ] T021 [US4] Add default-team seeding to the `/bot-init` command handler in `src/cogs/init_cog.py`: after existing server-config creation, if no `default_teams` rows exist for this server, INSERT the 10 standard F1 constructor team names (with `max_seats=2`) plus the Reserve team (with `max_seats=-1`, `is_reserve=1`)
-- [ ] T022 [US4] Implement `/team default add`, `/team default rename`, `/team default remove` subcommand group in `src/cogs/team_cog.py`: each action decorated with `@admin_only` and `@channel_guard`; `remove` shows a confirm/cancel prompt before executing; all responses ephemeral; map TeamService errors to `⛔` messages per contracts/commands.md
+- [X] T019 [US4] Implement `TeamService` default-team DB helpers in `src/services/team_service.py`: `get_default_teams(server_id) -> list[DefaultTeam]`, `add_default_team(server_id, name, max_seats) -> DefaultTeam` (check name uniqueness, not Reserve name), `rename_default_team(server_id, current_name, new_name)` (check is_reserve guard, check new_name uniqueness), `remove_default_team(server_id, name)` (check is_reserve guard); all mutating methods reject Reserve rows
+- [X] T020 [US4] Implement `TeamService.seed_division_teams(division_id: int, server_id: int)` in `src/services/team_service.py`: SELECT all `default_teams` for server; for each non-Reserve row INSERT a `team_instances` row with `max_seats` from default, then INSERT 2 `team_seats` rows (seat_number 1 and 2, `driver_profile_id=NULL`); for the Reserve row INSERT a `team_instances` row with `max_seats=-1` (no seats pre-created)
+- [X] T021 [US4] Add default-team seeding to the `/bot-init` command handler in `src/cogs/init_cog.py`: after existing server-config creation, if no `default_teams` rows exist for this server, INSERT the 10 standard F1 constructor team names (with `max_seats=2`) plus the Reserve team (with `max_seats=-1`, `is_reserve=1`)
+- [X] T022 [US4] Implement `/team default add`, `/team default rename`, `/team default remove` subcommand group in `src/cogs/team_cog.py`: each action decorated with `@admin_only` and `@channel_guard`; `remove` shows a confirm/cancel prompt before executing; all responses ephemeral; map TeamService errors to `⛔` messages per contracts/commands.md
 
 **Checkpoint**: User Story 4 fully functional. Default CRUD confirmed; Reserve protection confirmed; new division seeding confirmed via quickstart.md step 4.
 
@@ -124,8 +124,8 @@ current SETUP-phase season simultaneously. Atomically applied; Reserve always pr
 **Independent Test**: Season in SETUP with 3 divisions → add "Extra Team" → all 3 divisions gain
 it. Attempt same while ACTIVE → rejected. Remove Reserve → rejected.
 
-- [ ] T023 [US5] Implement `TeamService.season_team_add(server_id, season_id, name, max_seats)`, `season_team_rename(server_id, season_id, current_name, new_name)`, `season_team_remove(server_id, season_id, name)` in `src/services/team_service.py`: each method first asserts the season is in SETUP status (raise if not); changes applied to ALL `team_instances` rows for divisions belonging to that season in a single transaction; Reserve rows excluded; on `remove`, also DELETE associated `team_seats` rows
-- [ ] T024 [US5] Implement `/team season add`, `/team season rename`, `/team season remove` subcommand group in `src/cogs/team_cog.py`: each action decorated with `@admin_only` and `@channel_guard`; `remove` shows a confirm/cancel prompt; all responses ephemeral with division count in success message; map TeamService errors (non-SETUP, Reserve, name conflict) to `⛔` messages per contracts/commands.md
+- [X] T023 [US5] Implement `TeamService.season_team_add(server_id, season_id, name, max_seats)`, `season_team_rename(server_id, season_id, current_name, new_name)`, `season_team_remove(server_id, season_id, name)` in `src/services/team_service.py`: each method first asserts the season is in SETUP status (raise if not); changes applied to ALL `team_instances` rows for divisions belonging to that season in a single transaction; Reserve rows excluded; on `remove`, also DELETE associated `team_seats` rows
+- [X] T024 [US5] Implement `/team season add`, `/team season rename`, `/team season remove` subcommand group in `src/cogs/team_cog.py`: each action decorated with `@admin_only` and `@channel_guard`; `remove` shows a confirm/cancel prompt; all responses ephemeral with division count in success message; map TeamService errors (non-SETUP, Reserve, name conflict) to `⛔` messages per contracts/commands.md
 
 **Checkpoint**: User Story 5 fully functional. Season-level team mutations reflected in all divisions; ACTIVE-season rejection confirmed; Reserve protection confirmed.
 
@@ -141,13 +141,13 @@ season → displays "Season 2". Create two divisions with tiers 1 and 3 → appr
 missing-tier diagnostic. Fix to 1 and 2 → approve succeeds. Review shows team rosters per
 division.
 
-- [ ] T025 [US6] Update `SeasonService.create_season()` in `src/services/season_service.py` to read `server_config.previous_season_number`, set `season.season_number = previous_season_number + 1` at INSERT time, and include `season_number` in the returned `Season` object
-- [ ] T026 [US6] Update `SeasonService.cancel_season()` in `src/services/season_service.py` and `SeasonEndService` completion path in `src/services/season_end_service.py` to each increment `server_configs.previous_season_number` by 1 after persisting the terminal status (CANCELLED or COMPLETED)
-- [ ] T027 [US6] Add required `tier: int` parameter to `SeasonService.add_division()` and `SeasonService.duplicate_division()` in `src/services/season_service.py`: validate `tier >= 1`; validate no existing division in the season already has this tier (raise with descriptive `ValueError`); persist `tier` to the `divisions` row; call `TeamService.seed_division_teams(new_division_id, server_id)` after successful INSERT
-- [ ] T028 [US6] Update `SeasonService.approve_season()` in `src/services/season_service.py` to validate tier sequential integrity: collect all division tiers for the season, sort, compare to `range(1, len+1)`; if any tier is missing, raise `ValueError` with the full diagnostic listing missing tiers and current tiers (message matches contracts/commands.md format)
-- [ ] T029 [US6] Update `/division add` and `/division duplicate` in `src/cogs/season_cog.py` to include a required `tier: int` parameter; pass tier to the service methods; propagate tier-conflict errors as ephemeral `⛔` messages
-- [ ] T030 [US6] Update `/season setup` response in `src/cogs/season_cog.py` to display `season_number` from the returned Season object in the confirmation message
-- [ ] T031 [P] [US6] Update season review output builder in `src/utils/message_builder.py` to append `(Tier {tier})` to each division header and render a team roster block per division: one line per team instance showing `team_name`, each seat number with driver mention or `unassigned`, Reserve row showing `(no seats pre-assigned)`
+- [X] T025 [US6] Update `SeasonService.create_season()` in `src/services/season_service.py` to read `server_config.previous_season_number`, set `season.season_number = previous_season_number + 1` at INSERT time, and include `season_number` in the returned `Season` object
+- [X] T026 [US6] Update `SeasonService.cancel_season()` in `src/services/season_service.py` and `SeasonEndService` completion path in `src/services/season_end_service.py` to each increment `server_configs.previous_season_number` by 1 after persisting the terminal status (CANCELLED or COMPLETED)
+- [X] T027 [US6] Add required `tier: int` parameter to `SeasonService.add_division()` and `SeasonService.duplicate_division()` in `src/services/season_service.py`: validate `tier >= 1`; validate no existing division in the season already has this tier (raise with descriptive `ValueError`); persist `tier` to the `divisions` row; call `TeamService.seed_division_teams(new_division_id, server_id)` after successful INSERT
+- [X] T028 [US6] Update `SeasonService.approve_season()` in `src/services/season_service.py` to validate tier sequential integrity: collect all division tiers for the season, sort, compare to `range(1, len+1)`; if any tier is missing, raise `ValueError` with the full diagnostic listing missing tiers and current tiers (message matches contracts/commands.md format)
+- [X] T029 [US6] Update `/division add` and `/division duplicate` in `src/cogs/season_cog.py` to include a required `tier: int` parameter; pass tier to the service methods; propagate tier-conflict errors as ephemeral `⛔` messages
+- [X] T030 [US6] Update `/season setup` response in `src/cogs/season_cog.py` to display `season_number` from the returned Season object in the confirmation message
+- [X] T031 [P] [US6] Update season review output builder in `src/utils/message_builder.py` to append `(Tier {tier})` to each division header and render a team roster block per division: one line per team instance showing `team_name`, each seat number with driver mention or `unassigned`, Reserve row showing `(no seats pre-assigned)`
 
 **Checkpoint**: User Story 6 fully functional. Season numbers increment correctly; tier gap rejection fires with diagnostic; roster output visible in /season review.
 

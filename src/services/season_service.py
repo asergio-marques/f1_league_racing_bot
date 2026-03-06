@@ -45,12 +45,25 @@ class SeasonService:
         """Return the ACTIVE season for *server_id*, or None."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status FROM seasons "
+                "SELECT id, server_id, start_date, status, season_number FROM seasons "
                 "WHERE server_id = ? AND status = ?",
                 (server_id, SeasonStatus.ACTIVE.value),
             )
             row = await cursor.fetchone()
 
+        if row is None:
+            return None
+        return _row_to_season(row)
+
+    async def get_setup_season(self, server_id: int) -> Season | None:
+        """Return the SETUP season for *server_id*, or None."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "WHERE server_id = ? AND status = 'SETUP' LIMIT 1",
+                (server_id,),
+            )
+            row = await cursor.fetchone()
         if row is None:
             return None
         return _row_to_season(row)
@@ -81,24 +94,56 @@ class SeasonService:
         start_date: date,
         existing_season_id: int,
         divisions: list[dict],
-    ) -> int:
+    ) -> tuple[int, int]:
         """Atomically replace the SETUP season snapshot for *server_id* in the DB.
 
         Deletes the previous SETUP season (if *existing_season_id* is non-zero)
         and re-inserts the full pending config.  Sessions are NOT created here —
         they are created at approve time.
 
-        Returns the new season_id so callers can update their in-memory state.
+        Returns (new_season_id, season_number) so callers can update their in-memory state.
         """
         async with get_connection(self._db_path) as db:
+            # Determine the season_number to carry forward
             if existing_season_id != 0:
-                # Cascade-delete the old SETUP season manually (no ON DELETE CASCADE)
+                # Preserve the already-computed season_number from the existing SETUP row
+                cursor = await db.execute(
+                    "SELECT season_number FROM seasons WHERE id = ?",
+                    (existing_season_id,),
+                )
+                row = await cursor.fetchone()
+                season_number: int = row[0] if row else 1
+            else:
+                # First snapshot: derive from server_config.previous_season_number
+                cursor = await db.execute(
+                    "SELECT previous_season_number FROM server_configs WHERE server_id = ?",
+                    (server_id,),
+                )
+                row = await cursor.fetchone()
+                season_number = (row[0] if row else 0) + 1
+
+            if existing_season_id != 0:
+                # Cascade-delete the old SETUP season manually (no ON DELETE CASCADE).
+                # Clean up team_instances/team_seats first to avoid orphaned rows.
                 cursor = await db.execute(
                     "SELECT id FROM divisions WHERE season_id = ?",
                     (existing_season_id,),
                 )
                 div_rows = await cursor.fetchall()
                 for div_row in div_rows:
+                    cursor2 = await db.execute(
+                        "SELECT id FROM team_instances WHERE division_id = ?",
+                        (div_row[0],),
+                    )
+                    inst_rows = await cursor2.fetchall()
+                    for inst_row in inst_rows:
+                        await db.execute(
+                            "DELETE FROM team_seats WHERE team_instance_id = ?",
+                            (inst_row[0],),
+                        )
+                    await db.execute(
+                        "DELETE FROM team_instances WHERE division_id = ?", (div_row[0],)
+                    )
                     await db.execute(
                         "DELETE FROM rounds WHERE division_id = ?", (div_row[0],)
                     )
@@ -110,21 +155,23 @@ class SeasonService:
                 )
 
             cursor = await db.execute(
-                "INSERT INTO seasons (server_id, start_date, status) VALUES (?, ?, 'SETUP')",
-                (server_id, start_date.isoformat()),
+                "INSERT INTO seasons (server_id, start_date, status, season_number) "
+                "VALUES (?, ?, 'SETUP', ?)",
+                (server_id, start_date.isoformat(), season_number),
             )
             new_season_id: int = cursor.lastrowid  # type: ignore[assignment]
 
             for div_data in divisions:
                 cursor = await db.execute(
                     "INSERT INTO divisions "
-                    "(season_id, name, mention_role_id, forecast_channel_id) "
-                    "VALUES (?, ?, ?, ?)",
+                    "(season_id, name, mention_role_id, forecast_channel_id, tier) "
+                    "VALUES (?, ?, ?, ?, ?)",
                     (
                         new_season_id,
                         div_data["name"],
                         div_data["role_id"],
                         div_data["channel_id"],
+                        div_data.get("tier", 0),
                     ),
                 )
                 div_db_id: int = cursor.lastrowid  # type: ignore[assignment]
@@ -144,13 +191,13 @@ class SeasonService:
                     )
 
             await db.commit()
-        return new_season_id
+        return new_season_id, season_number
 
     async def load_all_setup_seasons(self) -> list[dict]:
         """Return raw data for every SETUP-status season to rebuild PendingConfig on startup."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date FROM seasons WHERE status = 'SETUP'"
+                "SELECT id, server_id, start_date, season_number FROM seasons WHERE status = 'SETUP'"
             )
             season_rows = await cursor.fetchall()
 
@@ -159,7 +206,7 @@ class SeasonService:
                 season_id = s_row["id"]
 
                 cursor = await db.execute(
-                    "SELECT id, name, mention_role_id, forecast_channel_id "
+                    "SELECT id, name, mention_role_id, forecast_channel_id, tier "
                     "FROM divisions WHERE season_id = ?",
                     (season_id,),
                 )
@@ -186,6 +233,7 @@ class SeasonService:
                         "name": d_row["name"],
                         "role_id": d_row["mention_role_id"],
                         "channel_id": d_row["forecast_channel_id"],
+                        "tier": d_row["tier"] if "tier" in d_row.keys() else 0,
                         "rounds": rounds,
                     })
 
@@ -193,10 +241,43 @@ class SeasonService:
                     "season_id": season_id,
                     "server_id": s_row["server_id"],
                     "start_date": date.fromisoformat(s_row["start_date"]),
+                    "season_number": s_row["season_number"] if "season_number" in s_row.keys() else 0,
                     "divisions": divisions,
                 })
 
         return result
+
+    async def increment_previous_season_number(self, server_id: int) -> None:
+        """Increment server_configs.previous_season_number by 1."""
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE server_configs "
+                "SET previous_season_number = previous_season_number + 1 "
+                "WHERE server_id = ?",
+                (server_id,),
+            )
+            await db.commit()
+
+    async def validate_division_tiers(self, season_id: int) -> None:
+        """Validate division tiers form a gapless sequence 1..N.
+
+        Raises ValueError with a diagnostic message if any tier is missing.
+        Cancelled divisions are excluded from the check.
+        """
+        divisions = await self.get_divisions(season_id)
+        active_divs = [d for d in divisions if d.status != "CANCELLED"]
+        if not active_divs:
+            return
+        tiers = sorted(d.tier for d in active_divs)
+        expected = list(range(1, len(tiers) + 1))
+        if tiers != expected:
+            existing = sorted(set(tiers))
+            missing = sorted(set(expected) - set(tiers))
+            raise ValueError(
+                f"Division tiers are not sequential. "
+                f"Current tiers: {existing}. "
+                f"Missing tier(s): {missing}."
+            )
 
     async def get_last_scheduled_at(self, server_id: int) -> datetime | None:
         """Return the latest scheduled_at across all ACTIVE rounds for the active season."""
@@ -298,16 +379,29 @@ class SeasonService:
         name: str,
         mention_role_id: int,
         forecast_channel_id: int,
+        tier: int = 0,
     ) -> Division:
         """Insert a division and return it."""
+        if tier != 0:
+            if tier < 1:
+                raise ValueError(f"Tier must be >= 1, got {tier}.")
+            async with get_connection(self._db_path) as db:
+                cursor = await db.execute(
+                    "SELECT 1 FROM divisions WHERE season_id = ? AND tier = ?",
+                    (season_id, tier),
+                )
+                if await cursor.fetchone():
+                    raise ValueError(
+                        f"A division with tier {tier} already exists in this season."
+                    )
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 """
                 INSERT INTO divisions
-                    (season_id, name, mention_role_id, forecast_channel_id)
-                VALUES (?, ?, ?, ?)
+                    (season_id, name, mention_role_id, forecast_channel_id, tier)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (season_id, name, mention_role_id, forecast_channel_id),
+                (season_id, name, mention_role_id, forecast_channel_id, tier),
             )
             await db.commit()
             div_id = cursor.lastrowid
@@ -318,13 +412,14 @@ class SeasonService:
             name=name,
             mention_role_id=mention_role_id,
             forecast_channel_id=forecast_channel_id,
+            tier=tier,
         )
 
     async def get_divisions(self, season_id: int) -> list[Division]:
         """Return all divisions for *season_id*."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status "
+                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier "
                 "FROM divisions WHERE season_id = ?",
                 (season_id,),
             )
@@ -402,6 +497,7 @@ class SeasonService:
         forecast_channel_id: int,
         day_offset: int,
         hour_offset: float,
+        tier: int = 0,
     ) -> Division:
         """Copy a division (and all its rounds with shifted datetimes) into a new division."""
         from datetime import timedelta
@@ -414,10 +510,22 @@ class SeasonService:
             row = await cursor.fetchone()
             season_id: int = row[0]
 
+            if tier != 0:
+                if tier < 1:
+                    raise ValueError(f"Tier must be >= 1, got {tier}.")
+                cursor = await db.execute(
+                    "SELECT 1 FROM divisions WHERE season_id = ? AND tier = ?",
+                    (season_id, tier),
+                )
+                if await cursor.fetchone():
+                    raise ValueError(
+                        f"A division with tier {tier} already exists in this season."
+                    )
+
             cursor = await db.execute(
-                "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id)"
-                " VALUES (?, ?, ?, ?)",
-                (season_id, name, role_id, forecast_channel_id),
+                "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id, tier)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (season_id, name, role_id, forecast_channel_id, tier),
             )
             await db.commit()
             new_div_id: int = cursor.lastrowid  # type: ignore[assignment]
@@ -444,7 +552,7 @@ class SeasonService:
 
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status"
+                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier"
                 " FROM divisions WHERE id = ?",
                 (new_div_id,),
             )
@@ -672,6 +780,7 @@ def _row_to_season(row: object) -> Season:
         server_id=row["server_id"],
         start_date=date.fromisoformat(row["start_date"]),
         status=SeasonStatus(row["status"]),
+        season_number=row["season_number"] if "season_number" in row.keys() else 0,
     )
 
 
@@ -683,6 +792,7 @@ def _row_to_division(row: object) -> Division:
         mention_role_id=row["mention_role_id"],
         forecast_channel_id=row["forecast_channel_id"],
         status=row["status"],
+        tier=row["tier"] if "tier" in row.keys() else 0,
     )
 
 

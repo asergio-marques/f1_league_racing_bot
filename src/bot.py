@@ -43,11 +43,16 @@ async def main() -> None:
     bot = create_bot()
 
     # Services are attached to bot for cog access
+    from services.driver_service import DriverService
+    from services.team_service import TeamService
+
     bot.config_service = ConfigService(DB_PATH)      # type: ignore[attr-defined]
     bot.season_service = SeasonService(DB_PATH)      # type: ignore[attr-defined]
     bot.amendment_service = AmendmentService(DB_PATH)  # type: ignore[attr-defined]
     bot.scheduler_service = SchedulerService(DB_PATH)  # type: ignore[attr-defined]
     bot.output_router = OutputRouter(bot)            # type: ignore[attr-defined]
+    bot.driver_service = DriverService(DB_PATH)      # type: ignore[attr-defined]
+    bot.team_service = TeamService(DB_PATH)          # type: ignore[attr-defined]
 
     @bot.event
     async def on_ready() -> None:
@@ -127,6 +132,8 @@ async def main() -> None:
     from cogs.test_mode_cog import TestModeCog
     from cogs.reset_cog import ResetCog
     from cogs.track_cog import TrackCog
+    from cogs.driver_cog import DriverCog
+    from cogs.team_cog import TeamCog
 
     await bot.add_cog(InitCog(bot))
     await bot.add_cog(SeasonCog(bot))
@@ -134,6 +141,8 @@ async def main() -> None:
     await bot.add_cog(TestModeCog(bot))
     await bot.add_cog(ResetCog(bot))
     await bot.add_cog(TrackCog(bot))
+    await bot.add_cog(DriverCog(bot))
+    await bot.add_cog(TeamCog(bot))
 
     log.info("All cogs loaded. Starting bot...")
     async with bot:

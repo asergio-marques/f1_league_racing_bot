@@ -128,6 +128,9 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
         full=False,
     )
 
+    # Increment the season counter so the next season gets a higher display number
+    await season_svc.increment_previous_season_number(server_id)
+
     log.info(
         "Season %s for server %s ended: %d season(s), %d division(s), %d round(s) deleted.",
         season_id,

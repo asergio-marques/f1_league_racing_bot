@@ -54,7 +54,9 @@ def _make_cog(pending_cfg: PendingConfig | None) -> tuple[SeasonCog, MagicMock]:
     """Return (cog, bot_mock) with SeasonCog having *pending_cfg* in _pending."""
     bot = MagicMock()
     bot.season_service.get_active_season = AsyncMock(return_value=None)
-    bot.season_service.save_pending_snapshot = AsyncMock(return_value=42)
+    bot.season_service.save_pending_snapshot = AsyncMock(return_value=(42, 1))
+    bot.season_service.get_divisions = AsyncMock(return_value=[])
+    bot.team_service.seed_division_teams = AsyncMock()
 
     cog = SeasonCog(bot)
     if pending_cfg is not None:
