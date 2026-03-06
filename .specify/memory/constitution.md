@@ -1,6 +1,37 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-03-06 — v1.2.0 → v2.0.0: Formal scope expansion — driver profiles, teams, season management]
+  Version change    : 1.2.0 → 2.0.0
+  Bump rationale    : MAJOR — Principle VI backward-incompatibly redefined. The prior scope
+                      restriction ("strictly limited to weather + schedule only") has been
+                      replaced with an explicit incremental-expansion policy that formally
+                      admits driver profile management, team management, and enhanced season
+                      lifecycle tracking as ratified additions to the bot's mandate.
+  Modified principles:
+    - Principle V (Observability & Change Audit Trail) — extended to cover driver-state
+      transitions and team mutations alongside weather/schedule changes.
+    - Principle VI (Simplicity & Focused Scope → Incremental Scope Expansion) — scope gate
+      redefined; still guards against uncontrolled expansion but now explicitly admits driver
+      profile management, team management, and extended season lifecycle as in-scope domains.
+    - Data & State Management — new entities (DriverProfile, TeamSeat) documented; season
+      counter and division tier ordering rule added; performance and storage footprint note
+      added per user request.
+  Added sections    :
+    - Principle VIII: Driver Profile Integrity (NEW)
+    - Principle IX: Team & Division Structural Integrity (NEW)
+  Removed sections  : None
+  Templates confirmed aligned:
+    ✅ .specify/templates/plan-template.md      — Constitution Check gate is dynamic; no
+         hardcoded principle list; no changes needed.
+    ✅ .specify/templates/spec-template.md      — generic; no stale references.
+    ✅ .specify/templates/tasks-template.md     — generic; aligns with I–IX.
+    ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+    ✅ .specify/templates/checklist-template.md  — no impact.
+  Deferred TODOs    : Race results recording, raw driver points calculation, and penalty
+                      management remain explicitly out of scope pending future formal
+                      ratification under Principle VI's incremental-expansion process.
+
 [2026-03-05 — v1.1.0 → v1.2.0: UX streamlining command standards]
   Version change    : 1.1.0 → 1.2.0
   Bump rationale    : MINOR — materially expanded guidance on command naming and UX
@@ -289,9 +320,10 @@ preserves competitive surprise by design.
 ### V. Observability & Change Audit Trail
 
 Every configuration mutation — season setup, track substitution, postponement, cancellation,
-format change, and trusted-role grant or revoke — MUST produce a timestamped audit log entry
-recording: actor (Discord user ID and display name), division, change type, previous value,
-and new value.
+format change, trusted-role grant or revoke, driver-state transition, team assignment change,
+and team definition add/modify/remove — MUST produce a timestamped audit log entry recording:
+actor (Discord user ID and display name), division (where applicable), change type, previous
+value, and new value.
 
 All three weather phases MUST log their full computation to the designated calculation log
 channel (configured separately from the division weather forecast channels): inputs, random
@@ -305,21 +337,36 @@ calculation log channel. The bot MUST NOT silently accept or silently discard an
 of computations and changes, especially when disputing weather outcomes or schedule
 alterations.
 
-### VI. Simplicity & Focused Scope
+### VI. Incremental Scope Expansion
 
-The bot's scope is strictly limited to: season and division configuration, schedule management
-(including amendments), and weather generation via the three-phase pipeline. It MUST NOT
-expand into race results recording, driver standings calculation, penalty management, or any
-other league administration feature unless a formal scope amendment is ratified under the
-governance process defined below. Every proposed new command MUST be evaluated against this
-scope boundary before implementation begins; commands that do not clearly serve weather
-randomization or schedule management MUST be rejected or deferred.
+The bot's scope expands incrementally, one ratified feature at a time. The following domains
+are formally in-scope as of this version:
+
+1. **Weather generation**: the three-phase pipeline (Principle IV) remains the core function.
+2. **Season and division lifecycle**: setup, activation, completion, cancellation, round
+   scheduling, and amendments.
+3. **Driver profile management**: signup workflow, state machine enforcement, Discord User ID
+   reassignment, and historical participation tracking.
+4. **Team management**: configurable team definitions per division, seat assignment, and
+   the Reserve team ruleset.
+
+The following domains remain explicitly **out of scope** until separately ratified:
+
+- Race results recording and raw score entry.
+- Driver championship standings computation.
+- Penalty and protest adjudication.
+- Financial or licensing workflows.
+
+Every proposed new command or data concern MUST be evaluated against the current scope
+boundary before implementation begins. Features that do not fall within a ratified domain
+MUST be rejected or deferred via the governance process below.
 
 The current output format is text-only. Image-based output is a known planned evolution and
-MUST be designed for as an additive change that does not break existing text output paths.
+MUST be designed as an additive change that does not break existing text output paths.
 
-**Rationale**: Scope creep degrades reliability and maintainability. A focused tool does one
-job well and is easier to test, audit, and reason about.
+**Rationale**: Controlled, documented scope expansions allow the bot to grow toward full
+league management without sacrificing reliability or auditability. Each expansion is gated
+behind a formal ratification to prevent unplanned feature creep.
 
 ### VII. Output Channel Discipline
 
@@ -336,6 +383,60 @@ are issued. Unsolicited messages in unregistered channels are not permitted.
 
 **Rationale**: Keeping output in known, designated channels prevents noise in general server
 channels and makes it trivial for drivers and admins to find the right information.
+
+### VIII. Driver Profile Integrity
+
+Every Discord user within a server is represented by at most one driver profile, keyed on
+their Discord User ID in server scope. The following rules are non-negotiable:
+
+- **State machine enforcement**: A driver's current state MUST only change via the transitions
+  listed in the specification. Any transition not in the approved list MUST be rejected with a
+  clear error. No code path may bypass the state machine to set state directly.
+- **Immutability of former drivers**: Once the `former_driver` flag is set to `true` (triggered
+  by the driver's first participation in a round), the profile record MUST NOT be deleted — only
+  modified. An attempt to delete such a record MUST be rejected.
+- **Deletion rule**: If a driver transitions to *Not Signed Up* and `former_driver` is `false`,
+  their database record MUST be deleted automatically as part of the same transaction.
+- **User ID reassignment**: Only a server administrator may change the Discord User ID
+  associated with a driver profile (to handle account changes). The reassignment MUST be logged
+  as an audit event (Principle V) with both the old and new User ID.
+- **Test-mode overrides**: When test mode is active, administrators MAY manually set
+  `former_driver` to `true` or `false`, and MAY directly assign *Not Signed Up* drivers to
+  *Unassigned* or *Assigned* state, bypassing the normal signup flow. All such overrides MUST
+  still produce audit log entries.
+- **Absent profile semantics**: A Discord user with no database record is treated as *Not Signed
+  Up*. The bot MUST NOT error or warn on absence — it is the canonical default state.
+
+**Rationale**: The driver profile is a long-lived, server-scoped identity record. Strict state
+machine enforcement and immutability guarantees prevent data loss from accidental operations
+and ensure the historical participation record is always trustworthy.
+
+### IX. Team & Division Structural Integrity
+
+Teams and division tiers carry structural invariants that MUST be enforced at every mutation
+point:
+
+- **Reserve team**: The Reserve team MUST always exist in every division and MUST NOT be
+  removable, renameable, or otherwise modified by any user command. Its seat count is
+  unlimited.
+- **Configurable teams**: The standard ten constructor teams (Alpine, Aston Martin, Ferrari,
+  Haas, McLaren, Mercedes, Racing Bulls, Red Bull, Sauber, Williams) each carry exactly 2 seats
+  by default. A server administrator MAY add, modify, or remove configurable teams from the
+  server-level default set at any time. Changes to the default set MAY be applied to all
+  divisions of the current season ONLY during the `SETUP` lifecycle phase.
+- **Division isolation**: A team definition or seat assignment in Division A MUST NOT affect
+  Division B. Team data is partitioned per division, per season.
+- **Sequential tier ordering**: Before a season may be approved (transitioned from `SETUP` to
+  `ACTIVE`), all configured divisions MUST have tier values that form a gapless sequence
+  starting at 1 (e.g., 1, 2, 3 — not 1, 3). The bot MUST block season approval and return a
+  clear diagnostic if this rule is violated. Divisions are stored and displayed in ascending
+  tier order, with tier 1 representing the highest tier.
+- **Tier as supplementary ID**: A division's tier MAY be used as a secondary identifier in
+  commands and logs, but the division name remains the canonical label in all bot output.
+
+**Rationale**: Structural invariants on teams and tiers prevent silent misconfiguration that
+would compromise competitive fairness — a division with a gap in its tier sequence or a
+missing Reserve team would produce ambiguous or incorrect league operations.
 
 ## Bot Behavior Standards
 
@@ -405,6 +506,45 @@ mixed by Phase 2).
 - A full data export of any division's season (schedule, amendments, weather log, phase
   computation records, audit trail) MUST be available to trusted users on demand.
 
+### New Entities (v2.0.0)
+
+**DriverProfile** (server-scoped, one row per Discord user per server):
+- `discord_user_id` (TEXT, PK within server) — canonical key; may be updated by admin only.
+- `current_state` (ENUM) — enforced by state machine (Principle VIII).
+- `former_driver` (BOOLEAN, default false) — immutability gate (Principle VIII).
+- `ban_counts` (race_bans INT, season_bans INT, league_bans INT) — accumulated ban history.
+- Current and historical season assignment data linked via a normalized join table,
+  avoiding redundant column-per-division patterns.
+
+**TeamSeat** (per division, per season):
+- Tracks which driver (if any) occupies each seat of each team in each division.
+- Reserve team rows are auto-created on division creation; configurable team rows follow
+  the server-level default set unless overridden during `SETUP`.
+
+**Season counter** (server-scoped scalar):
+- A single integer per server recording the highest completed-or-cancelled season number.
+  Defaults to 0. Incremented on season cancellation or completion. New seasons display
+  this value + 1 as their number.
+
+### Performance & Storage Considerations
+
+The bot is designed for small-to-medium Discord servers (tens to low hundreds of concurrent
+drivers per server). The projected storage growth per season per division is modest:
+
+- **DriverProfile rows**: O(number of ever-signed-up drivers) — expected dozens to low hundreds
+  per server; each row is <1 KB.
+- **TeamSeat rows**: one row per seat per team per division per season; with 10 standard teams
+  × 2 seats + Reserve = ~21 rows per division per season.
+- **Audit log rows**: one entry per mutation event; expected hundreds per season; small.
+- **Phase result rows**: unchanged from v1.x; 3 rows per round per division.
+
+No bulk computation, aggregation queries, or full-table scans are expected in hot paths.
+All primary access patterns are single-row lookups by surrogate key or short-range scans
+by (server_id, season_id, division_id). Standard SQLite indexes on these columns are
+sufficient; no additional caching layer is required at the current scale. If the server
+population grows beyond ~500 concurrent drivers, migrating the backing store from SQLite
+to a client-server RDBMS (e.g., PostgreSQL) should be evaluated.
+
 ## Governance
 
 This constitution supersedes all other development practices and conventions for this project.
@@ -420,9 +560,9 @@ Amendments require:
 - **MINOR**: Addition of a new principle, section, or materially expanded guidance.
 - **PATCH**: Clarifications, wording improvements, or non-semantic refinements.
 
-All pull requests MUST include a Constitution Check confirming compliance with Principles I–VII
+All pull requests MUST include a Constitution Check confirming compliance with Principles I–IX
 before merge. Any deliberate violation of a principle MUST be documented in the plan's
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 1.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-05
+**Version**: 2.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-06
