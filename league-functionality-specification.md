@@ -77,7 +77,7 @@ Bot initialization flow, right now, accounts only for the weather forecast funct
 - <NEW COMMAND> A module enable signup command will be made available to server administrators to enable signup functionality. This command will take a channel designated the "sign up channel", a user role which will be denominated the "base role", and a user which will be denominated the "signed up" role.
 - <NEW COMMAND> A module disable signup command will be made available to server administrators to disable signup functionality, clearing all settings from the previous enabling.
 - <NEW COMMAND> A signup time-type command will be made available to server administrators that provides two options via buttons: "Time Trial" or "Short Qualification". The option chosen will be recorded for use in the signup wizard.
-- <NEW COMMAND>
+- <NEW COMMAND> 
 
 
 The name of the commands is an example; the on
