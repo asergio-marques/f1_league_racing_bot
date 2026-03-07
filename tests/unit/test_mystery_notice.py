@@ -168,9 +168,11 @@ class TestRunMysteryNotice:
             await run_migrations(db_path)
             await _seed_mystery_round(db_path, round_id=1)
 
+            mock_msg = MagicMock()
+            mock_msg.id = 111
             mock_bot = MagicMock()
             mock_bot.db_path = db_path
-            mock_bot.output_router.post_forecast = AsyncMock()
+            mock_bot.output_router.post_forecast = AsyncMock(return_value=mock_msg)
             mock_bot.output_router.post_log = AsyncMock()
 
             await run_mystery_notice(1, mock_bot)
@@ -190,9 +192,11 @@ class TestRunMysteryNotice:
             await run_migrations(db_path)
             await _seed_mystery_round(db_path, round_id=2)
 
+            mock_msg = MagicMock()
+            mock_msg.id = 222
             mock_bot = MagicMock()
             mock_bot.db_path = db_path
-            mock_bot.output_router.post_forecast = AsyncMock()
+            mock_bot.output_router.post_forecast = AsyncMock(return_value=mock_msg)
             mock_bot.output_router.post_log = AsyncMock()
 
             await run_mystery_notice(2, mock_bot)
