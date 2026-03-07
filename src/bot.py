@@ -54,6 +54,12 @@ async def main() -> None:
     bot.driver_service = DriverService(DB_PATH)      # type: ignore[attr-defined]
     bot.team_service = TeamService(DB_PATH)          # type: ignore[attr-defined]
 
+    from services.module_service import ModuleService
+    from services.signup_module_service import SignupModuleService
+
+    bot.module_service = ModuleService(DB_PATH)          # type: ignore[attr-defined]
+    bot.signup_module_service = SignupModuleService(DB_PATH)  # type: ignore[attr-defined]
+
     @bot.event
     async def on_ready() -> None:
         log.info("Logged in as %s (id=%s)", bot.user, bot.user.id)
@@ -134,6 +140,8 @@ async def main() -> None:
     from cogs.track_cog import TrackCog
     from cogs.driver_cog import DriverCog
     from cogs.team_cog import TeamCog
+    from cogs.module_cog import ModuleCog
+    from cogs.signup_cog import SignupCog
 
     await bot.add_cog(InitCog(bot))
     await bot.add_cog(SeasonCog(bot))
@@ -143,6 +151,8 @@ async def main() -> None:
     await bot.add_cog(TrackCog(bot))
     await bot.add_cog(DriverCog(bot))
     await bot.add_cog(TeamCog(bot))
+    await bot.add_cog(ModuleCog(bot))
+    await bot.add_cog(SignupCog(bot))
 
     log.info("All cogs loaded. Starting bot...")
     async with bot:
@@ -164,7 +174,7 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
             """
             SELECT r.id, r.scheduled_at,
                    r.phase1_done, r.phase2_done, r.phase3_done,
-                   r.format
+                   r.format, s.server_id
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
@@ -175,10 +185,14 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
         rows = await cursor.fetchall()
 
     for row in rows:
-        round_id, scheduled_at_str, p1, p2, p3, fmt = row
+        round_id, scheduled_at_str, p1, p2, p3, fmt, server_id = row
         scheduled_at = datetime.fromisoformat(scheduled_at_str)
         if scheduled_at.tzinfo is None:
             scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+
+        # Only recover phases for servers with weather module active
+        if not await bot.module_service.is_weather_enabled(server_id):  # type: ignore[attr-defined]
+            continue
 
         phase1_horizon = scheduled_at - __import__("datetime").timedelta(days=5)
         phase2_horizon = scheduled_at - __import__("datetime").timedelta(days=2)

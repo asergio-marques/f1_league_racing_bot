@@ -141,7 +141,8 @@ class AmendmentService:
         # the future.  If T-5 has already passed the invalidation notice already
         # informs drivers; no notice job should fire retroactively (FR-009).
         if updated_round.format != RoundFormat.MYSTERY or now < p1_horizon:
-            bot.scheduler_service.schedule_round(updated_round)
+            if await bot.module_service.is_weather_enabled(server_id):
+                bot.scheduler_service.schedule_round(updated_round)
 
         # Erase stored forecast messages for all phases (FR-011).
         # delete_forecast_message respects the test-mode guard; any skipped

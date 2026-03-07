@@ -18,6 +18,7 @@ ALLOWED_TRANSITIONS: dict[DriverState, set[DriverState]] = {
     },
     DriverState.PENDING_SIGNUP_COMPLETION: {
         DriverState.PENDING_ADMIN_APPROVAL,
+        DriverState.NOT_SIGNED_UP,  # signup window force-close
     },
     DriverState.PENDING_ADMIN_APPROVAL: {
         DriverState.UNASSIGNED,
@@ -30,6 +31,7 @@ ALLOWED_TRANSITIONS: dict[DriverState, set[DriverState]] = {
         DriverState.PENDING_ADMIN_APPROVAL,
         DriverState.SEASON_BANNED,
         DriverState.LEAGUE_BANNED,
+        DriverState.NOT_SIGNED_UP,  # signup window force-close
     },
     DriverState.UNASSIGNED: {
         DriverState.ASSIGNED,
@@ -54,6 +56,20 @@ _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP: set[DriverState] = {
     DriverState.UNASSIGNED,
     DriverState.ASSIGNED,
 }
+
+
+def _row_to_profile(row) -> DriverProfile:
+    """Convert an aiosqlite Row from driver_profiles to a DriverProfile."""
+    return DriverProfile(
+        id=row["id"],
+        server_id=row["server_id"],
+        discord_user_id=row["discord_user_id"],
+        current_state=DriverState(row["current_state"]),
+        former_driver=bool(row["former_driver"]),
+        race_ban_count=row["race_ban_count"],
+        season_ban_count=row["season_ban_count"],
+        league_ban_count=row["league_ban_count"],
+    )
 
 
 class DriverService:

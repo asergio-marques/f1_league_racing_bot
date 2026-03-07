@@ -8,6 +8,6 @@ class Division:
     season_id: int
     name: str
     mention_role_id: int
-    forecast_channel_id: int
+    forecast_channel_id: int | None
     status: str = "ACTIVE"
     tier: int = 0

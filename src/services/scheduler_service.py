@@ -15,6 +15,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.triggers.date import DateTrigger
 
+from db.database import get_connection
 from models.round import Round, RoundFormat
 
 if TYPE_CHECKING:
@@ -261,6 +262,20 @@ class SchedulerService:
                 log.info("Removed job %s", job_id)
             except Exception:
                 pass  # Job may not exist if it already fired or was never scheduled
+
+    async def cancel_all_weather_for_server(self, server_id: int) -> None:
+        """Cancel all weather (phase) jobs for every round in active/setup seasons of *server_id*."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT r.id FROM rounds r "
+                "JOIN divisions d ON d.id = r.division_id "
+                "JOIN seasons s ON s.id = d.season_id "
+                "WHERE s.server_id = ? AND s.status IN ('ACTIVE', 'SETUP')",
+                (server_id,),
+            )
+            rows = await cursor.fetchall()
+        for row in rows:
+            self.cancel_round(row[0])
 
     def schedule_all_rounds(self, rounds: list[Round]) -> None:
         """Schedule all rounds in *rounds*."""

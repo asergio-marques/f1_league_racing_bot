@@ -47,7 +47,7 @@ log = logging.getLogger(__name__)
 class PendingDivision:
     name: str = ""
     role_id: int = 0
-    channel_id: int = 0
+    channel_id: int | None = None
     tier: int = 0
     rounds: list[dict[str, Any]] = field(default_factory=list)
 
@@ -182,10 +182,11 @@ class SeasonCog(commands.Cog):
                 if not div.name:
                     continue
                 tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
+                chan_display = f"<#{div.forecast_channel_id}>" if div.forecast_channel_id else "*(none)*"
                 lines.append(
                     f"\U0001f4c2 **{div.name}**{tier_tag} | "
                     f"Role <@&{div.mention_role_id}> | "
-                    f"Channel <#{div.forecast_channel_id}>"
+                    f"Channel {chan_display}"
                 )
                 rounds_db = await self.bot.season_service.get_division_rounds(div.id)
                 for r in rounds_db:
@@ -202,10 +203,11 @@ class SeasonCog(commands.Cog):
                 if not div.name:
                     continue
                 tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
+                pending_chan = f"<#{div.channel_id}>" if div.channel_id else "*(none)*"
                 lines.append(
                     f"\U0001f4c2 **{div.name}**{tier_tag} | "
                     f"Role <@&{div.role_id}> | "
-                    f"Channel <#{div.channel_id}>"
+                    f"Channel {pending_chan}"
                 )
                 for r in div.rounds:
                     lines.append(
@@ -348,7 +350,7 @@ class SeasonCog(commands.Cog):
     @app_commands.describe(
         name="Division name",
         role="The Discord role to mention for this division",
-        forecast_channel="Channel where weather forecasts are posted",
+        forecast_channel="Channel where weather forecasts are posted (required when weather module is enabled)",
         tier="Tier number for this division (1 = top tier, must be sequential and unique)",
     )
     @channel_guard
@@ -358,13 +360,29 @@ class SeasonCog(commands.Cog):
         interaction: discord.Interaction,
         name: str,
         role: discord.Role,
-        forecast_channel: discord.TextChannel,
-        tier: int,
+        forecast_channel: discord.TextChannel | None = None,
+        tier: int = 1,
     ) -> None:
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
             await interaction.response.send_message(
                 "\u274c No pending season setup. Run `/season setup` first.",
+                ephemeral=True,
+            )
+            return
+
+        # Weather module mutual-exclusivity guard (FR-012 / T015)
+        weather_enabled = await self.bot.module_service.is_weather_enabled(interaction.guild_id)
+        if weather_enabled and forecast_channel is None:
+            await interaction.response.send_message(
+                "\u274c Weather module is active \u2014 a forecast channel is required for each division.",
+                ephemeral=True,
+            )
+            return
+        if not weather_enabled and forecast_channel is not None:
+            await interaction.response.send_message(
+                "\u274c Weather module is inactive \u2014 do not configure a forecast channel yet. "
+                "Enable the weather module first.",
                 ephemeral=True,
             )
             return
@@ -390,7 +408,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        div = PendingDivision(name=name, role_id=role.id, channel_id=forecast_channel.id, tier=tier)
+        div = PendingDivision(name=name, role_id=role.id, channel_id=forecast_channel.id if forecast_channel else None, tier=tier)
         empty = [d for d in cfg.divisions if not d.name]
         if empty:
             idx = cfg.divisions.index(empty[0])
@@ -400,9 +418,10 @@ class SeasonCog(commands.Cog):
 
         await self._snapshot_pending(cfg)
 
+        channel_mention = forecast_channel.mention if forecast_channel else "*(none)*"
         await interaction.response.send_message(
             f"\u2705 Division **{name}** (Tier {tier}) added.\n"
-            f"Role: {role.mention} | Channel: {forecast_channel.mention}\n\n"
+            f"Role: {role.mention} | Channel: {channel_mention}\n\n"
             + format_division_list(_pending_to_division_models(cfg)),
             ephemeral=True,
         )
@@ -415,7 +434,7 @@ class SeasonCog(commands.Cog):
         source_name="Name of the division to copy from",
         new_name="Name for the new division",
         role="The Discord role to mention for the new division",
-        forecast_channel="Forecast channel for the new division",
+        forecast_channel="Forecast channel for the new division (required when weather module is enabled)",
         tier="Tier number for the new division (must be unique within this season)",
         day_offset="Days to shift all round datetimes (can be negative)",
         hour_offset="Hours to shift all round datetimes (can be negative, decimals OK)",
@@ -428,15 +447,31 @@ class SeasonCog(commands.Cog):
         source_name: str,
         new_name: str,
         role: discord.Role,
-        forecast_channel: discord.TextChannel,
-        tier: int,
-        day_offset: int,
-        hour_offset: float,
+        forecast_channel: discord.TextChannel | None = None,
+        tier: int = 1,
+        day_offset: int = 0,
+        hour_offset: float = 0.0,
     ) -> None:
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
                 "\u274c `/division duplicate` can only be used during season setup.",
+                ephemeral=True,
+            )
+            return
+
+        # Weather module mutual-exclusivity guard (FR-012 / T016)
+        weather_enabled = await self.bot.module_service.is_weather_enabled(interaction.guild_id)
+        if weather_enabled and forecast_channel is None:
+            await interaction.response.send_message(
+                "\u274c Weather module is active \u2014 a forecast channel is required for each division.",
+                ephemeral=True,
+            )
+            return
+        if not weather_enabled and forecast_channel is not None:
+            await interaction.response.send_message(
+                "\u274c Weather module is inactive \u2014 do not configure a forecast channel yet. "
+                "Enable the weather module first.",
                 ephemeral=True,
             )
             return
@@ -496,7 +531,7 @@ class SeasonCog(commands.Cog):
                 division_id=src_div.id,
                 name=new_name,
                 role_id=role.id,
-                forecast_channel_id=forecast_channel.id,
+                forecast_channel_id=forecast_channel.id if forecast_channel else None,
                 day_offset=day_offset,
                 hour_offset=hour_offset,
                 tier=tier,
@@ -1323,7 +1358,8 @@ class SeasonCog(commands.Cog):
                 all_rounds.append(rnd)
 
         # Schedule FIRST \u2014 if this fails the season stays SETUP in DB (fix #5)
-        self.bot.scheduler_service.schedule_all_rounds(all_rounds)
+        if await self.bot.module_service.is_weather_enabled(cfg.server_id):
+            self.bot.scheduler_service.schedule_all_rounds(all_rounds)
 
         # Only transition to ACTIVE after scheduling succeeds
         await season_svc.transition_to_active(cfg.season_id)

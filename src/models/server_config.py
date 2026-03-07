@@ -13,3 +13,5 @@ class ServerConfig:
     log_channel_id: int
     test_mode_active: bool = field(default=False)
     previous_season_number: int = 0
+    weather_module_enabled: bool = False
+    signup_module_enabled: bool = False
