@@ -1,3 +1,7 @@
+# WIP specification
+league-functionality-specification.md
+weather_specification.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
