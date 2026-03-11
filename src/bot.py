@@ -24,7 +24,7 @@ def create_bot() -> commands.Bot:
     intents = discord.Intents.default()
     intents.guilds = True
     intents.members = True
-    intents.message_content = False  # not reading message content
+    intents.message_content = True  # required for signup wizard on_message dispatch
 
     bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
     bot.db_path = DB_PATH  # type: ignore[attr-defined]
@@ -56,9 +56,16 @@ async def main() -> None:
 
     from services.module_service import ModuleService
     from services.signup_module_service import SignupModuleService
+    from services.wizard_service import WizardService
+    from utils.output_router import OutputRouter as _OutputRouter  # already imported above
 
     bot.module_service = ModuleService(DB_PATH)          # type: ignore[attr-defined]
     bot.signup_module_service = SignupModuleService(DB_PATH)  # type: ignore[attr-defined]
+    bot.wizard_service = WizardService(  # type: ignore[attr-defined]
+        DB_PATH,
+        bot.scheduler_service,  # type: ignore[attr-defined]
+        bot.output_router,  # type: ignore[attr-defined]
+    )
 
     @bot.event
     async def on_ready() -> None:
@@ -117,6 +124,16 @@ async def main() -> None:
         # Recover any season-end jobs that were lost during a restart
         await _recover_season_end_jobs(bot)
 
+        # Wire wizard service bot reference (needed for guild/service access)
+        bot.wizard_service.set_bot(bot)  # type: ignore[attr-defined]
+
+        # Re-arm inactivity APScheduler jobs for any non-UNENGAGED wizard sessions
+        # that were active before the last restart.
+        try:
+            await bot.wizard_service.recover_wizards()  # type: ignore[attr-defined]
+        except NotImplementedError:
+            pass  # stub until T030 is implemented
+
         # Restore in-memory pending setups from DB SETUP seasons
         await _recover_pending_setups(bot)
 
@@ -142,6 +159,7 @@ async def main() -> None:
     from cogs.team_cog import TeamCog
     from cogs.module_cog import ModuleCog
     from cogs.signup_cog import SignupCog
+    from cogs.admin_review_cog import AdminReviewCog
 
     await bot.add_cog(InitCog(bot))
     await bot.add_cog(SeasonCog(bot))
@@ -153,6 +171,7 @@ async def main() -> None:
     await bot.add_cog(TeamCog(bot))
     await bot.add_cog(ModuleCog(bot))
     await bot.add_cog(SignupCog(bot))
+    await bot.add_cog(AdminReviewCog(bot))
 
     log.info("All cogs loaded. Starting bot...")
     async with bot:

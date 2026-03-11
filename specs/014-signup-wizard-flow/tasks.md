@@ -170,10 +170,10 @@
 
 **Purpose**: Test coverage, edge-case validation, and forced-close completeness
 
-- [ ] T050 [P] Write unit tests for `WizardService` — all `WizardState` transitions, valid/invalid inputs per step, `_normalise_lap_time` variants, `_validate_nationality` variants, config-snapshot isolation (changes after snapshot do not affect in-progress wizard), inactivity-job arm/reset/cancel — in tests/unit/test_wizard_service.py
-- [ ] T051 [P] Write unit tests for lap-time normalisation edge cases — `M:ss.mss` canonical, `M:ss:mss` colon-ms, zero-pad 1-digit and 2-digit ms, half-up round 4-digit ms, strip whitespace, reject no-minutes, reject letters — in tests/unit/test_lap_time.py
-- [ ] T052 [P] Extend tests/unit/test_driver_state_machine.py with `AWAITING_CORRECTION_PARAMETER` transition paths (PENDING_ADMIN_APPROVAL → ACP, ACP → PENDING_DRIVER_CORRECTION, ACP → PENDING_ADMIN_APPROVAL timeout, PDC → PENDING_ADMIN_APPROVAL) and NOT_SIGNED_UP signup-data clearing (former_driver=True nulls fields, former_driver=False deletes record)
-- [ ] T053 [P] Extend tests/unit/test_signup_module_service.py — stable `slot_sequence_id` assignment on add, removed-slot ID not reused on next add, `SignupRecord` get/save/clear, `SignupWizardRecord` get/save/delete/get-by-channel, config snapshot returns copy isolated from subsequent config changes
+- [x] T050 [P] Write unit tests for `WizardService` — all `WizardState` transitions, valid/invalid inputs per step, `_normalise_lap_time` variants, `_validate_nationality` variants, config-snapshot isolation (changes after snapshot do not affect in-progress wizard), inactivity-job arm/reset/cancel — in tests/unit/test_wizard_service.py
+- [x] T051 [P] Write unit tests for lap-time normalisation edge cases — `M:ss.mss` canonical, `M:ss:mss` colon-ms, zero-pad 1-digit and 2-digit ms, half-up round 4-digit ms, strip whitespace, reject no-minutes, reject letters — in tests/unit/test_lap_time.py
+- [x] T052 [P] Extend tests/unit/test_driver_state_machine.py with `AWAITING_CORRECTION_PARAMETER` transition paths (PENDING_ADMIN_APPROVAL → ACP, ACP → PENDING_DRIVER_CORRECTION, ACP → PENDING_ADMIN_APPROVAL timeout, PDC → PENDING_ADMIN_APPROVAL) and NOT_SIGNED_UP signup-data clearing (former_driver=True nulls fields, former_driver=False deletes record)
+- [x] T053 [P] Extend tests/unit/test_signup_module_service.py — stable `slot_sequence_id` assignment on add, removed-slot ID not reused on next add, `SignupRecord` get/save/clear, `SignupWizardRecord` get/save/delete/get-by-channel, config snapshot returns copy isolated from subsequent config changes
 - [ ] T054 Run manual end-to-end validation against quickstart.md — happy path (enable → configure slots → open signups → complete wizard → approve), rejection path (admin presses Reject), correction path (Request Changes → select parameter → resubmit → approve), 24h inactivity simulation
 
 ---

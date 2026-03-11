@@ -18,27 +18,35 @@ ALLOWED_TRANSITIONS: dict[DriverState, set[DriverState]] = {
     },
     DriverState.PENDING_SIGNUP_COMPLETION: {
         DriverState.PENDING_ADMIN_APPROVAL,
-        DriverState.NOT_SIGNED_UP,  # signup window force-close
+        DriverState.NOT_SIGNED_UP,  # withdrawal, inactivity, or force-close
     },
     DriverState.PENDING_ADMIN_APPROVAL: {
+        DriverState.AWAITING_CORRECTION_PARAMETER,
         DriverState.UNASSIGNED,
-        DriverState.PENDING_DRIVER_CORRECTION,
-        DriverState.NOT_SIGNED_UP,
+        DriverState.NOT_SIGNED_UP,  # rejection or withdrawal
         DriverState.SEASON_BANNED,
         DriverState.LEAGUE_BANNED,
+    },
+    DriverState.AWAITING_CORRECTION_PARAMETER: {
+        DriverState.PENDING_DRIVER_CORRECTION,
+        DriverState.PENDING_ADMIN_APPROVAL,  # 5-minute timeout
+        DriverState.NOT_SIGNED_UP,           # withdrawal or force-close
     },
     DriverState.PENDING_DRIVER_CORRECTION: {
         DriverState.PENDING_ADMIN_APPROVAL,
+        DriverState.NOT_SIGNED_UP,  # withdrawal, inactivity, or force-close
         DriverState.SEASON_BANNED,
         DriverState.LEAGUE_BANNED,
-        DriverState.NOT_SIGNED_UP,  # signup window force-close
     },
     DriverState.UNASSIGNED: {
         DriverState.ASSIGNED,
+        DriverState.NOT_SIGNED_UP,  # /driver sack
         DriverState.SEASON_BANNED,
         DriverState.LEAGUE_BANNED,
     },
     DriverState.ASSIGNED: {
+        DriverState.UNASSIGNED,
+        DriverState.NOT_SIGNED_UP,  # /driver sack
         DriverState.SEASON_BANNED,
         DriverState.LEAGUE_BANNED,
     },
@@ -69,6 +77,7 @@ def _row_to_profile(row) -> DriverProfile:
         race_ban_count=row["race_ban_count"],
         season_ban_count=row["season_ban_count"],
         league_ban_count=row["league_ban_count"],
+        ban_races_remaining=row["ban_races_remaining"] if "ban_races_remaining" in row.keys() else 0,
     )
 
 
@@ -85,7 +94,7 @@ class DriverService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, server_id, discord_user_id, current_state, former_driver, "
-                "       race_ban_count, season_ban_count, league_ban_count "
+                "       race_ban_count, season_ban_count, league_ban_count, ban_races_remaining "
                 "FROM driver_profiles WHERE server_id = ? AND discord_user_id = ?",
                 (server_id, discord_user_id),
             )
@@ -149,6 +158,31 @@ class DriverService:
             )
             await db.commit()
 
+    async def _clear_signup_record(self, server_id: int, discord_user_id: str) -> None:
+        """Null out all signup data fields for a former driver (FR-036).
+        The signup_channel_id is retained until the channel is pruned."""
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                """
+                UPDATE signup_records
+                SET discord_username     = NULL,
+                    server_display_name  = NULL,
+                    nationality          = NULL,
+                    platform             = NULL,
+                    platform_id          = NULL,
+                    availability_slot_ids = NULL,
+                    driver_type          = NULL,
+                    preferred_teams      = NULL,
+                    preferred_teammate   = NULL,
+                    lap_times_json       = NULL,
+                    notes                = NULL,
+                    updated_at           = datetime('now')
+                WHERE server_id = ? AND discord_user_id = ?
+                """,
+                (server_id, discord_user_id),
+            )
+            await db.commit()
+
     # ------------------------------------------------------------------
     # State machine
     # ------------------------------------------------------------------
@@ -189,10 +223,14 @@ class DriverService:
                 f"Allowed targets: {sorted(s.value for s in allowed) or 'none'}."
             )
 
-        if new_state == DriverState.NOT_SIGNED_UP and not profile.former_driver:
-            await self._clear_seat_references(profile.id)
-            await self._delete_profile(profile.id)
-            return None
+        if new_state == DriverState.NOT_SIGNED_UP:
+            if not profile.former_driver:
+                await self._clear_seat_references(profile.id)
+                await self._delete_profile(profile.id)
+                return None
+            else:
+                # Former driver: null out signup record fields (FR-036)
+                await self._clear_signup_record(profile.server_id, profile.discord_user_id)
 
         await self._update_state(profile.id, new_state)
         profile.current_state = new_state

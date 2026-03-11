@@ -58,13 +58,48 @@ async def db_path(tmp_path):
             );
 
             CREATE TABLE signup_availability_slots (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id   INTEGER NOT NULL
-                                REFERENCES server_configs(server_id)
-                                ON DELETE CASCADE,
-                day_of_week INTEGER NOT NULL,
-                time_hhmm   TEXT NOT NULL,
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                server_id        INTEGER NOT NULL
+                                     REFERENCES server_configs(server_id)
+                                     ON DELETE CASCADE,
+                day_of_week      INTEGER NOT NULL,
+                time_hhmm        TEXT NOT NULL,
+                slot_sequence_id INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(server_id, day_of_week, time_hhmm)
+            );
+
+            CREATE TABLE signup_records (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                server_id            INTEGER NOT NULL,
+                discord_user_id      TEXT NOT NULL,
+                discord_username     TEXT,
+                server_display_name  TEXT,
+                nationality          TEXT,
+                platform             TEXT,
+                platform_id          TEXT,
+                availability_slot_ids TEXT,
+                driver_type          TEXT,
+                preferred_teams      TEXT,
+                preferred_teammate   TEXT,
+                lap_times_json       TEXT,
+                notes                TEXT,
+                signup_channel_id    INTEGER,
+                created_at           TEXT,
+                updated_at           TEXT,
+                UNIQUE(server_id, discord_user_id)
+            );
+
+            CREATE TABLE signup_wizard_records (
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                server_id               INTEGER NOT NULL,
+                discord_user_id         TEXT NOT NULL,
+                wizard_state            TEXT NOT NULL DEFAULT 'UNENGAGED',
+                signup_channel_id       INTEGER,
+                config_snapshot_json    TEXT,
+                draft_answers_json      TEXT NOT NULL DEFAULT '{}',
+                current_lap_track_index INTEGER NOT NULL DEFAULT 0,
+                last_activity_at        TEXT NOT NULL,
+                UNIQUE(server_id, discord_user_id)
             );
             """
         )
@@ -85,7 +120,7 @@ class TestSlotAdd:
         assert len(slots) == 1
         assert slots[0].day_of_week == 1
         assert slots[0].time_hhmm == "14:30"
-        assert slots[0].slot_id == 1
+        assert slots[0].slot_sequence_id == 1
 
     async def test_add_duplicate_raises(self, db_path):
         from services.signup_module_service import SignupModuleService
@@ -128,25 +163,29 @@ class TestChronologicalRanking:
         await svc.add_slot(1, 1, "14:30")   # Mon 14:30
         slots = await svc.get_slots(1)
         assert len(slots) == 3
-        assert slots[0].slot_id == 1
+        # Ordered chronologically regardless of insertion order
         assert slots[0].day_of_week == 1
         assert slots[0].time_hhmm == "14:30"
         assert slots[1].day_of_week == 1
         assert slots[1].time_hhmm == "20:00"
         assert slots[2].day_of_week == 3
 
-    async def test_slot_ids_renumber_after_remove(self, db_path):
+    async def test_stable_slot_id_not_reused_after_remove(self, db_path):
+        """Slot sequence IDs are stable: removed IDs are never reused."""
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(1, 1, "14:30")
-        await svc.add_slot(1, 1, "20:00")
-        await svc.add_slot(1, 3, "19:00")
-        # Remove slot #2 (Mon 20:00)
+        await svc.add_slot(1, 1, "14:30")   # seq_id = 1
+        await svc.add_slot(1, 1, "20:00")   # seq_id = 2
+        await svc.add_slot(1, 3, "19:00")   # seq_id = 3
+        # Remove seq_id 2 (Mon 20:00)
         await svc.remove_slot_by_rank(1, 2)
+        # Add a new slot — it must get seq_id 4, NOT 2
+        await svc.add_slot(1, 5, "18:00")   # seq_id = 4
         slots = await svc.get_slots(1)
-        assert len(slots) == 2
-        assert slots[0].slot_id == 1
-        assert slots[1].slot_id == 2
+        assert len(slots) == 3
+        seq_ids = [s.slot_sequence_id for s in slots]
+        assert 2 not in seq_ids, "seq_id 2 should never be reused after removal"
+        assert 4 in seq_ids
 
 
 class TestWindowState:
@@ -183,3 +222,220 @@ class TestWindowState:
         assert await svc.get_window_state(1) is False
         cfg2 = await svc.get_config(1)
         assert cfg2.signup_button_message_id is None
+
+
+# ---------------------------------------------------------------------------
+# T053 — SignupRecord CRUD
+# ---------------------------------------------------------------------------
+
+
+def _make_record(server_id: int = 1, user_id: str = "u1") -> "SignupRecord":
+    from models.signup_module import SignupRecord
+    return SignupRecord(
+        id=0,
+        server_id=server_id,
+        discord_user_id=user_id,
+        discord_username="TestUser",
+        server_display_name="Test User",
+        nationality="gb",
+        platform="Steam",
+        platform_id="SteamUser",
+        availability_slot_ids=[1, 2],
+        driver_type="REALISTIC",
+        preferred_teams=["Ferrari"],
+        preferred_teammate="partner1",
+        lap_times={"01": "1:23.456"},
+        notes="none",
+        signup_channel_id=555,
+    )
+
+
+class TestSignupRecordCRUD:
+    """T053: SignupRecord save/get/clear lifecycle."""
+
+    async def test_save_and_get_roundtrip(self, db_path):
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        rec = _make_record()
+        await svc.save_record(rec)
+        fetched = await svc.get_record(1, "u1")
+        assert fetched is not None
+        assert fetched.discord_username == "TestUser"
+        assert fetched.platform == "Steam"
+        assert fetched.availability_slot_ids == [1, 2]
+        assert fetched.lap_times == {"01": "1:23.456"}
+
+    async def test_get_missing_returns_none(self, db_path):
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        assert await svc.get_record(1, "ghost") is None
+
+    async def test_save_upserts_existing_record(self, db_path):
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        rec = _make_record()
+        await svc.save_record(rec)
+        # Overwrite with updated platform
+        from models.signup_module import SignupRecord
+        updated = SignupRecord(
+            id=0,
+            server_id=1,
+            discord_user_id="u1",
+            discord_username="TestUser",
+            server_display_name="Test User",
+            nationality="gb",
+            platform="PSN",
+            platform_id="PSN_User",
+            availability_slot_ids=[],
+            driver_type="REALISTIC",
+            preferred_teams=[],
+            preferred_teammate=None,
+            lap_times={},
+            notes=None,
+            signup_channel_id=None,
+        )
+        await svc.save_record(updated)
+        fetched = await svc.get_record(1, "u1")
+        assert fetched is not None
+        assert fetched.platform == "PSN"
+
+    async def test_clear_nulls_fields_but_retains_row(self, db_path):
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        await svc.save_record(_make_record())
+        await svc.clear_record(1, "u1")
+        fetched = await svc.get_record(1, "u1")
+        assert fetched is not None  # row still exists
+        assert fetched.discord_username is None
+        assert fetched.platform is None
+        assert fetched.nationality is None
+        assert fetched.lap_times == {}
+        assert fetched.availability_slot_ids == []
+
+
+# ---------------------------------------------------------------------------
+# T053 — SignupWizardRecord CRUD
+# ---------------------------------------------------------------------------
+
+
+def _make_wizard(server_id: int = 1, user_id: str = "w1") -> "SignupWizardRecord":
+    from models.signup_module import SignupWizardRecord, WizardState
+    return SignupWizardRecord(
+        id=0,
+        server_id=server_id,
+        discord_user_id=user_id,
+        wizard_state=WizardState.COLLECTING_NATIONALITY,
+        signup_channel_id=777,
+        config_snapshot=None,
+        draft_answers={"nationality": "gb"},
+        current_lap_track_index=0,
+        last_activity_at="2025-01-01T00:00:00",
+    )
+
+
+class TestSignupWizardRecordCRUD:
+    """T053: SignupWizardRecord save/get/delete/get_by_channel lifecycle."""
+
+    async def test_save_and_get_roundtrip(self, db_path):
+        from services.signup_module_service import SignupModuleService
+        from models.signup_module import WizardState
+        svc = SignupModuleService(db_path)
+        wizard = _make_wizard()
+        await svc.save_wizard(wizard)
+        fetched = await svc.get_wizard(1, "w1")
+        assert fetched is not None
+        assert fetched.wizard_state == WizardState.COLLECTING_NATIONALITY
+        assert fetched.draft_answers == {"nationality": "gb"}
+        assert fetched.signup_channel_id == 777
+
+    async def test_get_missing_returns_none(self, db_path):
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        assert await svc.get_wizard(1, "ghost") is None
+
+    async def test_get_by_channel(self, db_path):
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        await svc.save_wizard(_make_wizard())
+        fetched = await svc.get_wizard_by_channel(1, 777)
+        assert fetched is not None
+        assert fetched.discord_user_id == "w1"
+
+    async def test_get_by_channel_wrong_channel_returns_none(self, db_path):
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        await svc.save_wizard(_make_wizard())
+        assert await svc.get_wizard_by_channel(1, 9999) is None
+
+    async def test_delete_wizard(self, db_path):
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        await svc.save_wizard(_make_wizard())
+        await svc.delete_wizard(1, "w1")
+        assert await svc.get_wizard(1, "w1") is None
+
+    async def test_get_all_active_wizards_excludes_unengaged(self, db_path):
+        from services.signup_module_service import SignupModuleService
+        from models.signup_module import SignupWizardRecord, WizardState
+        svc = SignupModuleService(db_path)
+        await svc.save_wizard(_make_wizard(user_id="active1"))
+        inactive = SignupWizardRecord(
+            id=0, server_id=1, discord_user_id="inactive1",
+            wizard_state=WizardState.UNENGAGED,
+            signup_channel_id=None, config_snapshot=None,
+            draft_answers={}, current_lap_track_index=0,
+            last_activity_at="2025-01-01T00:00:00",
+        )
+        await svc.save_wizard(inactive)
+        active = await svc.get_all_active_wizards(1)
+        ids = [w.discord_user_id for w in active]
+        assert "active1" in ids
+        assert "inactive1" not in ids
+
+
+# ---------------------------------------------------------------------------
+# T053 — ConfigSnapshot isolation
+# ---------------------------------------------------------------------------
+
+
+class TestConfigSnapshotIsolation:
+    """T053: config_snapshot in wizard is independent of live config."""
+
+    async def test_snapshot_isolated_from_config_changes(self, db_path):
+        """Changing live settings does not affect an already-saved snapshot."""
+        from services.signup_module_service import SignupModuleService
+        from models.signup_module import (
+            SignupModuleSettings, ConfigSnapshot, AvailabilitySlot,
+            WizardState, SignupWizardRecord,
+        )
+        svc = SignupModuleService(db_path)
+        # Add a slot and capture a snapshot with nationality_required=True
+        await svc.add_slot(1, 1, "20:00")
+        slot = (await svc.get_slots(1))[0]
+        snapshot = ConfigSnapshot(
+            nationality_required=True,
+            time_type="TIME_TRIAL",
+            time_image_required=True,
+            selected_track_ids=["01", "02"],
+            slots=[slot],
+        )
+        wizard = SignupWizardRecord(
+            id=0, server_id=1, discord_user_id="snap1",
+            wizard_state=WizardState.COLLECTING_NATIONALITY,
+            signup_channel_id=888,
+            config_snapshot=snapshot,
+            draft_answers={},
+            current_lap_track_index=0,
+            last_activity_at="2025-01-01T00:00:00",
+        )
+        await svc.save_wizard(wizard)
+        # The snapshot is serialised to JSON — live config no longer influences it.
+        fetched = await svc.get_wizard(1, "snap1")
+        assert fetched is not None
+        snap = fetched.config_snapshot
+        assert snap is not None
+        assert snap.nationality_required is True
+        assert snap.selected_track_ids == ["01", "02"]
+        assert len(snap.slots) == 1
+        assert snap.slots[0].day_of_week == 1
+
