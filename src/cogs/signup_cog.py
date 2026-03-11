@@ -767,3 +767,56 @@ class SignupCog(commands.Cog):
             view=view,
             ephemeral=True,
         )
+
+    # ------------------------------------------------------------------
+    # /signup unassigned
+    # ------------------------------------------------------------------
+
+    @signup.command(
+        name="unassigned",
+        description="List all Unassigned drivers, seeded by total lap time.",
+    )
+    @channel_guard
+    @admin_only
+    async def signup_unassigned(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+        drivers = await self.bot.placement_service.get_unassigned_drivers_seeded(server_id)  # type: ignore[attr-defined]
+        if not drivers:
+            await interaction.followup.send(
+                "No Unassigned drivers found.", ephemeral=True
+            )
+            return
+
+        lines: list[str] = [f"**Unassigned Drivers — Seeded** ({len(drivers)} total)\n"]
+        for d in drivers:
+            preferred = ", ".join(d["preferred_teams"]) if d["preferred_teams"] else "—"
+            teammate = d["preferred_teammate"] or "—"
+            lines.append(
+                f"**#{d['seed']}** <@{d['discord_user_id']}> (**{d['server_display_name']}**)\n"
+                f"  Platform: {d['platform']} | Type: {d['driver_type']} | Lap total: {d['total_lap_fmt']}\n"
+                f"  Teams: {preferred} | Teammate: {teammate}"
+            )
+            if d["notes"]:
+                lines[-1] += f"\n  Notes: {d['notes']}"
+
+        # Discord has a 2000-char limit; chunk if needed
+        output = "\n\n".join(lines)
+        if len(output) <= 1900:
+            await interaction.followup.send(output, ephemeral=True)
+        else:
+            # Split into chunks of ~1900 chars
+            chunk, chunks = "", []
+            for line in lines:
+                if len(chunk) + len(line) + 2 > 1900:
+                    chunks.append(chunk)
+                    chunk = line
+                else:
+                    chunk = f"{chunk}\n\n{line}" if chunk else line
+            if chunk:
+                chunks.append(chunk)
+            for i, part in enumerate(chunks):
+                if i == 0:
+                    await interaction.followup.send(part, ephemeral=True)
+                else:
+                    await interaction.followup.send(part, ephemeral=True)

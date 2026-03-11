@@ -98,6 +98,7 @@ async def db_path(tmp_path):
                 lap_times_json       TEXT,
                 notes                TEXT,
                 signup_channel_id    INTEGER,
+                total_lap_ms         INTEGER,
                 created_at           TEXT,
                 updated_at           TEXT,
                 UNIQUE(server_id, discord_user_id)
@@ -349,6 +350,7 @@ async def db_with_signup(tmp_path):
                 lap_times_json       TEXT,
                 notes                TEXT,
                 signup_channel_id    INTEGER,
+                total_lap_ms         INTEGER,
                 created_at           TEXT,
                 updated_at           TEXT,
                 UNIQUE(server_id, discord_user_id)

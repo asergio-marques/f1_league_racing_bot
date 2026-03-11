@@ -336,7 +336,7 @@ class SignupModuleService:
                     nationality = NULL, platform = NULL, platform_id = NULL,
                     availability_slot_ids = NULL, driver_type = NULL,
                     preferred_teams = NULL, preferred_teammate = NULL,
-                    lap_times_json = NULL, notes = NULL,
+                    lap_times_json = NULL, total_lap_ms = NULL, notes = NULL,
                     updated_at = datetime('now')
                 WHERE server_id = ? AND discord_user_id = ?
                 """,
@@ -362,6 +362,7 @@ class SignupModuleService:
             lap_times=json.loads(row["lap_times_json"] or "{}"),
             notes=row["notes"],
             signup_channel_id=row["signup_channel_id"],
+            total_lap_ms=row["total_lap_ms"] if "total_lap_ms" in row.keys() else None,
         )
 
     # ── SignupWizardRecord CRUD ────────────────────────────────────────

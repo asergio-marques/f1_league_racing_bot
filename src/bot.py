@@ -54,6 +54,9 @@ async def main() -> None:
     bot.driver_service = DriverService(DB_PATH)      # type: ignore[attr-defined]
     bot.team_service = TeamService(DB_PATH)          # type: ignore[attr-defined]
 
+    from services.placement_service import PlacementService
+    bot.placement_service = PlacementService(DB_PATH)  # type: ignore[attr-defined]
+
     from services.module_service import ModuleService
     from services.signup_module_service import SignupModuleService
     from services.wizard_service import WizardService

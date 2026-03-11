@@ -131,6 +131,65 @@ class TeamCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
+    # /team role  (sub-group)
+    # ------------------------------------------------------------------
+
+    role_group = app_commands.Group(
+        name="role",
+        description="Map team names to Discord roles for placement.",
+        parent=team,
+        guild_only=True,
+    )
+
+    @role_group.command(
+        name="set",
+        description="Map a team name to a Discord role (granted/revoked on placement).",
+    )
+    @app_commands.describe(
+        team_name="Exact team name as it appears in the season.",
+        role="The Discord role to assign when a driver is placed into this team.",
+    )
+    @channel_guard
+    @admin_only
+    async def role_set(
+        self,
+        interaction: discord.Interaction,
+        team_name: str,
+        role: discord.Role,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
+            interaction.guild_id, team_name, role.id,
+            actor_id=interaction.user.id, actor_name=str(interaction.user),
+        )
+        await interaction.followup.send(
+            f'✅ Team **{team_name}** mapped to role {role.mention}.', ephemeral=True
+        )
+
+    @role_group.command(
+        name="list",
+        description="List all team → role mappings for this server.",
+    )
+    @channel_guard
+    @admin_only
+    async def role_list(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        configs = await self.bot.placement_service.get_all_team_role_configs(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if not configs:
+            await interaction.followup.send(
+                "No team role mappings configured. Use `/team role set` to add one.",
+                ephemeral=True,
+            )
+            return
+        lines = [f"**{c.team_name}** → <@&{c.role_id}>" for c in configs]
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+    # ------------------------------------------------------------------
     # /team season  (sub-group)
     # ------------------------------------------------------------------
 
