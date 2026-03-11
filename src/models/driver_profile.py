@@ -6,14 +6,15 @@ from enum import Enum
 
 
 class DriverState(str, Enum):
-    NOT_SIGNED_UP             = "NOT_SIGNED_UP"
-    PENDING_SIGNUP_COMPLETION = "PENDING_SIGNUP_COMPLETION"
-    PENDING_ADMIN_APPROVAL    = "PENDING_ADMIN_APPROVAL"
-    PENDING_DRIVER_CORRECTION = "PENDING_DRIVER_CORRECTION"
-    UNASSIGNED                = "UNASSIGNED"
-    ASSIGNED                  = "ASSIGNED"
-    SEASON_BANNED             = "SEASON_BANNED"
-    LEAGUE_BANNED             = "LEAGUE_BANNED"
+    NOT_SIGNED_UP                  = "NOT_SIGNED_UP"
+    PENDING_SIGNUP_COMPLETION      = "PENDING_SIGNUP_COMPLETION"
+    PENDING_ADMIN_APPROVAL         = "PENDING_ADMIN_APPROVAL"
+    AWAITING_CORRECTION_PARAMETER  = "AWAITING_CORRECTION_PARAMETER"
+    PENDING_DRIVER_CORRECTION      = "PENDING_DRIVER_CORRECTION"
+    UNASSIGNED                     = "UNASSIGNED"
+    ASSIGNED                       = "ASSIGNED"
+    SEASON_BANNED                  = "SEASON_BANNED"
+    LEAGUE_BANNED                  = "LEAGUE_BANNED"
 
 
 @dataclass
@@ -26,6 +27,7 @@ class DriverProfile:
     race_ban_count: int
     season_ban_count: int
     league_ban_count: int
+    ban_races_remaining: int = 0
 
 
 @dataclass

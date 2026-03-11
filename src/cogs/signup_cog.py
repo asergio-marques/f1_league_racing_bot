@@ -8,10 +8,10 @@ Commands:
   /signup time-type toggle                    — cycle time type setting
   /signup time-image toggle                   — toggle time image requirement
   /signup time-slot add   <day> <time>        — add availability slot
-  /signup time-slot remove <slot_id>          — remove slot by rank
+  /signup time-slot remove <slot_id>          — remove slot by sequence ID
   /signup time-slot list                      — list all slots
-  /signup enable [track_ids]                  — open signup window
-  /signup disable                             — close signup window
+  /signup open [track_ids]                    — open signup window
+  /signup close                               — close signup window
 """
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ from discord.ext import commands
 
 from cogs.module_cog import execute_forced_close
 from db.database import get_connection
+from models.driver_profile import DriverState
 from models.signup_module import SignupModuleConfig, SignupModuleSettings
 from models.track import TRACK_IDS
 from utils.channel_guard import admin_only, channel_guard
@@ -77,8 +78,138 @@ def _format_slots(slots: list) -> str:
         return "No availability slots configured."
     lines = [f"**Availability Time Slots**"]
     for slot in slots:
-        lines.append(f"#{slot.slot_id} — {slot.display_label}")
+        lines.append(f"#{slot.slot_sequence_id} — {slot.display_label}")
     return "\n".join(lines)
+
+
+class SignupButtonView(discord.ui.View):
+    """Persistent signup button view (T016).
+
+    Posted in the signup channel when signups are opened.  The button
+    callback is fully implemented in T028 (wizard integration).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Sign Up",
+        style=discord.ButtonStyle.primary,
+        custom_id="signup_button",
+    )
+    async def signup_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        """T028: Check driver state then launch the signup wizard."""
+        if not interaction.guild:
+            return
+        bot = interaction.client  # type: ignore[attr-defined]
+        server_id: int = interaction.guild.id
+        discord_user_id = str(interaction.user.id)
+
+        profile = await bot.driver_service.get_profile(server_id, discord_user_id)  # type: ignore[attr-defined]
+        if profile is not None and profile.driver_state != DriverState.NOT_SIGNED_UP:
+            if profile.ban_races_remaining > 0:
+                await interaction.response.send_message(
+                    "⛔ You are currently race-banned and cannot sign up at this time.",
+                    ephemeral=True,
+                )
+                return
+            await interaction.response.send_message(
+                "⛔ You already have a signup in progress. "
+                "Check your private wizard channel.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        channel = await bot.wizard_service.start_wizard(interaction, server_id)  # type: ignore[attr-defined]
+        if channel is None:
+            await interaction.followup.send(
+                "❌ Signup module is not configured. Contact an admin.", ephemeral=True
+            )
+            return
+        await channel.send(
+            view=WithdrawButtonView(server_id, discord_user_id, bot)  # type: ignore[arg-type]
+        )
+        await interaction.followup.send(
+            f"✅ Your signup channel has been created: {channel.mention}",
+            ephemeral=True,
+        )
+
+
+class ConfirmCloseView(discord.ui.View):
+    """Confirmation dialog for closing signups with in-progress drivers (T018)."""
+
+    def __init__(self, server_id: int, bot: commands.Bot) -> None:
+        super().__init__(timeout=300)
+        self._server_id = server_id
+        self._bot = bot
+        self.confirmed = False
+
+    @discord.ui.button(label="Confirm Close", style=discord.ButtonStyle.danger)
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        self.confirmed = True
+        self.stop()
+        await interaction.response.defer(ephemeral=True)
+        await execute_forced_close(
+            self._server_id, self._bot, audit_action="SIGNUP_FORCE_CLOSE"
+        )
+        await interaction.followup.send("✅ Signups force-closed.", ephemeral=True)
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        self.stop()
+        await interaction.response.send_message(
+            "Action cancelled. Signups remain open.", ephemeral=True
+        )
+
+    async def on_timeout(self) -> None:
+        pass
+
+
+class WithdrawButtonView(discord.ui.View):
+    """Withdrawal button view — visible throughout all in-wizard driver states (T027).
+
+    Posted in the private wizard channel immediately after the channel is
+    created.  The driver can press Withdraw at any point while in any
+    in-wizard state.
+    """
+
+    def __init__(
+        self, server_id: int, discord_user_id: str, bot: commands.Bot
+    ) -> None:
+        super().__init__(timeout=None)
+        self._server_id = server_id
+        self._discord_user_id = discord_user_id
+        self._bot = bot
+
+    @discord.ui.button(
+        label="Withdraw",
+        style=discord.ButtonStyle.danger,
+        custom_id="withdraw_button",
+    )
+    async def withdraw_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        """T041: Full implementation — verify user, call wizard_service.withdraw()."""
+        # Guard: only the driver who owns this wizard can press Withdraw
+        if str(interaction.user.id) != self._discord_user_id:
+            await interaction.response.send_message(
+                "⛔ This button is not for you.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        await self._bot.wizard_service.withdraw(  # type: ignore[attr-defined]
+            self._server_id, self._discord_user_id, interaction.guild
+        )
+        await interaction.followup.send(
+            "✅ Your signup has been withdrawn.", ephemeral=True
+        )
 
 
 class SignupCog(commands.Cog):
@@ -99,6 +230,27 @@ class SignupCog(commands.Cog):
             )
             return False
         return True
+
+    # ── Wizard message listener ────────────────────────────────────────
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message) -> None:
+        """T029: Route messages in wizard channels to the wizard state machine."""
+        if message.author.bot or not message.guild:
+            return
+        wizard = await self.bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
+            message.guild.id, message.channel.id
+        )
+        if wizard is None or wizard.discord_user_id != str(message.author.id):
+            return
+        await self.bot.wizard_service.handle_message(wizard, message)  # type: ignore[attr-defined]
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member) -> None:
+        """T048: Clean up wizard state when a member leaves the server (FR-027)."""
+        await self.bot.wizard_service.handle_member_remove(  # type: ignore[attr-defined]
+            member.guild.id, str(member.id), member.guild
+        )
 
     # ── /signup (root group) ───────────────────────────────────────────
 
@@ -341,7 +493,7 @@ class SignupCog(commands.Cog):
         # Guard: signups must be closed
         if await self.bot.signup_module_service.get_window_state(server_id):
             await interaction.response.send_message(
-                "❌ Slots cannot be modified while signups are open. Close signups first with `/signup disable`.",
+                "❌ Slots cannot be modified while signups are open. Close signups first with `/signup close`.",
                 ephemeral=True,
             )
             return
@@ -383,7 +535,7 @@ class SignupCog(commands.Cog):
                 "VALUES (?, ?, ?, NULL, 'SIGNUP_SLOT_ADD', '', ?, ?)",
                 (server_id, interaction.user.id, str(interaction.user),
                  json.dumps({"day": day_int, "time": normalized,
-                             "slot_id": new_slot.slot_id if new_slot else None}), now),
+                             "slot_id": new_slot.slot_sequence_id if new_slot else None}), now),
             )
             await db.commit()
 
@@ -391,8 +543,8 @@ class SignupCog(commands.Cog):
             _format_slots(updated), ephemeral=True
         )
 
-    @time_slot_group.command(name="remove", description="Remove an availability time slot by its ID.")
-    @app_commands.describe(slot_id="1-based slot ID from /signup time-slot list")
+    @time_slot_group.command(name="remove", description="Remove an availability time slot by its sequence ID.")
+    @app_commands.describe(slot_id="Stable sequence ID shown in /signup time-slot list")
     @channel_guard
     @admin_only
     async def time_slot_remove(
@@ -414,7 +566,7 @@ class SignupCog(commands.Cog):
             )
             return
 
-        target = next((s for s in slots if s.slot_id == slot_id), None)
+        target = next((s for s in slots if s.slot_sequence_id == slot_id), None)
         if target is None:
             await interaction.response.send_message(
                 f"❌ Slot #{slot_id} does not exist.", ephemeral=True
@@ -448,15 +600,15 @@ class SignupCog(commands.Cog):
             _format_slots(slots), ephemeral=True
         )
 
-    # ── /signup enable (T027) ──────────────────────────────────────────
+    # ── /signup open (T017) ───────────────────────────────────────────
 
-    @signup.command(name="enable", description="Open the signup window.")
+    @signup.command(name="open", description="Open the signup window.")
     @app_commands.describe(
         track_ids="Optional: space- or comma-separated track IDs (e.g. '01 03 12')"
     )
     @channel_guard
     @admin_only
-    async def signup_enable(
+    async def signup_open(
         self,
         interaction: discord.Interaction,
         track_ids: str | None = None,
@@ -534,18 +686,7 @@ class SignupCog(commands.Cog):
             color=discord.Color.green(),
         )
 
-        class SignupView(discord.ui.View):
-            def __init__(self) -> None:
-                super().__init__(timeout=None)
-
-            @discord.ui.button(label="Sign Up", style=discord.ButtonStyle.primary, custom_id="signup_button")
-            async def signup_button(self_view, btn_interaction: discord.Interaction, button: discord.ui.Button) -> None:
-                await btn_interaction.response.send_message(
-                    "✅ Your signup request has been noted. An admin will review it shortly.",
-                    ephemeral=True,
-                )
-
-        view = SignupView()
+        view = SignupButtonView()
         try:
             posted_msg = await signup_channel.send(embed=info_embed, view=view)
         except Exception as exc:
@@ -574,12 +715,12 @@ class SignupCog(commands.Cog):
             ephemeral=True,
         )
 
-    # ── /signup disable (T028) ─────────────────────────────────────────
+    # ── /signup close (T019) ──────────────────────────────────────────
 
-    @signup.command(name="disable", description="Close the signup window.")
+    @signup.command(name="close", description="Close the signup window.")
     @channel_guard
     @admin_only
-    async def signup_disable(self, interaction: discord.Interaction) -> None:
+    async def signup_close(self, interaction: discord.Interaction) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         cfg = await self.bot.signup_module_service.get_config(server_id)
@@ -618,30 +759,7 @@ class SignupCog(commands.Cog):
         if count > 10:
             driver_list += f"\n…and {count - 10} more"
 
-        class ConfirmCloseView(discord.ui.View):
-            def __init__(self_view) -> None:
-                super().__init__(timeout=300)
-                self_view.confirmed = False
-
-            @discord.ui.button(label="Confirm Close", style=discord.ButtonStyle.danger)
-            async def confirm(self_view, btn_interaction: discord.Interaction, button: discord.ui.Button) -> None:
-                self_view.confirmed = True
-                self_view.stop()
-                await btn_interaction.response.defer(ephemeral=True)
-                await execute_forced_close(server_id, self.bot, audit_action="SIGNUP_FORCE_CLOSE")
-                await btn_interaction.followup.send("✅ Signups force-closed.", ephemeral=True)
-
-            @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
-            async def cancel(self_view, btn_interaction: discord.Interaction, button: discord.ui.Button) -> None:
-                self_view.stop()
-                await btn_interaction.response.send_message(
-                    "Action cancelled. Signups remain open.", ephemeral=True
-                )
-
-            async def on_timeout(self_view) -> None:
-                pass  # No state change on timeout
-
-        view = ConfirmCloseView()
+        view = ConfirmCloseView(server_id, self.bot)
         await interaction.response.send_message(
             f"⚠️ **{count} driver(s) are currently in progress:**\n{driver_list}\n\n"
             "Closing signups will transition all in-progress drivers to **Not Signed Up**.\n"

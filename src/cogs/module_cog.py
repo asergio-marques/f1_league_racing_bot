@@ -64,6 +64,16 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
         except Exception:
             log.exception("forced_close: failed to transition driver %s", row["discord_user_id"])
 
+    # T046: cancel wizard APScheduler jobs for each force-transitioned driver
+    svc = bot.scheduler_service  # type: ignore[attr-defined]
+    for row in rows:
+        uid = row["discord_user_id"]
+        for prefix in ("wizard_inactivity", "wizard_channel_delete"):
+            try:
+                svc._scheduler.remove_job(f"{prefix}_{server_id}_{uid}")
+            except Exception:
+                pass  # Job already fired or never existed
+
     # 2. Delete button message
     if cfg.signup_button_message_id:
         guild = bot.get_guild(server_id)
@@ -372,12 +382,17 @@ class ModuleCog(commands.Cog):
         try:
             interaction_role = guild.get_role(cfg.interaction_role_id) if cfg else None
             overwrites = {
-                guild.default_role: discord.PermissionOverwrite(read_messages=False),
-                base_role: discord.PermissionOverwrite(read_messages=True, send_messages=False),
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                base_role: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=False,
+                    use_application_commands=True,
+                ),
+                guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
             }
             if interaction_role:
                 overwrites[interaction_role] = discord.PermissionOverwrite(
-                    read_messages=True, send_messages=True
+                    view_channel=True, send_messages=True
                 )
             await channel.edit(overwrites=overwrites)
         except Exception as exc:
@@ -435,20 +450,43 @@ class ModuleCog(commands.Cog):
         if signup_cfg and signup_cfg.signups_open:
             await execute_forced_close(server_id, self.bot, audit_action="SIGNUP_FORCE_CLOSE")
 
-        # Remove bot-applied permission overwrites
+        # Remove bot-applied permission overwrites (only those set by _enable_signup)
         if signup_cfg:
             guild = self.bot.get_guild(server_id)
             if guild:
                 channel = guild.get_channel(signup_cfg.signup_channel_id)
                 if channel and isinstance(channel, discord.TextChannel):
-                    overwrites_to_clear = []
-                    for target in list(channel.overwrites):
-                        overwrites_to_clear.append(target)
-                    for target in overwrites_to_clear:
+                    # Build the exact set of targets we set during _enable_signup
+                    targets_to_revert = [guild.default_role, guild.me]
+                    base_role = guild.get_role(signup_cfg.base_role_id)
+                    if base_role:
+                        targets_to_revert.append(base_role)
+                    server_cfg = await self.bot.config_service.get_server_config(server_id)
+                    if server_cfg:
+                        interaction_role = guild.get_role(server_cfg.interaction_role_id)
+                        if interaction_role:
+                            targets_to_revert.append(interaction_role)
+                    for target in targets_to_revert:
                         try:
                             await channel.set_permissions(target, overwrite=None)
                         except Exception:
-                            log.exception("disable_signup: could not clear overwrite for %s", target)
+                            log.exception(
+                                "disable_signup: could not clear overwrite for %s", target
+                            )
+
+        # Cancel all wizard inactivity and channel-delete APScheduler jobs for this server
+        if signup_cfg:
+            active_wizards = await self.bot.signup_module_service.get_all_active_wizards(
+                server_id
+            )
+            scheduler = self.bot.scheduler_service._scheduler
+            for wiz in active_wizards:
+                for prefix in ("wizard_inactivity", "wizard_channel_delete"):
+                    job_id = f"{prefix}_{server_id}_{wiz.discord_user_id}"
+                    try:
+                        scheduler.remove_job(job_id)
+                    except Exception:
+                        pass
 
         # Delete config (cascades to settings + slots)
         await self.bot.signup_module_service.delete_config(server_id)

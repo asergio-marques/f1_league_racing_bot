@@ -1,6 +1,49 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-03-10 — v2.1.0 → v2.2.0: Signup wizard & driver placement ratification + BAN_STATE_NAMING resolution]
+  Version change    : 2.1.0 → 2.2.0
+  Bump rationale    : MINOR — Signup wizard and driver assignment/placement moved from
+                      "planned future scope" to formally in-scope. New Principle XI
+                      (Signup Wizard Integrity) added. Principle VI in-scope list expanded
+                      to 7 items. Principle VIII materially expanded: all 9 driver states
+                      enumerated with a transition table, Awaiting Correction Parameter
+                      formalised as an explicit state, Season Banned duration mechanics
+                      resolved (BAN_STATE_NAMING TODO closed).
+  Modified principles:
+    - Principle VI (Incremental Scope Expansion) — items 5 (signup wizard & driver onboarding)
+      and 6 (driver assignment & placement) added to in-scope; corresponding entries removed
+      from planned future scope; former item 5 (Modular feature architecture) renumbered to 7.
+    - Principle VIII (Driver Profile Integrity) — all 9 driver states enumerated in a table;
+      full permitted-transition table added; Awaiting Correction Parameter formalised;
+      Season Banned ban_races_remaining mechanics specified; server-leave rule added;
+      signup data clearing on Not Signed Up transition clarified.
+  Added sections    :
+    - Principle XI: Signup Wizard Integrity (NEW)
+    - Data & State Management: SignupRecord, SignupWizardRecord, SignupConfiguration,
+      and TimeSlot entities added as New Entities (v2.2.0).
+  Removed sections  : None
+  Resolved TODOs    :
+    - TODO(BAN_STATE_NAMING): Resolved. "Season Banned" duration = total round count of the
+      season in which the ban was issued, stored as ban_races_remaining INT on DriverProfile.
+      Decrements by 1 for each round completion server-wide. Transitions automatically to
+      Not Signed Up when the counter reaches 0.
+  Templates confirmed aligned:
+    ✅ .specify/templates/plan-template.md      — dynamic Constitution Check; no hardcoded
+         principle list; no changes needed.
+    ✅ .specify/templates/spec-template.md      — generic; no stale references.
+    ✅ .specify/templates/tasks-template.md     — generic; aligns with I–XI.
+    ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+    ✅ .specify/templates/checklist-template.md  — no impact.
+  Deferred TODOs    :
+    - Race results recording, championship standings computation, penalty adjudication,
+      and financial/licensing workflows remain pending formal ratification; each will be
+      ratified as a dedicated feature increment per Principle VI.
+    - The signup module specification MUST enumerate all new channel categories introduced
+      (general signup channel, per-driver signup channels) and register them per Principle VII.
+    - Lap time format edge cases (millisecond rounding vs. zero-padding, multi-track display
+      ordering) are deferred to the signup feature specification for implementation detail.
+
 [2026-03-07 — v2.0.0 → v2.1.0: Modular architecture ratification + full-league expansion vision]
   Version change    : 2.0.0 → 2.1.0
   Bump rationale    : MINOR — New Principle X added (Modular Feature Architecture). Principle VI
@@ -388,20 +431,22 @@ domains are formally in-scope as of this version:
    delivered as an optional module (Principle X).
 2. **Season and division lifecycle**: setup, activation, completion, cancellation, round
    scheduling, and amendments.
-3. **Driver profile management**: signup workflow, state machine enforcement, Discord User ID
-   reassignment, and historical participation tracking.
+3. **Driver profile management**: state machine enforcement, Discord User ID reassignment,
+   and historical participation tracking.
 4. **Team management**: configurable team definitions per division, seat assignment, and
    the Reserve team ruleset.
-5. **Modular feature architecture**: per-server enablement and disablement of optional
+5. **Signup wizard and driver onboarding**: the multi-step signup flow, per-driver signup
+   channels, admin approval pipeline, correction request cycle, signup configuration
+   (nationality toggle, time type, time-proof image requirement, time slots), and driver
+   onboarding from first button-press through placement eligibility.
+6. **Driver assignment and placement**: assign/unassign/sack drivers to division-team seats;
+   seeded placement queue; division-role grant and revocation.
+7. **Modular feature architecture**: per-server enablement and disablement of optional
    capability modules (Principle X).
 
 The following domains are **planned future scope** — each will be formally ratified as an
 independent feature increment before any implementation begins:
 
-- **Signup wizard and flow**: full multi-step driver onboarding, admin approval, and
-  placement into divisions and teams.
-- **Driver assignment and placement**: assign/unassign drivers to division-team seats;
-  driver sacking flow.
 - **Race results recording** and raw score entry per round.
 - **Driver championship standings** computation and display.
 - **Penalty and protest adjudication**.
@@ -448,26 +493,78 @@ Every Discord user within a server is represented by at most one driver profile,
 their Discord User ID in server scope. The following rules are non-negotiable:
 
 - **State machine enforcement**: A driver's current state MUST only change via the transitions
-  listed in the specification. Any transition not in the approved list MUST be rejected with a
-  clear error. No code path may bypass the state machine to set state directly.
-- **Immutability of former drivers**: Once the `former_driver` flag is set to `true` (triggered
-  by the driver's first participation in a round), the profile record MUST NOT be deleted — only
-  modified. An attempt to delete such a record MUST be rejected.
-- **Deletion rule**: If a driver transitions to *Not Signed Up* and `former_driver` is `false`,
-  their database record MUST be deleted automatically as part of the same transaction.
-- **User ID reassignment**: Only a server administrator may change the Discord User ID
-  associated with a driver profile (to handle account changes). The reassignment MUST be logged
-  as an audit event (Principle V) with both the old and new User ID.
-- **Test-mode overrides**: When test mode is active, administrators MAY manually set
-  `former_driver` to `true` or `false`, and MAY directly assign *Not Signed Up* drivers to
-  *Unassigned* or *Assigned* state, bypassing the normal signup flow. All such overrides MUST
-  still produce audit log entries.
-- **Absent profile semantics**: A Discord user with no database record is treated as *Not Signed
-  Up*. The bot MUST NOT error or warn on absence — it is the canonical default state.
+  in the table below. Any transition not in the approved list MUST be rejected with a clear
+  error. No code path may bypass the state machine to set state directly.
 
-**Rationale**: The driver profile is a long-lived, server-scoped identity record. Strict state
-machine enforcement and immutability guarantees prevent data loss from accidental operations
-and ensure the historical participation record is always trustworthy.
+#### Driver States
+
+| State | Meaning |
+|-------|---------|
+| Not Signed Up | Inactive; eligible to initiate signup. Default when no profile exists. |
+| Pending Signup Completion | Wizard engaged; bot is collecting signup parameters. |
+| Pending Admin Approval | All parameters collected; awaiting trusted-role review. |
+| Awaiting Correction Parameter | Trusted user clicked "request changes"; selecting which field to re-collect (5-minute window). |
+| Pending Driver Correction | Specific field flagged; driver must re-submit that field only. |
+| Unassigned | Signup approved; not yet placed in any division-team seat. |
+| Assigned | Placed in at least one division-team seat. |
+| Season Banned | Banned for `ban_races_remaining` rounds (see Season Banned mechanics). Cannot sign up. |
+| League Banned | Permanently banned. Cannot sign up until explicitly lifted by an administrator. |
+
+#### Permitted Transitions
+
+| From | To | Trigger / Condition |
+|------|----|---------------------|
+| Not Signed Up | Pending Signup Completion | Driver presses signup button (signups must be open) |
+| Pending Signup Completion | Pending Admin Approval | Driver completes all wizard steps |
+| Pending Signup Completion | Not Signed Up | Driver withdraws; or 24 h inactivity timeout |
+| Pending Admin Approval | Awaiting Correction Parameter | Trusted user clicks "request changes" |
+| Awaiting Correction Parameter | Pending Driver Correction | Trusted user selects field to correct |
+| Awaiting Correction Parameter | Pending Admin Approval | 5-minute timeout with no field selected |
+| Pending Driver Correction | Pending Admin Approval | Driver submits valid corrected field |
+| Pending Driver Correction | Not Signed Up | Driver withdraws; or 24 h inactivity timeout |
+| Pending Admin Approval | Unassigned | Trusted user approves signup |
+| Pending Admin Approval | Not Signed Up | Trusted user rejects signup; or driver withdraws |
+| Unassigned | Assigned | `/driver assign` places driver in their first seat |
+| Assigned | Unassigned | `/driver unassign` removes driver's last seat assignment |
+| Unassigned | Not Signed Up | `/driver sack` |
+| Assigned | Not Signed Up | `/driver sack` |
+| Any (except League Banned, Season Banned) | Season Banned | Ban command issued |
+| Any (except League Banned) | League Banned | Ban command issued |
+| Season Banned | Not Signed Up | `ban_races_remaining` decrements to 0 |
+| League Banned | Not Signed Up | Administrator explicitly lifts ban |
+| Not Signed Up | Unassigned | Test mode: admin direct-assign |
+| Not Signed Up | Assigned | Test mode: admin direct-assign |
+
+- **Season Banned mechanics**: When a Season Ban is issued, `ban_races_remaining` is set to
+  the total round count of the active season at the time of issuance. This counter decrements
+  by 1 for each round that completes anywhere within the server. When `ban_races_remaining`
+  reaches 0, the driver automatically transitions to *Not Signed Up* under the same rules as
+  any other transition to that state (immutability gate, deletion, signup-data clearing).
+- **Signup data clearing**: On transition to *Not Signed Up* with `former_driver = true`, all
+  signup record fields (collected parameters) MUST be nulled; the driver's signup channel
+  reference is retained until the channel is pruned per Principle XI.
+- **Immutability of former drivers**: Once `former_driver` is `true` (set on first round
+  participation), the profile record MUST NOT be deleted — only modified. Deletion attempts
+  MUST be rejected.
+- **Deletion rule**: Transitioning to *Not Signed Up* with `former_driver = false` MUST delete
+  the record atomically in the same transaction as the state change.
+- **User ID reassignment**: Only a server administrator may change the Discord User ID.
+  Both old and new IDs MUST be logged as an audit event (Principle V). Upon reassignment,
+  the stored Discord username and server display name MUST be overwritten by those of the
+  new account.
+- **Test-mode overrides**: When test mode is active, administrators MAY directly set
+  `former_driver` to `true` or `false`, and MAY assign *Not Signed Up* drivers directly to
+  *Unassigned* or *Assigned*. All such overrides MUST produce audit log entries.
+- **Absent profile semantics**: A Discord user with no database record is treated as
+  *Not Signed Up*. The bot MUST NOT error or warn on absence — absence is the canonical
+  default.
+- **Server-leave rule**: If a user leaves the server while their driver profile exists, the
+  profile record MUST be retained. Any active signup wizard is cancelled immediately and the
+  signup channel deleted without delay.
+
+**Rationale**: The driver profile is a long-lived, server-scoped identity record. Exhaustive
+state enumeration and machine enforcement prevent data loss, support unambiguous auditability,
+and provide a stable framework for all planned lifecycle extensions.
 
 ### IX. Team & Division Structural Integrity
 
@@ -546,6 +643,57 @@ server administrators opt into. Mandatory modules establish the data model that 
 modules build on; optional modules add functionality only when the server is ready for it.
 The default-off policy prevents accidental activation of unintended features and keeps the
 initial setup experience simple.
+
+### XI. Signup Wizard Integrity
+
+The signup wizard is the multi-step onboarding flow initiated when a driver presses the signup
+button. It operates as a secondary state machine (wizard state) orthogonal to the driver
+lifecycle state (Principle VIII). The following rules are non-negotiable:
+
+- **Isolation**: Each driver has exactly one wizard state record. Concurrent wizards for
+  different drivers MUST be fully isolated; one driver's wizard MUST NOT delay, influence, or
+  share state with any other.
+- **Channel lifecycle**:
+  - On wizard start, the bot MUST create a private channel named `<username>-signup`, visible
+    only to the driver, tier-2 admins, and server administrators.
+  - The channel MUST be deleted after a 24-hour hold period following any terminal event
+    (approval, rejection, withdrawal, or timeout cancellation). During the hold period the
+    channel is read-only for the driver.
+  - The channel MUST be deleted immediately (no hold) when the driver leaves the server.
+  - If a driver with an existing signup channel re-presses the signup button, the old channel
+    MUST be deleted immediately and a new one created.
+  - Tier-2 admins and server administrators MAY write freely in any signup channel at any time.
+- **Sequential collection (normal flow)**: In the normal wizard (Pending Signup Completion),
+  parameter collection MUST follow the exact order specified in the feature specification.
+  Each step MUST wait for a valid response before advancing.
+- **Targeted correction flow**: In the correction wizard (Pending Driver Correction), the
+  wizard MUST advance directly to the flagged parameter's collection state, collect only that
+  parameter, then return to Unengaged and transition the driver to Pending Admin Approval.
+  No other parameters are re-collected.
+- **Inactivity timeout**: Remaining in Pending Signup Completion or Pending Driver Correction
+  without wizard progress for 24 consecutive hours triggers cancellation: the driver
+  transitions to Not Signed Up; the channel is frozen (read-only); a cancellation notice is
+  posted; the channel is deleted 24 hours later.
+- **Withdrawal**: A withdrawal button MUST be visible throughout the wizard while the driver is
+  in Pending Signup Completion, Pending Admin Approval, or Pending Driver Correction. Pressing
+  it transitions the driver to Not Signed Up immediately.
+- **Signup data persistence**: Collected answers are stored as draft data during the wizard.
+  On transition to Pending Admin Approval the complete record MUST be committed atomically.
+  Draft data MUST be discarded on any transition to Not Signed Up.
+- **Image proof validation (configurable)**: When `time_image_required` is enabled, every
+  lap-time submission MUST include an attached image; text-only submissions MUST be rejected
+  with a clear explanation. The requirement MUST be stated in the channel before each
+  time-collection step.
+- **Lap time format**: Accepted formats are `M:ss.mss` and `M:ss:mss`. The colon-separated
+  variant MUST be normalised to dot-separated. Milliseconds MUST be zero-padded to 3 digits.
+  Leading and trailing whitespace MUST be stripped.
+- **Configuration snapshot**: Wizard-governing configuration (nationality toggle, time type,
+  image requirement, time slots, signup tracks) is read once at wizard-start and cached per
+  wizard instance. Configuration changes after a wizard starts MUST NOT affect that wizard.
+
+**Rationale**: A strictly defined, isolated wizard removes ambiguity in the onboarding process,
+protects in-progress signups from mid-flow configuration changes, ensures data integrity before
+trusted-user review, and maintains a clean channel lifecycle for server hygiene.
 
 ## Bot Behavior Standards
 
@@ -654,6 +802,50 @@ sufficient; no additional caching layer is required at the current scale. If the
 population grows beyond ~500 concurrent drivers, migrating the backing store from SQLite
 to a client-server RDBMS (e.g., PostgreSQL) should be evaluated.
 
+- **SignupRecord rows**: one active record per signed-up or pending driver; cleared on
+  transition to Not Signed Up; expected O(active_drivers) ≤ hundreds per server; each
+  row is <2 KB (lap times stored as compact JSON strings).
+- **SignupWizardRecord rows**: one per driver with any wizard history; tiny; same order of
+  magnitude as DriverProfile.
+- **TimeSlot rows**: expected single digits to low tens per server; negligible.
+
+### New Entities (v2.2.0)
+
+**SignupRecord** (per driver per server — at most one active record per driver):
+- Stores the committed signup submission: `discord_username` (TEXT), `display_name` (TEXT),
+  `nationality` (TEXT — ISO flag code or "other"), `platform` (ENUM: Steam/EA/Xbox/
+  Playstation), `platform_id` (TEXT), `availability_slots` (JSON array of TimeSlot IDs),
+  `driver_type` (ENUM: FULL_TIME/RESERVE), `preferred_teams` (JSON ordered list of ≤3 team
+  IDs, or null for no preference), `preferred_teammate` (TEXT, nullable), `lap_times`
+  (JSON map of track_id → normalised time string), `notes` (TEXT ≤50 chars, nullable).
+- Linked 1-to-1 with DriverProfile. Fields nulled on transition to Not Signed Up when
+  `former_driver = true`; record deleted with DriverProfile when `former_driver = false`.
+
+**SignupWizardRecord** (per driver per server):
+- `wizard_state` (ENUM) — current wizard step; full enumeration defined in the signup
+  feature specification.
+- `signup_channel_id` (TEXT, nullable) — Discord channel ID; retained through the 24-hour
+  hold period after wizard completion (Principle XI).
+- `partial_answers` (JSON, nullable) — draft answers in progress; cleared atomically on
+  reaching Pending Admin Approval or on any transition to Not Signed Up.
+- Created lazily on first wizard engagement; linked 1-to-1 with DriverProfile.
+
+**SignupConfiguration** (per server, owned by the signup module):
+- `nationality_required` (BOOLEAN, default true).
+- `time_type` (ENUM: TIME_TRIAL/SHORT_QUALIFICATION, default TIME_TRIAL).
+- `time_image_required` (BOOLEAN, default true).
+- `signups_open` (BOOLEAN, default false).
+- `signup_tracks` (JSON array of track IDs, nullable — empty means no tracks shown).
+- `general_signup_channel_id` (TEXT, nullable).
+- `base_role_id` (TEXT, nullable) — Discord role that can see and use the signup channel.
+- `signedup_role_id` (TEXT, nullable) — Discord role granted on signup approval.
+
+**TimeSlot** (per server):
+- `slot_id` (INTEGER, server-scoped auto-increment PK).
+- `day_of_week` (ENUM: Monday–Sunday).
+- `time_of_day` (TEXT, HH:MM 24-hour).
+- IDs are stable; removing a slot does not renumber remaining slots.
+
 ## Governance
 
 This constitution supersedes all other development practices and conventions for this project.
@@ -669,9 +861,9 @@ Amendments require:
 - **MINOR**: Addition of a new principle, section, or materially expanded guidance.
 - **PATCH**: Clarifications, wording improvements, or non-semantic refinements.
 
-All pull requests MUST include a Constitution Check confirming compliance with Principles I–X
+All pull requests MUST include a Constitution Check confirming compliance with Principles I–XI
 before merge. Any deliberate violation of a principle MUST be documented in the plan's
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-07
+**Version**: 2.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-10
