@@ -522,6 +522,13 @@ class WizardService:
                 except discord.HTTPException:
                     log.warning("approve_signup: could not add signed-up role for %s", discord_user_id)
 
+        # Compute and persist total_lap_ms before transitioning state
+        signup_record = await self._signup_svc.get_record(server_id, discord_user_id)
+        if signup_record is not None and signup_record.lap_times:
+            await self.bot.placement_service.store_total_lap_ms(  # type: ignore[attr-defined]
+                server_id, discord_user_id, signup_record.lap_times
+            )
+
         # Transition driver to UNASSIGNED
         await self._driver_service.transition(
             server_id, discord_user_id, DriverState.UNASSIGNED

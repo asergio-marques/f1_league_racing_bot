@@ -36,6 +36,7 @@ class DriverSeasonAssignment:
     driver_profile_id: int
     season_id: int
     division_id: int
+    team_seat_id: int | None  # FK → team_seats(id); nullable for legacy rows
     current_position: int
     current_points: int
     points_gap_to_first: int

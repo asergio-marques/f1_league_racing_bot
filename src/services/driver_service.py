@@ -175,6 +175,7 @@ class DriverService:
                     preferred_teams      = NULL,
                     preferred_teammate   = NULL,
                     lap_times_json       = NULL,
+                    total_lap_ms         = NULL,
                     notes                = NULL,
                     updated_at           = datetime('now')
                 WHERE server_id = ? AND discord_user_id = ?

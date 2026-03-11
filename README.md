@@ -105,8 +105,9 @@ No parameters. Creates a pending season tied to today's date and enables the `/d
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name (used to reference it in subsequent commands) |
-| `role` | Role | ✅ | Discord role mentioned in weather forecast messages for this division |
-| `forecast_channel` | Channel | ✅ | Channel where weather forecast messages are posted |
+| `role` | Role | ✅ | Discord role mentioned when referencing this division |
+| `forecast_channel` | Channel | — | Channel where weather forecast messages are posted. Required when the weather module is enabled; must be omitted when disabled. |
+| `tier` | Integer | — | Tier number for this division (1 = top tier; must be sequential and unique within the season). Default: `1` |
 
 #### `/division duplicate` — Copy a division with a datetime offset
 *Access: Trusted admin · Setup only*
@@ -118,9 +119,10 @@ Clones all rounds from an existing division into a new one, shifting every sched
 | `source_name` | String | ✅ | Name of the division to copy from |
 | `new_name` | String | ✅ | Name for the new division |
 | `role` | Role | ✅ | Discord role for the new division |
-| `forecast_channel` | Channel | ✅ | Forecast channel for the new division |
-| `day_offset` | Integer | ✅ | Days to shift all round datetimes (can be negative) |
-| `hour_offset` | Float | ✅ | Hours to shift all round datetimes (can be negative; decimals OK) |
+| `forecast_channel` | Channel | — | Forecast channel for the new division. Required when the weather module is enabled; must be omitted when disabled. |
+| `tier` | Integer | — | Tier number for the new division (must be unique within the season). Default: `1` |
+| `day_offset` | Integer | — | Days to shift all round datetimes (can be negative). Default: `0` |
+| `hour_offset` | Float | — | Hours to shift all round datetimes (can be negative; decimals OK). Default: `0.0` |
 
 #### `/division delete` — Remove a division from setup
 *Access: Trusted admin · Setup only*
@@ -245,6 +247,227 @@ No parameters. Immediately runs the next pending weather phase in the queue (ord
 *Access: Interaction role · Requires test mode active*
 
 No parameters. Displays a summary of all rounds for the active season, showing which phases (✅/⏳) have been completed per round and division.
+
+#### `/test-mode set-former-driver` — Override the former_driver flag
+*Access: Trusted admin · Requires test mode active*
+
+Manually sets the `former_driver` flag on a driver profile. Only available when test mode is enabled.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user` | Member | ✅ | The driver whose flag is being updated |
+| `value` | Boolean | ✅ | The new value for the `former_driver` flag (`True` / `False`) |
+
+---
+
+### Module Commands
+
+Modules extend the bot beyond weather generation. Currently two modules are available: **weather** and **signup**.
+
+#### `/module enable` — Enable a bot module
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `module_name` | Choice | ✅ | Module to enable: `weather` or `signup` |
+| `channel` | Channel | — | *(signup only)* Channel designated for signup interactions |
+| `base_role` | Role | — | *(signup only)* Role granted to members eligible to sign up |
+| `signed_up_role` | Role | — | *(signup only)* Role granted on successful signup completion |
+
+#### `/module disable` — Disable a bot module
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `module_name` | Choice | ✅ | Module to disable: `weather` or `signup` |
+
+---
+
+### Driver Commands
+
+#### `/driver reassign` — Re-key a driver profile to a new Discord account
+*Access: Trusted admin*
+
+Transfers an existing driver profile from one Discord account to another. Provide either `old_user` (mention) or `old_user_id` (raw snowflake) for users who have left the server.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `new_user` | Member | ✅ | Target Discord account. Must not already have a driver profile. |
+| `old_user` | Member | — | Mention of the existing Discord user whose profile is to be transferred |
+| `old_user_id` | String | — | Raw Discord snowflake ID, for users who have left the server |
+
+#### `/driver assign` — Assign a driver to a team and division
+*Access: Trusted admin*
+
+Places an Unassigned driver into a specific team seat within a division for the active season. Also grants the division role and the team role (if configured via `/team role set`).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user` | Member | ✅ | The driver to assign |
+| `division` | String | ✅ | Division tier number or name (e.g. `1` or `Pro`) |
+| `team` | String | ✅ | Exact team name as it appears in the division |
+
+#### `/driver unassign` — Remove a driver from a division
+*Access: Trusted admin*
+
+Removes a driver's placement from one division. Revokes the division role and (if no other team-role seat remains) the team role. If this was their only assignment the driver reverts to Unassigned.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user` | Member | ✅ | The driver to unassign |
+| `division` | String | ✅ | Division tier number or name |
+
+#### `/driver sack` — Sack a driver
+*Access: Trusted admin*
+
+Revokes all placement roles, removes all season assignments, and transitions the driver back to Not Signed Up. For former drivers the profile row is retained; for others it is deleted.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user` | Member | ✅ | The driver to sack |
+
+---
+
+### Team Commands
+
+#### `/team default add` — Add a team to the server default list
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Name of the new team (max 50 chars) |
+| `seats` | Integer | — | Number of seats (default `2`, must be ≥ 1) |
+
+#### `/team default rename` — Rename a default team
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `current_name` | String | ✅ | Exact current name of the team |
+| `new_name` | String | ✅ | Replacement name (max 50 chars) |
+
+#### `/team default remove` — Remove a team from the default list
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Exact name of the team to remove |
+
+#### `/team role set` — Map a team name to a Discord role
+*Access: Trusted admin*
+
+Configures which Discord role is granted/revoked when a driver is placed into or removed from this team. Mapping persists across seasons.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `team_name` | String | ✅ | Exact team name as it appears in the season |
+| `role` | Role | ✅ | The Discord role to assign on placement into this team |
+
+#### `/team role list` — List all team → role mappings
+*Access: Trusted admin*
+
+No parameters. Displays all configured team–role mappings for this server.
+
+#### `/team season add` — Add a team to all divisions of the current SETUP season
+*Access: Trusted admin · Setup only*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Name of the team to add |
+| `seats` | Integer | — | Number of seats (default `2`) |
+
+#### `/team season rename` — Rename a team across all divisions of the current SETUP season
+*Access: Trusted admin · Setup only*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `current_name` | String | ✅ | Exact current name (same across all divisions) |
+| `new_name` | String | ✅ | New name |
+
+#### `/team season remove` — Remove a team from all divisions of the current SETUP season
+*Access: Trusted admin · Setup only*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Exact team name |
+
+---
+
+### Signup Module Commands
+
+All commands below require the signup module to be enabled (`/module enable signup`). Most commands also require being invoked from the configured interaction channel.
+
+#### `/signup config channel` — Set the signup channel
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `channel` | Channel | ✅ | Channel for signup interactions |
+
+#### `/signup config roles` — Set the signup roles
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `base_role` | Role | ✅ | Role granted to members eligible to sign up |
+| `signed_up_role` | Role | ✅ | Role granted on successful signup completion |
+
+#### `/signup config view` — View current signup configuration
+*Access: Trusted admin*
+
+No parameters. Displays the current signup module configuration as an embed.
+
+#### `/signup nationality` — Toggle nationality requirement
+*Access: Trusted admin*
+
+No parameters. Toggles whether drivers must provide their nationality during signup.
+
+#### `/signup time-type` — Toggle the time type setting
+*Access: Trusted admin*
+
+No parameters. Cycles the lap time type between Time Trial and Short Qualification.
+
+#### `/signup time-image` — Toggle time image requirement
+*Access: Trusted admin*
+
+No parameters. Toggles whether drivers must attach a screenshot of their lap time.
+
+#### `/signup time-slot add` — Add an availability time slot
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `day` | Choice | ✅ | Day of the week (Monday–Sunday) |
+| `time` | String | ✅ | Time in `HH:MM` 24 h or 12 h format (e.g. `14:30` or `2:30pm`) |
+
+#### `/signup time-slot remove` — Remove an availability time slot
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `slot_id` | Integer | ✅ | Stable sequence ID shown in `/signup time-slot list` |
+
+#### `/signup time-slot list` — List all configured availability time slots
+*Access: Trusted admin*
+
+No parameters.
+
+#### `/signup open` — Open the signup window
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `track_ids` | String | — | Space- or comma-separated track IDs for required lap times (e.g. `01 03 12`). Omit to require no specific tracks. |
+
+#### `/signup close` — Close the signup window
+*Access: Trusted admin*
+
+No parameters. If drivers are currently in progress you will be prompted to confirm transitioning them to Not Signed Up.
+
+#### `/signup unassigned` — List all Unassigned drivers seeded by lap time
+*Access: Trusted admin*
+
+No parameters. Displays all drivers in the Unassigned state, ordered by total lap time ascending (fastest first). Drivers with no lap time on record appear last.
 
 ---
 
