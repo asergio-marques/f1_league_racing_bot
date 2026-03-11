@@ -1,6 +1,53 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-03-11 — v2.2.0 → v2.3.0: Race results & championship ratification + SeasonAssignment formalization]
+  Version change    : 2.2.0 → 2.3.0
+  Bump rationale    : MINOR — Principle XII (Race Results & Championship Integrity) added.
+                      Race results recording and championship standings moved from "planned
+                      future scope" to formally in-scope (Principle VI items 8–9). Both
+                      added to foundational modules (Principle X). SeasonAssignment entity
+                      formally defined, resolving the "normalized join table" gap present
+                      since v2.0.0. RaceResult and ScoringTable entities added (v2.3.0).
+                      Constitution title updated to reflect full-lifecycle mandate.
+  Modified principles:
+    - Principle VI (Incremental Scope Expansion) — items 8 (race results recording) and
+      9 (championship standings) added to in-scope; both removed from planned future scope.
+      Planned future scope now contains only penalty adjudication and financial/licensing.
+    - Principle X (Modular Feature Architecture) — race results recording and championship
+      standings added to the foundational modules list.
+  Added sections    :
+    - Principle XII: Race Results & Championship Integrity (NEW)
+    - Data & State Management: SeasonAssignment, RaceResult, ScoringTable added as
+      New Entities (v2.3.0). SeasonAssignment formally resolves the underdefined
+      "normalized join table" referenced in DriverProfile since v2.0.0.
+  Removed sections  : None
+  Resolved TODOs    : None
+  Deferred TODOs    :
+    - TODO(FASTEST_LAP_RULE): Whether fastest-lap bonus points are available (and under
+      what conditions) is a policy question pending confirmation from the project owner
+      before the race results feature specification is written.
+    - TODO(SCORING_TABLE_CUSTOMIZATION): Whether servers may define fully custom scoring
+      tables or are restricted to the standard F1 preset must be confirmed before the race
+      results feature specification is written.
+  Other changes     :
+    - Constitution title updated from "F1 League Weather Randomizer Bot Constitution" to
+      "F1 League Bot Constitution" to reflect the bot's expanded scope mandate.
+  Templates confirmed aligned:
+    ✅ .specify/templates/plan-template.md      — Constitution Check gate is dynamic; no
+         hardcoded principle list; no changes needed.
+    ✅ .specify/templates/spec-template.md      — generic; no stale references.
+    ✅ .specify/templates/tasks-template.md     — generic; aligns with I–XII.
+    ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+    ✅ .specify/templates/checklist-template.md  — no impact.
+  Incoherencies resolved:
+    - The "normalized join table" for DriverProfile season assignments (referenced since
+      v2.0.0 but never formally structured) is now defined as SeasonAssignment, including
+      all position and points fields required for standings computation.
+  Pending follow-up:
+    - README.md title ("F1 League Weather Randomizer Bot") should be updated to reflect
+      the bot's expanded scope. Flagged for the next feature increment.
+
 [2026-03-10 — v2.1.0 → v2.2.0: Signup wizard & driver placement ratification + BAN_STATE_NAMING resolution]
   Version change    : 2.1.0 → 2.2.0
   Bump rationale    : MINOR — Signup wizard and driver assignment/placement moved from
@@ -313,7 +360,7 @@ Templates requiring updates:
 Follow-up TODOs   : None — all placeholders resolved
 -->
 
-# F1 League Weather Randomizer Bot Constitution
+# F1 League Bot Constitution
 
 ## Core Principles
 
@@ -443,12 +490,14 @@ domains are formally in-scope as of this version:
    seeded placement queue; division-role grant and revocation.
 7. **Modular feature architecture**: per-server enablement and disablement of optional
    capability modules (Principle X).
+8. **Race results recording**: round-by-round result entry per division, outcome modifiers
+   (DNF, DNS, DSQ), and result amendments with full audit trail.
+9. **Championship standings computation and display**: points accumulation per driver per
+   division, tiebreaking, and derivation of current and final standings.
 
 The following domains are **planned future scope** — each will be formally ratified as an
 independent feature increment before any implementation begins:
 
-- **Race results recording** and raw score entry per round.
-- **Driver championship standings** computation and display.
 - **Penalty and protest adjudication**.
 - Financial or licensing workflows.
 
@@ -603,6 +652,7 @@ per server and MUST survive bot restarts.
 - Team management
 - Driver profile management
 - Season lifecycle management
+- Race results recording and championship standings
 
 **Optional modules** (disabled by default; enabled explicitly per server by a server
 administrator via a dedicated `/module enable <name>` command — or its equivalent
@@ -694,6 +744,54 @@ lifecycle state (Principle VIII). The following rules are non-negotiable:
 **Rationale**: A strictly defined, isolated wizard removes ambiguity in the onboarding process,
 protects in-progress signups from mid-flow configuration changes, ensures data integrity before
 trusted-user review, and maintains a clean channel lifecycle for server hygiene.
+
+### XII. Race Results & Championship Integrity
+
+Race outcomes MUST be recorded, persisted, and computed with the same auditability as weather
+generation. Results form the authoritative competitive history of the league.
+
+- **Authorization**: Only tier-2 admins (season/config authority, Principle I) may submit
+  or amend result records.
+- **Round finality gate**: Results MAY only be submitted for a round that has been explicitly
+  marked as completed. Submissions against future or in-progress rounds MUST be rejected.
+- **Atomic submission**: The complete driver finishing order for a round and division MUST be
+  submitted in a single operation. Partial result sets are not permitted.
+- **Result record**: Every result MUST carry: round ID, division ID, driver Discord User ID,
+  finishing position (positive integer, 1-indexed), and an outcome modifier. Permitted
+  modifiers: CLASSIFIED (driver finished; points apply per scoring table), DNF (Did Not
+  Finish; 0 points), DNS (Did Not Start; 0 points), DSQ (Disqualified; 0 points).
+- **Amendment**: A tier-2 admin MAY amend a previously submitted result with a stated reason.
+  The prior record MUST be marked SUPERSEDED; a replacement record MUST be created. Standings
+  MUST be recomputed immediately. Each amendment MUST produce an audit log entry per Principle V.
+- **Scoring table**: A server-level scoring table (position → points mapping) MUST be
+  configured before any results may be submitted. The default preset MUST be the standard
+  F1 scoring table (25-18-15-12-10-8-6-4-2-1 for finishing positions 1–10). Fastest-lap
+  bonus point eligibility is a policy detail deferred to the race results feature
+  specification (see TODO below).
+- **Scoring table versioning**: Changing the scoring table after any results have been
+  submitted MUST trigger a full standings recomputation and produce an audit log entry.
+  The prior table version MUST be retained as an immutable historical record.
+- **Standings computation**: Championship standings for a division equal the sum of
+  `points_awarded` across all ACTIVE (non-SUPERSEDED) RaceResult records for each driver.
+  Standings MUST be persisted on the driver's SeasonAssignment record and refreshed
+  atomically after every result submission or amendment.
+- **Tiebreaking**: Equal points are resolved by the standard F1 rule — the driver who places
+  higher in the most recent round where their finishing positions differ ranks above the other.
+- **Season completion**: On season completion, current SeasonAssignment values (points,
+  position) MUST be written atomically to the historical fields as part of the season-end
+  transaction.
+
+**Rationale**: Accurate, immutable result records are the backbone of any competitive league.
+A deterministic, auditable computation pipeline ensures standings can always be reproduced
+from the raw result log and legitimately contested.
+
+TODO(FASTEST_LAP_RULE): Whether fastest-lap bonus points apply universally, only to top-10
+finishers, or not at all is a policy decision that MUST be confirmed with the project owner
+before the race results feature specification is written.
+
+TODO(SCORING_TABLE_CUSTOMIZATION): Whether servers may define fully custom scoring tables
+(arbitrary position counts and values) or are restricted to the standard F1 preset must be
+confirmed before the race results feature specification is written.
 
 ## Bot Behavior Standards
 
@@ -846,6 +944,44 @@ to a client-server RDBMS (e.g., PostgreSQL) should be evaluated.
 - `time_of_day` (TEXT, HH:MM 24-hour).
 - IDs are stable; removing a slot does not renumber remaining slots.
 
+### New Entities (v2.3.0)
+
+**SeasonAssignment** (per driver, per season, per division — formally specifies the
+"normalized join table" referenced in DriverProfile since v2.0.0):
+- `driver_id` (TEXT, FK → DriverProfile within server scope)
+- `season_id` (INTEGER, FK → Season)
+- `division_id` (INTEGER, FK → Division)
+- `team_seat_id` (INTEGER, FK → TeamSeat, nullable — null until `/driver assign` runs)
+- `is_historical` (BOOLEAN, default false — set to `true` on season completion)
+- `current_points` (INTEGER, default 0 — sum of ACTIVE RaceResult points_awarded)
+- `current_position` (INTEGER, nullable — null until first round results are posted)
+- `points_gap_to_leader` (INTEGER, nullable — null until standings have been computed)
+- `final_points` (INTEGER, nullable — written atomically on season completion)
+- `final_position` (INTEGER, nullable — written atomically on season completion)
+- Rows are created on first `/driver assign` for a season, or on admin direct-assign in
+  test mode.
+
+**RaceResult** (per driver, per round, per division):
+- `result_id` (INTEGER PK, server-scoped auto-increment)
+- `round_id` (INTEGER, FK → Round)
+- `division_id` (INTEGER, FK → Division)
+- `driver_id` (TEXT, FK → DriverProfile within server scope)
+- `finishing_position` (INTEGER, positive — 1-indexed)
+- `outcome_modifier` (ENUM: CLASSIFIED / DNF / DNS / DSQ)
+- `points_awarded` (INTEGER, computed on submission — 0 for non-CLASSIFIED modifiers)
+- `status` (ENUM: ACTIVE / SUPERSEDED, default ACTIVE)
+- `submitted_by` (TEXT — Discord User ID of the submitting tier-2 admin)
+- `submitted_at` (TEXT — UTC ISO 8601 timestamp)
+- `superseded_at` (TEXT — UTC ISO 8601 timestamp, nullable)
+- `supersession_reason` (TEXT, nullable)
+
+**ScoringTable** (per server):
+- `version` (INTEGER, auto-increment PK within server scope)
+- `position_points` (TEXT — JSON map: position integer → points integer)
+- `is_active` (BOOLEAN — exactly one active table per server at any time)
+- Changing the active scoring table after any results exist triggers a full standings
+  recomputation. Prior versions are retained as immutable audit records.
+
 ## Governance
 
 This constitution supersedes all other development practices and conventions for this project.
@@ -861,9 +997,9 @@ Amendments require:
 - **MINOR**: Addition of a new principle, section, or materially expanded guidance.
 - **PATCH**: Clarifications, wording improvements, or non-semantic refinements.
 
-All pull requests MUST include a Constitution Check confirming compliance with Principles I–XI
+All pull requests MUST include a Constitution Check confirming compliance with Principles I–XII
 before merge. Any deliberate violation of a principle MUST be documented in the plan's
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-10
+**Version**: 2.3.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-11
