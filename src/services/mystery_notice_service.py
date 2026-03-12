@@ -25,9 +25,11 @@ async def run_mystery_notice(round_id: int, bot: "Bot") -> None:
     """Post the mystery round notice for *round_id* to its forecast channel."""
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
-            "SELECT r.id, r.format, d.id AS division_id, d.forecast_channel_id "
+            "SELECT r.id, r.format, d.id AS division_id, d.forecast_channel_id, "
+            "       s.server_id "
             "FROM rounds r "
             "JOIN divisions d ON d.id = r.division_id "
+            "JOIN seasons s ON s.id = d.season_id "
             "WHERE r.id = ?",
             (round_id,),
         )
@@ -49,7 +51,9 @@ async def run_mystery_notice(round_id: int, bot: "Bot") -> None:
     class _Div:
         forecast_channel_id = row["forecast_channel_id"]
 
-    msg = await bot.output_router.post_forecast(_Div(), mystery_notice_message())
+    msg = await bot.output_router.post_forecast(
+        _Div(), mystery_notice_message(), server_id=row["server_id"]
+    )
     if msg is not None:
         await store_forecast_message(round_id, row["division_id"], 0, msg, bot.db_path)
     log.info("Mystery notice posted for round %s.", round_id)

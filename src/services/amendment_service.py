@@ -161,7 +161,9 @@ class AmendmentService:
                 forecast_channel_id = row["forecast_channel_id"]
 
             amended_track = str(db_value) if field == "track_name" else track_name
-            await bot.output_router.post_forecast(_Div(), invalidation_message(amended_track))
+            await bot.output_router.post_forecast(
+                _Div(), invalidation_message(amended_track), server_id=server_id
+            )
             await bot.output_router.post_log(
                 server_id,
                 f"🔧 **Amendment** by {actor} — Round #{round_id}: `{field}` changed "

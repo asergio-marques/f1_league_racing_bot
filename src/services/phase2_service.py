@@ -127,6 +127,7 @@ async def run_phase2(round_id: int, bot: "Bot") -> None:
     msg = await bot.output_router.post_forecast(
         _Div(),
         phase2_message(row["mention_role_id"], track_name, session_slots),
+        server_id=row["server_id"],
     )
     if msg is not None:
         await store_forecast_message(round_id, row["division_id"], 2, msg, bot.db_path)
