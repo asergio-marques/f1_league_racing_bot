@@ -196,7 +196,7 @@ class SeasonCog(commands.Cog):
                     )
                 teams = await self.bot.team_service.get_division_teams(div.id)
                 if teams:
-                    lines.append(format_roster_block(teams))
+                    lines.append("  **Teams:** " + ", ".join(t["name"] for t in teams))
                 lines.append("")
         else:
             for div in cfg.divisions:

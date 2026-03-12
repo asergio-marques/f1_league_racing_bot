@@ -10,20 +10,6 @@ log = logging.getLogger(__name__)
 
 _RESERVE_NAME = "Reserve"
 
-# Standard F1 constructor teams seeded on /bot-init
-DEFAULT_F1_TEAMS = [
-    "Red Bull Racing",
-    "Ferrari",
-    "Mercedes",
-    "McLaren",
-    "Aston Martin",
-    "Alpine",
-    "Williams",
-    "Haas",
-    "RB",
-    "Kick Sauber",
-]
-
 
 class TeamService:
     def __init__(self, db_path: str) -> None:
@@ -156,7 +142,7 @@ class TeamService:
     # ------------------------------------------------------------------
 
     async def seed_default_teams_if_empty(self, server_id: int) -> None:
-        """Insert F1 constructor defaults + Reserve if none exist for this server."""
+        """Insert the Reserve team if no teams exist yet for this server."""
         async with get_connection(self._db_path) as db:
             existing = await (
                 await db.execute(
@@ -166,12 +152,6 @@ class TeamService:
             ).fetchone()
             if existing:
                 return
-            for team_name in DEFAULT_F1_TEAMS:
-                await db.execute(
-                    "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
-                    "VALUES (?, ?, 2, 0)",
-                    (server_id, team_name),
-                )
             await db.execute(
                 "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
                 "VALUES (?, ?, -1, 1)",
@@ -362,8 +342,10 @@ class TeamService:
             for inst in instance_rows:
                 seat_rows = await (
                     await db.execute(
-                        "SELECT seat_number, driver_profile_id "
-                        "FROM team_seats WHERE team_instance_id = ? ORDER BY seat_number",
+                        "SELECT ts.seat_number, ts.driver_profile_id, dp.discord_user_id "
+                        "FROM team_seats ts "
+                        "LEFT JOIN driver_profiles dp ON dp.id = ts.driver_profile_id "
+                        "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
                         (inst["id"],),
                     )
                 ).fetchall()
@@ -372,7 +354,11 @@ class TeamService:
                     "max_seats": inst["max_seats"],
                     "is_reserve": bool(inst["is_reserve"]),
                     "seats": [
-                        {"seat_number": s["seat_number"], "driver_profile_id": s["driver_profile_id"]}
+                        {
+                            "seat_number": s["seat_number"],
+                            "driver_profile_id": s["driver_profile_id"],
+                            "discord_user_id": s["discord_user_id"],
+                        }
                         for s in seat_rows
                     ],
                 })

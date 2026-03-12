@@ -668,13 +668,16 @@ class PlacementService:
         self,
         server_id: int,
         driver_profile_id: int,
-        season_id: int,
+        season_id: int | None,
         member: discord.Member,
     ) -> None:
         """Revoke all division and team roles for a driver across all active assignments.
 
         Reusable by future ban management commands (FR-029).
         """
+        if season_id is None:
+            return
+
         async with get_connection(self._db_path) as db:
             # Division role IDs
             cursor = await db.execute(
@@ -717,7 +720,7 @@ class PlacementService:
         self,
         server_id: int,
         driver_profile_id: int,
-        season_id: int,
+        season_id: int | None,
         acting_user_id: int,
         acting_user_name: str,
         guild: discord.Guild,
@@ -749,13 +752,16 @@ class PlacementService:
             now = datetime.now(timezone.utc).isoformat()
 
             # Fetch current division assignments for the audit log
-            cursor = await db.execute(
-                "SELECT division_id FROM driver_season_assignments "
-                "WHERE driver_profile_id = ? AND season_id = ?",
-                (driver_profile_id, season_id),
-            )
-            asgn_rows = await cursor.fetchall()
-            division_ids = [r["division_id"] for r in asgn_rows]
+            if season_id is not None:
+                cursor = await db.execute(
+                    "SELECT division_id FROM driver_season_assignments "
+                    "WHERE driver_profile_id = ? AND season_id = ?",
+                    (driver_profile_id, season_id),
+                )
+                asgn_rows = await cursor.fetchall()
+                division_ids = [r["division_id"] for r in asgn_rows]
+            else:
+                division_ids = []
 
         # Revoke all roles before DB mutation (needs guild lookup)
         member = guild.get_member(int(discord_user_id))
@@ -766,7 +772,19 @@ class PlacementService:
                 member = None
 
         if member is not None:
-            await self.revoke_all_placement_roles(server_id, driver_profile_id, season_id, member)
+            if season_id is not None:
+                await self.revoke_all_placement_roles(server_id, driver_profile_id, season_id, member)
+            # Revoke the signed-up role granted at approval
+            async with get_connection(self._db_path) as db:
+                cur = await db.execute(
+                    "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
+                    (server_id,),
+                )
+                cfg_row = await cur.fetchone()
+            if cfg_row and cfg_row["signed_up_role_id"]:
+                signed_up_role = guild.get_role(cfg_row["signed_up_role_id"])
+                if signed_up_role is not None and signed_up_role in member.roles:
+                    await self._revoke_roles(member, signed_up_role.id)
 
         async with get_connection(self._db_path) as db:
             # Free all occupied seats
@@ -776,11 +794,12 @@ class PlacementService:
                 (driver_profile_id,),
             )
             # Delete all season assignments
-            await db.execute(
-                "DELETE FROM driver_season_assignments "
-                "WHERE driver_profile_id = ? AND season_id = ?",
-                (driver_profile_id, season_id),
-            )
+            if season_id is not None:
+                await db.execute(
+                    "DELETE FROM driver_season_assignments "
+                    "WHERE driver_profile_id = ? AND season_id = ?",
+                    (driver_profile_id, season_id),
+                )
             # Transition to NOT_SIGNED_UP per constitution rules
             if former_driver:
                 # Retain profile row; null signup record fields

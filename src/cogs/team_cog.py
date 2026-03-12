@@ -259,19 +259,120 @@ class TeamCog(commands.Cog):
 
         await _send_long(interaction, content)
 
+    # ------------------------------------------------------------------
+    # /team lineup  — show placed drivers per team for the active season
+    # ------------------------------------------------------------------
+
+    @team.command(
+        name="lineup",
+        description="Show team lineups for the active season.",
+    )
+    @app_commands.describe(
+        division="Division name or tier number. Omit to show all divisions.",
+        public="Post the lineup visibly in the channel (default: only visible to you).",
+    )
+    @channel_guard
+    @admin_only
+    async def team_lineup(
+        self,
+        interaction: discord.Interaction,
+        division: str | None = None,
+        public: bool = False,
+    ) -> None:
+        await interaction.response.defer(ephemeral=not public)
+
+        season = await self.bot.season_service.get_active_season(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if season is None:
+            await interaction.followup.send("⛔ No active season.", ephemeral=True)
+            return
+
+        all_divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+        all_divisions = sorted(all_divisions, key=lambda d: d.tier)
+
+        if division is not None:
+            result = await self.bot.placement_service.resolve_division(  # type: ignore[attr-defined]
+                season.id, division
+            )
+            if result is None:
+                await interaction.followup.send(f"⛔ Division `{division}` not found.", ephemeral=True)
+                return
+            div_id, _ = result
+            all_divisions = [d for d in all_divisions if d.id == div_id]
+
+        if not all_divisions:
+            await interaction.followup.send("No divisions found.", ephemeral=True)
+            return
+
+        lines: list[str] = []
+        for div in all_divisions:
+            lines.append(f"**{div.name}**")
+            teams = await self.bot.team_service.get_division_teams(div.id)  # type: ignore[attr-defined]
+            if not teams:
+                lines.append("  *(no teams)*")
+            else:
+                for team in teams:
+                    lines.append(f"  **{team['name']}**")
+                    filled = {
+                        s["seat_number"]: s["discord_user_id"]
+                        for s in team["seats"]
+                        if s["driver_profile_id"] is not None
+                    }
+                    for seat_num in range(1, team["max_seats"] + 1):
+                        uid = filled.get(seat_num)
+                        driver_str = f"<@{uid}>" if uid else "*(empty)*"
+                        lines.append(f"    Seat {seat_num}: {driver_str}")
+            lines.append("")
+
+        await _send_long(interaction, "\n".join(lines).rstrip(), ephemeral=not public)
+
+    # ------------------------------------------------------------------
+    # /team reserve-role  — set or clear the role for the Reserve team
+    # ------------------------------------------------------------------
+
+    @team.command(
+        name="reserve-role",
+        description="Set or clear the Discord role for the Reserve team.",
+    )
+    @app_commands.describe(
+        role="Role to grant to Reserve drivers. Omit (or leave blank) to clear the current mapping.",
+    )
+    @channel_guard
+    @admin_only
+    async def team_reserve_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role | None = None,
+    ) -> None:
+        if role is not None:
+            await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
+                interaction.guild_id, "Reserve", role.id,
+                actor_id=interaction.user.id, actor_name=str(interaction.user),
+            )
+            msg = f"✅ Reserve team role set to {role.mention}."
+        else:
+            await self.bot.placement_service.delete_team_role_config(  # type: ignore[attr-defined]
+                interaction.guild_id, "Reserve",
+                actor_id=interaction.user.id, actor_name=str(interaction.user),
+            )
+            msg = "✅ Reserve team role cleared."
+
+        await interaction.response.send_message(msg, ephemeral=True)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _send_long(interaction: discord.Interaction, text: str) -> None:
+async def _send_long(interaction: discord.Interaction, text: str, *, ephemeral: bool = True) -> None:
     """Send potentially-long text, splitting into followup chunks if needed."""
     if len(text) <= _MAX_MSG_LEN:
-        await interaction.followup.send(text, ephemeral=True)
+        await interaction.followup.send(text, ephemeral=ephemeral)
         return
     chunks = []
     while text:
         chunks.append(text[:_MAX_MSG_LEN])
         text = text[_MAX_MSG_LEN:]
     for chunk in chunks:
-        await interaction.followup.send(chunk, ephemeral=True)
+        await interaction.followup.send(chunk, ephemeral=ephemeral)

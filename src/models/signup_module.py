@@ -41,6 +41,7 @@ class SignupModuleConfig:
     signups_open: bool
     signup_button_message_id: int | None
     selected_tracks: list[str]
+    signup_closed_message_id: int | None = None
 
 
 @dataclass
@@ -83,6 +84,7 @@ class ConfigSnapshot:
     time_image_required: bool
     selected_track_ids: list[str]
     slots: list[AvailabilitySlot]
+    team_names: list[str] = field(default_factory=list)
 
 
 @dataclass

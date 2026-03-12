@@ -29,7 +29,8 @@ class SignupModuleService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT server_id, signup_channel_id, base_role_id, signed_up_role_id, "
-                "       signups_open, signup_button_message_id, selected_tracks_json "
+                "       signups_open, signup_button_message_id, selected_tracks_json, "
+                "       signup_closed_message_id "
                 "FROM signup_module_config WHERE server_id = ?",
                 (server_id,),
             )
@@ -44,6 +45,7 @@ class SignupModuleService:
             signups_open=bool(row["signups_open"]),
             signup_button_message_id=row["signup_button_message_id"],
             selected_tracks=json.loads(row["selected_tracks_json"] or "[]"),
+            signup_closed_message_id=row["signup_closed_message_id"],
         )
 
     async def save_config(self, cfg: SignupModuleConfig) -> None:
@@ -52,15 +54,17 @@ class SignupModuleService:
                 """
                 INSERT INTO signup_module_config
                     (server_id, signup_channel_id, base_role_id, signed_up_role_id,
-                     signups_open, signup_button_message_id, selected_tracks_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                     signups_open, signup_button_message_id, selected_tracks_json,
+                     signup_closed_message_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(server_id) DO UPDATE SET
-                    signup_channel_id        = excluded.signup_channel_id,
-                    base_role_id             = excluded.base_role_id,
-                    signed_up_role_id        = excluded.signed_up_role_id,
-                    signups_open             = excluded.signups_open,
-                    signup_button_message_id = excluded.signup_button_message_id,
-                    selected_tracks_json     = excluded.selected_tracks_json
+                    signup_channel_id          = excluded.signup_channel_id,
+                    base_role_id               = excluded.base_role_id,
+                    signed_up_role_id          = excluded.signed_up_role_id,
+                    signups_open               = excluded.signups_open,
+                    signup_button_message_id   = excluded.signup_button_message_id,
+                    selected_tracks_json       = excluded.selected_tracks_json,
+                    signup_closed_message_id   = excluded.signup_closed_message_id
                 """,
                 (
                     cfg.server_id,
@@ -70,6 +74,7 @@ class SignupModuleService:
                     int(cfg.signups_open),
                     cfg.signup_button_message_id,
                     json.dumps(cfg.selected_tracks),
+                    cfg.signup_closed_message_id,
                 ),
             )
             await db.commit()
@@ -131,10 +136,11 @@ class SignupModuleService:
     # ── Availability slots ────────────────────────────────────────────
 
     async def get_slots(self, server_id: int) -> list[AvailabilitySlot]:
-        """Return slots ordered by (day_of_week, time_hhmm) with stable slot_sequence_id."""
+        """Return slots ordered chronologically (Mon→Sun, time asc). Sequence IDs are
+        always 1..N matching display order, regardless of stored values."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, day_of_week, time_hhmm, slot_sequence_id "
+                "SELECT id, server_id, day_of_week, time_hhmm "
                 "FROM signup_availability_slots "
                 "WHERE server_id = ? "
                 "ORDER BY day_of_week ASC, time_hhmm ASC",
@@ -145,66 +151,78 @@ class SignupModuleService:
             AvailabilitySlot(
                 id=row["id"],
                 server_id=row["server_id"],
-                slot_sequence_id=row["slot_sequence_id"] or 0,
+                slot_sequence_id=i,
                 day_of_week=row["day_of_week"],
                 time_hhmm=row["time_hhmm"],
                 display_label=AvailabilitySlot.make_label(row["day_of_week"], row["time_hhmm"]),
             )
-            for row in rows
+            for i, row in enumerate(rows, start=1)
         ]
 
     async def add_slot(self, server_id: int, day_of_week: int, time_hhmm: str) -> AvailabilitySlot:
-        """Insert a slot with a stable slot_sequence_id; raises ValueError on duplicate."""
+        """Insert a slot and resequence all slots chronologically; raises ValueError on duplicate."""
         async with get_connection(self._db_path) as db:
-            # Compute next stable ID for this server
-            cursor = await db.execute(
-                "SELECT COALESCE(MAX(slot_sequence_id), 0) + 1 "
-                "FROM signup_availability_slots WHERE server_id = ?",
-                (server_id,),
-            )
-            row = await cursor.fetchone()
-            assert row is not None
-            next_seq_id: int = row[0]
             try:
                 await db.execute(
                     "INSERT INTO signup_availability_slots "
                     "(server_id, day_of_week, time_hhmm, slot_sequence_id) "
-                    "VALUES (?, ?, ?, ?)",
-                    (server_id, day_of_week, time_hhmm, next_seq_id),
+                    "VALUES (?, ?, ?, 0)",  # 0 is a placeholder; resequence fixes it
+                    (server_id, day_of_week, time_hhmm),
                 )
-                await db.commit()
             except Exception as exc:
                 if "UNIQUE constraint failed" in str(exc):
                     raise ValueError(
                         f"Slot already exists: day={day_of_week} time={time_hhmm}"
                     ) from exc
                 raise
-        return AvailabilitySlot(
-            id=-1,  # not needed by caller
-            server_id=server_id,
-            slot_sequence_id=next_seq_id,
-            day_of_week=day_of_week,
-            time_hhmm=time_hhmm,
-            display_label=AvailabilitySlot.make_label(day_of_week, time_hhmm),
+            await self._resequence_slots(db, server_id)
+            await db.commit()
+
+        # Fetch the newly assigned sequence ID for the inserted slot
+        slots = await self.get_slots(server_id)
+        inserted = next(
+            (s for s in slots if s.day_of_week == day_of_week and s.time_hhmm == time_hhmm),
+            None,
         )
+        assert inserted is not None
+        return inserted
 
     async def remove_slot_by_rank(self, server_id: int, slot_id: int) -> bool:
-        """Remove the slot with the given slot_sequence_id. Returns False if not found."""
+        """Remove the slot at chronological rank slot_id and resequence. Returns False if not found."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id FROM signup_availability_slots "
-                "WHERE server_id = ? AND slot_sequence_id = ?",
-                (server_id, slot_id),
+                "WHERE server_id = ? "
+                "ORDER BY day_of_week ASC, time_hhmm ASC",
+                (server_id,),
             )
-            row = await cursor.fetchone()
-            if not row:
+            rows = await cursor.fetchall()
+            if slot_id < 1 or slot_id > len(rows):
                 return False
+            target_id = rows[slot_id - 1]["id"]
             await db.execute(
                 "DELETE FROM signup_availability_slots WHERE id = ?",
-                (row["id"],),
+                (target_id,),
             )
+            await self._resequence_slots(db, server_id)
             await db.commit()
         return True
+
+    @staticmethod
+    async def _resequence_slots(db, server_id: int) -> None:
+        """Assign slot_sequence_id values 1..N in chronological order (Mon → Sun, then time)."""
+        cursor = await db.execute(
+            "SELECT id FROM signup_availability_slots "
+            "WHERE server_id = ? "
+            "ORDER BY day_of_week ASC, time_hhmm ASC",
+            (server_id,),
+        )
+        rows = await cursor.fetchall()
+        for seq, row in enumerate(rows, start=1):
+            await db.execute(
+                "UPDATE signup_availability_slots SET slot_sequence_id = ? WHERE id = ?",
+                (seq, row["id"]),
+            )
 
     # ── Window state helpers ──────────────────────────────────────────
 
@@ -224,19 +242,33 @@ class SignupModuleService:
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE signup_module_config "
-                "SET signups_open = 1, signup_button_message_id = ?, selected_tracks_json = ? "
+                "SET signups_open = 1, signup_button_message_id = ?, selected_tracks_json = ?, "
+                "    signup_closed_message_id = NULL "
                 "WHERE server_id = ?",
                 (button_message_id, json.dumps(selected_tracks), server_id),
             )
             await db.commit()
 
-    async def set_window_closed(self, server_id: int) -> None:
+    async def set_window_closed(
+        self, server_id: int, *, closed_msg_id: int | None = None
+    ) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE signup_module_config "
-                "SET signups_open = 0, signup_button_message_id = NULL "
+                "SET signups_open = 0, signup_button_message_id = NULL, "
+                "    signup_closed_message_id = ? "
                 "WHERE server_id = ?",
-                (server_id,),
+                (closed_msg_id, server_id),
+            )
+            await db.commit()
+
+    async def save_closed_message_id(self, server_id: int, msg_id: int | None) -> None:
+        """Persist only the closed-status message ID without altering other fields."""
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE signup_module_config SET signup_closed_message_id = ? "
+                "WHERE server_id = ?",
+                (msg_id, server_id),
             )
             await db.commit()
 
@@ -248,9 +280,11 @@ class SignupModuleService:
         """Alias for set_window_open."""
         await self.set_window_open(server_id, button_message_id, selected_tracks)
 
-    async def set_signups_closed(self, server_id: int) -> None:
+    async def set_signups_closed(
+        self, server_id: int, *, closed_msg_id: int | None = None
+    ) -> None:
         """Alias for set_window_closed."""
-        await self.set_window_closed(server_id)
+        await self.set_window_closed(server_id, closed_msg_id=closed_msg_id)
 
     async def save_selected_tracks(self, server_id: int, tracks: list[str]) -> None:
         """Persist selected_tracks without changing the open/closed state."""
@@ -491,6 +525,7 @@ class SignupModuleService:
                 time_image_required=d["time_image_required"],
                 selected_track_ids=d["selected_track_ids"],
                 slots=slots,
+                team_names=d.get("team_names", []),
             )
         return SignupWizardRecord(
             id=row["id"],
@@ -526,6 +561,7 @@ class SignupModuleService:
             "time_type": snapshot.time_type,
             "time_image_required": snapshot.time_image_required,
             "selected_track_ids": snapshot.selected_track_ids,
+            "team_names": snapshot.team_names,
             "slots": [
                 {
                     "id": s.id,

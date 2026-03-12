@@ -88,18 +88,20 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
                 except Exception:
                     log.exception("forced_close: could not delete button message")
 
-    # 3. Post closed message
+    # 3. Post closed message; capture ID so it can be deleted when re-opening
+    closed_msg_id: int | None = None
     guild = bot.get_guild(server_id)
     if guild:
         channel = guild.get_channel(cfg.signup_channel_id)
         if channel:
             try:
-                await channel.send("🔒 Signups are now closed.")
+                closed_msg = await channel.send("🔒 Signups are now closed.")
+                closed_msg_id = closed_msg.id
             except Exception:
                 log.exception("forced_close: could not post closed message")
 
-    # 4. Set window closed
-    await bot.signup_module_service.set_window_closed(server_id)
+    # 4. Set window closed (persists closed_msg_id)
+    await bot.signup_module_service.set_window_closed(server_id, closed_msg_id=closed_msg_id)
 
     # 5. Audit entry
     now = datetime.now(timezone.utc).isoformat()
@@ -427,6 +429,16 @@ class ModuleCog(commands.Cog):
                  json.dumps({"module": "signup"}), now),
             )
             await db.commit()
+
+        # Post initial "signups closed" notice to the signup channel
+        closed_msg_id: int | None = None
+        try:
+            closed_msg = await channel.send("🔒 Signups are currently closed.")
+            closed_msg_id = closed_msg.id
+        except Exception:
+            log.exception("_enable_signup: could not post initial closed message")
+        if closed_msg_id is not None:
+            await self.bot.signup_module_service.save_closed_message_id(server_id, closed_msg_id)
 
         self.bot.output_router.post_log(server_id, "✅ Signup module **enabled**.")
         await interaction.followup.send("✅ Signup module enabled.", ephemeral=True)

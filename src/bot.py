@@ -176,6 +176,33 @@ async def main() -> None:
     await bot.add_cog(SignupCog(bot))
     await bot.add_cog(AdminReviewCog(bot))
 
+    # Register ALL persistent views so button interactions survive bot restarts.
+    # Views with optional __init__ params resolve driver context from channel at
+    # interaction time, so a single registration handles all active wizard sessions.
+    from cogs.signup_cog import (
+        SignupButtonView,
+        WithdrawButtonView,
+        NoNotesButtonView,
+        PlatformButtonView,
+        DriverTypeButtonView,
+        PreferredTeamsButtonView,
+        NoPreferenceTeammateView,
+    )
+    from cogs.admin_review_cog import AdminReviewView, CorrectionParameterView
+
+    for _view in (
+        SignupButtonView(),
+        WithdrawButtonView(),
+        NoNotesButtonView(),
+        PlatformButtonView(),
+        DriverTypeButtonView(),
+        PreferredTeamsButtonView(),   # registers pteam_0..pteam_19 stubs + nopref + cancel
+        NoPreferenceTeammateView(),
+        AdminReviewView(),
+        CorrectionParameterView(),
+    ):
+        bot.add_view(_view)
+
     log.info("All cogs loaded. Starting bot...")
     async with bot:
         await bot.start(TOKEN)

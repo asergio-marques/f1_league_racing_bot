@@ -353,3 +353,45 @@ class TestTeamList:
         )
         assert "⚠️" in all_content
         assert "Season 3" in all_content
+
+
+# ---------------------------------------------------------------------------
+# /team reserve-role
+# ---------------------------------------------------------------------------
+
+class TestTeamReserveRole:
+    async def test_set_role_calls_set_config(self):
+        from cogs.team_cog import TeamCog
+        bot = _make_bot()
+        cog = TeamCog(bot)
+        interaction = _make_interaction()
+        role = MagicMock()
+        role.id = 999
+        role.mention = "<@&999>"
+
+        await _unwrap(cog.team_reserve_role)(cog, interaction, role=role)
+
+        bot.placement_service.set_team_role_config.assert_awaited_once()
+        call_args = bot.placement_service.set_team_role_config.call_args
+        assert call_args.args[1] == "Reserve"
+        assert call_args.args[2] == 999
+        args, kwargs = interaction.response.send_message.call_args
+        content = args[0] if args else kwargs["content"]
+        assert "✅" in content
+        assert "<@&999>" in content
+
+    async def test_clear_role_calls_delete_config(self):
+        from cogs.team_cog import TeamCog
+        bot = _make_bot()
+        cog = TeamCog(bot)
+        interaction = _make_interaction()
+
+        await _unwrap(cog.team_reserve_role)(cog, interaction, role=None)
+
+        bot.placement_service.delete_team_role_config.assert_awaited_once()
+        call_args = bot.placement_service.delete_team_role_config.call_args
+        assert call_args.args[1] == "Reserve"
+        bot.placement_service.set_team_role_config.assert_not_awaited()
+        args, kwargs = interaction.response.send_message.call_args
+        content = args[0] if args else kwargs["content"]
+        assert "cleared" in content

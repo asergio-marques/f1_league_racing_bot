@@ -82,6 +82,30 @@ def _format_slots(slots: list) -> str:
     return "\n".join(lines)
 
 
+_MAX_TEAM_BUTTONS = 20  # upper bound for pteam_N stub handlers in registration mode
+
+
+async def _resolve_view_context(
+    interaction: discord.Interaction,
+    stored_server_id: int | None,
+    stored_user_id: str | None,
+) -> tuple:
+    """Return (bot, server_id, discord_user_id) for a persistent-view callback.
+
+    When stored values are None (view registered for restart recovery via
+    ``bot.add_view``), looks up the wizard by channel ID to identify the
+    owning driver.
+    """
+    bot = interaction.client
+    server_id: int = stored_server_id or interaction.guild_id  # type: ignore[assignment]
+    if stored_user_id is not None:
+        return bot, server_id, stored_user_id
+    wizard = await bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
+        server_id, interaction.channel_id
+    )
+    return bot, server_id, (wizard.discord_user_id if wizard else None)
+
+
 class SignupButtonView(discord.ui.View):
     """Persistent signup button view (T016).
 
@@ -109,17 +133,35 @@ class SignupButtonView(discord.ui.View):
 
         profile = await bot.driver_service.get_profile(server_id, discord_user_id)  # type: ignore[attr-defined]
         if profile is not None and profile.driver_state != DriverState.NOT_SIGNED_UP:
-            if profile.ban_races_remaining > 0:
+            _IN_PROGRESS_STATES = {
+                DriverState.PENDING_SIGNUP_COMPLETION,
+                DriverState.PENDING_ADMIN_APPROVAL,
+                DriverState.AWAITING_CORRECTION_PARAMETER,
+                DriverState.PENDING_DRIVER_CORRECTION,
+            }
+            _APPROVED_STATES = {
+                DriverState.UNASSIGNED,
+                DriverState.ASSIGNED,
+                DriverState.SEASON_BANNED,
+                DriverState.LEAGUE_BANNED,
+            }
+            if profile.driver_state in _IN_PROGRESS_STATES:
                 await interaction.response.send_message(
-                    "⛔ You are currently race-banned and cannot sign up at this time.",
+                    "⛔ You already have a signup in progress — "
+                    "check your private wizard channel.",
                     ephemeral=True,
                 )
-                return
-            await interaction.response.send_message(
-                "⛔ You already have a signup in progress. "
-                "Check your private wizard channel.",
-                ephemeral=True,
-            )
+            elif profile.driver_state in _APPROVED_STATES:
+                await interaction.response.send_message(
+                    "⛔ Your signup has already been approved. "
+                    "You cannot sign up again.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    "⛔ You are not eligible to sign up at this time.",
+                    ephemeral=True,
+                )
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -129,9 +171,6 @@ class SignupButtonView(discord.ui.View):
                 "❌ Signup module is not configured. Contact an admin.", ephemeral=True
             )
             return
-        await channel.send(
-            view=WithdrawButtonView(server_id, discord_user_id, bot)  # type: ignore[arg-type]
-        )
         await interaction.followup.send(
             f"✅ Your signup channel has been created: {channel.mention}",
             ephemeral=True,
@@ -181,7 +220,10 @@ class WithdrawButtonView(discord.ui.View):
     """
 
     def __init__(
-        self, server_id: int, discord_user_id: str, bot: commands.Bot
+        self,
+        server_id: int | None = None,
+        discord_user_id: str | None = None,
+        bot: commands.Bot | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self._server_id = server_id
@@ -189,7 +231,7 @@ class WithdrawButtonView(discord.ui.View):
         self._bot = bot
 
     @discord.ui.button(
-        label="Withdraw",
+        label="Cancel Signup",
         style=discord.ButtonStyle.danger,
         custom_id="withdraw_button",
     )
@@ -197,19 +239,339 @@ class WithdrawButtonView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         """T041: Full implementation — verify user, call wizard_service.withdraw()."""
-        # Guard: only the driver who owns this wizard can press Withdraw
-        if str(interaction.user.id) != self._discord_user_id:
+        _bot, _server_id, _user_id = await _resolve_view_context(
+            interaction, self._server_id, self._discord_user_id
+        )
+        if _user_id is None or str(interaction.user.id) != _user_id:
             await interaction.response.send_message(
                 "⛔ This button is not for you.", ephemeral=True
             )
             return
         await interaction.response.defer(ephemeral=True)
-        await self._bot.wizard_service.withdraw(  # type: ignore[attr-defined]
-            self._server_id, self._discord_user_id, interaction.guild
+        await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
+            _server_id, _user_id, interaction.guild
         )
         await interaction.followup.send(
             "✅ Your signup has been withdrawn.", ephemeral=True
         )
+
+
+class NoNotesButtonView(discord.ui.View):
+    """Step 9 view — 'No Notes' shortcut alongside Cancel Signup."""
+
+    def __init__(
+        self,
+        server_id: int | None = None,
+        discord_user_id: str | None = None,
+        bot: commands.Bot | None = None,
+    ) -> None:
+        super().__init__(timeout=None)
+        self._server_id = server_id
+        self._discord_user_id = discord_user_id
+        self._bot = bot
+
+    @discord.ui.button(
+        label="No Notes",
+        style=discord.ButtonStyle.secondary,
+        custom_id="no_notes_button",
+    )
+    async def no_notes_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        _bot, _server_id, _user_id = await _resolve_view_context(
+            interaction, self._server_id, self._discord_user_id
+        )
+        if _user_id is None or str(interaction.user.id) != _user_id:
+            await interaction.response.send_message(
+                "⛔ This button is not for you.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        await _bot.wizard_service.handle_no_notes(  # type: ignore[attr-defined]
+            _server_id, _user_id, interaction.guild
+        )
+
+    @discord.ui.button(
+        label="Cancel Signup",
+        style=discord.ButtonStyle.danger,
+        custom_id="no_notes_cancel_button",
+    )
+    async def cancel_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        _bot, _server_id, _user_id = await _resolve_view_context(
+            interaction, self._server_id, self._discord_user_id
+        )
+        if _user_id is None or str(interaction.user.id) != _user_id:
+            await interaction.response.send_message(
+                "⛔ This button is not for you.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
+            _server_id, _user_id, interaction.guild
+        )
+        await interaction.followup.send(
+            "✅ Your signup has been withdrawn.", ephemeral=True
+        )
+
+
+class PlatformButtonView(discord.ui.View):
+    """Step 2 — one button per platform, plus Cancel Signup."""
+
+    def __init__(
+        self,
+        server_id: int | None = None,
+        discord_user_id: str | None = None,
+        bot: commands.Bot | None = None,
+    ) -> None:
+        super().__init__(timeout=None)
+        self._server_id = server_id
+        self._discord_user_id = discord_user_id
+        self._bot = bot
+
+    async def _pick(self, interaction: discord.Interaction, platform: str) -> None:
+        _bot, _server_id, _user_id = await _resolve_view_context(
+            interaction, self._server_id, self._discord_user_id
+        )
+        if _user_id is None or str(interaction.user.id) != _user_id:
+            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await _bot.wizard_service.handle_platform_button(  # type: ignore[attr-defined]
+            _server_id, _user_id, platform, interaction.guild
+        )
+
+    @discord.ui.button(label="Steam", style=discord.ButtonStyle.secondary, custom_id="plat_steam")
+    async def steam(self, i: discord.Interaction, b: discord.ui.Button) -> None:
+        await self._pick(i, "Steam")
+
+    @discord.ui.button(label="EA", style=discord.ButtonStyle.secondary, custom_id="plat_ea")
+    async def ea(self, i: discord.Interaction, b: discord.ui.Button) -> None:
+        await self._pick(i, "EA")
+
+    @discord.ui.button(label="Xbox", style=discord.ButtonStyle.secondary, custom_id="plat_xbox")
+    async def xbox(self, i: discord.Interaction, b: discord.ui.Button) -> None:
+        await self._pick(i, "Xbox")
+
+    @discord.ui.button(label="PlayStation", style=discord.ButtonStyle.secondary, custom_id="plat_ps")
+    async def playstation(self, i: discord.Interaction, b: discord.ui.Button) -> None:
+        await self._pick(i, "PlayStation")
+
+    @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="plat_cancel")
+    async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
+        _bot, _server_id, _user_id = await _resolve_view_context(
+            interaction, self._server_id, self._discord_user_id
+        )
+        if _user_id is None or str(interaction.user.id) != _user_id:
+            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
+            _server_id, _user_id, interaction.guild
+        )
+        await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
+
+
+class DriverTypeButtonView(discord.ui.View):
+    """Step 5 — Full-Time / Reserve buttons, plus Cancel Signup."""
+
+    def __init__(
+        self,
+        server_id: int | None = None,
+        discord_user_id: str | None = None,
+        bot: commands.Bot | None = None,
+    ) -> None:
+        super().__init__(timeout=None)
+        self._server_id = server_id
+        self._discord_user_id = discord_user_id
+        self._bot = bot
+
+    async def _pick(self, interaction: discord.Interaction, driver_type: str) -> None:
+        _bot, _server_id, _user_id = await _resolve_view_context(
+            interaction, self._server_id, self._discord_user_id
+        )
+        if _user_id is None or str(interaction.user.id) != _user_id:
+            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await _bot.wizard_service.handle_driver_type_button(  # type: ignore[attr-defined]
+            _server_id, _user_id, driver_type, interaction.guild
+        )
+
+    @discord.ui.button(label="Full-Time Driver", style=discord.ButtonStyle.primary, custom_id="dtype_fulltime")
+    async def full_time(self, i: discord.Interaction, b: discord.ui.Button) -> None:
+        await self._pick(i, "Full-Time Driver")
+
+    @discord.ui.button(label="Reserve Driver", style=discord.ButtonStyle.secondary, custom_id="dtype_reserve")
+    async def reserve(self, i: discord.Interaction, b: discord.ui.Button) -> None:
+        await self._pick(i, "Reserve Driver")
+
+    @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="dtype_cancel")
+    async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
+        _bot, _server_id, _user_id = await _resolve_view_context(
+            interaction, self._server_id, self._discord_user_id
+        )
+        if _user_id is None or str(interaction.user.id) != _user_id:
+            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
+            _server_id, _user_id, interaction.guild
+        )
+        await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
+
+
+class PreferredTeamsButtonView(discord.ui.View):
+    """Step 6 — one button per available team, No Preference, and Cancel Signup."""
+
+    def __init__(
+        self,
+        server_id: int | None = None,
+        discord_user_id: str | None = None,
+        bot: commands.Bot | None = None,
+        team_names: list[str] | None = None,
+        excluded: list[str] | None = None,
+    ) -> None:
+        super().__init__(timeout=None)
+        self._server_id = server_id
+        self._discord_user_id = discord_user_id
+        self._bot = bot
+
+        if team_names is not None:
+            available = [n for n in team_names if n not in (excluded or [])]
+            for i, name in enumerate(available):
+                btn: discord.ui.Button = discord.ui.Button(
+                    label=name,
+                    style=discord.ButtonStyle.secondary,
+                    custom_id=f"pteam_{i}",
+                )
+                btn.callback = self._make_team_callback(i)
+                self.add_item(btn)
+        else:
+            # Registration-mode: create stub handlers for all possible team slots
+            for i in range(_MAX_TEAM_BUTTONS):
+                btn = discord.ui.Button(
+                    label=str(i + 1),
+                    style=discord.ButtonStyle.secondary,
+                    custom_id=f"pteam_{i}",
+                )
+                btn.callback = self._make_team_callback(i)
+                self.add_item(btn)
+
+        no_pref: discord.ui.Button = discord.ui.Button(
+            label="No Preference",
+            style=discord.ButtonStyle.secondary,
+            custom_id="pteam_nopref",
+        )
+        no_pref.callback = self._no_preference_callback
+        self.add_item(no_pref)
+
+        cancel_btn: discord.ui.Button = discord.ui.Button(
+            label="Cancel Signup",
+            style=discord.ButtonStyle.danger,
+            custom_id="pteam_cancel",
+        )
+        cancel_btn.callback = self._cancel_callback
+        self.add_item(cancel_btn)
+
+    def _make_team_callback(self, i: int):
+        """Create callback for team button at index i.
+
+        Always resolves team name dynamically from current wizard state so
+        the correct team is selected even after a bot restart.
+        """
+        async def callback(interaction: discord.Interaction) -> None:
+            _bot, _server_id, _user_id = await _resolve_view_context(
+                interaction, self._server_id, self._discord_user_id
+            )
+            if _user_id is None or str(interaction.user.id) != _user_id:
+                await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+                return
+            # Resolve team name by index from live wizard state
+            wizard = await _bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
+                _server_id, interaction.channel_id
+            )
+            if wizard is None or wizard.config_snapshot is None:
+                await interaction.response.send_message("⛔ Wizard session not found.", ephemeral=True)
+                return
+            current_picks: list[str] = list(wizard.draft_answers.get("preferred_teams") or [])
+            available = [t for t in wizard.config_snapshot.team_names if t not in current_picks]
+            if i >= len(available):
+                await interaction.response.send_message("⛔ That option is no longer available.", ephemeral=True)
+                return
+            await interaction.response.defer(ephemeral=True)
+            await _bot.wizard_service.handle_preferred_teams_button(  # type: ignore[attr-defined]
+                _server_id, _user_id, available[i], interaction.guild
+            )
+        return callback
+
+    async def _no_preference_callback(self, interaction: discord.Interaction) -> None:
+        _bot, _server_id, _user_id = await _resolve_view_context(
+            interaction, self._server_id, self._discord_user_id
+        )
+        if _user_id is None or str(interaction.user.id) != _user_id:
+            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await _bot.wizard_service.handle_preferred_teams_button(  # type: ignore[attr-defined]
+            _server_id, _user_id, None, interaction.guild
+        )
+
+    async def _cancel_callback(self, interaction: discord.Interaction) -> None:
+        _bot, _server_id, _user_id = await _resolve_view_context(
+            interaction, self._server_id, self._discord_user_id
+        )
+        if _user_id is None or str(interaction.user.id) != _user_id:
+            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
+            _server_id, _user_id, interaction.guild
+        )
+        await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
+
+
+class NoPreferenceTeammateView(discord.ui.View):
+    """Step 7 — No Preference shortcut plus Cancel Signup."""
+
+    def __init__(
+        self,
+        server_id: int | None = None,
+        discord_user_id: str | None = None,
+        bot: commands.Bot | None = None,
+    ) -> None:
+        super().__init__(timeout=None)
+        self._server_id = server_id
+        self._discord_user_id = discord_user_id
+        self._bot = bot
+
+    @discord.ui.button(label="No Preference", style=discord.ButtonStyle.secondary, custom_id="tmmate_nopref")
+    async def no_preference(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
+        _bot, _server_id, _user_id = await _resolve_view_context(
+            interaction, self._server_id, self._discord_user_id
+        )
+        if _user_id is None or str(interaction.user.id) != _user_id:
+            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await _bot.wizard_service.handle_no_preference_teammate(  # type: ignore[attr-defined]
+            _server_id, _user_id, interaction.guild
+        )
+
+    @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="tmmate_cancel")
+    async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
+        _bot, _server_id, _user_id = await _resolve_view_context(
+            interaction, self._server_id, self._discord_user_id
+        )
+        if _user_id is None or str(interaction.user.id) != _user_id:
+            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
+            _server_id, _user_id, interaction.guild
+        )
+        await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
 
 
 class SignupCog(commands.Cog):
@@ -628,6 +990,15 @@ class SignupCog(commands.Cog):
             )
             return
 
+        # Guard: active season required
+        active_season = await self.bot.season_service.get_active_season(server_id)
+        if active_season is None:
+            await interaction.response.send_message(
+                "❌ An approved season setup is required before opening signups.",
+                ephemeral=True,
+            )
+            return
+
         # Guard: at least one slot configured
         slots = await self.bot.signup_module_service.get_slots(server_id)
         if not slots:
@@ -662,6 +1033,16 @@ class SignupCog(commands.Cog):
                 "❌ Configured signup channel not found.", ephemeral=True
             )
             return
+
+        # Delete any existing "signups closed" status message
+        if cfg.signup_closed_message_id:
+            try:
+                old_msg = await signup_channel.fetch_message(cfg.signup_closed_message_id)
+                await old_msg.delete()
+            except discord.NotFound:
+                pass
+            except Exception:
+                log.warning("signup_open: could not delete closed status message")
 
         if track_list:
             track_names = [TRACK_IDS[t] for t in track_list]

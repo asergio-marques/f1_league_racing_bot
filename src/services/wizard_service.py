@@ -180,6 +180,19 @@ class WizardService:
             reason="Signup wizard channel hold",
         )
 
+    async def _grant_driver_write(
+        self,
+        channel: discord.TextChannel,
+        member: discord.Member,
+    ) -> None:
+        """Restore driver's send_messages permission after a button-only step."""
+        await channel.set_permissions(
+            member,
+            view_channel=True,
+            send_messages=True,
+            reason="Signup wizard button step answered",
+        )
+
     async def _execute_channel_delete(
         self, server_id: int, discord_user_id: str
     ) -> None:
@@ -334,6 +347,10 @@ class WizardService:
         # Capture config snapshot
         snapshot = await self._signup_svc.capture_config_snapshot(server_id)
 
+        # Fetch non-reserve default team names for step 6 buttons
+        default_teams = await self._bot.team_service.get_default_teams(server_id)  # type: ignore[attr-defined]
+        snapshot.team_names = [t.name for t in default_teams if not t.is_reserve]
+
         # Determine first wizard state (skip nationality if not required)
         first_state = (
             WizardState.COLLECTING_NATIONALITY
@@ -368,10 +385,13 @@ class WizardService:
         fire_at = datetime.now(timezone.utc) + timedelta(hours=24)
         await self._arm_inactivity_job(server_id, discord_user_id, fire_at)
 
-        # Post first prompt
+        # Revoke write if first step is button-only, then post first prompt
+        if first_state in WizardService._BUTTON_ONLY_STATES:
+            await self._revoke_driver_write(channel, member)
         await channel.send(
             f"Welcome to the signup wizard, {member.mention}!\n"
             + self._prompt_for_state(first_state, snapshot),
+            view=self._build_step_view(first_state, server_id, discord_user_id, snapshot.team_names),
         )
 
         return channel
@@ -454,7 +474,11 @@ class WizardService:
             channel = guild.get_channel(wizard.signup_channel_id)
             if channel and isinstance(channel, discord.TextChannel):
                 from cogs.admin_review_cog import AdminReviewView  # type: ignore[import]
-                panel_text = self._format_review_panel(record)
+                slot_labels = {
+                    s.slot_sequence_id: s.display_label
+                    for s in (wizard.config_snapshot.slots if wizard.config_snapshot else [])
+                }
+                panel_text = self._format_review_panel(record, slot_labels)
                 await channel.send(
                     panel_text,
                     view=AdminReviewView(server_id, discord_user_id, self._bot),  # type: ignore[arg-type]
@@ -491,7 +515,7 @@ class WizardService:
         # Post cancellation notice and hold channel
         await self._trigger_channel_hold(
             server_id, discord_user_id, guild,
-            "❌ You have withdrawn your signup. "
+            "❌ You have cancelled your signup. "
             "This channel will be automatically deleted in 24 hours.",
         )
 
@@ -525,7 +549,7 @@ class WizardService:
         # Compute and persist total_lap_ms before transitioning state
         signup_record = await self._signup_svc.get_record(server_id, discord_user_id)
         if signup_record is not None and signup_record.lap_times:
-            await self.bot.placement_service.store_total_lap_ms(  # type: ignore[attr-defined]
+            await self._bot.placement_service.store_total_lap_ms(  # type: ignore[attr-defined]
                 server_id, discord_user_id, signup_record.lap_times
             )
 
@@ -549,6 +573,7 @@ class WizardService:
         discord_user_id: str,
         guild: discord.Guild,
         actor: discord.Member,
+        reason: str = "",
     ) -> None:
         """Admin rejects the signup (T042).
 
@@ -571,8 +596,9 @@ class WizardService:
 
         await self._trigger_channel_hold(
             server_id, discord_user_id, guild,
-            f"❌ Your signup has been rejected by **{actor.display_name}**. "
-            "This channel will be automatically deleted in 24 hours.",
+            f"<@{discord_user_id}> ❌ Your signup has been rejected by **{actor.display_name}**."
+            + (f"\n**Reason:** {reason}" if reason else "")
+            + "\nThis channel will be automatically deleted in 24 hours.",
         )
 
     async def request_changes(
@@ -581,6 +607,7 @@ class WizardService:
         discord_user_id: str,
         guild: discord.Guild,
         actor: discord.Member,
+        reason: str = "",
     ) -> None:
         """Admin requests correction (T036).
 
@@ -601,13 +628,18 @@ class WizardService:
             guild.get_channel(wizard.signup_channel_id)
             if wizard.signup_channel_id else None
         )
+        # Save reason so it appears only when the driver is prompted to re-submit
+        if reason:
+            wizard.draft_answers["_correction_reason"] = reason
+            await self._signup_svc.save_wizard(wizard)
+
         if isinstance(channel, discord.TextChannel):
             driver_member = guild.get_member(int(discord_user_id))
             mention = driver_member.mention if driver_member else f"<@{discord_user_id}>"
             from cogs.admin_review_cog import CorrectionParameterView  # type: ignore[import]
             await channel.send(
-                f"{mention} **{actor.display_name}** has requested a correction. "
-                "Please select the parameter to re-collect (5-minute window):",
+                f"{mention} **{actor.display_name}** has requested a correction.\n"
+                "Please select the parameter to correct (5-minute window):",
                 view=CorrectionParameterView(server_id, discord_user_id, self._bot),  # type: ignore[arg-type]
             )
 
@@ -664,10 +696,14 @@ class WizardService:
         )
 
         # Configure wizard for single-field re-collection
+        correction_reason = wizard.draft_answers.pop("_correction_reason", "")
         wizard.wizard_state = target_state
         wizard.draft_answers["_is_correction"] = True
         if target_state == WizardState.COLLECTING_LAP_TIME:
             wizard.current_lap_track_index = 0
+        if target_state == WizardState.COLLECTING_PREFERRED_TEAMS:
+            wizard.draft_answers.pop("_pref_teams_step", None)
+            wizard.draft_answers["preferred_teams"] = []
         wizard.last_activity_at = datetime.now(timezone.utc).isoformat()
         await self._signup_svc.save_wizard(wizard)
 
@@ -675,7 +711,7 @@ class WizardService:
         fire_at = datetime.now(timezone.utc) + timedelta(hours=24)
         await self._arm_inactivity_job(server_id, discord_user_id, fire_at)
 
-        # Post re-collection prompt
+        # Post re-collection prompt with step-appropriate view
         channel = (
             guild.get_channel(wizard.signup_channel_id)
             if wizard.signup_channel_id else None
@@ -683,9 +719,17 @@ class WizardService:
         if isinstance(channel, discord.TextChannel):
             member = guild.get_member(int(discord_user_id))
             mention = member.mention if member else f"<@{discord_user_id}>"
+            # Correct write permissions for the target step type
+            if target_state in WizardService._BUTTON_ONLY_STATES and member:
+                await self._revoke_driver_write(channel, member)
+            elif member:
+                await self._grant_driver_write(channel, member)
+            team_names = wizard.config_snapshot.team_names if wizard.config_snapshot else []
+            reason_line = f"\n**Reason:** {correction_reason}" if correction_reason else ""
             await channel.send(
-                f"{mention} Please re-submit your **{parameter.replace('_', ' ')}**:\n"
+                f"{mention} Please re-submit your **{parameter.replace('_', ' ')}**:{reason_line}\n"
                 + self._prompt_for_state(target_state, wizard.config_snapshot, wizard),
+                view=self._build_step_view(target_state, server_id, discord_user_id, team_names),
             )
 
     async def _trigger_channel_hold(
@@ -898,6 +942,11 @@ class WizardService:
 
     _PLATFORMS = ["Steam", "EA", "Xbox", "PlayStation"]
     _DRIVER_TYPES = ["Full-Time Driver", "Reserve Driver"]
+    _BUTTON_ONLY_STATES = frozenset({
+        WizardState.COLLECTING_PLATFORM,
+        WizardState.COLLECTING_DRIVER_TYPE,
+        WizardState.COLLECTING_PREFERRED_TEAMS,
+    })
 
     async def _advance_wizard(
         self,
@@ -905,6 +954,17 @@ class WizardService:
         message: discord.Message,
     ) -> None:
         """Determine and move to the next collection state; commit when done."""
+        assert isinstance(message.channel, discord.TextChannel)
+        assert message.guild is not None
+        await self._advance_wizard_in_channel(wizard, message.channel, message.guild)
+
+    async def _advance_wizard_in_channel(
+        self,
+        wizard: SignupWizardRecord,
+        channel: discord.TextChannel,
+        guild: discord.Guild,
+    ) -> None:
+        """Core wizard advancement — move to the next state within a known channel."""
         snapshot = wizard.config_snapshot
         assert snapshot is not None
 
@@ -928,6 +988,9 @@ class WizardService:
                 ns = _SEQUENCE[j]
                 if ns == WizardState.COLLECTING_NATIONALITY and not snapshot.nationality_required:
                     continue
+                if ns == WizardState.COLLECTING_PREFERRED_TEAMS:
+                    if wizard.draft_answers.get("driver_type") == "Reserve Driver":
+                        continue
                 if ns == WizardState.COLLECTING_LAP_TIME:
                     if wizard.current_lap_track_index < len(snapshot.selected_track_ids):
                         return ns  # still tracks to collect
@@ -935,6 +998,12 @@ class WizardService:
                         continue  # skip lap time entirely
                 return ns
             return None
+
+        # Exiting a button-only state: restore send_messages for next text step
+        if state in WizardService._BUTTON_ONLY_STATES:
+            member = guild.get_member(int(wizard.discord_user_id))
+            if member:
+                await self._grant_driver_write(channel, member)
 
         # For COLLECTING_LAP_TIME: check if more tracks remain
         if state == WizardState.COLLECTING_LAP_TIME:
@@ -944,31 +1013,191 @@ class WizardService:
                 # More tracks: stay in LAP_TIME state but for next track
                 wizard.last_activity_at = datetime.now(timezone.utc).isoformat()
                 await self._signup_svc.save_wizard(wizard)
-                await message.channel.send(self._prompt_for_state(state, snapshot, wizard))
+                await channel.send(
+                    self._prompt_for_state(state, snapshot, wizard),
+                    view=self._build_step_view(state, wizard.server_id, wizard.discord_user_id, snapshot.team_names),
+                )
                 await self._reset_inactivity_job(wizard.server_id, wizard.discord_user_id)
                 return
 
         # T039: correction mode — commit correction instead of advancing
         if wizard.draft_answers.pop("_is_correction", False):
-            await self._commit_correction(wizard, message)
+            await self._commit_correction(wizard, guild)
             return
 
         next_state = _peek_next(idx)
         if next_state is None:
-            # All steps complete — commit
-            assert message.guild is not None
-            await self.commit_wizard(wizard.server_id, wizard.discord_user_id, message.guild)
+            # All steps complete — persist final draft answers before commit reads them back
+            await self._signup_svc.save_wizard(wizard)
+            await self.commit_wizard(wizard.server_id, wizard.discord_user_id, guild)
             return
 
         wizard.wizard_state = next_state
         wizard.last_activity_at = datetime.now(timezone.utc).isoformat()
         await self._signup_svc.save_wizard(wizard)
         await self._reset_inactivity_job(wizard.server_id, wizard.discord_user_id)
-        await message.channel.send(self._prompt_for_state(next_state, snapshot, wizard))
+
+        # Entering a button-only state: revoke send_messages
+        if next_state in WizardService._BUTTON_ONLY_STATES:
+            member = guild.get_member(int(wizard.discord_user_id))
+            if member:
+                await self._revoke_driver_write(channel, member)
+
+        await channel.send(
+            self._prompt_for_state(next_state, snapshot, wizard),
+            view=self._build_step_view(next_state, wizard.server_id, wizard.discord_user_id, snapshot.team_names),
+        )
 
     async def _reset_inactivity_job(self, server_id: int, discord_user_id: str) -> None:
         fire_at = datetime.now(timezone.utc) + timedelta(hours=24)
         await self._arm_inactivity_job(server_id, discord_user_id, fire_at)
+
+    def _build_step_view(
+        self,
+        state: WizardState,
+        server_id: int,
+        discord_user_id: str,
+        team_names: list[str] | None = None,
+    ) -> discord.ui.View:
+        """Return the appropriate view for the given wizard state."""
+        from cogs.signup_cog import (  # lazy import — avoid circular
+            WithdrawButtonView,
+            PlatformButtonView,
+            DriverTypeButtonView,
+            PreferredTeamsButtonView,
+            NoPreferenceTeammateView,
+            NoNotesButtonView,
+        )
+        if state == WizardState.COLLECTING_PLATFORM:
+            return PlatformButtonView(server_id, discord_user_id, self._bot)
+        if state == WizardState.COLLECTING_DRIVER_TYPE:
+            return DriverTypeButtonView(server_id, discord_user_id, self._bot)
+        if state == WizardState.COLLECTING_PREFERRED_TEAMS:
+            return PreferredTeamsButtonView(server_id, discord_user_id, self._bot, team_names or [])
+        if state == WizardState.COLLECTING_PREFERRED_TEAMMATE:
+            return NoPreferenceTeammateView(server_id, discord_user_id, self._bot)
+        if state == WizardState.COLLECTING_NOTES:
+            return NoNotesButtonView(server_id, discord_user_id, self._bot)
+        return WithdrawButtonView(server_id, discord_user_id, self._bot)
+
+    async def handle_platform_button(
+        self,
+        server_id: int,
+        discord_user_id: str,
+        platform: str,
+        guild: discord.Guild,
+    ) -> None:
+        """Handle a platform button press in Step 2."""
+        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PLATFORM:
+            return
+        wizard.draft_answers["platform"] = platform
+        if wizard.signup_channel_id is None:
+            return
+        channel = guild.get_channel(wizard.signup_channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            return
+        await self._advance_wizard_in_channel(wizard, channel, guild)
+
+    async def handle_driver_type_button(
+        self,
+        server_id: int,
+        discord_user_id: str,
+        driver_type: str,
+        guild: discord.Guild,
+    ) -> None:
+        """Handle a driver-type button press in Step 5."""
+        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        if wizard is None or wizard.wizard_state != WizardState.COLLECTING_DRIVER_TYPE:
+            return
+        wizard.draft_answers["driver_type"] = driver_type
+        if wizard.signup_channel_id is None:
+            return
+        channel = guild.get_channel(wizard.signup_channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            return
+        await self._advance_wizard_in_channel(wizard, channel, guild)
+
+    async def handle_preferred_teams_button(
+        self,
+        server_id: int,
+        discord_user_id: str,
+        team_name: str | None,
+        guild: discord.Guild,
+    ) -> None:
+        """Handle a team button or No Preference press in Step 6 (up to 3 sub-steps)."""
+        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PREFERRED_TEAMS:
+            return
+        if wizard.signup_channel_id is None:
+            return
+        channel = guild.get_channel(wizard.signup_channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            return
+
+        current_step: int = wizard.draft_answers.get("_pref_teams_step", 0)
+        current_picks: list[str] = list(wizard.draft_answers.get("preferred_teams") or [])
+
+        if team_name is None:
+            # No Preference — finalise with however many picks accumulated so far
+            wizard.draft_answers["preferred_teams"] = current_picks
+            wizard.draft_answers.pop("_pref_teams_step", None)
+            await self._advance_wizard_in_channel(wizard, channel, guild)
+            return
+
+        # Record this pick
+        current_picks.append(team_name)
+        wizard.draft_answers["preferred_teams"] = current_picks
+        next_step = current_step + 1
+
+        snapshot = wizard.config_snapshot
+        team_names: list[str] = snapshot.team_names if snapshot else []
+        remaining = [t for t in team_names if t not in current_picks]
+
+        if next_step >= 3 or not remaining:
+            # Done — all 3 picks taken or no teams left
+            wizard.draft_answers.pop("_pref_teams_step", None)
+            await self._advance_wizard_in_channel(wizard, channel, guild)
+            return
+
+        # More sub-steps to go — save and send next sub-step prompt
+        wizard.draft_answers["_pref_teams_step"] = next_step
+        wizard.last_activity_at = datetime.now(timezone.utc).isoformat()
+        await self._signup_svc.save_wizard(wizard)
+        await self._reset_inactivity_job(server_id, discord_user_id)
+
+        _ORDINALS = ["1st", "2nd", "3rd"]
+        ordinal = _ORDINALS[next_step]
+        picks_str = ", ".join(current_picks)
+        prompt = (
+            f"**Step 6 — {ordinal} Preferred Team** *(so far: {picks_str})*\n"
+            f"Select your {ordinal} preferred team, or press **No Preference** to finish."
+        )
+        from cogs.signup_cog import PreferredTeamsButtonView  # lazy import
+        await channel.send(
+            prompt,
+            view=PreferredTeamsButtonView(
+                server_id, discord_user_id, self._bot, team_names, excluded=current_picks
+            ),
+        )
+
+    async def handle_no_preference_teammate(
+        self,
+        server_id: int,
+        discord_user_id: str,
+        guild: discord.Guild,
+    ) -> None:
+        """Handle the No Preference button press in Step 7."""
+        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PREFERRED_TEAMMATE:
+            return
+        wizard.draft_answers["preferred_teammate"] = None
+        if wizard.signup_channel_id is None:
+            return
+        channel = guild.get_channel(wizard.signup_channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            return
+        await self._advance_wizard_in_channel(wizard, channel, guild)
 
     async def _handle_nationality(
         self, wizard: SignupWizardRecord, message: discord.Message
@@ -1137,12 +1366,32 @@ class WizardService:
             wizard.draft_answers["notes"] = None
         elif len(raw) > 50:
             await message.channel.send(
-                "❌ Notes must be 50 characters or fewer (or type `No Notes`)."
+                "❌ Notes must be 50 characters or fewer."
             )
             return
         else:
             wizard.draft_answers["notes"] = raw
         await self._advance_wizard(wizard, message)
+
+    async def handle_no_notes(
+        self,
+        server_id: int,
+        discord_user_id: str,
+        guild: discord.Guild,
+    ) -> None:
+        """Handle the 'No Notes' button press in Step 9."""
+        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        if wizard is None or wizard.wizard_state != WizardState.COLLECTING_NOTES:
+            return
+
+        is_correction = wizard.draft_answers.pop("_is_correction", False)
+        wizard.draft_answers["notes"] = None
+
+        if is_correction:
+            await self._commit_correction(wizard, guild)
+        else:
+            await self._signup_svc.save_wizard(wizard)
+            await self.commit_wizard(server_id, discord_user_id, guild)
 
     # ------------------------------------------------------------------
     # Prompt builder helpers
@@ -1162,8 +1411,7 @@ class WizardService:
                 "Enter your 2-letter country code (e.g. `gb`, `us`) or `other`."
             )
         if state == WizardState.COLLECTING_PLATFORM:
-            opts = " / ".join(self._PLATFORMS)
-            return f"**Step 2 — Platform**\nChoose one: {opts}"
+            return "**Step 2 — Platform**\nSelect your platform using the buttons below."
         if state == WizardState.COLLECTING_PLATFORM_ID:
             return "**Step 3 — Platform ID**\nEnter your platform username / gamertag."
         if state == WizardState.COLLECTING_AVAILABILITY:
@@ -1177,17 +1425,16 @@ class WizardService:
                 + "\nEnter the IDs of the slots you can attend (e.g. `1 3 5`)."
             )
         if state == WizardState.COLLECTING_DRIVER_TYPE:
-            opts = " / ".join(self._DRIVER_TYPES)
-            return f"**Step 5 — Driver Type**\nChoose one: {opts}"
+            return "**Step 5 — Driver Type**\nSelect your driver type using the buttons below."
         if state == WizardState.COLLECTING_PREFERRED_TEAMS:
             return (
-                "**Step 6 — Preferred Teams**\n"
-                "Enter up to 3 preferred team names in order (comma-separated), or `No Preference`."
+                "**Step 6 — 1st Preferred Team**\n"
+                "Select your 1st preferred team, or press **No Preference** to skip."
             )
         if state == WizardState.COLLECTING_PREFERRED_TEAMMATE:
             return (
                 "**Step 7 — Preferred Teammate**\n"
-                "Enter your preferred teammate's username, or `No Preference`."
+                "Enter your preferred teammate's username, or press **No Preference**."
             )
         if state == WizardState.COLLECTING_LAP_TIME:
             idx = wizard.current_lap_track_index if wizard else 0
@@ -1208,7 +1455,7 @@ class WizardService:
         if state == WizardState.COLLECTING_NOTES:
             return (
                 "**Step 9 — Additional Notes**\n"
-                "Type any extra notes (max 50 chars), or `No Notes`."
+                "Press **No Notes** or type any extra notes (max 50 chars)."
             )
         return "Ready for next step."
 
@@ -1217,13 +1464,21 @@ class WizardService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _format_review_panel(record: SignupRecord) -> str:
+    def _format_review_panel(
+        record: SignupRecord,
+        slot_labels: dict[int, str] | None = None,
+    ) -> str:
         from models.track import TRACK_IDS  # type: ignore[import-not-found]
 
-        slots_str = (
-            ", ".join(f"#{i}" for i in record.availability_slot_ids)
-            if record.availability_slot_ids else "None"
-        )
+        if slot_labels:
+            availability_str = ", ".join(
+                slot_labels.get(i, f"#{i}") for i in record.availability_slot_ids
+            ) if record.availability_slot_ids else "None"
+        else:
+            availability_str = (
+                ", ".join(f"#{i}" for i in record.availability_slot_ids)
+                if record.availability_slot_ids else "None"
+            )
         teams_str = (
             ", ".join(record.preferred_teams)
             if record.preferred_teams else "No Preference"
@@ -1242,7 +1497,7 @@ class WizardService:
             f"**Nationality:** {record.nationality or 'Not collected'}\n"
             f"**Platform:** {record.platform}\n"
             f"**Platform ID:** {record.platform_id}\n"
-            f"**Availability:** {slots_str}\n"
+            f"**Availability:** {availability_str}\n"
             f"**Driver type:** {record.driver_type}\n"
             f"**Preferred teams:** {teams_str}\n"
             f"**Preferred teammate:** {record.preferred_teammate or 'No Preference'}\n"
@@ -1303,22 +1558,26 @@ class WizardService:
                 record = await self._signup_svc.get_record(server_id, discord_user_id)
                 if record is not None:
                     from cogs.admin_review_cog import AdminReviewView  # type: ignore[import]
+                    slot_labels = {
+                        s.slot_sequence_id: s.display_label
+                        for s in (wizard.config_snapshot.slots if wizard.config_snapshot else [])
+                    }
                     await channel.send(
                         "⏰ Parameter selection timed out. Here is the review panel again:",
                     )
                     await channel.send(
-                        self._format_review_panel(record),
+                        self._format_review_panel(record, slot_labels),
                         view=AdminReviewView(server_id, discord_user_id, self._bot),  # type: ignore[arg-type]
                     )
 
     async def _commit_correction(
         self,
         wizard: SignupWizardRecord,
-        message: discord.Message,
+        guild: discord.Guild,
     ) -> None:
         """Commit a single-field correction and return driver to PENDING_ADMIN_APPROVAL.
 
-        Used by _advance_wizard when the _is_correction flag is set in
+        Used by _advance_wizard_in_channel when the _is_correction flag is set in
         draft_answers.  Updates the existing SignupRecord with the corrected
         field(s), transitions driver state, and posts a fresh AdminReviewView.
         """
@@ -1358,13 +1617,15 @@ class WizardService:
         await self._signup_svc.save_wizard(wizard)
 
         # Post fresh admin review panel
-        assert message.guild is not None
-        guild = message.guild
         if wizard.signup_channel_id is not None:
             channel = guild.get_channel(wizard.signup_channel_id)
             if isinstance(channel, discord.TextChannel):
                 from cogs.admin_review_cog import AdminReviewView  # type: ignore[import]
+                slot_labels = {
+                    s.slot_sequence_id: s.display_label
+                    for s in (wizard.config_snapshot.slots if wizard.config_snapshot else [])
+                }
                 await channel.send(
-                    self._format_review_panel(record),
+                    self._format_review_panel(record, slot_labels),
                     view=AdminReviewView(server_id, discord_user_id, self._bot),  # type: ignore[arg-type]
                 )

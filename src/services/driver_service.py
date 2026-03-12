@@ -206,10 +206,16 @@ class DriverService:
         profile = await self.get_profile(server_id, discord_user_id)
 
         if profile is None:
-            # Only valid when test_mode allows direct creation from NOT_SIGNED_UP
-            if not test_mode_active or new_state not in _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP:
+            # Absent profile = implicitly NOT_SIGNED_UP (Principle VIII).
+            # Allow any transition valid from NOT_SIGNED_UP; create a fresh profile.
+            valid = set(ALLOWED_TRANSITIONS.get(DriverState.NOT_SIGNED_UP, set()))
+            if test_mode_active:
+                valid |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
+            if new_state not in valid:
                 raise ValueError(
-                    f"No driver profile found for user {discord_user_id} on this server."
+                    f"No driver profile found for user {discord_user_id}; "
+                    f"transition from NOT_SIGNED_UP to {new_state.value} is not allowed. "
+                    f"Allowed targets: {sorted(s.value for s in valid) or 'none'}."
                 )
             return await self._create_profile(server_id, discord_user_id, new_state)
 

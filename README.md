@@ -394,6 +394,25 @@ Renames the team in the server's default list and updates its role mapping key. 
 
 Displays all teams on the server's default list alongside their configured Discord roles. If a SETUP season is active and its team list differs from the server default, the divergence is shown with a warning.
 
+#### `/team lineup` — Show team lineups for the active season
+*Access: Trusted admin*
+
+Displays the placed drivers for each team seat in the active season. If a division name or tier number is provided only that division is shown; otherwise all divisions are listed. Requires an active season.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division` | String | — | Division name or tier number; omit to show all divisions |
+| `public` | Boolean | — | Post the lineup visibly in the channel; defaults to ephemeral (only visible to you) |
+
+#### `/team reserve-role` — Set or clear the Reserve team's Discord role
+*Access: Trusted admin*
+
+Sets the Discord role granted to (and revoked from) drivers placed in the Reserve team. Omit the `role` parameter to clear any existing mapping.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `role` | Role | — | Discord role for Reserve drivers; omit to clear |
+
 ---
 
 ### Signup Module Commands

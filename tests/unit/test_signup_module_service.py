@@ -45,7 +45,8 @@ async def db_path(tmp_path):
                 signed_up_role_id        INTEGER NOT NULL,
                 signups_open             INTEGER NOT NULL DEFAULT 0,
                 signup_button_message_id INTEGER,
-                selected_tracks_json     TEXT NOT NULL DEFAULT '[]'
+                selected_tracks_json     TEXT NOT NULL DEFAULT '[]',
+                signup_closed_message_id INTEGER
             );
 
             CREATE TABLE signup_module_settings (
@@ -165,28 +166,38 @@ class TestChronologicalRanking:
         slots = await svc.get_slots(1)
         assert len(slots) == 3
         # Ordered chronologically regardless of insertion order
-        assert slots[0].day_of_week == 1
-        assert slots[0].time_hhmm == "14:30"
-        assert slots[1].day_of_week == 1
-        assert slots[1].time_hhmm == "20:00"
+        assert slots[0].day_of_week == 1 and slots[0].time_hhmm == "14:30"
+        assert slots[1].day_of_week == 1 and slots[1].time_hhmm == "20:00"
         assert slots[2].day_of_week == 3
+        # Sequence IDs must reflect chronological order
+        assert [s.slot_sequence_id for s in slots] == [1, 2, 3]
 
-    async def test_stable_slot_id_not_reused_after_remove(self, db_path):
-        """Slot sequence IDs are stable: removed IDs are never reused."""
+    async def test_slot_ids_chronological_when_added_out_of_order(self, db_path):
+        """Wednesday added first, then Monday → Monday gets #1, Wednesday gets #2."""
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(1, 1, "14:30")   # seq_id = 1
-        await svc.add_slot(1, 1, "20:00")   # seq_id = 2
-        await svc.add_slot(1, 3, "19:00")   # seq_id = 3
-        # Remove seq_id 2 (Mon 20:00)
+        await svc.add_slot(1, 3, "18:00")   # Wed 18:00 added first
+        await svc.add_slot(1, 1, "17:00")   # Mon 17:00 added second
+        slots = await svc.get_slots(1)
+        assert slots[0].day_of_week == 1 and slots[0].slot_sequence_id == 1
+        assert slots[1].day_of_week == 3 and slots[1].slot_sequence_id == 2
+
+    async def test_slot_ids_resequenced_after_remove(self, db_path):
+        """After a removal, slot sequence IDs are resequenced 1..N in chronological order."""
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        await svc.add_slot(1, 1, "14:30")   # Mon 14:30 → seq 1
+        await svc.add_slot(1, 1, "20:00")   # Mon 20:00 → seq 2
+        await svc.add_slot(1, 3, "19:00")   # Wed 19:00 → seq 3
+        # Remove seq_id 2 (Mon 20:00); remaining: Mon 14:30, Wed 19:00
         await svc.remove_slot_by_rank(1, 2)
-        # Add a new slot — it must get seq_id 4, NOT 2
-        await svc.add_slot(1, 5, "18:00")   # seq_id = 4
+        # Add Fri 18:00; new chronological order: Mon 14:30(1), Wed 19:00(2), Fri 18:00(3)
+        await svc.add_slot(1, 5, "18:00")
         slots = await svc.get_slots(1)
         assert len(slots) == 3
-        seq_ids = [s.slot_sequence_id for s in slots]
-        assert 2 not in seq_ids, "seq_id 2 should never be reused after removal"
-        assert 4 in seq_ids
+        assert slots[0].day_of_week == 1 and slots[0].time_hhmm == "14:30" and slots[0].slot_sequence_id == 1
+        assert slots[1].day_of_week == 3 and slots[1].time_hhmm == "19:00" and slots[1].slot_sequence_id == 2
+        assert slots[2].day_of_week == 5 and slots[2].time_hhmm == "18:00" and slots[2].slot_sequence_id == 3
 
 
 class TestWindowState:
