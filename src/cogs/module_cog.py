@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 _MODULE_CHOICES = [
     app_commands.Choice(name="weather", value="weather"),
     app_commands.Choice(name="signup", value="signup"),
+    app_commands.Choice(name="results", value="results"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -157,6 +158,8 @@ class ModuleCog(commands.Cog):
 
         if module_name.value == "weather":
             await self._enable_weather(interaction, server_id)
+        elif module_name.value == "results":
+            await self._enable_results(interaction, server_id)
         else:
             await self._enable_signup(interaction, server_id, channel, base_role, signed_up_role)
 
@@ -179,6 +182,8 @@ class ModuleCog(commands.Cog):
 
         if module_name.value == "weather":
             await self._disable_weather(interaction, server_id)
+        elif module_name.value == "results":
+            await self._disable_results(interaction, server_id)
         else:
             await self._disable_signup(interaction, server_id)
 
@@ -329,6 +334,83 @@ class ModuleCog(commands.Cog):
         await interaction.followup.send(
             "✅ Weather module disabled. All scheduled weather jobs have been cancelled.",
             ephemeral=True,
+        )
+
+    # ── Results & Standings enable ─────────────────────────────────────
+
+    async def _enable_results(
+        self, interaction: discord.Interaction, server_id: int
+    ) -> None:
+        # 1. Guard already-enabled
+        if await self.bot.module_service.is_results_enabled(server_id):
+            await interaction.response.send_message(
+                "⚠️ Results & Standings module is already enabled.", ephemeral=True
+            )
+            return
+
+        # 2. Block if ACTIVE season exists (FR-003)
+        active_season = await self.bot.season_service.get_active_season(server_id)
+        if active_season is not None:
+            await interaction.response.send_message(
+                "❌ Results & Standings module cannot be enabled while a season is active.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        # 3. Atomically set flag + audit
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as db:
+            await db.execute(
+                "INSERT OR REPLACE INTO results_module_config (server_id, module_enabled) VALUES (?, 1)",
+                (server_id,),
+            )
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, NULL, 'MODULE_ENABLE', '', ?, ?)",
+                (server_id, interaction.user.id, str(interaction.user),
+                 json.dumps({"module": "results"}), now),
+            )
+            await db.commit()
+
+        self.bot.output_router.post_log(server_id, "✅ Results & Standings module **enabled**.")
+        await interaction.followup.send("✅ Results & Standings module enabled.", ephemeral=True)
+
+    # ── Results & Standings disable ────────────────────────────────────
+
+    async def _disable_results(
+        self, interaction: discord.Interaction, server_id: int
+    ) -> None:
+        if not await self.bot.module_service.is_results_enabled(server_id):
+            await interaction.response.send_message(
+                "⚠️ Results & Standings module is already disabled.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as db:
+            await db.execute(
+                "INSERT OR REPLACE INTO results_module_config (server_id, module_enabled) VALUES (?, 0)",
+                (server_id,),
+            )
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, NULL, 'MODULE_DISABLE', ?, '', ?)",
+                (server_id, interaction.user.id, str(interaction.user),
+                 json.dumps({"module": "results"}), now),
+            )
+            await db.commit()
+
+        self.bot.output_router.post_log(
+            server_id, "✅ Results & Standings module **disabled**."
+        )
+        await interaction.followup.send(
+            "✅ Results & Standings module disabled.", ephemeral=True
         )
 
     # ── Signup enable (T017) ───────────────────────────────────────────
