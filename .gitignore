@@ -1,6 +1,12 @@
 # WIP specification
-league-functionality-specification.md
-weather_specification.md
+module_list.md
+results_module_specification.md
+signup_module_specification.md
+weather_module_specification.md
+stats_module_specification.md
+rsvp_module_specification.md
+steward_module_specification.md
+other_changes.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

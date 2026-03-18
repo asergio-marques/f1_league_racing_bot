@@ -1,6 +1,84 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-03-18 — v2.3.0 → v2.4.0: Results & Standings module formal specification]
+  Version change    : 2.3.0 → 2.4.0
+  Bump rationale    : MINOR — Principle XII (Race Results & Championship Integrity)
+                      materially expanded and corrected. Principle X amended: race results
+                      recording and championship standings moved from foundational to the new
+                      optional Results & Standings module. Both previously deferred TODOs
+                      (FASTEST_LAP_RULE and SCORING_TABLE_CUSTOMIZATION) resolved.
+                      Data entities for v2.3.0 (RaceResult, ScoringTable) superseded by the
+                      correct session-level and configuration-store schema (v2.4.0).
+  Modified principles:
+    - Principle X (Modular Feature Architecture) — "Race results recording and championship
+      standings" removed from foundational modules; "Results & standings module" added as a
+      new optional module.
+    - Principle XII (Race Results & Championship Integrity) — full rewrite:
+        * Corrected: no default scoring preset (zero-points default, not the F1 table).
+        * Corrected: results are session-level, not round-level (sequential per-session
+          submission per round).
+        * Corrected: tiebreaking uses Feature Race finishes only (not a generic "most recent
+          round" criterion).
+        * Added: named multi-configuration points store (server-scope and season-scope).
+        * Added: fastest-lap bonus mechanics (per session per config, position-limit).
+        * Added: mid-season amendment flow (modification store, modified flag, approval gate).
+        * Added: reserve driver standings visibility toggle per division.
+        * Added: standings snapshot per round (points, per-position finish counts, first
+          finish round).
+        * Added: results channel and standings channel as module-introduced channel categories.
+        * Added: season approval gate for the Results & Standings module.
+  Added sections    : New Entities (v2.4.0)
+  Removed sections  : None
+  Resolved TODOs    :
+    - TODO(FASTEST_LAP_RULE): Resolved — fastest-lap bonus points apply per session per
+      named configuration; qualifying sessions are excluded; position-limit eligibility is
+      configurable per session per configuration.
+    - TODO(SCORING_TABLE_CUSTOMIZATION): Resolved — servers define fully custom named
+      configurations; no F1 preset is provided; the default for any unspecified position
+      is 0 points.
+  Data entities     :
+    - Superseded (v2.3.0): RaceResult, ScoringTable.
+      *Reason: designed for a simplified single-round/single-table model inconsistent with
+      the session-level multi-config schema mandated by the feature specification.*
+    - SeasonAssignment (v2.3.0) amended: standings live-state fields (current_points,
+      current_position, points_gap_to_leader) removed; authoritative standings state
+      moved to DriverStandingsSnapshot (v2.4.0).
+    - New (v2.4.0): PointsConfigStore, PointsConfigEntry, PointsConfigFastestLap,
+      SeasonPointsLink, SeasonPointsStore, SeasonModificationStore, SeasonAmendmentState,
+      SessionResult, DriverSessionResult, DriverStandingsSnapshot, TeamStandingsSnapshot,
+      ResultsModuleConfig.
+  Templates confirmed aligned:
+    ✅ .specify/templates/plan-template.md      — Constitution Check gate is dynamic; no
+         hardcoded principle list; no changes needed.
+    ✅ .specify/templates/spec-template.md      — generic; no stale references.
+    ✅ .specify/templates/tasks-template.md     — generic; aligns with I–XII.
+    ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+    ✅ .specify/templates/checklist-template.md  — no impact.
+  Incoherencies resolved:
+    - Principle X listed "Race results recording and championship standings" as foundational
+      (cannot be disabled), but the feature specification requires an optional module.
+      Corrected.
+    - Principle XII stated the default scoring table is the standard F1 preset; the feature
+      specification states the default is 0 points for all positions. Corrected.
+    - Principle XII described round-level "atomic submission" (one operation per round);
+      the feature specification requires session-level sequential submission. Corrected.
+    - Principle XII's tiebreaker was "driver who places higher in most recent round"; the
+      feature specification defines a detailed countback hierarchy restricted to Feature Race
+      finishes. Corrected.
+    - v2.3.0 RaceResult modelled results at round/driver level; the feature requires results
+      at session/driver level with per-session config choices. Superseded.
+    - v2.3.0 ScoringTable modelled a single server-level table; the feature requires named
+      multi-config stores at both server and season scope. Superseded.
+  Follow-up notes   :
+    - The "results channel", "standings channel", and transient "round submission channel"
+      per division are module-introduced channel categories and MUST be explicitly documented
+      in the feature specification per Principle VII.
+    - Division-level channel config (results channel, standings channel) MUST be specified
+      in the feature spec (stored on Division or a new DivisionResultsConfig entity).
+    - SeasonAssignment live-state fields already implemented code-side from v2.3.0 will
+      require a migration to drop or ignore the removed columns.
+
 [2026-03-12 — Session reuse: QoL changes and bugfixes]
   - Constitution reused as-is; no principle amendments required.
   - Session intent: quality-of-life improvements and bugfixes to existing features.
@@ -671,7 +749,6 @@ per server and MUST survive bot restarts.
 - Team management
 - Driver profile management
 - Season lifecycle management
-- Race results recording and championship standings
 
 **Optional modules** (disabled by default; enabled explicitly per server by a server
 administrator via a dedicated `/module enable <name>` command — or its equivalent
@@ -681,6 +758,9 @@ structured subcommand):
 - **Signup module**: manages the signup wizard flow, the general signup channel, per-driver
   signup channels, signup configuration (nationality toggle, time-type, time-image, time
   slots), and the driver onboarding state machine.
+- **Results & standings module**: delivers the named points-configuration store, season
+  attachment, session-by-session round result submission, standings computation, and results
+  and standings channel posting (Principle XII).
 - Additional modules as ratified under Principle VI.
 
 The following rules MUST hold for every optional module:
