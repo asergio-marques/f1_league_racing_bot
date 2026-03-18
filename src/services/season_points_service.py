@@ -225,3 +225,14 @@ def _collapse_trailing_zeros(rows: list[tuple[int, int]]) -> list[tuple[str, int
             break
 
     return result
+
+
+async def get_season_config_names(db_path: str, season_id: int) -> list[str]:
+    """Return all config names attached to the given season."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT config_name FROM season_points_links WHERE season_id = ? ORDER BY config_name",
+            (season_id,),
+        )
+        rows = await cursor.fetchall()
+    return [r["config_name"] for r in rows]

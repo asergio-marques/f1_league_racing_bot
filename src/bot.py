@@ -112,6 +112,14 @@ async def main() -> None:
 
         bot.scheduler_service.register_forecast_cleanup_callback(_forecast_cleanup_cb)
 
+        # Register result submission callback
+        from services.result_submission_service import run_result_submission_job
+
+        async def _result_submission_cb(round_id: int) -> None:
+            await run_result_submission_job(round_id, bot)
+
+        bot.scheduler_service.register_result_submission_callback(_result_submission_cb)
+
         # Register season-end callback (stored in _GLOBAL_SERVICE so the
         # module-level _season_end_job can reach it without pickling a closure)
         from services.season_end_service import execute_season_end as _execute_season_end

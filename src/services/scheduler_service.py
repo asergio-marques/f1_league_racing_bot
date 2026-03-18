@@ -118,6 +118,24 @@ async def _forecast_cleanup_job(round_id: int) -> None:
     await cb(round_id)
 
 
+async def _result_submission_job_wrapper(round_id: int) -> None:
+    """Top-level APScheduler callable for result submission job."""
+    if _GLOBAL_SERVICE is None:
+        log.warning(
+            "_result_submission_job_wrapper fired but _GLOBAL_SERVICE is None "
+            "(round=%s) — skipping",
+            round_id,
+        )
+        return
+    cb = _GLOBAL_SERVICE._result_submission_callback
+    if cb is None:
+        log.warning(
+            "No result submission callback registered; skipping round %s.", round_id
+        )
+        return
+    await cb(round_id)
+
+
 class SchedulerService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -135,6 +153,8 @@ class SchedulerService:
         self._mystery_notice_callback: "Callable | None" = None
         # Post-race forecast cleanup callback injected after bot starts
         self._forecast_cleanup_callback: "Callable | None" = None
+        # Result submission callback injected after bot starts
+        self._result_submission_callback: "Callable | None" = None
 
     def register_callbacks(
         self,
@@ -170,6 +190,14 @@ class SchedulerService:
         Called from bot.py on_ready after the scheduler is started.
         """
         self._forecast_cleanup_callback = callback
+
+    def register_result_submission_callback(self, callback: Callable) -> None:
+        """Register the async callable invoked at round start time for result submission.
+
+        The callable must accept ``(round_id: int)``.
+        Called from bot.py on_ready after the scheduler is started.
+        """
+        self._result_submission_callback = callback
 
     def start(self) -> None:
         global _GLOBAL_SERVICE
@@ -248,6 +276,18 @@ class SchedulerService:
         )
         log.info("Scheduled %s at %s", cleanup_job_id, cleanup_fire_at.isoformat())
 
+        # Schedule result submission job at round start time (FR-010)
+        results_job_id = f"results_r{rnd.id}"
+        self._scheduler.add_job(
+            _result_submission_job_wrapper,
+            trigger=DateTrigger(run_date=scheduled_at, timezone="UTC"),
+            id=results_job_id,
+            replace_existing=True,
+            name=f"Result submission for round {rnd.id}",
+            kwargs={"round_id": rnd.id},
+        )
+        log.info("Scheduled %s at %s", results_job_id, scheduled_at.isoformat())
+
     def cancel_round(self, round_id: int) -> None:
         """Remove all phase jobs, the mystery-notice job, and the cleanup job for *round_id*."""
         for job_id in (
@@ -256,6 +296,7 @@ class SchedulerService:
             f"phase3_r{round_id}",
             f"mystery_r{round_id}",
             f"cleanup_r{round_id}",
+            f"results_r{round_id}",
         ):
             try:
                 self._scheduler.remove_job(job_id)

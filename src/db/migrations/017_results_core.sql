@@ -1,5 +1,6 @@
 -- Migration 017: Results & Standings core — points config, submission, standings
 -- Adds: points_config_store, points_config_entries, points_config_fl,
+--        season_points_links,
 --        season_points_entries, season_points_fl,
 --        season_amendment_state, season_modification_entries, season_modification_fl,
 --        session_results, driver_session_results,
@@ -35,6 +36,16 @@ CREATE TABLE IF NOT EXISTS points_config_fl (
     fl_points         INTEGER NOT NULL DEFAULT 0,
     fl_position_limit INTEGER,
     UNIQUE (config_id, session_type)
+);
+
+-- Tracks which named configs are attached to a season during SETUP; persists post-snapshot.
+CREATE TABLE IF NOT EXISTS season_points_links (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_id   INTEGER NOT NULL
+                    REFERENCES seasons(id)
+                    ON DELETE CASCADE,
+    config_name TEXT    NOT NULL,
+    UNIQUE (season_id, config_name)
 );
 
 CREATE TABLE IF NOT EXISTS season_points_entries (
