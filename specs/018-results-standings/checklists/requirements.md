@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain — **2 open: NC-001 (permission level), NC-002 (approval gate logic)**
+- [x] No [NEEDS CLARIFICATION] markers remain — NC-001 and NC-002 resolved by project owner on 2026-03-18
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,7 +31,4 @@
 
 ## Notes
 
-- **NC-001** and **NC-002** must be resolved before `/speckit.plan` can begin.
-- NC-001: Permission level for results/standings channel commands (Tier-2 vs server admin).
-- NC-002: Exact logical condition for R&S season approval gate (AND vs OR for missing channels + missing points config).
-- Pending clarification responses are marked in spec.md under the "Needs Clarification" section.
+- All items pass. Spec is ready for `/speckit.plan`.

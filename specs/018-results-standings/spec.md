@@ -2,7 +2,7 @@
 
 **Feature Branch**: `018-results-standings`  
 **Created**: 2026-03-18  
-**Status**: Draft  
+**Status**: Clarified  
 **Input**: Foundation of the Results & Standings module: module enable/disable lifecycle, decoupling division channel configuration from the division-add command, new per-division channel assignment commands, and season approval prerequisite gates.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -52,8 +52,8 @@ A trusted admin sets the channel where race results will be posted and the chann
 
 **Acceptance Scenarios**:
 
-1. **Given** a division exists in the current season setup, **When** a [NEEDS CLARIFICATION: see NC-001] admin runs the results channel assignment command with a valid division name and a valid channel, **Then** the results channel for that division is stored and the bot confirms ephemerally.
-2. **Given** a division exists in the current season setup, **When** the same type of admin runs the standings channel assignment command with a valid division name and a valid channel, **Then** the standings channel for that division is stored and the bot confirms ephemerally.
+1. **Given** a division exists in the current season setup, **When** a Tier-2 admin (config authority) runs the results channel assignment command with a valid division name and a valid channel, **Then** the results channel for that division is stored and the bot confirms ephemerally.
+2. **Given** a division exists in the current season setup, **When** a Tier-2 admin (config authority) runs the standings channel assignment command with a valid division name and a valid channel, **Then** the standings channel for that division is stored and the bot confirms ephemerally.
 3. **Given** a division already has a results channel and it is re-assigned via the command, **When** the command runs successfully, **Then** the previous channel is replaced; only the results channel is changed, not the standings channel.
 4. **Given** a division already has a standings channel and it is re-assigned via the command, **When** the command runs successfully, **Then** the previous channel is replaced; only the standings channel is changed, not the results channel.
 5. **Given** an invalid division name or non-channel value is provided, **Then** the bot rejects the input with a specific, actionable error message.
@@ -72,7 +72,8 @@ When an admin attempts to approve a season in SETUP, the bot validates that all 
 
 1. **Given** the weather module is enabled and at least one division has no weather forecast channel assigned, **When** an admin attempts to approve the season, **Then** the approval is rejected and the bot identifies which divisions are missing a weather forecast channel.
 2. **Given** the weather module is enabled and every division has a weather forecast channel assigned, **When** an admin attempts to approve the season (all other conditions met), **Then** the weather-channel prerequisite does not block approval.
-3. **Given** the R&S module is enabled and the prerequisites are not met (see NC-002 for exact conditions), **When** an admin attempts to approve the season, **Then** the approval is rejected and the bot posts a specific diagnostic indicating which prerequisite is unmet.
+3. **Given** the R&S module is enabled and at least one division is missing its results channel or standings channel, **When** an admin attempts to approve the season, **Then** the approval is rejected and the bot identifies each non-compliant division and its missing channel(s).
+3b. **Given** the R&S module is enabled and every division has both channels set but no points configuration is attached to the season in SETUP, **When** an admin attempts to approve the season, **Then** the approval is rejected and the bot states that at least one points configuration must be attached to the season before approval.
 4. **Given** the R&S module is enabled and all prerequisites are met, **When** an admin attempts to approve the season, **Then** the R&S prerequisite check does not block approval.
 5. **Given** neither the weather module nor the R&S module is enabled, **When** an admin attempts to approve the season (other conditions met), **Then** no channel-related check blocks approval.
 
@@ -111,13 +112,13 @@ When a season is already active, a server admin attempts to enable the weather m
 - **FR-004**: Disabling the R&S module MUST be restricted to server administrators; it MAY be executed at any point regardless of season state.
 - **FR-005**: The division-add command MUST NOT accept a weather forecast channel as a parameter. Any existing parameter for that purpose MUST be removed.
 - **FR-006**: A new command MUST allow a Tier-2 admin (config authority) to assign a weather forecast channel to a named division. The command MUST accept a division name and a Discord channel reference.
-- **FR-007**: A new command MUST allow a [NEEDS CLARIFICATION: NC-001] admin to assign a results channel to a named division. The command MUST accept a division name and a Discord channel reference.
-- **FR-008**: A new command MUST allow a [NEEDS CLARIFICATION: NC-001] admin to assign a standings channel to a named division. The command MUST accept a division name and a Discord channel reference.
+- **FR-007**: A new command MUST allow a Tier-2 admin (config authority) to assign a results channel to a named division. The command MUST accept a division name and a Discord channel reference.
+- **FR-008**: A new command MUST allow a Tier-2 admin (config authority) to assign a standings channel to a named division. The command MUST accept a division name and a Discord channel reference.
 - **FR-009**: Each of the three channel assignment commands (weather, results, standings) MUST be idempotent: re-running it with a different channel replaces the previous value; re-running with the same channel is a no-op with a confirmation response.
 - **FR-010**: Each channel assignment command MUST validate that the provided division name exists and that the provided channel reference is a valid Discord channel; invalid inputs MUST be rejected before any state change.
 - **FR-011**: Season approval (SETUP → ACTIVE transition) MUST be blocked if the weather module is enabled and any division in the season lacks a configured weather forecast channel. The rejection message MUST name every non-compliant division.
 - **FR-012**: Enabling the weather module on a server with an active season MUST be blocked if any division in that season lacks a configured weather forecast channel. The rejection message MUST name every non-compliant division.
-- **FR-013**: Season approval MUST be blocked if the R&S module is enabled and the applicable prerequisite conditions are not met (exact conditions per NC-002). The rejection message MUST identify all unmet prerequisites.
+- **FR-013**: Season approval MUST be blocked if the R&S module is enabled and either (a) any division in the season has no results channel configured, (b) any division in the season has no standings channel configured, or (c) no points configuration is attached to the season being approved. Each unmet condition MUST be reported distinctly in the rejection message.
 - **FR-014**: The weather channel, results channel, and standings channel for each division MUST be persisted independently. Changing one MUST NOT affect the others.
 - **FR-015**: All channel assignment command responses MUST be ephemeral (visible only to the invoking user), per bot behavior standards.
 - **FR-016**: All module enable/disable events and all channel assignment changes MUST produce audit log entries per Principle V, recording the actor, the division (where applicable), the channel or module changed, the previous value, and the new value.
@@ -129,42 +130,11 @@ When a season is already active, a server admin attempts to enable the weather m
 
 ## Assumptions
 
-- Tier-2 admin (config authority / season authority) is the appropriate permission level for assigning weather forecast channels, consistent with its existing use for all season-setup commands. The same level is assumed for results and standings channel assignment pending clarification of NC-001.
+- Tier-2 admin (config authority) is the appropriate permission level for all three channel assignment commands (weather, results, standings), consistent with other season-configuration commands. Module enable/disable remains server-admin-only.
 - Channel assignment commands may be executed at any season lifecycle state (no season, SETUP, or ACTIVE); they are not gated on season phase. This is consistent with how season amendments are permitted during ACTIVE state.
 - When the R&S module is disabled, the stored results and standings channel IDs for each division are retained (not cleared). This aligns with Principle X rule 3, which states only live/scheduled artifacts are removed; configuration data is preserved for re-enablement.
 - When a weather forecast channel was previously supplied as part of the division-add command, any such value already stored in the database is treated as a valid channel assignment and does not need to be manually re-entered after this change.
-
-## Needs Clarification
-
-### NC-001: Permission level for results and standings channel commands
-
-The feature input describes the results channel command as "usable by trusted admins" in one sentence and "May only be used by server admins" in the next sentence of the same bullet point. The same ambiguity applies to the standings channel command.
-
-| Option | Answer | Implications |
-|--------|--------|--------------|
-| A | Tier-2 admin (config authority) | Consistent with all other season-configuration commands; league managers can set channels without needing full server admin permissions |
-| B | Discord server admin only | More restrictive; consistent with module enable/disable; league managers must request a server admin to configure channels |
-| Custom | Provide your own answer | Specify the intended permission level |
-
-**Your choice**: _[Awaiting response]_
-
----
-
-### NC-002: Season approval gate logic for the R&S module
-
-The feature input states that approval fails if:  
-> *"the R&S module is enabled AND not all divisions have a results channel and standings configured AND there is no existing points configuration (every position gives 0 points)"*
-
-This connects all three conditions with **AND**, which means approval is only blocked when all three are simultaneously true. That would allow approving a season with R&S enabled and channels missing, as long as at least one point-earning configuration exists — which is likely unintentional.
-
-| Option | Answer | Implications |
-|--------|--------|--------------|
-| A | Block if **all three** are true simultaneously (literal reading) | Module enabled + channels missing + no points config → blocked; having either channels or a non-zero config is sufficient to proceed even if the other is absent |
-| B | Block if R&S enabled **and** any division is missing results or standings channel **or** no non-zero points config exists | Stricter: both channel readiness and a meaningful points config are required before approval; approval with missing channels is never allowed |
-| C | Block if R&S enabled **and** any division is missing results or standings channel (ignore points config readiness at approval time) | Channels are mandatory; points config is deferred — admins may approve and configure points before the first round |
-| Custom | Provide your own answer | Describe the exact logical condition |
-
-**Your choice**: _[Awaiting response]_
+- "A points configuration attached to the season" means at least one named configuration has been weakly linked to the current SETUP season via the results config append command (see the points configuration design in results_module_specification.md). Having only un-attached server-level configs does not satisfy this prerequisite.
 
 ## Success Criteria *(mandatory)*
 
