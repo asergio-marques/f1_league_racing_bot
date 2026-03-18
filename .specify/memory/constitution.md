@@ -1,6 +1,53 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-03-18 — v2.4.0 → v2.4.1: PATCH clarifications for Results & Standings module]
+  Version change    : 2.4.0 → 2.4.1
+  Bump rationale    : PATCH — Non-semantic clarifications to Principle XII covering three
+                      gaps identified when cross-checking results_module_specification.md
+                      against the constitution:
+                        1. Endurance round session-type mapping for results not explicit.
+                        2. Round-cancel constraint (fail if submission channel already open)
+                           not stated.
+                        3. Amendment-toggle disable constraint (cannot disable while
+                           modified_flag is true) not stated.
+  Modified principles:
+    - Principle XII (Race Results & Championship Integrity):
+        * Result Submission: added explicit session-type mapping for all four round
+          formats (Normal, Sprint, Endurance, Mystery); Endurance Full Qualifying /
+          Full Race → Feature Qualifying / Feature Race respectively.
+        * Amendment & Penalty: added round-cancel-while-submission-open constraint;
+          added amendment-toggle-off-while-modified constraint.
+  Added sections    : None
+  Removed sections  : None
+  Resolved spec incoherencies (spec errors — to be corrected in feature spec, not here):
+    1. results_module_specification.md §"Sprint Race and Feature Race" states that
+       DNF/DNS/DSQ drivers "shall not be eligible to receive points" — this omits the
+       constitution's explicit allowance that DNF drivers MAY still receive the fastest-lap
+       bonus (provided the position limit is met). The feature spec MUST be updated to
+       read: "DNF drivers are ineligible for finishing-position points but remain eligible
+       for the fastest-lap bonus under the position-limit condition."
+    2. results_module_specification.md §"Assigning channels to divisions" uses logical AND
+       for the R&S approval gate ("module enabled AND not all channels configured AND no
+       valid points config"), which would incorrectly allow approval when only channels or
+       only the config prerequisite is missing. The constitution (Principle XII, Authorization
+       & Module Gate) uses OR — each missing prerequisite independently blocks approval.
+       The feature spec MUST be corrected to use OR semantics.
+  Templates confirmed aligned:
+    ✅ .specify/templates/plan-template.md      — no changes needed.
+    ✅ .specify/templates/spec-template.md      — no changes needed.
+    ✅ .specify/templates/tasks-template.md     — no changes needed.
+    ✅ .specify/templates/agent-file-template.md — no changes needed.
+    ✅ .specify/templates/checklist-template.md  — no changes needed.
+  Feature branch status:
+    - `018-results-standings` already exists; foundational phases 1–8 implemented
+      (module enable/disable, channel decoupling, channel assignment commands,
+      season approval gates, and unit tests).
+    - Remaining work: points configuration management, results submission wizard,
+      standings computation, amendment/penalty flow, and all associated commands.
+    - Next step: speckit.specify for the next increment within 018.
+  No deferred TODOs remaining.
+
 [2026-03-18 — v2.3.0 → v2.4.0: Results & Standings module formal specification]
   Version change    : 2.3.0 → 2.4.0
   Bump rationale    : MINOR — Principle XII (Race Results & Championship Integrity)
@@ -886,7 +933,13 @@ governs the **Results & Standings optional module** (Principle X).
 - Results are submitted **per session**, sequentially within a round, in the order: Sprint
   Qualifying → Sprint Race → Feature Qualifying → Feature Race (sprint-type sessions
   omitted for Normal/Endurance rounds). Each session's results MUST be validated and
-  accepted before the next session's collection begins.
+  accepted before the next session's collection begins. Session-type mapping by round
+  format:
+    - **Normal**: Feature Qualifying, Feature Race.
+    - **Sprint**: Sprint Qualifying, Sprint Race, Feature Qualifying, Feature Race.
+    - **Endurance**: the Full Qualifying session maps to Feature Qualifying; the Full Race
+      session maps to Feature Race for result-type and points-configuration purposes.
+    - **Mystery**: no result sessions; result collection MUST NOT be triggered.
 - The bot creates a transient submission channel adjacent to the division's results channel
   at the scheduled round start time, notifying tier-2 admins to enter results. This channel
   is a module-introduced channel category registered per Principle VII.
@@ -912,6 +965,14 @@ governs the **Results & Standings optional module** (Principle X).
   amendment or penalty MUST produce an audit log entry per Principle V.
 - On amendment or penalty application, standings for the affected round and all subsequent
   rounds in that division MUST be recomputed and reposted atomically.
+- If the transient round results submission channel has already been opened for a round,
+  any request to cancel that round MUST be rejected with a clear error. The round MAY
+  only be cancelled once all pending result sessions have been submitted or explicitly
+  marked CANCELLED.
+- The amendment-mode toggle MUST reject a request to disable (toggle off) while
+  `modified_flag` is `true`. Tier-2 admins MUST first either approve (overwriting the
+  season points store) or revert (discarding the modification store) before amendment
+  mode may be disabled.
 - Mid-season scoring table amendments follow a **modification store** workflow: a copy of
   the season points store is placed into a modification store; changes are applied there;
   only upon tier-2 admin approval does the modification store overwrite the season store.
@@ -1256,4 +1317,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.4.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-18
+**Version**: 2.4.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-18
