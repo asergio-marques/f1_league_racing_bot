@@ -292,14 +292,14 @@ Manually sets the `former_driver` flag on a driver profile. Only available when 
 
 ### Module Commands
 
-Modules extend the bot beyond weather generation. Currently two modules are available: **weather** and **signup**.
+Modules extend the bot beyond weather generation. Three modules are available: **weather**, **signup**, and **results**.
 
 #### `/module enable` — Enable a bot module
 *Access: Trusted admin*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `module_name` | Choice | ✅ | Module to enable: `weather` or `signup` |
+| `module_name` | Choice | ✅ | Module to enable: `weather`, `signup`, or `results` |
 | `channel` | Channel | — | *(signup only)* Channel designated for signup interactions |
 | `base_role` | Role | — | *(signup only)* Role granted to members eligible to sign up |
 | `signed_up_role` | Role | — | *(signup only)* Role granted on successful signup completion |
@@ -309,7 +309,7 @@ Modules extend the bot beyond weather generation. Currently two modules are avai
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `module_name` | Choice | ✅ | Module to disable: `weather` or `signup` |
+| `module_name` | Choice | ✅ | Module to disable: `weather`, `signup`, or `results` |
 
 ---
 
@@ -490,6 +490,183 @@ No parameters. If drivers are currently in progress you will be prompted to conf
 *Access: Trusted admin*
 
 No parameters. Displays all drivers in the Unassigned state, ordered by total lap time ascending (fastest first). Drivers with no lap time on record appear last.
+
+---
+
+### Results Module Commands
+
+All commands below require the results module to be enabled (`/module enable results`). Most commands also require the `results` module gate, and some also require Server Admin access.
+
+#### Points Config Management
+
+##### `/results config add` — Create a named points configuration
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Unique config name (e.g. `100%`) |
+
+All positions default to 0 points after creation.
+
+##### `/results config remove` — Delete a named points configuration
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Config name to remove |
+
+##### `/results config session` — Set points for a finishing position
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Config name |
+| `session` | Choice | ✅ | Session type: `Feature Qualifying`, `Feature Race`, `Sprint Qualifying`, or `Sprint Race` |
+| `position` | Integer | ✅ | Finishing position (1-indexed) |
+| `points` | Integer | ✅ | Points awarded |
+
+##### `/results config fl` — Set the fastest-lap bonus
+*Access: Trusted admin*
+
+Only applicable to race session types (`Feature Race`, `Sprint Race`).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Config name |
+| `session` | Choice | ✅ | Race session type |
+| `points` | Integer | ✅ | Bonus points for fastest lap |
+
+##### `/results config fl-plimit` — Set the fastest-lap position eligibility limit
+*Access: Trusted admin*
+
+Only applicable to race session types. For example `limit:10` means only drivers finishing in positions 1–10 are eligible.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Config name |
+| `session` | Choice | ✅ | Race session type |
+| `limit` | Integer | ✅ | Highest eligible position |
+
+##### `/results config append` — Attach a config to the current season
+*Access: Trusted admin*
+
+Only allowed when the season is in **SETUP** status.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Config name to attach |
+
+##### `/results config detach` — Detach a config from the current season
+*Access: Trusted admin*
+
+Only allowed when the season is in **SETUP** status.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Config name to detach |
+
+##### `/results config view` — View a points config
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Config name |
+| `session` | Choice | — | Optional: filter output to a specific session type |
+
+Displays position-to-points mappings and fastest-lap settings. Works for both server-level configs (SETUP) and season-attached configs (ACTIVE).
+
+---
+
+#### Round Results Commands
+
+##### `/round results penalize` — Apply post-race time penalties or disqualifications
+*Access: Trusted admin · Results module required*
+
+Interactive wizard. Select the session, then enter penalties one by one as `@Driver +5` (seconds), `@Driver DSQ`, or `@Driver 5`. DSQ supersedes any prior time penalty for the same driver in the same session. Type `review` or click **Review** to confirm and apply. Standings are recalculated after approval.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division_name` | String | ✅ | Name of the division |
+| `round_number` | Integer | ✅ | Round number to apply penalties to |
+
+##### `/round results amend` — Re-submit results for a completed session
+*Access: Trusted admin · Results module required*
+
+Re-runs the full results submission flow for the specified session. The original submission is superseded and standings are recalculated.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division_name` | String | ✅ | Name of the division |
+| `round_number` | Integer | ✅ | Round number to amend |
+| `session` | Choice | — | Session to amend. If omitted the bot will prompt for one |
+
+---
+
+#### Mid-Season Points Amendment
+
+##### `/results amend toggle` — Enable or disable amendment mode
+*Access: Server admin*
+
+No parameters. Toggles amendment mode for the active season. When amendment mode is active, changes made via `/results amend session`, `/results amend fl`, and `/results amend fl-plimit` are staged in a modification store and do not affect live standings until approved with `/results amend review`.
+
+Disabling amendment mode while there are uncommitted changes is blocked — use `/results amend revert` to discard them first.
+
+##### `/results amend revert` — Discard modification store changes
+*Access: Trusted admin*
+
+No parameters. Resets the modification store to match the current season points and clears the modified flag.
+
+##### `/results amend session` — Stage a points change in the modification store
+*Access: Trusted admin*
+
+Requires amendment mode to be active.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Config name |
+| `session` | Choice | ✅ | Session type |
+| `position` | Integer | ✅ | Finishing position |
+| `points` | Integer | ✅ | New points value |
+
+##### `/results amend fl` — Stage a fastest-lap bonus change
+*Access: Trusted admin*
+
+Requires amendment mode to be active. Race session types only.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Config name |
+| `session` | Choice | ✅ | Race session type |
+| `points` | Integer | ✅ | New FL bonus value |
+
+##### `/results amend fl-plimit` — Stage a fastest-lap position limit change
+*Access: Trusted admin*
+
+Requires amendment mode to be active. Race session types only.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Config name |
+| `session` | Choice | ✅ | Race session type |
+| `limit` | Integer | ✅ | New position limit |
+
+##### `/results amend review` — Review and approve modification store changes
+*Access: Server admin*
+
+No parameters. Displays a diff of the staged changes against the current season points. Approve to atomically overwrite season points and recalculate all standings. Reject to leave the modification store unchanged.
+
+---
+
+#### Reserve Driver Visibility
+
+##### `/results reserves toggle` — Toggle reserve driver visibility in standings
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division` | String | ✅ | Division name |
+
+Toggles whether reserve drivers appear in the publicly posted standings for the specified division.
 
 ---
 
