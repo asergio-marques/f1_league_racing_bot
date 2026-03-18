@@ -55,6 +55,23 @@ class SeasonService:
             return None
         return _row_to_season(row)
 
+    async def get_season_for_server(self, server_id: int) -> Season | None:
+        """Return the most recent season for *server_id* regardless of status.
+
+        Used by channel assignment commands that should work in any season state.
+        Returns the season with the highest id for the server.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "WHERE server_id = ? ORDER BY id DESC LIMIT 1",
+                (server_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return _row_to_season(row)
+
     async def get_setup_season(self, server_id: int) -> Season | None:
         """Return the SETUP season for *server_id*, or None."""
         async with get_connection(self._db_path) as db:
@@ -378,7 +395,7 @@ class SeasonService:
         season_id: int,
         name: str,
         mention_role_id: int,
-        forecast_channel_id: int,
+        forecast_channel_id: int | None = None,
         tier: int = 0,
     ) -> Division:
         """Insert a division and return it."""
@@ -425,6 +442,90 @@ class SeasonService:
             )
             rows = await cursor.fetchall()
         return [_row_to_division(r) for r in rows]
+
+    async def set_division_forecast_channel(
+        self, division_id: int, channel_id: int | None
+    ) -> int | None:
+        """Update divisions.forecast_channel_id. Returns the previous value."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT forecast_channel_id FROM divisions WHERE id = ?",
+                (division_id,),
+            )
+            row = await cursor.fetchone()
+            old_id: int | None = row[0] if row else None
+            await db.execute(
+                "UPDATE divisions SET forecast_channel_id = ? WHERE id = ?",
+                (channel_id, division_id),
+            )
+            await db.commit()
+        return old_id
+
+    async def set_division_results_channel(
+        self, division_id: int, channel_id: int | None
+    ) -> int | None:
+        """Upsert division_results_config.results_channel_id. Returns the previous value."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT results_channel_id FROM division_results_config WHERE division_id = ?",
+                (division_id,),
+            )
+            row = await cursor.fetchone()
+            old_id: int | None = row[0] if row else None
+            await db.execute(
+                "INSERT INTO division_results_config (division_id, results_channel_id) "
+                "VALUES (?, ?) "
+                "ON CONFLICT(division_id) DO UPDATE SET results_channel_id = excluded.results_channel_id",
+                (division_id, channel_id),
+            )
+            await db.commit()
+        return old_id
+
+    async def set_division_standings_channel(
+        self, division_id: int, channel_id: int | None
+    ) -> int | None:
+        """Upsert division_results_config.standings_channel_id. Returns the previous value."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT standings_channel_id FROM division_results_config WHERE division_id = ?",
+                (division_id,),
+            )
+            row = await cursor.fetchone()
+            old_id: int | None = row[0] if row else None
+            await db.execute(
+                "INSERT INTO division_results_config (division_id, standings_channel_id) "
+                "VALUES (?, ?) "
+                "ON CONFLICT(division_id) DO UPDATE SET standings_channel_id = excluded.standings_channel_id",
+                (division_id, channel_id),
+            )
+            await db.commit()
+        return old_id
+
+    async def get_divisions_with_results_config(
+        self, season_id: int
+    ) -> list[Division]:
+        """Return divisions with results_channel_id and standings_channel_id populated
+        via LEFT JOIN to division_results_config. Used by the approval gate."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT d.id, d.season_id, d.name, d.mention_role_id, d.forecast_channel_id,
+                       d.status, d.tier,
+                       drc.results_channel_id, drc.standings_channel_id
+                FROM divisions d
+                LEFT JOIN division_results_config drc ON drc.division_id = d.id
+                WHERE d.season_id = ?
+                """,
+                (season_id,),
+            )
+            rows = await cursor.fetchall()
+        result: list[Division] = []
+        for r in rows:
+            div = _row_to_division(r)
+            div.results_channel_id = r["results_channel_id"]
+            div.standings_channel_id = r["standings_channel_id"]
+            result.append(div)
+        return result
 
     async def rename_division(self, division_id: int, new_name: str) -> None:
         """Update a division's name."""
@@ -494,9 +595,9 @@ class SeasonService:
         division_id: int,
         name: str,
         role_id: int,
-        forecast_channel_id: int,
-        day_offset: int,
-        hour_offset: float,
+        forecast_channel_id: int | None = None,
+        day_offset: int = 0,
+        hour_offset: float = 0.0,
         tier: int = 0,
     ) -> Division:
         """Copy a division (and all its rounds with shifted datetimes) into a new division."""

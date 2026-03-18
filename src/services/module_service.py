@@ -49,3 +49,23 @@ class ModuleService:
                 (int(value), server_id),
             )
             await db.commit()
+
+    async def is_results_enabled(self, server_id: int) -> bool:
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT module_enabled FROM results_module_config WHERE server_id = ?",
+                (server_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return False
+        return bool(row[0])
+
+    async def set_results_enabled(self, server_id: int, value: bool) -> None:
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "INSERT OR REPLACE INTO results_module_config (server_id, module_enabled) "
+                "VALUES (?, ?)",
+                (server_id, int(value)),
+            )
+            await db.commit()

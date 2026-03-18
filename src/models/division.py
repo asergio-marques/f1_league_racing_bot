@@ -11,3 +11,5 @@ class Division:
     forecast_channel_id: int | None
     status: str = "ACTIVE"
     tier: int = 0
+    results_channel_id: int | None = None
+    standings_channel_id: int | None = None
