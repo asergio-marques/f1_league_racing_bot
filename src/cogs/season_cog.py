@@ -32,6 +32,7 @@ from discord.ext import commands
 from db.database import get_connection
 from models.division import Division
 from models.round import RoundFormat
+from services import season_points_service
 from models.track import TRACK_DEFAULTS, TRACK_IDS
 from utils.channel_guard import channel_guard, admin_only
 from utils.message_builder import format_division_list, format_round_list, format_roster_block
@@ -1480,6 +1481,28 @@ class SeasonCog(commands.Cog):
                 else:
                     await interaction.response.send_message(msg, ephemeral=True)
                 return
+
+            # ── Gate 3: monotonic ordering check (FR-008) ────────────────────
+            mono_errors = await season_points_service.validate_monotonic_ordering(
+                self.bot.db_path, cfg.season_id
+            )
+            if mono_errors:
+                bullet_list = "\n\u2022 ".join(mono_errors)
+                msg = (
+                    f"\u274c Season cannot be approved \u2014 points configuration "
+                    f"violates monotonic ordering:\n\u2022 {bullet_list}"
+                )
+                if interaction.response.is_done():
+                    await interaction.followup.send(msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(msg, ephemeral=True)
+                return
+
+        # Snapshot attached points configs before transitioning (FR-007)
+        if await self.bot.module_service.is_results_enabled(cfg.server_id):
+            await season_points_service.snapshot_configs_to_season(
+                self.bot.db_path, cfg.season_id, cfg.server_id
+            )
 
         # Schedule FIRST \u2014 if this fails the season stays SETUP in DB (fix #5)
         if await self.bot.module_service.is_weather_enabled(cfg.server_id):

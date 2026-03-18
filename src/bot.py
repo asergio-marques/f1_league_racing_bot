@@ -164,6 +164,7 @@ async def main() -> None:
     from cogs.signup_cog import SignupCog
     from cogs.admin_review_cog import AdminReviewCog
     from cogs.retry_cog import RetryCog
+    from cogs.results_cog import ResultsCog
 
     await bot.add_cog(InitCog(bot))
     await bot.add_cog(SeasonCog(bot))
@@ -177,6 +178,7 @@ async def main() -> None:
     await bot.add_cog(SignupCog(bot))
     await bot.add_cog(AdminReviewCog(bot))
     await bot.add_cog(RetryCog(bot))
+    await bot.add_cog(ResultsCog(bot))
 
     # Register ALL persistent views so button interactions survive bot restarts.
     # Views with optional __init__ params resolve driver context from channel at
