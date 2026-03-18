@@ -847,50 +847,105 @@ trusted-user review, and maintains a clean channel lifecycle for server hygiene.
 ### XII. Race Results & Championship Integrity
 
 Race outcomes MUST be recorded, persisted, and computed with the same auditability as weather
-generation. Results form the authoritative competitive history of the league.
+generation. Results form the authoritative competitive history of the league. This principle
+governs the **Results & Standings optional module** (Principle X).
 
-- **Authorization**: Only tier-2 admins (season/config authority, Principle I) may submit
-  or amend result records.
-- **Round finality gate**: Results MAY only be submitted for a round that has been explicitly
-  marked as completed. Submissions against future or in-progress rounds MUST be rejected.
-- **Atomic submission**: The complete driver finishing order for a round and division MUST be
-  submitted in a single operation. Partial result sets are not permitted.
-- **Result record**: Every result MUST carry: round ID, division ID, driver Discord User ID,
-  finishing position (positive integer, 1-indexed), and an outcome modifier. Permitted
-  modifiers: CLASSIFIED (driver finished; points apply per scoring table), DNF (Did Not
-  Finish; 0 points), DNS (Did Not Start; 0 points), DSQ (Disqualified; 0 points).
-- **Amendment**: A tier-2 admin MAY amend a previously submitted result with a stated reason.
-  The prior record MUST be marked SUPERSEDED; a replacement record MUST be created. Standings
-  MUST be recomputed immediately. Each amendment MUST produce an audit log entry per Principle V.
-- **Scoring table**: A server-level scoring table (position → points mapping) MUST be
-  configured before any results may be submitted. The default preset MUST be the standard
-  F1 scoring table (25-18-15-12-10-8-6-4-2-1 for finishing positions 1–10). Fastest-lap
-  bonus point eligibility is a policy detail deferred to the race results feature
-  specification (see TODO below).
-- **Scoring table versioning**: Changing the scoring table after any results have been
-  submitted MUST trigger a full standings recomputation and produce an audit log entry.
-  The prior table version MUST be retained as an immutable historical record.
-- **Standings computation**: Championship standings for a division equal the sum of
-  `points_awarded` across all ACTIVE (non-SUPERSEDED) RaceResult records for each driver.
-  Standings MUST be persisted on the driver's SeasonAssignment record and refreshed
-  atomically after every result submission or amendment.
-- **Tiebreaking**: Equal points are resolved by the standard F1 rule — the driver who places
-  higher in the most recent round where their finishing positions differ ranks above the other.
-- **Season completion**: On season completion, current SeasonAssignment values (points,
-  position) MUST be written atomically to the historical fields as part of the season-end
-  transaction.
+#### Authorization & Module Gate
 
-**Rationale**: Accurate, immutable result records are the backbone of any competitive league.
-A deterministic, auditable computation pipeline ensures standings can always be reproduced
-from the raw result log and legitimately contested.
+- Only tier-2 admins (season/config authority, Principle I) may submit, amend, or penalise
+  result records.
+- All commands in this module MUST check that the Results & Standings module is enabled before
+  executing, and return a clear error if it is not (Principle X, rule 5).
+- The module MAY NOT be enabled in the middle of an active season.
+- A season in `SETUP` MAY NOT be approved if the module is enabled and any division lacks a
+  configured results channel or standings channel, or if no points configuration exists that
+  yields at least one non-zero position value for any session.
 
-TODO(FASTEST_LAP_RULE): Whether fastest-lap bonus points apply universally, only to top-10
-finishers, or not at all is a policy decision that MUST be confirmed with the project owner
-before the race results feature specification is written.
+#### Points Configuration Store
 
-TODO(SCORING_TABLE_CUSTOMIZATION): Whether servers may define fully custom scoring tables
-(arbitrary position counts and values) or are restricted to the standard F1 preset must be
-confirmed before the race results feature specification is written.
+- A server maintains a **server points config store**: a keyed set of named configurations.
+  Each configuration defines, per session type, the points awarded per finishing position
+  and optionally a fastest-lap bonus and a position eligibility limit for that bonus.
+- The default for any position or bonus not explicitly configured is **0 points**. There is
+  no preset.
+- Valid session types for point awards are: Sprint Qualifying, Sprint Race, Feature
+  Qualifying, Feature Race. Fastest-lap awards are valid only for Sprint Race and Feature
+  Race; configuring fastest-lap for qualifying sessions MUST be rejected.
+- Within a single configuration and session type, positions MUST be monotonically
+  non-increasing in points (higher position ≥ lower position). Season approval MUST be
+  blocked if any configuration attached to the season violates this rule.
+- Named configurations from the server store are **attached** (weakly linked) to a season
+  in `SETUP` to form that season's **season points store**. Attachment is a copy-on-approve
+  action: on season approval the attached configurations' settings are snapshotted into the
+  season points store and become independent of the server store.
+- Modifications to the server store after a season is approved do NOT affect that season's
+  store.
+
+#### Result Submission
+
+- Results are submitted **per session**, sequentially within a round, in the order: Sprint
+  Qualifying → Sprint Race → Feature Qualifying → Feature Race (sprint-type sessions
+  omitted for Normal/Endurance rounds). Each session's results MUST be validated and
+  accepted before the next session's collection begins.
+- The bot creates a transient submission channel adjacent to the division's results channel
+  at the scheduled round start time, notifying tier-2 admins to enter results. This channel
+  is a module-introduced channel category registered per Principle VII.
+- Each session result row MUST carry: session type, round ID, division ID, driver Discord
+  User ID, finishing position (1-indexed positive integer), team role, tyre (qualifying)
+  or total race time and fastest lap (race), and an outcome modifier. Permitted modifiers:
+  CLASSIFIED (eligible for points), DNF / DNS / DSQ (0 points, ineligible for fastest-lap
+  bonus except as noted). A special CANCELLED result MAY be recorded for sessions not run.
+- After a session's results are accepted, the bot presents one button per named seasonal
+  configuration; the tier-2 admin MUST choose one. The chosen configuration name is
+  persisted with the session result and used for all points calculations for that session.
+- A CLASSIFIED driver is eligible for the chosen configuration's fastest-lap bonus if, and
+  only if, their finishing position is at or above the configured position limit for that
+  session (i.e., finishing_position ≤ fastest_lap_position_limit).
+- DNF, DNS, and DSQ drivers are NEVER eligible for finishing-position points. DSQ and DNS
+  drivers are NEVER eligible for fastest-lap points. DNF drivers are eligible for
+  fastest-lap points provided the position limit condition is met.
+
+#### Amendment & Penalty
+
+- A tier-2 admin MAY amend any session's results entirely (full re-entry) or apply
+  targeted time penalties or disqualifications per driver via a guided wizard. Each
+  amendment or penalty MUST produce an audit log entry per Principle V.
+- On amendment or penalty application, standings for the affected round and all subsequent
+  rounds in that division MUST be recomputed and reposted atomically.
+- Mid-season scoring table amendments follow a **modification store** workflow: a copy of
+  the season points store is placed into a modification store; changes are applied there;
+  only upon tier-2 admin approval does the modification store overwrite the season store.
+  On approval, all affected results and standings MUST be reposted. A `modified_flag`
+  (default false) tracks uncommitted changes; it is set on any modification and cleared
+  on approval or revert.
+
+#### Standings Computation
+
+- **Driver standings**: all drivers who have participated in a division, ranked by (1)
+  total points, (2) count of Feature Race wins, (3) count of Feature Race 2nd-place
+  finishes, … (n) count of Feature Race nth-place finishes, (n+1) earliest round in which
+  the highest diverging finish was first achieved. Only Feature Race sessions are
+  authoritative for countback tiebreaking.
+- **Team standings**: teams ranked by the same hierarchy applied to the aggregate points and
+  Feature Race finishes of all drivers scoring under that team's banner in each session.
+  A reserve driver's points and finishes accrue to whichever team they drove for in each
+  individual session.
+- A standings **snapshot** MUST be persisted after every round: per driver (and per team),
+  the total points accumulated to that round and the per-position finish counts (and
+  the round number on which each position was first obtained) MUST be stored. These
+  snapshots form the authoritative historical record and allow reconstruction of standings
+  at any point in the season.
+- Reserve drivers' appearance in the public driver standings is governed by a per-division
+  **reserves visibility toggle** (default on). When toggled off, reserve drivers still
+  accrue points and are included in internal snapshots, but are excluded from posted output.
+- On season completion, each driver's final points and position MUST be written atomically
+  to their SeasonAssignment `final_points` and `final_position` fields as part of the
+  season-end transaction.
+
+**Rationale**: Accurate, immutable, session-level result records are the backbone of any
+competitive league. A deterministic, auditable computation pipeline with named configurations
+and snapshot-based standings history ensures results can always be reproduced from raw input
+and legitimately contested.
 
 ## Bot Behavior Standards
 
@@ -1052,34 +1107,134 @@ to a client-server RDBMS (e.g., PostgreSQL) should be evaluated.
 - `division_id` (INTEGER, FK → Division)
 - `team_seat_id` (INTEGER, FK → TeamSeat, nullable — null until `/driver assign` runs)
 - `is_historical` (BOOLEAN, default false — set to `true` on season completion)
-- `current_points` (INTEGER, default 0 — sum of ACTIVE RaceResult points_awarded)
-- `current_position` (INTEGER, nullable — null until first round results are posted)
-- `points_gap_to_leader` (INTEGER, nullable — null until standings have been computed)
 - `final_points` (INTEGER, nullable — written atomically on season completion)
 - `final_position` (INTEGER, nullable — written atomically on season completion)
 - Rows are created on first `/driver assign` for a season, or on admin direct-assign in
   test mode.
 
-**RaceResult** (per driver, per round, per division):
-- `result_id` (INTEGER PK, server-scoped auto-increment)
+*Note: `current_points`, `current_position`, and `points_gap_to_leader` fields previously
+defined here (v2.3.0 draft) are superseded; authoritative live standings state is now
+held in DriverStandingsSnapshot (v2.4.0).*
+
+*Note: RaceResult and ScoringTable entities previously defined here (v2.3.0 draft) are
+superseded by the session-level schema in v2.4.0 below.*
+
+### New Entities (v2.4.0)
+
+**PointsConfigStore** (per server — the server-level named configuration store):
+- `config_id` (TEXT, server-scoped — user-supplied name/ID, e.g. "100%", "50%")
+- `server_id` (TEXT, FK → Server)
+- One row per named configuration per server. Deleting a config from the store does not
+  automatically detach it from a season in SETUP.
+
+**PointsConfigEntry** (per server config, per session type, per finishing position):
+- `config_id` (TEXT, FK → PointsConfigStore)
+- `server_id` (TEXT)
+- `session_type` (ENUM: SPRINT_QUALIFYING / SPRINT_RACE / FEATURE_QUALIFYING / FEATURE_RACE)
+- `position` (INTEGER, 1-indexed)
+- `points` (INTEGER, default 0)
+- Uniquely keyed on (server_id, config_id, session_type, position).
+
+**PointsConfigFastestLap** (per server config, per race session type):
+- `config_id` (TEXT, FK → PointsConfigStore)
+- `server_id` (TEXT)
+- `session_type` (ENUM: SPRINT_RACE / FEATURE_RACE only)
+- `fl_points` (INTEGER, default 0)
+- `fl_position_limit` (INTEGER, nullable — null means no limit; otherwise driver must finish
+  at or above this position to be eligible)
+- Uniquely keyed on (server_id, config_id, session_type).
+
+**SeasonPointsLink** (attachment record — weak link between server config and a season in
+SETUP; discarded on approval after snapshot copied to SeasonPointsStore):
+- `server_id` (TEXT)
+- `season_id` (INTEGER, FK → Season)
+- `config_id` (TEXT, FK → PointsConfigStore)
+- Uniquely keyed on (server_id, season_id, config_id).
+
+**SeasonPointsStore** (season-scoped snapshot of PointsConfigEntry rows — created on season
+approval from the attached SeasonPointsLinks; completely independent of server store):
+- Mirrors the schema of PointsConfigEntry with an added `season_id` column.
+- Immutable after creation unless the mid-season amendment flow produces an approved
+  replacement (at which point existing rows are replaced atomically).
+
+**SeasonAmendmentState** (per server — tracks mid-season points amendment lifecycle):
+- `server_id` (TEXT, PK)
+- `season_id` (INTEGER, FK → Season)
+- `amendment_active` (BOOLEAN, default false — true when `results amend toggle` has
+  enabled amendment mode)
+- `modified_flag` (BOOLEAN, default false — true once any modification is made to the
+  modification store since the last revert or approval)
+
+**SeasonModificationStore** (working copy of SeasonPointsStore during mid-season amendment;
+mirrors SeasonPointsStore schema with an added `season_id` and `is_modification` flag;
+cleared on successful amendment approval or explicit revert).
+
+**ResultsModuleConfig** (per server — module-introduced configuration for the Results &
+Standings module):
+- `server_id` (TEXT, PK)
+- `module_enabled` (BOOLEAN, default false)
+- Per-division result and standings channel IDs are stored on a **DivisionResultsConfig**
+  record (per division, per server):
+  - `division_id` (INTEGER, FK → Division)
+  - `results_channel_id` (TEXT, nullable)
+  - `standings_channel_id` (TEXT, nullable)
+  - `reserves_in_standings` (BOOLEAN, default true — the reserves visibility toggle)
+
+**SessionResult** (per session, per round, per division — top-level result container):
+- `session_result_id` (INTEGER PK, server-scoped auto-increment)
+- `round_id` (INTEGER, FK → Round)
+- `division_id` (INTEGER, FK → Division)
+- `session_type` (ENUM: SPRINT_QUALIFYING / SPRINT_RACE / FEATURE_QUALIFYING / FEATURE_RACE)
+- `status` (ENUM: ACTIVE / CANCELLED — CANCELLED when the special "CANCELLED" input is used)
+- `applied_config_id` (TEXT, nullable — name of the seasonal config chosen for this session;
+  null if CANCELLED)
+- `submitted_by` (TEXT — Discord User ID of submitting tier-2 admin)
+- `submitted_at` (TEXT — UTC ISO 8601 timestamp)
+
+**DriverSessionResult** (per driver, per SessionResult):
+- `driver_session_result_id` (INTEGER PK, server-scoped auto-increment)
+- `session_result_id` (INTEGER, FK → SessionResult)
+- `driver_id` (TEXT, FK → DriverProfile within server scope)
+- `team_id` (INTEGER, FK → Team — the team the driver represented in this session)
+- `finishing_position` (INTEGER, 1-indexed; null for CANCELLED sessions)
+- `outcome_modifier` (ENUM: CLASSIFIED / DNF / DNS / DSQ)
+- `tyre` (TEXT, nullable — qualifying sessions only)
+- `best_lap` (TEXT, nullable — lap time string or DNS/DNF/DSQ marker; qualifying sessions)
+- `gap` (TEXT, nullable — qualifying sessions)
+- `total_time` (TEXT, nullable — race sessions)
+- `fastest_lap` (TEXT, nullable — race sessions)
+- `time_penalties` (TEXT, nullable — race sessions; raw input value)
+- `post_stewarding_total_time` (TEXT, nullable — reserved for post-stewarding corrections)
+- `post_race_time_penalties` (TEXT, nullable — reserved for post-race penalty records)
+- `points_awarded` (INTEGER, computed — 0 if outcome_modifier ≠ CLASSIFIED or session
+  CANCELLED; otherwise sum of position points + fastest-lap bonus if eligible)
+- `has_fastest_lap` (BOOLEAN, default false)
+- `status` (ENUM: ACTIVE / SUPERSEDED, default ACTIVE)
+- `superseded_at` (TEXT, nullable)
+- `supersession_reason` (TEXT, nullable)
+
+**DriverStandingsSnapshot** (per driver, per round, per division — standings state after
+that round's results are finalised):
+- `snapshot_id` (INTEGER PK, server-scoped auto-increment)
 - `round_id` (INTEGER, FK → Round)
 - `division_id` (INTEGER, FK → Division)
 - `driver_id` (TEXT, FK → DriverProfile within server scope)
-- `finishing_position` (INTEGER, positive — 1-indexed)
-- `outcome_modifier` (ENUM: CLASSIFIED / DNF / DNS / DSQ)
-- `points_awarded` (INTEGER, computed on submission — 0 for non-CLASSIFIED modifiers)
-- `status` (ENUM: ACTIVE / SUPERSEDED, default ACTIVE)
-- `submitted_by` (TEXT — Discord User ID of the submitting tier-2 admin)
-- `submitted_at` (TEXT — UTC ISO 8601 timestamp)
-- `superseded_at` (TEXT — UTC ISO 8601 timestamp, nullable)
-- `supersession_reason` (TEXT, nullable)
+- `total_points` (INTEGER)
+- `position` (INTEGER — driver's rank in the division at this round)
+- `position_finish_counts` (TEXT — JSON map: position integer → finish count integer)
+- `position_first_round` (TEXT — JSON map: position integer → round number integer,
+  recording the first round in which this driver obtained each finishing position)
 
-**ScoringTable** (per server):
-- `version` (INTEGER, auto-increment PK within server scope)
-- `position_points` (TEXT — JSON map: position integer → points integer)
-- `is_active` (BOOLEAN — exactly one active table per server at any time)
-- Changing the active scoring table after any results exist triggers a full standings
-  recomputation. Prior versions are retained as immutable audit records.
+**TeamStandingsSnapshot** (per team, per round, per division — mirrors DriverStandingsSnapshot
+for team-level aggregates):
+- `snapshot_id` (INTEGER PK, server-scoped auto-increment)
+- `round_id` (INTEGER, FK → Round)
+- `division_id` (INTEGER, FK → Division)
+- `team_id` (INTEGER, FK → Team)
+- `total_points` (INTEGER)
+- `position` (INTEGER)
+- `position_finish_counts` (TEXT — JSON map)
+- `position_first_round` (TEXT — JSON map)
 
 ## Governance
 
@@ -1101,4 +1256,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.3.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-11
+**Version**: 2.4.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-18
