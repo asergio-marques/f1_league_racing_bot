@@ -32,6 +32,7 @@ from discord.ext import commands
 from db.database import get_connection
 from models.division import Division
 from models.round import RoundFormat
+from services import season_points_service
 from models.track import TRACK_DEFAULTS, TRACK_IDS
 from utils.channel_guard import channel_guard, admin_only
 from utils.message_builder import format_division_list, format_round_list, format_roster_block
@@ -1277,6 +1278,16 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        # Guard: block cancel while a results submission channel is open (FR-020)
+        from services.result_submission_service import is_submission_open
+        if await is_submission_open(self.bot.db_path, rnd.id):
+            await interaction.response.send_message(
+                f"\u274c Cannot cancel Round {round_number} — a results submission channel is "
+                "currently open. Close the submission first.",
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.defer(ephemeral=True)
 
         self.bot.scheduler_service.cancel_round(rnd.id)
@@ -1303,6 +1314,492 @@ class SeasonCog(commands.Cog):
             f"\u2705 Round **{round_number}** in **{division_name}** cancelled.",
             ephemeral=True,
         )
+
+    # ------------------------------------------------------------------
+    # /round results sub-group (T021, T023)
+    # ------------------------------------------------------------------
+
+    round_results = app_commands.Group(
+        name="results",
+        description="Round results management (penalties, amendments)",
+        parent=round,
+    )
+
+    @round_results.command(
+        name="penalize",
+        description="Apply post-race time penalties or disqualifications for a round.",
+    )
+    @app_commands.describe(
+        division_name="Division name",
+        round_number="Round number",
+    )
+    @channel_guard
+    @admin_only
+    async def round_results_penalize(
+        self,
+        interaction: discord.Interaction,
+        division_name: str,
+        round_number: int,
+    ) -> None:
+        if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
+            await interaction.response.send_message(
+                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        from services.penalty_service import StagedPenalty, validate_penalty_input
+        from models.points_config import SessionType
+
+        # --- Resolve division and round ---
+        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        if season is None:
+            await interaction.followup.send("\u274c No active season.", ephemeral=True)
+            return
+
+        divisions = await self.bot.season_service.get_divisions(season.id)
+        div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
+        if div is None:
+            await interaction.followup.send(
+                f"\u274c Division `{division_name}` not found.", ephemeral=True
+            )
+            return
+
+        rounds = await self.bot.season_service.get_division_rounds(div.id)
+        rnd = next((r for r in rounds if r.round_number == round_number), None)
+        if rnd is None:
+            await interaction.followup.send(
+                f"\u274c Round {round_number} not found in `{division_name}`.", ephemeral=True
+            )
+            return
+
+        # Load ACTIVE session_results
+        from db.database import get_connection
+        async with get_connection(self.bot.db_path) as db:
+            cursor = await db.execute(
+                "SELECT session_type FROM session_results WHERE round_id = ? AND status = 'ACTIVE'",
+                (rnd.id,),
+            )
+            sr_rows = await cursor.fetchall()
+
+        if not sr_rows:
+            await interaction.followup.send(
+                "\u274c No results found for this round.", ephemeral=True
+            )
+            return
+
+        session_types_present = [SessionType(r["session_type"]) for r in sr_rows]
+        staged: list[StagedPenalty] = []
+
+        # --- Session selection view ---
+        _LABEL = {
+            SessionType.SPRINT_QUALIFYING: "Sprint Q",
+            SessionType.SPRINT_RACE: "Sprint Race",
+            SessionType.FEATURE_QUALIFYING: "Feature Q",
+            SessionType.FEATURE_RACE: "Feature Race",
+        }
+
+        async def _run_wizard() -> bool:
+            """Run one pass of the session→penalty entry loop. Returns True if approved."""
+            nonlocal staged
+
+            class _SessionView(discord.ui.View):
+                def __init__(self_v) -> None:
+                    super().__init__(timeout=None)
+                    self_v.selected_session: SessionType | None = None
+                    self_v.cancelled = False
+                    self_v.review = False
+                    for st in session_types_present:
+                        btn = discord.ui.Button(
+                            label=_LABEL.get(st, st.value),
+                            custom_id=f"psess_{st.value}",
+                        )
+                        async def _cb(btn_inter: discord.Interaction, _st=st) -> None:
+                            self_v.selected_session = _st
+                            self_v.stop()
+                            await btn_inter.response.defer()
+                        btn.callback = _cb
+                        self_v.add_item(btn)
+                    cancel_btn = discord.ui.Button(label="\u274c Cancel", style=discord.ButtonStyle.secondary)
+                    async def _cancel(btn_inter: discord.Interaction) -> None:
+                        self_v.cancelled = True
+                        self_v.stop()
+                        await btn_inter.response.defer()
+                    cancel_btn.callback = _cancel
+                    self_v.add_item(cancel_btn)
+                    if staged:
+                        review_btn = discord.ui.Button(label="\U0001f4cb Review", style=discord.ButtonStyle.primary)
+                        async def _review(btn_inter: discord.Interaction) -> None:
+                            self_v.review = True
+                            self_v.stop()
+                            await btn_inter.response.defer()
+                        review_btn.callback = _review
+                        self_v.add_item(review_btn)
+
+            sess_view = _SessionView()
+            prompt = (
+                f"\U0001f6a6 **Penalty Wizard** — Round {round_number} ({division_name})\n"
+                f"Staged: {len(staged)} penalt{'y' if len(staged)==1 else 'ies'}\n"
+                "Select the session to apply a penalty to:"
+            )
+            await interaction.followup.send(prompt, view=sess_view, ephemeral=True)
+            await sess_view.wait()
+
+            if sess_view.cancelled:
+                await interaction.followup.send("\u2139\ufe0f Penalty wizard cancelled.", ephemeral=True)
+                return False
+            if sess_view.review:
+                return await _review_and_approve()
+            if sess_view.selected_session is None:
+                return False
+
+            session_type = sess_view.selected_session
+
+            # --- Collect penalties for this session ---
+            await interaction.followup.send(
+                f"\U0001f464 Enter driver Discord mention and penalty on one line:\n"
+                f"`@Driver +5` (seconds), `@Driver DSQ`, or `@Driver 5`\n"
+                f"Type `done` or `review` when finished.",
+                ephemeral=True,
+            )
+
+            while True:
+                try:
+                    msg = await interaction.client.wait_for(
+                        "message",
+                        check=lambda m: (
+                            m.channel.id == interaction.channel_id
+                            and m.author.id == interaction.user.id
+                        ),
+                        timeout=None,
+                    )
+                except Exception:
+                    return False
+
+                content = msg.content.strip()
+                if content.lower() in ("done", "review"):
+                    try:
+                        await msg.delete()
+                    except Exception:
+                        pass
+                    if content.lower() == "review":
+                        return await _review_and_approve()
+                    return await _run_wizard()
+
+                # Parse @mention + penalty
+                parts = content.split(None, 1)
+                if len(parts) != 2:
+                    await interaction.followup.send(
+                        "\u274c Invalid format. Use `@Driver +5` or `@Driver DSQ`.", ephemeral=True
+                    )
+                    continue
+
+                mention_str, penalty_str = parts
+                mention_str = mention_str.strip("<>@!")
+                try:
+                    driver_uid = int(mention_str)
+                except ValueError:
+                    await interaction.followup.send(
+                        "\u274c Could not parse driver mention.", ephemeral=True
+                    )
+                    continue
+
+                result = validate_penalty_input(driver_uid, session_type, penalty_str)
+                if isinstance(result, str):
+                    await interaction.followup.send(f"\u274c {result}", ephemeral=True)
+                    continue
+
+                # DSQ supersedes existing TIME penalty for same driver+session
+                staged = [
+                    sp for sp in staged
+                    if not (sp.driver_user_id == driver_uid and sp.session_type == session_type)
+                ]
+                staged.append(result)
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+                p_desc = "DSQ" if result.penalty_type == "DSQ" else f"+{result.penalty_seconds}s"
+                await interaction.followup.send(
+                    f"\u2705 Staged: <@{driver_uid}> {p_desc} ({_LABEL.get(session_type, session_type.value)})",
+                    ephemeral=True,
+                )
+
+            return False
+
+        async def _review_and_approve() -> bool:
+            if not staged:
+                await interaction.followup.send("\u2139\ufe0f No penalties staged.", ephemeral=True)
+                return False
+
+            lines = ["**\U0001f4cb Staged penalties:**"]
+            for sp in staged:
+                p_desc = "DSQ" if sp.penalty_type == "DSQ" else f"+{sp.penalty_seconds}s"
+                lines.append(f"- <@{sp.driver_user_id}> — {_LABEL.get(sp.session_type, sp.session_type.value)}: {p_desc}")
+            lines.append("\nApprove or go back to make changes?")
+
+            class _ReviewView(discord.ui.View):
+                def __init__(self_v) -> None:
+                    super().__init__(timeout=None)
+                    self_v.approved = False
+                    self_v.changes = False
+                    self_v.cancelled = False
+
+                @discord.ui.button(label="\u2705 Approve", style=discord.ButtonStyle.success)
+                async def approve(self_v, btn_inter: discord.Interaction, _: discord.ui.Button) -> None:
+                    self_v.approved = True
+                    self_v.stop()
+                    await btn_inter.response.defer()
+
+                @discord.ui.button(label="\u270f\ufe0f Make Changes", style=discord.ButtonStyle.secondary)
+                async def changes(self_v, btn_inter: discord.Interaction, _: discord.ui.Button) -> None:
+                    self_v.changes = True
+                    self_v.stop()
+                    await btn_inter.response.defer()
+
+                @discord.ui.button(label="\u274c Cancel", style=discord.ButtonStyle.danger)
+                async def cancel(self_v, btn_inter: discord.Interaction, _: discord.ui.Button) -> None:
+                    self_v.cancelled = True
+                    self_v.stop()
+                    await btn_inter.response.defer()
+
+            rev_view = _ReviewView()
+            await interaction.followup.send("\n".join(lines), view=rev_view, ephemeral=True)
+            await rev_view.wait()
+
+            if rev_view.cancelled:
+                await interaction.followup.send("\u2139\ufe0f Wizard cancelled. No changes applied.", ephemeral=True)
+                return False
+            if rev_view.changes:
+                return await _run_wizard()
+
+            # Approved
+            from services import penalty_service as _ps
+            await _ps.apply_penalties(
+                self.bot.db_path, rnd.id, div.id, staged, interaction.user.id, interaction.client
+            )
+            await interaction.followup.send(
+                "\u2705 Penalties applied and standings updated.", ephemeral=True
+            )
+            return True
+
+        await _run_wizard()
+
+    @round_results.command(
+        name="amend",
+        description="Re-submit results for one session of a completed round.",
+    )
+    @app_commands.describe(
+        division_name="Division name",
+        round_number="Round number",
+        session="Session to amend (if omitted, bot will ask)",
+    )
+    @app_commands.choices(session=[
+        app_commands.Choice(name="Sprint Qualifying", value="SPRINT_QUALIFYING"),
+        app_commands.Choice(name="Sprint Race", value="SPRINT_RACE"),
+        app_commands.Choice(name="Feature Qualifying", value="FEATURE_QUALIFYING"),
+        app_commands.Choice(name="Feature Race", value="FEATURE_RACE"),
+    ])
+    @channel_guard
+    @admin_only
+    async def round_results_amend(
+        self,
+        interaction: discord.Interaction,
+        division_name: str,
+        round_number: int,
+        session: app_commands.Choice[str] | None = None,
+    ) -> None:
+        if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
+            await interaction.response.send_message(
+                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        from models.points_config import SessionType
+        from db.database import get_connection
+
+        # --- Resolve division and round ---
+        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        if season is None:
+            await interaction.followup.send("\u274c No active season.", ephemeral=True)
+            return
+
+        divisions = await self.bot.season_service.get_divisions(season.id)
+        div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
+        if div is None:
+            await interaction.followup.send(
+                f"\u274c Division `{division_name}` not found.", ephemeral=True
+            )
+            return
+
+        rounds = await self.bot.season_service.get_division_rounds(div.id)
+        rnd = next((r for r in rounds if r.round_number == round_number), None)
+        if rnd is None:
+            await interaction.followup.send(
+                f"\u274c Round {round_number} not found.", ephemeral=True
+            )
+            return
+
+        # Load ACTIVE session_results
+        async with get_connection(self.bot.db_path) as db:
+            cursor = await db.execute(
+                "SELECT session_type, id, config_name FROM session_results WHERE round_id = ? AND status = 'ACTIVE'",
+                (rnd.id,),
+            )
+            sr_rows = await cursor.fetchall()
+
+        if not sr_rows:
+            await interaction.followup.send(
+                "\u274c No results found for this round.", ephemeral=True
+            )
+            return
+
+        # Determine target session type
+        chosen_session_type: SessionType | None = (
+            SessionType(session.value) if session is not None else None
+        )
+
+        if chosen_session_type is None:
+            # Ask user to select which session to amend
+            session_types_present = [SessionType(r["session_type"]) for r in sr_rows]
+            _LABEL = {
+                SessionType.SPRINT_QUALIFYING: "Sprint Qualifying",
+                SessionType.SPRINT_RACE: "Sprint Race",
+                SessionType.FEATURE_QUALIFYING: "Feature Qualifying",
+                SessionType.FEATURE_RACE: "Feature Race",
+            }
+
+            class _SessionView(discord.ui.View):
+                def __init__(self_v) -> None:
+                    super().__init__(timeout=None)
+                    self_v.selected: SessionType | None = None
+                    self_v.cancelled = False
+                    for st in session_types_present:
+                        btn = discord.ui.Button(label=_LABEL.get(st, st.value), custom_id=f"asess_{st.value}")
+                        async def _cb(bi: discord.Interaction, _st=st) -> None:
+                            self_v.selected = _st
+                            self_v.stop()
+                            await bi.response.defer()
+                        btn.callback = _cb
+                        self_v.add_item(btn)
+                    cancel_btn = discord.ui.Button(label="\u274c Cancel", style=discord.ButtonStyle.secondary)
+                    async def _cancel(bi: discord.Interaction) -> None:
+                        self_v.cancelled = True
+                        self_v.stop()
+                        await bi.response.defer()
+                    cancel_btn.callback = _cancel
+                    self_v.add_item(cancel_btn)
+
+            sv = _SessionView()
+            await interaction.followup.send(
+                "\U0001f4cb Select the session to re-submit:", view=sv, ephemeral=True
+            )
+            await sv.wait()
+            if sv.cancelled or sv.selected is None:
+                await interaction.followup.send("\u2139\ufe0f Amendment cancelled.", ephemeral=True)
+                return
+            chosen_session_type = sv.selected
+
+        sr_match = next((r for r in sr_rows if r["session_type"] == chosen_session_type.value), None)
+        if sr_match is None:
+            await interaction.followup.send(
+                f"\u274c No {chosen_session_type.value} session found for this round.", ephemeral=True
+            )
+            return
+
+        existing_config_name = sr_match["config_name"]
+
+        # --- Collect new results ---
+        from services.result_submission_service import validate_submission_block
+        from services.result_submission_service import _build_division_validation_data  # type: ignore[attr-defined]
+
+        driver_ids, team_role_ids, reserve_role_id, driver_team_map = await _build_division_validation_data(
+            div.id, interaction.guild_id, interaction.client
+        )
+
+        _SESSION_LABEL = {
+            SessionType.SPRINT_QUALIFYING: "Sprint Qualifying",
+            SessionType.SPRINT_RACE: "Sprint Race",
+            SessionType.FEATURE_QUALIFYING: "Feature Qualifying",
+            SessionType.FEATURE_RACE: "Feature Race",
+        }
+
+        await interaction.followup.send(
+            f"\U0001f4cb **Re-submit {_SESSION_LABEL.get(chosen_session_type, chosen_session_type.value)}** "
+            f"for Round {round_number} ({division_name}).\n"
+            "Paste the corrected results (same format as original submission):",
+            ephemeral=True,
+        )
+
+        while True:
+            try:
+                msg = await interaction.client.wait_for(
+                    "message",
+                    check=lambda m: (
+                        m.channel.id == interaction.channel_id
+                        and m.author.id == interaction.user.id
+                    ),
+                    timeout=None,
+                )
+            except Exception:
+                return
+
+            lines_raw = [ln.strip() for ln in msg.content.strip().splitlines() if ln.strip()]
+            parsed = validate_submission_block(
+                lines_raw,
+                chosen_session_type,
+                driver_ids,
+                team_role_ids,
+                reserve_role_id,
+                driver_team_map,
+            )
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
+            if isinstance(parsed, list) and parsed and isinstance(parsed[0], str):
+                # Error list
+                error_lines = "\n".join(f"• {e}" for e in parsed[:10])
+                await interaction.followup.send(
+                    f"\u274c Validation errors:\n{error_lines}\nPlease resubmit.", ephemeral=True
+                )
+                continue
+
+            # Valid — determine config name
+            from services.season_points_service import get_season_config_names
+
+            config_names = await get_season_config_names(self.bot.db_path, season.id)
+            if len(config_names) == 1:
+                config_name = config_names[0]
+            elif existing_config_name and existing_config_name in config_names:
+                config_name = existing_config_name
+            else:
+                # Let user pick
+                from services.result_submission_service import _ConfigSelectView  # type: ignore[attr-defined]
+                cfg_view = _ConfigSelectView(config_names)
+                await interaction.followup.send(
+                    "Select the points configuration for this session:", view=cfg_view, ephemeral=True
+                )
+                await cfg_view.wait()
+                config_name = cfg_view.selected or config_names[0]
+
+            from services.result_submission_service import amend_session_result
+            await amend_session_result(
+                self.bot.db_path,
+                rnd.id,
+                div.id,
+                chosen_session_type,
+                parsed,  # type: ignore[arg-type]
+                config_name,
+                interaction.user.id,
+                interaction.client,
+            )
+            await interaction.followup.send(
+                "\u2705 Session amended and standings updated.", ephemeral=True
+            )
+            return
 
     # ------------------------------------------------------------------
     # Shared instance methods
@@ -1480,6 +1977,28 @@ class SeasonCog(commands.Cog):
                 else:
                     await interaction.response.send_message(msg, ephemeral=True)
                 return
+
+            # ── Gate 3: monotonic ordering check (FR-008) ────────────────────
+            mono_errors = await season_points_service.validate_monotonic_ordering(
+                self.bot.db_path, cfg.season_id
+            )
+            if mono_errors:
+                bullet_list = "\n\u2022 ".join(mono_errors)
+                msg = (
+                    f"\u274c Season cannot be approved \u2014 points configuration "
+                    f"violates monotonic ordering:\n\u2022 {bullet_list}"
+                )
+                if interaction.response.is_done():
+                    await interaction.followup.send(msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(msg, ephemeral=True)
+                return
+
+        # Snapshot attached points configs before transitioning (FR-007)
+        if await self.bot.module_service.is_results_enabled(cfg.server_id):
+            await season_points_service.snapshot_configs_to_season(
+                self.bot.db_path, cfg.season_id, cfg.server_id
+            )
 
         # Schedule FIRST \u2014 if this fails the season stays SETUP in DB (fix #5)
         if await self.bot.module_service.is_weather_enabled(cfg.server_id):

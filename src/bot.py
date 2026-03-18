@@ -112,6 +112,14 @@ async def main() -> None:
 
         bot.scheduler_service.register_forecast_cleanup_callback(_forecast_cleanup_cb)
 
+        # Register result submission callback
+        from services.result_submission_service import run_result_submission_job
+
+        async def _result_submission_cb(round_id: int) -> None:
+            await run_result_submission_job(round_id, bot)
+
+        bot.scheduler_service.register_result_submission_callback(_result_submission_cb)
+
         # Register season-end callback (stored in _GLOBAL_SERVICE so the
         # module-level _season_end_job can reach it without pickling a closure)
         from services.season_end_service import execute_season_end as _execute_season_end
@@ -164,6 +172,7 @@ async def main() -> None:
     from cogs.signup_cog import SignupCog
     from cogs.admin_review_cog import AdminReviewCog
     from cogs.retry_cog import RetryCog
+    from cogs.results_cog import ResultsCog
 
     await bot.add_cog(InitCog(bot))
     await bot.add_cog(SeasonCog(bot))
@@ -177,6 +186,7 @@ async def main() -> None:
     await bot.add_cog(SignupCog(bot))
     await bot.add_cog(AdminReviewCog(bot))
     await bot.add_cog(RetryCog(bot))
+    await bot.add_cog(ResultsCog(bot))
 
     # Register ALL persistent views so button interactions survive bot restarts.
     # Views with optional __init__ params resolve driver context from channel at
