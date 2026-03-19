@@ -122,8 +122,8 @@ class TestCancelRoundIncludesMystery:
     def test_removes_four_job_ids_total(self):
         svc = _make_scheduler_no_db()
         svc.cancel_round(7)
-        # phase1, phase2, phase3, mystery, cleanup = 5 job IDs
-        assert svc._scheduler.remove_job.call_count == 5
+        # phase1, phase2, phase3, mystery, cleanup, results = 6 job IDs
+        assert svc._scheduler.remove_job.call_count == 6
 
 
 # ---------------------------------------------------------------------------

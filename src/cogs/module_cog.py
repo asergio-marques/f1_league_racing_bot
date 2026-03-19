@@ -14,7 +14,7 @@ from discord.ext import commands
 
 from db.database import get_connection
 from models.driver_profile import DriverState
-from utils.channel_guard import admin_only, channel_guard
+from utils.channel_guard import admin_only, channel_guard, server_admin_only
 
 log = logging.getLogger(__name__)
 
@@ -145,7 +145,7 @@ class ModuleCog(commands.Cog):
     )
     @app_commands.choices(module_name=_MODULE_CHOICES)
     @channel_guard
-    @admin_only
+    @server_admin_only
     async def enable(
         self,
         interaction: discord.Interaction,
@@ -172,7 +172,7 @@ class ModuleCog(commands.Cog):
     @app_commands.describe(module_name="Module to disable")
     @app_commands.choices(module_name=_MODULE_CHOICES)
     @channel_guard
-    @admin_only
+    @server_admin_only
     async def disable(
         self,
         interaction: discord.Interaction,

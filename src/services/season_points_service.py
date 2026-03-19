@@ -36,14 +36,11 @@ async def attach_config(
             f"Config attachment is only allowed for seasons in SETUP (status: {season_status})"
         )
     async with get_connection(db_path) as db:
-        try:
-            await db.execute(
-                "INSERT INTO season_points_links (season_id, config_name) VALUES (?, ?)",
-                (season_id, config_name),
-            )
-            await db.commit()
-        except aiosqlite.IntegrityError:
-            raise ConfigAlreadyAttachedError(config_name)
+        await db.execute(
+            "INSERT OR REPLACE INTO season_points_links (season_id, config_name) VALUES (?, ?)",
+            (season_id, config_name),
+        )
+        await db.commit()
 
 
 async def detach_config(
@@ -131,7 +128,7 @@ async def validate_monotonic_ordering(db_path: str, season_id: int) -> list[str]
         for i in range(len(entries) - 1):
             curr = entries[i]
             nxt = entries[i + 1]
-            if curr["points"] < nxt["points"]:
+            if nxt["points"] > 0 and nxt["points"] >= curr["points"]:
                 errors.append(
                     f"Config '{config_name}', {session_type}: "
                     f"position {curr['position']} ({curr['points']} pts) < "
