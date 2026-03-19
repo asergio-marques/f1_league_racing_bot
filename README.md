@@ -582,7 +582,13 @@ Displays position-to-points mappings and fastest-lap settings. Works for both se
 ##### `/round results penalize` — Apply post-race time penalties or disqualifications
 *Access: Trusted admin · Results module required*
 
-Interactive wizard. Select the session, then enter penalties one by one as `@Driver +5` (seconds), `@Driver DSQ`, or `@Driver 5`. DSQ supersedes any prior time penalty for the same driver in the same session. Type `review` or click **Review** to confirm and apply. Standings are recalculated after approval.
+Interactive two-step wizard:
+1. **Start** — session buttons are shown. A **Review** button also appears once any penalty has been staged. Press **Cancel** to exit without applying anything.
+2. **Insert User ID** — type the Discord @mention of the driver to penalise. A **Go Back** button returns to the session list.
+3. **Insert Time Penalty** — for race sessions, type a whole number of seconds (e.g. `5`). For qualifying sessions, only DSQ is accepted. Buttons available: **DSQ** (disqualifies the driver), **Back to User ID** (retry the mention step), **Back to Start** (return to the session list). After a valid entry the wizard loops back to step 2 for the next driver.
+4. **Review** — displays all staged penalties with **Approve**, **Make Changes** (return to Start), and **Cancel** buttons. Cancel at this screen exits without applying. Approve applies all penalties, recalculates positions and standings, and reposts results.
+
+A new DSQ entry for a driver supersedes any prior time penalty for the same driver and session.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
