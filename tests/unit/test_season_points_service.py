@@ -119,6 +119,39 @@ async def test_validate_monotonic_invalid(db_path):
     assert "BAD" in errors[0]
 
 
+@pytest.mark.asyncio
+async def test_validate_monotonic_equal_nonzero(db_path):
+    season_id = await _make_season(db_path)
+    # P1=25, P2=25 — equal non-zero counts as a violation
+    async with get_connection(db_path) as db:
+        for pos, pts in [(1, 25), (2, 25)]:
+            await db.execute(
+                "INSERT INTO season_points_entries (season_id, config_name, session_type, position, points) "
+                "VALUES (?, 'EQ', 'FEATURE_RACE', ?, ?)",
+                (season_id, pos, pts),
+            )
+        await db.commit()
+    errors = await validate_monotonic_ordering(db_path, season_id)
+    assert len(errors) >= 1
+    assert "EQ" in errors[0]
+
+
+@pytest.mark.asyncio
+async def test_validate_monotonic_trailing_zeros_ok(db_path):
+    season_id = await _make_season(db_path)
+    # P1=0, P2=0 — equal zeros are NOT a violation
+    async with get_connection(db_path) as db:
+        for pos, pts in [(1, 0), (2, 0)]:
+            await db.execute(
+                "INSERT INTO season_points_entries (season_id, config_name, session_type, position, points) "
+                "VALUES (?, 'ZEROS', 'FEATURE_RACE', ?, ?)",
+                (season_id, pos, pts),
+            )
+        await db.commit()
+    errors = await validate_monotonic_ordering(db_path, season_id)
+    assert errors == []
+
+
 # ---------------------------------------------------------------------------
 # get_season_points_view — trailing-zero collapse
 # ---------------------------------------------------------------------------
