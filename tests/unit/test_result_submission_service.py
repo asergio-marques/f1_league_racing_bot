@@ -13,6 +13,8 @@ from models.round import RoundFormat
 from services.result_submission_service import (
     ParsedQualifyingRow,
     ParsedRaceRow,
+    _format_time_ms,
+    _parse_time_to_ms,
     get_sessions_for_format,
     validate_qualifying_row,
     validate_race_row,
@@ -174,3 +176,161 @@ def test_validate_submission_block_success():
     result = _make_qual_block(lines)
     assert isinstance(result, list)
     assert all(isinstance(r, ParsedQualifyingRow) for r in result)
+
+
+# ---------------------------------------------------------------------------
+# G2 — regex accepts sub-10-second values
+# ---------------------------------------------------------------------------
+
+
+def test_validate_qualifying_row_accepts_sub10s_gap():
+    """G2: +0.039 must be accepted (was rejected by old \\d{2} pattern)."""
+    line = "2, <@200>, <@&400>, Soft, 1:23.456, +0.039"
+    result = validate_qualifying_row(line)
+    assert isinstance(result, ParsedQualifyingRow)
+
+
+def test_validate_qualifying_row_accepts_sub10s_best_lap():
+    """G2: A best lap of 9.456 (9 seconds) must be accepted."""
+    line = "1, <@100>, <@&300>, Soft, 9.456, N/A"
+    result = validate_qualifying_row(line)
+    assert isinstance(result, ParsedQualifyingRow)
+
+
+def test_validate_race_row_accepts_sub10s_gap():
+    """G2: +0.202 delta must be accepted for race Total Time."""
+    line = "2, <@200>, <@&300>, +0.202, 1:14.532, 0.000"
+    result = validate_race_row(line, is_first=False)
+    assert isinstance(result, ParsedRaceRow)
+
+
+# ---------------------------------------------------------------------------
+# C2 — P1 gap input ignored entirely
+# ---------------------------------------------------------------------------
+
+
+def test_validate_qualifying_row_p1_gap_ignored():
+    """C2: P1 gap with any value (even invalid format) must be accepted."""
+    line = "1, <@100>, <@&300>, Soft, 1:23.456, WHATEVER_IGNORED"
+    result = validate_qualifying_row(line)
+    assert isinstance(result, ParsedQualifyingRow)
+
+
+def test_validate_qualifying_row_p2_gap_validated():
+    """C2: P2+ gap is still validated — bad format must fail."""
+    line = "2, <@200>, <@&400>, Soft, 1:24.000, INVALID"
+    result = validate_qualifying_row(line)
+    assert isinstance(result, str)
+    assert "Gap" in result
+
+
+# ---------------------------------------------------------------------------
+# C3 — Fastest Lap validation skipped when Total Time is outcome literal
+# ---------------------------------------------------------------------------
+
+
+def test_validate_race_row_dsq_fl_skipped():
+    """C3: DSQ Total Time — Fastest Lap validation skipped (N/A allowed)."""
+    line = "2, <@200>, <@&300>, DSQ, N/A, 0.000"
+    result = validate_race_row(line, is_first=False)
+    assert isinstance(result, ParsedRaceRow)
+
+
+def test_validate_race_row_dnf_fl_skipped():
+    """C3: DNF Total Time — Fastest Lap validation skipped."""
+    line = "3, <@300>, <@&400>, DNF, N/A, 0.000"
+    result = validate_race_row(line, is_first=False)
+    assert isinstance(result, ParsedRaceRow)
+
+
+def test_validate_race_row_dns_fl_skipped():
+    """C3: DNS Total Time — Fastest Lap validation skipped."""
+    line = "4, <@400>, <@&500>, DNS, N/A, 0.000"
+    result = validate_race_row(line, is_first=False)
+    assert isinstance(result, ParsedRaceRow)
+
+
+def test_validate_race_row_normal_fl_validated():
+    """C3: Normal Total Time — Fastest Lap must still be valid."""
+    line = "2, <@200>, <@&300>, +5.321, BADLAP, 0.000"
+    result = validate_race_row(line, is_first=False)
+    assert isinstance(result, str)
+    assert "Fastest Lap" in result
+
+
+# ---------------------------------------------------------------------------
+# G1 — DNF best-lap derivation in validate_submission_block
+# ---------------------------------------------------------------------------
+
+
+def _make_qual_block_3(lines):
+    return validate_submission_block(
+        lines,
+        session_type=SessionType.FEATURE_QUALIFYING,
+        division_driver_ids={100, 200, 300},
+        team_role_ids={400, 500, 600},
+        reserve_team_role_id=None,
+        driver_team_map={100: 400, 200: 500, 300: 600},
+    )
+
+
+def test_dnf_best_lap_derived_from_gap():
+    """G1: DNF + valid gap → best_lap computed as P1_best_lap + gap."""
+    lines = [
+        "1, <@100>, <@&400>, Soft, 1:11.606, N/A",   # P1 best lap = 71606ms
+        "2, <@200>, <@&500>, Soft, 1:11.645, +0.039", # normal
+        "3, <@300>, <@&600>, Soft, DNF, +0.202",       # DNF + gap → derived
+    ]
+    result = _make_qual_block_3(lines)
+    assert not isinstance(result[0], str), f"Expected parsed rows, got errors: {result}"
+    p3 = next(r for r in result if r.position == 3)
+    # P1 best lap 1:11.606 + 0.202 = 1:11.808
+    assert p3.best_lap == "1:11.808"
+
+
+def test_dnf_best_lap_not_derived_without_valid_gap():
+    """G1: DNF with N/A gap → best_lap stays as DNF."""
+    lines = [
+        "1, <@100>, <@&400>, Soft, 1:11.606, N/A",
+        "2, <@200>, <@&500>, Soft, DNF, N/A",         # DNF, gap = N/A → no derivation
+    ]
+    result = validate_submission_block(
+        lines,
+        session_type=SessionType.FEATURE_QUALIFYING,
+        division_driver_ids={100, 200},
+        team_role_ids={400, 500},
+        reserve_team_role_id=None,
+        driver_team_map={100: 400, 200: 500},
+    )
+    assert not isinstance(result[0], str)
+    p2 = next(r for r in result if r.position == 2)
+    assert p2.best_lap == "DNF"
+
+
+# ---------------------------------------------------------------------------
+# _parse_time_to_ms / _format_time_ms helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("time_str,expected_ms", [
+    ("0.039", 39),
+    ("9.456", 9456),
+    ("1:11.606", 71606),
+    ("1:23.456", 83456),
+    ("1:23:45.678", 5025678),
+    ("+0.039", 39),
+    ("+1:11.606", 71606),
+])
+def test_parse_time_to_ms(time_str, expected_ms):
+    assert _parse_time_to_ms(time_str) == expected_ms
+
+
+@pytest.mark.parametrize("ms,expected_str", [
+    (39, "0.039"),
+    (9456, "9.456"),
+    (71606, "1:11.606"),
+    (83456, "1:23.456"),
+])
+def test_format_time_ms(ms, expected_str):
+    assert _format_time_ms(ms) == expected_str
+

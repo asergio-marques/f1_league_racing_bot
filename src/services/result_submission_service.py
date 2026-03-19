@@ -270,7 +270,8 @@ async def amend_session_result(
     # Cascade standings and repost
     from services import standings_service, results_post_service  # lazy imports
 
-    server_id = await _get_server_id_for_round(db_path, round_id)
+    rctx = await _get_round_context(db_path, round_id)
+    server_id = rctx["server_id"]
     guild = bot.get_guild(server_id)
     await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
     if guild is not None:
@@ -278,8 +279,9 @@ async def amend_session_result(
 
     await bot.output_router.post_log(
         server_id,
-        f"\U0001f4cb RESULT_AMENDED | round={round_id} session={session_type.value} "
-        f"by=<@{amended_by}> division={division_id}",
+        f"\U0001f4cb RESULT_AMENDED | season={rctx['season_number']} "
+        f"division={rctx['division_name']!r} round={rctx['round_number']} "
+        f"session={session_type.value} by=<@{amended_by}>",
     )
 
 
@@ -290,14 +292,14 @@ async def amend_session_result(
 # Absolute lap time:  M:SS.mmm  |  SS.mmm  |  H:MM:SS.mmm
 _ABS_TIME_RE = re.compile(
     r"^\d+:\d{2}\.\d{3}$"
-    r"|^\d{2}\.\d{3}$"
+    r"|^\d+\.\d{3}$"
     r"|^\d+:\d{2}:\d{2}\.\d{3}$"
 )
 
 # Delta time:  +M:SS.mmm  |  +SS.mmm  |  +H:MM:SS.mmm
 _DELTA_TIME_RE = re.compile(
     r"^\+\d+:\d{2}\.\d{3}$"
-    r"|^\+\d{2}\.\d{3}$"
+    r"|^\+\d+\.\d{3}$"
     r"|^\+\d+:\d{2}:\d{2}\.\d{3}$"
 )
 
@@ -397,9 +399,15 @@ def validate_qualifying_row(line: str) -> ParsedQualifyingRow | str:
             f"Best Lap must be a time (e.g. 1:23.456) or DNS/DNF/DSQ, got `{best_lap}`"
         )
 
-    gap_upper = gap.upper()
-    if gap_upper != "N/A" and not _DELTA_TIME_RE.match(gap):
-        return f"Gap must be a delta time (e.g. +1:23.456) or N/A, got `{gap}`"
+    # For 1st position the Gap input is ignored entirely (spec)
+    if position != 1:
+        gap_upper = gap.upper()
+        if (
+            gap_upper != "N/A"
+            and not _DELTA_TIME_RE.match(gap)
+            and not _ABS_TIME_RE.match(gap)
+        ):
+            return f"Gap must be a delta time (e.g. +1:23.456), an absolute time, or N/A, got `{gap}`"
 
     outcome = _parse_outcome(best_lap)
     return ParsedQualifyingRow(
@@ -460,8 +468,10 @@ def validate_race_row(line: str, is_first: bool) -> ParsedRaceRow | str:
             )
 
     fl_upper = fastest_lap.upper()
-    if fl_upper != "N/A" and not _ABS_TIME_RE.match(fastest_lap):
-        return f"Fastest Lap must be a time (e.g. 1:23.456) or N/A, got `{fastest_lap}`"
+    # When Total Time is an outcome literal, Fastest Lap validation is skipped (spec)
+    if total_upper not in _OUTCOME_LITERALS:
+        if fl_upper != "N/A" and not _ABS_TIME_RE.match(fastest_lap):
+            return f"Fastest Lap must be a time (e.g. 1:23.456) or N/A, got `{fastest_lap}`"
 
     tp_upper = time_penalties.upper()
     if tp_upper != "N/A" and not _ABS_TIME_RE.match(time_penalties):
@@ -567,7 +577,68 @@ def validate_submission_block(
                 f"but is assigned to <@&{mapped_team}>."
             )
 
-    return errors if errors else parsed_rows
+    if errors:
+        return errors
+
+    # G1: derive Best Lap for qualifying DNF entries that have a valid gap
+    if is_qualifying:
+        p1_row = next((r for r in parsed_rows if r.position == 1), None)
+        if (
+            p1_row is not None
+            and p1_row.best_lap.upper() not in _OUTCOME_LITERALS
+            and _ABS_TIME_RE.match(p1_row.best_lap)
+        ):
+            try:
+                p1_ms = _parse_time_to_ms(p1_row.best_lap)
+                for row in parsed_rows:
+                    if row.best_lap.upper() == "DNF" and (
+                        _DELTA_TIME_RE.match(row.gap) or _ABS_TIME_RE.match(row.gap)
+                    ):
+                        gap_ms = _parse_time_to_ms(row.gap)
+                        row.best_lap = _format_time_ms(p1_ms + gap_ms)
+            except ValueError:
+                pass  # parsing failed; leave best_lap unchanged
+
+    return parsed_rows
+
+
+# ---------------------------------------------------------------------------
+# Time parsing helpers (for DNF best-lap derivation)
+# ---------------------------------------------------------------------------
+
+def _parse_time_to_ms(s: str) -> int:
+    """Parse 'H:MM:SS.mmm', 'M:SS.mmm', or 'SS.mmm' (optional leading '+') to ms."""
+    s = s.lstrip("+")
+    parts = s.split(":")
+    try:
+        if len(parts) == 1:
+            sec_str, ms_str = parts[0].split(".")
+            return int(sec_str) * 1000 + int(ms_str)
+        if len(parts) == 2:
+            sec_str, ms_str = parts[1].split(".")
+            return int(parts[0]) * 60_000 + int(sec_str) * 1000 + int(ms_str)
+        if len(parts) == 3:
+            sec_str, ms_str = parts[2].split(".")
+            return (
+                int(parts[0]) * 3_600_000
+                + int(parts[1]) * 60_000
+                + int(sec_str) * 1000
+                + int(ms_str)
+            )
+    except (ValueError, IndexError) as exc:
+        raise ValueError(f"Cannot parse time string {s!r}") from exc
+    raise ValueError(f"Cannot parse time string {s!r}")
+
+
+def _format_time_ms(total_ms: int) -> str:
+    """Format milliseconds to 'M:SS.mmm' or 'SS.mmm'."""
+    ms = total_ms % 1000
+    total_s = total_ms // 1000
+    mins = total_s // 60
+    secs = total_s % 60
+    if mins == 0:
+        return f"{secs}.{ms:03d}"
+    return f"{mins}:{secs:02d}.{ms:03d}"
 
 
 # ---------------------------------------------------------------------------
@@ -605,10 +676,16 @@ class _ConfigSelectView(discord.ui.View):
 
 async def _get_server_id_for_round(db_path: str, round_id: int) -> int:
     """Resolve server_id from a round_id via the division → season chain."""
+    ctx = await _get_round_context(db_path, round_id)
+    return ctx["server_id"]
+
+
+async def _get_round_context(db_path: str, round_id: int) -> dict:
+    """Return server_id, season_number, round_number, division_name for a round."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT s.server_id
+            SELECT s.server_id, s.season_number, r.round_number, d.name AS division_name
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
@@ -619,7 +696,7 @@ async def _get_server_id_for_round(db_path: str, round_id: int) -> int:
         row = await cursor.fetchone()
     if row is None:
         raise ValueError(f"Round {round_id} not found or has no season")
-    return row["server_id"]
+    return dict(row)
 
 
 async def _build_division_validation_data(
@@ -754,6 +831,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     division_name: str = ctx["division_name"]
     round_number: int = ctx["round_number"]
     season_id: int = ctx["season_id"]
+    season_number: int = ctx["season_number"]
     round_format = RoundFormat(ctx["round_format"])
     results_channel_id: int | None = ctx["results_channel_id"]
     mention_role_id: int = ctx["mention_role_id"]
@@ -905,8 +983,9 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 error_list = "\n".join(f"• {e}" for e in result)
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
                     server_id,
-                    f"RESULT_SUBMISSION_ATTEMPT | round={round_id} session={session_type.value} "
-                    f"by={msg.author.id} — REJECTED\n```\n{content[:500]}\n```",
+                    f"RESULT_SUBMISSION_REJECTED | season={season_number} "
+                    f"division={division_name!r} round={round_number} "
+                    f"session={session_type.value} by=<@{msg.author.id}>\n```\n{content[:500]}\n```",
                 )
                 await sub_channel.send(
                     f"❌ Validation failed:\n{error_list}\nPlease correct and resubmit."
@@ -916,12 +995,12 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             # Valid — parsed_rows
             parsed_rows = result
 
-            # Log accepted input
+            # Log accepted input (with raw content for auditability)
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 server_id,
-                f"RESULT_SUBMISSION_ACCEPTED | round={round_id} "
-                f"season={season_id} division={division_id} "
-                f"session={session_type.value} by={msg.author.id}",
+                f"RESULT_SUBMISSION_ACCEPTED | season={season_number} "
+                f"division={division_name!r} round={round_number} "
+                f"session={session_type.value} by=<@{msg.author.id}>\n```\n{content[:500]}\n```",
             )
 
             # Config selection
