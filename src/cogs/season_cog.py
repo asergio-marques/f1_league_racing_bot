@@ -20,6 +20,7 @@ Commands:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -1400,9 +1401,16 @@ class SeasonCog(commands.Cog):
         }
 
         async def _run_wizard() -> bool:
-            """Run one pass of the session→penalty entry loop. Returns True if approved."""
+            """Run the full penalty wizard. Returns True if approved."""
             nonlocal staged
 
+            def _check(m: discord.Message) -> bool:
+                return (
+                    m.channel.id == interaction.channel_id
+                    and m.author.id == interaction.user.id
+                )
+
+            # View classes defined once; re-instantiated each state visit.
             class _SessionView(discord.ui.View):
                 def __init__(self_v) -> None:
                     super().__init__(timeout=None)
@@ -1436,96 +1444,256 @@ class SeasonCog(commands.Cog):
                         review_btn.callback = _review
                         self_v.add_item(review_btn)
 
-            sess_view = _SessionView()
-            prompt = (
-                f"\U0001f6a6 **Penalty Wizard** — Round {round_number} ({division_name})\n"
-                f"Staged: {len(staged)} penalt{'y' if len(staged)==1 else 'ies'}\n"
-                "Select the session to apply a penalty to:"
-            )
-            await interaction.followup.send(prompt, view=sess_view, ephemeral=True)
-            await sess_view.wait()
+            class _UserIdView(discord.ui.View):
+                def __init__(self_v) -> None:
+                    super().__init__(timeout=None)
+                    self_v.go_back = False
 
-            if sess_view.cancelled:
-                await interaction.followup.send("\u2139\ufe0f Penalty wizard cancelled.", ephemeral=True)
-                return False
-            if sess_view.review:
-                return await _review_and_approve()
-            if sess_view.selected_session is None:
-                return False
+                @discord.ui.button(label="\u2b05\ufe0f Go Back", style=discord.ButtonStyle.secondary)
+                async def go_back_btn(
+                    self_v, btn_inter: discord.Interaction, _: discord.ui.Button
+                ) -> None:
+                    self_v.go_back = True
+                    self_v.stop()
+                    await btn_inter.response.defer()
 
-            session_type = sess_view.selected_session
+            class _PenaltyView(discord.ui.View):
+                def __init__(self_v) -> None:
+                    super().__init__(timeout=None)
+                    self_v.dsq = False
+                    self_v.back_to_uid = False
+                    self_v.back_to_start = False
 
-            # --- Collect penalties for this session ---
-            await interaction.followup.send(
-                f"\U0001f464 Enter driver Discord mention and penalty on one line:\n"
-                f"`@Driver +5` (seconds), `@Driver DSQ`, or `@Driver 5`\n"
-                f"Type `done` or `review` when finished.",
-                ephemeral=True,
-            )
+                @discord.ui.button(label="\U0001f6ab DSQ", style=discord.ButtonStyle.danger)
+                async def dsq_btn(
+                    self_v, btn_inter: discord.Interaction, _: discord.ui.Button
+                ) -> None:
+                    self_v.dsq = True
+                    self_v.stop()
+                    await btn_inter.response.defer()
 
-            while True:
-                try:
-                    msg = await interaction.client.wait_for(
-                        "message",
-                        check=lambda m: (
-                            m.channel.id == interaction.channel_id
-                            and m.author.id == interaction.user.id
-                        ),
-                        timeout=None,
-                    )
-                except Exception:
-                    return False
+                @discord.ui.button(label="\u2b05\ufe0f Back to User ID", style=discord.ButtonStyle.secondary)
+                async def back_uid_btn(
+                    self_v, btn_inter: discord.Interaction, _: discord.ui.Button
+                ) -> None:
+                    self_v.back_to_uid = True
+                    self_v.stop()
+                    await btn_inter.response.defer()
 
-                content = msg.content.strip()
-                if content.lower() in ("done", "review"):
-                    try:
-                        await msg.delete()
-                    except Exception:
-                        pass
-                    if content.lower() == "review":
-                        return await _review_and_approve()
-                    return await _run_wizard()
+                @discord.ui.button(label="\u21a9\ufe0f Back to Start", style=discord.ButtonStyle.secondary)
+                async def back_start_btn(
+                    self_v, btn_inter: discord.Interaction, _: discord.ui.Button
+                ) -> None:
+                    self_v.back_to_start = True
+                    self_v.stop()
+                    await btn_inter.response.defer()
 
-                # Parse @mention + penalty
-                parts = content.split(None, 1)
-                if len(parts) != 2:
-                    await interaction.followup.send(
-                        "\u274c Invalid format. Use `@Driver +5` or `@Driver DSQ`.", ephemeral=True
-                    )
-                    continue
-
-                mention_str, penalty_str = parts
-                mention_str = mention_str.strip("<>@!")
-                try:
-                    driver_uid = int(mention_str)
-                except ValueError:
-                    await interaction.followup.send(
-                        "\u274c Could not parse driver mention.", ephemeral=True
-                    )
-                    continue
-
-                result = validate_penalty_input(driver_uid, session_type, penalty_str)
-                if isinstance(result, str):
-                    await interaction.followup.send(f"\u274c {result}", ephemeral=True)
-                    continue
-
-                # DSQ supersedes existing TIME penalty for same driver+session
-                staged = [
-                    sp for sp in staged
-                    if not (sp.driver_user_id == driver_uid and sp.session_type == session_type)
-                ]
-                staged.append(result)
-                try:
-                    await msg.delete()
-                except Exception:
-                    pass
-                p_desc = "DSQ" if result.penalty_type == "DSQ" else f"+{result.penalty_seconds}s"
+            while True:  # START state loop — re-entered via "Back to Start"
+                # ============================================================
+                # START: session selection
+                # ============================================================
+                sess_view = _SessionView()
                 await interaction.followup.send(
-                    f"\u2705 Staged: <@{driver_uid}> {p_desc} ({_LABEL.get(session_type, session_type.value)})",
+                    f"\U0001f6a6 **Penalty Wizard** \u2014 Round {round_number} ({division_name})\n"
+                    f"Staged: {len(staged)} penalt{'y' if len(staged) == 1 else 'ies'}\n"
+                    "Select the session to apply a penalty to:",
+                    view=sess_view,
                     ephemeral=True,
                 )
+                await sess_view.wait()
 
-            return False
+                if sess_view.cancelled:
+                    await interaction.followup.send(
+                        "\u2139\ufe0f Penalty wizard cancelled.", ephemeral=True
+                    )
+                    return False
+                if sess_view.review:
+                    return await _review_and_approve()
+                if sess_view.selected_session is None:
+                    return False
+
+                session_type = sess_view.selected_session
+                is_quali = session_type in (
+                    SessionType.SPRINT_QUALIFYING,
+                    SessionType.FEATURE_QUALIFYING,
+                )
+
+                go_back_to_start = False
+
+                # ============================================================
+                # INSERT USER ID loop
+                # ============================================================
+                while not go_back_to_start:
+                    uid_view = _UserIdView()
+                    await interaction.followup.send(
+                        f"\U0001f464 **Session**: {_LABEL.get(session_type, session_type.value)}\n"
+                        "Enter the Discord @mention of the driver to penalise, or press Go Back:",
+                        view=uid_view,
+                        ephemeral=True,
+                    )
+
+                    msg_task: asyncio.Task = asyncio.create_task(
+                        interaction.client.wait_for("message", check=_check)
+                    )
+                    view_task: asyncio.Task = asyncio.create_task(uid_view.wait())
+                    done, pending = await asyncio.wait(
+                        {msg_task, view_task}, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    for t in pending:
+                        t.cancel()
+                        try:
+                            await t
+                        except asyncio.CancelledError:
+                            pass
+
+                    if uid_view.go_back:
+                        go_back_to_start = True
+                        break  # exit UID loop → outer while loops back to Start
+
+                    if msg_task not in done:
+                        continue  # unexpected; retry
+
+                    uid_msg: discord.Message = msg_task.result()
+                    try:
+                        await uid_msg.delete()
+                    except Exception:
+                        pass
+
+                    raw_mention = uid_msg.content.strip().strip("<>@!")
+                    try:
+                        driver_uid = int(raw_mention)
+                    except ValueError:
+                        await interaction.followup.send(
+                            "\u274c Could not parse mention. Please use a Discord @mention.",
+                            ephemeral=True,
+                        )
+                        continue  # retry UID prompt
+
+                    # ========================================================
+                    # INSERT TIME PENALTY loop
+                    # ========================================================
+                    while not go_back_to_start:
+                        pen_view = _PenaltyView()
+                        if is_quali:
+                            pen_prompt = (
+                                f"\u2696\ufe0f **Penalise** <@{driver_uid}> \u2014 "
+                                f"**{_LABEL.get(session_type, session_type.value)}**\n"
+                                "Qualifying: only DSQ is accepted. Press **DSQ** or navigate."
+                            )
+                        else:
+                            pen_prompt = (
+                                f"\u2696\ufe0f **Penalise** <@{driver_uid}> \u2014 "
+                                f"**{_LABEL.get(session_type, session_type.value)}**\n"
+                                "Enter a time penalty in whole seconds (e.g. `5`), "
+                                "or press **DSQ** / use the navigation buttons."
+                            )
+                        await interaction.followup.send(pen_prompt, view=pen_view, ephemeral=True)
+
+                        if is_quali:
+                            # Qualifying: only DSQ or navigation buttons accepted
+                            await pen_view.wait()
+                            if pen_view.back_to_uid:
+                                break  # exit penalty loop → UID loop continues
+                            if pen_view.back_to_start:
+                                go_back_to_start = True
+                                break
+                            if pen_view.dsq:
+                                result = validate_penalty_input(driver_uid, session_type, "DSQ")
+                                if isinstance(result, str):
+                                    await interaction.followup.send(
+                                        f"\u274c {result}", ephemeral=True
+                                    )
+                                    continue  # retry penalty prompt
+                                staged[:] = [
+                                    sp for sp in staged
+                                    if not (
+                                        sp.driver_user_id == driver_uid
+                                        and sp.session_type == session_type
+                                    )
+                                ]
+                                staged.append(result)
+                                await interaction.followup.send(
+                                    f"\u2705 Staged: <@{driver_uid}> DSQ "
+                                    f"({_LABEL.get(session_type, session_type.value)})",
+                                    ephemeral=True,
+                                )
+                                break  # exit penalty loop → UID loop (next driver)
+                        else:
+                            # Race session: race message vs button
+                            pen_msg_task: asyncio.Task = asyncio.create_task(
+                                interaction.client.wait_for("message", check=_check)
+                            )
+                            pen_view_task: asyncio.Task = asyncio.create_task(pen_view.wait())
+                            done2, pending2 = await asyncio.wait(
+                                {pen_msg_task, pen_view_task},
+                                return_when=asyncio.FIRST_COMPLETED,
+                            )
+                            for t in pending2:
+                                t.cancel()
+                                try:
+                                    await t
+                                except asyncio.CancelledError:
+                                    pass
+
+                            if pen_view_task in done2:
+                                if pen_view.back_to_uid:
+                                    break  # exit penalty loop → UID loop
+                                if pen_view.back_to_start:
+                                    go_back_to_start = True
+                                    break
+                                if pen_view.dsq:
+                                    result = validate_penalty_input(
+                                        driver_uid, session_type, "DSQ"
+                                    )
+                                    if isinstance(result, str):
+                                        await interaction.followup.send(
+                                            f"\u274c {result}", ephemeral=True
+                                        )
+                                        continue  # retry penalty prompt
+                                    staged[:] = [
+                                        sp for sp in staged
+                                        if not (
+                                            sp.driver_user_id == driver_uid
+                                            and sp.session_type == session_type
+                                        )
+                                    ]
+                                    staged.append(result)
+                                    await interaction.followup.send(
+                                        f"\u2705 Staged: <@{driver_uid}> DSQ "
+                                        f"({_LABEL.get(session_type, session_type.value)})",
+                                        ephemeral=True,
+                                    )
+                                    break  # exit penalty loop → UID loop
+                            elif pen_msg_task in done2:
+                                pen_msg: discord.Message = pen_msg_task.result()
+                                penalty_str = pen_msg.content.strip()
+                                try:
+                                    await pen_msg.delete()
+                                except Exception:
+                                    pass
+                                result = validate_penalty_input(
+                                    driver_uid, session_type, penalty_str
+                                )
+                                if isinstance(result, str):
+                                    await interaction.followup.send(
+                                        f"\u274c {result}", ephemeral=True
+                                    )
+                                    continue  # retry penalty prompt
+                                staged[:] = [
+                                    sp for sp in staged
+                                    if not (
+                                        sp.driver_user_id == driver_uid
+                                        and sp.session_type == session_type
+                                    )
+                                ]
+                                staged.append(result)
+                                p_desc = f"+{result.penalty_seconds}s"
+                                await interaction.followup.send(
+                                    f"\u2705 Staged: <@{driver_uid}> {p_desc} "
+                                    f"({_LABEL.get(session_type, session_type.value)})",
+                                    ephemeral=True,
+                                )
+                                break  # exit penalty loop → UID loop (next driver)
 
         async def _review_and_approve() -> bool:
             if not staged:
