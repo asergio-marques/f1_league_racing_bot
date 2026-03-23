@@ -13,7 +13,7 @@ description: "Task list for 022-results-standings-verification"
 
 **Purpose**: No scaffolding needed — all affected files already exist. This phase confirms the working baseline passes current tests before any changes are introduced.
 
-- [ ] T001 Verify existing test suite passes on the feature branch: run `pytest tests/unit/test_standings_service.py tests/unit/test_results_formatter.py -v` and confirm 0 failures
+- [X] T001 Verify existing test suite passes on the feature branch: run `pytest tests/unit/test_standings_service.py tests/unit/test_results_formatter.py -v` and confirm 0 failures
 
 ---
 
@@ -23,8 +23,8 @@ description: "Task list for 022-results-standings-verification"
 
 **⚠️ CRITICAL**: US1 tests depend on the corrected sort-key logic; US3 depends on correct standings output. Both block on this phase.
 
-- [ ] T002 Fix `compute_driver_standings` sort-key in `src/services/standings_service.py`: replace per-entity `max_pos = max(fc.keys(), default=0)` inside `_sort_key` with a single `global_max_pos` computed before the sort over all `finish_counts` values, then pad both `count_vec` and `first_vec` to `range(1, global_max_pos + 1)`
-- [ ] T003 Apply the identical `global_max_pos` fix to `compute_team_standings` sort-key in `src/services/standings_service.py`
+- [X] T002 Fix `compute_driver_standings` sort-key in `src/services/standings_service.py`: replace per-entity `max_pos = max(fc.keys(), default=0)` inside `_sort_key` with a single `global_max_pos` computed before the sort over all `finish_counts` values, then pad both `count_vec` and `first_vec` to `range(1, global_max_pos + 1)`
+- [X] T003 Apply the identical `global_max_pos` fix to `compute_team_standings` sort-key in `src/services/standings_service.py`
 
 **Checkpoint**: Both compute functions now produce correctly ordered standings for all tiebreak scenarios. Run `pytest tests/unit/test_standings_service.py -v` — existing test must still pass.
 
@@ -38,11 +38,11 @@ description: "Task list for 022-results-standings-verification"
 
 ### Implementation for User Story 1
 
-- [ ] T004 [P] [US1] Add `test_tiebreak_p2_count` to `tests/unit/test_standings_service.py`: two drivers equal on total points and wins, A has 2 Feature Race P2 finishes, B has 1 → A ranks above B (covers acceptance scenario 1)
-- [ ] T005 [P] [US1] Add `test_tiebreak_p3_vs_no_p3` to `tests/unit/test_standings_service.py`: two drivers equal on points/wins/P2s, A has 1 P3, B has 0 P3 (no P3 key in dict) → A ranks above B (covers acceptance scenario 2; validates global-pad fix)
-- [ ] T006 [P] [US1] Add `test_tiebreak_first_achieved_round` to `tests/unit/test_standings_service.py`: two drivers identical finish counts, A first achieved P2 in Round 1, B in Round 3 → A ranks above B (covers acceptance scenario 3)
-- [ ] T007 [P] [US1] Add `test_tiebreak_teams_same_hierarchy` to `tests/unit/test_standings_service.py`: two teams equal on total points, one has Feature Race P1 finish the other doesn't → team with P1 ranks above (covers acceptance scenario 4; uses `compute_team_standings`)
-- [ ] T008 [P] [US1] Add `test_tiebreak_cross_position_set` to `tests/unit/test_standings_service.py`: A has 1 P2 finish only (max_pos=2), B has 1 P3 finish only (max_pos=3) → A ranks above B; verifies pre-fix defect does not regress (covers acceptance scenario 5)
+- [X] T004 [P] [US1] Add `test_tiebreak_p2_count` to `tests/unit/test_standings_service.py`: two drivers equal on total points and wins, A has 2 Feature Race P2 finishes, B has 1 → A ranks above B (covers acceptance scenario 1)
+- [X] T005 [P] [US1] Add `test_tiebreak_p3_vs_no_p3` to `tests/unit/test_standings_service.py`: two drivers equal on points/wins/P2s, A has 1 P3, B has 0 P3 (no P3 key in dict) → A ranks above B (covers acceptance scenario 2; validates global-pad fix)
+- [X] T006 [P] [US1] Add `test_tiebreak_first_achieved_round` to `tests/unit/test_standings_service.py`: two drivers identical finish counts, A first achieved P2 in Round 1, B in Round 3 → A ranks above B (covers acceptance scenario 3)
+- [X] T007 [P] [US1] Add `test_tiebreak_teams_same_hierarchy` to `tests/unit/test_standings_service.py`: two teams equal on total points, one has Feature Race P1 finish the other doesn't → team with P1 ranks above (covers acceptance scenario 4; uses `compute_team_standings`)
+- [X] T008 [P] [US1] Add `test_tiebreak_cross_position_set` to `tests/unit/test_standings_service.py`: A has 1 P2 finish only (max_pos=2), B has 1 P3 finish only (max_pos=3) → A ranks above B; verifies pre-fix defect does not regress (covers acceptance scenario 5)
 
 **Checkpoint**: `pytest tests/unit/test_standings_service.py -v` — all existing + 5 new tests pass.
 
@@ -56,9 +56,9 @@ description: "Task list for 022-results-standings-verification"
 
 ### Implementation for User Story 2
 
-- [ ] T009 [US2] Audit `reserves_toggle` handler in `src/cogs/results_cog.py` against acceptance scenarios 1–5: confirm division-not-found returns `❌ Division '{division}' not found.` (scenario 5), confirm module gate is called before any DB access, confirm ephemeral messages match contracts/commands.md wording — fix any discrepancies found
-- [ ] T010 [US2] Audit `_get_show_reserves` in `src/services/results_post_service.py`: confirm it defaults to `True` when no row exists (scenario 1 default-on behaviour) and returns `False` when `reserves_in_standings = 0` — fix if incorrect
-- [ ] T011 [US2] Audit `format_driver_standings` call path in `src/utils/results_formatter.py`: confirm reserve drivers with `driver_user_id in reserve_user_ids` are filtered when `show_reserves=False`, included when `True` — fix if incorrect
+- [X] T009 [US2] Audit `reserves_toggle` handler in `src/cogs/results_cog.py` against acceptance scenarios 1–5: confirm division-not-found returns `❌ Division '{division}' not found.` (scenario 5), confirm module gate is called before any DB access, confirm ephemeral messages match contracts/commands.md wording — fix any discrepancies found
+- [X] T010 [US2] Audit `_get_show_reserves` in `src/services/results_post_service.py`: confirm it defaults to `True` when no row exists (scenario 1 default-on behaviour) and returns `False` when `reserves_in_standings = 0` — fix if incorrect
+- [X] T011 [US2] Audit `format_driver_standings` call path in `src/utils/results_formatter.py`: confirm reserve drivers with `driver_user_id in reserve_user_ids` are filtered when `show_reserves=False`, included when `True` — fix if incorrect
 
 **Checkpoint**: All acceptance scenarios for US2 can be manually verified; no code paths skip the module gate or return wrong messages.
 
@@ -72,8 +72,8 @@ description: "Task list for 022-results-standings-verification"
 
 ### Implementation for User Story 3
 
-- [ ] T012 [US3] Add `repost_standings_for_division(db_path: str, division_id: int, guild: discord.Guild) -> bool` to `src/services/results_post_service.py`: query the most recent completed `round_id` for the division; if none, return `False`; else compute driver + team standings, fetch standings channel from `division_results_config`, call `_get_show_reserves`, call `post_standings`, return `True`
-- [ ] T013 [US3] Add `standings_group = app_commands.Group(name="standings", description="Standings commands", parent=results_group)` and `sync` subcommand to `src/cogs/results_cog.py`: call `_module_gate`, defer ephemerally, resolve division by name, call `repost_standings_for_division`, send appropriate success/no-data/error message per contracts/commands.md
+- [X] T012 [US3] Add `repost_standings_for_division(db_path: str, division_id: int, guild: discord.Guild) -> bool` to `src/services/results_post_service.py`: query the most recent completed `round_id` for the division; if none, return `False`; else compute driver + team standings, fetch standings channel from `division_results_config`, call `_get_show_reserves`, call `post_standings`, return `True`
+- [X] T013 [US3] Add `standings_group = app_commands.Group(name="standings", description="Standings commands", parent=results_group)` and `sync` subcommand to `src/cogs/results_cog.py`: call `_module_gate`, defer ephemerally, resolve division by name, call `repost_standings_for_division`, send appropriate success/no-data/error message per contracts/commands.md
 
 **Checkpoint**: `/results standings sync` is registered as a slash command; manually verify all three response paths (success, no data, division not found).
 
@@ -87,7 +87,7 @@ description: "Task list for 022-results-standings-verification"
 
 ### Implementation for User Story 4
 
-- [ ] T014 [US4] Audit `src/services/driver_service.py` and `src/services/team_service.py` for any statement that writes to `driver_session_results` outside of result submission — confirm no retroactive `team_role_id` mutation exists; document finding as a comment in the relevant service or fix if a defect is found
+- [X] T014 [US4] Audit `src/services/driver_service.py` and `src/services/team_service.py` for any statement that writes to `driver_session_results` outside of result submission — confirm no retroactive `team_role_id` mutation exists; document finding as a comment in the relevant service or fix if a defect is found
 
 **Checkpoint**: Confirmed (or fixed) that team re-assignment never mutates historic session results. US4 acceptance scenarios hold by data model invariant.
 
@@ -95,9 +95,9 @@ description: "Task list for 022-results-standings-verification"
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T015 [P] Run full unit test suite `pytest tests/unit/ -v` and confirm 0 failures
-- [ ] T016 [P] Run full integration test suite `pytest tests/integration/ -v` and confirm 0 failures
-- [ ] T017 Verify `/results standings sync` appears correctly in Discord command autocomplete (slash command tree sync)
+- [X] T015 [P] Run full unit test suite `pytest tests/unit/ -v` and confirm 0 failures
+- [X] T016 [P] Run full integration test suite `pytest tests/integration/ -v` and confirm 0 failures
+- [X] T017 Verify `/results standings sync` appears correctly in Discord command autocomplete (slash command tree sync)
 
 ---
 

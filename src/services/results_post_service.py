@@ -347,3 +347,55 @@ async def _get_show_reserves(db_path: str, division_id: int) -> bool:
         return True
     val = row["reserves_in_standings"]
     return bool(val) if val is not None else True
+
+
+async def repost_standings_for_division(
+    db_path: str,
+    division_id: int,
+    guild: discord.Guild,
+) -> str:
+    """Repost the current standings for a division to its configured standings channel.
+
+    Returns one of three status strings for the caller to surface to the admin:
+    - ``"ok"``         — standings reposted successfully
+    - ``"no_rounds"``  — no completed rounds exist for this division
+    - ``"no_channel"`` — no standings channel is configured for the division
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT r.id AS round_id, drc.standings_channel_id
+            FROM rounds r
+            JOIN session_results sr ON sr.round_id = r.id
+            LEFT JOIN division_results_config drc ON drc.division_id = r.division_id
+            WHERE r.division_id = ?
+              AND sr.status = 'ACTIVE'
+            ORDER BY r.round_number DESC
+            LIMIT 1
+            """,
+            (division_id,),
+        )
+        row = await cursor.fetchone()
+
+    if row is None:
+        return "no_rounds"
+
+    round_id: int = row["round_id"]
+    standings_ch_id: int | None = row["standings_channel_id"]
+
+    if not standings_ch_id:
+        return "no_channel"
+
+    sc = guild.get_channel(standings_ch_id)
+    if sc is None:
+        log.warning(
+            "repost_standings_for_division: standings channel %s not found in guild",
+            standings_ch_id,
+        )
+        return "no_channel"
+
+    driver_snaps = await standings_service.compute_driver_standings(db_path, division_id, round_id)
+    team_snaps = await standings_service.compute_team_standings(db_path, division_id, round_id)
+    show_reserves = await _get_show_reserves(db_path, division_id)
+    await post_standings(db_path, division_id, round_id, sc, driver_snaps, team_snaps, guild, show_reserves)
+    return "ok"
