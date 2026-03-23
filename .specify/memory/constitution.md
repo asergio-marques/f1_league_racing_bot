@@ -1,6 +1,32 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-03-23 — Session reuse: Results & Standings specification & incremental verification — feature branch created]
+  - Constitution reused as-is; no principle amendments required at session start.
+  - Session intent: provide a fresh specification for the Results & Standings module and
+    verify the existing implementation against it incrementally. Any conflicts between the
+    current implementation and the specification provided in this session will be resolved
+    in favour of the specification. Feature branch `022-results-standings-verification`
+    created from main.
+  - Existing implementation status at session start:
+      ✅ specs/018-results-standings/  — fully merged to main; all tasks [X] complete.
+      ✅ specs/019-results-submission-standings/  — fully merged to main; all tasks [X]
+         complete.
+      ✅ specs/020-results-standings-session/  — fully merged to main (session branch).
+      ✅ specs/021-results-spec-alignment/  — fully merged to main; spec-alignment
+         corrections applied (submission validation, penalty wizard two-step flow).
+  - All placeholder tokens remain resolved; constitution is fully resolved at v2.4.1.
+  - No version bump required (no content amendments at session start).
+  - All templates confirmed aligned with Principles I–XII:
+      ✅ .specify/templates/plan-template.md
+      ✅ .specify/templates/spec-template.md
+      ✅ .specify/templates/tasks-template.md
+      ✅ .specify/templates/agent-file-template.md
+      ✅ .specify/templates/checklist-template.md
+  - Deferred TODOs: none.
+  - Pending: user to provide new specification for this session; constitution will be
+    re-evaluated and amended once the scope of new work is defined.
+
 [2026-03-19 — Session reuse: Results & Standings continuation — feature branch created]
   - Constitution reused as-is; no principle amendments required.
   - Session intent: begin a new session for results & standings specification and
