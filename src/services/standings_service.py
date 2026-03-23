@@ -178,15 +178,21 @@ async def compute_driver_standings(
 
     all_drivers = set(total_points) | set(finish_counts)
 
+    # Compute once across all drivers so every sort-key vector has the same
+    # length — prevents tuple length mismatch corrupting tiebreak comparisons.
+    global_max_pos = max(
+        (max(fc.keys(), default=0) for fc in finish_counts.values()),
+        default=0,
+    )
+
     def _sort_key(uid: int) -> tuple:
         pts = total_points.get(uid, 0)
         fc = finish_counts.get(uid, {})
         ffr = first_finish_rounds.get(uid, {})
         # Build per-position tiebreak vectors — use negative counts (descending)
         # and positive first_round (ascending for tiebreak: earlier is better)
-        max_pos = max(fc.keys(), default=0)
-        count_vec = tuple(-fc.get(p, 0) for p in range(1, max_pos + 1))
-        first_vec = tuple(ffr.get(p, 999999) for p in range(1, max_pos + 1))
+        count_vec = tuple(-fc.get(p, 0) for p in range(1, global_max_pos + 1))
+        first_vec = tuple(ffr.get(p, 999999) for p in range(1, global_max_pos + 1))
         return (-pts, count_vec, first_vec)
 
     sorted_drivers = sorted(all_drivers, key=_sort_key)
@@ -274,13 +280,19 @@ async def compute_team_standings(
 
     all_teams = set(total_points) | set(finish_counts)
 
+    # Compute once across all teams so every sort-key vector has the same
+    # length — prevents tuple length mismatch corrupting tiebreak comparisons.
+    global_max_pos = max(
+        (max(fc.keys(), default=0) for fc in finish_counts.values()),
+        default=0,
+    )
+
     def _sort_key(tid: int) -> tuple:
         pts = total_points.get(tid, 0)
         fc = finish_counts.get(tid, {})
         ffr = first_finish_rounds.get(tid, {})
-        max_pos = max(fc.keys(), default=0)
-        count_vec = tuple(-fc.get(p, 0) for p in range(1, max_pos + 1))
-        first_vec = tuple(ffr.get(p, 999999) for p in range(1, max_pos + 1))
+        count_vec = tuple(-fc.get(p, 0) for p in range(1, global_max_pos + 1))
+        first_vec = tuple(ffr.get(p, 999999) for p in range(1, global_max_pos + 1))
         return (-pts, count_vec, first_vec)
 
     sorted_teams = sorted(all_teams, key=_sort_key)

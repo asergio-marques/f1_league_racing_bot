@@ -643,7 +643,7 @@ class ResultsCog(commands.Cog):
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division.lower()), None)
         if div is None:
-            await interaction.followup.send(f"\u274c Division `{division}` not found.", ephemeral=True)
+            await interaction.followup.send(f"\u274c Division '{division}' not found.", ephemeral=True)
             return
 
         from db.database import get_connection
@@ -677,3 +677,50 @@ class ResultsCog(commands.Cog):
         await interaction.followup.send(
             f"\u2705 Reserve visibility for **{division}** set to **{state_str}**.", ephemeral=True
         )
+
+    # ------------------------------------------------------------------
+    # /results standings group — T013 (US3)
+    # ------------------------------------------------------------------
+
+    standings_group = app_commands.Group(
+        name="standings", description="Standings commands", parent=results_group
+    )
+
+    @standings_group.command(name="sync", description="Force a standings repost for a division.")
+    @app_commands.describe(division="Division name")
+    @channel_guard
+    @admin_only
+    async def standings_sync(self, interaction: discord.Interaction, division: str) -> None:
+        if not await self._module_gate(interaction):
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        if season is None:
+            await interaction.followup.send("\u274c No active season.", ephemeral=True)
+            return
+
+        divisions = await self.bot.season_service.get_divisions(season.id)
+        div = next((d for d in divisions if d.name.lower() == division.lower()), None)
+        if div is None:
+            await interaction.followup.send(f"\u274c Division '{division}' not found.", ephemeral=True)
+            return
+
+        from services.results_post_service import repost_standings_for_division
+        status = await repost_standings_for_division(self.bot.db_path, div.id, interaction.guild)
+
+        if status == "ok":
+            await interaction.followup.send(
+                f"\u2705 Standings for **{division}** synced to the standings channel.",
+                ephemeral=True,
+            )
+        elif status == "no_rounds":
+            await interaction.followup.send(
+                f"\u2139\ufe0f No completed rounds found for **{division}**. No standings to post.",
+                ephemeral=True,
+            )
+        else:  # no_channel
+            await interaction.followup.send(
+                f"\u274c Division '{division}' has no standings channel configured.",
+                ephemeral=True,
+            )
