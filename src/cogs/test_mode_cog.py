@@ -70,10 +70,20 @@ class TestModeCog(commands.Cog):
             await interaction.response.defer(ephemeral=True)
             from services.forecast_cleanup_service import flush_pending_deletions
             await flush_pending_deletions(interaction.guild_id, self.bot)  # type: ignore[attr-defined]
+            from services.test_roster_service import clear_all_test_drivers
+            removed = await clear_all_test_drivers(interaction.guild_id, self.bot.db_path)  # type: ignore[attr-defined]
+            if removed:
+                log.info(
+                    "Test mode disabled: cleared %d fake driver(s) for server %s",
+                    removed,
+                    interaction.guild_id,
+                )
             msg = (
                 "✅ Test mode **disabled**. "
                 "The scheduler will resume normal operation for any remaining pending phases."
             )
+            if removed:
+                msg += f"\n🗑️ Removed **{removed}** fake driver(s)."
             await interaction.followup.send(msg, ephemeral=True)
 
     # ------------------------------------------------------------------
@@ -314,3 +324,333 @@ class TestModeCog(commands.Cog):
             "set-former-driver on server %s: user=%s %s→%s by %s",
             interaction.guild_id, user.id, old_val, new_val, interaction.user,
         )
+
+    # ------------------------------------------------------------------
+    # /test-mode roster (subgroup)
+    # ------------------------------------------------------------------
+
+    roster = app_commands.Group(
+        name="roster",
+        description="Manage fake driver roster for test mode.",
+        parent=test_mode,
+        guild_only=True,
+        default_permissions=None,
+    )
+
+    # /test-mode roster add ------------------------------------------------
+
+    @roster.command(
+        name="add",
+        description="Add a fake driver to a team in a division.",
+    )
+    @app_commands.describe(
+        driver_name="Display name for the fake driver.",
+        team_name="Team to assign the driver to (must exist in the division).",
+        division="Name of the division.",
+    )
+    @admin_only
+    async def roster_add(
+        self,
+        interaction: discord.Interaction,
+        driver_name: str,
+        team_name: str,
+        division: str,
+    ) -> None:
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ This command is only available when test mode is enabled.",
+                ephemeral=True,
+            )
+            return
+
+        from services.test_roster_service import add_test_driver
+
+        result = await add_test_driver(
+            server_id=interaction.guild_id,
+            driver_name=driver_name,
+            team_name=team_name,
+            division_name=division,
+            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+        )
+
+        if isinstance(result, str):
+            await interaction.response.send_message(f"⛔ {result}", ephemeral=True)
+            return
+
+        mention_str = f"<@{result['discord_user_id']}>"
+        await interaction.response.send_message(
+            f"✅ Added fake driver **{result['display_name']}** to **{result['team_name']}**.\n"
+            f"Mention string (copy-paste into results): `{mention_str}`",
+            ephemeral=True,
+        )
+
+    # /test-mode roster list -----------------------------------------------
+
+    @roster.command(
+        name="list",
+        description="Show all fake drivers in a division (cheat sheet for result submission).",
+    )
+    @app_commands.describe(division="Name of the division.")
+    @admin_only
+    async def roster_list(
+        self,
+        interaction: discord.Interaction,
+        division: str,
+    ) -> None:
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ This command is only available when test mode is enabled.",
+                ephemeral=True,
+            )
+            return
+
+        from services.test_roster_service import list_test_drivers
+
+        result = await list_test_drivers(
+            server_id=interaction.guild_id,
+            division_name=division,
+            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+        )
+
+        if isinstance(result, str):
+            await interaction.response.send_message(f"⛔ {result}", ephemeral=True)
+            return
+
+        if not result:
+            await interaction.response.send_message(
+                f"ℹ️ No fake drivers in **{division}**. Use `/test-mode roster add` to create some.",
+                ephemeral=True,
+            )
+            return
+
+        lines = [f"**Fake Driver Roster — {division}**\n"]
+        lines.append(f"{'Name':<20} {'Mention':<30} Team")
+        lines.append("-" * 65)
+        for driver in result:
+            mention = f"<@{driver['discord_user_id']}>"
+            lines.append(f"{driver['display_name']:<20} {mention:<30} {driver['team_name']}")
+        lines.append(
+            "\nCopy mention strings above when submitting results in the format:\n"
+            "`Position, <@user_id>, <@&role_id>, ...`"
+        )
+
+        await interaction.response.send_message(
+            "```\n" + "\n".join(lines) + "\n```",
+            ephemeral=True,
+        )
+
+    # /test-mode roster clear ----------------------------------------------
+
+    @roster.command(
+        name="clear",
+        description="Remove all fake drivers from a division.",
+    )
+    @app_commands.describe(division="Name of the division to clear.")
+    @admin_only
+    async def roster_clear(
+        self,
+        interaction: discord.Interaction,
+        division: str,
+    ) -> None:
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ This command is only available when test mode is enabled.",
+                ephemeral=True,
+            )
+            return
+
+        from services.test_roster_service import clear_test_drivers
+
+        result = await clear_test_drivers(
+            server_id=interaction.guild_id,
+            division_name=division,
+            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+        )
+
+        if isinstance(result, str):
+            await interaction.response.send_message(f"⛔ {result}", ephemeral=True)
+            return
+
+        if result == 0:
+            await interaction.response.send_message(
+                f"ℹ️ No fake drivers found in **{division}**.", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"✅ Removed **{result}** fake driver(s) from **{division}**.", ephemeral=True
+            )
+
+    # ------------------------------------------------------------------
+    # /test-mode submit-results
+    # ------------------------------------------------------------------
+
+    @test_mode.command(
+        name="submit-results",
+        description="Open the result submission wizard for a round (test mode).",
+    )
+    @app_commands.describe(
+        division="Name of the division.",
+        round_number="Round number to submit results for (defaults to earliest pending round).",
+    )
+    @admin_only
+    async def submit_results(
+        self,
+        interaction: discord.Interaction,
+        division: str,
+        round_number: int | None = None,
+    ) -> None:
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "ℹ️ Test mode is not active. Use `/test-mode toggle` to enable it first.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        from db.database import get_connection
+        from services.test_roster_service import (
+            ensure_test_configs,
+            list_test_drivers,
+        )
+
+        # 1. Resolve active season
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            season_cursor = await db.execute(
+                "SELECT id FROM seasons WHERE server_id = ? AND status = 'ACTIVE'",
+                (interaction.guild_id,),
+            )
+            season_row = await season_cursor.fetchone()
+
+        if season_row is None:
+            await interaction.followup.send("⛔ No active season found.", ephemeral=True)
+            return
+
+        season_id: int = season_row["id"]
+
+        # 2. Resolve division ID
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            div_cursor = await db.execute(
+                """
+                SELECT d.id
+                FROM divisions d
+                WHERE d.season_id = ?
+                  AND LOWER(d.name) = LOWER(?)
+                  AND d.status != 'CANCELLED'
+                """,
+                (season_id, division),
+            )
+            div_row = await div_cursor.fetchone()
+
+        if div_row is None:
+            await interaction.followup.send(
+                f"⛔ Division **{division}** not found in the active season.", ephemeral=True
+            )
+            return
+
+        division_id: int = div_row["id"]
+
+        # 3. Find the target round
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            if round_number is not None:
+                round_cursor = await db.execute(
+                    """
+                    SELECT r.id FROM rounds r
+                    WHERE r.division_id = ?
+                      AND r.round_number = ?
+                      AND r.status != 'CANCELLED'
+                    """,
+                    (division_id, round_number),
+                )
+            else:
+                # Earliest round with no ACTIVE session_results yet
+                round_cursor = await db.execute(
+                    """
+                    SELECT r.id FROM rounds r
+                    WHERE r.division_id = ?
+                      AND r.status != 'CANCELLED'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM session_results sr
+                          WHERE sr.round_id = r.id AND sr.status = 'ACTIVE'
+                      )
+                    ORDER BY r.round_number
+                    LIMIT 1
+                    """,
+                    (division_id,),
+                )
+            round_row = await round_cursor.fetchone()
+
+        if round_row is None:
+            msg = (
+                f"⛔ Round {round_number} not found in **{division}**."
+                if round_number is not None
+                else f"ℹ️ No pending rounds found in **{division}** — all rounds have results already."
+            )
+            await interaction.followup.send(msg, ephemeral=True)
+            return
+
+        round_id: int = round_row["id"]
+
+        # 4. Ensure "Standard" and "Half Points" configs exist and are attached
+        new_configs = await ensure_test_configs(
+            server_id=interaction.guild_id,
+            season_id=season_id,
+            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+        )
+
+        # 5. Post cheat sheet of fake drivers in this division
+        fake_drivers = await list_test_drivers(
+            server_id=interaction.guild_id,
+            division_name=division,
+            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+        )
+
+        cheat_lines: list[str] = []
+        if isinstance(fake_drivers, list) and fake_drivers:
+            cheat_lines.append(f"**Fake Driver Roster — {division}**")
+            cheat_lines.append(f"{'Name':<20} {'Mention':<30} Team")
+            cheat_lines.append("-" * 65)
+            for driver in fake_drivers:
+                mention = f"<@{driver['discord_user_id']}>"
+                cheat_lines.append(
+                    f"{driver['display_name']:<20} {mention:<30} {driver['team_name']}"
+                )
+
+        config_note = (
+            f"\n📌 Created configs: **{', '.join(new_configs)}**" if new_configs else ""
+        )
+        cheat_block = (
+            "\n```\n" + "\n".join(cheat_lines) + "\n```" if cheat_lines else ""
+        )
+
+        await interaction.followup.send(
+            f"⏩ Opening result submission wizard for **{division}** "
+            f"(round {round_number or '?'})…{config_note}{cheat_block}\n"
+            "A submission channel will appear shortly.",
+            ephemeral=True,
+        )
+
+        log.info(
+            "Test mode submit-results: division=%r round_id=%d server=%d",
+            division,
+            round_id,
+            interaction.guild_id,
+        )
+
+        # 6. Launch the wizard as a background task so the interaction can return
+        import asyncio
+        from services.result_submission_service import run_result_submission_job
+
+        asyncio.create_task(run_result_submission_job(round_id, self.bot))

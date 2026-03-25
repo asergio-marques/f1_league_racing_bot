@@ -9,9 +9,9 @@ from datetime import datetime, timezone
 import discord
 
 from db.database import get_connection
-from models.points_config import SessionType
+from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from models.round import RoundFormat
-from models.session_result import OutcomeModifier
+from models.session_result import DriverSessionResult, OutcomeModifier
 
 log = logging.getLogger(__name__)
 
@@ -748,6 +748,117 @@ def _make_slug(name: str) -> str:
     return slug[:24]  # keep channel name short
 
 
+# ---------------------------------------------------------------------------
+# Points computation — applied after save_session_result
+# ---------------------------------------------------------------------------
+
+async def _apply_points_from_config(
+    db_path: str,
+    session_result_id: int,
+    season_id: int,
+    config_name: str,
+    session_type: SessionType,
+) -> None:
+    """Load season config entries, compute points for each driver row, and UPDATE the DB.
+
+    This is called after save_session_result so that driver_session_results.points_awarded
+    and fastest_lap_bonus are populated from the chosen points configuration.
+    """
+    from services.standings_service import compute_points_for_session  # lazy import
+
+    async with get_connection(db_path) as db:
+        # Load config entries for (season, config, session_type)
+        entries_cursor = await db.execute(
+            "SELECT position, points FROM season_points_entries "
+            "WHERE season_id = ? AND config_name = ? AND session_type = ? "
+            "ORDER BY position",
+            (season_id, config_name, session_type.value),
+        )
+        entry_rows = await entries_cursor.fetchall()
+
+        # Load FL config
+        fl_cursor = await db.execute(
+            "SELECT fl_points, fl_position_limit FROM season_points_fl "
+            "WHERE season_id = ? AND config_name = ? AND session_type = ?",
+            (season_id, config_name, session_type.value),
+        )
+        fl_row = await fl_cursor.fetchone()
+
+        # Load driver result rows for this session
+        dsr_cursor = await db.execute(
+            "SELECT id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, fastest_lap "
+            "FROM driver_session_results "
+            "WHERE session_result_id = ? AND is_superseded = 0",
+            (session_result_id,),
+        )
+        dsr_rows = await dsr_cursor.fetchall()
+
+    if not entry_rows and fl_row is None:
+        # No config data — nothing to compute (0 points stays as-is)
+        return
+
+    config_entries = [
+        PointsConfigEntry(
+            id=0,
+            config_id=0,
+            session_type=session_type,
+            position=r["position"],
+            points=r["points"],
+        )
+        for r in entry_rows
+    ]
+
+    fl_config: PointsConfigFastestLap | None = None
+    if fl_row is not None:
+        fl_config = PointsConfigFastestLap(
+            id=0,
+            config_id=0,
+            session_type=session_type,
+            fl_points=fl_row["fl_points"],
+            fl_position_limit=fl_row["fl_position_limit"],
+        )
+
+    driver_rows = [
+        DriverSessionResult(
+            id=r["id"],
+            session_result_id=session_result_id,
+            driver_user_id=r["driver_user_id"],
+            team_role_id=r["team_role_id"],
+            finishing_position=r["finishing_position"],
+            outcome=OutcomeModifier(r["outcome"]),
+            tyre=None,
+            best_lap=None,
+            gap=None,
+            total_time=None,
+            fastest_lap=r["fastest_lap"],
+            time_penalties=None,
+            post_steward_total_time=None,
+            post_race_time_penalties=None,
+            points_awarded=0,
+            fastest_lap_bonus=0,
+            is_superseded=False,
+        )
+        for r in dsr_rows
+    ]
+
+    # Mutates driver_rows in-place with computed points_awarded / fastest_lap_bonus
+    compute_points_for_session(driver_rows, config_entries, fl_config, session_type)
+
+    # Persist the computed values
+    async with get_connection(db_path) as db:
+        for row in driver_rows:
+            await db.execute(
+                "UPDATE driver_session_results "
+                "SET points_awarded = ?, fastest_lap_bonus = ? "
+                "WHERE id = ?",
+                (row.points_awarded, row.fastest_lap_bonus, row.id),
+            )
+        await db.commit()
+
+
+
+
 def _row_dict_from_qualifying(row: ParsedQualifyingRow) -> dict:
     return {
         "driver_user_id": row.driver_user_id,
@@ -1056,6 +1167,21 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 submitted_by=msg.author.id,
                 driver_rows=driver_rows_data,
             )
+
+            # Compute and store points_awarded / fastest_lap_bonus from the chosen config
+            if selected_config is not None:
+                # Reload the session_result_id we just inserted
+                async with get_connection(db_path) as _db:
+                    _cur = await _db.execute(
+                        "SELECT id FROM session_results WHERE round_id = ? AND session_type = ?",
+                        (round_id, session_type.value),
+                    )
+                    _sr = await _cur.fetchone()
+                if _sr is not None:
+                    await _apply_points_from_config(
+                        db_path, _sr["id"], season_id, selected_config, session_type
+                    )
+
             await sub_channel.send(f"✅ **{label}** results saved.")
             break  # advance to next session
 
