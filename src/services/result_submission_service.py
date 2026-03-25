@@ -12,6 +12,7 @@ from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from models.round import RoundFormat
 from models.session_result import DriverSessionResult, OutcomeModifier
+from utils import results_formatter
 
 log = logging.getLogger(__name__)
 
@@ -1102,7 +1103,10 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # 6. Opening message
     # ------------------------------------------------------------------
     sessions = get_sessions_for_format(round_format)
-    session_list_str = ", ".join(_SESSION_LABELS[s] for s in sessions)
+    is_sprint = round_format is RoundFormat.SPRINT
+    session_list_str = ", ".join(
+        results_formatter.format_session_label(s, is_sprint=is_sprint) for s in sessions
+    )
     mention_str = f" <@&{mention_role_id}>" if mention_role_id else ""
     await sub_channel.send(
         f"✅ Results submission open for **Round {round_number}** ({division_name})."
@@ -1121,7 +1125,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # 8. Per-session collection loop
     # ------------------------------------------------------------------
     for session_type in sessions:
-        label = _SESSION_LABELS[session_type]
+        label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
 
         if session_type.is_qualifying:
             format_hint = "Format: `Position, @Driver, @TeamRole, Tyre, BestLap, Gap`"
