@@ -112,7 +112,7 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     # Announce completion *before* deleting so the log message makes sense
     completion_msg = (
         "\U0001f3c1 **Season Complete!**\n"
-        f"The season (ID: {season_id}) has concluded and all round data has been "
+        f"Season {season.season_number} has concluded and all round data has been "
         "cleared from the database.\n"
         "Run `/season-setup` to begin a new season."
     )

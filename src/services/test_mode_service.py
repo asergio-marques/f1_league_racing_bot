@@ -9,9 +9,12 @@ Provides three async functions consumed by TestModeCog:
 from __future__ import annotations
 
 import logging
-from typing import TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from db.database import get_connection
+
+if TYPE_CHECKING:
+    from services.scheduler_service import SchedulerService
 
 log = logging.getLogger(__name__)
 
@@ -24,9 +27,10 @@ class PhaseEntry(TypedDict):
     round_id: int
     round_number: int
     division_id: int
-    phase_number: int  # 1|2|3 for normal phases; 0 for mystery notice
+    phase_number: int  # 0=mystery notice, 1|2|3=weather phases, 4=result submission
     track_name: str
     division_name: str
+    job_id: str | None  # APScheduler job ID; None for mystery-round result fallback
 
 
 # ---------------------------------------------------------------------------
@@ -63,26 +67,30 @@ async def toggle_test_mode(server_id: int, db_path: str) -> bool:
 # Phase advancement queue
 # ---------------------------------------------------------------------------
 
-async def get_next_pending_phase(server_id: int, db_path: str) -> PhaseEntry | None:
-    """Return the earliest pending action entry, or None when all are done.
+async def get_next_pending_phase(
+    server_id: int,
+    db_path: str,
+    scheduler_service: Any,
+) -> PhaseEntry | None:
+    """Return the earliest pending action entry based on the APScheduler job store.
 
-    Resolution order:
-      1. rounds.scheduled_at ASC   (real-world trigger time — earliest first)
-      2. divisions.id ASC          (insertion order; tie-breaks same-date rounds)
-      3. action type ASC           (mystery notice / Phase 1 before 2 before 3)
+    Uses the scheduler as the single source of truth for what is actually pending,
+    so only events that the system has genuinely scheduled (i.e. the relevant module
+    was enabled when the season was approved or the module was later enabled) are
+    returned.  This means, for example, that weather phases are never advanced when
+    the weather module is disabled — because no phase jobs would have been created.
 
-    Mystery rounds are included: when their mystery notice has not yet been sent
-    (phase1_done = 0 for that round), phase_number=0 is returned as a sentinel
-    so the cog can call run_mystery_notice instead of a phase service.  After the
-    notice is sent the cog sets phase1_done = 1 on the round, which excludes it
-    from future calls.
+    Resolution order (matches APScheduler fire-time ordering):
+      1. next_run_time ASC  — earliest scheduled fire time first
+      2. round_id ASC       — tie-break for same-fire-time jobs
+      3. phase_number ASC   — e.g. phase 1 before phase 2 on same round
+
+    Special case — Mystery rounds whose notice has already been sent (phase1_done=1)
+    but have no ACTIVE session results yet: these never get a ``results_r{id}``
+    APScheduler job (``schedule_round`` skips it for MYSTERY format), so they are
+    handled via a DB-state fallback after all scheduler-backed jobs are exhausted.
 
     If there is no ACTIVE season for this server, returns None.
-
-    Note on concurrency: if the real scheduler fires a phase for a round that has
-    already been advanced by this command, the phase service's own phase1_done /
-    phase2_done / phase3_done idempotency guard will silently skip it — no
-    duplicate output will be produced.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -93,10 +101,7 @@ async def get_next_pending_phase(server_id: int, db_path: str) -> PhaseEntry | N
                 r.division_id,
                 r.format,
                 r.track_name,
-                r.scheduled_at,
                 r.phase1_done,
-                r.phase2_done,
-                r.phase3_done,
                 d.name         AS division_name
             FROM rounds r
             JOIN divisions d ON d.id  = r.division_id
@@ -110,51 +115,75 @@ async def get_next_pending_phase(server_id: int, db_path: str) -> PhaseEntry | N
             (server_id,),
         )
         rows = await cursor.fetchall()
+        if not rows:
+            return None
 
-    for row in rows:
-        is_mystery = str(row["format"]).upper() == "MYSTERY"
-        if is_mystery:
-            # phase1_done = 1 means the mystery notice has already been posted
-            if not row["phase1_done"]:
-                return PhaseEntry(
-                    round_id=row["round_id"],
-                    round_number=row["round_number"],
-                    division_id=row["division_id"],
-                    phase_number=0,  # sentinel: mystery notice
-                    track_name=row["track_name"] or "Mystery",
-                    division_name=row["division_name"],
-                )
-            continue  # notice already sent — skip this round
-        # Non-mystery: check each phase in order
-        if not row["phase1_done"]:
+        round_ids: set[int] = {r["round_id"] for r in rows}
+        round_info = {r["round_id"]: r for r in rows}
+
+        # Rounds that already have at least one ACTIVE session_result (for mystery fallback)
+        results_cursor = await db.execute(
+            """
+            SELECT DISTINCT sr.round_id
+            FROM session_results sr
+            JOIN rounds r ON r.id = sr.round_id
+            JOIN divisions d ON d.id = r.division_id
+            JOIN seasons s ON s.id = d.season_id
+            WHERE s.server_id = ? AND sr.status = 'ACTIVE'
+            """,
+            (server_id,),
+        )
+        rounds_with_results: set[int] = {r["round_id"] for r in await results_cursor.fetchall()}
+
+    # ── Primary: scheduler job store ────────────────────────────────────────
+    pending_jobs = scheduler_service.get_pending_advance_jobs(round_ids)
+    if pending_jobs:
+        job = pending_jobs[0]
+        rnd = round_info[job["round_id"]]
+        is_mystery = str(rnd["format"]).upper() == "MYSTERY"
+        return PhaseEntry(
+            round_id=job["round_id"],
+            round_number=rnd["round_number"],
+            division_id=rnd["division_id"],
+            phase_number=job["phase_number"],
+            track_name=rnd["track_name"] or ("Mystery" if is_mystery else "Unknown"),
+            division_name=rnd["division_name"],
+            job_id=job["job_id"],
+        )
+
+    # ── Fallback: any round whose result submission is still pending ───────────
+    # Result submission is always detected via DB state, not via the APScheduler
+    # job store, because:
+    #   - results_r{id} jobs for past dates auto-fire immediately when added (test mode)
+    #   - MYSTERY rounds never get a results_r APScheduler job at all
+    # A round needs results when the results module is enabled, all applicable
+    # scheduler-backed work is done (no pending jobs above), and no ACTIVE
+    # session_result exists for it.
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT module_enabled FROM results_module_config WHERE server_id = ?",
+            (server_id,),
+        )
+        rmc_row = await cursor.fetchone()
+    results_module_enabled = bool(rmc_row[0]) if rmc_row else False
+
+    if results_module_enabled:
+        for row in rows:
+            is_mystery = str(row["format"]).upper() == "MYSTERY"
+            if is_mystery and not row["phase1_done"]:
+                continue  # mystery notice not yet sent
+            if row["round_id"] in rounds_with_results:
+                continue
             return PhaseEntry(
                 round_id=row["round_id"],
                 round_number=row["round_number"],
                 division_id=row["division_id"],
-                phase_number=1,
-                track_name=row["track_name"] or "Unknown",
+                phase_number=4,
+                track_name=row["track_name"] or ("Mystery" if is_mystery else "Unknown"),
                 division_name=row["division_name"],
-            )
-        if not row["phase2_done"]:
-            return PhaseEntry(
-                round_id=row["round_id"],
-                round_number=row["round_number"],
-                division_id=row["division_id"],
-                phase_number=2,
-                track_name=row["track_name"] or "Unknown",
-                division_name=row["division_name"],
-            )
-        if not row["phase3_done"]:
-            return PhaseEntry(
-                round_id=row["round_id"],
-                round_number=row["round_number"],
-                division_id=row["division_id"],
-                phase_number=3,
-                track_name=row["track_name"] or "Unknown",
-                division_name=row["division_name"],
+                job_id=None,
             )
 
-    # All rounds fully actioned (or no active season / no rounds)
     return None
 
 

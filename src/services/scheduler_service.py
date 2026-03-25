@@ -323,6 +323,97 @@ class SchedulerService:
         for rnd in rounds:
             self.schedule_round(rnd)
 
+    def schedule_result_submission_jobs(self, rounds: list[Round]) -> None:
+        """Schedule only the result-submission job for each round.
+
+        Used when the results module is enabled but the weather module is not,
+        so ``schedule_round`` (which creates all weather + results jobs together)
+        was not called at approval time.
+
+        MYSTERY rounds are skipped — their result submission is handled via a
+        DB-state fallback in get_next_pending_phase (no APScheduler job needed).
+        """
+        for rnd in rounds:
+            if rnd.format == RoundFormat.MYSTERY:
+                continue
+            scheduled_at = rnd.scheduled_at
+            if scheduled_at.tzinfo is None:
+                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+            job_id = f"results_r{rnd.id}"
+            self._scheduler.add_job(
+                _result_submission_job_wrapper,
+                trigger=DateTrigger(run_date=scheduled_at, timezone="UTC"),
+                id=job_id,
+                replace_existing=True,
+                name=f"Result submission for round {rnd.id}",
+                kwargs={"round_id": rnd.id},
+            )
+            log.info("Scheduled %s at %s", job_id, scheduled_at.isoformat())
+
+    def cancel_job(self, job_id: str) -> None:
+        """Remove a single job from the scheduler by ID (no-op if not found)."""
+        try:
+            self._scheduler.remove_job(job_id)
+            log.info("Removed job %s", job_id)
+        except Exception:
+            pass  # Already fired or never scheduled
+
+    def get_pending_advance_jobs(self, round_ids: set[int]) -> list[dict]:
+        """Return un-fired phase/results/mystery jobs for the given round IDs.
+
+        Used by the test-mode advance command to determine what the scheduler has
+        actually queued — so advance only fires events that a live season would
+        fire (respecting which modules are enabled).
+
+        Returns a list of dicts sorted by ``(next_run_time, round_id, phase_number)``:
+          - ``job_id``       — APScheduler job ID string
+          - ``round_id``     — round this job belongs to
+          - ``phase_number`` — 0=mystery notice, 1/2/3=weather, 4=result submission
+          - ``next_run_time``— datetime when the job is scheduled to fire
+
+        Cleanup and season-end jobs are excluded.
+        Jobs that are paused (``next_run_time is None``) are excluded.
+        """
+        # result submission (results_r) is intentionally excluded here.
+        # For test-mode advance, result submission is detected via DB state
+        # (rounds_with_results fallback) so that past-dated results_r jobs
+        # that already auto-fired don't block or double-trigger the wizard.
+        _PHASE_PREFIX_MAP = {
+            "mystery": 0,
+            "phase1":  1,
+            "phase2":  2,
+            "phase3":  3,
+        }
+        result: list[dict] = []
+        for job in self._scheduler.get_jobs():
+            if job.next_run_time is None:
+                continue
+            job_id: str = job.id
+            if "_r" not in job_id:
+                continue
+            try:
+                prefix, round_str = job_id.rsplit("_r", 1)
+                round_id = int(round_str)
+            except ValueError:
+                continue
+            if round_id not in round_ids:
+                continue
+            phase = _PHASE_PREFIX_MAP.get(prefix)
+            if phase is None:
+                continue  # cleanup, season_end, etc.
+            result.append(
+                {
+                    "job_id": job_id,
+                    "round_id": round_id,
+                    "phase_number": phase,
+                    "next_run_time": job.next_run_time,
+                }
+            )
+        result.sort(key=lambda x: (x["next_run_time"], x["round_id"], x["phase_number"]))
+        return result
+
+
+
     # ------------------------------------------------------------------
     # Season-end scheduling
     # ------------------------------------------------------------------

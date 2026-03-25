@@ -52,9 +52,16 @@ def _collapse_trailing_zeros(
     return result
 
 
-def format_session_label(session_type: SessionType) -> str:
-    """Return the human-readable label for a session type."""
-    return _SESSION_LABELS.get(session_type, session_type.value.replace("_", " ").title())
+def format_session_label(session_type: SessionType, *, is_sprint: bool = True) -> str:
+    """Return the human-readable label for a session type.
+
+    When ``is_sprint=False`` the "Feature " prefix is dropped so that
+    FEATURE_QUALIFYING → "Qualifying" and FEATURE_RACE → "Race".
+    """
+    label = _SESSION_LABELS.get(session_type, session_type.value.replace("_", " ").title())
+    if not is_sprint:
+        label = label.removeprefix("Feature ").strip()
+    return label
 
 
 # ---------------------------------------------------------------------------
@@ -64,65 +71,46 @@ def format_session_label(session_type: SessionType) -> str:
 def format_qualifying_table(
     driver_rows: list[DriverSessionResult],
     points_by_driver: dict[int, int],
-    member_display: dict[int, str],
-    team_display: dict[int, str],
 ) -> str:
-    """Render a qualifying result as a Discord code block table.
+    """Render a qualifying result as a Discord mention-based list.
 
-    Columns: Pos | Driver | Team | Tyre | Best Lap | Gap | Points
+    Each line: `{pos}.` @Driver · @Team · Tyre · `BestLap` · `Gap` · **N pts**
+    Mentions are used so drivers and teams are tagged in Discord.
     """
-    # Sort by finishing position
     sorted_rows = sorted(driver_rows, key=lambda r: r.finishing_position)
-
-    lines = [
-        "```",
-        f"{'Pos':<4} {'Driver':<20} {'Team':<18} {'Tyre':<6} {'Best Lap':<12} {'Gap':<14} {'Pts'}",
-        "-" * 80,
-    ]
+    lines: list[str] = []
     for row in sorted_rows:
-        driver_name = member_display.get(row.driver_user_id, f"<@{row.driver_user_id}>")[:19]
-        team_name = team_display.get(row.team_role_id, f"<@&{row.team_role_id}>")[:17]
-        tyre = (row.tyre or "—")[:5]
-        best_lap = (row.best_lap or row.outcome.value)[:11]
-        gap = (row.gap or "—")[:13]
-        pts = str(points_by_driver.get(row.driver_user_id, 0))
+        tyre = row.tyre or "—"
+        best_lap = row.best_lap or row.outcome.value
+        gap = row.gap or "—"
+        pts = points_by_driver.get(row.driver_user_id, 0)
         lines.append(
-            f"{row.finishing_position:<4} {driver_name:<20} {team_name:<18} "
-            f"{tyre:<6} {best_lap:<12} {gap:<14} {pts}"
+            f"`{row.finishing_position}.` <@{row.driver_user_id}> · <@&{row.team_role_id}> · "
+            f"{tyre} · `{best_lap}` · `{gap}` · **{pts} pts**"
         )
-    lines.append("```")
     return "\n".join(lines)
 
 
 def format_race_table(
     driver_rows: list[DriverSessionResult],
     points_by_driver: dict[int, int],
-    member_display: dict[int, str],
-    team_display: dict[int, str],
 ) -> str:
-    """Render a race result as a Discord code block table.
+    """Render a race result as a Discord mention-based list.
 
-    Columns: Pos | Driver | Team | Total Time | Fastest Lap | Time Penalties | Points
+    Each line: `{pos}.` @Driver · @Team · `TotalTime` · `FastestLap` · `Penalties` · **N pts**
+    Mentions are used so drivers and teams are tagged in Discord.
     """
     sorted_rows = sorted(driver_rows, key=lambda r: r.finishing_position)
-
-    lines = [
-        "```",
-        f"{'Pos':<4} {'Driver':<20} {'Team':<18} {'Total Time':<15} {'Fastest Lap':<13} {'Penalties':<11} {'Pts'}",
-        "-" * 90,
-    ]
+    lines: list[str] = []
     for row in sorted_rows:
-        driver_name = member_display.get(row.driver_user_id, f"<@{row.driver_user_id}>")[:19]
-        team_name = team_display.get(row.team_role_id, f"<@&{row.team_role_id}>")[:17]
-        total_time = (row.total_time or row.outcome.value)[:14]
-        fl = (row.fastest_lap or "—")[:12]
-        tp = (row.time_penalties or "—")[:10]
-        pts = str(points_by_driver.get(row.driver_user_id, 0))
+        total_time = row.total_time or row.outcome.value
+        fl = row.fastest_lap or "—"
+        tp = row.time_penalties or "—"
+        pts = points_by_driver.get(row.driver_user_id, 0)
         lines.append(
-            f"{row.finishing_position:<4} {driver_name:<20} {team_name:<18} "
-            f"{total_time:<15} {fl:<13} {tp:<11} {pts}"
+            f"`{row.finishing_position}.` <@{row.driver_user_id}> · <@&{row.team_role_id}> · "
+            f"`{total_time}` · `{fl}` · `{tp}` · **{pts} pts**"
         )
-    lines.append("```")
     return "\n".join(lines)
 
 
@@ -132,38 +120,34 @@ def format_race_table(
 
 def format_driver_standings(
     snapshots: list[DriverStandingsSnapshot],
-    member_display: dict[int, str],
     reserve_user_ids: set[int],
     show_reserves: bool,
 ) -> str:
-    """Render driver standings as a ranked list.
+    """Render driver standings as a ranked mention list.
 
     Omits reserve drivers when ``show_reserves=False``.
-    Format: ``{pos}. {name} — {total_points} pts``
+    Format: ``{pos}. @Driver — **{total_points} pts**``
     """
     sorted_snaps = sorted(snapshots, key=lambda s: s.standing_position)
     lines: list[str] = []
     for snap in sorted_snaps:
         if not show_reserves and snap.driver_user_id in reserve_user_ids:
             continue
-        name = member_display.get(snap.driver_user_id, f"<@{snap.driver_user_id}>")
-        lines.append(f"{snap.standing_position}. {name} — {snap.total_points} pts")
+        lines.append(f"{snap.standing_position}. <@{snap.driver_user_id}> — **{snap.total_points} pts**")
     return "\n".join(lines) if lines else "No standings available."
 
 
 def format_team_standings(
     snapshots: list[TeamStandingsSnapshot],
-    team_display: dict[int, str],
 ) -> str:
-    """Render team standings as a ranked list.
+    """Render team standings as a ranked mention list.
 
-    Format: ``{pos}. {team} — {total_points} pts``
+    Format: ``{pos}. @&Team — **{total_points} pts**``
     """
     sorted_snaps = sorted(snapshots, key=lambda s: s.standing_position)
     lines: list[str] = []
     for snap in sorted_snaps:
-        name = team_display.get(snap.team_role_id, f"<@&{snap.team_role_id}>")
-        lines.append(f"{snap.standing_position}. {name} — {snap.total_points} pts")
+        lines.append(f"{snap.standing_position}. <@&{snap.team_role_id}> — **{snap.total_points} pts**")
     return "\n".join(lines) if lines else "No standings available."
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-from src.models.points_config import SessionType
+from models.points_config import SessionType
 
 
 class OutcomeModifier(str, enum.Enum):

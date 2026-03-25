@@ -59,21 +59,55 @@ class TestModeCog(commands.Cog):
             self.bot.db_path,  # type: ignore[attr-defined]
         )
         if new_state:
+            # Auto-seed default point configs for the current season (SETUP or ACTIVE)
+            await interaction.response.defer(ephemeral=True)
+            from db.database import get_connection
+            from services.test_roster_service import ensure_test_configs
+
+            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                season_cursor = await db.execute(
+                    "SELECT id FROM seasons WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE')",
+                    (interaction.guild_id,),
+                )
+                season_row = await season_cursor.fetchone()
+
+            config_note = ""
+            if season_row is not None:
+                new_configs = await ensure_test_configs(
+                    server_id=interaction.guild_id,
+                    season_id=season_row["id"],
+                    db_path=self.bot.db_path,  # type: ignore[attr-defined]
+                )
+                if new_configs:
+                    config_note = (
+                        f"\n📌 Added default point configs: **{', '.join(new_configs)}**"
+                    )
+
             msg = (
                 "✅ Test mode **enabled**. "
                 "Use `/test-mode advance` to step through phases, "
-                "or `/test-mode review` to inspect season status."
+                f"or `/test-mode review` to inspect season status.{config_note}"
             )
-            await interaction.response.send_message(msg, ephemeral=True)
+            await interaction.followup.send(msg, ephemeral=True)
         else:
             # Defer so the flush (multiple Discord API calls) has time to complete
             await interaction.response.defer(ephemeral=True)
             from services.forecast_cleanup_service import flush_pending_deletions
             await flush_pending_deletions(interaction.guild_id, self.bot)  # type: ignore[attr-defined]
+            from services.test_roster_service import clear_all_test_drivers
+            removed = await clear_all_test_drivers(interaction.guild_id, self.bot.db_path)  # type: ignore[attr-defined]
+            if removed:
+                log.info(
+                    "Test mode disabled: cleared %d fake driver(s) for server %s",
+                    removed,
+                    interaction.guild_id,
+                )
             msg = (
                 "✅ Test mode **disabled**. "
                 "The scheduler will resume normal operation for any remaining pending phases."
             )
+            if removed:
+                msg += f"\n🗑️ Removed **{removed}** fake driver(s)."
             await interaction.followup.send(msg, ephemeral=True)
 
     # ------------------------------------------------------------------
@@ -82,7 +116,7 @@ class TestModeCog(commands.Cog):
 
     @test_mode.command(
         name="advance",
-        description="Execute the next pending weather phase immediately.",
+        description="Execute the next pending scheduled event (weather phase or result submission) immediately.",
     )
     @admin_only
     async def advance(self, interaction: discord.Interaction) -> None:
@@ -103,6 +137,7 @@ class TestModeCog(commands.Cog):
         entry = await get_next_pending_phase(
             interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]
+            self.bot.scheduler_service,  # type: ignore[attr-defined]
         )
 
         if entry is None:
@@ -167,6 +202,9 @@ class TestModeCog(commands.Cog):
                 )
                 return
             # Mark notice as sent so this round is excluded from future advance calls
+            # Cancel the scheduler job so it doesn't double-fire later
+            if entry["job_id"] is not None:
+                self.bot.scheduler_service.cancel_job(entry["job_id"])  # type: ignore[attr-defined]
             async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
                 await db.execute(
                     "UPDATE rounds SET phase1_done = 1 WHERE id = ?",
@@ -181,9 +219,46 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        # ── Normal phase dispatch ───────────────────────────────────────────────
+        # ── Result submission (phase_number=4) ───────────────────────────────────
+        if phase_number == 4:
+            import asyncio
+            from services.result_submission_service import (
+                run_result_submission_job,
+                is_submission_open,
+            )
+
+            # Guard: if a submission channel is already open, the admin must complete
+            # that submission before advancing to the next round.
+            if await is_submission_open(self.bot.db_path, entry["round_id"]):  # type: ignore[attr-defined]
+                await interaction.followup.send(
+                    f"⏸️ Result submission for "
+                    f"**{entry['division_name']}** — **Round {entry['round_number']}** "
+                    f"is already in progress. Please submit results in the submission "
+                    f"channel before advancing.",
+                    ephemeral=True,
+                )
+                return
+
+            # Always cancel any results_r job for this round — handles the case where
+            # a real future-dated results_r job exists (e.g. weather-enabled season)
+            # so it doesn't double-fire after advance has already triggered submission.
+            self.bot.scheduler_service.cancel_job(f"results_r{entry['round_id']}")  # type: ignore[attr-defined]
+            await interaction.followup.send(
+                f"⏩ Opening result submission wizard for "
+                f"**{entry['division_name']}** — **Round {entry['round_number']}** "
+                f"(**{entry['track_name']}**). A submission channel will appear shortly.",
+                ephemeral=True,
+            )
+            asyncio.create_task(run_result_submission_job(entry["round_id"], self.bot))
+            return
+
+        # ── Normal weather phase dispatch ───────────────────────────────────────
         phase_runners = {1: run_phase1, 2: run_phase2, 3: run_phase3}
         runner = phase_runners[phase_number]
+
+        # Cancel the scheduler job before running so it doesn't double-fire later
+        if entry["job_id"] is not None:
+            self.bot.scheduler_service.cancel_job(entry["job_id"])  # type: ignore[attr-defined]
 
         try:
             await runner(entry["round_id"], self.bot)
@@ -204,16 +279,16 @@ class TestModeCog(commands.Cog):
         next_entry = await get_next_pending_phase(
             interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]
+            self.bot.scheduler_service,  # type: ignore[attr-defined]
         )
 
         if next_entry is None and phase_number == 3:
-            # This was the last phase of the last round — end the season now
+            # This was the last weather phase of the last round — end the season now
             from services.season_end_service import execute_season_end
             season = await self.bot.season_service.get_active_season(  # type: ignore[attr-defined]
                 interaction.guild_id
             )
             if season is not None:
-                # Cancel any pending scheduled job (executing immediately)
                 self.bot.scheduler_service.cancel_season_end(  # type: ignore[attr-defined]
                     interaction.guild_id
                 )
@@ -314,3 +389,169 @@ class TestModeCog(commands.Cog):
             "set-former-driver on server %s: user=%s %s→%s by %s",
             interaction.guild_id, user.id, old_val, new_val, interaction.user,
         )
+
+    # ------------------------------------------------------------------
+    # /test-mode roster (subgroup)
+    # ------------------------------------------------------------------
+
+    roster = app_commands.Group(
+        name="roster",
+        description="Manage fake driver roster for test mode.",
+        parent=test_mode,
+        guild_only=True,
+        default_permissions=None,
+    )
+
+    # /test-mode roster add ------------------------------------------------
+
+    @roster.command(
+        name="add",
+        description="Add a fake driver to a team in a division.",
+    )
+    @app_commands.describe(
+        driver_name="Display name for the fake driver.",
+        team_name="Team to assign the driver to (must exist in the division).",
+        division="Name of the division.",
+    )
+    @admin_only
+    async def roster_add(
+        self,
+        interaction: discord.Interaction,
+        driver_name: str,
+        team_name: str,
+        division: str,
+    ) -> None:
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ This command is only available when test mode is enabled.",
+                ephemeral=True,
+            )
+            return
+
+        from services.test_roster_service import add_test_driver
+
+        result = await add_test_driver(
+            server_id=interaction.guild_id,
+            driver_name=driver_name,
+            team_name=team_name,
+            division_name=division,
+            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+        )
+
+        if isinstance(result, str):
+            await interaction.response.send_message(f"⛔ {result}", ephemeral=True)
+            return
+
+        mention_str = f"<@{result['discord_user_id']}>"
+        await interaction.response.send_message(
+            f"✅ Added fake driver **{result['display_name']}** to **{result['team_name']}**.\n"
+            f"Mention string (copy-paste into results): `{mention_str}`",
+            ephemeral=True,
+        )
+
+    # /test-mode roster list -----------------------------------------------
+
+    @roster.command(
+        name="list",
+        description="Show all fake drivers in a division (cheat sheet for result submission).",
+    )
+    @app_commands.describe(division="Name of the division.")
+    @admin_only
+    async def roster_list(
+        self,
+        interaction: discord.Interaction,
+        division: str,
+    ) -> None:
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ This command is only available when test mode is enabled.",
+                ephemeral=True,
+            )
+            return
+
+        from services.test_roster_service import list_test_drivers
+
+        result = await list_test_drivers(
+            server_id=interaction.guild_id,
+            division_name=division,
+            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+        )
+
+        if isinstance(result, str):
+            await interaction.response.send_message(f"⛔ {result}", ephemeral=True)
+            return
+
+        if not result:
+            await interaction.response.send_message(
+                f"ℹ️ No fake drivers in **{division}**. Use `/test-mode roster add` to create some.",
+                ephemeral=True,
+            )
+            return
+
+        lines = [f"**Fake Driver Roster — {division}**\n"]
+        lines.append(f"{'Name':<20} {'Mention':<30} Team")
+        lines.append("-" * 65)
+        for driver in result:
+            mention = f"<@{driver['discord_user_id']}>"
+            lines.append(f"{driver['display_name']:<20} {mention:<30} {driver['team_name']}")
+        lines.append(
+            "\nCopy mention strings above when submitting results in the format:\n"
+            "`Position, <@user_id>, <@&role_id>, ...`"
+        )
+
+        await interaction.response.send_message(
+            "```\n" + "\n".join(lines) + "\n```",
+            ephemeral=True,
+        )
+
+    # /test-mode roster clear ----------------------------------------------
+
+    @roster.command(
+        name="clear",
+        description="Remove all fake drivers from a division.",
+    )
+    @app_commands.describe(division="Name of the division to clear.")
+    @admin_only
+    async def roster_clear(
+        self,
+        interaction: discord.Interaction,
+        division: str,
+    ) -> None:
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ This command is only available when test mode is enabled.",
+                ephemeral=True,
+            )
+            return
+
+        from services.test_roster_service import clear_test_drivers
+
+        result = await clear_test_drivers(
+            server_id=interaction.guild_id,
+            division_name=division,
+            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+        )
+
+        if isinstance(result, str):
+            await interaction.response.send_message(f"⛔ {result}", ephemeral=True)
+            return
+
+        if result == 0:
+            await interaction.response.send_message(
+                f"ℹ️ No fake drivers found in **{division}**.", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"✅ Removed **{result}** fake driver(s) from **{division}**.", ephemeral=True
+            )
+
+    # (submit-results removed — use /test-mode advance which now handles result submission)

@@ -179,6 +179,19 @@ class SeasonCog(commands.Cog):
 
         # Load from DB to get tier and team roster data
         if cfg.season_id != 0:
+            # Pre-fetch role configs so we can warn about teams missing a role
+            teams_with_roles = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
+                interaction.guild_id
+            )
+            roleless = {t["name"] for t in teams_with_roles if not t["role_id"] and not t["is_reserve"]}
+            reserve_has_role = any(t["is_reserve"] and t["role_id"] for t in teams_with_roles)
+            if not reserve_has_role:
+                lines.append(
+                    "⚠️ **Reserve team has no role assigned** — use `/team reserve-role` "
+                    "before approving. Drivers on the reserve team will fail result validation."
+                )
+                lines.append("")
+
             db_divisions = await self.bot.season_service.get_divisions(cfg.season_id)
             for div in db_divisions:
                 if not div.name:
@@ -199,6 +212,13 @@ class SeasonCog(commands.Cog):
                 teams = await self.bot.team_service.get_division_teams(div.id)
                 if teams:
                     lines.append("  **Teams:** " + ", ".join(t["name"] for t in teams))
+                    missing_roles = [t["name"] for t in teams if t["name"] in roleless]
+                    if missing_roles:
+                        lines.append(
+                            "  ⚠️ **No role assigned:** "
+                            + ", ".join(f'"{n}"' for n in missing_roles)
+                            + " — result submission will reject drivers in these teams."
+                        )
                 lines.append("")
         else:
             for div in cfg.divisions:
@@ -361,7 +381,7 @@ class SeasonCog(commands.Cog):
         interaction: discord.Interaction,
         name: str,
         role: discord.Role,
-        tier: int = 1,
+        tier: int,
     ) -> None:
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
@@ -1882,7 +1902,7 @@ class SeasonCog(commands.Cog):
         from services.result_submission_service import validate_submission_block
         from services.result_submission_service import _build_division_validation_data  # type: ignore[attr-defined]
 
-        driver_ids, team_role_ids, reserve_role_id, driver_team_map = await _build_division_validation_data(
+        driver_ids, team_role_ids, reserve_role_id, driver_team_map, reserve_driver_ids = await _build_division_validation_data(
             div.id, interaction.guild_id, interaction.client
         )
 
@@ -1921,6 +1941,7 @@ class SeasonCog(commands.Cog):
                 team_role_ids,
                 reserve_role_id,
                 driver_team_map,
+                reserve_driver_ids,
             )
             try:
                 await msg.delete()
@@ -2120,6 +2141,23 @@ class SeasonCog(commands.Cog):
 
         # ── Gate 2: R&S channel and points-config prerequisites (FR-013) ───────
         if await self.bot.module_service.is_results_enabled(cfg.server_id):
+            # Auto-seed point configs if test mode is active and none are attached yet
+            server_config = await self.bot.config_service.get_server_config(cfg.server_id)  # type: ignore[attr-defined]
+            if server_config is not None and server_config.test_mode_active:
+                async with get_connection(self.bot.db_path) as _db:
+                    _cur = await _db.execute(
+                        "SELECT COUNT(*) FROM season_points_links WHERE season_id = ?",
+                        (cfg.season_id,),
+                    )
+                    _cnt = await _cur.fetchone()
+                if (_cnt[0] if _cnt else 0) == 0:
+                    from services.test_roster_service import ensure_test_configs
+                    await ensure_test_configs(
+                        server_id=cfg.server_id,
+                        season_id=cfg.season_id,
+                        db_path=self.bot.db_path,  # type: ignore[attr-defined]
+                    )
+
             divs_rs = await season_svc.get_divisions_with_results_config(cfg.season_id)
             errors: list[str] = []
             for d in divs_rs:
@@ -2168,9 +2206,19 @@ class SeasonCog(commands.Cog):
                 self.bot.db_path, cfg.season_id, cfg.server_id
             )
 
-        # Schedule FIRST \u2014 if this fails the season stays SETUP in DB (fix #5)
-        if await self.bot.module_service.is_weather_enabled(cfg.server_id):
+        # Schedule FIRST — if this fails the season stays SETUP in DB (fix #5)
+        weather_enabled = await self.bot.module_service.is_weather_enabled(cfg.server_id)
+        results_enabled = await self.bot.module_service.is_results_enabled(cfg.server_id)
+        if weather_enabled:
+            # schedule_round creates weather phase jobs AND the results_r job together
             self.bot.scheduler_service.schedule_all_rounds(all_rounds)
+        elif results_enabled:
+            # Weather off but results on: schedule results_r jobs for production
+            # (real future race times).  In test mode we skip this because past-dated
+            # jobs auto-fire immediately; the advance command uses DB-state detection.
+            server_config = await self.bot.config_service.get_server_config(cfg.server_id)  # type: ignore[attr-defined]
+            if server_config is None or not server_config.test_mode_active:
+                self.bot.scheduler_service.schedule_result_submission_jobs(all_rounds)
 
         # Only transition to ACTIVE after scheduling succeeds
         await season_svc.transition_to_active(cfg.season_id)

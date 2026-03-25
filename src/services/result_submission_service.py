@@ -9,9 +9,10 @@ from datetime import datetime, timezone
 import discord
 
 from db.database import get_connection
-from models.points_config import SessionType
+from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from models.round import RoundFormat
-from models.session_result import OutcomeModifier
+from models.session_result import DriverSessionResult, OutcomeModifier
+from utils import results_formatter
 
 log = logging.getLogger(__name__)
 
@@ -56,21 +57,58 @@ def get_sessions_for_format(round_format: RoundFormat) -> list[SessionType]:
 
 async def create_submission_channel(
     guild: discord.Guild,
-    results_channel: discord.TextChannel,
-    division_name_slug: str,
+    division_name: str,
+    season_number: int,
     round_number: int,
     round_id: int,
     db_path: str,
+    *,
+    bot_cmd_channel_id: int | None = None,
+    admin_role: discord.Role | None = None,
 ) -> discord.TextChannel:
-    """Create a transient text channel for result submission adjacent to the results channel."""
-    name = f"results-sub-{division_name_slug}-r{round_number}"
+    """Create a transient text channel for result submission.
+
+    The channel is named S{season_number}-{slug}-R{round_number}-results, placed
+    in the bot command channel's category, and restricted to tier-2 admins only.
+    """
+    slug = _make_slug(division_name)
+    name = f"S{season_number}-{slug}-R{round_number}-results"
+
+    # Determine category from the bot command channel (if available)
+    category: discord.CategoryChannel | None = None
+    if bot_cmd_channel_id is not None:
+        cmd_channel = guild.get_channel(bot_cmd_channel_id)
+        if cmd_channel is not None:
+            category = getattr(cmd_channel, "category", None)
+
+    # Deny @everyone; grant the bot itself and the tier-2 admin role
+    overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
+        guild.default_role: discord.PermissionOverwrite(read_messages=False),
+    }
+    bot_member = guild.me
+    if bot_member is not None:
+        overwrites[bot_member] = discord.PermissionOverwrite(
+            read_messages=True, send_messages=True, manage_messages=True
+        )
+    if admin_role is not None:
+        overwrites[admin_role] = discord.PermissionOverwrite(
+            read_messages=True, send_messages=True
+        )
+
     channel = await guild.create_text_channel(
         name=name,
-        category=results_channel.category,
+        category=category,
+        overwrites=overwrites,
         reason="Results submission channel created by bot",
     )
     created_at = datetime.now(timezone.utc).isoformat()
     async with get_connection(db_path) as db:
+        # Remove any previous row for this round (e.g. a prior closed submission or
+        # an orphaned row from a bot restart) so the INSERT never hits the UNIQUE constraint.
+        await db.execute(
+            "DELETE FROM round_submission_channels WHERE round_id = ?",
+            (round_id,),
+        )
         await db.execute(
             "INSERT INTO round_submission_channels (round_id, channel_id, created_at, closed) "
             "VALUES (?, ?, ?, 0)",
@@ -502,13 +540,17 @@ def validate_submission_block(
     team_role_ids: set[int],
     reserve_team_role_id: int | None,
     driver_team_map: dict[int, int],
+    reserve_driver_ids: set[int] | None = None,
 ) -> list[ParsedQualifyingRow | ParsedRaceRow] | list[str]:
     """Validate all result lines for a session.
 
     Returns a list of parsed rows on success, or a list of error strings on failure.
     Checks: field formats; sequential positions from 1; drivers in division; valid team
-    roles; each driver assigned to their own team (or the reserve team).
+    roles; each driver assigned to their own team (reserves may sub for any team);
+    max 2 drivers per team per session.
     """
+    if reserve_driver_ids is None:
+        reserve_driver_ids = set()
     is_qualifying = session_type.is_qualifying
     non_empty = [ln for ln in lines if ln.strip()]
 
@@ -553,28 +595,42 @@ def validate_submission_block(
                 "is not registered in this division."
             )
 
-    # Each team role must be valid
-    all_valid_team_roles: set[int] = set(team_role_ids)
-    if reserve_team_role_id is not None:
-        all_valid_team_roles.add(reserve_team_role_id)
-
+    # Each submitted team role must be a valid non-reserve team role.
+    # Reserves sub *into* a real team, so the reserve team role is never a valid
+    # submission role.
     for row in parsed_rows:
-        if row.team_role_id not in all_valid_team_roles:
+        if row.team_role_id not in team_role_ids:
             errors.append(
                 f"Row {row.position}: <@&{row.team_role_id}> "
                 "is not a valid team role for this division."
             )
 
-    # Driver must be assigned to the stated team or the reserve team
+    # Driver must be assigned to the stated team — unless the driver is a reserve,
+    # in which case they may sub for any valid non-reserve team.
     for row in parsed_rows:
+        if row.driver_user_id in reserve_driver_ids:
+            # Reserve driver: only check that the target team role is a real team
+            # (already validated above); no further team-match restriction.
+            continue
         mapped_team = driver_team_map.get(row.driver_user_id)
         if mapped_team is None:
             continue  # already reported above as "not in division"
-        if row.team_role_id != mapped_team and row.team_role_id != reserve_team_role_id:
+        if row.team_role_id != mapped_team:
             errors.append(
                 f"Row {row.position}: driver <@{row.driver_user_id}> "
                 f"submitted as <@&{row.team_role_id}> "
                 f"but is assigned to <@&{mapped_team}>."
+            )
+
+    # Max 2 drivers per team (counting reserve subs)
+    team_driver_counts: dict[int, int] = {}
+    for row in parsed_rows:
+        if row.team_role_id in team_role_ids:
+            team_driver_counts[row.team_role_id] = team_driver_counts.get(row.team_role_id, 0) + 1
+    for role_id, count in team_driver_counts.items():
+        if count > 2:
+            errors.append(
+                f"Team <@&{role_id}> has {count} drivers submitted — maximum is 2."
             )
 
     if errors:
@@ -703,11 +759,16 @@ async def _build_division_validation_data(
     division_id: int,
     server_id: int,
     bot,
-) -> tuple[set[int], set[int], int | None, dict[int, int]]:
+) -> tuple[set[int], set[int], int | None, dict[int, int], set[int]]:
     """Build validation structures for the given division.
 
     Returns:
-        (division_driver_ids, team_role_ids, reserve_team_role_id, driver_team_map)
+        (division_driver_ids, team_role_ids, reserve_team_role_id, driver_team_map,
+         reserve_driver_ids)
+
+    ``reserve_driver_ids`` contains the user IDs of drivers currently seated in the
+    reserve team.  They appear in ``division_driver_ids`` and ``driver_team_map`` but
+    must be treated differently during submission validation.
     """
     div_teams = await bot.team_service.get_division_teams(division_id)
     teams_with_roles = await bot.team_service.get_teams_with_roles(server_id)
@@ -722,6 +783,7 @@ async def _build_division_validation_data(
     team_role_ids: set[int] = set()
     reserve_team_role_id: int | None = None
     driver_team_map: dict[int, int] = {}
+    reserve_driver_ids: set[int] = set()
 
     for team in div_teams:
         role_id = name_to_role.get(team["name"])
@@ -737,8 +799,10 @@ async def _build_division_validation_data(
                 uid = int(uid_str)
                 division_driver_ids.add(uid)
                 driver_team_map[uid] = role_id
+                if team["is_reserve"]:
+                    reserve_driver_ids.add(uid)
 
-    return division_driver_ids, team_role_ids, reserve_team_role_id, driver_team_map
+    return division_driver_ids, team_role_ids, reserve_team_role_id, driver_team_map, reserve_driver_ids
 
 
 def _make_slug(name: str) -> str:
@@ -746,6 +810,117 @@ def _make_slug(name: str) -> str:
     slug = name.lower().replace(" ", "-")
     slug = re.sub(r"[^a-z0-9-]", "", slug)
     return slug[:24]  # keep channel name short
+
+
+# ---------------------------------------------------------------------------
+# Points computation — applied after save_session_result
+# ---------------------------------------------------------------------------
+
+async def _apply_points_from_config(
+    db_path: str,
+    session_result_id: int,
+    season_id: int,
+    config_name: str,
+    session_type: SessionType,
+) -> None:
+    """Load season config entries, compute points for each driver row, and UPDATE the DB.
+
+    This is called after save_session_result so that driver_session_results.points_awarded
+    and fastest_lap_bonus are populated from the chosen points configuration.
+    """
+    from services.standings_service import compute_points_for_session  # lazy import
+
+    async with get_connection(db_path) as db:
+        # Load config entries for (season, config, session_type)
+        entries_cursor = await db.execute(
+            "SELECT position, points FROM season_points_entries "
+            "WHERE season_id = ? AND config_name = ? AND session_type = ? "
+            "ORDER BY position",
+            (season_id, config_name, session_type.value),
+        )
+        entry_rows = await entries_cursor.fetchall()
+
+        # Load FL config
+        fl_cursor = await db.execute(
+            "SELECT fl_points, fl_position_limit FROM season_points_fl "
+            "WHERE season_id = ? AND config_name = ? AND session_type = ?",
+            (season_id, config_name, session_type.value),
+        )
+        fl_row = await fl_cursor.fetchone()
+
+        # Load driver result rows for this session
+        dsr_cursor = await db.execute(
+            "SELECT id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, fastest_lap "
+            "FROM driver_session_results "
+            "WHERE session_result_id = ? AND is_superseded = 0",
+            (session_result_id,),
+        )
+        dsr_rows = await dsr_cursor.fetchall()
+
+    if not entry_rows and fl_row is None:
+        # No config data — nothing to compute (0 points stays as-is)
+        return
+
+    config_entries = [
+        PointsConfigEntry(
+            id=0,
+            config_id=0,
+            session_type=session_type,
+            position=r["position"],
+            points=r["points"],
+        )
+        for r in entry_rows
+    ]
+
+    fl_config: PointsConfigFastestLap | None = None
+    if fl_row is not None:
+        fl_config = PointsConfigFastestLap(
+            id=0,
+            config_id=0,
+            session_type=session_type,
+            fl_points=fl_row["fl_points"],
+            fl_position_limit=fl_row["fl_position_limit"],
+        )
+
+    driver_rows = [
+        DriverSessionResult(
+            id=r["id"],
+            session_result_id=session_result_id,
+            driver_user_id=r["driver_user_id"],
+            team_role_id=r["team_role_id"],
+            finishing_position=r["finishing_position"],
+            outcome=OutcomeModifier(r["outcome"]),
+            tyre=None,
+            best_lap=None,
+            gap=None,
+            total_time=None,
+            fastest_lap=r["fastest_lap"],
+            time_penalties=None,
+            post_steward_total_time=None,
+            post_race_time_penalties=None,
+            points_awarded=0,
+            fastest_lap_bonus=0,
+            is_superseded=False,
+        )
+        for r in dsr_rows
+    ]
+
+    # Mutates driver_rows in-place with computed points_awarded / fastest_lap_bonus
+    compute_points_for_session(driver_rows, config_entries, fl_config, session_type)
+
+    # Persist the computed values
+    async with get_connection(db_path) as db:
+        for row in driver_rows:
+            await db.execute(
+                "UPDATE driver_session_results "
+                "SET points_awarded = ?, fastest_lap_bonus = ? "
+                "WHERE id = ?",
+                (row.points_awarded, row.fastest_lap_bonus, row.id),
+            )
+        await db.commit()
+
+
 
 
 def _row_dict_from_qualifying(row: ParsedQualifyingRow) -> dict:
@@ -885,6 +1060,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             team_role_ids,
             reserve_team_role_id,
             driver_team_map,
+            reserve_driver_ids,
         ) = await _build_division_validation_data(division_id, server_id, bot)
     except Exception:
         log.exception(
@@ -896,10 +1072,25 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # ------------------------------------------------------------------
     # 5. Create submission channel
     # ------------------------------------------------------------------
-    slug = _make_slug(division_name)
+    # Look up tier-2 admin role and bot-command channel for channel setup
+    server_cfg = await bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
+    admin_role: discord.Role | None = None
+    bot_cmd_channel_id: int | None = None
+    if server_cfg is not None:
+        bot_cmd_channel_id = server_cfg.interaction_channel_id
+        if server_cfg.interaction_role_id:
+            admin_role = guild.get_role(server_cfg.interaction_role_id)
+
     try:
         sub_channel = await create_submission_channel(
-            guild, results_channel, slug, round_number, round_id, db_path
+            guild,
+            division_name,
+            season_number,
+            round_number,
+            round_id,
+            db_path,
+            bot_cmd_channel_id=bot_cmd_channel_id,
+            admin_role=admin_role,
         )
     except discord.HTTPException:
         log.exception(
@@ -912,7 +1103,10 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # 6. Opening message
     # ------------------------------------------------------------------
     sessions = get_sessions_for_format(round_format)
-    session_list_str = ", ".join(_SESSION_LABELS[s] for s in sessions)
+    is_sprint = round_format is RoundFormat.SPRINT
+    session_list_str = ", ".join(
+        results_formatter.format_session_label(s, is_sprint=is_sprint) for s in sessions
+    )
     mention_str = f" <@&{mention_role_id}>" if mention_role_id else ""
     await sub_channel.send(
         f"✅ Results submission open for **Round {round_number}** ({division_name})."
@@ -931,7 +1125,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # 8. Per-session collection loop
     # ------------------------------------------------------------------
     for session_type in sessions:
-        label = _SESSION_LABELS[session_type]
+        label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
 
         if session_type.is_qualifying:
             format_hint = "Format: `Position, @Driver, @TeamRole, Tyre, BestLap, Gap`"
@@ -976,6 +1170,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 team_role_ids,
                 reserve_team_role_id,
                 driver_team_map,
+                reserve_driver_ids,
             )
 
             if isinstance(result[0] if result else None, str):
@@ -1056,6 +1251,21 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 submitted_by=msg.author.id,
                 driver_rows=driver_rows_data,
             )
+
+            # Compute and store points_awarded / fastest_lap_bonus from the chosen config
+            if selected_config is not None:
+                # Reload the session_result_id we just inserted
+                async with get_connection(db_path) as _db:
+                    _cur = await _db.execute(
+                        "SELECT id FROM session_results WHERE round_id = ? AND session_type = ?",
+                        (round_id, session_type.value),
+                    )
+                    _sr = await _cur.fetchone()
+                if _sr is not None:
+                    await _apply_points_from_config(
+                        db_path, _sr["id"], season_id, selected_config, session_type
+                    )
+
             await sub_channel.send(f"✅ **{label}** results saved.")
             break  # advance to next session
 

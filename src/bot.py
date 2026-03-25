@@ -129,6 +129,11 @@ async def main() -> None:
 
         bot.scheduler_service.register_season_end_callback(_season_end_cb)
 
+        # Close any submission channels that were left open by a previous run.
+        # Their wait_for loops died with the process, so we reset them here
+        # so /test-mode advance can re-trigger submission.
+        await _recover_orphaned_submission_channels(bot)
+
         # Recover any missed phases from before bot restart
         await _recover_missed_phases(bot)
 
@@ -284,6 +289,64 @@ async def _recover_season_end_jobs(bot: commands.Bot) -> None:
     for server_id in server_ids:
         log.info("Startup recovery: checking season-end status for server %s", server_id)
         await check_and_schedule_season_end(server_id, bot)
+
+
+async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
+    """Close any submission channels left open by a previous bot process.
+
+    When the bot restarts, any in-progress wait_for submission loops are
+    killed mid-flight.  The DB row remains closed=0 and the Discord channel
+    still exists, but nothing is listening.  We clean them up here so that
+    /test-mode advance (and the advance guard in test_mode_cog) can
+    re-trigger submission normally.
+    """
+    from db.database import get_connection
+
+    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+        cursor = await db.execute(
+            """
+            SELECT rsc.round_id, rsc.channel_id, s.server_id
+            FROM round_submission_channels rsc
+            JOIN rounds r    ON r.id  = rsc.round_id
+            JOIN divisions d ON d.id  = r.division_id
+            JOIN seasons s   ON s.id  = d.season_id
+            WHERE rsc.closed = 0
+            """
+        )
+        orphans = await cursor.fetchall()
+
+    for row in orphans:
+        round_id: int = row["round_id"]
+        channel_id: int = row["channel_id"]
+        server_id: int = row["server_id"]
+
+        # DELETE the row entirely (not mark closed) so that create_submission_channel
+        # can INSERT a fresh row for this round_id when re-triggered.
+        async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+            await db.execute(
+                "DELETE FROM round_submission_channels WHERE round_id = ?",
+                (round_id,),
+            )
+            await db.commit()
+
+        guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
+        if guild is None:
+            log.warning(
+                "Recovery: guild %s not in cache, removed orphaned submission row for round %s",
+                server_id, round_id,
+            )
+            continue
+
+        log.info(
+            "Recovery: deleting orphaned submission channel %s for round %s",
+            channel_id, round_id,
+        )
+        channel = guild.get_channel(channel_id)
+        if channel is not None:
+            try:
+                await channel.delete(reason="Orphaned submission channel cleanup on restart")
+            except (discord.NotFound, discord.HTTPException):
+                pass
 
 
 async def _recover_pending_setups(bot: commands.Bot) -> None:
