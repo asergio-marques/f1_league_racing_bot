@@ -35,7 +35,7 @@ class TeamCog(commands.Cog):
     )
     @app_commands.describe(
         name="Name of the new team (max 50 chars).",
-        role="Discord role to associate with this team (optional).",
+        role="Discord role to associate with this team.",
     )
     @channel_guard
     @admin_only
@@ -43,7 +43,7 @@ class TeamCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         name: str,
-        role: discord.Role | None = None,
+        role: discord.Role,
     ) -> None:
         try:
             await self.bot.team_service.add_default_team(  # type: ignore[attr-defined]
@@ -53,11 +53,10 @@ class TeamCog(commands.Cog):
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
             return
 
-        if role is not None:
-            await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
-                interaction.guild_id, name, role.id,
-                actor_id=interaction.user.id, actor_name=str(interaction.user),
-            )
+        await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
+            interaction.guild_id, name, role.id,
+            actor_id=interaction.user.id, actor_name=str(interaction.user),
+        )
 
         setup_season = await self.bot.season_service.get_setup_season(  # type: ignore[attr-defined]
             interaction.guild_id
@@ -70,21 +69,12 @@ class TeamCog(commands.Cog):
             except ValueError as exc:
                 await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
                 return
-
-        if setup_season is not None and role is not None:
             msg = (
                 f'✅ Team "{name}" added with role {role.mention} and inserted into all '
                 f"{div_count} division(s) of Season {setup_season.season_number}."
             )
-        elif setup_season is not None:
-            msg = (
-                f'✅ Team "{name}" added and inserted into all '
-                f"{div_count} division(s) of Season {setup_season.season_number}."
-            )
-        elif role is not None:
-            msg = f'✅ Team "{name}" added with role {role.mention}.'
         else:
-            msg = f'✅ Team "{name}" added.'
+            msg = f'✅ Team "{name}" added with role {role.mention}.'
 
         await interaction.response.send_message(msg, ephemeral=True)
 

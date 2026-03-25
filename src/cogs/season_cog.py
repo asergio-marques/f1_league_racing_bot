@@ -179,6 +179,19 @@ class SeasonCog(commands.Cog):
 
         # Load from DB to get tier and team roster data
         if cfg.season_id != 0:
+            # Pre-fetch role configs so we can warn about teams missing a role
+            teams_with_roles = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
+                interaction.guild_id
+            )
+            roleless = {t["name"] for t in teams_with_roles if not t["role_id"] and not t["is_reserve"]}
+            reserve_has_role = any(t["is_reserve"] and t["role_id"] for t in teams_with_roles)
+            if not reserve_has_role:
+                lines.append(
+                    "⚠️ **Reserve team has no role assigned** — use `/team reserve-role` "
+                    "before approving. Drivers on the reserve team will fail result validation."
+                )
+                lines.append("")
+
             db_divisions = await self.bot.season_service.get_divisions(cfg.season_id)
             for div in db_divisions:
                 if not div.name:
@@ -199,6 +212,13 @@ class SeasonCog(commands.Cog):
                 teams = await self.bot.team_service.get_division_teams(div.id)
                 if teams:
                     lines.append("  **Teams:** " + ", ".join(t["name"] for t in teams))
+                    missing_roles = [t["name"] for t in teams if t["name"] in roleless]
+                    if missing_roles:
+                        lines.append(
+                            "  ⚠️ **No role assigned:** "
+                            + ", ".join(f'"{n}"' for n in missing_roles)
+                            + " — result submission will reject drivers in these teams."
+                        )
                 lines.append("")
         else:
             for div in cfg.divisions:
