@@ -59,12 +59,36 @@ class TestModeCog(commands.Cog):
             self.bot.db_path,  # type: ignore[attr-defined]
         )
         if new_state:
+            # Auto-seed default point configs for the current season (SETUP or ACTIVE)
+            await interaction.response.defer(ephemeral=True)
+            from db.database import get_connection
+            from services.test_roster_service import ensure_test_configs
+
+            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                season_cursor = await db.execute(
+                    "SELECT id FROM seasons WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE')",
+                    (interaction.guild_id,),
+                )
+                season_row = await season_cursor.fetchone()
+
+            config_note = ""
+            if season_row is not None:
+                new_configs = await ensure_test_configs(
+                    server_id=interaction.guild_id,
+                    season_id=season_row["id"],
+                    db_path=self.bot.db_path,  # type: ignore[attr-defined]
+                )
+                if new_configs:
+                    config_note = (
+                        f"\n📌 Added default point configs: **{', '.join(new_configs)}**"
+                    )
+
             msg = (
                 "✅ Test mode **enabled**. "
                 "Use `/test-mode advance` to step through phases, "
-                "or `/test-mode review` to inspect season status."
+                f"or `/test-mode review` to inspect season status.{config_note}"
             )
-            await interaction.response.send_message(msg, ephemeral=True)
+            await interaction.followup.send(msg, ephemeral=True)
         else:
             # Defer so the flush (multiple Discord API calls) has time to complete
             await interaction.response.defer(ephemeral=True)
@@ -92,7 +116,7 @@ class TestModeCog(commands.Cog):
 
     @test_mode.command(
         name="advance",
-        description="Execute the next pending weather phase immediately.",
+        description="Execute the next pending scheduled event (weather phase or result submission) immediately.",
     )
     @admin_only
     async def advance(self, interaction: discord.Interaction) -> None:
@@ -113,6 +137,7 @@ class TestModeCog(commands.Cog):
         entry = await get_next_pending_phase(
             interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]
+            self.bot.scheduler_service,  # type: ignore[attr-defined]
         )
 
         if entry is None:
@@ -177,6 +202,9 @@ class TestModeCog(commands.Cog):
                 )
                 return
             # Mark notice as sent so this round is excluded from future advance calls
+            # Cancel the scheduler job so it doesn't double-fire later
+            if entry["job_id"] is not None:
+                self.bot.scheduler_service.cancel_job(entry["job_id"])  # type: ignore[attr-defined]
             async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
                 await db.execute(
                     "UPDATE rounds SET phase1_done = 1 WHERE id = ?",
@@ -191,9 +219,46 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        # ── Normal phase dispatch ───────────────────────────────────────────────
+        # ── Result submission (phase_number=4) ───────────────────────────────────
+        if phase_number == 4:
+            import asyncio
+            from services.result_submission_service import (
+                run_result_submission_job,
+                is_submission_open,
+            )
+
+            # Guard: if a submission channel is already open, the admin must complete
+            # that submission before advancing to the next round.
+            if await is_submission_open(self.bot.db_path, entry["round_id"]):  # type: ignore[attr-defined]
+                await interaction.followup.send(
+                    f"⏸️ Result submission for "
+                    f"**{entry['division_name']}** — **Round {entry['round_number']}** "
+                    f"is already in progress. Please submit results in the submission "
+                    f"channel before advancing.",
+                    ephemeral=True,
+                )
+                return
+
+            # Always cancel any results_r job for this round — handles the case where
+            # a real future-dated results_r job exists (e.g. weather-enabled season)
+            # so it doesn't double-fire after advance has already triggered submission.
+            self.bot.scheduler_service.cancel_job(f"results_r{entry['round_id']}")  # type: ignore[attr-defined]
+            await interaction.followup.send(
+                f"⏩ Opening result submission wizard for "
+                f"**{entry['division_name']}** — **Round {entry['round_number']}** "
+                f"(**{entry['track_name']}**). A submission channel will appear shortly.",
+                ephemeral=True,
+            )
+            asyncio.create_task(run_result_submission_job(entry["round_id"], self.bot))
+            return
+
+        # ── Normal weather phase dispatch ───────────────────────────────────────
         phase_runners = {1: run_phase1, 2: run_phase2, 3: run_phase3}
         runner = phase_runners[phase_number]
+
+        # Cancel the scheduler job before running so it doesn't double-fire later
+        if entry["job_id"] is not None:
+            self.bot.scheduler_service.cancel_job(entry["job_id"])  # type: ignore[attr-defined]
 
         try:
             await runner(entry["round_id"], self.bot)
@@ -214,16 +279,16 @@ class TestModeCog(commands.Cog):
         next_entry = await get_next_pending_phase(
             interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]
+            self.bot.scheduler_service,  # type: ignore[attr-defined]
         )
 
         if next_entry is None and phase_number == 3:
-            # This was the last phase of the last round — end the season now
+            # This was the last weather phase of the last round — end the season now
             from services.season_end_service import execute_season_end
             season = await self.bot.season_service.get_active_season(  # type: ignore[attr-defined]
                 interaction.guild_id
             )
             if season is not None:
-                # Cancel any pending scheduled job (executing immediately)
                 self.bot.scheduler_service.cancel_season_end(  # type: ignore[attr-defined]
                     interaction.guild_id
                 )
@@ -489,168 +554,4 @@ class TestModeCog(commands.Cog):
                 f"✅ Removed **{result}** fake driver(s) from **{division}**.", ephemeral=True
             )
 
-    # ------------------------------------------------------------------
-    # /test-mode submit-results
-    # ------------------------------------------------------------------
-
-    @test_mode.command(
-        name="submit-results",
-        description="Open the result submission wizard for a round (test mode).",
-    )
-    @app_commands.describe(
-        division="Name of the division.",
-        round_number="Round number to submit results for (defaults to earliest pending round).",
-    )
-    @admin_only
-    async def submit_results(
-        self,
-        interaction: discord.Interaction,
-        division: str,
-        round_number: int | None = None,
-    ) -> None:
-        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
-            interaction.guild_id
-        )
-        if config is None or not config.test_mode_active:
-            await interaction.response.send_message(
-                "ℹ️ Test mode is not active. Use `/test-mode toggle` to enable it first.",
-                ephemeral=True,
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        from db.database import get_connection
-        from services.test_roster_service import (
-            ensure_test_configs,
-            list_test_drivers,
-        )
-
-        # 1. Resolve active season
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
-            season_cursor = await db.execute(
-                "SELECT id FROM seasons WHERE server_id = ? AND status = 'ACTIVE'",
-                (interaction.guild_id,),
-            )
-            season_row = await season_cursor.fetchone()
-
-        if season_row is None:
-            await interaction.followup.send("⛔ No active season found.", ephemeral=True)
-            return
-
-        season_id: int = season_row["id"]
-
-        # 2. Resolve division ID
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
-            div_cursor = await db.execute(
-                """
-                SELECT d.id
-                FROM divisions d
-                WHERE d.season_id = ?
-                  AND LOWER(d.name) = LOWER(?)
-                  AND d.status != 'CANCELLED'
-                """,
-                (season_id, division),
-            )
-            div_row = await div_cursor.fetchone()
-
-        if div_row is None:
-            await interaction.followup.send(
-                f"⛔ Division **{division}** not found in the active season.", ephemeral=True
-            )
-            return
-
-        division_id: int = div_row["id"]
-
-        # 3. Find the target round
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
-            if round_number is not None:
-                round_cursor = await db.execute(
-                    """
-                    SELECT r.id FROM rounds r
-                    WHERE r.division_id = ?
-                      AND r.round_number = ?
-                      AND r.status != 'CANCELLED'
-                    """,
-                    (division_id, round_number),
-                )
-            else:
-                # Earliest round with no ACTIVE session_results yet
-                round_cursor = await db.execute(
-                    """
-                    SELECT r.id FROM rounds r
-                    WHERE r.division_id = ?
-                      AND r.status != 'CANCELLED'
-                      AND NOT EXISTS (
-                          SELECT 1 FROM session_results sr
-                          WHERE sr.round_id = r.id AND sr.status = 'ACTIVE'
-                      )
-                    ORDER BY r.round_number
-                    LIMIT 1
-                    """,
-                    (division_id,),
-                )
-            round_row = await round_cursor.fetchone()
-
-        if round_row is None:
-            msg = (
-                f"⛔ Round {round_number} not found in **{division}**."
-                if round_number is not None
-                else f"ℹ️ No pending rounds found in **{division}** — all rounds have results already."
-            )
-            await interaction.followup.send(msg, ephemeral=True)
-            return
-
-        round_id: int = round_row["id"]
-
-        # 4. Ensure "Standard" and "Half Points" configs exist and are attached
-        new_configs = await ensure_test_configs(
-            server_id=interaction.guild_id,
-            season_id=season_id,
-            db_path=self.bot.db_path,  # type: ignore[attr-defined]
-        )
-
-        # 5. Post cheat sheet of fake drivers in this division
-        fake_drivers = await list_test_drivers(
-            server_id=interaction.guild_id,
-            division_name=division,
-            db_path=self.bot.db_path,  # type: ignore[attr-defined]
-        )
-
-        cheat_lines: list[str] = []
-        if isinstance(fake_drivers, list) and fake_drivers:
-            cheat_lines.append(f"**Fake Driver Roster — {division}**")
-            cheat_lines.append(f"{'Name':<20} {'Mention':<30} Team")
-            cheat_lines.append("-" * 65)
-            for driver in fake_drivers:
-                mention = f"<@{driver['discord_user_id']}>"
-                cheat_lines.append(
-                    f"{driver['display_name']:<20} {mention:<30} {driver['team_name']}"
-                )
-
-        config_note = (
-            f"\n📌 Created configs: **{', '.join(new_configs)}**" if new_configs else ""
-        )
-        cheat_block = (
-            "\n```\n" + "\n".join(cheat_lines) + "\n```" if cheat_lines else ""
-        )
-
-        await interaction.followup.send(
-            f"⏩ Opening result submission wizard for **{division}** "
-            f"(round {round_number or '?'})…{config_note}{cheat_block}\n"
-            "A submission channel will appear shortly.",
-            ephemeral=True,
-        )
-
-        log.info(
-            "Test mode submit-results: division=%r round_id=%d server=%d",
-            division,
-            round_id,
-            interaction.guild_id,
-        )
-
-        # 6. Launch the wizard as a background task so the interaction can return
-        import asyncio
-        from services.result_submission_service import run_result_submission_job
-
-        asyncio.create_task(run_result_submission_job(round_id, self.bot))
+    # (submit-results removed — use /test-mode advance which now handles result submission)

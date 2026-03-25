@@ -140,13 +140,47 @@ class SeasonService:
                 season_number = (row[0] if row else 0) + 1
 
             if existing_season_id != 0:
-                # Cascade-delete the old SETUP season manually (no ON DELETE CASCADE).
-                # Clean up team_instances/team_seats first to avoid orphaned rows.
+                # Save division_results_config keyed by division name so we can
+                # restore channel assignments after divisions are re-created with new IDs.
                 cursor = await db.execute(
                     "SELECT id FROM divisions WHERE season_id = ?",
                     (existing_season_id,),
                 )
                 div_rows = await cursor.fetchall()
+
+                saved_channel_cfg: dict[int, dict] = {}  # div_id → config row
+                saved_div_names: dict[int, str] = {}     # div_id → name
+                for div_row in div_rows:
+                    old_div_id = div_row[0]
+                    cursor2 = await db.execute(
+                        "SELECT name FROM divisions WHERE id = ?", (old_div_id,)
+                    )
+                    name_row = await cursor2.fetchone()
+                    if name_row:
+                        saved_div_names[old_div_id] = name_row[0]
+                    cursor2 = await db.execute(
+                        "SELECT results_channel_id, standings_channel_id, reserves_in_standings "
+                        "FROM division_results_config WHERE division_id = ?",
+                        (old_div_id,),
+                    )
+                    cfg_row = await cursor2.fetchone()
+                    if cfg_row:
+                        saved_channel_cfg[old_div_id] = {
+                            "results_channel_id": cfg_row[0],
+                            "standings_channel_id": cfg_row[1],
+                            "reserves_in_standings": cfg_row[2],
+                        }
+
+                # name → channel config (for lookup when new division IDs are known)
+                channels_by_name: dict[str, dict] = {
+                    saved_div_names[did]: cfg
+                    for did, cfg in saved_channel_cfg.items()
+                    if did in saved_div_names
+                }
+
+                # Cascade-delete the old SETUP season manually (no ON DELETE CASCADE on
+                # seasons/divisions, though division_results_config does have it).
+                # Clean up team_instances/team_seats first to avoid orphaned rows.
                 for div_row in div_rows:
                     cursor2 = await db.execute(
                         "SELECT id FROM team_instances WHERE division_id = ?",
@@ -170,6 +204,8 @@ class SeasonService:
                 await db.execute(
                     "DELETE FROM seasons WHERE id = ?", (existing_season_id,)
                 )
+            else:
+                channels_by_name = {}
 
             cursor = await db.execute(
                 "INSERT INTO seasons (server_id, start_date, status, season_number) "
@@ -192,6 +228,24 @@ class SeasonService:
                     ),
                 )
                 div_db_id: int = cursor.lastrowid  # type: ignore[assignment]
+
+                # Restore any previously-assigned results/standings channels for
+                # this division (by name), which would otherwise be lost because
+                # save_pending_snapshot deletes and re-creates division rows.
+                saved = channels_by_name.get(div_data["name"])
+                if saved and (saved["results_channel_id"] or saved["standings_channel_id"]):
+                    await db.execute(
+                        "INSERT INTO division_results_config "
+                        "(division_id, results_channel_id, standings_channel_id, reserves_in_standings) "
+                        "VALUES (?, ?, ?, ?)",
+                        (
+                            div_db_id,
+                            saved["results_channel_id"],
+                            saved["standings_channel_id"],
+                            saved["reserves_in_standings"] if saved["reserves_in_standings"] is not None else 1,
+                        ),
+                    )
+
                 for r in div_data["rounds"]:
                     await db.execute(
                         "INSERT INTO rounds "
@@ -372,15 +426,69 @@ class SeasonService:
                 )
                 round_ids = [r[0] for r in await cursor.fetchall()]
 
+            # ── Results module: round-level children ────────────────────────
             if round_ids:
                 ph = ",".join("?" * len(round_ids))
+                await db.execute(f"DELETE FROM round_submission_channels WHERE round_id IN ({ph})", round_ids)
+                await db.execute(f"DELETE FROM driver_standings_snapshots WHERE round_id IN ({ph})", round_ids)
+                await db.execute(f"DELETE FROM team_standings_snapshots WHERE round_id IN ({ph})", round_ids)
+                # driver_session_results has no direct FK to rounds — delete via session_results
+                cursor = await db.execute(
+                    f"SELECT id FROM session_results WHERE round_id IN ({ph})", round_ids
+                )
+                session_result_ids = [r[0] for r in await cursor.fetchall()]
+                if session_result_ids:
+                    sph = ",".join("?" * len(session_result_ids))
+                    await db.execute(f"DELETE FROM driver_session_results WHERE session_result_id IN ({sph})", session_result_ids)
+                await db.execute(f"DELETE FROM session_results WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM forecast_messages WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM phase_results WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM sessions WHERE round_id IN ({ph})", round_ids)
 
+            # ── Results module: season-level children ───────────────────────
+            await db.execute("DELETE FROM season_modification_fl WHERE season_id = ?", (season_id,))
+            await db.execute("DELETE FROM season_modification_entries WHERE season_id = ?", (season_id,))
+            await db.execute("DELETE FROM season_amendment_state WHERE season_id = ?", (season_id,))
+            await db.execute("DELETE FROM season_points_fl WHERE season_id = ?", (season_id,))
+            await db.execute("DELETE FROM season_points_entries WHERE season_id = ?", (season_id,))
+            await db.execute("DELETE FROM season_points_links WHERE season_id = ?", (season_id,))
+
+            # ── Driver/team children ────────────────────────────────────────
             if division_ids:
                 ph = ",".join("?" * len(division_ids))
+
+                # Collect fake (test-mode) driver profile IDs so we can delete
+                # them after their FK references are cleared.
+                cursor = await db.execute(
+                    f"""
+                    SELECT DISTINCT dp.id
+                    FROM driver_profiles dp
+                    JOIN driver_season_assignments dsa ON dsa.driver_profile_id = dp.id
+                    WHERE dp.is_test_driver = 1
+                      AND dsa.division_id IN ({ph})
+                    """,
+                    division_ids,
+                )
+                test_profile_ids = [r[0] for r in await cursor.fetchall()]
+
+                await db.execute(f"DELETE FROM driver_season_assignments WHERE division_id IN ({ph})", division_ids)
+                await db.execute(f"DELETE FROM division_results_config WHERE division_id IN ({ph})", division_ids)
+
+                # team_seats → team_instances → divisions
+                cursor = await db.execute(
+                    f"SELECT id FROM team_instances WHERE division_id IN ({ph})", division_ids
+                )
+                team_instance_ids = [r[0] for r in await cursor.fetchall()]
+                if team_instance_ids:
+                    tiph = ",".join("?" * len(team_instance_ids))
+                    await db.execute(f"DELETE FROM team_seats WHERE team_instance_id IN ({tiph})", team_instance_ids)
+                await db.execute(f"DELETE FROM team_instances WHERE division_id IN ({ph})", division_ids)
                 await db.execute(f"DELETE FROM rounds WHERE division_id IN ({ph})", division_ids)
+
+                # Remove orphaned fake driver profiles (test-mode roster)
+                if test_profile_ids:
+                    tph = ",".join("?" * len(test_profile_ids))
+                    await db.execute(f"DELETE FROM driver_profiles WHERE id IN ({tph})", test_profile_ids)
 
             await db.execute("DELETE FROM divisions WHERE season_id = ?", (season_id,))
             await db.execute("DELETE FROM seasons WHERE id = ?", (season_id,))

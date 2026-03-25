@@ -126,7 +126,7 @@ async def add_test_driver(
     async with get_connection(db_path) as db:
         # Find the team instance in this division (case-insensitive name match)
         cursor = await db.execute(
-            "SELECT id, max_seats FROM team_instances "
+            "SELECT id, max_seats, is_reserve FROM team_instances "
             "WHERE division_id = ? AND LOWER(name) = LOWER(?)",
             (division_id, team_name),
         )
@@ -135,6 +135,7 @@ async def add_test_driver(
             return f"Team '{team_name}' not found in division '{division_name}'."
 
         team_instance_id: int = team_row["id"]
+        is_reserve: bool = bool(team_row["is_reserve"])
 
         # Find a free seat (driver_profile_id IS NULL)
         seat_cursor = await db.execute(
@@ -146,9 +147,23 @@ async def add_test_driver(
         )
         seat_row = await seat_cursor.fetchone()
         if seat_row is None:
-            return f"No free seats available in team '{team_name}'."
-
-        seat_id: int = seat_row["id"]
+            if not is_reserve:
+                return f"No free seats available in team '{team_name}'."
+            # Reserve team has unlimited seats — create a new one
+            max_cursor = await db.execute(
+                "SELECT MAX(seat_number) FROM team_seats WHERE team_instance_id = ?",
+                (team_instance_id,),
+            )
+            max_row = await max_cursor.fetchone()
+            next_seat_number = (max_row[0] or 0) + 1
+            new_seat_cursor = await db.execute(
+                "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+                "VALUES (?, ?, NULL)",
+                (team_instance_id, next_seat_number),
+            )
+            seat_id = new_seat_cursor.lastrowid  # type: ignore[assignment]
+        else:
+            seat_id: int = seat_row["id"]
 
         # Generate synthetic ID
         synthetic_uid = await _next_synthetic_id(db_path)
@@ -220,7 +235,7 @@ async def list_test_drivers(
             JOIN team_instances ti ON ti.id = ts.team_instance_id
             WHERE dp.is_test_driver = 1
               AND ti.division_id = ?
-            ORDER BY ti.name, dp.id
+            ORDER BY ti.is_reserve ASC, ti.name, dp.id
             """,
             (division_id,),
         )
