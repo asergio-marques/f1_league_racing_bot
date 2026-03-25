@@ -30,18 +30,17 @@ _SYNTHETIC_ID_BASE = 9_000_000_000_000_000_000
 _STANDARD_NAME = "Standard"
 _HALF_POINTS_NAME = "Half Points"
 
-# Points per position (1-indexed), applied to all four session types.
-_STANDARD_POINTS = {1: 25, 2: 18, 3: 15, 4: 12, 5: 10, 6: 8, 7: 6, 8: 4, 9: 2, 10: 1}
-_HALF_POINTS = {1: 12, 2: 9, 3: 7, 4: 6, 5: 5, 6: 4, 7: 3, 8: 2, 9: 1, 10: 0}
+# Points per position (1-indexed) per session type.
+_QUALIFYING_POINTS = {1: 3, 2: 2, 3: 1}
 
-# FL bonuses apply to race sessions only (spec §FL).
-_RACE_SESSION_TYPES = (SessionType.SPRINT_RACE, SessionType.FEATURE_RACE)
-_ALL_SESSION_TYPES = (
-    SessionType.SPRINT_QUALIFYING,
-    SessionType.SPRINT_RACE,
-    SessionType.FEATURE_QUALIFYING,
-    SessionType.FEATURE_RACE,
-)
+_SPRINT_RACE_STANDARD = {1: 10, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1}
+_SPRINT_RACE_HALF = {1: 5, 2: 4, 3: 3, 4: 2, 5: 1}
+
+_FEATURE_RACE_STANDARD = {
+    1: 30, 2: 27, 3: 24, 4: 21, 5: 18, 6: 15, 7: 13, 8: 11,
+    9: 9, 10: 7, 11: 5, 12: 4, 13: 3, 14: 2, 15: 1,
+}
+_FEATURE_RACE_HALF = {1: 15, 2: 13, 3: 11, 4: 9, 5: 7, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1}
 
 
 # ─── Return types ────────────────────────────────────────────────────────────
@@ -360,16 +359,36 @@ async def ensure_test_configs(
     """
     created: list[str] = []
 
-    for config_name, pos_map, has_fl in [
-        (_STANDARD_NAME, _STANDARD_POINTS, True),
-        (_HALF_POINTS_NAME, _HALF_POINTS, False),
-    ]:
+    configs: list[tuple[str, dict[SessionType, dict[int, int]], dict[SessionType, tuple[int, int]]]] = [
+        (
+            _STANDARD_NAME,
+            {
+                SessionType.SPRINT_QUALIFYING: _QUALIFYING_POINTS,
+                SessionType.SPRINT_RACE: _SPRINT_RACE_STANDARD,
+                SessionType.FEATURE_QUALIFYING: _QUALIFYING_POINTS,
+                SessionType.FEATURE_RACE: _FEATURE_RACE_STANDARD,
+            },
+            {SessionType.FEATURE_RACE: (2, 15)},
+        ),
+        (
+            _HALF_POINTS_NAME,
+            {
+                SessionType.SPRINT_QUALIFYING: _QUALIFYING_POINTS,
+                SessionType.SPRINT_RACE: _SPRINT_RACE_HALF,
+                SessionType.FEATURE_QUALIFYING: _QUALIFYING_POINTS,
+                SessionType.FEATURE_RACE: _FEATURE_RACE_HALF,
+            },
+            {SessionType.FEATURE_RACE: (1, 10)},
+        ),
+    ]
+
+    for config_name, session_entries, fl_configs in configs:
         newly_created = await _ensure_single_config(
             server_id=server_id,
             season_id=season_id,
             config_name=config_name,
-            pos_map=pos_map,
-            has_fl=has_fl,
+            session_entries=session_entries,
+            fl_configs=fl_configs,
             db_path=db_path,
         )
         if newly_created:
@@ -382,12 +401,14 @@ async def _ensure_single_config(
     server_id: int,
     season_id: int,
     config_name: str,
-    pos_map: dict[int, int],
-    has_fl: bool,
+    session_entries: dict[SessionType, dict[int, int]],
+    fl_configs: dict[SessionType, tuple[int, int]],
     db_path: str,
 ) -> bool:
     """Create and attach *config_name* if it does not yet exist in the season.
 
+    *session_entries* maps each SessionType to its position→points dict.
+    *fl_configs* maps each SessionType that has an FL bonus to (fl_points, fl_position_limit).
     Returns True if the config was newly created, False if it already existed.
     """
     async with get_connection(db_path) as db:
@@ -413,8 +434,8 @@ async def _ensure_single_config(
             (season_id, config_name),
         )
 
-        # Write season_points_entries for all four session types
-        for session_type in _ALL_SESSION_TYPES:
+        # Write season_points_entries per session type
+        for session_type, pos_map in session_entries.items():
             for pos, points in pos_map.items():
                 await db.execute(
                     "INSERT OR REPLACE INTO season_points_entries "
@@ -423,15 +444,14 @@ async def _ensure_single_config(
                     (season_id, config_name, session_type.value, pos, points),
                 )
 
-        # Write season_points_fl (race sessions only, Standard config only)
-        if has_fl:
-            for session_type in _RACE_SESSION_TYPES:
-                await db.execute(
-                    "INSERT OR REPLACE INTO season_points_fl "
-                    "(season_id, config_name, session_type, fl_points, fl_position_limit) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (season_id, config_name, session_type.value, 1, 10),
-                )
+        # Write season_points_fl entries
+        for session_type, (fl_pts, fl_pos_limit) in fl_configs.items():
+            await db.execute(
+                "INSERT OR REPLACE INTO season_points_fl "
+                "(season_id, config_name, session_type, fl_points, fl_position_limit) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (season_id, config_name, session_type.value, fl_pts, fl_pos_limit),
+            )
 
         await db.commit()
 
