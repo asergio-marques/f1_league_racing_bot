@@ -226,10 +226,21 @@ class TestModeCog(commands.Cog):
                 run_result_submission_job,
                 is_submission_open,
             )
+            from services.test_mode_service import is_round_finalized
 
             # Guard: if a submission channel is already open, the admin must complete
             # that submission before advancing to the next round.
             if await is_submission_open(self.bot.db_path, entry["round_id"]):  # type: ignore[attr-defined]
+                # Check if we're in penalty-review state (results submitted but not finalized)
+                if not await is_round_finalized(self.bot.db_path, entry["round_id"]):  # type: ignore[attr-defined]
+                    await interaction.followup.send(
+                        f"⏸️ **{entry['division_name']}** — **Round {entry['round_number']}** "
+                        f"is awaiting penalty review approval. Please approve or dismiss the "
+                        f"penalties in the submission channel before advancing.",
+                        ephemeral=True,
+                    )
+                    return
+                # Finalized (shouldn't normally reach here, but handle gracefully)
                 await interaction.followup.send(
                     f"⏸️ Result submission for "
                     f"**{entry['division_name']}** — **Round {entry['round_number']}** "

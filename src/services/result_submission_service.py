@@ -156,6 +156,347 @@ async def is_submission_open(db_path: str, round_id: int) -> bool:
     return row is not None and row["closed"] == 0
 
 
+async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
+    """Return True if *channel_id* belongs to an open submission channel in
+    penalty-review state (all sessions submitted/cancelled, round not yet finalized).
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT rsc.round_id
+            FROM round_submission_channels rsc
+            JOIN rounds r ON r.id = rsc.round_id
+            WHERE rsc.channel_id = ?
+              AND rsc.closed = 0
+              AND rsc.in_penalty_review = 1
+              AND r.finalized = 0
+            """,
+            (channel_id,),
+        )
+        row = await cursor.fetchone()
+    return row is not None
+
+
+async def enter_penalty_state(
+    bot,
+    guild: discord.Guild,
+    round_id: int,
+    division_id: int,
+    sub_channel: discord.TextChannel,
+    *,
+    season_id: int | None = None,
+    skip_results_post: bool = False,
+) -> None:
+    """Transition the submission channel to post-round penalty-review state.
+
+    Steps performed:
+    1. (Unless *skip_results_post*) Compute standings, post interim results and
+       standings to the configured division channels.
+    2. Mark the submission channel row as ``in_penalty_review = 1`` in the DB.
+    3. Post a :class:`PenaltyReviewView` prompt to *sub_channel*.
+    4. Register the view with the bot for persistent interaction routing.
+
+    When called from T030 restart-recovery, pass ``skip_results_post=True``
+    (the results were already posted before the restart).
+    """
+    from services import standings_service, results_post_service  # lazy imports
+    from services.penalty_wizard import PenaltyReviewState, PenaltyReviewView, _render_prompt_content
+
+    db_path: str = bot.db_path  # type: ignore[attr-defined]
+
+    # ------------------------------------------------------------------
+    # Fetch round context
+    # ------------------------------------------------------------------
+    async with get_connection(db_path) as db:
+        rnd_cursor = await db.execute(
+            """
+            SELECT r.round_number, r.track_name, d.name AS division_name,
+                   d.season_id, drc.results_channel_id, drc.standings_channel_id,
+                   drc.reserves_in_standings
+            FROM rounds r
+            JOIN divisions d ON d.id = r.division_id
+            LEFT JOIN division_results_config drc ON drc.division_id = d.id
+            WHERE r.id = ?
+            """,
+            (round_id,),
+        )
+        ctx = await rnd_cursor.fetchone()
+
+    if ctx is None:
+        log.error("enter_penalty_state: round %s not found", round_id)
+        return
+
+    round_number: int = ctx["round_number"]
+    track_name: str = ctx["track_name"] or "Unknown"
+    division_name: str = ctx["division_name"]
+    if season_id is None:
+        season_id = ctx["season_id"]
+
+    results_ch_id: int | None = ctx["results_channel_id"]
+    standings_ch_id: int | None = ctx["standings_channel_id"]
+    show_reserves: bool = bool(ctx["reserves_in_standings"]) if ctx["reserves_in_standings"] is not None else True
+
+    # ------------------------------------------------------------------
+    # Step 1: Compute and post interim results + standings
+    # ------------------------------------------------------------------
+    if not skip_results_post:
+        try:
+            await standings_service.compute_and_persist_round(db_path, round_id, division_id)
+
+            if results_ch_id:
+                rc = guild.get_channel(results_ch_id)
+                if rc:
+                    await results_post_service.post_round_results(
+                        db_path, round_id, division_id, rc, guild
+                    )
+
+            if standings_ch_id:
+                sc = guild.get_channel(standings_ch_id)
+                if sc:
+                    from services.standings_service import (
+                        compute_driver_standings,
+                        compute_team_standings,
+                    )
+                    driver_snaps = await compute_driver_standings(db_path, division_id, round_id)
+                    team_snaps = await compute_team_standings(db_path, division_id, round_id)
+                    await results_post_service.post_standings(
+                        db_path, division_id, round_id, round_number, track_name,
+                        sc, driver_snaps, team_snaps, guild, show_reserves,
+                    )
+        except Exception:
+            log.exception(
+                "enter_penalty_state: error posting interim results for round %s", round_id
+            )
+
+    # ------------------------------------------------------------------
+    # Step 2: Query non-cancelled session types for PenaltyReviewState
+    # ------------------------------------------------------------------
+    async with get_connection(db_path) as db:
+        sr_cursor = await db.execute(
+            "SELECT session_type FROM session_results WHERE round_id = ? AND status = 'ACTIVE'",
+            (round_id,),
+        )
+        sr_rows = await sr_cursor.fetchall()
+        # Also mark the channel as in_penalty_review
+        await db.execute(
+            "UPDATE round_submission_channels SET in_penalty_review = 1 WHERE round_id = ?",
+            (round_id,),
+        )
+        await db.commit()
+
+    session_types_present = [SessionType(r["session_type"]) for r in sr_rows]
+
+    # ------------------------------------------------------------------
+    # Step 3: Build state and post the penalty review prompt
+    # ------------------------------------------------------------------
+    state = PenaltyReviewState(
+        round_id=round_id,
+        division_id=division_id,
+        submission_channel_id=sub_channel.id,
+        session_types_present=session_types_present,
+        db_path=db_path,
+        bot=bot,
+        round_number=round_number,
+        division_name=division_name,
+    )
+
+    view = PenaltyReviewView(state=state)
+    content = await _render_prompt_content(state)
+    msg = await sub_channel.send(content, view=view)
+    state.prompt_message_id = msg.id
+    bot.add_view(view, message_id=msg.id)  # type: ignore[attr-defined]
+    log.info(
+        "enter_penalty_state: penalty review prompt posted for round %s (msg=%s)",
+        round_id,
+        msg.id,
+    )
+
+
+async def finalize_round(
+    interaction: discord.Interaction,
+    state,  # PenaltyReviewState — forward-ref to avoid import cycle
+) -> None:
+    """Apply all staged penalties, replace interim posts, mark the round finalized,
+    and close the submission channel.
+
+    Called from :meth:`ApprovalView.approve_btn` (T025).
+    """
+    import json as _json
+    from services import results_post_service as _rps
+    from services.standings_service import cascade_recompute_from_round
+    from services import penalty_service as _ps
+
+    # T024-a: defer as the very first statement (NFR-001)
+    await interaction.response.defer(ephemeral=True)
+
+    db_path: str = state.db_path
+    bot = state.bot
+    round_id: int = state.round_id
+    division_id: int = state.division_id
+    guild = interaction.guild
+    actor_id: int = interaction.user.id
+
+    # T024-b: pre-penalty snapshot for audit log
+    pre_snapshot = await _snapshot_staged_drivers(db_path, round_id, division_id, state.staged)
+
+    # T022: apply staged penalties to DB (positions, times, outcomes)
+    if state.staged:
+        await _ps.apply_penalties(
+            db_path, round_id, division_id, state.staged,
+            applied_by=actor_id, bot=bot,
+            _skip_post=True,
+        )
+        # Recompute points_awarded / fastest_lap_bonus for all affected sessions
+        await _recompute_session_points(db_path, round_id)
+
+    # T024-c: post-penalty snapshot
+    post_snapshot = await _snapshot_staged_drivers(db_path, round_id, division_id, state.staged)
+
+    # T023: delete interim posts, repost final results and standings
+    if guild:
+        await _rps.delete_and_repost_final_results(db_path, round_id, division_id, guild)
+        await _rps.repost_subsequent_standings(db_path, division_id, round_id, guild)
+
+    # T024-d: mark round as finalized
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET finalized = 1 WHERE id = ?", (round_id,))
+        await db.commit()
+
+    # T024-e: audit log ROUND_FINALIZED
+    penalty_log = [
+        {
+            "driver_user_id": sp.driver_user_id,
+            "session_type": sp.session_type.value,
+            "penalty_type": sp.penalty_type,
+            "penalty_seconds": sp.penalty_seconds,
+        }
+        for sp in state.staged
+    ]
+    old_val = _json.dumps({"finalized": 0, "affected_drivers": pre_snapshot})
+    new_val = _json.dumps(
+        {
+            "finalized": 1,
+            "affected_drivers": post_snapshot,
+            "penalties": penalty_log,
+            "actor_id": actor_id,
+        }
+    )
+    try:
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                (division_id,),
+            )
+            srv_row = await cursor.fetchone()
+        if srv_row:
+            await bot.output_router.post_log(  # type: ignore[attr-defined]
+                int(srv_row["server_id"]),
+                f"🏁 **ROUND_FINALIZED** by <@{actor_id}> — "
+                f"Round {state.round_number} | {state.division_name}\n"
+                f"old={old_val}\nnew={new_val}",
+            )
+    except Exception:
+        log.exception("finalize_round: error writing audit log for round %s", round_id)
+
+    # T024-f: close the submission channel
+    await close_submission_channel(state.submission_channel_id, round_id, guild, db_path)
+
+    # T024-g: ephemeral followup
+    n_penalties = len(state.staged)
+    summary = (
+        f"✅ **Round {state.round_number} ({state.division_name}) finalized.**\n"
+        + (f"{n_penalties} penalty(ies) applied. " if n_penalties else "No penalties applied. ")
+        + "Final results posted and submission channel closed."
+    )
+    await interaction.followup.send(summary, ephemeral=True)
+
+
+async def _recompute_session_points(db_path: str, round_id: int) -> None:
+    """Re-run ``_apply_points_from_config`` for every ACTIVE session in *round_id*
+    so that ``points_awarded`` and ``fastest_lap_bonus`` reflect any position changes
+    caused by penalties applied to ``driver_session_results``.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT sr.id AS session_result_id, sr.config_name, sr.session_type,
+                   s.id AS season_id
+            FROM session_results sr
+            JOIN rounds r ON r.id = sr.round_id
+            JOIN divisions d ON d.id = r.division_id
+            JOIN seasons s ON s.id = d.season_id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+            """,
+            (round_id,),
+        )
+        sessions = await cursor.fetchall()
+
+    for row in sessions:
+        if row["config_name"] is None:
+            continue  # no config attached — skip points recompute
+        try:
+            await _apply_points_from_config(
+                db_path,
+                row["session_result_id"],
+                row["season_id"],
+                row["config_name"],
+                SessionType(row["session_type"]),
+            )
+        except Exception:
+            log.exception(
+                "_recompute_session_points: error for session_result %s",
+                row["session_result_id"],
+            )
+
+
+async def _snapshot_staged_drivers(
+    db_path: str,
+    round_id: int,
+    division_id: int,
+    staged,
+) -> list[dict]:
+    """Return current ``finishing_position``, ``post_race_time_penalties``, and
+    ``total_points`` for every driver referenced in *staged*.  Used for audit log.
+    """
+    from services.standings_service import compute_driver_standings
+
+    if not staged:
+        return []
+
+    driver_ids = list({sp.driver_user_id for sp in staged})
+
+    async with get_connection(db_path) as db:
+        placeholders = ",".join("?" * len(driver_ids))
+        cursor = await db.execute(
+            f"""
+            SELECT dsr.driver_user_id, dsr.finishing_position, dsr.post_race_time_penalties
+            FROM driver_session_results dsr
+            JOIN session_results sr ON sr.id = dsr.session_result_id
+            WHERE sr.round_id = ? AND dsr.driver_user_id IN ({placeholders})
+              AND dsr.is_superseded = 0
+            """,
+            (round_id, *driver_ids),
+        )
+        dsr_rows = await cursor.fetchall()
+
+    # Get total_points from latest standings snapshot
+    driver_snaps = await compute_driver_standings(db_path, division_id, round_id)
+    pts_map = {snap.driver_user_id: snap.total_points for snap in driver_snaps}
+
+    result = []
+    for r in dsr_rows:
+        uid = r["driver_user_id"]
+        result.append(
+            {
+                "driver_user_id": uid,
+                "finishing_position": r["finishing_position"],
+                "total_points": pts_map.get(uid, 0),
+                "post_race_time_penalties": r["post_race_time_penalties"],
+            }
+        )
+    return result
+
+
 async def save_session_result(
     db_path: str,
     round_id: int,
@@ -1270,45 +1611,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             break  # advance to next session
 
     # ------------------------------------------------------------------
-    # 9. Compute standings and post results
+    # 9+10. Enter penalty-review state (posts interim results/standings,
+    #       keeps channel open, posts penalty review prompt).
     # ------------------------------------------------------------------
-    try:
-        from services import standings_service, results_post_service  # lazy imports
-
-        await standings_service.compute_and_persist_round(db_path, round_id, division_id)
-
-        div_with_channels = await bot.season_service.get_divisions_with_results_config(season_id)  # type: ignore[attr-defined]
-        div_obj = next((d for d in div_with_channels if d.id == division_id), None)
-        if div_obj and div_obj.results_channel_id:
-            rc = guild.get_channel(div_obj.results_channel_id)
-            if rc:
-                await results_post_service.post_round_results(
-                    db_path, round_id, division_id, rc, guild
-                )
-        if div_obj and div_obj.standings_channel_id:
-            sc = guild.get_channel(div_obj.standings_channel_id)
-            if sc:
-                from services.standings_service import compute_driver_standings, compute_team_standings
-                driver_snaps = await compute_driver_standings(db_path, division_id, round_id)
-                team_snaps = await compute_team_standings(db_path, division_id, round_id)
-                await results_post_service.post_standings(
-                    db_path, division_id, round_id, sc, driver_snaps, team_snaps, guild,
-                    show_reserves=True,
-                )
-    except ImportError:
-        log.info(
-            "run_result_submission_job: standings/post services not yet available "
-            "(round %s) — results saved, posting skipped",
-            round_id,
-        )
-    except Exception:
-        log.exception(
-            "run_result_submission_job: error during standings/post for round %s",
-            round_id,
-        )
-
-    # ------------------------------------------------------------------
-    # 10. Close submission channel
-    # ------------------------------------------------------------------
-    await sub_channel.send("✅ All sessions complete. Closing this channel.")
-    await close_submission_channel(sub_channel.id, round_id, guild, db_path)
+    await enter_penalty_state(bot, guild, round_id, division_id, sub_channel, season_id=season_id)

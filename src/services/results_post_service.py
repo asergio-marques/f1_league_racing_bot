@@ -417,3 +417,304 @@ async def repost_standings_for_division(
         driver_snaps, team_snaps, guild, show_reserves,
     )
     return "ok"
+
+
+# ---------------------------------------------------------------------------
+# Finalization helpers (T021, T021b)
+# ---------------------------------------------------------------------------
+
+async def delete_and_repost_final_results(
+    db_path: str,
+    round_id: int,
+    division_id: int,
+    guild: discord.Guild,
+) -> None:
+    """Delete all interim results/standings Discord messages for *round_id* and
+    repost the final (post-penalty) versions.
+
+    For each non-cancelled session:
+    1. Fetch ``results_message_id`` from ``session_results``.
+    2. Delete that Discord message if it still exists.
+    3. Post the corrected final results table and store the new ``results_message_id``.
+
+    Then for standings:
+    4. Find the current ``standings_message_id`` for this round.
+    5. Delete that Discord message if it still exists.
+    6. Post fresh final standings and update ``standings_message_id``.
+    """
+    async with get_connection(db_path) as db:
+        ctx_cursor = await db.execute(
+            """
+            SELECT r.round_number, r.track_name,
+                   drc.results_channel_id, drc.standings_channel_id,
+                   drc.reserves_in_standings
+            FROM rounds r
+            LEFT JOIN division_results_config drc ON drc.division_id = r.division_id
+            WHERE r.id = ?
+            """,
+            (round_id,),
+        )
+        ctx = await ctx_cursor.fetchone()
+
+    if ctx is None:
+        log.warning("delete_and_repost_final_results: round %s not found", round_id)
+        return
+
+    round_number: int = ctx["round_number"]
+    track_name: str = ctx["track_name"] or "Unknown"
+    results_ch_id: int | None = ctx["results_channel_id"]
+    standings_ch_id: int | None = ctx["standings_channel_id"]
+    show_reserves: bool = bool(ctx["reserves_in_standings"]) if ctx["reserves_in_standings"] is not None else True
+
+    # ── Delete interim results messages and re-post final ──────────────────
+    if results_ch_id:
+        rc = guild.get_channel(results_ch_id)
+        if rc is not None:
+            # Fetch session rows with their existing message IDs
+            async with get_connection(db_path) as db:
+                cursor = await db.execute(
+                    """
+                    SELECT id, round_id, division_id, session_type, status,
+                           config_name, submitted_by, submitted_at, results_message_id
+                    FROM session_results
+                    WHERE round_id = ? AND status = 'ACTIVE'
+                    ORDER BY id
+                    """,
+                    (round_id,),
+                )
+                session_rows = await cursor.fetchall()
+
+            is_sprint = await _is_sprint_round(db_path, round_id)
+
+            for sr_row in session_rows:
+                session_result = _sr_from_row(sr_row)
+
+                # Delete old interim Discord message
+                old_msg_id: int | None = sr_row["results_message_id"]
+                if old_msg_id is not None:
+                    try:
+                        old_msg = await rc.fetch_message(old_msg_id)
+                        await old_msg.delete()
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                        log.warning(
+                            "delete_and_repost_final_results: could not delete interim "
+                            "results message %s: %s",
+                            old_msg_id,
+                            exc,
+                        )
+
+                    # Clear stale message_id so post_session_results inserts a fresh one
+                    async with get_connection(db_path) as db:
+                        await db.execute(
+                            "UPDATE session_results SET results_message_id = NULL WHERE id = ?",
+                            (sr_row["id"],),
+                        )
+                        await db.commit()
+
+                # Load updated driver rows
+                async with get_connection(db_path) as db:
+                    cursor = await db.execute(
+                        """
+                        SELECT id, session_result_id, driver_user_id, team_role_id,
+                               finishing_position, outcome, tyre, best_lap, gap, total_time,
+                               fastest_lap, time_penalties, post_steward_total_time,
+                               post_race_time_penalties, points_awarded, fastest_lap_bonus,
+                               is_superseded
+                        FROM driver_session_results
+                        WHERE session_result_id = ? AND is_superseded = 0
+                        ORDER BY finishing_position
+                        """,
+                        (sr_row["id"],),
+                    )
+                    driver_rows_raw = await cursor.fetchall()
+
+                from models.session_result import OutcomeModifier as _OM
+                driver_rows = [
+                    _dr_from_row(r)
+                    for r in driver_rows_raw
+                ]
+                points_map = {
+                    r.driver_user_id: r.points_awarded + r.fastest_lap_bonus
+                    for r in driver_rows
+                }
+
+                await post_session_results(
+                    db_path, session_result, driver_rows, points_map, rc, guild,
+                    round_number, track_name, is_sprint,
+                )
+
+    # ── Delete interim standings message and re-post final ─────────────────
+    if standings_ch_id:
+        sc = guild.get_channel(standings_ch_id)
+        if sc is not None:
+            old_standings_msg_id = await _get_standings_message_id(db_path, division_id, round_id)
+            if old_standings_msg_id is not None:
+                try:
+                    old_sm = await sc.fetch_message(old_standings_msg_id)
+                    await old_sm.delete()
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                    log.warning(
+                        "delete_and_repost_final_results: could not delete interim "
+                        "standings message %s: %s",
+                        old_standings_msg_id,
+                        exc,
+                    )
+
+                # Clear obsolete standings_message_id from all snapshots for this round
+                async with get_connection(db_path) as db:
+                    await db.execute(
+                        "UPDATE driver_standings_snapshots SET standings_message_id = NULL "
+                        "WHERE round_id = ? AND division_id = ?",
+                        (round_id, division_id),
+                    )
+                    await db.commit()
+
+            driver_snaps = await standings_service.compute_driver_standings(
+                db_path, division_id, round_id
+            )
+            team_snaps = await standings_service.compute_team_standings(
+                db_path, division_id, round_id
+            )
+            await post_standings(
+                db_path, division_id, round_id, round_number, track_name,
+                sc, driver_snaps, team_snaps, guild, show_reserves,
+            )
+
+
+async def repost_subsequent_standings(
+    db_path: str,
+    division_id: int,
+    from_round_id: int,
+    guild: discord.Guild,
+) -> None:
+    """Cascade-recompute standings and repost Discord standings messages for all
+    rounds *after* *from_round_id* in the division that have an existing
+    ``standings_message_id``.
+
+    This is called after :func:`delete_and_repost_final_results` so that
+    subsequent rounds' standings reflect any penalty-driven point changes.
+    """
+    # Cascade recompute DB snapshots for all subsequent rounds
+    await standings_service.cascade_recompute_from_round(db_path, division_id, from_round_id)
+
+    # Find subsequent rounds that have standings messages posted
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT r.id AS round_id, r.round_number, r.track_name,
+                   drc.standings_channel_id, drc.reserves_in_standings
+            FROM rounds r
+            LEFT JOIN division_results_config drc ON drc.division_id = r.division_id
+            WHERE r.division_id = ?
+              AND r.round_number > (SELECT round_number FROM rounds WHERE id = ?)
+              AND r.status != 'CANCELLED'
+            ORDER BY r.round_number
+            """,
+            (division_id, from_round_id),
+        )
+        rounds = await cursor.fetchall()
+
+    for rnd in rounds:
+        rnd_id: int = rnd["round_id"]
+        rnd_number: int = rnd["round_number"]
+        rnd_track: str = rnd["track_name"] or "Unknown"
+        standings_ch_id: int | None = rnd["standings_channel_id"]
+        show_reserves: bool = bool(rnd["reserves_in_standings"]) if rnd["reserves_in_standings"] is not None else True
+
+        if not standings_ch_id:
+            continue
+
+        existing_msg_id = await _get_standings_message_id(db_path, division_id, rnd_id)
+        if existing_msg_id is None:
+            continue  # No standings message posted for this round — skip
+
+        sc = guild.get_channel(standings_ch_id)
+        if sc is None:
+            continue
+
+        # Delete old standings message
+        try:
+            old_sm = await sc.fetch_message(existing_msg_id)
+            await old_sm.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+            log.warning(
+                "repost_subsequent_standings: could not delete standings message %s: %s",
+                existing_msg_id,
+                exc,
+            )
+
+        # Clear obsolete standings_message_id
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE driver_standings_snapshots SET standings_message_id = NULL "
+                "WHERE round_id = ? AND division_id = ?",
+                (rnd_id, division_id),
+            )
+            await db.commit()
+
+        # Repost fresh standings
+        driver_snaps = await standings_service.compute_driver_standings(
+            db_path, division_id, rnd_id
+        )
+        team_snaps = await standings_service.compute_team_standings(
+            db_path, division_id, rnd_id
+        )
+        await post_standings(
+            db_path, division_id, rnd_id, rnd_number, rnd_track,
+            sc, driver_snaps, team_snaps, guild, show_reserves,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Private helpers for finalization
+# ---------------------------------------------------------------------------
+
+async def _is_sprint_round(db_path: str, round_id: int) -> bool:
+    """Return True if *round_id* is a SPRINT-format round."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT format FROM rounds WHERE id = ?", (round_id,)
+        )
+        row = await cursor.fetchone()
+    return row is not None and str(row["format"]).upper() == "SPRINT"
+
+
+def _sr_from_row(sr_row) -> "SessionResult":
+    """Construct a :class:`SessionResult` from a DB row dict."""
+    from models.session_result import SessionResult
+    return SessionResult(
+        id=sr_row["id"],
+        round_id=sr_row["round_id"],
+        division_id=sr_row["division_id"],
+        session_type=sr_row["session_type"],
+        status=sr_row["status"],
+        config_name=sr_row["config_name"],
+        submitted_by=sr_row["submitted_by"],
+        submitted_at=sr_row["submitted_at"],
+        results_message_id=sr_row["results_message_id"],
+    )
+
+
+def _dr_from_row(r) -> "DriverSessionResult":
+    """Construct a :class:`DriverSessionResult` from a DB row dict."""
+    from models.session_result import DriverSessionResult, OutcomeModifier
+    return DriverSessionResult(
+        id=r["id"],
+        session_result_id=r["session_result_id"],
+        driver_user_id=r["driver_user_id"],
+        team_role_id=r["team_role_id"],
+        finishing_position=r["finishing_position"],
+        outcome=OutcomeModifier(r["outcome"]),
+        tyre=r["tyre"],
+        best_lap=r["best_lap"],
+        gap=r["gap"],
+        total_time=r["total_time"],
+        fastest_lap=r["fastest_lap"],
+        time_penalties=r["time_penalties"],
+        post_steward_total_time=r["post_steward_total_time"],
+        post_race_time_penalties=r["post_race_time_penalties"],
+        points_awarded=r["points_awarded"] or 0,
+        fastest_lap_bonus=r["fastest_lap_bonus"] or 0,
+        is_superseded=bool(r["is_superseded"]),
+    )
+

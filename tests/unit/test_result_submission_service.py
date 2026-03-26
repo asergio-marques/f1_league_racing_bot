@@ -334,3 +334,95 @@ def test_parse_time_to_ms(time_str, expected_ms):
 def test_format_time_ms(ms, expected_str):
     assert _format_time_ms(ms) == expected_str
 
+
+# ---------------------------------------------------------------------------
+# T032 — penalty-state entry after final session
+# ---------------------------------------------------------------------------
+
+
+async def test_submission_channel_not_closed_after_final_session(monkeypatch):
+    """Structural check: run_result_submission_job ends by calling enter_penalty_state,
+    not close_submission_channel. We verify this by checking close_submission_channel
+    is not called when enter_penalty_state replaces the step 9+10 block."""
+    import inspect
+    from services.result_submission_service import run_result_submission_job
+
+    source = inspect.getsource(run_result_submission_job)
+    # After the final session loop, only enter_penalty_state should appear
+    # (close_submission_channel is called inside finalize_round, not here)
+    final_block = source[source.rfind("# 9+10"):]
+    assert "enter_penalty_state" in final_block
+    assert "close_submission_channel" not in final_block
+
+
+async def test_penalty_state_entered_after_final_session(tmp_path):
+    """is_channel_in_penalty_review returns True once in_penalty_review=1 is set in the DB."""
+    from db.database import get_connection, run_migrations
+    from services.result_submission_service import is_channel_in_penalty_review
+
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, log_channel_id) VALUES (1,10,20,30)"
+        )
+        cursor = await db.execute(
+            "INSERT INTO seasons (server_id, start_date, status, season_number) VALUES (1,'2026-01-01','ACTIVE',1)"
+        )
+        season_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id) VALUES (?,?,777,888)",
+            (season_id, "Main"),
+        )
+        division_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
+            (division_id,),
+        )
+        round_id = cursor.lastrowid
+        channel_id = 555
+        await db.execute(
+            "INSERT INTO round_submission_channels (round_id, channel_id, created_at, closed, in_penalty_review) VALUES (?,?,'2026-01-01T18:00:00',0,1)",
+            (round_id, channel_id),
+        )
+        await db.commit()
+
+    assert await is_channel_in_penalty_review(db_path, channel_id) is True
+
+
+async def test_channel_not_in_penalty_review_when_flag_zero(tmp_path):
+    """is_channel_in_penalty_review returns False when in_penalty_review=0."""
+    from db.database import get_connection, run_migrations
+    from services.result_submission_service import is_channel_in_penalty_review
+
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, log_channel_id) VALUES (1,10,20,30)"
+        )
+        cursor = await db.execute(
+            "INSERT INTO seasons (server_id, start_date, status, season_number) VALUES (1,'2026-01-01','ACTIVE',1)"
+        )
+        season_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id) VALUES (?,?,777,888)",
+            (season_id, "Main"),
+        )
+        division_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
+            (division_id,),
+        )
+        round_id = cursor.lastrowid
+        channel_id = 555
+        await db.execute(
+            "INSERT INTO round_submission_channels (round_id, channel_id, created_at, closed, in_penalty_review) VALUES (?,?,'2026-01-01T18:00:00',0,0)",
+            (round_id, channel_id),
+        )
+        await db.commit()
+
+    assert await is_channel_in_penalty_review(db_path, channel_id) is False
+

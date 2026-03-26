@@ -814,7 +814,7 @@ class SeasonService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
-                "phase1_done, phase2_done, phase3_done, status FROM rounds WHERE id = ?",
+                "phase1_done, phase2_done, phase3_done, status, finalized FROM rounds WHERE id = ?",
                 (round_id,),
             )
             row = await cursor.fetchone()
@@ -825,7 +825,7 @@ class SeasonService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
-                "phase1_done, phase2_done, phase3_done, status FROM rounds "
+                "phase1_done, phase2_done, phase3_done, status, finalized FROM rounds "
                 "WHERE division_id = ? ORDER BY round_number",
                 (division_id,),
             )
@@ -1017,6 +1017,7 @@ def _row_to_round(row: object) -> Round:
         phase2_done=bool(row["phase2_done"]),
         phase3_done=bool(row["phase3_done"]),
         status=row["status"],
+        finalized=bool(row["finalized"]),
     )
 
 

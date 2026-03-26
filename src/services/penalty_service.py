@@ -14,7 +14,7 @@ from models.points_config import SessionType
 
 log = logging.getLogger(__name__)
 
-_TIME_PENALTY_RE = re.compile(r"^\+?(\d+)s?$", re.IGNORECASE)
+_TIME_PENALTY_RE = re.compile(r"^([+-]?\d+)s?$", re.IGNORECASE)
 
 # HH:MM:SS.mmm or MM:SS.mmm or SS.mmm
 _LAP_TIME_RE = re.compile(
@@ -38,10 +38,19 @@ def validate_penalty_input(
     driver_user_id: int,
     session_type: SessionType,
     penalty_value: str,
+    current_time_ms: int | None = None,
 ) -> StagedPenalty | str:
     """Parse penalty_value for the given session.
 
     Returns a StagedPenalty on success or an error string on failure.
+
+    Args:
+        driver_user_id: The Discord user ID of the driver.
+        session_type: The session the penalty applies to.
+        penalty_value: Raw input string, e.g. ``+5s``, ``-3``, ``10``, ``DSQ``.
+        current_time_ms: The driver's current total race time in milliseconds.
+            When provided, negative penalties are rejected if they would make
+            the resulting time negative.  Pass ``None`` to skip this check.
     """
     pv = penalty_value.strip().upper()
 
@@ -58,11 +67,19 @@ def validate_penalty_input(
 
     m = _TIME_PENALTY_RE.match(penalty_value.strip())
     if not m:
-        return "Invalid penalty. Use seconds (e.g. `5` or `+5s`) or `DSQ`."
+        return "Invalid penalty. Use seconds (e.g. `5`, `+5s`, `-3s`) or `DSQ`."
 
     seconds = int(m.group(1))
-    if seconds <= 0:
-        return "Penalty must be a positive number of seconds."
+    if seconds == 0:
+        return "Penalty must be a non-zero number of seconds."
+
+    if seconds < 0 and current_time_ms is not None:
+        resulting_ms = current_time_ms + seconds * 1000
+        if resulting_ms < 0:
+            return (
+                f"A {seconds}s penalty would result in a negative race time. "
+                "Please review your input."
+            )
 
     return StagedPenalty(
         driver_user_id=driver_user_id,
@@ -102,7 +119,15 @@ def _ms_to_time(ms: int) -> str:
 
 
 def _apply_time_penalty(total_time_str: str, penalty_seconds: int) -> str:
-    """Add penalty_seconds to a total-time string and return the new string."""
+    """Add *penalty_seconds* (positive or negative) to a total-time string.
+
+    Returns the adjusted time string, or the original string unchanged when
+    the time cannot be parsed.
+
+    Note: callers (i.e. ``validate_penalty_input``) are responsible for
+    guaranteeing that the resulting time is non-negative before calling this
+    function.  No floor clamp is applied here.
+    """
     ms = _time_to_ms(total_time_str)
     if ms is None:
         return total_time_str  # Cannot parse — leave unchanged
@@ -121,8 +146,15 @@ async def apply_penalties(
     staged: list[StagedPenalty],
     applied_by: int,
     bot: discord.Client,
+    *,
+    _skip_post: bool = False,
 ) -> None:
-    """Apply a list of staged penalties to the DB and cascade standings."""
+    """Apply a list of staged penalties to the DB and cascade standings.
+
+    When *_skip_post* is ``True`` the internal cascade-recompute and
+    ``repost_round_results`` calls are skipped.  Pass ``True`` when the
+    caller (e.g. ``finalize_round``) will handle reposting itself.
+    """
     from services import standings_service
     from services import results_post_service
 
@@ -225,7 +257,7 @@ async def apply_penalties(
                 # Sort by total_time (parseable); keep original order for null/unparseable
                 def _sort_key(d: dict):
                     ms = _time_to_ms(d["total_time"] or "")
-                    return ms if ms is not None else 10**15
+                    return (ms if ms is not None else 10**15, d["finishing_position"])
 
                 classified.sort(key=_sort_key)
             # DSQ rows keep relative order by original position
@@ -284,18 +316,20 @@ async def apply_penalties(
         await bot.output_router.post_log(int(srv_row["server_id"]), details_msg)
 
     # Cascade recompute standings
-    await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
+    if not _skip_post:
+        await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
 
     # Repost results in Discord
-    guild = None
-    async with get_connection(db_path) as db3:
-        cursor3 = await db3.execute(
-            "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
-            (division_id,),
-        )
-        row3 = await cursor3.fetchone()
-    if row3:
-        guild = bot.get_guild(int(row3["server_id"]))
-    if guild:
-        await results_post_service.repost_round_results(db_path, round_id, division_id, guild)
+    if not _skip_post:
+        guild = None
+        async with get_connection(db_path) as db3:
+            cursor3 = await db3.execute(
+                "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                (division_id,),
+            )
+            row3 = await cursor3.fetchone()
+        if row3:
+            guild = bot.get_guild(int(row3["server_id"]))
+        if guild:
+            await results_post_service.repost_round_results(db_path, round_id, division_id, guild)
 

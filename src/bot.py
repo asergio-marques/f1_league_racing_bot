@@ -206,6 +206,7 @@ async def main() -> None:
         NoPreferenceTeammateView,
     )
     from cogs.admin_review_cog import AdminReviewView, CorrectionParameterView
+    from services.penalty_wizard import PenaltyReviewView, ApprovalView
 
     for _view in (
         SignupButtonView(),
@@ -217,6 +218,8 @@ async def main() -> None:
         NoPreferenceTeammateView(),
         AdminReviewView(),
         CorrectionParameterView(),
+        PenaltyReviewView(),
+        ApprovalView(),
     ):
         bot.add_view(_view)
 
@@ -299,13 +302,16 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
     still exists, but nothing is listening.  We clean them up here so that
     /test-mode advance (and the advance guard in test_mode_cog) can
     re-trigger submission normally.
+
+    Channels that are in penalty review are restored rather than deleted.
     """
     from db.database import get_connection
 
     async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
         cursor = await db.execute(
             """
-            SELECT rsc.round_id, rsc.channel_id, s.server_id
+            SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
+                   r.division_id, s.server_id
             FROM round_submission_channels rsc
             JOIN rounds r    ON r.id  = rsc.round_id
             JOIN divisions d ON d.id  = r.division_id
@@ -318,10 +324,47 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
     for row in orphans:
         round_id: int = row["round_id"]
         channel_id: int = row["channel_id"]
+        in_penalty_review: int = row["in_penalty_review"]
+        division_id: int = row["division_id"]
         server_id: int = row["server_id"]
 
-        # DELETE the row entirely (not mark closed) so that create_submission_channel
-        # can INSERT a fresh row for this round_id when re-triggered.
+        guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
+
+        if in_penalty_review:
+            # The bot restarted while a round was awaiting penalty review.
+            # Re-post the penalty review prompt instead of deleting the channel.
+            if guild is None:
+                log.warning(
+                    "Recovery: guild %s not in cache, cannot restore penalty review for round %s",
+                    server_id, round_id,
+                )
+                continue
+            channel = guild.get_channel(channel_id)
+            if channel is None:
+                log.warning(
+                    "Recovery: channel %s not found, cannot restore penalty review for round %s",
+                    channel_id, round_id,
+                )
+                continue
+            try:
+                from services.result_submission_service import enter_penalty_state
+
+                await enter_penalty_state(
+                    bot, guild, round_id, division_id, channel,
+                    skip_results_post=True,
+                )
+                log.info(
+                    "Recovery: restored penalty review prompt for round %s in channel %s",
+                    round_id, channel_id,
+                )
+            except Exception:
+                log.exception(
+                    "Recovery: failed to restore penalty review for round %s", round_id
+                )
+            continue
+
+        # Mid-submission orphan: DELETE the row entirely so that
+        # create_submission_channel can INSERT a fresh row when re-triggered.
         async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
             await db.execute(
                 "DELETE FROM round_submission_channels WHERE round_id = ?",
@@ -329,7 +372,6 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
             )
             await db.commit()
 
-        guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
         if guild is None:
             log.warning(
                 "Recovery: guild %s not in cache, removed orphaned submission row for round %s",
