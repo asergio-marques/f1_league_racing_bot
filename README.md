@@ -228,6 +228,13 @@ No parameters. Shows active season overview: divisions, next scheduled round per
 
 Posts a cancellation notice to each active division's forecast channel before deleting.
 
+#### `/season complete` — Mark the active season as complete
+*Access: Trusted admin*
+
+No parameters. Triggers the season-end flow manually. The bot will refuse if any non-cancelled round is not yet finalized, and will list the outstanding rounds. Once all rounds are finalized it executes the season-end sequence (standings archival, server reset) in the same way that `/season cancel` would not — but without deleting any data prematurely.
+
+> **Note:** Season completion is no longer automatic. A league manager must run this command once every round in every division has been finalized.
+
 #### `/round amend` — Amend a round in the active season
 *Access: Trusted admin*
 
@@ -607,7 +614,7 @@ Once **Approve** is pressed, the bot posts an **approval message** to the submis
 ##### `/round results amend` — Re-submit results for a completed session
 *Access: Trusted admin · Results module required*
 
-Re-runs the full results submission flow for the specified session. The original submission is superseded and standings are recalculated.
+Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in the same category as the bot commands channel. Paste the corrected results in that channel; the bot validates and applies them, recalculates standings, then deletes the channel automatically. A **❌ Cancel Amendment** button is posted in the channel to abort at any time. If `session` is omitted you will be prompted to choose one before the channel is created.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

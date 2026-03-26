@@ -390,6 +390,46 @@ class SeasonService:
             row = await cursor.fetchone()
         return row is not None and row[0] == 0
 
+    async def all_rounds_finalized(self, server_id: int) -> bool:
+        """True if every non-CANCELLED round in every non-CANCELLED division of the active season has finalized=1."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT COUNT(*) FROM rounds r
+                JOIN divisions d ON d.id = r.division_id
+                JOIN seasons   s ON s.id = d.season_id
+                WHERE s.server_id = ?
+                  AND s.status    = 'ACTIVE'
+                  AND r.status   != 'CANCELLED'
+                  AND d.status   != 'CANCELLED'
+                  AND r.finalized = 0
+                """,
+                (server_id,),
+            )
+            row = await cursor.fetchone()
+        return row is not None and row[0] == 0
+
+    async def get_unfinalized_rounds(self, server_id: int) -> list[dict]:
+        """Return name, round_number, and division for every non-CANCELLED unfinalized round in the active season."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT d.name AS division, r.round_number, r.track_name
+                FROM rounds r
+                JOIN divisions d ON d.id = r.division_id
+                JOIN seasons   s ON s.id = d.season_id
+                WHERE s.server_id = ?
+                  AND s.status    = 'ACTIVE'
+                  AND r.status   != 'CANCELLED'
+                  AND d.status   != 'CANCELLED'
+                  AND r.finalized = 0
+                ORDER BY d.name, r.round_number
+                """,
+                (server_id,),
+            )
+            rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
     async def get_all_server_ids_with_active_season(self) -> list[int]:
         """Return all server_ids that currently have an ACTIVE season row."""
         async with get_connection(self._db_path) as db:

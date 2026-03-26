@@ -380,6 +380,42 @@ class SeasonCog(commands.Cog):
             ephemeral=True,
         )
 
+    @season.command(
+        name="complete",
+        description="Manually mark the current season as complete (requires all rounds finalized).",
+    )
+    @channel_guard
+    @admin_only
+    async def season_complete(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        season = await self.bot.season_service.get_active_season(interaction.guild_id)
+        if season is None:
+            await interaction.response.send_message(
+                "\u274c No active season to complete.", ephemeral=True
+            )
+            return
+
+        all_done = await self.bot.season_service.all_rounds_finalized(interaction.guild_id)
+        if not all_done:
+            pending = await self.bot.season_service.get_unfinalized_rounds(interaction.guild_id)
+            lines = "\n".join(
+                f"• {r['division']} — Round {r['round_number']}"
+                + (f" ({r['track_name']})" if r.get("track_name") else "")
+                for r in pending[:20]
+            )
+            await interaction.response.send_message(
+                f"\u274c Cannot complete season — the following rounds are not yet finalized:\n{lines}",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        from services.season_end_service import execute_season_end
+        await execute_season_end(interaction.guild_id, season.id, self.bot)
+        await interaction.followup.send("\u2705 Season marked as complete.", ephemeral=True)
+
     # ------------------------------------------------------------------
     # /division group
     # ------------------------------------------------------------------
@@ -1448,7 +1484,7 @@ class SeasonCog(commands.Cog):
         )
 
         if chosen_session_type is None:
-            # Ask user to select which session to amend
+            # Ask user to select which session to amend (ephemeral in the command channel)
             session_types_present = [SessionType(r["session_type"]) for r in sr_rows]
             _LABEL = {
                 SessionType.SPRINT_QUALIFYING: "Sprint Qualifying",
@@ -1497,12 +1533,41 @@ class SeasonCog(commands.Cog):
 
         existing_config_name = sr_match["config_name"]
 
-        # --- Collect new results ---
-        from services.result_submission_service import validate_submission_block
-        from services.result_submission_service import _build_division_validation_data  # type: ignore[attr-defined]
+        # --- Create a dedicated amend channel ---
+        import re as _re
+        from datetime import datetime, timezone
 
-        driver_ids, team_role_ids, reserve_role_id, driver_team_map, reserve_driver_ids = await _build_division_validation_data(
-            div.id, interaction.guild_id, interaction.client
+        server_cfg = await self.bot.config_service.get_server_config(interaction.guild_id)  # type: ignore[attr-defined]
+        bot_cmd_channel_id: int | None = server_cfg.interaction_channel_id if server_cfg else None
+        admin_role: discord.Role | None = None
+        if server_cfg and server_cfg.interaction_role_id:
+            admin_role = interaction.guild.get_role(server_cfg.interaction_role_id)
+
+        # Derive category from bot command channel (same pattern as submission channel)
+        category: discord.CategoryChannel | None = None
+        if bot_cmd_channel_id is not None:
+            cmd_channel = interaction.guild.get_channel(bot_cmd_channel_id)
+            if cmd_channel is not None:
+                category = getattr(cmd_channel, "category", None)
+
+        slug = _re.sub(r"[^a-z0-9-]", "", division_name.lower().replace(" ", "-"))[:20]
+        amend_ch_name = f"amend-S{season.season_number}-{slug}-R{round_number}"
+        overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
+            interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+        }
+        if interaction.guild.me is not None:
+            overwrites[interaction.guild.me] = discord.PermissionOverwrite(
+                read_messages=True, send_messages=True, manage_messages=True
+            )
+        if admin_role is not None:
+            overwrites[admin_role] = discord.PermissionOverwrite(
+                read_messages=True, send_messages=True
+            )
+        amend_channel = await interaction.guild.create_text_channel(
+            name=amend_ch_name,
+            category=category,
+            overwrites=overwrites,
+            reason="Results amend channel",
         )
 
         _SESSION_LABEL = {
@@ -1511,27 +1576,82 @@ class SeasonCog(commands.Cog):
             SessionType.FEATURE_QUALIFYING: "Feature Qualifying",
             SessionType.FEATURE_RACE: "Feature Race",
         }
+        session_label = _SESSION_LABEL.get(chosen_session_type, chosen_session_type.value)
 
-        await interaction.followup.send(
-            f"\U0001f4cb **Re-submit {_SESSION_LABEL.get(chosen_session_type, chosen_session_type.value)}** "
-            f"for Round {round_number} ({division_name}).\n"
-            "Paste the corrected results (same format as original submission):",
-            ephemeral=True,
+        # Cancel button posted in the amend channel
+        cancelled_flag: list[bool] = [False]
+
+        class _CancelView(discord.ui.View):
+            def __init__(self_v) -> None:
+                super().__init__(timeout=None)
+
+            @discord.ui.button(label="❌ Cancel Amendment", style=discord.ButtonStyle.danger)
+            async def cancel_btn(self_v, bi: discord.Interaction, btn: discord.ui.Button) -> None:
+                if bi.user.id != interaction.user.id:
+                    if admin_role is None or admin_role not in getattr(bi.user, "roles", []):
+                        await bi.response.send_message("⛔ Only league managers can cancel.", ephemeral=True)
+                        return
+                cancelled_flag[0] = True
+                self_v.stop()
+                await bi.response.send_message("Amendment cancelled.", ephemeral=True)
+
+        cancel_view = _CancelView()
+        prompt_msg = await amend_channel.send(
+            f"📋 **Amend Results — {session_label} | Round {round_number} ({division_name})**\n"
+            "Paste the corrected results below (same format as original submission).\n"
+            "Click **❌ Cancel Amendment** to abort and delete this channel.",
+            view=cancel_view,
         )
 
-        while True:
+        await interaction.followup.send(
+            f"✅ Amendment channel created: {amend_channel.mention}", ephemeral=True
+        )
+
+        # --- Collect new results ---
+        from services.result_submission_service import validate_submission_block
+        from services.result_submission_service import _build_division_validation_data  # type: ignore[attr-defined]
+
+        driver_ids, team_role_ids, reserve_role_id, driver_team_map, reserve_driver_ids = await _build_division_validation_data(
+            div.id, interaction.guild_id, interaction.client
+        )
+
+        async def _cleanup_channel() -> None:
             try:
-                msg = await interaction.client.wait_for(
+                await amend_channel.delete(reason="Results amend complete")
+            except discord.HTTPException:
+                pass
+
+        while True:
+            # Wait for either a message in the amend channel or the cancel button
+            done_task = self.bot.loop.create_task(
+                interaction.client.wait_for(
                     "message",
                     check=lambda m: (
-                        m.channel.id == interaction.channel_id
+                        m.channel.id == amend_channel.id
                         and m.author.id == interaction.user.id
                     ),
-                    timeout=None,
                 )
-            except Exception:
+            )
+            cancel_task = self.bot.loop.create_task(cancel_view.wait())
+
+            import asyncio as _asyncio
+            done, pending = await _asyncio.wait(
+                {done_task, cancel_task},
+                return_when=_asyncio.FIRST_COMPLETED,
+            )
+            for t in pending:
+                t.cancel()
+
+            if cancelled_flag[0] or (cancel_task in done and not cancelled_flag[0]):
+                # Cancel button was clicked (cancel_view.wait() finished) or flag set
+                cancelled_flag[0] = True
+
+            if cancelled_flag[0]:
+                await _cleanup_channel()
+                await interaction.followup.send("ℹ️ Amendment cancelled.", ephemeral=True)
                 return
 
+            msg = done_task.result()
             lines_raw = [ln.strip() for ln in msg.content.strip().splitlines() if ln.strip()]
             parsed = validate_submission_block(
                 lines_raw,
@@ -1550,8 +1670,8 @@ class SeasonCog(commands.Cog):
             if isinstance(parsed, list) and parsed and isinstance(parsed[0], str):
                 # Error list
                 error_lines = "\n".join(f"• {e}" for e in parsed[:10])
-                await interaction.followup.send(
-                    f"\u274c Validation errors:\n{error_lines}\nPlease resubmit.", ephemeral=True
+                await amend_channel.send(
+                    f"❌ Validation errors:\n{error_lines}\nPlease resubmit."
                 )
                 continue
 
@@ -1564,11 +1684,10 @@ class SeasonCog(commands.Cog):
             elif existing_config_name and existing_config_name in config_names:
                 config_name = existing_config_name
             else:
-                # Let user pick
                 from services.result_submission_service import _ConfigSelectView  # type: ignore[attr-defined]
                 cfg_view = _ConfigSelectView(config_names)
-                await interaction.followup.send(
-                    "Select the points configuration for this session:", view=cfg_view, ephemeral=True
+                await amend_channel.send(
+                    "Select the points configuration for this session:", view=cfg_view
                 )
                 await cfg_view.wait()
                 config_name = cfg_view.selected or config_names[0]
@@ -1584,8 +1703,11 @@ class SeasonCog(commands.Cog):
                 interaction.user.id,
                 interaction.client,
             )
+            await amend_channel.send("✅ Results amended successfully. This channel will be deleted.")
+            await _asyncio.sleep(3)
+            await _cleanup_channel()
             await interaction.followup.send(
-                "\u2705 Session amended and standings updated.", ephemeral=True
+                "✅ Session amended and standings updated.", ephemeral=True
             )
             return
 
