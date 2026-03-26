@@ -1,6 +1,47 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-03-26 — v2.4.1 → v2.5.0: Season Archive paradigm — seasons persist on completion]
+  Version change    : 2.4.1 → 2.5.0
+  Bump rationale    : MINOR — New governance concept added: Season Archive, formalising that
+                      completed seasons are retained permanently in an append-only,
+                      server-scoped archive rather than wiped or discarded. This supersedes
+                      the prior implicit ephemeral-season paradigm. Changes land in three
+                      places:
+                        1. Principle VI (Incremental Scope Expansion) — "Season history and
+                           statistics" added to planned future scope as the consumer of the
+                           archive.
+                        2. Data & State Management — COMPLETED lifecycle state description
+                           extended to reference archival.
+                        3. New Season Archive section in Data & State Management, defining
+                           append-only semantics, zero-to-many cardinality, full data
+                           retention, and read-only access rules.
+  Feature branch    : 024-season-archive (created 2026-03-26 from main)
+  Modified principles:
+    - Principle VI (Incremental Scope Expansion) — "Season history and statistics" added
+      to planned future scope.
+  Added sections    :
+    - Data & State Management: Season Archive (new governance section)
+    - Data & State Management: New Entities (v2.5.0) note
+  Removed sections  : None
+  Paradigm superseded:
+    - Prior practice of wiping/discarding season data on completion is formally superseded.
+      Completed Season records (and all related tables) are now permanently retained.
+  Templates confirmed aligned:
+    ✅ .specify/templates/plan-template.md      — dynamic Constitution Check; no changes.
+    ✅ .specify/templates/spec-template.md      — generic structure; no stale references.
+    ✅ .specify/templates/tasks-template.md     — generic; aligns with I–XII.
+    ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+    ✅ .specify/templates/checklist-template.md  — no impact.
+  Deferred TODOs    :
+    - Concrete schema additions for archive indexing, migration tooling, and the
+      stats-module query layer are deferred to the feature specification for the season
+      persistence increment (speckit.specify to be called next).
+  Follow-up TODOs   :
+    - If a `reset` or "wipe season" command currently exists in the implementation it
+      MUST be deprecated or removed as part of the season persistence feature increment;
+      this will be enforced in the feature spec.
+
 [2026-03-23 — Session reuse: Results & Standings specification & incremental verification — feature branch created]
   - Constitution reused as-is; no principle amendments required at session start.
   - Session intent: provide a fresh specification for the Results & Standings module and
@@ -698,6 +739,8 @@ The following domains are **planned future scope** — each will be formally rat
 independent feature increment before any implementation begins:
 
 - **Penalty and protest adjudication**.
+- **Season history and statistics**: aggregated career records and cross-season metrics
+  derived from the Season Archive (see Data & State Management).
 - Financial or licensing workflows.
 
 Every proposed new command or data concern MUST be evaluated against the current scope
@@ -1115,7 +1158,40 @@ mixed by Phase 2).
   - In `SETUP`: divisions, tracks, schedules, and round formats may be freely configured.
   - In `ACTIVE`: amendments (track substitutions, postponements, format changes, cancellations)
     are permitted; wholesale reconfiguration of the base schedule is not.
-  - In `COMPLETED`: the season is read-only; no mutations are allowed.
+  - In `COMPLETED`: the season is finalised and moved into the Season Archive (see below).
+    All data associated with the season — divisions, rounds, results, standings, driver
+    assignments, and the full audit trail — is retained permanently and becomes fully
+    immutable. No mutations are permitted. The archived record forms the authoritative
+    historical basis for future statistics and reporting features (Principle VI).
+### Season Archive
+
+A server maintains a **Season Archive**: a persistent, append-only collection of all
+completed seasons for that server. The following rules are non-negotiable:
+
+- **Append-only**: When a season transitions to `COMPLETED`, the season record and all
+  associated data are added to the archive atomically as the final step of the season-end
+  transaction. A season already in the archive MUST NOT be deleted, overwritten, or mutated
+  by any user command or automated system process.
+- **Zero-to-many cardinality**: A server's archive MAY contain zero or more completed
+  seasons. An empty archive is the canonical initial state for a newly configured server.
+- **Full data retention**: Every archived season retains all associated records: division
+  configurations, round schedules and amendment history, weather phase outputs, session
+  results and driver results, standings snapshots, driver and team seasonal assignments,
+  points configuration snapshots, and the full audit trail. No associated data is discarded
+  on season completion.
+- **Read-only access**: Archived season data MAY be read by any command or module with
+  appropriate authorisation. No write path targets archived records outside of the single
+  append operation triggered by season completion.
+- **Future statistics foundation**: The Season Archive is the authoritative data source for
+  all planned season history and statistics features (Principle VI). Any implementation
+  consuming archived data MUST treat the archive as immutable and MUST NOT rely on derived
+  or cached state not persisted at completion time.
+
+The archive is constituted by the existing `Season` records (and all related tables) in the
+`COMPLETED` lifecycle state. Concrete schema additions for archive indexing, querying, or
+migration from the prior ephemeral-season model are deferred to the feature specification
+for the season persistence increment.
+
 - **Inter-phase state**: The `Rpc` value computed in Phase 1 MUST be persisted against its
   round and division and remain available until Phase 3 completes or the round is cancelled.
   Phase 2 session-type draws MUST similarly be persisted per session until Phase 3 consumes
@@ -1352,6 +1428,15 @@ for team-level aggregates):
 - `position_finish_counts` (TEXT — JSON map)
 - `position_first_round` (TEXT — JSON map)
 
+### New Entities (v2.5.0)
+
+No new database schema entities are introduced at this governance layer. The Season Archive
+is a governance concept formalising that `Season` records (and all their associated data
+— Division, Round, SessionResult, DriverStandingsSnapshot, SeasonAssignment, etc.) in the
+`COMPLETED` state are permanently retained. Concrete schema additions (e.g., archive
+indexing tables, a dedicated stats-query layer, or migration scaffolding to clear any prior
+ephemeral-deletion logic) are scoped to the season persistence feature specification.
+
 ## Governance
 
 This constitution supersedes all other development practices and conventions for this project.
@@ -1372,4 +1457,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.4.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-18
+**Version**: 2.5.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-26
