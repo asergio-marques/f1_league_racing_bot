@@ -389,26 +389,22 @@ async def finalize_round(
             )
             srv_row = await cursor.fetchone()
         if srv_row:
+            n_penalties = len(state.staged)
+            summary = (
+                f"🏁 **Round {state.round_number} ({state.division_name}) finalized** by <@{actor_id}>.\n"
+                + (f"{n_penalties} penalty(ies) applied. " if n_penalties else "No penalties applied. ")
+                + "Final results posted and submission channel closed.\n"
+                f"old={old_val}\nnew={new_val}"
+            )
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 int(srv_row["server_id"]),
-                f"🏁 **ROUND_FINALIZED** by <@{actor_id}> — "
-                f"Round {state.round_number} | {state.division_name}\n"
-                f"old={old_val}\nnew={new_val}",
+                summary,
             )
     except Exception:
         log.exception("finalize_round: error writing audit log for round %s", round_id)
 
     # T024-f: close the submission channel
     await close_submission_channel(state.submission_channel_id, round_id, guild, db_path)
-
-    # T024-g: ephemeral followup
-    n_penalties = len(state.staged)
-    summary = (
-        f"✅ **Round {state.round_number} ({state.division_name}) finalized.**\n"
-        + (f"{n_penalties} penalty(ies) applied. " if n_penalties else "No penalties applied. ")
-        + "Final results posted and submission channel closed."
-    )
-    await interaction.followup.send(summary, ephemeral=True)
 
 
 async def _recompute_session_points(db_path: str, round_id: int) -> None:

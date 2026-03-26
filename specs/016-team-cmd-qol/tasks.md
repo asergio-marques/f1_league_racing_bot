@@ -34,15 +34,15 @@
 
 **Goal**: Admin runs `/team add name:"Red Bull" role:@RedBull` to create a team in the server list. If a SETUP season is active, the team is automatically inserted into every division.
 
-**Independent Test**: Run `/team add name:"Alpine"` with no active season — team appears in server list with no role. Run again with the same name — error returned. No other commands needed.
+**Independent Test**: Run `/team add name:"Alpine" role:@Alpine` with no active season — team appears in server list with the role. Run again with the same name — error returned. No other commands needed.
 
 ### Implementation
 
-- [X] T007 [US1] Rewrite `src/cogs/team_cog.py`: remove `default_group`, `role_group`, `season_group`, and `_ConfirmView`; keep the `team = app_commands.Group(...)` definition; implement `/team add name: str role: discord.Role = None` with `@channel_guard @admin_only` and all response variants (no role/no season · role/no season · role+SETUP season showing div count · duplicate-name ⛔ error) (FR-001, FR-002, FR-003, FR-012)
+- [X] T007 [US1] Rewrite `src/cogs/team_cog.py`: remove `default_group`, `role_group`, `season_group`, and `_ConfirmView`; keep the `team = app_commands.Group(...)` definition; implement `/team add name: str role: discord.Role` (role required) with `@channel_guard @admin_only` and all response variants (role/no season · role+SETUP season showing div count · duplicate-name ⛔ error) (FR-001, FR-002, FR-003, FR-012)
 
 ### Tests
 
-- [X] T008 [P] [US1] Create `tests/unit/test_team_cog.py` with 4 `/team add` cog tests using `AsyncMock` for `bot.team_service`, `bot.placement_service`, `bot.season_service`: no-role+no-season (`set_team_role_config` NOT called), role+no-season (role mention in response), role+SETUP-season (`season_team_add` called, div count in response), duplicate-name (`add_default_team` raises `ValueError`, error response, no further service calls)
+- [X] T008 [P] [US1] Create `tests/unit/test_team_cog.py` with 3 `/team add` cog tests using `AsyncMock` for `bot.team_service`, `bot.placement_service`, `bot.season_service`: role+no-season (`set_team_role_config` called, role mention in response), role+SETUP-season (`season_team_add` called, div count in response), duplicate-name (`add_default_team` raises `ValueError`, error response, no further service calls)
 
 **Checkpoint**: `/team add` operational; `default_group`, `role_group`, `season_group`, `_ConfirmView` no longer present in `team_cog.py`.
 

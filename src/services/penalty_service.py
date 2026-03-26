@@ -198,7 +198,7 @@ async def apply_penalties(
                 """
                 SELECT id, driver_user_id, finishing_position, outcome, total_time,
                        fastest_lap, time_penalties, post_steward_total_time,
-                       post_race_time_penalties
+                       post_race_time_penalties, best_lap, tyre, gap
                 FROM driver_session_results
                 WHERE session_result_id = ? AND is_superseded = 0
                 ORDER BY finishing_position
@@ -224,6 +224,11 @@ async def apply_penalties(
                     "total_time": dr["total_time"],
                     "post_steward_total_time": dr["post_steward_total_time"],
                     "post_race_time_penalties": dr["post_race_time_penalties"],
+                    "fastest_lap": dr["fastest_lap"],
+                    "time_penalties": dr["time_penalties"],
+                    "best_lap": dr["best_lap"],
+                    "tyre": dr["tyre"],
+                    "gap": dr["gap"],
                     "points_awarded": None,  # will be recomputed
                     "fastest_lap_bonus": None,
                     "finishing_position": dr["finishing_position"],
@@ -232,6 +237,15 @@ async def apply_penalties(
                     update["outcome"] = "DSQ"
                     update["points_awarded"] = 0
                     update["fastest_lap_bonus"] = 0
+                    if session_type.is_qualifying:
+                        update["best_lap"] = "DSQ"
+                        update["tyre"] = "N/A"
+                        update["gap"] = "N/A"
+                    else:
+                        update["total_time"] = "DSQ"
+                        update["post_steward_total_time"] = "DSQ"
+                        update["fastest_lap"] = "N/A"
+                        update["time_penalties"] = "N/A"
                 elif uid in time_boosts:
                     penalty_s = time_boosts[uid]
                     base_time = dr["total_time"] or ""
@@ -276,6 +290,11 @@ async def apply_penalties(
                         total_time = ?,
                         post_steward_total_time = ?,
                         post_race_time_penalties = ?,
+                        fastest_lap = ?,
+                        time_penalties = ?,
+                        best_lap = ?,
+                        tyre = ?,
+                        gap = ?,
                         finishing_position = ?
                     WHERE id = ?
                     """,
@@ -284,6 +303,11 @@ async def apply_penalties(
                         dr_dict["total_time"],
                         dr_dict["post_steward_total_time"],
                         dr_dict["post_race_time_penalties"],
+                        dr_dict["fastest_lap"],
+                        dr_dict["time_penalties"],
+                        dr_dict["best_lap"],
+                        dr_dict["tyre"],
+                        dr_dict["gap"],
                         dr_dict["finishing_position"],
                         dr_dict["id"],
                     ),

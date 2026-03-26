@@ -82,9 +82,25 @@ async def reset_server_data(
             scheduler_service.cancel_round(rid)
 
         # ── 3.  FK-safe deletes inside a single transaction ──
-        #        Order: leaf → root
-        #        sessions / phase_results → rounds → divisions → seasons
-        #                                → audit_entries → [server_configs]
+        #        Full NO-ACTION FK chain (must delete leaf-first):
+        #
+        #        driver_season_assignments
+        #            .team_seat_id    → team_seats (NO ACTION)
+        #            .division_id     → divisions  (NO ACTION)
+        #            .season_id       → seasons    (NO ACTION)
+        #        team_seats
+        #            .team_instance_id → team_instances (NO ACTION)
+        #        team_instances
+        #            .division_id     → divisions  (NO ACTION)
+        #        rounds
+        #            .division_id     → divisions  (NO ACTION)
+        #              └── CASCADE: session_results, driver_standings_snapshots,
+        #                           team_standings_snapshots, round_submission_channels
+        #        sessions / phase_results
+        #            .round_id        → rounds     (NO ACTION)
+        #        forecast_messages
+        #            .round_id        → rounds     (NO ACTION)
+        #            .division_id     → divisions  (NO ACTION)
 
         if round_ids:
             ph = _ph(round_ids)
@@ -102,9 +118,38 @@ async def reset_server_data(
             )
 
         if division_ids:
-            ph = _ph(division_ids)
+            ph_div = _ph(division_ids)
+
+            # Also clear any forecast_messages tied to the division but not a round
             await db.execute(
-                f"DELETE FROM rounds WHERE division_id IN ({ph})",
+                f"DELETE FROM forecast_messages WHERE division_id IN ({ph_div})",
+                division_ids,
+            )
+
+            # driver_season_assignments must go before team_seats (references it)
+            # and before divisions (references it)
+            await db.execute(
+                f"DELETE FROM driver_season_assignments WHERE division_id IN ({ph_div})",
+                division_ids,
+            )
+
+            # team_seats must go before team_instances (references it)
+            await db.execute(
+                f"""DELETE FROM team_seats WHERE team_instance_id IN (
+                    SELECT id FROM team_instances WHERE division_id IN ({ph_div})
+                )""",
+                division_ids,
+            )
+
+            # team_instances must go before divisions
+            await db.execute(
+                f"DELETE FROM team_instances WHERE division_id IN ({ph_div})",
+                division_ids,
+            )
+
+            # rounds + cascade (session_results, standings, submission_channels)
+            await db.execute(
+                f"DELETE FROM rounds WHERE division_id IN ({ph_div})",
                 division_ids,
             )
 

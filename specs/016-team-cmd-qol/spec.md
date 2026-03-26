@@ -9,7 +9,7 @@
 
 ### User Story 1 - Add a Team to the Server (Priority: P1)
 
-A trusted admin runs `/team add` to create a new team entry, providing the team name and optionally a Discord role. If a season is currently in SETUP, the team is simultaneously added to every division in that pending season.
+A trusted admin runs `/team add` to create a new team entry, providing the team name and a required Discord role. If a season is currently in SETUP, the team is simultaneously added to every division in that pending season.
 
 **Why this priority**: Adding teams is the first action an admin takes when configuring a season. Without it, no other team workflow proceeds.
 
@@ -20,7 +20,7 @@ A trusted admin runs `/team add` to create a new team entry, providing the team 
 1. **Given** no active SETUP season exists, **When** an admin runs `/team add name:"Red Bull" role:@RedBull`, **Then** the team is added to the server list with the role mapping recorded and a confirmation is returned.
 2. **Given** a SETUP season is active with two divisions, **When** an admin runs `/team add name:"Red Bull" role:@RedBull`, **Then** the team is added to the server list, the role is mapped, and the team (with the configured seat count) is inserted into every division of the pending season.
 3. **Given** a team with that name already exists in the server list, **When** an admin runs `/team add` with the same name, **Then** the command is rejected with a clear duplicate-name error.
-4. **Given** no role is provided, **When** an admin runs `/team add name:"Red Bull"`, **Then** the team is added without a role mapping; role operations for this team are simply skipped.
+4. **Given** no role is provided, **When** an admin runs `/team add name:"Red Bull"`, **Then** Discord rejects the command before it reaches the bot (role is a required parameter).
 
 ---
 
@@ -86,7 +86,7 @@ A trusted admin runs `/team list` to view the full server team list with each te
 
 ### Functional Requirements
 
-- **FR-001**: The bot MUST expose a `/team add` command that accepts a team name (required) and a Discord role (optional) and adds the team to the persistent server team list.
+- **FR-001**: The bot MUST expose a `/team add` command that accepts a team name (required) and a Discord role (required) and adds the team to the persistent server team list.
 - **FR-002**: When `/team add` is invoked and a season in SETUP state is active, the bot MUST also insert the team into every division of that pending season.
 - **FR-003**: The bot MUST reject `/team add` if a team with the same name already exists in the server list, returning a clear error message.
 - **FR-004**: The bot MUST expose a `/team remove` command that accepts a team name and removes that team and its role mapping from the persistent server team list.

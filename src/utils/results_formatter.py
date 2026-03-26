@@ -74,27 +74,25 @@ def format_qualifying_table(
     member_display: dict[int, str] | None = None,
     team_display: dict[int, str] | None = None,
 ) -> str:
-    """Render a qualifying result as a fixed-width code-block table.
+    """Render a qualifying result as a plain-text mention list.
 
-    Header: Pos | Driver | Team | Tyre | Best Lap | Gap | Points
+    Format per line: {pos}. @Driver (@&Team) — {tyre} — {best_lap} — {gap} — {pts} pts
     Uses display names when member_display/team_display are provided,
     otherwise falls back to Discord mention strings.
     """
     sorted_rows = sorted(driver_rows, key=lambda r: r.finishing_position)
-    header = f"{'Pos':<4} {'Driver':<20} {'Team':<15} {'Tyre':<6} {'Best Lap':<10} {'Gap':<10} {'Points'}"
-    separator = "-" * len(header)
-    lines: list[str] = [header, separator]
+    lines: list[str] = []
     for row in sorted_rows:
-        driver_name = (member_display or {}).get(row.driver_user_id, f"<@{row.driver_user_id}>")
-        team_name = (team_display or {}).get(row.team_role_id, f"<@&{row.team_role_id}>")
+        driver_ref = (member_display or {}).get(row.driver_user_id) or f"<@{row.driver_user_id}>"
+        team_ref = (team_display or {}).get(row.team_role_id) or f"<@&{row.team_role_id}>"
         tyre = row.tyre or "—"
         best_lap = row.best_lap or row.outcome.value
         gap = row.gap or "—"
         pts = points_by_driver.get(row.driver_user_id, 0)
         lines.append(
-            f"{row.finishing_position:<4} {driver_name:<20} {team_name:<15} {tyre:<6} {best_lap:<10} {gap:<10} {pts} pts"
+            f"**{row.finishing_position}.** {driver_ref} ({team_ref}) — {tyre} — {best_lap} — {gap} — **{pts} pts**"
         )
-    return "```\n" + "\n".join(lines) + "\n```"
+    return "\n".join(lines)
 
 
 def format_race_table(
@@ -103,27 +101,35 @@ def format_race_table(
     member_display: dict[int, str] | None = None,
     team_display: dict[int, str] | None = None,
 ) -> str:
-    """Render a race result as a fixed-width code-block table.
+    """Render a race result as a plain-text mention list.
 
-    Header: Pos | Driver | Team | Total Time | Fastest Lap | Time Penalties | Points
+    Format per line: {pos}. @Driver (@&Team) — {total_time}{penalty_suffix} — {pts} pts
     Uses display names when member_display/team_display are provided,
     otherwise falls back to Discord mention strings.
+
+    If any driver has fastest_lap_bonus > 0, a footnote line is appended:
+    ``🏎 **Fastest lap** — <@driver_id> — {time}``
     """
     sorted_rows = sorted(driver_rows, key=lambda r: r.finishing_position)
-    header = f"{'Pos':<4} {'Driver':<20} {'Team':<15} {'Total Time':<14} {'Fastest Lap':<13} {'Time Penalties':<16} {'Points'}"
-    separator = "-" * len(header)
-    lines: list[str] = [header, separator]
+    lines: list[str] = []
+    fl_driver_id: int | None = None
+    fl_time: str | None = None
     for row in sorted_rows:
-        driver_name = (member_display or {}).get(row.driver_user_id, f"<@{row.driver_user_id}>")
-        team_name = (team_display or {}).get(row.team_role_id, f"<@&{row.team_role_id}>")
+        driver_ref = (member_display or {}).get(row.driver_user_id) or f"<@{row.driver_user_id}>"
+        team_ref = (team_display or {}).get(row.team_role_id) or f"<@&{row.team_role_id}>"
         total_time = row.total_time or row.outcome.value
-        fl = row.fastest_lap or "—"
-        tp = row.time_penalties or "—"
+        penalty_suffix = f" (+{row.time_penalties})" if row.time_penalties and row.time_penalties not in ("—", "N/A") else ""
         pts = points_by_driver.get(row.driver_user_id, 0)
         lines.append(
-            f"{row.finishing_position:<4} {driver_name:<20} {team_name:<15} {total_time:<14} {fl:<13} {tp:<16} {pts} pts"
+            f"**{row.finishing_position}.** {driver_ref} ({team_ref}) — {total_time}{penalty_suffix} — **{pts} pts**"
         )
-    return "```\n" + "\n".join(lines) + "\n```"
+        if row.fastest_lap_bonus > 0:
+            fl_driver_id = row.driver_user_id
+            fl_time = row.fastest_lap
+    result = "\n".join(lines)
+    if fl_driver_id is not None:
+        result += f"\n🏎 **Fastest lap** — <@{fl_driver_id}> — {fl_time or '—'}"
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -137,14 +143,16 @@ def format_driver_standings(
 ) -> str:
     """Render driver standings as a ranked mention list.
 
-    Omits reserve drivers when ``show_reserves=False``.
+    Non-reserve drivers are always shown (even at 0 points).
+    Reserve drivers are shown only when they have points AND ``show_reserves=True``.
     Format: ``{pos}. @Driver — **{total_points} pts**``
     """
     sorted_snaps = sorted(snapshots, key=lambda s: s.standing_position)
     lines: list[str] = []
     for snap in sorted_snaps:
-        if not show_reserves and snap.driver_user_id in reserve_user_ids:
-            continue
+        if snap.driver_user_id in reserve_user_ids:
+            if snap.total_points == 0 or not show_reserves:
+                continue
         lines.append(f"{snap.standing_position}. <@{snap.driver_user_id}> — **{snap.total_points} pts**")
     return "\n".join(lines) if lines else "No standings available."
 

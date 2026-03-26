@@ -43,7 +43,7 @@ class TeamCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         name: str,
-        role: discord.Role | None = None,
+        role: discord.Role,
     ) -> None:
         try:
             await self.bot.team_service.add_default_team(  # type: ignore[attr-defined]
@@ -53,11 +53,10 @@ class TeamCog(commands.Cog):
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
             return
 
-        if role is not None:
-            await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
-                interaction.guild_id, name, role.id,
-                actor_id=interaction.user.id, actor_name=str(interaction.user),
-            )
+        await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
+            interaction.guild_id, name, role.id,
+            actor_id=interaction.user.id, actor_name=str(interaction.user),
+        )
 
         setup_season = await self.bot.season_service.get_setup_season(  # type: ignore[attr-defined]
             interaction.guild_id
@@ -70,14 +69,12 @@ class TeamCog(commands.Cog):
             except ValueError as exc:
                 await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
                 return
-            role_part = f" with role {role.mention}" if role is not None else ""
             msg = (
-                f'✅ Team "{name}" added{role_part} and inserted into all '
+                f'✅ Team "{name}" added with role {role.mention} and inserted into all '
                 f"{div_count} division(s) of Season {setup_season.season_number}."
             )
         else:
-            role_part = f" with role {role.mention}" if role is not None else ""
-            msg = f'✅ Team "{name}" added{role_part}.'
+            msg = f'✅ Team "{name}" added with role {role.mention}.'
 
         await interaction.response.send_message(msg, ephemeral=True)
 

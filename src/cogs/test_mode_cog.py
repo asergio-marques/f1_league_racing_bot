@@ -141,30 +141,12 @@ class TestModeCog(commands.Cog):
         )
 
         if entry is None:
-            # Non-mystery phases exhausted.  If the season is still active its end
-            # was supposed to fire on the previous Phase-3 advance; trigger it now
-            # as a safety net (e.g. timing race or past-dates path left season open).
-            from services.season_end_service import execute_season_end
-            season = await self.bot.season_service.get_active_season(  # type: ignore[attr-defined]
-                interaction.guild_id
+            await interaction.followup.send(
+                "ℹ️ All phases for all rounds and divisions have been executed. "
+                "There is nothing left to advance.\n"
+                "Use `/season complete` when all rounds are finalized to end the season.",
+                ephemeral=True,
             )
-            if season is not None:
-                self.bot.scheduler_service.cancel_season_end(  # type: ignore[attr-defined]
-                    interaction.guild_id
-                )
-                await execute_season_end(interaction.guild_id, season.id, self.bot)
-                await interaction.followup.send(
-                    "🏁 **Season complete!** All phases have been executed and "
-                    "all data has been cleared.\n"
-                    "Run `/season-setup` to begin a new season.",
-                    ephemeral=True,
-                )
-            else:
-                await interaction.followup.send(
-                    "ℹ️ All phases for all rounds and divisions have been executed. "
-                    "There is nothing left to advance.",
-                    ephemeral=True,
-                )
             return
 
         # Dispatch to the appropriate phase service
@@ -292,27 +274,6 @@ class TestModeCog(commands.Cog):
             self.bot.db_path,  # type: ignore[attr-defined]
             self.bot.scheduler_service,  # type: ignore[attr-defined]
         )
-
-        if next_entry is None and phase_number == 3:
-            # This was the last weather phase of the last round — end the season now
-            from services.season_end_service import execute_season_end
-            season = await self.bot.season_service.get_active_season(  # type: ignore[attr-defined]
-                interaction.guild_id
-            )
-            if season is not None:
-                self.bot.scheduler_service.cancel_season_end(  # type: ignore[attr-defined]
-                    interaction.guild_id
-                )
-                await execute_season_end(interaction.guild_id, season.id, self.bot)
-                await interaction.followup.send(
-                    f"⏩ Advanced **Phase {phase_number}** for "
-                    f"**{entry['division_name']}** — **{entry['track_name']}**. "
-                    f"That was the final phase.\n"
-                    f"🏁 **Season complete!** All data has been cleared. "
-                    f"Run `/season-setup` to begin a new season.",
-                    ephemeral=True,
-                )
-                return
 
         await interaction.followup.send(
             f"⏩ Advanced **Phase {phase_number}** for "

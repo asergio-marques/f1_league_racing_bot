@@ -340,16 +340,16 @@ team = app_commands.Group(
 
 #### `/team add` (FR-001, FR-002, FR-003)
 
-**Signature**: `/team add name: str role: discord.Role = None`
+**Signature**: `/team add name: str role: discord.Role`
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | `str` | Yes | Team name (max 50 chars) |
-| `role` | `discord.Role` | No | Discord role to associate with this team |
+| `role` | `discord.Role` | Yes | Discord role to associate with this team |
 
 **Step-by-step logic**:
 1. Call `bot.team_service.add_default_team(guild_id, name)` — raises `ValueError` on duplicate or Reserve name.
-2. If `role` arg provided: call `bot.placement_service.set_team_role_config(guild_id, name, role.id, actor_id=interaction.user.id, actor_name=str(interaction.user))`.
+2. Call `bot.placement_service.set_team_role_config(guild_id, name, role.id, actor_id=interaction.user.id, actor_name=str(interaction.user))`.
 3. Call `bot.season_service.get_setup_season(guild_id)` → `setup_season`.
 4. If `setup_season` is not None: call `bot.team_service.season_team_add(guild_id, setup_season.id, name, 2)` → `div_count`.
 5. Respond ephemeral.
@@ -357,7 +357,6 @@ team = app_commands.Group(
 **Error handling**: Wrap steps 1 and 4 in `try/except ValueError`; send `⛔ {exc}` ephemeral.
 
 **Response**:
-- No role, no season: `✅ Team "Red Bull" added.`
 - With role, no season: `✅ Team "Red Bull" added with role @RedBull.`
 - With role + SETUP season (N divisions): `✅ Team "Red Bull" added with role @RedBull and inserted into all 2 division(s) of Season 3.`
 
@@ -465,7 +464,7 @@ Season 3 effective teams:
 
 | Command | No SETUP Season | SETUP Season active |
 |---------|-----------------|---------------------|
-| `/team add` | `add_default_team` + optional `set_team_role_config` | + `season_team_add` for every division |
+| `/team add` | `add_default_team` + `set_team_role_config` | + `season_team_add` for every division |
 | `/team remove` | `remove_default_team` + `delete_team_role_config` | + `season_team_remove` for every division (0-count accepted) |
 | `/team rename` | `rename_default_team` + `rename_team_role_config` | + `season_team_rename` for every division |
 | `/team list` | Show server list | Show server list + divergence check |
@@ -530,7 +529,7 @@ Mock `bot.team_service`, `bot.placement_service`, `bot.season_service` as `Async
 
 | Scenario | Key assertions |
 |----------|---------------|
-| `/team add` — no role, no season | `add_default_team` called; `set_team_role_config` NOT called; success message |
+| `/team add` — role + no season | `add_default_team` called; `set_team_role_config` called with role.id; success message with role mention |
 | `/team add` — with role, no season | `add_default_team` + `set_team_role_config` called; role mention in response |
 | `/team add` — with SETUP season | `add_default_team` + `set_team_role_config` + `season_team_add` called; division count in response |
 | `/team add` — duplicate name | `add_default_team` raises `ValueError`; error response; no further calls |

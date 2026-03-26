@@ -70,22 +70,7 @@ def _unwrap(cmd):
 # ---------------------------------------------------------------------------
 
 class TestTeamAdd:
-    async def test_no_role_no_season_success(self):
-        from cogs.team_cog import TeamCog
-        bot = _make_bot(setup_season=None)
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=None)
-
-        bot.team_service.add_default_team.assert_awaited_once_with(1, "Alpine")
-        bot.placement_service.set_team_role_config.assert_not_awaited()
-        bot.team_service.season_team_add.assert_not_awaited()
-        args, kwargs = interaction.response.send_message.call_args
-        assert "Alpine" in (args[0] if args else kwargs["content"])
-        assert kwargs.get("ephemeral") is True
-
-    async def test_with_role_no_season(self):
+    async def test_with_role_no_season_success(self):
         from cogs.team_cog import TeamCog
         bot = _make_bot(setup_season=None)
         cog = TeamCog(bot)
@@ -96,11 +81,14 @@ class TestTeamAdd:
 
         await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=role)
 
+        bot.team_service.add_default_team.assert_awaited_once_with(1, "Alpine")
         bot.placement_service.set_team_role_config.assert_awaited_once()
         bot.team_service.season_team_add.assert_not_awaited()
         args, kwargs = interaction.response.send_message.call_args
         content = args[0] if args else kwargs["content"]
+        assert "Alpine" in content
         assert "<@&555>" in content
+        assert kwargs.get("ephemeral") is True
 
     async def test_with_role_and_setup_season(self):
         from cogs.team_cog import TeamCog

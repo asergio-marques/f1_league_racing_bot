@@ -401,3 +401,101 @@ async def test_tiebreak_cross_position_set(db_path):
     assert uid_to_pos[111] < uid_to_pos[222], (
         "Driver A (P2 finish) should rank above Driver B (P3 finish) on equal points"
     )
+
+
+# ---------------------------------------------------------------------------
+# Zero-point inclusion tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_compute_driver_standings_includes_zero_pt_non_reserve(db_path):
+    """Non-reserve drivers with no results appear in standings with 0 points."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=10)
+        # Round with one result for driver 111
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        await _result(db, sr1, 111, pos=1, pts=25)
+        # Driver 222 has a seat in a non-reserve team instance but no results
+        cur = await db.execute(
+            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) VALUES (10, 222, 'ACTIVE')"
+        )
+        dp_id = cur.lastrowid
+        cur = await db.execute(
+            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) VALUES (?, 'Alpha', 2, 0)",
+            (div_id,),
+        )
+        ti_id = cur.lastrowid
+        await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) VALUES (?, 1, ?)",
+            (ti_id, dp_id),
+        )
+        await db.commit()
+    snaps = await compute_driver_standings(db_path, div_id, r1)
+    uids = {s.driver_user_id for s in snaps}
+    assert 222 in uids, "Non-reserve driver with no results must appear in standings"
+    zero_snap = next(s for s in snaps if s.driver_user_id == 222)
+    assert zero_snap.total_points == 0
+
+
+@pytest.mark.asyncio
+async def test_compute_driver_standings_excludes_zero_pt_reserve(db_path):
+    """Reserve drivers with no results do NOT appear in standings."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=11)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        await _result(db, sr1, 111, pos=1, pts=25)
+        # Driver 333 is in a reserve team instance with no results
+        cur = await db.execute(
+            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) VALUES (11, 333, 'ACTIVE')"
+        )
+        dp_id = cur.lastrowid
+        cur = await db.execute(
+            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) VALUES (?, 'Reserve', 2, 1)",
+            (div_id,),
+        )
+        ti_id = cur.lastrowid
+        await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) VALUES (?, 1, ?)",
+            (ti_id, dp_id),
+        )
+        await db.commit()
+    snaps = await compute_driver_standings(db_path, div_id, r1)
+    uids = {s.driver_user_id for s in snaps}
+    assert 333 not in uids, "Reserve driver with no results must NOT appear in standings"
+
+
+@pytest.mark.asyncio
+async def test_compute_team_standings_includes_zero_pt_team(db_path):
+    """Non-reserve teams with no results appear in team standings with 0 points."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=12)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        # Team role 555 scores points; team role 666 has a team_instance but no results
+        await _result(db, sr1, 111, pos=1, pts=25, team=555)
+        # Register team_role_config for both teams (server_id=12 from _bootstrap)
+        await db.execute(
+            "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (12, 'TeamA', 555)"
+        )
+        await db.execute(
+            "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (12, 'TeamB', 666)"
+        )
+        # Create team instances for both in the division
+        await db.execute(
+            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) VALUES (?, 'TeamA', 2, 0)",
+            (div_id,),
+        )
+        await db.execute(
+            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) VALUES (?, 'TeamB', 2, 0)",
+            (div_id,),
+        )
+        await db.commit()
+    snaps = await compute_team_standings(db_path, div_id, r1)
+    role_ids = {s.team_role_id for s in snaps}
+    assert 666 in role_ids, "Zero-point team must appear in team standings"
+    zero_snap = next(s for s in snaps if s.team_role_id == 666)
+    assert zero_snap.total_points == 0
+

@@ -178,9 +178,10 @@ async def _refresh_prompt(state: PenaltyReviewState) -> None:
 class _SessionSelectView(discord.ui.View):
     """One button per non-cancelled session type in the round."""
 
-    def __init__(self, state: PenaltyReviewState) -> None:
+    def __init__(self, state: PenaltyReviewState, source_interaction: discord.Interaction) -> None:
         super().__init__(timeout=120)
         self.state = state
+        self.source_interaction = source_interaction
         for stype in state.session_types_present:
             label = stype.value.replace("_", " ").title()
             btn = discord.ui.Button(label=label, style=discord.ButtonStyle.primary)
@@ -193,7 +194,18 @@ class _SessionSelectView(discord.ui.View):
                 AddPenaltyModal(state=self.state, session_type=stype)
             )
             self.stop()
+            try:
+                await self.source_interaction.delete_original_response()
+            except discord.HTTPException:
+                pass
         return cb
+
+    async def on_timeout(self) -> None:
+        """User closed the selector without picking — delete the ephemeral."""
+        try:
+            await self.source_interaction.delete_original_response()
+        except discord.HTTPException:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -448,7 +460,7 @@ class PenaltyReviewView(discord.ui.View):
             return
         if not await _require_lm(interaction, self.state):
             return
-        view = _SessionSelectView(state=self.state)
+        view = _SessionSelectView(state=self.state, source_interaction=interaction)
         await interaction.response.send_message(
             "Select which session to penalise:", view=view, ephemeral=True
         )
@@ -509,8 +521,8 @@ class PenaltyReviewView(discord.ui.View):
                 ephemeral=True,
             )
             return
-        await interaction.response.defer(ephemeral=True)
-        await _show_approval_step(interaction, self.state)
+        from services.result_submission_service import finalize_round
+        await finalize_round(interaction, self.state)
 
 
 # ---------------------------------------------------------------------------
