@@ -370,20 +370,40 @@ async def persist_snapshots(
     team_snaps: list[TeamStandingsSnapshot],
 ) -> None:
     """INSERT OR REPLACE all snapshot rows into the database."""
+    from services.driver_service import resolve_driver_profile_id
+
     async with get_connection(db_path) as db:
+        # Cache server_id per division_id (all snaps in a batch are typically one division)
+        _server_id_cache: dict[int, int | None] = {}
+
         for snap in driver_snaps:
+            if snap.division_id not in _server_id_cache:
+                cursor = await db.execute(
+                    "SELECT s.server_id FROM divisions d "
+                    "JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
+                    (snap.division_id,),
+                )
+                div_row = await cursor.fetchone()
+                _server_id_cache[snap.division_id] = div_row["server_id"] if div_row else None
+            server_id = _server_id_cache.get(snap.division_id)
+            snap_profile_id: int | None = None
+            if server_id is not None:
+                snap_profile_id = await resolve_driver_profile_id(
+                    server_id, snap.driver_user_id, db
+                )
             await db.execute(
                 """
                 INSERT INTO driver_standings_snapshots
                     (round_id, division_id, driver_user_id, standing_position, total_points,
-                     finish_counts, first_finish_rounds, standings_message_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                     finish_counts, first_finish_rounds, standings_message_id, driver_profile_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(round_id, division_id, driver_user_id)
                 DO UPDATE SET
                     standing_position = excluded.standing_position,
                     total_points = excluded.total_points,
                     finish_counts = excluded.finish_counts,
-                    first_finish_rounds = excluded.first_finish_rounds
+                    first_finish_rounds = excluded.first_finish_rounds,
+                    driver_profile_id = excluded.driver_profile_id
                 """,
                 (
                     snap.round_id,
@@ -394,6 +414,7 @@ async def persist_snapshots(
                     json.dumps(snap.finish_counts),
                     json.dumps(snap.first_finish_rounds),
                     snap.standings_message_id,
+                    snap_profile_id,
                 ),
             )
         for snap in team_snaps:

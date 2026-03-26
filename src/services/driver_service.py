@@ -81,6 +81,21 @@ def _row_to_profile(row) -> DriverProfile:
     )
 
 
+async def resolve_driver_profile_id(server_id: int, discord_user_id: int, db) -> int | None:
+    """Return driver_profiles.id for the given discord_user_id and server_id.
+
+    Accepts an open aiosqlite connection so callers can reuse an existing transaction.
+    Returns None if no matching profile is found.
+    """
+    cursor = await db.execute(
+        "SELECT id FROM driver_profiles "
+        "WHERE server_id = ? AND CAST(discord_user_id AS INTEGER) = ?",
+        (server_id, discord_user_id),
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else None
+
+
 class DriverService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path

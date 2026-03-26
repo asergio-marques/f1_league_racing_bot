@@ -16,6 +16,7 @@ class DriverStandingsSnapshot:
     finish_counts: dict[str, int]
     first_finish_rounds: dict[str, int]
     standings_message_id: int | None = None
+    driver_profile_id: int | None = None
 
     @classmethod
     def from_row(cls, row: object) -> DriverStandingsSnapshot:

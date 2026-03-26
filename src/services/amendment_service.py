@@ -14,6 +14,7 @@ import discord
 
 from db.database import get_connection
 from models.round import RoundFormat
+from services.season_service import SeasonImmutableError
 
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
@@ -48,7 +49,7 @@ class AmendmentService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT r.*, d.division_id, s.server_id, "
-                "       d.forecast_channel_id, d.mention_role_id "
+                "       d.forecast_channel_id, d.mention_role_id, s.status AS season_status "
                 "FROM rounds r "
                 "JOIN divisions d ON d.id = r.division_id "
                 "JOIN seasons s ON s.id = d.season_id "
@@ -59,6 +60,11 @@ class AmendmentService:
 
         if row is None:
             raise ValueError(f"Round {round_id} not found")
+
+        if row["season_status"] == "COMPLETED":
+            raise SeasonImmutableError(
+                f"Round {round_id} belongs to an archived season and cannot be amended."
+            )
 
         old_value = row[field] if field in row.keys() else None
         server_id: int = row["server_id"]

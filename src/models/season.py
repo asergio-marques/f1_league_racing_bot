@@ -20,3 +20,4 @@ class Season:
     start_date: date
     status: SeasonStatus
     season_number: int = 0
+    game_edition: int = 0

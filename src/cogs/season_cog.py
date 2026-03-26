@@ -35,6 +35,7 @@ from models.division import Division
 from models.round import RoundFormat
 from services import season_points_service
 from models.track import TRACK_DEFAULTS, TRACK_IDS
+from services.season_service import SeasonImmutableError
 from utils.channel_guard import channel_guard, admin_only
 from utils.message_builder import format_division_list, format_round_list, format_roster_block
 
@@ -61,6 +62,7 @@ class PendingConfig:
     divisions: list[PendingDivision] = field(default_factory=list)
     season_id: int = 0  # set after first DB snapshot; 0 = not yet persisted
     season_number: int = 0  # set after first DB snapshot
+    game_edition: int = 0  # positive integer (e.g. 25 for F1 25)
 
 
 # ---------------------------------------------------------------------------
@@ -121,10 +123,17 @@ class SeasonCog(commands.Cog):
         name="setup",
         description="Start season configuration (admin only).",
     )
+    @app_commands.describe(
+        game_edition="Game edition year (e.g. 25 for F1 25). Required.",
+    )
     @channel_guard
     @admin_only
-    async def season_setup(self, interaction: discord.Interaction) -> None:
-        """Begin season setup \u2014 no parameters required."""
+    async def season_setup(
+        self,
+        interaction: discord.Interaction,
+        game_edition: app_commands.Range[int, 1, 9999],
+    ) -> None:
+        """Begin season setup."""
         server_id = interaction.guild_id
 
         if self._get_pending_for_server(server_id) is not None:
@@ -135,20 +144,28 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if await self.bot.season_service.has_existing_season(server_id):
+        if await self.bot.season_service.get_active_season(server_id) is not None:
             await interaction.response.send_message(
-                "\u274c A season already exists for this server. "
-                "Use `/season cancel` to delete it, or `/bot-reset` to clear all data.",
+                "\u274c A season is currently active for this server. "
+                "Complete it before starting a new one.",
                 ephemeral=True,
             )
             return
 
-        cfg = PendingConfig(server_id=server_id)
+        if await self.bot.season_service.get_setup_season(server_id) is not None:
+            await interaction.response.send_message(
+                "\u274c A season setup is already in progress for this server. "
+                "Use `/season review` to continue, or cancel it first.",
+                ephemeral=True,
+            )
+            return
+
+        cfg = PendingConfig(server_id=server_id, game_edition=game_edition)
         self._pending[interaction.user.id] = cfg
         await self._snapshot_pending(cfg)
 
         await interaction.response.send_message(
-            f"\u2705 Season setup started. **Season #{cfg.season_number}** is being configured.\n\n"
+            f"\u2705 Season setup started. **Season #{cfg.season_number} (F1 {cfg.game_edition})** is being configured.\n\n"
             "Use `/division add` for each division, then `/round add` for each round.\n"
             "When done, run `/season review` to review and approve.",
             ephemeral=True,
@@ -169,7 +186,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season_num = f" (Season #{cfg.season_number})" if cfg.season_number > 0 else ""
+        season_num = f" (Season #{cfg.season_number} — F1 {cfg.game_edition})" if cfg.season_number > 0 else (f" (F1 {cfg.game_edition})" if cfg.game_edition > 0 else "")
         lines = [
             f"**Season Review{season_num}**",
             "",
@@ -345,6 +362,15 @@ class SeasonCog(commands.Cog):
         if season is None:
             await interaction.response.send_message(
                 "\u274c No active season to cancel.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            await self.bot.season_service.assert_season_mutable(season)
+        except SeasonImmutableError:
+            await interaction.response.send_message(
+                "\u274c This season is archived (COMPLETED) and cannot be modified.",
                 ephemeral=True,
             )
             return
@@ -734,6 +760,15 @@ class SeasonCog(commands.Cog):
         if season is None:
             await interaction.response.send_message(
                 "\u274c `/division cancel` requires an active season.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            await self.bot.season_service.assert_season_mutable(season)
+        except SeasonImmutableError:
+            await interaction.response.send_message(
+                "\u274c This season is archived (COMPLETED) and cannot be modified.",
                 ephemeral=True,
             )
             return
@@ -1272,6 +1307,17 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        setup_season = await self.bot.season_service.get_setup_season(interaction.guild_id)
+        if setup_season is not None:
+            try:
+                await self.bot.season_service.assert_season_mutable(setup_season)
+            except SeasonImmutableError:
+                await interaction.response.send_message(
+                    "\u274c This season is archived (COMPLETED) and cannot be modified.",
+                    ephemeral=True,
+                )
+                return
+
         divisions = await self.bot.season_service.get_divisions(season_id)
         div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
@@ -1332,6 +1378,15 @@ class SeasonCog(commands.Cog):
         if season is None:
             await interaction.response.send_message(
                 "\u274c `/round cancel` requires an active season.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            await self.bot.season_service.assert_season_mutable(season)
+        except SeasonImmutableError:
+            await interaction.response.send_message(
+                "\u274c This season is archived (COMPLETED) and cannot be modified.",
                 ephemeral=True,
             )
             return
@@ -1750,7 +1805,7 @@ class SeasonCog(commands.Cog):
             if d.name
         ]
         new_season_id, season_number = await self.bot.season_service.save_pending_snapshot(
-            cfg.server_id, cfg.start_date, cfg.season_id, divisions_data
+            cfg.server_id, cfg.start_date, cfg.season_id, divisions_data, cfg.game_edition
         )
         cfg.season_id = new_season_id
         cfg.season_number = season_number
@@ -1794,6 +1849,7 @@ class SeasonCog(commands.Cog):
                 start_date=s["start_date"],
                 season_id=s["season_id"],
                 season_number=s.get("season_number", 0),
+                game_edition=s.get("game_edition", 0),
                 divisions=[
                     PendingDivision(
                         name=d["name"],

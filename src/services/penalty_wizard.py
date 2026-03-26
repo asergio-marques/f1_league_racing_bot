@@ -574,6 +574,32 @@ class ApprovalView(discord.ui.View):
             return
         if not await _require_lm(interaction, self.state):
             return
+        # Immutability guard: reject finalize on archived season
+        from services.season_service import SeasonImmutableError
+        from db.database import get_connection as _gc
+        try:
+            async with _gc(self.state.db_path) as _db:
+                _cur = await _db.execute(
+                    """
+                    SELECT s.status AS season_status
+                    FROM rounds r
+                    JOIN divisions d ON d.id = r.division_id
+                    JOIN seasons s ON s.id = d.season_id
+                    WHERE r.id = ?
+                    """,
+                    (self.state.round_id,),
+                )
+                _row = await _cur.fetchone()
+            if _row and _row["season_status"] == "COMPLETED":
+                raise SeasonImmutableError(
+                    f"Round {self.state.round_id} belongs to an archived season."
+                )
+        except SeasonImmutableError:
+            await interaction.response.send_message(
+                "❌ This season is archived (COMPLETED) and cannot be modified.",
+                ephemeral=True,
+            )
+            return
         # T025: wire to finalize_round
         from services.result_submission_service import finalize_round
         await finalize_round(interaction, self.state)
