@@ -172,13 +172,39 @@ class SeasonCog(commands.Cog):
         season_num = f" (Season #{cfg.season_number})" if cfg.season_number > 0 else ""
         lines = [
             f"**Season Review{season_num}**",
-            f"Start date: {cfg.start_date}",
-            f"Server: {interaction.guild_id}",
             "",
         ]
 
         # Load from DB to get tier and team roster data
         if cfg.season_id != 0:
+            # ── Modules ───────────────────────────────────────────────
+            weather_on = await self.bot.module_service.is_weather_enabled(interaction.guild_id)  # type: ignore[attr-defined]
+            signup_on = await self.bot.module_service.is_signup_enabled(interaction.guild_id)  # type: ignore[attr-defined]
+            results_on = await self.bot.module_service.is_results_enabled(interaction.guild_id)  # type: ignore[attr-defined]
+            on = "✅ Enabled"
+            off = "❌ Disabled"
+            if signup_on:
+                signup_cfg = await self.bot.signup_module_service.get_config(interaction.guild_id)  # type: ignore[attr-defined]
+                signup_ch = f" | Channel: <#{signup_cfg.signup_channel_id}>" if signup_cfg and signup_cfg.signup_channel_id else ""
+                signup_line = f"  Signup: {on}{signup_ch}"
+            else:
+                signup_line = f"  Signup: {off}"
+            lines += [
+                "**Modules**",
+                f"  Weather: {on if weather_on else off}",
+                signup_line,
+                f"  Results: {on if results_on else off}",
+                "",
+            ]
+
+            # ── Points configs ────────────────────────────────────────
+            config_names = await season_points_service.get_season_config_names(self.bot.db_path, cfg.season_id)  # type: ignore[attr-defined]
+            if config_names:
+                lines.append("**Points Configs:** " + ", ".join(config_names))
+            else:
+                lines.append("**Points Configs:** *(none attached)*")
+            lines.append("")
+
             # Pre-fetch role configs so we can warn about teams missing a role
             teams_with_roles = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
                 interaction.guild_id
@@ -192,23 +218,19 @@ class SeasonCog(commands.Cog):
                 )
                 lines.append("")
 
-            db_divisions = await self.bot.season_service.get_divisions(cfg.season_id)
+            db_divisions = await self.bot.season_service.get_divisions_with_results_config(cfg.season_id)
             for div in db_divisions:
                 if not div.name:
                     continue
                 tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
-                chan_display = f"<#{div.forecast_channel_id}>" if div.forecast_channel_id else "*(none)*"
-                lines.append(
-                    f"\U0001f4c2 **{div.name}**{tier_tag} | "
-                    f"Role <@&{div.mention_role_id}> | "
-                    f"Channel {chan_display}"
-                )
-                rounds_db = await self.bot.season_service.get_division_rounds(div.id)
-                for r in rounds_db:
-                    lines.append(
-                        f"  Round {r.round_number}: {r.format.value} "
-                        f"@ {r.track_name or 'Mystery'} \u2014 {r.scheduled_at.isoformat()}"
-                    )
+                lines.append(f"\U0001f4c2 **{div.name}**{tier_tag}")
+                lines.append(f"  Role: <@&{div.mention_role_id}>")
+                weather_chan = f"<#{div.forecast_channel_id}>" if div.forecast_channel_id else "*(none)*"
+                results_chan = f"<#{div.results_channel_id}>" if div.results_channel_id else "*(none)*"
+                standings_chan = f"<#{div.standings_channel_id}>" if div.standings_channel_id else "*(none)*"
+                lines.append(f"  Weather channel: {weather_chan}")
+                lines.append(f"  Results channel: {results_chan}")
+                lines.append(f"  Standings channel: {standings_chan}")
                 teams = await self.bot.team_service.get_division_teams(div.id)
                 if teams:
                     lines.append("  **Teams:** " + ", ".join(t["name"] for t in teams))
@@ -219,6 +241,12 @@ class SeasonCog(commands.Cog):
                             + ", ".join(f'"{n}"' for n in missing_roles)
                             + " — result submission will reject drivers in these teams."
                         )
+                rounds_db = await self.bot.season_service.get_division_rounds(div.id)
+                for r in rounds_db:
+                    lines.append(
+                        f"  Round {r.round_number}: {r.format.value} "
+                        f"@ {r.track_name or 'Mystery'} \u2014 {r.scheduled_at.isoformat()}"
+                    )
                 lines.append("")
         else:
             for div in cfg.divisions:
@@ -226,11 +254,9 @@ class SeasonCog(commands.Cog):
                     continue
                 tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
                 pending_chan = f"<#{div.channel_id}>" if div.channel_id else "*(none)*"
-                lines.append(
-                    f"\U0001f4c2 **{div.name}**{tier_tag} | "
-                    f"Role <@&{div.role_id}> | "
-                    f"Channel {pending_chan}"
-                )
+                lines.append(f"\U0001f4c2 **{div.name}**{tier_tag}")
+                lines.append(f"  Role: <@&{div.role_id}>")
+                lines.append(f"  Weather channel: {pending_chan}")
                 for r in div.rounds:
                     lines.append(
                         f"  Round {r['round_number']}: {r['format'].value} "
