@@ -1950,8 +1950,7 @@ class SeasonCog(commands.Cog):
 
         msg = (
             f"\u2705 **Season approved and activated!**\n"
-            f"Season #{cfg.season_number} (ID: {cfg.season_id}) | "
-            f"Rounds scheduled: {len(all_rounds)}"
+            f"Season #{cfg.season_number} (ID: {cfg.season_id})"
         )
         if interaction.response.is_done():
             await interaction.followup.send(msg, ephemeral=True)
