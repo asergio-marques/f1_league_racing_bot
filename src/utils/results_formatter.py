@@ -71,47 +71,59 @@ def format_session_label(session_type: SessionType, *, is_sprint: bool = True) -
 def format_qualifying_table(
     driver_rows: list[DriverSessionResult],
     points_by_driver: dict[int, int],
+    member_display: dict[int, str] | None = None,
+    team_display: dict[int, str] | None = None,
 ) -> str:
-    """Render a qualifying result as a Discord mention-based list.
+    """Render a qualifying result as a fixed-width code-block table.
 
-    Each line: `{pos}.` @Driver · @Team · Tyre · `BestLap` · `Gap` · **N pts**
-    Mentions are used so drivers and teams are tagged in Discord.
+    Header: Pos | Driver | Team | Tyre | Best Lap | Gap | Points
+    Uses display names when member_display/team_display are provided,
+    otherwise falls back to Discord mention strings.
     """
     sorted_rows = sorted(driver_rows, key=lambda r: r.finishing_position)
-    lines: list[str] = []
+    header = f"{'Pos':<4} {'Driver':<20} {'Team':<15} {'Tyre':<6} {'Best Lap':<10} {'Gap':<10} {'Points'}"
+    separator = "-" * len(header)
+    lines: list[str] = [header, separator]
     for row in sorted_rows:
+        driver_name = (member_display or {}).get(row.driver_user_id, f"<@{row.driver_user_id}>")
+        team_name = (team_display or {}).get(row.team_role_id, f"<@&{row.team_role_id}>")
         tyre = row.tyre or "—"
         best_lap = row.best_lap or row.outcome.value
         gap = row.gap or "—"
         pts = points_by_driver.get(row.driver_user_id, 0)
         lines.append(
-            f"`{row.finishing_position}.` <@{row.driver_user_id}> · <@&{row.team_role_id}> · "
-            f"{tyre} · `{best_lap}` · `{gap}` · **{pts} pts**"
+            f"{row.finishing_position:<4} {driver_name:<20} {team_name:<15} {tyre:<6} {best_lap:<10} {gap:<10} {pts} pts"
         )
-    return "\n".join(lines)
+    return "```\n" + "\n".join(lines) + "\n```"
 
 
 def format_race_table(
     driver_rows: list[DriverSessionResult],
     points_by_driver: dict[int, int],
+    member_display: dict[int, str] | None = None,
+    team_display: dict[int, str] | None = None,
 ) -> str:
-    """Render a race result as a Discord mention-based list.
+    """Render a race result as a fixed-width code-block table.
 
-    Each line: `{pos}.` @Driver · @Team · `TotalTime` · `FastestLap` · `Penalties` · **N pts**
-    Mentions are used so drivers and teams are tagged in Discord.
+    Header: Pos | Driver | Team | Total Time | Fastest Lap | Time Penalties | Points
+    Uses display names when member_display/team_display are provided,
+    otherwise falls back to Discord mention strings.
     """
     sorted_rows = sorted(driver_rows, key=lambda r: r.finishing_position)
-    lines: list[str] = []
+    header = f"{'Pos':<4} {'Driver':<20} {'Team':<15} {'Total Time':<14} {'Fastest Lap':<13} {'Time Penalties':<16} {'Points'}"
+    separator = "-" * len(header)
+    lines: list[str] = [header, separator]
     for row in sorted_rows:
+        driver_name = (member_display or {}).get(row.driver_user_id, f"<@{row.driver_user_id}>")
+        team_name = (team_display or {}).get(row.team_role_id, f"<@&{row.team_role_id}>")
         total_time = row.total_time or row.outcome.value
         fl = row.fastest_lap or "—"
         tp = row.time_penalties or "—"
         pts = points_by_driver.get(row.driver_user_id, 0)
         lines.append(
-            f"`{row.finishing_position}.` <@{row.driver_user_id}> · <@&{row.team_role_id}> · "
-            f"`{total_time}` · `{fl}` · `{tp}` · **{pts} pts**"
+            f"{row.finishing_position:<4} {driver_name:<20} {team_name:<15} {total_time:<14} {fl:<13} {tp:<16} {pts} pts"
         )
-    return "\n".join(lines)
+    return "```\n" + "\n".join(lines) + "\n```"
 
 
 # ---------------------------------------------------------------------------
