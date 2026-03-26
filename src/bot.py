@@ -279,19 +279,12 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
 
 
 async def _recover_season_end_jobs(bot: commands.Bot) -> None:
-    """Re-register season-end APScheduler jobs lost during a process restart.
+    """No-op: season end is now triggered only via /season complete.
 
-    For each server with an ACTIVE season where all non-Mystery rounds are
-    complete, compute the fire time (last scheduled_at + 7 days) and either:
-    - schedule the job normally if the fire time is in the future, or
-    - call execute_season_end immediately if the fire time is already past.
+    Previously this re-registered APScheduler season-end jobs on restart and
+    could auto-fire execute_season_end for past-due seasons. That behaviour has
+    been removed — league managers must explicitly run /season complete.
     """
-    from services.season_end_service import check_and_schedule_season_end
-
-    server_ids = await bot.season_service.get_all_server_ids_with_active_season()  # type: ignore[attr-defined]
-    for server_id in server_ids:
-        log.info("Startup recovery: checking season-end status for server %s", server_id)
-        await check_and_schedule_season_end(server_id, bot)
 
 
 async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:

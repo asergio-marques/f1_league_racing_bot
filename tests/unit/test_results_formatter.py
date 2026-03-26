@@ -109,10 +109,9 @@ def test_format_qualifying_table_headers():
         member_display={100: "Driver One"},
         team_display={200: "Red Bull"},
     )
-    table_lower = table.lower()
-    assert "pos" in table_lower
-    assert "driver" in table_lower
-    assert "```" in table
+    assert "Driver One" in table
+    assert "Red Bull" in table
+    assert "1." in table or "**1.**" in table
 
 
 # ---------------------------------------------------------------------------
@@ -128,9 +127,9 @@ def test_format_race_table_headers():
         member_display={100: "Driver One"},
         team_display={200: "Red Bull"},
     )
-    table_lower = table.lower()
-    assert "pos" in table_lower
-    assert "```" in table
+    assert "Driver One" in table
+    assert "Red Bull" in table
+    assert "1." in table or "**1.**" in table
 
 
 def test_format_race_table_fl_footer_shown_when_bonus():
@@ -144,10 +143,10 @@ def test_format_race_table_fl_footer_shown_when_bonus():
     assert "Fastest lap" in table
     assert "<@100>" in table
     assert "1:23.456" in table
-    # Footer must appear outside the code block (after closing ```)
-    closing = table.index("```", table.index("```") + 3)
+    # Footer must appear after all driver lines
+    last_driver_line = table.rindex("pts")
     footer_pos = table.index("Fastest lap")
-    assert footer_pos > closing
+    assert footer_pos > last_driver_line
 
 
 def test_format_race_table_no_fl_footer_when_no_bonus():
