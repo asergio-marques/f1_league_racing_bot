@@ -83,8 +83,18 @@ async def reset_server_data(
 
         # ── 3.  FK-safe deletes inside a single transaction ──
         #        Order: leaf → root
-        #        sessions / phase_results → rounds → divisions → seasons
-        #                                → audit_entries → [server_configs]
+        #        sessions / phase_results / forecast_messages → rounds
+        #        → team_instances / driver_season_assignments → divisions
+        #        → seasons → audit_entries → [server_configs]
+        #
+        #        Notes:
+        #        - session_results, driver_standings_snapshots,
+        #          team_standings_snapshots, round_submission_channels all have
+        #          round_id ON DELETE CASCADE, so they are removed automatically
+        #          when rounds are deleted.
+        #        - team_instances.division_id and
+        #          driver_season_assignments.division_id / season_id have NO
+        #          ACTION, so they must be deleted explicitly before divisions.
 
         if round_ids:
             ph = _ph(round_ids)
@@ -110,6 +120,16 @@ async def reset_server_data(
 
         if season_ids:
             ph = _ph(season_ids)
+            # Delete tables that reference divisions/seasons with NO ACTION FKs
+            # before deleting the parent rows.
+            await db.execute(
+                f"DELETE FROM team_instances WHERE division_id IN ({_ph(division_ids)})",
+                division_ids,
+            )
+            await db.execute(
+                f"DELETE FROM driver_season_assignments WHERE division_id IN ({_ph(division_ids)})",
+                division_ids,
+            )
             await db.execute(
                 f"DELETE FROM divisions WHERE season_id IN ({ph})",
                 season_ids,
