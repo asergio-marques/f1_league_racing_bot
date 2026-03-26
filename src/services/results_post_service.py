@@ -48,6 +48,23 @@ async def _build_team_display(
     return result
 
 
+async def _get_season_number(db_path: str, round_id: int) -> int | None:
+    """Return the season_number for the season that contains this round."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT s.season_number
+            FROM rounds r
+            JOIN divisions d ON d.id = r.division_id
+            JOIN seasons s ON s.id = d.season_id
+            WHERE r.id = ?
+            """,
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+    return row["season_number"] if row else None
+
+
 # ---------------------------------------------------------------------------
 # Session-level posting
 # ---------------------------------------------------------------------------
@@ -72,8 +89,10 @@ async def post_session_results(
     else:
         table = results_formatter.format_race_table(driver_rows, points_map)
 
+    season_number = await _get_season_number(db_path, session_result.round_id)
+    season_prefix = f"S{season_number} — " if season_number is not None else ""
     msg = await results_channel.send(
-        f"**Round {round_number} — {track_name} | {label} Results**\n{table}"
+        f"**{season_prefix}Round {round_number} — {track_name} | {label} Results**\n{table}"
     )
 
     async with get_connection(db_path) as db:
@@ -111,9 +130,11 @@ async def post_standings(
     )
     team_text = results_formatter.format_team_standings(team_snapshots)
 
+    season_number = await _get_season_number(db_path, round_id)
+    season_suffix = f" | S{season_number}" if season_number is not None else ""
     content = (
-        f"**Driver Standings — after Round {round_number} ({track_name})**\n{driver_text}\n\n"
-        f"**Team Standings — after Round {round_number} ({track_name})**\n{team_text}"
+        f"**Driver Standings — after Round {round_number} ({track_name}){season_suffix}**\n{driver_text}\n\n"
+        f"**Team Standings — after Round {round_number} ({track_name}){season_suffix}**\n{team_text}"
     )
 
     # Look for existing standings message (stored in the top-ranked driver snapshot)
