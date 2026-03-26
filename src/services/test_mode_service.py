@@ -70,7 +70,7 @@ async def toggle_test_mode(server_id: int, db_path: str) -> bool:
 async def get_next_pending_phase(
     server_id: int,
     db_path: str,
-    scheduler_service: Any,
+    scheduler_service: Any = None,
 ) -> PhaseEntry | None:
     """Return the earliest pending action entry based on the APScheduler job store.
 
@@ -102,6 +102,8 @@ async def get_next_pending_phase(
                 r.format,
                 r.track_name,
                 r.phase1_done,
+                r.phase2_done,
+                r.phase3_done,
                 d.name         AS division_name
             FROM rounds r
             JOIN divisions d ON d.id  = r.division_id
@@ -134,6 +136,47 @@ async def get_next_pending_phase(
             (server_id,),
         )
         rounds_with_results: set[int] = {r["round_id"] for r in await results_cursor.fetchall()}
+
+    # ── DB-based path (no scheduler) ────────────────────────────────────────
+    # Used by unit tests and any caller that does not have a scheduler_service.
+    # Implements the original spec ordering: scheduled_at ASC, division_id ASC;
+    # Mystery rounds with phase1_done=0 return phase_number=0 (notice pending);
+    # Mystery rounds with phase1_done=1 are skipped; Normal rounds return the
+    # first incomplete phase (1, 2, or 3) based on the phase flag columns.
+    if scheduler_service is None:
+        for row in rows:
+            is_mystery = str(row["format"]).upper() == "MYSTERY"
+            if is_mystery:
+                if not row["phase1_done"]:
+                    return PhaseEntry(
+                        round_id=row["round_id"],
+                        round_number=row["round_number"],
+                        division_id=row["division_id"],
+                        phase_number=0,
+                        track_name=row["track_name"] or "Mystery",
+                        division_name=row["division_name"],
+                        job_id=None,
+                    )
+                continue  # noticed mystery → skip
+            # Normal round: find first incomplete phase
+            if not row["phase1_done"]:
+                phase = 1
+            elif not row["phase2_done"]:
+                phase = 2
+            elif not row["phase3_done"]:
+                phase = 3
+            else:
+                continue  # all weather phases done
+            return PhaseEntry(
+                round_id=row["round_id"],
+                round_number=row["round_number"],
+                division_id=row["division_id"],
+                phase_number=phase,
+                track_name=row["track_name"] or "Unknown",
+                division_name=row["division_name"],
+                job_id=None,
+            )
+        return None
 
     # ── Primary: scheduler job store ────────────────────────────────────────
     pending_jobs = scheduler_service.get_pending_advance_jobs(round_ids)
