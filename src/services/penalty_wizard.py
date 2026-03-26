@@ -521,7 +521,6 @@ class PenaltyReviewView(discord.ui.View):
                 ephemeral=True,
             )
             return
-        await interaction.response.defer(ephemeral=True)
         from services.result_submission_service import finalize_round
         await finalize_round(interaction, self.state)
 
