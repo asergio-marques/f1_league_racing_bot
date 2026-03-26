@@ -178,6 +178,27 @@ async def compute_driver_standings(
 
     all_drivers = set(total_points) | set(finish_counts)
 
+    # Include all non-reserve drivers in the division even if they have no results yet.
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT dp.discord_user_id
+            FROM team_seats ts
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
+            WHERE ti.division_id = ?
+              AND ti.is_reserve = 0
+              AND ts.driver_profile_id IS NOT NULL
+            """,
+            (division_id,),
+        )
+        seated_rows = await cursor.fetchall()
+    for r in seated_rows:
+        uid = int(r["discord_user_id"])
+        if uid not in total_points:
+            total_points[uid] = 0
+        all_drivers.add(uid)
+
     # Compute once across all drivers so every sort-key vector has the same
     # length — prevents tuple length mismatch corrupting tiebreak comparisons.
     global_max_pos = max(
@@ -279,6 +300,28 @@ async def compute_team_standings(
                 first_finish_rounds[tid][pos] = rnum
 
     all_teams = set(total_points) | set(finish_counts)
+
+    # Include all non-reserve team instances in the division even if they have no results yet.
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT trc.role_id
+            FROM team_instances ti
+            JOIN divisions d ON d.id = ti.division_id
+            JOIN seasons s ON s.id = d.season_id
+            JOIN team_role_configs trc
+              ON trc.server_id = s.server_id AND trc.team_name = ti.name
+            WHERE ti.division_id = ?
+              AND ti.is_reserve = 0
+            """,
+            (division_id,),
+        )
+        team_rows = await cursor.fetchall()
+    for r in team_rows:
+        tid = int(r["role_id"])
+        if tid not in total_points:
+            total_points[tid] = 0
+        all_teams.add(tid)
 
     # Compute once across all teams so every sort-key vector has the same
     # length — prevents tuple length mismatch corrupting tiebreak comparisons.

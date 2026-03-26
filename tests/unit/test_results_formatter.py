@@ -9,7 +9,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from models.session_result import DriverSessionResult, OutcomeModifier
-from utils.results_formatter import _collapse_trailing_zeros, format_qualifying_table, format_race_table
+from models.standings_snapshot import DriverStandingsSnapshot
+from utils.results_formatter import _collapse_trailing_zeros, format_driver_standings, format_qualifying_table, format_race_table
 
 
 def _make_dsr(
@@ -130,3 +131,78 @@ def test_format_race_table_headers():
     table_lower = table.lower()
     assert "pos" in table_lower
     assert "```" in table
+
+
+def test_format_race_table_fl_footer_shown_when_bonus():
+    """When a driver has fastest_lap_bonus > 0, a FL footnote appears after the table."""
+    row = _make_dsr(1, driver_user_id=100, fastest_lap="1:23.456")
+    row.fastest_lap_bonus = 1
+    table = format_race_table(
+        [row],
+        points_by_driver={100: 26},
+    )
+    assert "Fastest lap" in table
+    assert "<@100>" in table
+    assert "1:23.456" in table
+    # Footer must appear outside the code block (after closing ```)
+    closing = table.index("```", table.index("```") + 3)
+    footer_pos = table.index("Fastest lap")
+    assert footer_pos > closing
+
+
+def test_format_race_table_no_fl_footer_when_no_bonus():
+    """No FL footnote when no driver has a fastest_lap_bonus."""
+    row = _make_dsr(1, driver_user_id=100, fastest_lap="1:23.456")
+    row.fastest_lap_bonus = 0
+    table = format_race_table(
+        [row],
+        points_by_driver={100: 25},
+    )
+    assert "Fastest lap" not in table
+
+
+# ---------------------------------------------------------------------------
+# format_driver_standings — reserve filtering rules
+# ---------------------------------------------------------------------------
+
+
+def _make_snap(driver_user_id: int, position: int, total_points: int) -> DriverStandingsSnapshot:
+    return DriverStandingsSnapshot(
+        id=0,
+        round_id=1,
+        division_id=1,
+        driver_user_id=driver_user_id,
+        standing_position=position,
+        total_points=total_points,
+        finish_counts={},
+        first_finish_rounds={},
+    )
+
+
+def test_driver_standings_non_reserve_always_shown():
+    """Non-reserve drivers are always listed, even at 0 points."""
+    snaps = [_make_snap(100, 1, 0)]
+    result = format_driver_standings(snaps, reserve_user_ids=set(), show_reserves=True)
+    assert "<@100>" in result
+
+
+def test_driver_standings_reserve_with_points_shown_reserves_on():
+    """Reserve with points is shown when show_reserves=True."""
+    snaps = [_make_snap(200, 1, 5)]
+    result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=True)
+    assert "<@200>" in result
+
+
+def test_driver_standings_reserve_zero_pts_always_hidden():
+    """Reserve with 0 points is never shown, even when show_reserves=True."""
+    snaps = [_make_snap(200, 1, 0)]
+    result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=True)
+    assert "<@200>" not in result
+
+
+def test_driver_standings_reserve_with_points_hidden_reserves_off():
+    """Reserve with points is hidden when show_reserves=False."""
+    snaps = [_make_snap(200, 1, 5)]
+    result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=False)
+    assert "<@200>" not in result
+

@@ -108,11 +108,16 @@ def format_race_table(
     Header: Pos | Driver | Team | Total Time | Fastest Lap | Time Penalties | Points
     Uses display names when member_display/team_display are provided,
     otherwise falls back to Discord mention strings.
+
+    If any driver has fastest_lap_bonus > 0, a footnote is appended outside
+    the code block: ``🏎 **Fastest lap** — <@driver_id> — {time}``
     """
     sorted_rows = sorted(driver_rows, key=lambda r: r.finishing_position)
     header = f"{'Pos':<4} {'Driver':<20} {'Team':<15} {'Total Time':<14} {'Fastest Lap':<13} {'Time Penalties':<16} {'Points'}"
     separator = "-" * len(header)
     lines: list[str] = [header, separator]
+    fl_driver_id: int | None = None
+    fl_time: str | None = None
     for row in sorted_rows:
         driver_name = (member_display or {}).get(row.driver_user_id, f"<@{row.driver_user_id}>")
         team_name = (team_display or {}).get(row.team_role_id, f"<@&{row.team_role_id}>")
@@ -123,7 +128,13 @@ def format_race_table(
         lines.append(
             f"{row.finishing_position:<4} {driver_name:<20} {team_name:<15} {total_time:<14} {fl:<13} {tp:<16} {pts} pts"
         )
-    return "```\n" + "\n".join(lines) + "\n```"
+        if row.fastest_lap_bonus > 0:
+            fl_driver_id = row.driver_user_id
+            fl_time = row.fastest_lap
+    table = "```\n" + "\n".join(lines) + "\n```"
+    if fl_driver_id is not None:
+        table += f"\n🏎 **Fastest lap** — <@{fl_driver_id}> — {fl_time or '—'}"
+    return table
 
 
 # ---------------------------------------------------------------------------
@@ -137,14 +148,16 @@ def format_driver_standings(
 ) -> str:
     """Render driver standings as a ranked mention list.
 
-    Omits reserve drivers when ``show_reserves=False``.
+    Non-reserve drivers are always shown (even at 0 points).
+    Reserve drivers are shown only when they have points AND ``show_reserves=True``.
     Format: ``{pos}. @Driver — **{total_points} pts**``
     """
     sorted_snaps = sorted(snapshots, key=lambda s: s.standing_position)
     lines: list[str] = []
     for snap in sorted_snaps:
-        if not show_reserves and snap.driver_user_id in reserve_user_ids:
-            continue
+        if snap.driver_user_id in reserve_user_ids:
+            if snap.total_points == 0 or not show_reserves:
+                continue
         lines.append(f"{snap.standing_position}. <@{snap.driver_user_id}> — **{snap.total_points} pts**")
     return "\n".join(lines) if lines else "No standings available."
 
