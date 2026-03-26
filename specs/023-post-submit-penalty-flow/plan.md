@@ -7,7 +7,7 @@
 
 ## Summary
 
-Replace the standalone `round results penalize` slash command with an inline penalty review state embedded in the results submission wizard. After all sessions in a round are submitted or cancelled, the transient submission channel stays open and enters a Post-Round Penalties state where trusted admins may stage signed time penalties (positive or negative) and DSQs. Only after the penalty list is approved does the round reach FINALIZED state, the final results and standings posts replace the interim posts, and the submission channel closes. In test mode, the advance command is blocked until the current round is finalized.
+Replace the standalone `round results penalize` slash command with an inline penalty review state embedded in the results submission wizard. After all sessions in a round are submitted or cancelled, the transient submission channel stays open and enters a Post-Round Penalties state where league managers may stage signed time penalties (positive or negative) and DSQs. Only after the penalty list is approved does the round reach FINALIZED state, the final results and standings posts replace the interim posts, and the submission channel closes. In test mode, the advance command is blocked until the current round is finalized.
 
 ---
 
@@ -31,18 +31,14 @@ Replace the standalone `round results penalize` slash command with an inline pen
 
 | Principle | Status | Notes |
 |---|---|---|
-| I — Minimal footprint | ✅ PASS | One new DB column; no new tables |
-| II — Explicit access control | ✅ PASS | Penalty UI rejects non-trusted-admin interactions |
-| III — Audit trail | ✅ PASS | Existing `audit_entries` table used for PENALTY_APPLIED and ROUND_FINALIZED entries |
-| IV — Reversibility gates | ✅ PASS | "Make Changes" step allows staged penalty correction before committing |
-| V — Module gating | ✅ PASS | Results module enabled check preserved in all entry points |
-| VI — Season state coherence | ✅ PASS | Penalty state only reachable from within an ACTIVE season with submitted sessions |
-| VII — Channel categories | ✅ PASS | No new channel categories; submission channel lifecycle extended, not changed |
-| VIII — Test mode isolation | ✅ PASS | FINALIZED gate applies only when test_mode_active; live mode unaffected |
-| IX — Wizard idempotency | ✅ PASS | Re-posting penalty prompt on restart does not duplicate data; staged list is in-memory only |
-| X — Modular architecture | ✅ PASS | Results module; no cross-module writes |
-| XI — Data integrity | ✅ PASS | `rounds.finalized` default 0; existing rounds unaffected by migration |
-| XII — Race results integrity | ✅ PASS | Signed time penalties extend existing penalty mechanics; DSQ semantics unchanged |
+| I — Trusted Configuration Authority | ✅ PASS | One new DB column; no new tables |
+| II — Multi-Division Isolation | ✅ PASS | Penalty UI rejects non-league-manager interactions |
+| V — Observability & Change Audit Trail | ✅ PASS | Existing `audit_entries` table used for PENALTY_APPLIED and ROUND_FINALIZED entries |
+| VI — Incremental Scope Expansion | ✅ PASS | "Make Changes" step allows staged penalty correction before committing |
+| VII — Output Channel Discipline | ✅ PASS | No new channel categories; submission channel lifecycle extended, not changed |
+| X — Modular Feature Architecture | ✅ PASS | Results module enabled check preserved in all entry points; no cross-module writes |
+| XI — Signup Wizard Integrity | ✅ PASS | Re-posting penalty prompt on restart does not duplicate data; staged list is in-memory only |
+| XII — Race Results & Championship Integrity | ✅ PASS | Signed time penalties extend existing penalty mechanics; DSQ semantics unchanged; `rounds.finalized` default 0; existing rounds unaffected by migration |
 
 **Gate result**: No violations. No complexity tracking required.
 
@@ -134,13 +130,22 @@ tests/
 5. **Update `validate_penalty_input`**
    - Remove the `seconds <= 0` guard. Replace with `seconds == 0` guard (reject zero only).
    - Pass the signed integer (`int(m.group(1))`) directly to `StagedPenalty.penalty_seconds`.
+   - For negative values, look up the driver's current recorded race time (`total_race_time_ms`) from the staged session results. Reject with an error if `current_ms + penalty_seconds * 1000 < 0`, prompting the admin to review their input.
 
 6. **Update `_apply_time_penalty`**
-   - After computing `ms += penalty_seconds * 1000`, clamp to `max(0, ms)` to prevent negative total times.
-   - Document the clamp behavior in the docstring.
+   - Compute `ms += penalty_seconds * 1000` directly. No floor clamp is needed — `validate_penalty_input` already guarantees the result is ≥ 0 ms before any staged penalty is accepted.
+   - Document in the docstring that callers are responsible for ensuring the penalty does not produce a negative result.
 
 7. **Update `apply_penalties` to handle negative `post_race_time_penalties` accumulation**
    - The existing line `update["post_race_time_penalties"] = existing_pen + penalty_s` already works for signed values; verify no cast issue.
+
+7b. **Update `_sort_key` in `apply_penalties`** to include an explicit tiebreak on original `finishing_position`:
+   ```python
+   def _sort_key(d: dict):
+       ms = _time_to_ms(d["total_time"] or "")
+       return (ms if ms is not None else 10**15, d["finishing_position"])
+   ```
+   This makes tiebreak behaviour explicit and correct regardless of input list order, satisfying the spec edge case: *"If two drivers end up with identical total times after penalties are applied, standard tiebreak rules (earlier original submitted position) are used."*
 
 8. **Unit tests**: add cases for `-3`, `-5s`, `0`, `+0s` to `test_penalty_service.py`.
 
@@ -174,7 +179,7 @@ tests/
     - **No Penalties / Confirm** — calls `_handle_no_penalties(interaction, state)`.
     - **Approve** — visible only when `state.staged` is non-empty; calls `_handle_approve(interaction, state)`.
 
-    The View holds a reference to `PenaltyReviewState`. On each button interaction, validate the actor is a trusted admin (check guild role); reject otherwise.
+    The View holds a reference to `PenaltyReviewState`. On each button interaction, validate the actor is a league manager (check `server_config.trusted_role_id` against the actor's guild roles); reject otherwise.
 
 11. **Create `AddPenaltyModal`** (`discord.ui.Modal`)
 
@@ -226,12 +231,19 @@ tests/
     ) -> None:
     ```
     Steps:
-    1. Call `penalty_service.apply_penalties(db_path, round_id, division_id, staged, applied_by, bot)` — already handles DB writes and cascade.
-    2. Call `delete_and_repost_final_results(db_path, round_id, division_id, guild)`.
-    3. `UPDATE rounds SET finalized = 1 WHERE id = ?`.
-    4. Audit log: `ROUND_FINALIZED` entry with actor, division, round, penalty list (JSON).
-    5. Call `close_submission_channel(channel_id, round_id, guild, db_path)`.
-    6. Send ephemeral confirmation to the interaction.
+    1. Call `interaction.response.defer(ephemeral=True)` immediately (NFR-001 — finalization exceeds the 3-second Discord window); all subsequent user-facing messages use `interaction.followup.send`.
+    2. **Before mutating anything**, read `finishing_position`, `total_points`, and `post_race_time_penalties` for every driver that appears in `state.staged` (one DB read per affected session). Store this as `pre_penalty_snapshot`.
+    3. Call `penalty_service.apply_penalties(db_path, round_id, division_id, staged, applied_by, bot)` — already handles DB writes and cascade.
+    4. Read the same fields again for the same drivers to build `post_penalty_snapshot`.
+    5. Call `delete_and_repost_final_results(db_path, round_id, division_id, guild)` — replaces interim posts for the finalized round.
+    6. Call `repost_subsequent_standings(db_path, division_id, round_id, guild)` — calls `standings_service.cascade_recompute_from_round` then deletes and reposts Discord standing messages for every subsequent round in the division that already has a snapshot. This ensures rounds that were submitted before this finalization (e.g. penalties applied to Round 2 while the division is already at Round 5) reflect the corrected points totals.
+    7. `UPDATE rounds SET finalized = 1 WHERE id = ?`.
+    8. Audit log: write a `ROUND_FINALIZED` entry to `audit_entries`:
+       - `old_value` (JSON): `{"finalized": 0, "affected_drivers": [{"driver_id": X, "session": "RACE", "position": 1, "points": 25, "time_penalties_ms": 0}, ...]}`
+       - `new_value` (JSON): `{"finalized": 1, "affected_drivers": [{"driver_id": X, "session": "RACE", "position": 3, "points": 15, "time_penalties_ms": 5000}, ...], "penalties": [...], "actor_id": N}`
+       - For an empty staged list, `affected_drivers` is `[]` in both fields.
+    9. Call `close_submission_channel(channel_id, round_id, guild, db_path)`.
+    10. Send ephemeral followup confirmation via `interaction.followup.send`.
 
 17. **Update `apply_penalties` audit log entry** (if the existing entry says `PENALTY_APPLIED`): emit the audit entry regardless of empty/non-empty staged list so every finalization is recorded.
 
@@ -294,7 +306,7 @@ tests/
 
 **Tasks**:
 
-22. **Add `is_round_finalized(db_path, round_id) -> bool`** helper in `result_submission_service.py` (or `test_mode_service.py`):
+22. **Add `is_round_finalized(db_path, round_id) -> bool`** helper in `test_mode_service.py`:
     ```python
     async def is_round_finalized(db_path: str, round_id: int) -> bool:
         """Return True if rounds.finalized = 1 for the given round."""
@@ -350,8 +362,9 @@ tests/
     - `test_validate_negative_time_penalty` — `-3s` → `StagedPenalty(penalty_seconds=-3)`
     - `test_validate_zero_penalty_rejected` — `0` → error string
     - `test_apply_negative_penalty_reorders` — driver with lower adjusted time moves up
+    - `test_tiebreak_identical_times_preserves_earlier_position` — two drivers with equal post-penalty times retain their pre-penalty position order
     - `test_dsq_fastest_lap_not_redistributed` — DSQ driver had fastest lap; no other driver gains bonus
-    - `test_time_clamp_at_zero` — very large negative penalty clamps to 0 ms
+    - `test_time_penalty_rejected_if_result_negative` — a penalty whose magnitude exceeds the driver's current race time is rejected at staging with an error message
 
 27. **`tests/unit/test_result_submission_service.py`** — extend:
     - `test_submission_channel_not_closed_after_final_session` — after last session, `close_submission_channel` not called
@@ -375,14 +388,18 @@ tests/
 
 Two new `change_type` values in `audit_entries`:
 
-| `change_type` | When written | `new_value` JSON shape |
-|---|---|---|
-| `ROUND_FINALIZED` | On finalization approval | `{"round_id": N, "penalties": [...], "actor_id": N}` |
-| `PENALTY_APPLIED` | Per `apply_penalties` call (already exists; keep as-is) | existing schema |
+| `change_type` | When written | `old_value` JSON shape | `new_value` JSON shape |
+|---|---|---|---|
+| `ROUND_FINALIZED` | On finalization approval | `{"finalized": 0, "affected_drivers": [{"driver_id": X, "session": "RACE", "position": N, "points": N, "time_penalties_ms": N}, ...]}` | `{"finalized": 1, "affected_drivers": [{...post-penalty state...}], "penalties": [...], "actor_id": N}` |
+| `PENALTY_APPLIED` | Per `apply_penalties` call (already exists; keep as-is) | existing schema | existing schema |
 
 ### Message Deletion Safety
 
-`delete_and_repost_final_results` catches `discord.NotFound` and `discord.Forbidden` on message deletion (message manually deleted by an admin) and logs a warning without failing the finalization.
+`delete_and_repost_final_results` and `repost_subsequent_standings` each catch `discord.NotFound` and `discord.Forbidden` on message deletion (message manually deleted by an admin) and log a warning without failing the finalization.
+
+### Cross-Cutting: `round results amend` Command
+
+`repost_subsequent_standings` (`standings_service.cascade_recompute_from_round`) is the correct cascade path for any flow that mutates a past round's results. The existing `round results amend` command (spec 019 US6) performs a result resubmission for a specific round but does **not** currently trigger this cascade. That omission is a pre-existing gap outside the scope of this feature. A follow-up task should be added to the `round results amend` implementation path to call `cascade_recompute_from_round` after a successful amendment, ensuring standings for all subsequent rounds are recomputed.
 
 ### Empty Round (All Sessions CANCELLED)
 

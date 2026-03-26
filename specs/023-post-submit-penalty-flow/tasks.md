@@ -36,9 +36,10 @@
 - [ ] T003 Add `finalized: bool = False` field to the `Round` dataclass in `src/models/round.py`
 - [ ] T004 Update all DB `SELECT` queries that construct `Round` objects from rows to include the `finalized` column in `src/services/season_service.py` (specifically `get_division_rounds` and any other method that maps a DB row to `Round`)
 - [ ] T005 [P] Update `_TIME_PENALTY_RE` in `src/services/penalty_service.py` from `r"^\+?(\d+)s?$"` to `r"^([+-]?\d+)s?$"` so the leading sign (positive or negative) is captured
-- [ ] T006 Update `validate_penalty_input` in `src/services/penalty_service.py`: replace the `seconds <= 0` guard with `seconds == 0` (reject zero only); pass the signed captured integer directly to `StagedPenalty.penalty_seconds`
-- [ ] T007 Update `_apply_time_penalty` in `src/services/penalty_service.py` to clamp the result: `ms = max(0, ms + penalty_seconds * 1000)` — document the clamp in the docstring
+- [ ] T006 Update `validate_penalty_input` in `src/services/penalty_service.py`: replace the `seconds <= 0` guard with `seconds == 0` (reject zero only); pass the signed captured integer directly to `StagedPenalty.penalty_seconds`; for negative values, look up the driver's `total_race_time_ms` from the staged session results and reject with an error if `current_ms + penalty_seconds * 1000 < 0`, prompting the admin to review their input
+- [ ] T007 Update `_apply_time_penalty` in `src/services/penalty_service.py`: compute `ms += penalty_seconds * 1000` directly — no floor clamp; document in the docstring that callers (i.e. `validate_penalty_input`) are responsible for guaranteeing a non-negative result before calling this function
 - [ ] T008 Verify `apply_penalties` in `src/services/penalty_service.py` accumulates signed `post_race_time_penalties` without a cast error (the existing `existing_pen + penalty_s` already works for negative values; confirm no `abs()` or unsigned cast is present and remove any such guard)
+- [ ] T008b Update `_sort_key` inside `apply_penalties` in `src/services/penalty_service.py` to use an explicit two-element tuple: `return (ms if ms is not None else 10**15, d["finishing_position"])` — this makes the tiebreak (earlier original position wins when adjusted times are equal) unconditionally correct regardless of input list ordering
 - [ ] T009 Create new file `src/services/penalty_wizard.py` and define `PenaltyReviewState` dataclass there with fields: `round_id: int`, `division_id: int`, `submission_channel_id: int`, `session_types_present: list[SessionType]` (non-cancelled sessions only), `staged: list[StagedPenalty]`, `db_path: str`, `bot: Any`
 
 **Checkpoint**: Foundation ready — Round model updated, signed penalty intake works, wizard state type defined. User story implementation can begin.
@@ -52,7 +53,7 @@
 **Independent Test**: Submit all sessions in a round. Confirm: interim results are posted to the results channel, interim standings are posted to the standings channel, the submission channel remains open, and a penalty review prompt with Add Penalty / No Penalties / Approve buttons appears in the submission channel.
 
 - [ ] T010 [US1] Create `PenaltyReviewView(discord.ui.View, timeout=None)` in `src/services/penalty_wizard.py` with three module-level buttons as stubs: `Add Penalty` (disabled when `state.session_types_present` is empty), `No Penalties / Confirm`, and `Approve` (visible only when `state.staged` is non-empty); store a `PenaltyReviewState` reference on the view instance
-- [ ] T011 [US1] Add a trusted-admin interaction guard to every button callback in `PenaltyReviewView` (and later `ApprovalView`) in `src/services/penalty_wizard.py`: query the actor's guild roles; reject non-trusted-admin interactions with an ephemeral permissions error and return early
+- [ ] T011 [US1] Add a league-manager interaction guard to every button callback in `PenaltyReviewView` (and later `ApprovalView`) in `src/services/penalty_wizard.py`: check whether the actor's guild roles include `server_config.trusted_role_id`; reject non-league-manager interactions with an ephemeral permissions error and return early
 - [ ] T012 [US1] Modify the final-session completion handler in `src/services/result_submission_service.py` (`run_result_submission_job` or equivalent) to call `enter_penalty_state(...)` instead of `close_submission_channel(...)` once all sessions for the round are submitted or cancelled
 - [ ] T013 [US1] Implement `enter_penalty_state(bot, guild, round_id, division_id, submission_channel)` in `src/services/result_submission_service.py`: post interim results per non-cancelled session to the division's results channel (reuse existing format), post interim standings to the standings channel, instantiate `PenaltyReviewState`, instantiate `PenaltyReviewView(state)`, post the penalty review prompt (driver roster by session, empty staged list) to the submission channel with the view attached, and call `bot.add_view(view)`
 - [ ] T014 [US1] Add an `on_message` guard in the submission channel handler in `src/services/result_submission_service.py`: if `rounds.finalized = 0` and all expected `session_results` rows exist for this round (penalty review is active), reject any plain-text session result input with a clear message stating the round is in penalty review state
@@ -61,7 +62,7 @@
 
 ---
 
-## Phase 4: User Story 2 — Trusted Admin Enters, Reviews, and Adjusts Staged Penalties (Priority: P1)
+## Phase 4: User Story 2 — League Manager Enters, Reviews, and Adjusts Staged Penalties (Priority: P1)
 
 **Goal**: Admins can stage signed time penalties and DSQs, remove individual staged entries, and advance to the approval step.
 
@@ -78,16 +79,17 @@
 
 ---
 
-## Phase 5: User Story 3 — Trusted Admin Approves; Round Finalized, Final Posts Replace Interim Posts (Priority: P1)
+## Phase 5: User Story 3 — League Manager Approves; Round Finalized, Final Posts Replace Interim Posts (Priority: P1)
 
 **Goal**: Approval applies all staged penalties, replaces interim posts with final posts, marks the round FINALIZED, and closes the submission channel.
 
 **Independent Test**: Submit a round, stage a +5 s penalty on 1st place, and approve. Confirm: the interim results post is deleted and replaced by a corrected final table, the standings post is updated, `rounds.finalized = 1`, and the submission channel is closed.
 
-- [ ] T021 [US3] Add `delete_and_repost_final_results(db_path, round_id, division_id, guild)` to `src/services/results_post_service.py`: for each non-cancelled session in the round, fetch `session_results.results_message_id`, delete that Discord message if it exists, post the corrected final results table, and overwrite `results_message_id` in DB; then delete the current `driver_standings_snapshots.standings_message_id` message, post fresh final standings, and update `standings_message_id`
-- [ ] T022 [US3] Implement `finalize_round(interaction, state)` in `src/services/result_submission_service.py` (step 1 of 3): call `penalty_service.apply_penalties(db_path, round_id, division_id, staged, actor_id, bot)` for every `StagedPenalty` in `state.staged`; recompute final positions and points for all affected sessions (reuse existing position/points recalculation path); do nothing to results rows when `state.staged` is empty
-- [ ] T023 [US3] In `finalize_round` (step 2 of 3) in `src/services/result_submission_service.py`, call `results_post_service.delete_and_repost_final_results(db_path, round_id, division_id, guild)` to replace interim results and standings posts with final posts
-- [ ] T024 [US3] In `finalize_round` (step 3 of 3) in `src/services/result_submission_service.py`: `UPDATE rounds SET finalized = 1 WHERE id = ?`; write a `ROUND_FINALIZED` audit log entry to `audit_entries` recording actor, division, round, and the full serialized penalty list (include empty-list case); call `close_submission_channel(channel_id, round_id, guild, db_path)`; send an ephemeral confirmation to `interaction`
+- [ ] T021 [US3] Add `delete_and_repost_final_results(db_path, round_id, division_id, guild)` to `src/services/results_post_service.py`: for each non-cancelled session in the round, fetch `session_results.results_message_id`, delete that Discord message if it exists, post the corrected final results table, and overwrite `results_message_id` in DB; then delete the current `driver_standings_snapshots.standings_message_id` message for this round, post fresh final standings for this round, and update `standings_message_id`
+- [ ] T021b [US3] Add `repost_subsequent_standings(db_path, division_id, from_round_id, guild)` to `src/services/results_post_service.py`: call `standings_service.cascade_recompute_from_round(db_path, division_id, from_round_id)` to update DB snapshots for all rounds after `from_round_id`; then for each such round that has a `standings_message_id` stored in `driver_standings_snapshots`, delete the existing Discord message and post a fresh standings table, updating `standings_message_id`; catch `discord.NotFound`/`discord.Forbidden` per message and log a warning without aborting
+- [ ] T022 [US3] Implement `finalize_round(interaction, state)` in `src/services/result_submission_service.py` (step 1 of 3): call `penalty_service.apply_penalties(db_path, round_id, division_id, staged, actor_id, bot)` for every `StagedPenalty` in `state.staged`; recompute final positions and points for all affected sessions (reuse existing position/points recalculation path); do nothing to results rows when `state.staged` is empty — **Verify AC7**: confirm the recalculation path enforces that when a DSQ is applied to the fastest-lap holder, `has_fastest_lap` is set to 0 for that driver and no other driver in that session is assigned the bonus (i.e., bonus is forfeited, not redistributed); see T031 `test_dsq_fastest_lap_not_redistributed`
+- [ ] T023 [US3] In `finalize_round` (step 2 of 3) in `src/services/result_submission_service.py`, call `results_post_service.delete_and_repost_final_results(db_path, round_id, division_id, guild)` to replace interim results and standings posts with final posts for the finalized round, then call `results_post_service.repost_subsequent_standings(db_path, division_id, round_id, guild)` to cascade-recompute and repost standings for any subsequent rounds in the division that already have standings snapshots
+- [ ] T024 [US3] In `finalize_round` (step 3 of 3) in `src/services/result_submission_service.py`: (a) call `interaction.response.defer(ephemeral=True)` as the very first statement (NFR-001); (b) before calling `apply_penalties`, read `finishing_position`, `total_points`, and `post_race_time_penalties` for every driver in `state.staged` to build `pre_penalty_snapshot`; (c) after `apply_penalties`, read the same fields again to build `post_penalty_snapshot`; (d) `UPDATE rounds SET finalized = 1 WHERE id = ?`; (e) write a `ROUND_FINALIZED` audit log entry where `old_value = {"finalized": 0, "affected_drivers": [...pre_penalty_snapshot]}` and `new_value = {"finalized": 1, "affected_drivers": [...post_penalty_snapshot], "penalties": [...state.staged], "actor_id": actor_id}` (both `affected_drivers` lists are `[]` when `state.staged` is empty); (f) call `close_submission_channel(channel_id, round_id, guild, db_path)`; (g) send an ephemeral followup via `interaction.followup.send`
 - [ ] T025 [US3] Wire the `Approve` button callback on `ApprovalView` in `src/services/penalty_wizard.py` to call `result_submission_service.finalize_round(interaction, state)`
 
 **Checkpoint**: After Approve, interim posts are gone, final posts are present, `rounds.finalized = 1`, channel is closed, audit log entry exists.
@@ -124,11 +126,36 @@
 **Purpose**: Persistent view registration and bot-restart recovery (FR-014).
 
 - [ ] T029 Import `PenaltyReviewView` and `ApprovalView` from `src/services/penalty_wizard.py` in `src/bot.py` and add `bot.add_view(PenaltyReviewView(state=None))` and `bot.add_view(ApprovalView(state=None))` to the persistent view setup block (alongside `SignupButtonView`, `AdminReviewView`, etc.) so Discord button interactions survive bot restarts
-- [ ] T030 Implement `_recover_submission_channels(bot)` coroutine in `src/bot.py` and call it from `on_ready`: query `round_submission_channels WHERE closed = 0`; for each row, load `rounds.finalized` and check if all expected `session_results` rows exist; if `finalized = 1` mark `closed = 1` and attempt channel deletion (orphaned cleanup); if all sessions submitted and `finalized = 0` re-post the penalty review prompt into the existing channel and re-attach a new `PenaltyReviewView` instance loaded from DB state
+- [ ] T030 Implement `_recover_submission_channels(bot)` coroutine in `src/bot.py` and call it from `on_ready`: query `round_submission_channels WHERE closed = 0`; for each row, load `rounds.finalized` and check if all expected `session_results` rows exist; if `finalized = 1` mark `closed = 1` and attempt channel deletion (orphaned cleanup); if all sessions submitted and `finalized = 0` re-post the penalty review prompt into the existing channel with a new `PenaltyReviewView` instance (empty staged list) and include a visible restart notice — e.g. "⚠️ The bot was restarted. Any penalties that were staged but not yet approved have been lost and must be re-entered." — so the admin knows to re-stage before approving
 
 ---
 
-## Dependencies & Execution Order
+## Phase 9: Tests
+
+**Purpose**: Verify the new flow end-to-end. Depends on Phases 1–8 complete.
+
+- [ ] T031 Extend `tests/unit/test_penalty_service.py` with the following cases:
+  - `test_validate_negative_time_penalty` — `-3s` input produces `StagedPenalty(penalty_seconds=-3)`
+  - `test_validate_zero_penalty_rejected` — `0` input returns an error string
+  - `test_time_penalty_rejected_if_result_negative` — penalty magnitude exceeds driver's recorded race time; `validate_penalty_input` returns an error
+  - `test_apply_negative_penalty_reorders` — driver with lower adjusted time moves up in position
+  - `test_tiebreak_identical_times_preserves_earlier_position` — two drivers with equal post-penalty times retain their pre-penalty position order (validates explicit `finishing_position` secondary sort key)
+  - `test_dsq_fastest_lap_not_redistributed` — DSQ applied to the fastest-lap holder; no other driver receives the bonus
+- [ ] T032 Extend `tests/unit/test_result_submission_service.py` with the following cases:
+  - `test_submission_channel_not_closed_after_final_session` — after last session is processed, `close_submission_channel` is not called
+  - `test_penalty_state_entered_after_final_session` — penalty prompt message is sent to the submission channel
+- [ ] T033 Create `tests/integration/test_penalty_flow.py` with the following cases:
+  - `test_full_flow_no_penalties` — submit round, approve empty list, `rounds.finalized = 1`, interim posts deleted, channel closed
+  - `test_full_flow_with_positive_time_penalty` — stage `+5s` on P1 driver, approve, verify P1 driver drops position and points reassigned
+  - `test_full_flow_with_negative_time_penalty` — stage `-3s` on last-place driver, approve, verify driver moves up
+  - `test_full_flow_with_dsq` — stage DSQ, approve, verify driver at bottom with 0 points
+  - `test_cascade_standings_recomputed` — finalize Round 2 with a penalty while Round 3 standings exist; verify Round 3 standings snapshot and Discord post are updated
+  - `test_test_mode_advance_blocked_before_finalize` — advance blocked with named error; approve; advance succeeds
+  - `test_restart_recovery` — simulate bot restart with open submission channel in penalty state; prompt re-posted with restart notice; approve works
+
+**Checkpoint**: All unit and integration tests pass; `penalty_service.py` coverage ≥ existing baseline.
+
+---
 
 ### Phase Dependencies
 
@@ -140,6 +167,7 @@
 - **Phase 6 (US4)**: Depends on Phase 2 only — can proceed in parallel with Phases 3–5
 - **Phase 7 (US5)**: No dependencies — can proceed in parallel with all other phases after Phase 1
 - **Phase 8 (Polish)**: Depends on Phases 3–5 (needs `PenaltyReviewView` and `ApprovalView` to be fully defined)
+- **Phase 9 (Tests)**: Depends on Phases 1–8 complete
 
 ### User Story Dependencies
 
@@ -175,6 +203,9 @@ T026 → T027
 
 # Stream C: US5 (command removal — fully isolated)
 T028
+
+# Stream D: Tests (after all implementation phases)
+T031 → T032 → T033
 ```
 
 ---
@@ -190,6 +221,7 @@ T028
 5. Complete Phase 5 (US3) — finalization works end-to-end
 6. **STOP and VALIDATE** using quickstart.md scenarios
 7. Add Phase 6 (US4) and Phase 7 (US5) before merging
+8. Complete Phase 9 (Tests) before merge review
 
 ### Incremental Delivery
 
@@ -199,6 +231,7 @@ T028
 - After Phase 6: Test mode gate is independently testable
 - After Phase 7: Old command is gone — verify via Discord slash command menu
 - After Phase 8: Restart recovery is testable by simulating a bot restart mid-penalty-state
+- After Phase 9: Full test suite passes; feature is merge-ready
 
 ---
 
@@ -206,15 +239,16 @@ T028
 
 | Metric | Value |
 |---|---|
-| Total tasks | 30 |
+| Total tasks | 35 |
 | Phase 1 (Setup) | 2 |
-| Phase 2 (Foundational) | 7 |
+| Phase 2 (Foundational) | 8 |
 | US1 tasks (Phase 3) | 5 |
 | US2 tasks (Phase 4) | 6 |
-| US3 tasks (Phase 5) | 5 |
+| US3 tasks (Phase 5) | 6 |
 | US4 tasks (Phase 6) | 2 |
 | US5 tasks (Phase 7) | 1 |
 | Polish tasks (Phase 8) | 2 |
+| Test tasks (Phase 9) | 3 |
 | Tasks marked [P] | 4 (T005, T026, T028, T029) |
 | New files | 1 (`src/services/penalty_wizard.py`) |
 | Modified files | 8 (`round.py`, `season_service.py`, `penalty_service.py`, `result_submission_service.py`, `results_post_service.py`, `test_mode_service.py`, `test_mode_cog.py`, `season_cog.py`, `bot.py`) |

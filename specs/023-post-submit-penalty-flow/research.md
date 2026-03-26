@@ -29,7 +29,7 @@
 2. Replace the `<= 0` guard with `== 0`.
 3. Pass the signed integer to `StagedPenalty.penalty_seconds`.
 
-Modify `_apply_time_penalty` so that when `ms + penalty_seconds * 1000 < 0`, it clamps to `0` ms to avoid negative total times in the output string (edge case: a ridiculously large negative penalty). Document the clamp behavior.
+Reject a negative penalty at staging time if `current_ms + penalty_seconds * 1000 < 0` — i.e. the penalty would drive the driver's total race time negative. Return an error prompting the admin to review their input. `_apply_time_penalty` requires no floor clamp; validation at staging guarantees the result is non-negative before the function is ever called.
 
 **Rationale**: The arithmetic path already works for negative values; only the input parsing and guard need updating. This keeps the change minimal.
 
@@ -100,7 +100,7 @@ The `View` for the penalty state must use **persistent views** (`timeout=None`, 
 **Rationale**: Persistent views are the canonical discord.py solution for buttons that survive restarts. This is the same approach as the existing submission `View` components where present.
 
 **Alternatives considered**:  
-- Store penalty wizard state (staged penalties) in the DB: partial state is acceptable as a recovery aid, but staged (unapproved) penalties are transient and need not persist — the admin simply re-enters them after restart. The spec only requires that the channel remains open and finalizable, not that staged-but-unapproved data is preserved.
+- Store penalty wizard state (staged penalties) in the DB: explicitly rejected. Post-round penalty review spans days or weeks of external evaluation, so restarts are expected during that window. The spec's recovery guarantee is that season progress never stalls, not that staged-but-unapproved data survives a restart. Adding a scratch persistence table introduces complexity for data that is intentionally transient. The recovered prompt notifies the admin that a restart occurred and any pending staged entries must be re-entered.
 
 ---
 

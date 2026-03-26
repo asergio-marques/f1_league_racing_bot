@@ -4,7 +4,7 @@ This document describes the interaction contract for the Post-Round Penalties st
 
 The penalty review is **not a slash command**. It is an in-channel interactive flow that activates automatically within the transient results submission channel after all sessions for a round have been submitted or cancelled.
 
-*Access: Trusted admin only. All interactions from non-trusted users are silently rejected or acknowledged with a permissions error.*
+*Access: League managers only (users whose guild roles include `server_config.trusted_role_id`). All interactions from non-league-manager users are silently rejected or acknowledged with a permissions error.*
 
 ---
 
