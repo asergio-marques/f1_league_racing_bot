@@ -174,6 +174,10 @@ async def get_next_pending_phase(
                 continue  # mystery notice not yet sent
             if row["round_id"] in rounds_with_results:
                 continue
+            # Skip rounds that are finalized (penalty review approved) — their
+            # results submission is fully complete, not a pending phase.
+            if await is_round_finalized(db_path, row["round_id"]):
+                continue
             return PhaseEntry(
                 round_id=row["round_id"],
                 round_number=row["round_number"],
@@ -185,6 +189,17 @@ async def get_next_pending_phase(
             )
 
     return None
+
+
+async def is_round_finalized(db_path: str, round_id: int) -> bool:
+    """Return True if the round's penalty review has been approved (``finalized = 1``)."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT finalized FROM rounds WHERE id = ?",
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+    return bool(row["finalized"]) if row else False
 
 
 # ---------------------------------------------------------------------------

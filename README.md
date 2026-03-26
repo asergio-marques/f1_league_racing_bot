@@ -584,21 +584,25 @@ Displays position-to-points mappings and fastest-lap settings. Works for both se
 
 #### Round Results Commands
 
-##### `/round results penalize` — Apply post-race time penalties or disqualifications
-*Access: Trusted admin · Results module required*
+##### Post-submission penalty review — Apply post-race penalties or disqualifications
 
-Interactive two-step wizard:
-1. **Start** — session buttons are shown. A **Review** button also appears once any penalty has been staged. Press **Cancel** to exit without applying anything.
-2. **Insert User ID** — type the Discord @mention of the driver to penalise. A **Go Back** button returns to the session list.
-3. **Insert Time Penalty** — for race sessions, type a whole number of seconds (e.g. `5`). For qualifying sessions, only DSQ is accepted. Buttons available: **DSQ** (disqualifies the driver), **Back to User ID** (retry the mention step), **Back to Start** (return to the session list). After a valid entry the wizard loops back to step 2 for the next driver.
-4. **Review** — displays all staged penalties with **Approve**, **Make Changes** (return to Start), and **Cancel** buttons. Cancel at this screen exits without applying. Approve applies all penalties, recalculates positions and standings, and reposts results.
+After all sessions of a round are submitted, the submission channel enters **penalty review state** instead of closing immediately. The bot posts a penalty review prompt with the following buttons:
 
-A new DSQ entry for a driver supersedes any prior time penalty for the same driver and session.
+- **➕ Add Penalty** — opens a modal to enter a driver mention and penalty value (e.g. `+5s`, `-3s`, `DSQ`). Positive and negative time penalties are supported for race sessions; only DSQ is accepted for qualifying sessions. A zero-second penalty is rejected. Negative penalties are also rejected if they would produce a negative total race time.
+- **🗑 Clear All** — prompts for confirmation, then clears the entire staged list.
+- **✅ Approve** — disabled until at least one or zero penalties have been staged; moves to the approval step (see below).
+- **Remove [driver] [penalty]** — a per-entry button appears for each staged penalty, allowing individual removals.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `division_name` | String | ✅ | Name of the division |
-| `round_number` | Integer | ✅ | Round number to apply penalties to |
+Once **Approve** is pressed, the bot posts an **approval message** to the submission channel with:
+- **✏️ Make Changes** — returns to the penalty review prompt.
+- **✅ Approve** — applies all staged penalties, recomputes positions and points for all affected sessions, deletes and reposts the interim results and standings, cascades standing recalculations to subsequent rounds, then closes the submission channel. The round is marked **finalized**.
+
+**Notes:**
+- Any message posted in the submission channel while it is in penalty review state is automatically deleted with an explanatory reply.
+- Penalties can be positive (`+5s`, `5s`, `5`) or negative (`-3s`, `-3`) for race sessions.
+- A DSQ on the fastest-lap holder forfeits the bonus; no other driver receives it.
+- A round that is finalized blocks `/test-mode advance` until approved.
+- On bot restart, open penalty review channels are automatically restored.
 
 ##### `/round results amend` — Re-submit results for a completed session
 *Access: Trusted admin · Results module required*
