@@ -171,7 +171,7 @@ def format_division_list(divisions: "list[Division]") -> str:
     for div in divisions:
         tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
         lines.append(
-            f"  📂 **{div.name}**{tier_tag} | <@&{div.mention_role_id}> | <#{div.forecast_channel_id}>"
+            f"  📂 **{div.name}**{tier_tag} | <@&{div.mention_role_id}>"
         )
     return "\n".join(lines)
 
