@@ -508,8 +508,28 @@ async def save_session_result(
     driver_rows: list[dict],
 ) -> int:
     """INSERT session_results + driver_session_results; return session_result_id."""
+    from services.season_service import SeasonImmutableError
+    from services.driver_service import resolve_driver_profile_id
+
     submitted_at = datetime.now(timezone.utc).isoformat()
     async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT s.status AS season_status, s.server_id
+            FROM rounds r
+            JOIN divisions d ON d.id = r.division_id
+            JOIN seasons s ON s.id = d.season_id
+            WHERE r.id = ?
+            """,
+            (round_id,),
+        )
+        season_row = await cursor.fetchone()
+        if season_row and season_row["season_status"] == "COMPLETED":
+            raise SeasonImmutableError(
+                f"Round {round_id} belongs to an archived season — results cannot be submitted."
+            )
+        server_id_for_profile: int | None = season_row["server_id"] if season_row else None
+
         cursor = await db.execute(
             """
             INSERT INTO session_results
@@ -529,14 +549,19 @@ async def save_session_result(
         )
         session_result_id = cursor.lastrowid
         for row in driver_rows:
+            driver_profile_id: int | None = None
+            if server_id_for_profile is not None:
+                driver_profile_id = await resolve_driver_profile_id(
+                    server_id_for_profile, row["driver_user_id"], db
+                )
             await db.execute(
                 """
                 INSERT INTO driver_session_results
                     (session_result_id, driver_user_id, team_role_id, finishing_position,
                      outcome, tyre, best_lap, gap, total_time, fastest_lap, time_penalties,
                      post_steward_total_time, post_race_time_penalties,
-                     points_awarded, fastest_lap_bonus, is_superseded)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, 0)
+                     points_awarded, fastest_lap_bonus, is_superseded, driver_profile_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, 0, ?)
                 """,
                 (
                     session_result_id,
@@ -552,6 +577,7 @@ async def save_session_result(
                     row.get("time_penalties"),
                     row.get("points_awarded", 0),
                     row.get("fastest_lap_bonus", 0),
+                    driver_profile_id,
                 ),
             )
         await db.commit()
@@ -575,6 +601,8 @@ async def amend_session_result(
 
     Cascades standings recomputation from this round forward and reposts results.
     """
+    from services.season_service import SeasonImmutableError
+    from services.driver_service import resolve_driver_profile_id
 
     def _get(obj, key, default=None):
         if hasattr(obj, key):
@@ -585,6 +613,24 @@ async def amend_session_result(
 
     submitted_at = datetime.now(timezone.utc).isoformat()
     async with get_connection(db_path) as db:
+        # Immutability guard: reject writes to archived seasons
+        cursor = await db.execute(
+            """
+            SELECT s.status AS season_status, s.server_id
+            FROM rounds r
+            JOIN divisions d ON d.id = r.division_id
+            JOIN seasons s ON s.id = d.season_id
+            WHERE r.id = ?
+            """,
+            (round_id,),
+        )
+        season_row = await cursor.fetchone()
+        if season_row and season_row["season_status"] == "COMPLETED":
+            raise SeasonImmutableError(
+                f"Round {round_id} belongs to an archived season — results cannot be amended."
+            )
+        server_id_for_profile: int | None = season_row["server_id"] if season_row else None
+
         # Mark all current rows as superseded
         await db.execute(
             """
@@ -619,18 +665,24 @@ async def amend_session_result(
         session_result_id = row["id"]
         # Insert new rows
         for i, dr in enumerate(new_driver_rows, start=1):
+            driver_user_id = _get(dr, "driver_user_id")
+            drv_profile_id: int | None = None
+            if server_id_for_profile is not None and driver_user_id is not None:
+                drv_profile_id = await resolve_driver_profile_id(
+                    server_id_for_profile, driver_user_id, db
+                )
             await db.execute(
                 """
                 INSERT INTO driver_session_results
                     (session_result_id, driver_user_id, team_role_id, finishing_position,
                      outcome, tyre, best_lap, gap, total_time, fastest_lap, time_penalties,
                      post_steward_total_time, post_race_time_penalties,
-                     points_awarded, fastest_lap_bonus, is_superseded)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, 0)
+                     points_awarded, fastest_lap_bonus, is_superseded, driver_profile_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, 0, ?)
                 """,
                 (
                     session_result_id,
-                    _get(dr, "driver_user_id"),
+                    driver_user_id,
                     _get(dr, "team_role_id"),
                     _get(dr, "position") or _get(dr, "finishing_position") or i,
                     _get(dr, "outcome", OutcomeModifier.CLASSIFIED.value),
@@ -642,6 +694,7 @@ async def amend_session_result(
                     _get(dr, "time_penalties"),
                     _get(dr, "points_awarded", 0),
                     _get(dr, "fastest_lap_bonus", 0),
+                    drv_profile_id,
                 ),
             )
         await db.commit()

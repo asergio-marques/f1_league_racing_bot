@@ -56,3 +56,4 @@ class DriverSessionResult:
     points_awarded: int
     fastest_lap_bonus: int
     is_superseded: bool
+    driver_profile_id: int | None = None

@@ -239,7 +239,8 @@ async def test_check_is_noop_when_no_active_season() -> None:
 # execute_season_end tests
 # ---------------------------------------------------------------------------
 
-async def test_execute_season_end_deletes_season() -> None:
+async def test_execute_season_end_archives_season() -> None:
+    """Season row status becomes COMPLETED and all data is retained."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
     try:
@@ -247,11 +248,41 @@ async def test_execute_season_end_deletes_season() -> None:
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
         await execute_season_end(1, season_id, bot)
-        # Season row must now be gone
+        # Season row must still exist with status COMPLETED
         async with get_connection(db_path) as db:
-            cur = await db.execute("SELECT COUNT(*) FROM seasons WHERE server_id = 1")
-            (n,) = await cur.fetchone()
-        assert n == 0
+            cur = await db.execute(
+                "SELECT status FROM seasons WHERE server_id = 1"
+            )
+            row = await cur.fetchone()
+        assert row is not None, "Season row must be retained after completion"
+        assert row[0] == "COMPLETED"
+    finally:
+        os.unlink(db_path)
+
+
+async def test_execute_season_end_retains_divisions_and_rounds() -> None:
+    """Division and round rows are preserved after season archival."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        season_id, _ = await _seed_server(db_path, server_id=1)
+        bot = _FakeBot(db_path)
+        await execute_season_end(1, season_id, bot)
+        async with get_connection(db_path) as db:
+            cur = await db.execute(
+                "SELECT COUNT(*) FROM divisions d "
+                "JOIN seasons s ON s.id = d.season_id WHERE s.server_id = 1"
+            )
+            (div_count,) = await cur.fetchone()
+            cur = await db.execute(
+                "SELECT COUNT(*) FROM rounds r "
+                "JOIN divisions d ON d.id = r.division_id "
+                "JOIN seasons s ON s.id = d.season_id WHERE s.server_id = 1"
+            )
+            (round_count,) = await cur.fetchone()
+        assert div_count == 1
+        assert round_count == 2
     finally:
         os.unlink(db_path)
 
@@ -281,7 +312,7 @@ async def test_execute_season_end_is_idempotent() -> None:
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
         await execute_season_end(1, season_id, bot)
-        await execute_season_end(1, season_id, bot)  # second call: no-op
+        await execute_season_end(1, season_id, bot)  # second call: no-op (no active season)
         assert len(bot.output_router.log_messages) == 1  # only posted once
     finally:
         os.unlink(db_path)

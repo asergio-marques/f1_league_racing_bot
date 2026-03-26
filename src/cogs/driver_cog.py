@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from utils.channel_guard import channel_guard, admin_only
+from services.season_service import SeasonImmutableError
 
 log = logging.getLogger(__name__)
 
@@ -120,6 +121,15 @@ class DriverCog(commands.Cog):
             )
             return
 
+        try:
+            await self.bot.season_service.assert_season_mutable(season)  # type: ignore[attr-defined]
+        except SeasonImmutableError:
+            await interaction.followup.send(
+                "❌ This season is archived (COMPLETED) and cannot be modified.",
+                ephemeral=True,
+            )
+            return
+
         # Resolve division
         resolved = await self.bot.placement_service.resolve_division(  # type: ignore[attr-defined]
             season.id, division
@@ -200,6 +210,15 @@ class DriverCog(commands.Cog):
             )
             return
 
+        try:
+            await self.bot.season_service.assert_season_mutable(season)  # type: ignore[attr-defined]
+        except SeasonImmutableError:
+            await interaction.followup.send(
+                "❌ This season is archived (COMPLETED) and cannot be modified.",
+                ephemeral=True,
+            )
+            return
+
         resolved = await self.bot.placement_service.resolve_division(  # type: ignore[attr-defined]
             season.id, division
         )
@@ -268,6 +287,16 @@ class DriverCog(commands.Cog):
         actor_name = str(interaction.user)
 
         season = await self.bot.season_service.get_active_season(server_id)  # type: ignore[attr-defined]
+
+        if season is not None:
+            try:
+                await self.bot.season_service.assert_season_mutable(season)  # type: ignore[attr-defined]
+            except SeasonImmutableError:
+                await interaction.followup.send(
+                    "❌ This season is archived (COMPLETED) and cannot be modified.",
+                    ephemeral=True,
+                )
+                return
 
         profile = await self.bot.driver_service.get_profile(  # type: ignore[attr-defined]
             server_id, str(user.id)

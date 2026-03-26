@@ -1,4 +1,4 @@
-"""season_end_service — automatic season completion and data cleanup.
+"""season_end_service — automatic season completion and archival.
 
 Two entry points:
 
@@ -8,8 +8,9 @@ check_and_schedule_season_end(server_id, bot)
     to fire 7 days after the latest round's scheduled_at.
 
 execute_season_end(server_id, season_id, bot)
-    Posts a season-completion message to the log channel, then deletes all
-    season data (preserving server_configs so the bot stays configured).
+    Archives the season (status → COMPLETED), writes DriverHistoryEntry
+    records for every assigned driver, and announces completion in the log
+    channel.  All season data is permanently retained.
     Idempotent: a no-op if no active season is found (handles duplicate calls).
 """
 
@@ -19,8 +20,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
+from db.database import get_connection
+
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
+    from models.season import Season
 
 log = logging.getLogger(__name__)
 
@@ -91,8 +95,9 @@ async def check_and_schedule_season_end(
 
 
 async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None:
-    """Delete the season's data and announce completion in the log channel.
+    """Archive the season and announce completion in the log channel.
 
+    All season data is permanently retained (status → COMPLETED).
     Idempotent: returns immediately if no active season is found for the server.
     """
     season_svc = bot.season_service  # type: ignore[attr-defined]
@@ -101,7 +106,7 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     season = await season_svc.get_active_season(server_id)
     if season is None:
         log.info(
-            "execute_season_end: no active season for server %s — already cleaned up.",
+            "execute_season_end: no active season for server %s — already archived.",
             server_id,
         )
         return
@@ -109,33 +114,131 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     # Cancel any pending season-end scheduler job (no-op if already fired)
     bot.scheduler_service.cancel_season_end(server_id)  # type: ignore[attr-defined]
 
-    # Announce completion *before* deleting so the log message makes sense
+    # Write DriverHistoryEntry records for every assigned driver before archiving
+    await _write_driver_history_entries(season, bot)
+
+    # Archive: flip status to COMPLETED (all data retained)
+    await season_svc.complete_season(season.id)
+
+    # Announce completion
     completion_msg = (
-        "\U0001f3c1 **Season Complete!**\n"
-        f"Season {season.season_number} has concluded and all round data has been "
-        "cleared from the database.\n"
-        "Run `/season-setup` to begin a new season."
+        f"\U0001f3c1 **Season {season.season_number} Complete!** "
+        "All data has been preserved in the archive.\n"
+        "Run `/season setup` to begin a new season."
     )
     await bot.output_router.post_log(server_id, completion_msg)  # type: ignore[attr-defined]
 
-    # Delete season data (keep server_configs — bot stays configured)
-    from services.reset_service import reset_server_data
-
-    result = await reset_server_data(
-        server_id=server_id,
-        db_path=bot.db_path,  # type: ignore[attr-defined]
-        scheduler_service=bot.scheduler_service,  # type: ignore[attr-defined]
-        full=False,
-    )
-
-    # Increment the season counter so the next season gets a higher display number
-    await season_svc.increment_previous_season_number(server_id)
-
     log.info(
-        "Season %s for server %s ended: %d season(s), %d division(s), %d round(s) deleted.",
+        "Season %s for server %s archived (COMPLETED).",
         season_id,
         server_id,
-        result["seasons_deleted"],
-        result["divisions_deleted"],
-        result["rounds_deleted"],
     )
+
+
+async def _write_driver_history_entries(season: "Season", bot: "Bot") -> None:
+    """Write a DriverHistoryEntry for every ASSIGNED driver at season end.
+
+    Sources:
+    - season_number, division_name, division_tier: from the season/division rows
+    - final_position, final_points: from the most recent driver_standings_snapshots row
+    - points_gap_to_winner: derived from final points vs the division winner's final points
+    """
+    db_path: str = bot.db_path  # type: ignore[attr-defined]
+
+    async with get_connection(db_path) as db:
+        # Load all ASSIGNED driver × division pairs for this season
+        cursor = await db.execute(
+            """
+            SELECT dsa.driver_profile_id,
+                   d.id   AS division_id,
+                   d.name AS division_name,
+                   d.tier AS division_tier
+            FROM driver_season_assignments dsa
+            JOIN divisions d ON d.id = dsa.division_id
+            WHERE d.season_id = ?
+            """,
+            (season.id,),
+        )
+        assignments = await cursor.fetchall()
+
+        if not assignments:
+            log.info(
+                "_write_driver_history_entries: no assignments for season %s — skipping.",
+                season.id,
+            )
+            return
+
+        # For each division, determine the winner's final points (max at last round)
+        division_ids = list({row["division_id"] for row in assignments})
+        division_winner_points: dict[int, int] = {}
+        for div_id in division_ids:
+            cursor = await db.execute(
+                """
+                SELECT MAX(dss.total_points)
+                FROM driver_standings_snapshots dss
+                WHERE dss.division_id = ?
+                  AND dss.round_id = (
+                      SELECT dss2.round_id
+                      FROM driver_standings_snapshots dss2
+                      JOIN rounds r ON r.id = dss2.round_id
+                      WHERE dss2.division_id = ?
+                      ORDER BY r.round_number DESC
+                      LIMIT 1
+                  )
+                """,
+                (div_id, div_id),
+            )
+            row = await cursor.fetchone()
+            division_winner_points[div_id] = (row[0] if row and row[0] is not None else 0)
+
+        # Write a history entry for each driver × division
+        for asgn in assignments:
+            driver_profile_id = asgn["driver_profile_id"]
+            div_id = asgn["division_id"]
+            div_name = asgn["division_name"]
+            div_tier = asgn["division_tier"] or 0
+
+            # Fetch the most recent standings snapshot for this driver × division
+            cursor = await db.execute(
+                """
+                SELECT dss.total_points, dss.standing_position
+                FROM driver_standings_snapshots dss
+                JOIN rounds r ON r.id = dss.round_id
+                JOIN driver_profiles dp ON CAST(dp.discord_user_id AS INTEGER) = dss.driver_user_id
+                WHERE dss.division_id = ? AND dp.id = ?
+                ORDER BY r.round_number DESC
+                LIMIT 1
+                """,
+                (div_id, driver_profile_id),
+            )
+            snap = await cursor.fetchone()
+            final_points = snap["total_points"] if snap else 0
+            final_position = snap["standing_position"] if snap else 0
+
+            winner_points = division_winner_points.get(div_id, 0)
+            points_gap = winner_points - final_points
+
+            await db.execute(
+                """
+                INSERT INTO driver_history_entries
+                    (driver_profile_id, season_number, division_name, division_tier,
+                     final_position, final_points, points_gap_to_winner)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    driver_profile_id,
+                    season.season_number,
+                    div_name,
+                    div_tier,
+                    final_position,
+                    final_points,
+                    points_gap,
+                ),
+            )
+
+        await db.commit()
+        log.info(
+            "_write_driver_history_entries: wrote %d entries for season %s.",
+            len(assignments),
+            season.id,
+        )

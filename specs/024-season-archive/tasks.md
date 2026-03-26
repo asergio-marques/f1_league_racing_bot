@@ -27,7 +27,7 @@
 
 **Purpose**: Create the migration file that underpins all model and service changes. Nothing else can be implemented without this schema in place.
 
-- [ ] T001 Create `src/db/migrations/020_season_archive.sql` — `ALTER TABLE seasons ADD COLUMN game_edition INTEGER NOT NULL DEFAULT 0`; `ALTER TABLE driver_session_results ADD COLUMN driver_profile_id INTEGER REFERENCES driver_profiles(id)`; `ALTER TABLE driver_standings_snapshots ADD COLUMN driver_profile_id INTEGER REFERENCES driver_profiles(id)`; backfill UPDATE for driver_session_results joining through session_results→rounds→divisions→seasons to match discord_user_id; backfill UPDATE for driver_standings_snapshots joining through rounds→divisions→seasons; `CREATE INDEX IF NOT EXISTS idx_dsr_driver_profile ON driver_session_results(session_result_id, driver_profile_id)`; `CREATE INDEX IF NOT EXISTS idx_dss_driver_profile ON driver_standings_snapshots(division_id, driver_profile_id)` — see data-model.md for exact SQL
+- [X] T001 Create `src/db/migrations/020_season_archive.sql` — `ALTER TABLE seasons ADD COLUMN game_edition INTEGER NOT NULL DEFAULT 0`; `ALTER TABLE driver_session_results ADD COLUMN driver_profile_id INTEGER REFERENCES driver_profiles(id)`; `ALTER TABLE driver_standings_snapshots ADD COLUMN driver_profile_id INTEGER REFERENCES driver_profiles(id)`; backfill UPDATE for driver_session_results joining through session_results→rounds→divisions→seasons to match discord_user_id; backfill UPDATE for driver_standings_snapshots joining through rounds→divisions→seasons; `CREATE INDEX IF NOT EXISTS idx_dsr_driver_profile ON driver_session_results(session_result_id, driver_profile_id)`; `CREATE INDEX IF NOT EXISTS idx_dss_driver_profile ON driver_standings_snapshots(division_id, driver_profile_id)` — see data-model.md for exact SQL
 
 **Checkpoint**: Migration applied on next bot startup (`run_migrations` in `src/db/database.py`). Verify with `sqlite3 /tmp/testbot.db ".schema seasons"` — `game_edition` column present.
 
@@ -39,10 +39,10 @@
 
 **⚠️ CRITICAL**: All of Phase 3–7 depend on T005 being complete.
 
-- [ ] T002 [P] Add `game_edition: int = 0` field to `Season` dataclass and update `_row_to_season` to read column index 5 in `src/models/season.py`
-- [ ] T003 [P] Add `driver_profile_id: int | None = None` field to `DriverSessionResult` dataclass in `src/models/session_result.py`
-- [ ] T004 [P] Add `driver_profile_id: int | None = None` field to `DriverStandingsSnapshot` dataclass in `src/models/standings_snapshot.py`
-- [ ] T005 Add `class SeasonImmutableError(Exception): pass`; add `async def has_active_or_setup_season(server_id: int) -> bool` (SELECT status IN ('ACTIVE','SETUP')); add `async def count_completed_seasons(server_id: int) -> int` (SELECT COUNT WHERE status='COMPLETED'); add `async def complete_season(season_id: int) -> None` (UPDATE status='COMPLETED'); add `async def assert_season_mutable(season: Season) -> None` (raises SeasonImmutableError if status==COMPLETED); update all `SELECT … FROM seasons` queries to include `game_edition` column — all in `src/services/season_service.py`
+- [X] T002 [P] Add `game_edition: int = 0` field to `Season` dataclass and update `_row_to_season` to read column index 5 in `src/models/season.py`
+- [X] T003 [P] Add `driver_profile_id: int | None = None` field to `DriverSessionResult` dataclass in `src/models/session_result.py`
+- [X] T004 [P] Add `driver_profile_id: int | None = None` field to `DriverStandingsSnapshot` dataclass in `src/models/standings_snapshot.py`
+- [X] T005 Add `class SeasonImmutableError(Exception): pass`; add `async def has_active_or_setup_season(server_id: int) -> bool` (SELECT status IN ('ACTIVE','SETUP')); add `async def count_completed_seasons(server_id: int) -> int` (SELECT COUNT WHERE status='COMPLETED'); add `async def complete_season(season_id: int) -> None` (UPDATE status='COMPLETED'); add `async def assert_season_mutable(season: Season) -> None` (raises SeasonImmutableError if status==COMPLETED); update all `SELECT … FROM seasons` queries to include `game_edition` column — all in `src/services/season_service.py`
 
 **Checkpoint**: `python -c "from models.season import Season; s = Season(1,1,'2026-01-01','SETUP',1,25); print(s.game_edition)"` → `25`
 
@@ -56,12 +56,12 @@
 
 ### Implementation for User Story 1
 
-- [ ] T006 [P] [US1] Rewrite `execute_season_end` in `src/services/season_end_service.py` — load active season (return early if None); cancel scheduler job; load all ASSIGNED `driver_season_assignments`; for each driver×division write a `DriverHistoryEntry` (season_number, division_name, division_tier, final_position/final_points from most-recent `driver_standings_snapshots` row, points_gap_to_winner); call `season_service.complete_season(season.id)`; post `🏁 **Season {season.season_number} Complete!** All data has been preserved in the archive.` to log channel; remove `reset_server_data` call and `increment_previous_season_number` call; remove import of `reset_service`
-- [ ] T007 [P] [US1] Add `assert_season_mutable` guard (catch `SeasonImmutableError`, respond ephemeral `❌ This season is archived (COMPLETED) and cannot be modified.`) to `/season cancel`, `/division cancel`, `/round cancel`, and `/round delete` handlers in `src/cogs/season_cog.py`
-- [ ] T008 [P] [US1] Add `assert_season_mutable` guard (load season via round→division→season chain, raise on COMPLETED) to `cancel_round`, `postpone_round`, and `amend_round` in `src/services/amendment_service.py`; callers in the cog already surface `ValueError`-family errors — ensure `SeasonImmutableError` propagates with the standard immutability message
-- [ ] T009 [P] [US1] Add `assert_season_mutable` guard to result submission and result amendment paths in `src/services/result_submission_service.py`; load season from round→division chain before any write; catch `SeasonImmutableError` and return the immutability error string
-- [ ] T010 [P] [US1] Add `assert_season_mutable` guard before any penalty write in `src/services/penalty_wizard.py`; resolve session→round→season chain; catch `SeasonImmutableError` and respond with `❌ This season is archived (COMPLETED) and cannot be modified.`
-- [ ] T011 [P] [US1] Add `assert_season_mutable` guard to `/driver assign`, `/driver unassign`, and `/driver sack` handlers in `src/cogs/driver_cog.py`; load active season to check mutability; catch `SeasonImmutableError` and respond ephemeral with the immutability message
+- [X] T006 [P] [US1] Rewrite `execute_season_end` in `src/services/season_end_service.py` — load active season (return early if None); cancel scheduler job; load all ASSIGNED `driver_season_assignments`; for each driver×division write a `DriverHistoryEntry` (season_number, division_name, division_tier, final_position/final_points from most-recent `driver_standings_snapshots` row, points_gap_to_winner); call `season_service.complete_season(season.id)`; post `🏁 **Season {season.season_number} Complete!** All data has been preserved in the archive.` to log channel; remove `reset_server_data` call and `increment_previous_season_number` call; remove import of `reset_service`
+- [X] T007 [P] [US1] Add `assert_season_mutable` guard (catch `SeasonImmutableError`, respond ephemeral `❌ This season is archived (COMPLETED) and cannot be modified.`) to `/season cancel`, `/division cancel`, `/round cancel`, and `/round delete` handlers in `src/cogs/season_cog.py`
+- [X] T008 [P] [US1] Add `assert_season_mutable` guard (load season via round→division→season chain, raise on COMPLETED) to `cancel_round`, `postpone_round`, and `amend_round` in `src/services/amendment_service.py`; callers in the cog already surface `ValueError`-family errors — ensure `SeasonImmutableError` propagates with the standard immutability message
+- [X] T009 [P] [US1] Add `assert_season_mutable` guard to result submission and result amendment paths in `src/services/result_submission_service.py`; load season from round→division chain before any write; catch `SeasonImmutableError` and return the immutability error string
+- [X] T010 [P] [US1] Add `assert_season_mutable` guard before any penalty write in `src/services/penalty_wizard.py`; resolve session→round→season chain; catch `SeasonImmutableError` and respond with `❌ This season is archived (COMPLETED) and cannot be modified.`
+- [X] T011 [P] [US1] Add `assert_season_mutable` guard to `/driver assign`, `/driver unassign`, and `/driver sack` handlers in `src/cogs/driver_cog.py`; load active season to check mutability; catch `SeasonImmutableError` and respond ephemeral with the immutability message
 
 **Checkpoint**: US1 fully functional. Season completes → all rows retained. Any mutation attempt on a COMPLETED season → rejected with the correct message.
 
@@ -75,7 +75,7 @@
 
 ### Implementation for User Story 2
 
-- [ ] T012 [US2] In `src/cogs/season_cog.py` `season_setup` handler: replace `has_existing_season` call with `has_active_or_setup_season`; split the single rejection into two distinct error messages — `❌ A season is currently active for this server. Complete it before starting a new one.` when ACTIVE exists; `❌ A season setup is already in progress for this server. Use /season review to continue, or cancel it first.` when SETUP exists (detect which by calling `get_active_season` and `get_setup_season` as needed, or by returning a status enum from the guard)
+- [X] T012 [US2] In `src/cogs/season_cog.py` `season_setup` handler: replace `has_existing_season` call with `has_active_or_setup_season`; split the single rejection into two distinct error messages — `❌ A season is currently active for this server. Complete it before starting a new one.` when ACTIVE exists; `❌ A season setup is already in progress for this server. Use /season review to continue, or cancel it first.` when SETUP exists (detect which by calling `get_active_season` and `get_setup_season` as needed, or by returning a status enum from the guard)
 
 **Checkpoint**: US2 fully functional. Old `has_existing_season` call removed. New gating logic tested end-to-end per quickstart step 6.
 
@@ -89,10 +89,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T013 [US3] Add `game_edition: int = 0` field to `PendingConfig` dataclass in `src/cogs/season_cog.py`
-- [ ] T014 [US3] Add `game_edition: app_commands.Range[int, 1, 9999]` parameter to `season_setup` command signature in `src/cogs/season_cog.py`; assign `cfg.game_edition = game_edition` when creating the `PendingConfig`; pass `game_edition` through to `_snapshot_pending` and into `save_pending_snapshot`
-- [ ] T015 [P] [US3] Update `save_pending_snapshot` INSERT statement in `src/services/season_service.py` to include `game_edition` in the column list and bind the value passed by the caller; also preserve `game_edition` when re-snapshotting (carry forward from existing SETUP row)
-- [ ] T016 [US3] Update `/season review` summary formatter in `src/cogs/season_cog.py` to display `Season #{cfg.season_number} (F1 {cfg.game_edition})` in the title line; also update the setup-started confirmation message in `season_setup` to show game edition
+- [X] T013 [US3] Add `game_edition: int = 0` field to `PendingConfig` dataclass in `src/cogs/season_cog.py`
+- [X] T014 [US3] Add `game_edition: app_commands.Range[int, 1, 9999]` parameter to `season_setup` command signature in `src/cogs/season_cog.py`; assign `cfg.game_edition = game_edition` when creating the `PendingConfig`; pass `game_edition` through to `_snapshot_pending` and into `save_pending_snapshot`
+- [X] T015 [P] [US3] Update `save_pending_snapshot` INSERT statement in `src/services/season_service.py` to include `game_edition` in the column list and bind the value passed by the caller; also preserve `game_edition` when re-snapshotting (carry forward from existing SETUP row)
+- [X] T016 [US3] Update `/season review` summary formatter in `src/cogs/season_cog.py` to display `Season #{cfg.season_number} (F1 {cfg.game_edition})` in the title line; also update the setup-started confirmation message in `season_setup` to show game edition
 
 **Checkpoint**: US3 fully functional. `game_edition` stored on season at setup, shown in review, retained after completion.
 
@@ -106,7 +106,7 @@
 
 ### Implementation for User Story 4
 
-- [ ] T017 [US4] In `save_pending_snapshot` in `src/services/season_service.py`, replace the `existing_season_id == 0` branch that reads `previous_season_number + 1` with `await self.count_completed_seasons(server_id) + 1`; remove the `SELECT previous_season_number FROM server_configs` query from this branch; the re-snapshot branch (existing_season_id != 0) remains unchanged — it already preserves the computed season_number
+- [X] T017 [US4] In `save_pending_snapshot` in `src/services/season_service.py`, replace the `existing_season_id == 0` branch that reads `previous_season_number + 1` with `await self.count_completed_seasons(server_id) + 1`; remove the `SELECT previous_season_number FROM server_configs` query from this branch; the re-snapshot branch (existing_season_id != 0) remains unchanged — it already preserves the computed season_number
 
 **Checkpoint**: US4 fully functional. `count_completed_seasons` drives season numbering for all new seasons. Legacy counter column remains in schema but is never written.
 
@@ -120,10 +120,10 @@
 
 ### Implementation for User Story 5
 
-- [ ] T018 [US5] Add `async def resolve_driver_profile_id(server_id: int, discord_user_id: int, db) -> int | None` to `src/services/driver_service.py` — executes `SELECT id FROM driver_profiles WHERE server_id = ? AND CAST(discord_user_id AS INTEGER) = ?` and returns the integer PK or None if no profile found
-- [ ] T019 [P] [US5] Update every INSERT into `driver_session_results` in `src/services/result_submission_service.py` to call `resolve_driver_profile_id(server_id, row.driver_user_id, db)` and include `driver_profile_id` in the INSERT column list; pass the resolved value (or None for unresolvable legacy rows)
-- [ ] T020 [P] [US5] Update every INSERT into `driver_standings_snapshots` in `src/services/standings_service.py` to call `resolve_driver_profile_id(server_id, driver_user_id, db)` and include `driver_profile_id` in the INSERT column list
-- [ ] T021 [P] [US5] Update penalty result writes in `src/services/penalty_wizard.py` that INSERT or UPDATE `driver_session_results` to call `resolve_driver_profile_id` and populate `driver_profile_id` on the affected rows
+- [X] T018 [US5] Add `async def resolve_driver_profile_id(server_id: int, discord_user_id: int, db) -> int | None` to `src/services/driver_service.py` — executes `SELECT id FROM driver_profiles WHERE server_id = ? AND CAST(discord_user_id AS INTEGER) = ?` and returns the integer PK or None if no profile found
+- [X] T019 [P] [US5] Update every INSERT into `driver_session_results` in `src/services/result_submission_service.py` to call `resolve_driver_profile_id(server_id, row.driver_user_id, db)` and include `driver_profile_id` in the INSERT column list; pass the resolved value (or None for unresolvable legacy rows)
+- [X] T020 [P] [US5] Update every INSERT into `driver_standings_snapshots` in `src/services/standings_service.py` to call `resolve_driver_profile_id(server_id, driver_user_id, db)` and include `driver_profile_id` in the INSERT column list
+- [X] T021 [P] [US5] Update penalty result writes in `src/services/penalty_wizard.py` that INSERT or UPDATE `driver_session_results` to call `resolve_driver_profile_id` and populate `driver_profile_id` on the affected rows
 
 **Checkpoint**: US5 fully functional. All new result rows carry `driver_profile_id`. Reassigning a driver's Discord account leaves all existing result/standings rows correctly attributed to the internal profile ID.
 
@@ -133,10 +133,10 @@
 
 **Purpose**: Finalise test coverage for the changed service and run the full verification sequence.
 
-- [ ] T022 Update `tests/unit/test_season_end_service.py` — replace any assertions that verify row deletion (e.g. `assert seasons_deleted == 1`) with assertions that verify archive semantics: `season.status == 'COMPLETED'`, division/round/result rows still present, two `driver_history_entries` rows created; remove any mock setup for `reset_server_data`
-- [ ] T023 [P] Remove now-unused import of `reset_service` and any reference to `increment_previous_season_number` from `src/services/season_end_service.py` if not already handled by T006
-- [ ] T024 Run full test suite from repo root — `cd src && pytest ../tests/ -v` — and resolve any regressions introduced by migration 020 or service changes
-- [ ] T025 [P] Execute quickstart.md manual smoke-test sequence on a test server: `/season setup game_edition:25` → approve → activate → complete → verify DB → `/season setup game_edition:26` → verify season_number=2 → attempt second setup → rejected
+- [X] T022 Update `tests/unit/test_season_end_service.py` — replace any assertions that verify row deletion (e.g. `assert seasons_deleted == 1`) with assertions that verify archive semantics: `season.status == 'COMPLETED'`, division/round/result rows still present, two `driver_history_entries` rows created; remove any mock setup for `reset_server_data`
+- [X] T023 [P] Remove now-unused import of `reset_service` and any reference to `increment_previous_season_number` from `src/services/season_end_service.py` if not already handled by T006
+- [X] T024 Run full test suite from repo root — `cd src && pytest ../tests/ -v` — and resolve any regressions introduced by migration 020 or service changes
+- [X] T025 [P] Execute quickstart.md manual smoke-test sequence on a test server: `/season setup game_edition:25` → approve → activate → complete → verify DB → `/season setup game_edition:26` → verify season_number=2 → attempt second setup → rejected
 
 ---
 

@@ -14,6 +14,10 @@ from models.session import Session, SessionType, SESSIONS_BY_FORMAT
 log = logging.getLogger(__name__)
 
 
+class SeasonImmutableError(Exception):
+    """Raised when a mutation is attempted on a COMPLETED (archived) season."""
+
+
 class SeasonService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -105,12 +109,49 @@ class SeasonService:
             row = await cursor.fetchone()
         return row is not None
 
+    async def has_active_or_setup_season(self, server_id: int) -> bool:
+        """Return True if an ACTIVE or SETUP season exists for *server_id*."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT 1 FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') LIMIT 1",
+                (server_id,),
+            )
+            row = await cursor.fetchone()
+        return row is not None
+
+    async def count_completed_seasons(self, server_id: int) -> int:
+        """Return the count of COMPLETED seasons for *server_id*."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT COUNT(id) FROM seasons WHERE server_id = ? AND status = 'COMPLETED'",
+                (server_id,),
+            )
+            row = await cursor.fetchone()
+        return row[0] if row else 0
+
+    async def complete_season(self, season_id: int) -> None:
+        """Transition a season to COMPLETED (archive it in-place)."""
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE seasons SET status = 'COMPLETED' WHERE id = ?",
+                (season_id,),
+            )
+            await db.commit()
+
+    async def assert_season_mutable(self, season: "Season") -> None:
+        """Raise SeasonImmutableError if *season* is COMPLETED."""
+        if season.status == SeasonStatus.COMPLETED:
+            raise SeasonImmutableError(
+                f"Season {season.season_number} is archived (COMPLETED) and cannot be modified."
+            )
+
     async def save_pending_snapshot(
         self,
         server_id: int,
         start_date: date,
         existing_season_id: int,
         divisions: list[dict],
+        game_edition: int = 0,
     ) -> tuple[int, int]:
         """Atomically replace the SETUP season snapshot for *server_id* in the DB.
 
@@ -131,13 +172,8 @@ class SeasonService:
                 row = await cursor.fetchone()
                 season_number: int = row[0] if row else 1
             else:
-                # First snapshot: derive from server_config.previous_season_number
-                cursor = await db.execute(
-                    "SELECT previous_season_number FROM server_configs WHERE server_id = ?",
-                    (server_id,),
-                )
-                row = await cursor.fetchone()
-                season_number = (row[0] if row else 0) + 1
+                # First snapshot: season_number = completed seasons + 1
+                season_number = await self.count_completed_seasons(server_id) + 1
 
             if existing_season_id != 0:
                 # Save division_results_config keyed by division name so we can
@@ -208,9 +244,9 @@ class SeasonService:
                 channels_by_name = {}
 
             cursor = await db.execute(
-                "INSERT INTO seasons (server_id, start_date, status, season_number) "
-                "VALUES (?, ?, 'SETUP', ?)",
-                (server_id, start_date.isoformat(), season_number),
+                "INSERT INTO seasons (server_id, start_date, status, season_number, game_edition) "
+                "VALUES (?, ?, 'SETUP', ?, ?)",
+                (server_id, start_date.isoformat(), season_number, game_edition),
             )
             new_season_id: int = cursor.lastrowid  # type: ignore[assignment]
 
@@ -268,7 +304,7 @@ class SeasonService:
         """Return raw data for every SETUP-status season to rebuild PendingConfig on startup."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, season_number FROM seasons WHERE status = 'SETUP'"
+                "SELECT id, server_id, start_date, season_number, game_edition FROM seasons WHERE status = 'SETUP'"
             )
             season_rows = await cursor.fetchall()
 
@@ -313,6 +349,7 @@ class SeasonService:
                     "server_id": s_row["server_id"],
                     "start_date": date.fromisoformat(s_row["start_date"]),
                     "season_number": s_row["season_number"] if "season_number" in s_row.keys() else 0,
+                    "game_edition": s_row["game_edition"] if "game_edition" in s_row.keys() else 0,
                     "divisions": divisions,
                 })
 
@@ -878,10 +915,22 @@ class SeasonService:
         now = datetime.now(timezone.utc)
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT division_id FROM rounds WHERE id = ?", (round_id,)
+                """
+                SELECT r.division_id, s.status AS season_status
+                FROM rounds r
+                JOIN divisions d ON d.id = r.division_id
+                JOIN seasons s ON s.id = d.season_id
+                WHERE r.id = ?
+                """,
+                (round_id,),
             )
             row = await cursor.fetchone()
-            division_id = row[0] if row else None
+            division_id = row["division_id"] if row else None
+
+            if row and row["season_status"] == "COMPLETED":
+                raise SeasonImmutableError(
+                    f"Round {round_id} belongs to an archived season and cannot be cancelled."
+                )
 
             await db.execute(
                 "UPDATE rounds SET status = 'CANCELLED' WHERE id = ?",
@@ -990,6 +1039,7 @@ def _row_to_season(row: object) -> Season:
         start_date=date.fromisoformat(row["start_date"]),
         status=SeasonStatus(row["status"]),
         season_number=row["season_number"] if "season_number" in row.keys() else 0,
+        game_edition=row["game_edition"] if "game_edition" in row.keys() else 0,
     )
 
 
