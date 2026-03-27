@@ -600,6 +600,11 @@ async def save_session_result(
                 driver_profile_id = await resolve_driver_profile_id(
                     server_id_for_profile, row["driver_user_id"], db
                 )
+            if driver_profile_id is not None:
+                await db.execute(
+                    "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND former_driver = 0",
+                    (driver_profile_id,),
+                )
             await db.execute(
                 """
                 INSERT INTO driver_session_results
@@ -717,6 +722,11 @@ async def amend_session_result(
             if server_id_for_profile is not None and driver_user_id is not None:
                 drv_profile_id = await resolve_driver_profile_id(
                     server_id_for_profile, driver_user_id, db
+                )
+            if drv_profile_id is not None:
+                await db.execute(
+                    "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND former_driver = 0",
+                    (drv_profile_id,),
                 )
             await db.execute(
                 """
