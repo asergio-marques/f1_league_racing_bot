@@ -218,6 +218,15 @@ class SeasonCog(commands.Cog):
             config_names = await season_points_service.get_season_config_names(self.bot.db_path, cfg.season_id)  # type: ignore[attr-defined]
             if config_names:
                 lines.append("**Points Configs:** " + ", ".join(config_names))
+            elif results_on:
+                server_config_tm = await self.bot.config_service.get_server_config(interaction.guild_id)  # type: ignore[attr-defined]
+                if server_config_tm is not None and server_config_tm.test_mode_active:
+                    lines.append(
+                        "**Points Configs:** *(none attached)* "
+                        "\u26a0\ufe0f Test mode active \u2014 Standard & Half Points will be auto-seeded on approval."
+                    )
+                else:
+                    lines.append("**Points Configs:** *(none attached)*")
             else:
                 lines.append("**Points Configs:** *(none attached)*")
             lines.append("")
