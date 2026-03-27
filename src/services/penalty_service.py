@@ -335,7 +335,9 @@ async def apply_penalties(
         srv_row = await cursor2.fetchone()
     if srv_row:
         details_msg = (
-            f"\U0001f6a8 **Penalties applied** by <@{applied_by}> — Round {round_id}: {details}"
+            f"<@{applied_by}> | PENALTIES_APPLIED | Success\n"
+            f"  round_id: {round_id}\n"
+            f"  penalties: {details}"
         )
         await bot.output_router.post_log(int(srv_row["server_id"]), details_msg)
 

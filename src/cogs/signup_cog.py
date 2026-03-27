@@ -199,8 +199,8 @@ class ConfirmCloseView(discord.ui.View):
         await interaction.followup.send("✅ Signups force-closed.", ephemeral=True)
         await self._bot.output_router.post_log(
             self._server_id,
-            f"\U0001f534 Signups **force-closed** by **{interaction.user.display_name}** "
-            "(in-progress drivers discarded)",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close (force) | Success\n"
+            f"  in_progress_drivers_discarded: true",
         )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
@@ -684,7 +684,8 @@ class SignupCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             server_id,
-            f"\U0001f4e2 Signup channel set to #{channel.name} by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup config channel | Success\n"
+            f"  channel: #{channel.name}",
         )
 
     @config_group.command(name="roles", description="Set the signup roles.")
@@ -721,8 +722,9 @@ class SignupCog(commands.Cog):
         await interaction.response.send_message("✅ Signup roles configured.", ephemeral=True)
         await self.bot.output_router.post_log(
             server_id,
-            f"\U0001f6e1\ufe0f Signup roles configured by **{interaction.user.display_name}**: "
-            f"base={base_role.name}, signed_up={signed_up_role.name}",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup config roles | Success\n"
+            f"  base_role: {base_role.name} (<@&{base_role.id}>)\n"
+            f"  signed_up_role: {signed_up_role.name} (<@&{signed_up_role.id}>)",
         )
 
     @config_group.command(name="view", description="View current signup module configuration.")
@@ -792,7 +794,8 @@ class SignupCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             server_id,
-            f"\U0001f310 Nationality requirement set to {state} by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup nationality | Success\n"
+            f"  nationality_required: {settings.nationality_required}",
         )
 
     # ── /signup time-type toggle (T021) ────────────────────────────────
@@ -828,7 +831,8 @@ class SignupCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             server_id,
-            f"\u23f1\ufe0f Signup time type set to **{label}** by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-type | Success\n"
+            f"  time_type: {settings.time_type}",
         )
 
     # ── /signup time-image toggle (T022) ───────────────────────────────
@@ -862,7 +866,8 @@ class SignupCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             server_id,
-            f"\U0001f4f7 Time image requirement set to {state} by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-image | Success\n"
+            f"  time_image_required: {settings.time_image_required}",
         )
 
     # ── /signup time-slot (sub-group) ──────────────────────────────────
@@ -940,7 +945,9 @@ class SignupCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             server_id,
-            f"\u2795 Time slot added by **{interaction.user.display_name}**: {day.name} {normalized}",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-slot add | Success\n"
+            f"  day: {day.name}\n"
+            f"  time: {normalized}",
         )
 
     @time_slot_group.command(name="remove", description="Remove an availability time slot by its sequence ID.")
@@ -993,8 +1000,9 @@ class SignupCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             server_id,
-            f"\u2796 Time slot #{slot_id} removed by **{interaction.user.display_name}** "
-            f"({target.display_label})",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-slot remove | Success\n"
+            f"  slot_id: {slot_id}\n"
+            f"  slot: {target.display_label}",
         )
 
     @time_slot_group.command(name="list", description="List all configured availability time slots.")
@@ -1142,8 +1150,8 @@ class SignupCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             server_id,
-            f"\U0001f7e2 Signups **opened** by **{interaction.user.display_name}**"
-            + (f" (tracks: {', '.join(track_list)})" if track_list else ""),
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup open | Success"
+            + (f"\n  track_ids: {', '.join(track_list)}" if track_list else ""),
         )
 
     # ── /signup close (T019) ──────────────────────────────────────────
@@ -1183,7 +1191,7 @@ class SignupCog(commands.Cog):
             await interaction.followup.send("✅ Signups closed.", ephemeral=True)
             await self.bot.output_router.post_log(
                 server_id,
-                f"\U0001f534 Signups **closed** by **{interaction.user.display_name}**",
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close | Success",
             )
             return
 

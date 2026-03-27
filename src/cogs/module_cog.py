@@ -260,7 +260,10 @@ class ModuleCog(commands.Cog):
                 return
 
         # 5. Post log channel confirmation
-        await self.bot.output_router.post_log(server_id, "✅ Weather module **enabled**.")
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable weather | Success",
+        )
         await interaction.followup.send("✅ Weather module enabled.", ephemeral=True)
 
     async def _catchup_and_schedule_weather(self, server_id: int, season: object) -> None:
@@ -329,7 +332,8 @@ class ModuleCog(commands.Cog):
             await db.commit()
 
         await self.bot.output_router.post_log(
-            server_id, "✅ Weather module **disabled**. All scheduled weather jobs cancelled."
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable weather | Success",
         )
         await interaction.followup.send(
             "✅ Weather module disabled. All scheduled weather jobs have been cancelled.",
@@ -375,7 +379,10 @@ class ModuleCog(commands.Cog):
             )
             await db.commit()
 
-        await self.bot.output_router.post_log(server_id, "✅ Results & Standings module **enabled**.")
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable results | Success",
+        )
         await interaction.followup.send("✅ Results & Standings module enabled.", ephemeral=True)
 
     # ── Results & Standings disable ────────────────────────────────────
@@ -407,7 +414,8 @@ class ModuleCog(commands.Cog):
             await db.commit()
 
         await self.bot.output_router.post_log(
-            server_id, "✅ Results & Standings module **disabled**."
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results | Success",
         )
         await interaction.followup.send(
             "✅ Results & Standings module disabled.", ephemeral=True
@@ -522,7 +530,13 @@ class ModuleCog(commands.Cog):
         if closed_msg_id is not None:
             await self.bot.signup_module_service.save_closed_message_id(server_id, closed_msg_id)
 
-        await self.bot.output_router.post_log(server_id, "✅ Signup module **enabled**.")
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable signup | Success\n"
+            f"  channel: #{channel.name}\n"
+            f"  base_role: {base_role.name} (<@&{base_role.id}>)\n"
+            f"  signed_up_role: {signed_up_role.name} (<@&{signed_up_role.id}>)",
+        )
         await interaction.followup.send("✅ Signup module enabled.", ephemeral=True)
 
     # ── Signup disable (T018) ──────────────────────────────────────────
@@ -598,7 +612,10 @@ class ModuleCog(commands.Cog):
             )
             await db.commit()
 
-        await self.bot.output_router.post_log(server_id, "✅ Signup module **disabled**.")
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable signup | Success",
+        )
         await interaction.followup.send(
             "✅ Signup module disabled. All signup configuration has been cleared.",
             ephemeral=True,

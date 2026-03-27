@@ -92,8 +92,9 @@ class TestModeCog(commands.Cog):
             await interaction.followup.send(msg, ephemeral=True)
             await self.bot.output_router.post_log(
                 interaction.guild_id,
-                f"🧪 Test mode **enabled** by **{interaction.user.display_name}**"
-                + (f". Seeded configs: {', '.join(new_configs)}" if new_configs else ""),
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode toggle | Success\n"
+                f"  test_mode: enabled"
+                + (f"\n  seeded_configs: {', '.join(new_configs)}" if new_configs else ""),
             )
         else:
             # Defer so the flush (multiple Discord API calls) has time to complete
@@ -117,8 +118,9 @@ class TestModeCog(commands.Cog):
             await interaction.followup.send(msg, ephemeral=True)
             await self.bot.output_router.post_log(
                 interaction.guild_id,
-                f"🧪 Test mode **disabled** by **{interaction.user.display_name}**"
-                + (f". Removed {removed} fake driver(s)." if removed else ""),
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode toggle | Success\n"
+                f"  test_mode: disabled"
+                + (f"\n  removed_fake_drivers: {removed}" if removed else ""),
             )
 
     # ------------------------------------------------------------------
@@ -295,9 +297,11 @@ class TestModeCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"⏩ **{interaction.user.display_name}** advanced Phase {phase_number} for "
-            f"**{entry['division_name']}** \u2014 **{entry['track_name']}** "
-            f"(Round {entry['round_number']})",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
+            f"  phase: {phase_number}\n"
+            f"  division: {entry['division_name']}\n"
+            f"  track: {entry['track_name']}\n"
+            f"  round: {entry['round_number']}",
         )
     # ------------------------------------------------------------------
     # /test-mode review
@@ -378,8 +382,9 @@ class TestModeCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\U0001f9ea former_driver flag for **{user.display_name}** set to `{new_val}` "
-            f"by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode set-former-driver | Success\n"
+            f"  user: {user.display_name} (<@{user.id}>)\n"
+            f"  former_driver: {old_val} -> {new_val}",
         )
         log.info(
             "set-former-driver on server %s: user=%s %s→%s by %s",
@@ -450,8 +455,10 @@ class TestModeCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"🧪 Fake driver **{result['display_name']}** added to **{result['team_name']}** "
-            f"in **{division}** by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster add | Success\n"
+            f"  driver: {result['display_name']}\n"
+            f"  team: {result['team_name']}\n"
+            f"  division: {division}",
         )
 
     # /test-mode roster list -----------------------------------------------
@@ -559,8 +566,9 @@ class TestModeCog(commands.Cog):
             )
             await self.bot.output_router.post_log(
                 interaction.guild_id,
-                f"🧪 Removed **{result}** fake driver(s) from **{division}** "
-                f"by **{interaction.user.display_name}**",
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster clear | Success\n"
+                f"  division: {division}\n"
+                f"  removed_drivers: {result}",
             )
 
     # (submit-results removed — use /test-mode advance which now handles result submission)

@@ -122,9 +122,7 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
 
     # Announce completion
     completion_msg = (
-        f"\U0001f3c1 **Season {season.season_number} Complete!** "
-        "All data has been preserved in the archive.\n"
-        "Run `/season setup` to begin a new season."
+        f"System | Season {season.season_number} complete | Success"
     )
     await bot.output_router.post_log(server_id, completion_msg)  # type: ignore[attr-defined]
 

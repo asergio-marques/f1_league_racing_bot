@@ -81,7 +81,8 @@ class ResultsCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\U0001f4c4 Points config **{name}** created by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config add | Success\n"
+            f"  config: {name}",
         )
 
     @config_group.command(name="remove", description="Remove a named points configuration.")
@@ -102,7 +103,8 @@ class ResultsCog(commands.Cog):
         await interaction.followup.send(f"\u2705 Config **{name}** removed.", ephemeral=True)
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\U0001f5d1\ufe0f Points config **{name}** removed by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config remove | Success\n"
+            f"  config: {name}",
         )
 
     @config_group.command(name="session", description="Set points for a finishing position in a session type.")
@@ -144,8 +146,9 @@ class ResultsCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u270f\ufe0f Config **{name}** updated by **{interaction.user.display_name}**: "
-            f"{session.name} P{position} \u2192 {points} pts",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config session | Success\n"
+            f"  config: {name}\n"
+            f"  session: {session.name}, position: {position}, points: {points}",
         )
 
     @config_group.command(name="fl", description="Set the fastest-lap bonus for a race session type.")
@@ -185,8 +188,9 @@ class ResultsCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u270f\ufe0f Config **{name}** FL bonus updated by **{interaction.user.display_name}**: "
-            f"{session.name} \u2192 {points} pts",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config fl | Success\n"
+            f"  config: {name}\n"
+            f"  session: {session.name}, fl_bonus: {points}",
         )
 
     @config_group.command(name="fl-plimit", description="Set the position eligibility limit for fastest-lap bonus.")
@@ -226,8 +230,9 @@ class ResultsCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u270f\ufe0f Config **{name}** FL position limit updated by **{interaction.user.display_name}**: "
-            f"{session.name} \u2192 top {limit}",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config fl-plimit | Success\n"
+            f"  config: {name}\n"
+            f"  session: {session.name}, fl_position_limit: {limit}",
         )
 
     @config_group.command(name="append", description="Attach a server config to the current season in SETUP.")
@@ -256,7 +261,8 @@ class ResultsCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\U0001f4ce Config **{name}** attached to season by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config append | Success\n"
+            f"  config: {name}",
         )
 
     @config_group.command(name="detach", description="Detach a config from the current season in SETUP.")
@@ -290,7 +296,8 @@ class ResultsCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\U0001f4cb Config **{name}** detached from season by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config detach | Success\n"
+            f"  config: {name}",
         )
 
     # ------------------------------------------------------------------
@@ -427,7 +434,8 @@ class ResultsCog(commands.Cog):
             )
             await self.bot.output_router.post_log(
                 interaction.guild_id,
-                f"\u270f\ufe0f Amendment mode **enabled** by **{interaction.user.display_name}**",
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend toggle | Success\n"
+                f"  amendment_mode: enabled",
             )
         else:
             try:
@@ -435,7 +443,8 @@ class ResultsCog(commands.Cog):
                 await interaction.followup.send("\u2705 Amendment mode disabled.", ephemeral=True)
                 await self.bot.output_router.post_log(
                     interaction.guild_id,
-                    f"\u270f\ufe0f Amendment mode **disabled** by **{interaction.user.display_name}**",
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend toggle | Success\n"
+                    f"  amendment_mode: disabled",
                 )
             except AmendmentModifiedError:
                 await interaction.followup.send(
@@ -474,7 +483,7 @@ class ResultsCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u21a9\ufe0f Amendment modification store reverted by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend revert | Success",
         )
 
     @amend_group.command(name="session", description="Set points in the modification store for a session position.")
@@ -519,8 +528,9 @@ class ResultsCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u270f\ufe0f Amendment store updated by **{interaction.user.display_name}**: "
-            f"**{name}** {session.name} P{position} \u2192 {points} pts",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend session | Success\n"
+            f"  config: {name}\n"
+            f"  session: {session.name}, position: {position}, points: {points}",
         )
 
     @amend_group.command(name="fl", description="Set fastest-lap bonus in the modification store.")
@@ -561,8 +571,9 @@ class ResultsCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u270f\ufe0f Amendment store FL bonus updated by **{interaction.user.display_name}**: "
-            f"**{name}** {session.name} \u2192 {points} pts",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend fl | Success\n"
+            f"  config: {name}\n"
+            f"  session: {session.name}, fl_bonus: {points}",
         )
 
     @amend_group.command(name="fl-plimit", description="Set fastest-lap position limit in the modification store.")
@@ -603,8 +614,9 @@ class ResultsCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u270f\ufe0f Amendment store FL position limit updated by **{interaction.user.display_name}**: "
-            f"**{name}** {session.name} \u2192 top {limit}",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend fl-plimit | Success\n"
+            f"  config: {name}\n"
+            f"  session: {session.name}, fl_position_limit: {limit}",
         )
 
     @amend_group.command(name="review", description="Review modification store changes and approve or reject.")
@@ -677,8 +689,8 @@ class ResultsCog(commands.Cog):
             )
             await self.bot.output_router.post_log(
                 interaction.guild_id,
-                f"\u2714\ufe0f Amendment approved by **{interaction.user.display_name}**. "
-                "Standings recomputed and reposted.",
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend review | Success\n"
+                f"  standings recomputed and reposted",
             )
 
     # ------------------------------------------------------------------
@@ -742,8 +754,9 @@ class ResultsCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\U0001f465 Reserve driver visibility for **{division}** set to **{state_str}** "
-            f"by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results reserves toggle | Success\n"
+            f"  division: {division}\n"
+            f"  reserves_in_standings: {state_str}",
         )
 
     # ------------------------------------------------------------------

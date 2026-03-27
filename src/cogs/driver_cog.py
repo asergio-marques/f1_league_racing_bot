@@ -83,8 +83,9 @@ class DriverCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             server_id,
-            f"\U0001f504 Driver re-keyed by **{interaction.user.display_name}**: "
-            f"`{resolved_old_id}` \u2192 **{new_user.display_name}** (`{new_user_id}`)",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reassign | Success\n"
+            f"  old_user_id: {resolved_old_id}\n"
+            f"  new_user: {new_user.display_name} (<@{new_user_id}>)",
         )
         log.info(
             "Driver profile re-keyed on server %s: %s → %s by %s",
@@ -180,8 +181,10 @@ class DriverCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             server_id,
-            f"\U0001f3ce\ufe0f {verb} **{user.display_name}** to **{result['team_name']}** "
-            f"in **{result['division_name']}** by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver assign | Success\n"
+            f"  user: {user.display_name} (<@{user.id}>)\n"
+            f"  team: {result['team_name']}\n"
+            f"  division: {result['division_name']}",
         )
         log.info(
             "assign: server=%s user=%s → team=%s division=%s by %s",
@@ -270,8 +273,9 @@ class DriverCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             server_id,
-            f"❌ Unassigned **{user.display_name}** from **{result['division_name']}**{suffix} "
-            f"by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver unassign | Success\n"
+            f"  user: {user.display_name} (<@{user.id}>)\n"
+            f"  division: {result['division_name']}",
         )
         log.info(
             "unassign: server=%s user=%s from division=%s by %s",
@@ -342,8 +346,8 @@ class DriverCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             server_id,
-            f"⛔ **{user.display_name}** sacked by **{interaction.user.display_name}**. "
-            "All roles and season assignments removed.",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver sack | Success\n"
+            f"  user: {user.display_name} (<@{user.id}>)",
         )
         log.info(
             "sack: server=%s user=%s by %s",

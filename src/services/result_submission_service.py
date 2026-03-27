@@ -439,10 +439,10 @@ async def finalize_round(
         if srv_row:
             n_penalties = len(state.staged)
             summary = (
-                f"🏁 **Round {state.round_number} ({state.division_name}) finalized** by <@{actor_id}>.\n"
-                + (f"{n_penalties} penalty(ies) applied. " if n_penalties else "No penalties applied. ")
-                + "Final results posted and submission channel closed.\n"
-                f"old={old_val}\nnew={new_val}"
+                f"<@{actor_id}> | ROUND_FINALIZED | Success\n"
+                f"  round: {state.round_number} ({state.division_name})\n"
+                + (f"  penalties: {n_penalties}\n" if n_penalties else "  penalties: none\n")
+                + f"  old={old_val}\n  new={new_val}"
             )
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 int(srv_row["server_id"]),
@@ -768,9 +768,9 @@ async def amend_session_result(
 
     await bot.output_router.post_log(
         server_id,
-        f"\U0001f4cb RESULT_AMENDED | season={rctx['season_number']} "
-        f"division={rctx['division_name']!r} round={rctx['round_number']} "
-        f"session={session_type.value} by=<@{amended_by}>",
+        f"<@{amended_by}> | RESULT_AMENDED | Success\n"
+        f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
+        f"  round: {rctx['round_number']}, session: {session_type.value}",
     )
 
 
@@ -1678,9 +1678,10 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 error_list = "\n".join(f"• {e}" for e in result)
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
                     server_id,
-                    f"RESULT_SUBMISSION_REJECTED | season={season_number} "
-                    f"division={division_name!r} round={round_number} "
-                    f"session={session_type.value} by=<@{msg.author.id}>\n```\n{content[:500]}\n```",
+                    f"{msg.author.display_name} (<@{msg.author.id}>) | RESULT_SUBMISSION_REJECTED | \n"
+                    f"  season: {season_number}, division: {division_name!r}\n"
+                    f"  round: {round_number}, session: {session_type.value}\n"
+                    f"  input:\n```\n{content[:500]}\n```",
                 )
                 await sub_channel.send(
                     f"❌ Validation failed:\n{error_list}\nPlease correct and resubmit."
@@ -1703,9 +1704,10 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             # Log accepted input (with raw content for auditability)
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 server_id,
-                f"RESULT_SUBMISSION_ACCEPTED | season={season_number} "
-                f"division={division_name!r} round={round_number} "
-                f"session={session_type.value} by=<@{msg.author.id}>\n```\n{content[:500]}\n```",
+                f"{msg.author.display_name} (<@{msg.author.id}>) | RESULT_SUBMISSION_ACCEPTED | Success\n"
+                f"  season: {season_number}, division: {division_name!r}\n"
+                f"  round: {round_number}, session: {session_type.value}\n"
+                f"  input:\n```\n{content[:500]}\n```",
             )
 
             # Config selection
