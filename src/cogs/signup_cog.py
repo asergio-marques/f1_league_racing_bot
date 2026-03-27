@@ -639,6 +639,12 @@ class SignupCog(commands.Cog):
     ) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
+        if not await self.bot.module_service.is_signup_enabled(server_id):
+            await interaction.response.send_message(
+                "\u274c The Signup module is not enabled.", ephemeral=True
+            )
+            return
+
         # Check bot has send_messages + manage_channels on channel
         guild = interaction.guild
         assert guild is not None

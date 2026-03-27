@@ -269,6 +269,30 @@ Cancels scheduled jobs for the round, sets its status to `CANCELLED`, and posts 
 
 Cancels all scheduled rounds in the division (jobs + status flags) and posts a notice to the forecast channel.
 
+#### `/division weather-channel` — Set the weather forecast channel for a division
+*Access: Trusted admin · Weather module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where weather forecast messages are posted |
+
+#### `/division results-channel` — Set the results posting channel for a division
+*Access: Trusted admin · Results & Standings module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where session results are posted |
+
+#### `/division standings-channel` — Set the standings posting channel for a division
+*Access: Trusted admin · Results & Standings module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where standings tables are posted |
+
 ---
 
 ### Test Mode Commands

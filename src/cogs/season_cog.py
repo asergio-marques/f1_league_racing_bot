@@ -906,6 +906,11 @@ class SeasonCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
+        if not await self.bot.module_service.is_weather_enabled(interaction.guild_id):
+            await interaction.response.send_message(
+                "\u274c The Weather module is not enabled.", ephemeral=True
+            )
+            return
         await self._set_division_channel(interaction, name, channel, "weather")
 
     @division.command(
@@ -920,6 +925,11 @@ class SeasonCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
+        if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
+            await interaction.response.send_message(
+                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            )
+            return
         await self._set_division_channel(interaction, name, channel, "results")
 
     @division.command(
@@ -934,6 +944,11 @@ class SeasonCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
+        if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
+            await interaction.response.send_message(
+                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            )
+            return
         await self._set_division_channel(interaction, name, channel, "standings")
 
     # ------------------------------------------------------------------
