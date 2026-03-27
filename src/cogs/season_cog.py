@@ -1625,6 +1625,20 @@ class SeasonCog(commands.Cog):
             reason="Results amend channel",
         )
 
+        # Record the channel so restart recovery can detect and clean it up.
+        _amend_created_at = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as _adb:
+            await _adb.execute(
+                """
+                INSERT OR REPLACE INTO round_amend_channels
+                    (round_id, server_id, channel_id, session_type, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (rnd.id, interaction.guild_id, amend_channel.id,
+                 chosen_session_type.value, _amend_created_at),
+            )
+            await _adb.commit()
+
         _SESSION_LABEL = {
             SessionType.SPRINT_QUALIFYING: "Sprint Qualifying",
             SessionType.SPRINT_RACE: "Sprint Race",
@@ -1672,6 +1686,12 @@ class SeasonCog(commands.Cog):
         )
 
         async def _cleanup_channel() -> None:
+            async with get_connection(self.bot.db_path) as _cdb:
+                await _cdb.execute(
+                    "DELETE FROM round_amend_channels WHERE round_id = ? AND session_type = ?",
+                    (rnd.id, chosen_session_type.value),
+                )
+                await _cdb.commit()
             try:
                 await amend_channel.delete(reason="Results amend complete")
             except discord.HTTPException:

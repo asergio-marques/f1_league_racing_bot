@@ -134,6 +134,9 @@ async def main() -> None:
         # so /test-mode advance can re-trigger submission.
         await _recover_orphaned_submission_channels(bot)
 
+        # Close any results-amend channels left open by a previous run.
+        await _recover_orphaned_amend_channels(bot)
+
         # Recover any missed phases from before bot restart
         await _recover_missed_phases(bot)
 
@@ -444,6 +447,81 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
             "Recovery: re-triggering result submission wizard for round %s", round_id
         )
         asyncio.create_task(run_result_submission_job(round_id, bot))
+
+        # Notify the log channel so the LM knows to re-submit any sessions
+        # that were in progress when the bot was terminated.
+        try:
+            await bot.output_router.post_log(  # type: ignore[attr-defined]
+                server_id,
+                f"⚠️ **Bot restarted mid-result-submission** for round {round_id}. "
+                "Any sessions submitted before the restart have been cleared and the "
+                "submission wizard has been re-opened. Please re-submit all sessions.",
+            )
+        except Exception:
+            log.exception(
+                "Recovery: failed to post log for mid-submission orphan round %s", round_id
+            )
+
+
+async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
+    """Delete any results-amend channels left open by a previous bot process.
+
+    The /round results amend wait_for loop dies with the process on restart.
+    We detect stale rows in round_amend_channels, notify the log channel so
+    the league manager knows to re-run the command, then delete the Discord
+    channel and remove the DB row.
+    """
+    from db.database import get_connection
+
+    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+        cursor = await db.execute(
+            "SELECT id, round_id, server_id, channel_id, session_type FROM round_amend_channels"
+        )
+        orphans = await cursor.fetchall()
+
+    for row in orphans:
+        row_id: int = row["id"]
+        round_id: int = row["round_id"]
+        server_id: int = row["server_id"]
+        channel_id: int = row["channel_id"]
+        session_type: str = row["session_type"]
+
+        # Remove the DB row first so a further crash doesn't re-process it.
+        async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+            await db.execute(
+                "DELETE FROM round_amend_channels WHERE id = ?", (row_id,)
+            )
+            await db.commit()
+
+        # Delete the Discord channel.
+        guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
+        if guild is not None:
+            channel = guild.get_channel(channel_id)
+            if channel is not None:
+                try:
+                    await channel.delete(reason="Orphaned amendment channel cleanup on restart")
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+
+        log.info(
+            "Recovery: deleted orphaned amend channel %s for round %s session %s",
+            channel_id, round_id, session_type,
+        )
+
+        # Notify the log channel so the LM knows to re-run the command.
+        try:
+            await bot.output_router.post_log(  # type: ignore[attr-defined]
+                server_id,
+                f"⚠️ **Bot restarted mid-amendment** for round {round_id} "
+                f"({session_type.replace('_', ' ').title()}). "
+                "The amendment channel has been deleted. "
+                "Please re-run `/round results amend` to re-submit.",
+            )
+        except Exception:
+            log.exception(
+                "Recovery: failed to post log for orphaned amend channel round %s session %s",
+                round_id, session_type,
+            )
 
 
 async def _recover_pending_setups(bot: commands.Bot) -> None:
