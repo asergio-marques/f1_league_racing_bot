@@ -218,6 +218,15 @@ class SeasonCog(commands.Cog):
             config_names = await season_points_service.get_season_config_names(self.bot.db_path, cfg.season_id)  # type: ignore[attr-defined]
             if config_names:
                 lines.append("**Points Configs:** " + ", ".join(config_names))
+            elif results_on:
+                server_config_tm = await self.bot.config_service.get_server_config(interaction.guild_id)  # type: ignore[attr-defined]
+                if server_config_tm is not None and server_config_tm.test_mode_active:
+                    lines.append(
+                        "**Points Configs:** *(none attached)* "
+                        "\u26a0\ufe0f Test mode active \u2014 Standard & Half Points will be auto-seeded on approval."
+                    )
+                else:
+                    lines.append("**Points Configs:** *(none attached)*")
             else:
                 lines.append("**Points Configs:** *(none attached)*")
             lines.append("")
@@ -906,6 +915,11 @@ class SeasonCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
+        if not await self.bot.module_service.is_weather_enabled(interaction.guild_id):
+            await interaction.response.send_message(
+                "\u274c The Weather module is not enabled.", ephemeral=True
+            )
+            return
         await self._set_division_channel(interaction, name, channel, "weather")
 
     @division.command(
@@ -920,6 +934,11 @@ class SeasonCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
+        if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
+            await interaction.response.send_message(
+                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            )
+            return
         await self._set_division_channel(interaction, name, channel, "results")
 
     @division.command(
@@ -934,6 +953,11 @@ class SeasonCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
+        if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
+            await interaction.response.send_message(
+                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            )
+            return
         await self._set_division_channel(interaction, name, channel, "standings")
 
     # ------------------------------------------------------------------
@@ -1625,6 +1649,20 @@ class SeasonCog(commands.Cog):
             reason="Results amend channel",
         )
 
+        # Record the channel so restart recovery can detect and clean it up.
+        _amend_created_at = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as _adb:
+            await _adb.execute(
+                """
+                INSERT OR REPLACE INTO round_amend_channels
+                    (round_id, server_id, channel_id, session_type, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (rnd.id, interaction.guild_id, amend_channel.id,
+                 chosen_session_type.value, _amend_created_at),
+            )
+            await _adb.commit()
+
         _SESSION_LABEL = {
             SessionType.SPRINT_QUALIFYING: "Sprint Qualifying",
             SessionType.SPRINT_RACE: "Sprint Race",
@@ -1664,6 +1702,7 @@ class SeasonCog(commands.Cog):
 
         # --- Collect new results ---
         from services.result_submission_service import validate_submission_block
+        from services.result_submission_service import extract_fl_override  # type: ignore[attr-defined]
         from services.result_submission_service import _build_division_validation_data  # type: ignore[attr-defined]
 
         driver_ids, team_role_ids, reserve_role_id, driver_team_map, reserve_driver_ids = await _build_division_validation_data(
@@ -1671,6 +1710,12 @@ class SeasonCog(commands.Cog):
         )
 
         async def _cleanup_channel() -> None:
+            async with get_connection(self.bot.db_path) as _cdb:
+                await _cdb.execute(
+                    "DELETE FROM round_amend_channels WHERE round_id = ? AND session_type = ?",
+                    (rnd.id, chosen_session_type.value),
+                )
+                await _cdb.commit()
             try:
                 await amend_channel.delete(reason="Results amend complete")
             except discord.HTTPException:
@@ -1708,6 +1753,9 @@ class SeasonCog(commands.Cog):
 
             msg = done_task.result()
             lines_raw = [ln.strip() for ln in msg.content.strip().splitlines() if ln.strip()]
+            fl_amend_override: int | None = None
+            if not chosen_session_type.is_qualifying:
+                fl_amend_override, lines_raw = extract_fl_override(lines_raw)
             parsed = validate_submission_block(
                 lines_raw,
                 chosen_session_type,
@@ -1729,6 +1777,16 @@ class SeasonCog(commands.Cog):
                     f"❌ Validation errors:\n{error_lines}\nPlease resubmit."
                 )
                 continue
+
+            # Validate FL override references a driver in the submitted results
+            if fl_amend_override is not None:
+                submitted_driver_ids = {r.driver_user_id for r in parsed}
+                if fl_amend_override not in submitted_driver_ids:
+                    await amend_channel.send(
+                        f"❌ FL override <@{fl_amend_override}> is not in the submitted results. "
+                        "Please resubmit."
+                    )
+                    continue
 
             # Valid — determine config name
             from services.season_points_service import get_season_config_names
@@ -1757,6 +1815,7 @@ class SeasonCog(commands.Cog):
                 config_name,
                 interaction.user.id,
                 interaction.client,
+                fl_driver_override=fl_amend_override,
             )
             await amend_channel.send("✅ Results amended successfully. This channel will be deleted.")
             await _asyncio.sleep(3)

@@ -35,6 +35,7 @@ class SessionResult:
     submitted_by: int | None
     submitted_at: str | None
     results_message_id: int | None = None
+    fl_driver_override: int | None = None
 
 
 @dataclass

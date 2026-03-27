@@ -269,6 +269,30 @@ Cancels scheduled jobs for the round, sets its status to `CANCELLED`, and posts 
 
 Cancels all scheduled rounds in the division (jobs + status flags) and posts a notice to the forecast channel.
 
+#### `/division weather-channel` — Set the weather forecast channel for a division
+*Access: Trusted admin · Weather module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where weather forecast messages are posted |
+
+#### `/division results-channel` — Set the results posting channel for a division
+*Access: Trusted admin · Results & Standings module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where session results are posted |
+
+#### `/division standings-channel` — Set the standings posting channel for a division
+*Access: Trusted admin · Results & Standings module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where standings tables are posted |
+
 ---
 
 ### Test Mode Commands
@@ -609,12 +633,30 @@ Once **Approve** is pressed, the bot posts an **approval message** to the submis
 - Penalties can be positive (`+5s`, `5s`, `5`) or negative (`-3s`, `-3`) for race sessions.
 - A DSQ on the fastest-lap holder forfeits the bonus; no other driver receives it.
 - A round that is finalized blocks `/test-mode advance` until approved.
+
+##### Fastest-lap tie-breaking — FL override header
+
+The fastest-lap bonus is awarded to the driver with the lowest Fastest Lap time in the submitted block. When two or more drivers share the exact same time, add an optional **FL override header** as the very first line of the race submission:
+
+```
+FL: @Driver
+1, @Driver, @TeamRole, 1:23:45.678, 1:24.000, N/A
+2, @Other,  @TeamRole, +5.321,       1:24.000, N/A
+...
+```
+
+Rules:
+- The header format is `FL: <@user_id>` (standard Discord member mention).
+- The named driver must appear in the submitted results — if not, the submission is rejected.
+- The override replaces automatic time-comparison entirely for that submission.
+- Omitting the header restores normal behaviour: the lowest lap time wins; ties fall to the driver listed highest (lowest finishing position).
+- The header is ignored for qualifying submissions.
 - On bot restart, open penalty review channels are automatically restored.
 
 ##### `/round results amend` — Re-submit results for a completed session
 *Access: Trusted admin · Results module required*
 
-Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in the same category as the bot commands channel. Paste the corrected results in that channel; the bot validates and applies them, recalculates standings, then deletes the channel automatically. A **❌ Cancel Amendment** button is posted in the channel to abort at any time. If `session` is omitted you will be prompted to choose one before the channel is created.
+Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in the same category as the bot commands channel. Paste the corrected results in that channel; the bot validates and applies them, recalculates standings, then deletes the channel automatically. The optional `FL: @Driver` fastest-lap override header (see above) is supported here as well. A **❌ Cancel Amendment** button is posted in the channel to abort at any time. If `session` is omitted you will be prompted to choose one before the channel is created.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

@@ -27,6 +27,7 @@ def compute_points_for_session(
     config_entries: list[PointsConfigEntry],
     fl_config: PointsConfigFastestLap | None,
     session_type: SessionType,
+    fl_override: int | None = None,
 ) -> list[DriverSessionResult]:
     """Compute and assign points_awarded / fastest_lap_bonus for each driver row.
 
@@ -37,6 +38,9 @@ def compute_points_for_session(
     - DNF → 0 position points; eligible for FL bonus if within position limit.
     - CLASSIFIED → position points from config; eligible for FL bonus.
     FL eligibility also requires that the driver's ``fastest_lap`` field is non-null.
+
+    ``fl_override`` — when provided, designates the fastest-lap holder directly,
+    bypassing automatic time-based detection.
     """
     # Build position → points lookup
     pos_to_pts: dict[int, int] = {e.position: e.points for e in config_entries}
@@ -44,7 +48,10 @@ def compute_points_for_session(
     # Detect the fastest lap holder (race sessions only)
     fl_holder: int | None = None
     if session_type.is_race:
-        fl_holder = detect_fastest_lap(driver_rows, session_type)
+        if fl_override is not None:
+            fl_holder = fl_override
+        else:
+            fl_holder = detect_fastest_lap(driver_rows, session_type)
 
     for row in driver_rows:
         # Position points

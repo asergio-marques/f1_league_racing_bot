@@ -15,6 +15,7 @@ from services.result_submission_service import (
     ParsedRaceRow,
     _format_time_ms,
     _parse_time_to_ms,
+    extract_fl_override,
     get_sessions_for_format,
     validate_qualifying_row,
     validate_race_row,
@@ -438,4 +439,55 @@ async def test_channel_not_in_penalty_review_when_flag_zero(tmp_path):
         await db.commit()
 
     assert await is_channel_in_penalty_review(db_path, channel_id) is False
+
+
+# ---------------------------------------------------------------------------
+# extract_fl_override
+# ---------------------------------------------------------------------------
+
+
+def test_extract_fl_override_present():
+    """A valid FL: header is stripped and the driver ID is returned."""
+    lines = ["FL: <@12345>", "1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A"]
+    fl_id, remaining = extract_fl_override(lines)
+    assert fl_id == 12345
+    assert remaining == ["1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A"]
+
+
+def test_extract_fl_override_old_mention_format():
+    """FL: <@!id> (legacy mention format) is also accepted."""
+    lines = ["FL: <@!99999>", "1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A"]
+    fl_id, remaining = extract_fl_override(lines)
+    assert fl_id == 99999
+    assert remaining == ["1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A"]
+
+
+def test_extract_fl_override_case_insensitive():
+    """The 'FL:' prefix is matched case-insensitively."""
+    lines = ["fl: <@777>", "1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A"]
+    fl_id, remaining = extract_fl_override(lines)
+    assert fl_id == 777
+
+
+def test_extract_fl_override_absent():
+    """When no FL: header is present, None is returned and lines is unchanged."""
+    lines = ["1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A"]
+    fl_id, remaining = extract_fl_override(lines)
+    assert fl_id is None
+    assert remaining is lines  # same object — unchanged
+
+
+def test_extract_fl_override_empty_list():
+    """Empty input returns (None, [])."""
+    fl_id, remaining = extract_fl_override([])
+    assert fl_id is None
+    assert remaining == []
+
+
+def test_extract_fl_override_non_matching_first_line():
+    """A first line that looks like a driver row is not consumed."""
+    lines = ["1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A", "2, <@200>, <@&500>, +0:05.000, 1:26.000, N/A"]
+    fl_id, remaining = extract_fl_override(lines)
+    assert fl_id is None
+    assert remaining is lines
 

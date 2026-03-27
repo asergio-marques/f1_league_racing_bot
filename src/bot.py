@@ -134,6 +134,9 @@ async def main() -> None:
         # so /test-mode advance can re-trigger submission.
         await _recover_orphaned_submission_channels(bot)
 
+        # Close any results-amend channels left open by a previous run.
+        await _recover_orphaned_amend_channels(bot)
+
         # Recover any missed phases from before bot restart
         await _recover_missed_phases(bot)
 
@@ -292,11 +295,22 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
 
     When the bot restarts, any in-progress wait_for submission loops are
     killed mid-flight.  The DB row remains closed=0 and the Discord channel
-    still exists, but nothing is listening.  We clean them up here so that
-    /test-mode advance (and the advance guard in test_mode_cog) can
-    re-trigger submission normally.
+    still exists, but nothing is listening.  We clean them up here.
 
-    Channels that are in penalty review are restored rather than deleted.
+    Mid-submission orphans (in_penalty_review=0):
+      - Delete the session_results rows for the round (so the round is not
+        mistakenly treated as complete by get_next_pending_phase).
+      - Delete the orphaned round_submission_channels row and Discord channel.
+      - Re-trigger run_result_submission_job so the wizard opens immediately
+        (production path — test mode uses /test-mode advance instead).
+
+    Penalty-review orphans (in_penalty_review=1):
+      - Re-post the penalty review prompt.  skip_results_post is set based on
+        the results_posted column so we never re-post interim results that were
+        already sent before the crash.
+      - If staged_penalties is set the penalties were already committed to the
+        DB before the previous crash; a warning is posted in the channel so the
+        LM knows not to re-add them before approving.
     """
     from db.database import get_connection
 
@@ -304,6 +318,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         cursor = await db.execute(
             """
             SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
+                   rsc.results_posted, rsc.staged_penalties,
                    r.division_id, s.server_id
             FROM round_submission_channels rsc
             JOIN rounds r    ON r.id  = rsc.round_id
@@ -318,6 +333,8 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         round_id: int = row["round_id"]
         channel_id: int = row["channel_id"]
         in_penalty_review: int = row["in_penalty_review"]
+        results_posted: int = row["results_posted"]
+        staged_penalties_json: str | None = row["staged_penalties"]
         division_id: int = row["division_id"]
         server_id: int = row["server_id"]
 
@@ -340,15 +357,43 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
                 )
                 continue
             try:
+                # If staged_penalties is set, penalties were already written to
+                # driver_session_results before the crash.  Warn the LM before
+                # re-posting the prompt with an empty staged list so they know
+                # not to re-add those penalties before approving.
+                if staged_penalties_json:
+                    import json as _json
+                    try:
+                        entries = _json.loads(staged_penalties_json)
+                        lines = [
+                            "⚠️ **The bot restarted mid-finalization.** "
+                            "The penalties listed below were **already applied to the results** "
+                            "before the crash. Do **not** re-add them — just approve as-is to finalize.",
+                            "",
+                        ]
+                        for e in entries:
+                            stype = e.get("session_type", "?").replace("_", " ").title()
+                            ptype = e.get("penalty_type", "?")
+                            psecs = e.get("penalty_seconds")
+                            uid = e.get("driver_user_id", "?")
+                            label = f"+{psecs}s" if ptype == "TIME" and psecs is not None else ptype
+                            lines.append(f"• <@{uid}> | {stype} | **{label}**")
+                        await channel.send("\n".join(lines))
+                    except Exception:
+                        log.exception(
+                            "Recovery: failed to post staged_penalties warning for round %s", round_id
+                        )
+
                 from services.result_submission_service import enter_penalty_state
 
                 await enter_penalty_state(
                     bot, guild, round_id, division_id, channel,
-                    skip_results_post=True,
+                    skip_results_post=bool(results_posted),
                 )
                 log.info(
-                    "Recovery: restored penalty review prompt for round %s in channel %s",
-                    round_id, channel_id,
+                    "Recovery: restored penalty review prompt for round %s in channel %s "
+                    "(results_posted=%s, had_staged_penalties=%s)",
+                    round_id, channel_id, results_posted, bool(staged_penalties_json),
                 )
             except Exception:
                 log.exception(
@@ -356,32 +401,127 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
                 )
             continue
 
-        # Mid-submission orphan: DELETE the row entirely so that
-        # create_submission_channel can INSERT a fresh row when re-triggered.
+        # ------------------------------------------------------------------
+        # Mid-submission orphan
+        # ------------------------------------------------------------------
+        # 1. Delete session_results so the round is not mistaken for complete
+        #    by get_next_pending_phase (driver_session_results cascades).
+        # 2. Delete the channel row and the Discord channel.
+        # 3. Re-trigger the submission wizard immediately (production path).
         async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+            await db.execute(
+                "DELETE FROM session_results WHERE round_id = ?",
+                (round_id,),
+            )
             await db.execute(
                 "DELETE FROM round_submission_channels WHERE round_id = ?",
                 (round_id,),
             )
             await db.commit()
 
+        log.info(
+            "Recovery: cleared orphaned session_results and submission row for round %s",
+            round_id,
+        )
+
         if guild is None:
             log.warning(
-                "Recovery: guild %s not in cache, removed orphaned submission row for round %s",
+                "Recovery: guild %s not in cache for round %s — "
+                "submission row cleared but wizard not re-triggered",
                 server_id, round_id,
             )
             continue
 
-        log.info(
-            "Recovery: deleting orphaned submission channel %s for round %s",
-            channel_id, round_id,
-        )
         channel = guild.get_channel(channel_id)
         if channel is not None:
             try:
                 await channel.delete(reason="Orphaned submission channel cleanup on restart")
             except (discord.NotFound, discord.HTTPException):
                 pass
+
+        # Re-trigger the wizard so the round is not silently abandoned in
+        # production (where /test-mode advance is not used).
+        from services.result_submission_service import run_result_submission_job
+
+        log.info(
+            "Recovery: re-triggering result submission wizard for round %s", round_id
+        )
+        asyncio.create_task(run_result_submission_job(round_id, bot))
+
+        # Notify the log channel so the LM knows to re-submit any sessions
+        # that were in progress when the bot was terminated.
+        try:
+            await bot.output_router.post_log(  # type: ignore[attr-defined]
+                server_id,
+                f"⚠️ **Bot restarted mid-result-submission** for round {round_id}. "
+                "Any sessions submitted before the restart have been cleared and the "
+                "submission wizard has been re-opened. Please re-submit all sessions.",
+            )
+        except Exception:
+            log.exception(
+                "Recovery: failed to post log for mid-submission orphan round %s", round_id
+            )
+
+
+async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
+    """Delete any results-amend channels left open by a previous bot process.
+
+    The /round results amend wait_for loop dies with the process on restart.
+    We detect stale rows in round_amend_channels, notify the log channel so
+    the league manager knows to re-run the command, then delete the Discord
+    channel and remove the DB row.
+    """
+    from db.database import get_connection
+
+    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+        cursor = await db.execute(
+            "SELECT id, round_id, server_id, channel_id, session_type FROM round_amend_channels"
+        )
+        orphans = await cursor.fetchall()
+
+    for row in orphans:
+        row_id: int = row["id"]
+        round_id: int = row["round_id"]
+        server_id: int = row["server_id"]
+        channel_id: int = row["channel_id"]
+        session_type: str = row["session_type"]
+
+        # Remove the DB row first so a further crash doesn't re-process it.
+        async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+            await db.execute(
+                "DELETE FROM round_amend_channels WHERE id = ?", (row_id,)
+            )
+            await db.commit()
+
+        # Delete the Discord channel.
+        guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
+        if guild is not None:
+            channel = guild.get_channel(channel_id)
+            if channel is not None:
+                try:
+                    await channel.delete(reason="Orphaned amendment channel cleanup on restart")
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+
+        log.info(
+            "Recovery: deleted orphaned amend channel %s for round %s session %s",
+            channel_id, round_id, session_type,
+        )
+
+        # Notify the log channel so the LM knows to re-run the command.
+        try:
+            await bot.output_router.post_log(  # type: ignore[attr-defined]
+                server_id,
+                f"⚠️ **Bot restarted mid-amendment** for round {round_id} "
+                f"({session_type.replace('_', ' ').title()}). "
+                "The amendment channel has been deleted. "
+                "Please re-run `/round results amend` to re-submit.",
+            )
+        except Exception:
+            log.exception(
+                "Recovery: failed to post log for orphaned amend channel round %s session %s",
+                round_id, session_type,
+            )
 
 
 async def _recover_pending_setups(bot: commands.Bot) -> None:
