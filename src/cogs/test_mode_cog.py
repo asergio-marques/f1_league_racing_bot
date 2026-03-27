@@ -290,7 +290,8 @@ class TestModeCog(commands.Cog):
             f"**{entry['division_name']}** — **{entry['track_name']}**. "
             f"Outputs posted to the configured forecast and log channels.",
             ephemeral=True,
-        )        await self.bot.output_router.post_log(
+        )
+        await self.bot.output_router.post_log(
             interaction.guild_id,
             f"⏩ **{interaction.user.display_name}** advanced Phase {phase_number} for "
             f"**{entry['division_name']}** \u2014 **{entry['track_name']}** "
@@ -370,11 +371,13 @@ class TestModeCog(commands.Cog):
             f"   Old value: {old_val}\n"
             f"   New value: {new_val}",
             ephemeral=True,
-        )        await self.bot.output_router.post_log(
+        )
+        await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"🧪 former_driver flag for **{user.display_name}** set to `{new_val}` "
+            f"\U0001f9ea former_driver flag for **{user.display_name}** set to `{new_val}` "
             f"by **{interaction.user.display_name}**",
-        )        log.info(
+        )
+        log.info(
             "set-former-driver on server %s: user=%s %s→%s by %s",
             interaction.guild_id, user.id, old_val, new_val, interaction.user,
         )
