@@ -80,11 +80,13 @@ class DriverCog(commands.Cog):
             f"   State       : {profile.current_state.value}\n"
             f"   Former driver: {former}",
             ephemeral=True,
-        )        await self.bot.output_router.post_log(
+        )
+        await self.bot.output_router.post_log(
             server_id,
-            f"🔄 Driver re-keyed by **{interaction.user.display_name}**: "
-            f"`{resolved_old_id}` → **{new_user.display_name}** (`{new_user_id}`)",
-        )        log.info(
+            f"\U0001f504 Driver re-keyed by **{interaction.user.display_name}**: "
+            f"`{resolved_old_id}` \u2192 **{new_user.display_name}** (`{new_user_id}`)",
+        )
+        log.info(
             "Driver profile re-keyed on server %s: %s → %s by %s",
             server_id, resolved_old_id, new_user_id, actor_name,
         )
@@ -175,11 +177,13 @@ class DriverCog(commands.Cog):
             f"✅ {verb} **{user.display_name}** to **{result['team_name']}** "
             f"in **{result['division_name']}**.",
             ephemeral=True,
-        )        await self.bot.output_router.post_log(
+        )
+        await self.bot.output_router.post_log(
             server_id,
-            f"🏎️ {verb} **{user.display_name}** to **{result['team_name']}** "
+            f"\U0001f3ce\ufe0f {verb} **{user.display_name}** to **{result['team_name']}** "
             f"in **{result['division_name']}** by **{interaction.user.display_name}**",
-        )        log.info(
+        )
+        log.info(
             "assign: server=%s user=%s → team=%s division=%s by %s",
             server_id, user.id, team, division_name, actor_name,
         )

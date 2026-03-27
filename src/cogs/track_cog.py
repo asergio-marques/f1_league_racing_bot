@@ -110,7 +110,8 @@ class TrackCog(commands.Cog):
             f"✅ **{resolved}** updated — μ = `{mu}`, σ = `{sigma}`. "
             "Applies to future Phase 1 draws; existing results are unchanged.",
             ephemeral=True,
-        )        await self.bot.output_router.post_log(
+        )
+        await self.bot.output_router.post_log(
             interaction.guild_id,
             f"🏆 Track params updated for **{resolved}** by **{interaction.user.display_name}**: "
             f"\u03bc=`{mu}`, \u03c3=`{sigma}`",
@@ -164,7 +165,8 @@ class TrackCog(commands.Cog):
                 f"μ = `{default_mu}`, σ = `{default_sigma}` "
                 f"(was μ = `{old[0]}`, σ = `{old[1]}`).",
                 ephemeral=True,
-            )            await self.bot.output_router.post_log(
+            )
+            await self.bot.output_router.post_log(
                 interaction.guild_id,
                 f"↩️ Track params reset for **{resolved}** to packaged defaults "
                 f"by **{interaction.user.display_name}** (was \u03bc=`{old[0]}`, \u03c3=`{old[1]}`)",
