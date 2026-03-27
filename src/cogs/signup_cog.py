@@ -726,6 +726,8 @@ class SignupCog(commands.Cog):
         )
 
     @config_group.command(name="view", description="View current signup module configuration.")
+    @channel_guard
+    @admin_only
     async def config_view(self, interaction: discord.Interaction) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         cfg = await self.bot.signup_module_service.get_config(server_id)
@@ -996,6 +998,8 @@ class SignupCog(commands.Cog):
         )
 
     @time_slot_group.command(name="list", description="List all configured availability time slots.")
+    @channel_guard
+    @admin_only
     async def time_slot_list(self, interaction: discord.Interaction) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         slots = await self.bot.signup_module_service.get_slots(server_id)
