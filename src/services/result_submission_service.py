@@ -977,6 +977,19 @@ def validate_submission_block(
     if errors:
         return errors
 
+    # Each driver must appear exactly once
+    seen_driver_ids: set[int] = set()
+    for row in parsed_rows:
+        if row.driver_user_id in seen_driver_ids:
+            errors.append(
+                f"Row {row.position}: driver <@{row.driver_user_id}> "
+                "appears more than once in this submission."
+            )
+        seen_driver_ids.add(row.driver_user_id)
+
+    if errors:
+        return errors
+
     # Each driver must be in the division
     for row in parsed_rows:
         if row.driver_user_id not in division_driver_ids:
