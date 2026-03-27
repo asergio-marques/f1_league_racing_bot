@@ -48,9 +48,22 @@ def channel_guard(func: Callable) -> Callable:
             await func(self, interaction, *args, **kwargs)
             return
 
-        # 1. Channel check — silent ignore
+        # 1. Channel check — error and log
         if interaction.channel_id != config.interaction_channel_id:
-            # Do not respond at all; just silently drop the interaction
+            log.warning(
+                "channel_guard: command /%s blocked — wrong channel (channel_id=%s, expected=%s) "
+                "by user %s (id=%s) in guild %s",
+                func.__name__,
+                interaction.channel_id,
+                config.interaction_channel_id,
+                interaction.user,
+                interaction.user.id,
+                interaction.guild_id,
+            )
+            await interaction.response.send_message(
+                "⛔ This command can only be used in the configured interaction channel.",
+                ephemeral=True,
+            )
             return
 
         # 2. Role check — ephemeral error

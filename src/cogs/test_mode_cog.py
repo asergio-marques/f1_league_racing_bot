@@ -24,7 +24,7 @@ from services.test_mode_service import (
     get_next_pending_phase,
     build_review_summary,
 )
-from utils.channel_guard import admin_only
+from utils.channel_guard import channel_guard, admin_only
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +52,7 @@ class TestModeCog(commands.Cog):
         name="toggle",
         description="Enable or disable test mode. State persists across bot restarts.",
     )
+    @channel_guard
     @admin_only
     async def toggle(self, interaction: discord.Interaction) -> None:
         new_state = await toggle_test_mode(
@@ -128,6 +129,7 @@ class TestModeCog(commands.Cog):
         name="advance",
         description="Execute the next pending scheduled event (weather phase or result submission) immediately.",
     )
+    @channel_guard
     @admin_only
     async def advance(self, interaction: discord.Interaction) -> None:
         # Check test mode is active before doing any heavy work
@@ -305,6 +307,7 @@ class TestModeCog(commands.Cog):
         name="review",
         description="Show season configuration and phase completion status.",
     )
+    @channel_guard
     @admin_only
     async def review(self, interaction: discord.Interaction) -> None:
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
@@ -335,6 +338,7 @@ class TestModeCog(commands.Cog):
         user="The driver whose flag is being updated.",
         value="The new value for the former_driver flag.",
     )
+    @channel_guard
     @admin_only
     async def set_former_driver(
         self,
@@ -405,6 +409,7 @@ class TestModeCog(commands.Cog):
         team_name="Team to assign the driver to (must exist in the division).",
         division="Name of the division.",
     )
+    @channel_guard
     @admin_only
     async def roster_add(
         self,
@@ -456,6 +461,7 @@ class TestModeCog(commands.Cog):
         description="Show all fake drivers in a division (cheat sheet for result submission).",
     )
     @app_commands.describe(division="Name of the division.")
+    @channel_guard
     @admin_only
     async def roster_list(
         self,
@@ -514,6 +520,7 @@ class TestModeCog(commands.Cog):
         description="Remove all fake drivers from a division.",
     )
     @app_commands.describe(division="Name of the division to clear.")
+    @channel_guard
     @admin_only
     async def roster_clear(
         self,
