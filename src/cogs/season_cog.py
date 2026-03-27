@@ -414,6 +414,10 @@ class SeasonCog(commands.Cog):
             "\u2705 Season cancelled and all data deleted.",
             ephemeral=True,
         )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u274c **Season cancelled** by **{interaction.user.display_name}**. All season data deleted.",
+        )
 
     @season.command(
         name="complete",
@@ -450,6 +454,10 @@ class SeasonCog(commands.Cog):
         from services.season_end_service import execute_season_end
         await execute_season_end(interaction.guild_id, season.id, self.bot)
         await interaction.followup.send("\u2705 Season marked as complete.", ephemeral=True)
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\U0001f3c1 **Season completed** by **{interaction.user.display_name}**. Season end sequence executed.",
+        )
 
     # ------------------------------------------------------------------
     # /division group
@@ -524,6 +532,11 @@ class SeasonCog(commands.Cog):
             f"Role: {role.mention}\n\n"
             + format_division_list(_pending_to_division_models(cfg)),
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u2795 Division **{name}** (Tier {tier}) added to setup "
+            f"by **{interaction.user.display_name}**",
         )
 
     @division.command(
@@ -643,6 +656,11 @@ class SeasonCog(commands.Cog):
             + warn_block,
             ephemeral=True,
         )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u2795 Division **{new_name}** (Tier {tier}) duplicated from **{source_name}** "
+            f"(offset: {day_offset:+}d {hour_offset:+}h) by **{interaction.user.display_name}**",
+        )
 
     @division.command(
         name="delete",
@@ -684,6 +702,10 @@ class SeasonCog(commands.Cog):
             f"\u2705 Division **{name}** deleted.\n\n"
             + format_division_list(remaining),
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u2796 Division **{name}** deleted from setup by **{interaction.user.display_name}**",
         )
 
     @division.command(
@@ -740,6 +762,10 @@ class SeasonCog(commands.Cog):
             f"\u2705 Division **{current_name}** renamed to **{new_name}**.\n\n"
             + format_division_list(remaining),
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u270f\ufe0f Division **{current_name}** renamed to **{new_name}** by **{interaction.user.display_name}**",
         )
 
     @division.command(
@@ -826,6 +852,10 @@ class SeasonCog(commands.Cog):
             f"\u2705 Division **{name}** cancelled.",
             ephemeral=True,
         )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u274c Division **{name}** cancelled by **{interaction.user.display_name}**",
+        )
 
     # ------------------------------------------------------------------
     # Division channel assignment (shared helper + 3 commands)
@@ -901,6 +931,10 @@ class SeasonCog(commands.Cog):
         await interaction.response.send_message(
             f"\u2705 {type_label} channel for **{name}** set to {channel.mention}.",
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\U0001f4e2 {type_label} channel for **{name}** set to #{channel.name} by **{interaction.user.display_name}**",
         )
 
     @division.command(
@@ -1077,6 +1111,11 @@ class SeasonCog(commands.Cog):
             + format_round_list(round_models),
             ephemeral=True,
         )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u2795 Round **{assigned_number}** added to **{div.name}** by **{interaction.user.display_name}** "
+            f"(Format: {fmt.value}, Track: {track_name or 'Mystery'}, Scheduled: {sched.isoformat()} UTC)",
+        )
 
     @round_add.autocomplete("track")
     async def round_add_track_autocomplete(
@@ -1221,6 +1260,11 @@ class SeasonCog(commands.Cog):
                 f"(no DB write \u2014 use `/season approve` to commit).\n\n"
                 + format_round_list(round_models),
                 ephemeral=True,
+            )
+            await self.bot.output_router.post_log(
+                interaction.guild_id,
+                f"\u270f\ufe0f Round **{round_number}** in **{pend_div.name}** amended in pending setup "
+                f"by **{interaction.user.display_name}**",
             )
             return
 
@@ -1372,6 +1416,10 @@ class SeasonCog(commands.Cog):
             + format_round_list(remaining),
             ephemeral=True,
         )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u2796 Round **{round_number}** deleted from **{division_name}** by **{interaction.user.display_name}**",
+        )
 
     @round.command(
         name="cancel",
@@ -1475,6 +1523,10 @@ class SeasonCog(commands.Cog):
         await interaction.followup.send(
             f"\u2705 Round **{round_number}** in **{division_name}** cancelled.",
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u274c Round **{round_number}** in **{division_name}** cancelled by **{interaction.user.display_name}**",
         )
 
     # ------------------------------------------------------------------
@@ -1782,8 +1834,10 @@ class SeasonCog(commands.Cog):
             if fl_amend_override is not None:
                 submitted_driver_ids = {r.driver_user_id for r in parsed}
                 if fl_amend_override not in submitted_driver_ids:
+                    fl_member = amend_channel.guild.get_member(int(fl_amend_override)) if amend_channel.guild else None
+                    fl_name = fl_member.display_name if fl_member else fl_amend_override
                     await amend_channel.send(
-                        f"❌ FL override <@{fl_amend_override}> is not in the submitted results. "
+                        f"❌ FL override **{fl_name}** is not in the submitted results. "
                         "Please resubmit."
                     )
                     continue
@@ -2072,6 +2126,11 @@ class SeasonCog(commands.Cog):
         else:
             await interaction.response.send_message(msg, ephemeral=True)
 
+        await self.bot.output_router.post_log(
+            cfg.server_id,
+            f"✅ **Season #{cfg.season_number}** approved and activated "
+            f"by **{interaction.user.display_name}** (ID: {cfg.season_id})",
+        )
         log.info("Season %s activated for server %s by %s", cfg.season_id, cfg.server_id, interaction.user)
 
     # ------------------------------------------------------------------
@@ -2091,7 +2150,7 @@ class SeasonCog(commands.Cog):
                 pass
             try:
                 await message.channel.send(
-                    f"❌ <@{message.author.id}> This channel is locked during penalty review."
+                    f"❌ **{message.author.display_name}** this channel is locked during penalty review."
                     " Please use the buttons above.",
                     delete_after=8,
                 )
@@ -2194,6 +2253,11 @@ class _ConfirmView(discord.ui.View):
         if rounds:
             msg += "\n\n" + format_round_list(rounds)
         await interaction.followup.send(msg, ephemeral=True)
+        await self._cog.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u270f\ufe0f Round **{self._round_id}** amended by **{interaction.user.display_name}** "
+            f"({', '.join(f'`{f}`' for f, _ in self._amendments)})",
+        )
         self.stop()
 
     @discord.ui.button(label="\u274c Cancel", style=discord.ButtonStyle.secondary)

@@ -197,6 +197,11 @@ class ConfirmCloseView(discord.ui.View):
             self._server_id, self._bot, audit_action="SIGNUP_FORCE_CLOSE"
         )
         await interaction.followup.send("✅ Signups force-closed.", ephemeral=True)
+        await self._bot.output_router.post_log(
+            self._server_id,
+            f"\U0001f534 Signups **force-closed** by **{interaction.user.display_name}** "
+            "(in-progress drivers discarded)",
+        )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(
@@ -677,6 +682,10 @@ class SignupCog(commands.Cog):
         await interaction.response.send_message(
             f"✅ Signup channel set to {channel.mention}.", ephemeral=True
         )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"\U0001f4e2 Signup channel set to #{channel.name} by **{interaction.user.display_name}**",
+        )
 
     @config_group.command(name="roles", description="Set the signup roles.")
     @app_commands.describe(
@@ -710,6 +719,11 @@ class SignupCog(commands.Cog):
             await self.bot.signup_module_service.save_config(new_cfg)
 
         await interaction.response.send_message("✅ Signup roles configured.", ephemeral=True)
+        await self.bot.output_router.post_log(
+            server_id,
+            f"\U0001f6e1\ufe0f Signup roles configured by **{interaction.user.display_name}**: "
+            f"base={base_role.name}, signed_up={signed_up_role.name}",
+        )
 
     @config_group.command(name="view", description="View current signup module configuration.")
     async def config_view(self, interaction: discord.Interaction) -> None:
@@ -774,6 +788,10 @@ class SignupCog(commands.Cog):
         await interaction.response.send_message(
             f"✅ Nationality requirement: {state}.", ephemeral=True
         )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"\U0001f310 Nationality requirement set to {state} by **{interaction.user.display_name}**",
+        )
 
     # ── /signup time-type toggle (T021) ────────────────────────────────
 
@@ -806,6 +824,10 @@ class SignupCog(commands.Cog):
         await interaction.response.send_message(
             f"✅ Time type: **{label}**.", ephemeral=True
         )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"\u23f1\ufe0f Signup time type set to **{label}** by **{interaction.user.display_name}**",
+        )
 
     # ── /signup time-image toggle (T022) ───────────────────────────────
 
@@ -835,6 +857,10 @@ class SignupCog(commands.Cog):
         state = "**ON**" if settings.time_image_required else "**OFF**"
         await interaction.response.send_message(
             f"✅ Time image requirement: {state}.", ephemeral=True
+        )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"\U0001f4f7 Time image requirement set to {state} by **{interaction.user.display_name}**",
         )
 
     # ── /signup time-slot (sub-group) ──────────────────────────────────
@@ -910,6 +936,10 @@ class SignupCog(commands.Cog):
         await interaction.response.send_message(
             _format_slots(updated), ephemeral=True
         )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"\u2795 Time slot added by **{interaction.user.display_name}**: {day.name} {normalized}",
+        )
 
     @time_slot_group.command(name="remove", description="Remove an availability time slot by its sequence ID.")
     @app_commands.describe(slot_id="Stable sequence ID shown in /signup time-slot list")
@@ -958,6 +988,11 @@ class SignupCog(commands.Cog):
         updated = await self.bot.signup_module_service.get_slots(server_id)
         await interaction.response.send_message(
             _format_slots(updated), ephemeral=True
+        )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"\u2796 Time slot #{slot_id} removed by **{interaction.user.display_name}** "
+            f"({target.display_label})",
         )
 
     @time_slot_group.command(name="list", description="List all configured availability time slots.")
@@ -1101,6 +1136,11 @@ class SignupCog(commands.Cog):
             f"✅ Signups opened. Button posted in {signup_channel.mention}.",
             ephemeral=True,
         )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"\U0001f7e2 Signups **opened** by **{interaction.user.display_name}**"
+            + (f" (tracks: {', '.join(track_list)})" if track_list else ""),
+        )
 
     # ── /signup close (T019) ──────────────────────────────────────────
 
@@ -1137,12 +1177,22 @@ class SignupCog(commands.Cog):
             await interaction.response.defer(ephemeral=True)
             await execute_forced_close(server_id, self.bot, audit_action="SIGNUP_CLOSE")
             await interaction.followup.send("✅ Signups closed.", ephemeral=True)
+            await self.bot.output_router.post_log(
+                server_id,
+                f"\U0001f534 Signups **closed** by **{interaction.user.display_name}**",
+            )
             return
 
         # Present confirmation view
         driver_ids = [row["discord_user_id"] for row in rows]
         count = len(driver_ids)
-        driver_list = "\n".join(f"• <@{uid}>" for uid in driver_ids[:10])
+        _guild = interaction.guild
+
+        def _name_for_uid(uid: str) -> str:
+            member = _guild.get_member(int(uid)) if _guild else None
+            return member.display_name if member else uid
+
+        driver_list = "\n".join(f"• {_name_for_uid(uid)}" for uid in driver_ids[:10])
         if count > 10:
             driver_list += f"\n…and {count - 10} more"
 
@@ -1180,7 +1230,7 @@ class SignupCog(commands.Cog):
             preferred = ", ".join(d["preferred_teams"]) if d["preferred_teams"] else "—"
             teammate = d["preferred_teammate"] or "—"
             lines.append(
-                f"**#{d['seed']}** <@{d['discord_user_id']}> (**{d['server_display_name']}**)\n"
+                f"**#{d['seed']}** **{d['server_display_name']}** (`{d['discord_user_id']}`)\n"
                 f"  Platform: {d['platform']} | Type: {d['driver_type']} | Lap total: {d['total_lap_fmt']}\n"
                 f"  Teams: {preferred} | Teammate: {teammate}"
             )

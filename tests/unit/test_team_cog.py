@@ -57,6 +57,7 @@ def _make_bot(
     bot.placement_service.delete_team_role_config = AsyncMock()
     bot.placement_service.rename_team_role_config = AsyncMock()
     bot.season_service.get_setup_season = AsyncMock(return_value=setup_season)
+    bot.output_router.post_log = AsyncMock()
     return bot
 
 
