@@ -190,14 +190,16 @@ async def enter_penalty_state(
     """Transition the submission channel to post-round penalty-review state.
 
     Steps performed:
-    1. (Unless *skip_results_post*) Compute standings, post interim results and
-       standings to the configured division channels.
-    2. Mark the submission channel row as ``in_penalty_review = 1`` in the DB.
+    1. Mark the submission channel row as ``in_penalty_review = 1`` in the DB
+       *before* any results posting so that a crash during posting is seen as a
+       penalty-review orphan (not a mid-submission orphan) on the next restart.
+    2. (Unless *skip_results_post*) Compute standings, post interim results and
+       standings to the configured division channels; then set ``results_posted = 1``.
     3. Post a :class:`PenaltyReviewView` prompt to *sub_channel*.
     4. Register the view with the bot for persistent interaction routing.
 
-    When called from T030 restart-recovery, pass ``skip_results_post=True``
-    (the results were already posted before the restart).
+    When called from restart-recovery, pass ``skip_results_post=True`` only when
+    ``results_posted = 1`` in the DB (i.e. posting already completed before the crash).
     """
     from services import standings_service, results_post_service  # lazy imports
     from services.penalty_wizard import PenaltyReviewState, PenaltyReviewView, _render_prompt_content
@@ -237,7 +239,20 @@ async def enter_penalty_state(
     show_reserves: bool = bool(ctx["reserves_in_standings"]) if ctx["reserves_in_standings"] is not None else True
 
     # ------------------------------------------------------------------
-    # Step 1: Compute and post interim results + standings
+    # Step 1a: Mark in_penalty_review BEFORE any results posting so that
+    # a crash during posting is detected as a penalty-review orphan (not a
+    # mid-submission orphan) on the next restart.  This prevents the
+    # recovery path from deleting the session_results and skipping the round.
+    # ------------------------------------------------------------------
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels SET in_penalty_review = 1 WHERE round_id = ?",
+            (round_id,),
+        )
+        await db.commit()
+
+    # ------------------------------------------------------------------
+    # Step 1b: Compute and post interim results + standings
     # ------------------------------------------------------------------
     if not skip_results_post:
         try:
@@ -263,6 +278,14 @@ async def enter_penalty_state(
                         db_path, division_id, round_id, round_number, track_name,
                         sc, driver_snaps, team_snaps, guild, show_reserves,
                     )
+
+            # Mark results as posted so restart recovery knows not to re-post.
+            async with get_connection(db_path) as db:
+                await db.execute(
+                    "UPDATE round_submission_channels SET results_posted = 1 WHERE round_id = ?",
+                    (round_id,),
+                )
+                await db.commit()
         except Exception:
             log.exception(
                 "enter_penalty_state: error posting interim results for round %s", round_id
@@ -277,12 +300,6 @@ async def enter_penalty_state(
             (round_id,),
         )
         sr_rows = await sr_cursor.fetchall()
-        # Also mark the channel as in_penalty_review
-        await db.execute(
-            "UPDATE round_submission_channels SET in_penalty_review = 1 WHERE round_id = ?",
-            (round_id,),
-        )
-        await db.commit()
 
     session_types_present = [SessionType(r["session_type"]) for r in sr_rows]
 
@@ -339,8 +356,39 @@ async def finalize_round(
     # T024-b: pre-penalty snapshot for audit log
     pre_snapshot = await _snapshot_staged_drivers(db_path, round_id, division_id, state.staged)
 
-    # T022: apply staged penalties to DB (positions, times, outcomes)
-    if state.staged:
+    # T022: apply staged penalties to DB (positions, times, outcomes).
+    # Check whether penalties were already committed before a previous crash by
+    # reading the staged_penalties column.  If it is already set, skip applying
+    # them again to avoid double-penalising drivers.
+    async with get_connection(db_path) as _db:
+        _rsc = await _db.execute(
+            "SELECT staged_penalties FROM round_submission_channels WHERE round_id = ?",
+            (round_id,),
+        )
+        _rsc_row = await _rsc.fetchone()
+    penalties_already_applied = bool(_rsc_row and _rsc_row["staged_penalties"] is not None)
+
+    if state.staged and not penalties_already_applied:
+        # Persist the staged list to the DB BEFORE writing so a crash here
+        # doesn't leave penalties partially applied with no record.
+        penalty_json = _json.dumps(
+            [
+                {
+                    "driver_user_id": sp.driver_user_id,
+                    "session_type": sp.session_type.value,
+                    "penalty_type": sp.penalty_type,
+                    "penalty_seconds": sp.penalty_seconds,
+                }
+                for sp in state.staged
+            ]
+        )
+        async with get_connection(db_path) as _db:
+            await _db.execute(
+                "UPDATE round_submission_channels SET staged_penalties = ? WHERE round_id = ?",
+                (penalty_json, round_id),
+            )
+            await _db.commit()
+
         await _ps.apply_penalties(
             db_path, round_id, division_id, state.staged,
             applied_by=actor_id, bot=bot,
