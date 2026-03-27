@@ -202,8 +202,16 @@ class SeasonCog(commands.Cog):
             off = "❌ Disabled"
             if signup_on:
                 signup_cfg = await self.bot.signup_module_service.get_config(interaction.guild_id)  # type: ignore[attr-defined]
-                signup_ch = f" | Channel: <#{signup_cfg.signup_channel_id}>" if signup_cfg and signup_cfg.signup_channel_id else ""
-                signup_line = f"  Signup: {on}{signup_ch}"
+                if signup_cfg:
+                    signup_ch = f"<#{signup_cfg.signup_channel_id}>" if signup_cfg.signup_channel_id else "*(not configured)*"
+                    signup_br = f"<@&{signup_cfg.base_role_id}>" if signup_cfg.base_role_id else "*(not configured)*"
+                    signup_cr = f"<@&{signup_cfg.signed_up_role_id}>" if signup_cfg.signed_up_role_id else "*(not configured)*"
+                    signup_line = (
+                        f"  Signup: {on} | Channel: {signup_ch} | "
+                        f"Base role: {signup_br} | Complete role: {signup_cr}"
+                    )
+                else:
+                    signup_line = f"  Signup: {on}"
             else:
                 signup_line = f"  Signup: {off}"
             lines += [
@@ -1001,6 +1009,69 @@ class SeasonCog(commands.Cog):
             )
             return
         await self._set_division_channel(interaction, name, channel, "standings")
+
+    @division.command(
+        name="lineup-channel",
+        description="Set the lineup posting channel for a division (signup module).",
+    )
+    @app_commands.describe(name="Division name", channel="Lineup channel")
+    @channel_guard
+    @admin_only
+    async def division_lineup_channel(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        channel: discord.TextChannel,
+    ) -> None:
+        import json as _json
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+        if not await self.bot.module_service.is_signup_enabled(server_id):
+            await interaction.response.send_message(
+                "\u274c The Signup module is not enabled.", ephemeral=True
+            )
+            return
+        season = await self.bot.season_service.get_season_for_server(server_id)
+        if season is None:
+            await interaction.response.send_message(
+                "\u274c No season found. Set up a season before assigning channels.",
+                ephemeral=True,
+            )
+            return
+        divisions = await self.bot.season_service.get_divisions(season.id)
+        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
+        if div is None:
+            await interaction.response.send_message(
+                f"\u274c Division **{name}** not found in the current season.",
+                ephemeral=True,
+            )
+            return
+        await self.bot.signup_module_service.upsert_division_config(server_id, div.id, channel.id)
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as db:
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, ?, 'SIGNUP_LINEUP_CHANNEL_SET', '', ?, ?)",
+                (
+                    server_id,
+                    interaction.user.id,
+                    str(interaction.user),
+                    div.id,
+                    _json.dumps({"channel_id": channel.id}),
+                    now,
+                ),
+            )
+            await db.commit()
+        await interaction.response.send_message(
+            f"\u2705 Lineup channel for **{name}** set to {channel.mention}.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division lineup-channel | Success\n"
+            f"  division: {name}\n"
+            f"  channel: #{channel.name}",
+        )
 
     # ------------------------------------------------------------------
     # /round group
@@ -2105,6 +2176,29 @@ class SeasonCog(commands.Cog):
                 else:
                     await interaction.response.send_message(msg, ephemeral=True)
                 return
+
+        # ── Gate 3: signup module config prerequisites ────────────────────────
+        if await self.bot.module_service.is_signup_enabled(cfg.server_id):
+            signup_cfg = await self.bot.signup_module_service.get_config(cfg.server_id)
+            if signup_cfg:
+                missing: list[str] = []
+                if signup_cfg.signup_channel_id is None:
+                    missing.append("**Signup channel** (use `/signup channel`)")
+                if signup_cfg.base_role_id is None:
+                    missing.append("**Base role** (use `/signup base-role`)")
+                if signup_cfg.signed_up_role_id is None:
+                    missing.append("**Complete role** (use `/signup complete-role`)")
+                if missing:
+                    bullet_list = "\n\u2022 ".join(missing)
+                    msg = (
+                        f"\u274c Season cannot be approved \u2014 signup module is enabled but "
+                        f"missing required configuration:\n\u2022 {bullet_list}"
+                    )
+                    if interaction.response.is_done():
+                        await interaction.followup.send(msg, ephemeral=True)
+                    else:
+                        await interaction.response.send_message(msg, ephemeral=True)
+                    return
 
         # Snapshot attached points configs before transitioning (FR-007)
         if await self.bot.module_service.is_results_enabled(cfg.server_id):

@@ -9,6 +9,7 @@ from db.database import get_connection
 from models.signup_module import (
     AvailabilitySlot,
     ConfigSnapshot,
+    SignupDivisionConfig,
     SignupModuleConfig,
     SignupModuleSettings,
     SignupRecord,
@@ -30,7 +31,7 @@ class SignupModuleService:
             cursor = await db.execute(
                 "SELECT server_id, signup_channel_id, base_role_id, signed_up_role_id, "
                 "       signups_open, signup_button_message_id, selected_tracks_json, "
-                "       signup_closed_message_id "
+                "       signup_closed_message_id, close_at "
                 "FROM signup_module_config WHERE server_id = ?",
                 (server_id,),
             )
@@ -46,6 +47,7 @@ class SignupModuleService:
             signup_button_message_id=row["signup_button_message_id"],
             selected_tracks=json.loads(row["selected_tracks_json"] or "[]"),
             signup_closed_message_id=row["signup_closed_message_id"],
+            close_at=row["close_at"],
         )
 
     async def save_config(self, cfg: SignupModuleConfig) -> None:
@@ -55,8 +57,8 @@ class SignupModuleService:
                 INSERT INTO signup_module_config
                     (server_id, signup_channel_id, base_role_id, signed_up_role_id,
                      signups_open, signup_button_message_id, selected_tracks_json,
-                     signup_closed_message_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                     signup_closed_message_id, close_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(server_id) DO UPDATE SET
                     signup_channel_id          = excluded.signup_channel_id,
                     base_role_id               = excluded.base_role_id,
@@ -64,7 +66,8 @@ class SignupModuleService:
                     signups_open               = excluded.signups_open,
                     signup_button_message_id   = excluded.signup_button_message_id,
                     selected_tracks_json       = excluded.selected_tracks_json,
-                    signup_closed_message_id   = excluded.signup_closed_message_id
+                    signup_closed_message_id   = excluded.signup_closed_message_id,
+                    close_at                   = excluded.close_at
                 """,
                 (
                     cfg.server_id,
@@ -75,6 +78,7 @@ class SignupModuleService:
                     cfg.signup_button_message_id,
                     json.dumps(cfg.selected_tracks),
                     cfg.signup_closed_message_id,
+                    cfg.close_at,
                 ),
             )
             await db.commit()
@@ -256,9 +260,18 @@ class SignupModuleService:
             await db.execute(
                 "UPDATE signup_module_config "
                 "SET signups_open = 0, signup_button_message_id = NULL, "
-                "    signup_closed_message_id = ? "
+                "    signup_closed_message_id = ?, close_at = NULL "
                 "WHERE server_id = ?",
                 (closed_msg_id, server_id),
+            )
+            await db.commit()
+
+    async def set_close_at(self, server_id: int, close_at_iso: str | None) -> None:
+        """Persist (or clear) the auto-close ISO 8601 UTC timestamp."""
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE signup_module_config SET close_at = ? WHERE server_id = ?",
+                (close_at_iso, server_id),
             )
             await db.commit()
 
@@ -538,6 +551,44 @@ class SignupModuleService:
             current_lap_track_index=row["current_lap_track_index"],
             last_activity_at=row["last_activity_at"],
         )
+
+    # ── SignupDivisionConfig CRUD ─────────────────────────────────────
+
+    async def get_division_config(
+        self, server_id: int, division_id: int
+    ) -> SignupDivisionConfig | None:
+        """Return the division config record or None if not set."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, server_id, division_id, lineup_channel_id "
+                "FROM signup_division_config WHERE server_id = ? AND division_id = ?",
+                (server_id, division_id),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return SignupDivisionConfig(
+            id=row["id"],
+            server_id=row["server_id"],
+            division_id=row["division_id"],
+            lineup_channel_id=row["lineup_channel_id"],
+        )
+
+    async def upsert_division_config(
+        self, server_id: int, division_id: int, lineup_channel_id: int | None
+    ) -> None:
+        """Create or update the lineup channel for a division."""
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                """
+                INSERT INTO signup_division_config (server_id, division_id, lineup_channel_id)
+                VALUES (?, ?, ?)
+                ON CONFLICT(server_id, division_id) DO UPDATE SET
+                    lineup_channel_id = excluded.lineup_channel_id
+                """,
+                (server_id, division_id, lineup_channel_id),
+            )
+            await db.commit()
 
     # ── Config snapshot ───────────────────────────────────────────────
 

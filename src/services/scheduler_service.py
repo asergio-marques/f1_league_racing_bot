@@ -30,6 +30,26 @@ _GRACE_SECONDS = 300  # 5-minute misfire grace period
 _GLOBAL_SERVICE: "SchedulerService | None" = None
 
 
+async def _signup_close_timer_job(server_id: int) -> None:
+    """Module-level APScheduler callable for signup auto-close — picklable for
+    SQLAlchemyJobStore. Delegates to the registered signup-close callback."""
+    if _GLOBAL_SERVICE is None:
+        log.warning(
+            "_signup_close_timer_job fired but _GLOBAL_SERVICE is None "
+            "(server_id=%s) — skipping",
+            server_id,
+        )
+        return
+    cb = _GLOBAL_SERVICE._signup_close_callback
+    if cb is None:
+        log.warning(
+            "_signup_close_timer_job: no callback registered (server_id=%s) — skipping",
+            server_id,
+        )
+        return
+    await cb(server_id)
+
+
 async def _season_end_job(server_id: int, season_id: int) -> None:
     """Module-level APScheduler callable for season-end jobs — avoids closure
     pickling issues with SQLAlchemyJobStore.
@@ -149,6 +169,8 @@ class SchedulerService:
         self._phase_callbacks: dict[int, Callable] = {}
         # Season-end callback injected after bot starts
         self._season_end_callback: "Callable | None" = None
+        # Signup auto-close callback injected after bot starts
+        self._signup_close_callback: "Callable | None" = None
         # Mystery notice callback injected after bot starts
         self._mystery_notice_callback: "Callable | None" = None
         # Post-race forecast cleanup callback injected after bot starts
@@ -448,5 +470,44 @@ class SchedulerService:
         try:
             self._scheduler.remove_job(job_id)
             log.info("Removed season_end job for server %s", server_id)
+        except Exception:
+            pass  # Already fired or never scheduled
+
+    # ------------------------------------------------------------------
+    # Signup auto-close scheduling
+    # ------------------------------------------------------------------
+
+    def register_signup_close_callback(self, callback: Callable) -> None:
+        """Register the async callable invoked when the signup close timer fires.
+
+        The callable must accept ``(server_id: int)``.
+        Called from bot.py on_ready after the scheduler is started.
+        """
+        self._signup_close_callback = callback
+
+    def schedule_signup_close_timer(self, server_id: int, close_at_iso: str) -> None:
+        """Schedule a one-shot signup auto-close job for *server_id* at the
+        given ISO 8601 UTC timestamp string.
+
+        Uses ``replace_existing=True`` so calling this again re-arms the timer.
+        """
+        fire_at = datetime.fromisoformat(close_at_iso).replace(tzinfo=timezone.utc)
+        job_id = f"signup_close_{server_id}"
+        self._scheduler.add_job(
+            _signup_close_timer_job,
+            trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
+            id=job_id,
+            replace_existing=True,
+            name=f"Signup auto-close for server {server_id}",
+            kwargs={"server_id": server_id},
+        )
+        log.info("Scheduled signup_close_%s at %s", server_id, fire_at.isoformat())
+
+    def cancel_signup_close_timer(self, server_id: int) -> None:
+        """Remove the signup close timer for *server_id* if it exists."""
+        job_id = f"signup_close_{server_id}"
+        try:
+            self._scheduler.remove_job(job_id)
+            log.info("Removed signup_close job for server %s", server_id)
         except Exception:
             pass  # Already fired or never scheduled
