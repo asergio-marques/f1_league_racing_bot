@@ -1664,6 +1664,7 @@ class SeasonCog(commands.Cog):
 
         # --- Collect new results ---
         from services.result_submission_service import validate_submission_block
+        from services.result_submission_service import extract_fl_override  # type: ignore[attr-defined]
         from services.result_submission_service import _build_division_validation_data  # type: ignore[attr-defined]
 
         driver_ids, team_role_ids, reserve_role_id, driver_team_map, reserve_driver_ids = await _build_division_validation_data(
@@ -1708,6 +1709,9 @@ class SeasonCog(commands.Cog):
 
             msg = done_task.result()
             lines_raw = [ln.strip() for ln in msg.content.strip().splitlines() if ln.strip()]
+            fl_amend_override: int | None = None
+            if not chosen_session_type.is_qualifying:
+                fl_amend_override, lines_raw = extract_fl_override(lines_raw)
             parsed = validate_submission_block(
                 lines_raw,
                 chosen_session_type,
@@ -1729,6 +1733,16 @@ class SeasonCog(commands.Cog):
                     f"❌ Validation errors:\n{error_lines}\nPlease resubmit."
                 )
                 continue
+
+            # Validate FL override references a driver in the submitted results
+            if fl_amend_override is not None:
+                submitted_driver_ids = {r.driver_user_id for r in parsed}
+                if fl_amend_override not in submitted_driver_ids:
+                    await amend_channel.send(
+                        f"❌ FL override <@{fl_amend_override}> is not in the submitted results. "
+                        "Please resubmit."
+                    )
+                    continue
 
             # Valid — determine config name
             from services.season_points_service import get_season_config_names
@@ -1757,6 +1771,7 @@ class SeasonCog(commands.Cog):
                 config_name,
                 interaction.user.id,
                 interaction.client,
+                fl_driver_override=fl_amend_override,
             )
             await amend_channel.send("✅ Results amended successfully. This channel will be deleted.")
             await _asyncio.sleep(3)

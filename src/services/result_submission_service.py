@@ -502,6 +502,7 @@ async def save_session_result(
     config_name: str | None,
     submitted_by: int | None,
     driver_rows: list[dict],
+    fl_driver_override: int | None = None,
 ) -> int:
     """INSERT session_results + driver_session_results; return session_result_id."""
     from services.season_service import SeasonImmutableError
@@ -530,8 +531,8 @@ async def save_session_result(
             """
             INSERT INTO session_results
                 (round_id, division_id, session_type, status, config_name,
-                 submitted_by, submitted_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                 submitted_by, submitted_at, fl_driver_override)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 round_id,
@@ -541,6 +542,7 @@ async def save_session_result(
                 config_name,
                 submitted_by,
                 submitted_at,
+                fl_driver_override,
             ),
         )
         session_result_id = cursor.lastrowid
@@ -589,6 +591,7 @@ async def amend_session_result(
     config_name: str,
     amended_by: int,
     bot,
+    fl_driver_override: int | None = None,
 ) -> None:
     """Supersede the existing session results and insert new driver rows.
 
@@ -642,10 +645,10 @@ async def amend_session_result(
         await db.execute(
             """
             UPDATE session_results
-            SET submitted_by = ?, submitted_at = ?, config_name = ?
+            SET submitted_by = ?, submitted_at = ?, config_name = ?, fl_driver_override = ?
             WHERE round_id = ? AND session_type = ?
             """,
-            (amended_by, submitted_at, config_name, round_id, session_type.value),
+            (amended_by, submitted_at, config_name, fl_driver_override, round_id, session_type.value),
         )
         # Fetch session_result_id
         cursor = await db.execute(
@@ -739,6 +742,9 @@ _MEMBER_MENTION_RE = re.compile(r"^<@!?(\d+)>$")
 
 # Discord role mention:  <@&123>
 _ROLE_MENTION_RE = re.compile(r"^<@&(\d+)>$")
+
+# Optional fastest-lap override header:  FL: <@123>  (case-insensitive)
+_FL_OVERRIDE_RE = re.compile(r"^FL:\s*<@!?(\d+)>\s*$", re.IGNORECASE)
 
 _OUTCOME_LITERALS: frozenset[str] = frozenset({"DNS", "DNF", "DSQ"})
 
@@ -922,6 +928,22 @@ def validate_race_row(line: str, is_first: bool) -> ParsedRaceRow | str:
 # ---------------------------------------------------------------------------
 # Validation — block-level function
 # ---------------------------------------------------------------------------
+
+def extract_fl_override(lines: list[str]) -> tuple[int | None, list[str]]:
+    """Strip an optional ``FL: <@user_id>`` header from the start of *lines*.
+
+    Returns ``(fl_driver_id, remaining_lines)``.  If the first line does not
+    match the header pattern, returns ``(None, lines)`` unchanged.
+    Only meaningful for race sessions; callers should ignore the override for
+    qualifying submissions.
+    """
+    if not lines:
+        return None, lines
+    m = _FL_OVERRIDE_RE.match(lines[0].strip())
+    if m is None:
+        return None, lines
+    return int(m.group(1)), lines[1:]
+
 
 def validate_submission_block(
     lines: list[str],
@@ -1261,6 +1283,16 @@ async def _apply_points_from_config(
         )
         dsr_rows = await dsr_cursor.fetchall()
 
+        # Load FL driver override (if any) from the session header
+        fl_override_cursor = await db.execute(
+            "SELECT fl_driver_override FROM session_results WHERE id = ?",
+            (session_result_id,),
+        )
+        fl_override_row = await fl_override_cursor.fetchone()
+        fl_driver_override: int | None = (
+            fl_override_row["fl_driver_override"] if fl_override_row else None
+        )
+
     if not entry_rows and fl_row is None:
         # No config data — nothing to compute (0 points stays as-is)
         return
@@ -1310,7 +1342,7 @@ async def _apply_points_from_config(
     ]
 
     # Mutates driver_rows in-place with computed points_awarded / fastest_lap_bonus
-    compute_points_for_session(driver_rows, config_entries, fl_config, session_type)
+    compute_points_for_session(driver_rows, config_entries, fl_config, session_type, fl_override=fl_driver_override)
 
     # Persist the computed values
     async with get_connection(db_path) as db:
@@ -1533,7 +1565,11 @@ async def run_result_submission_job(round_id: int, bot) -> None:
         if session_type.is_qualifying:
             format_hint = "Format: `Position, @Driver, @TeamRole, Tyre, BestLap, Gap`"
         else:
-            format_hint = "Format: `Position, @Driver, @TeamRole, TotalTime, FastestLap, TimePenalties`"
+            format_hint = (
+                "Format: `Position, @Driver, @TeamRole, TotalTime, FastestLap, TimePenalties`\n"
+                "Optional first line: `FL: @Driver` to designate the fastest-lap holder "
+                "(use when two drivers share the same lap time)."
+            )
 
         await sub_channel.send(
             f"📋 Submit **{label}** results (one driver per line), or type `CANCELLED`.\n"
@@ -1566,6 +1602,9 @@ async def run_result_submission_job(round_id: int, bot) -> None:
 
             # Validate the block
             lines = content.splitlines()
+            fl_override: int | None = None
+            if not session_type.is_qualifying:
+                fl_override, lines = extract_fl_override(lines)
             result = validate_submission_block(
                 lines,
                 session_type,
@@ -1592,6 +1631,16 @@ async def run_result_submission_job(round_id: int, bot) -> None:
 
             # Valid — parsed_rows
             parsed_rows = result
+
+            # Validate FL override references a driver in the submitted results
+            if fl_override is not None:
+                submitted_driver_ids = {r.driver_user_id for r in parsed_rows}
+                if fl_override not in submitted_driver_ids:
+                    await sub_channel.send(
+                        f"❌ FL override <@{fl_override}> is not in the submitted results. "
+                        "Please correct and resubmit."
+                    )
+                    continue
 
             # Log accepted input (with raw content for auditability)
             await bot.output_router.post_log(  # type: ignore[attr-defined]
@@ -1653,6 +1702,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 config_name=selected_config,
                 submitted_by=msg.author.id,
                 driver_rows=driver_rows_data,
+                fl_driver_override=fl_override,
             )
 
             # Compute and store points_awarded / fastest_lap_bonus from the chosen config

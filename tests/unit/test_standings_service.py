@@ -146,6 +146,48 @@ def test_dnf_eligible_for_fl():
     assert result[1].fastest_lap_bonus == 1
 
 
+def test_fl_override_bypasses_auto_detection():
+    """fl_override designates a specific driver regardless of submitted lap times."""
+    rows = [
+        _make_row(1, position=1, fastest_lap="1:23.456"),  # would win by time
+        _make_row(2, position=2, fastest_lap="1:24.000"),  # slower, but overridden as winner
+    ]
+    entries = _make_race_entries([25, 18])
+    fl_cfg = PointsConfigFastestLap(
+        id=1, config_id=1,
+        session_type=SessionType.FEATURE_RACE,
+        fl_points=1, fl_position_limit=None,
+    )
+    result = compute_points_for_session(
+        rows, entries, fl_config=fl_cfg,
+        session_type=SessionType.FEATURE_RACE,
+        fl_override=2,  # driver 2 is the explicit FL holder
+    )
+    assert result[0].fastest_lap_bonus == 0
+    assert result[1].fastest_lap_bonus == 1
+
+
+def test_fl_override_none_falls_back_to_auto_detection():
+    """fl_override=None uses normal time-based detection."""
+    rows = [
+        _make_row(1, position=1, fastest_lap="1:23.456"),
+        _make_row(2, position=2, fastest_lap="1:24.000"),
+    ]
+    entries = _make_race_entries([25, 18])
+    fl_cfg = PointsConfigFastestLap(
+        id=1, config_id=1,
+        session_type=SessionType.FEATURE_RACE,
+        fl_points=1, fl_position_limit=None,
+    )
+    result = compute_points_for_session(
+        rows, entries, fl_config=fl_cfg,
+        session_type=SessionType.FEATURE_RACE,
+        fl_override=None,
+    )
+    assert result[0].fastest_lap_bonus == 1  # driver 1 wins by time
+    assert result[1].fastest_lap_bonus == 0
+
+
 # ---------------------------------------------------------------------------
 # compute_driver_standings — countback tiebreak
 # ---------------------------------------------------------------------------
