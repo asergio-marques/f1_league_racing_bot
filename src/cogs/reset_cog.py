@@ -100,9 +100,9 @@ class ResetCog(commands.Cog):
         log_mode = "Full reset (config deleted)" if full else "Partial reset (config preserved)"
         await self.bot.output_router.post_log(
             server_id,
-            f"🗑️ Server data **{mode_label}** by **{interaction.user.display_name}**.\n"
-            f"  Mode: {log_mode}\n"
-            f"  Deleted: **{seasons}** season(s), **{divisions}** division(s), **{rounds}** round(s)",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot-reset | Success\n"
+            f"  mode: {log_mode}\n"
+            f"  deleted: {seasons} season(s), {divisions} division(s), {rounds} round(s)",
         )
         await interaction.followup.send(
             f"✅ Server data {mode_label}.\n"

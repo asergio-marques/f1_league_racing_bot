@@ -416,7 +416,7 @@ class SeasonCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u274c **Season cancelled** by **{interaction.user.display_name}**. All season data deleted.",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season cancel | Success",
         )
 
     @season.command(
@@ -456,7 +456,7 @@ class SeasonCog(commands.Cog):
         await interaction.followup.send("\u2705 Season marked as complete.", ephemeral=True)
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\U0001f3c1 **Season completed** by **{interaction.user.display_name}**. Season end sequence executed.",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season complete | Success",
         )
 
     # ------------------------------------------------------------------
@@ -535,8 +535,8 @@ class SeasonCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u2795 Division **{name}** (Tier {tier}) added to setup "
-            f"by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division add | Success\n"
+            f"  division: {name}, tier: {tier}",
         )
 
     @division.command(
@@ -658,8 +658,10 @@ class SeasonCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u2795 Division **{new_name}** (Tier {tier}) duplicated from **{source_name}** "
-            f"(offset: {day_offset:+}d {hour_offset:+}h) by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division duplicate | Success\n"
+            f"  source: {source_name}\n"
+            f"  new_division: {new_name}, tier: {tier}\n"
+            f"  offset: {day_offset:+}d {hour_offset:+}h",
         )
 
     @division.command(
@@ -705,7 +707,8 @@ class SeasonCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u2796 Division **{name}** deleted from setup by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division delete | Success\n"
+            f"  division: {name}",
         )
 
     @division.command(
@@ -765,7 +768,9 @@ class SeasonCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u270f\ufe0f Division **{current_name}** renamed to **{new_name}** by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division rename | Success\n"
+            f"  old_name: {current_name}\n"
+            f"  new_name: {new_name}",
         )
 
     @division.command(
@@ -854,7 +859,8 @@ class SeasonCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u274c Division **{name}** cancelled by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division cancel | Success\n"
+            f"  division: {name}",
         )
 
     # ------------------------------------------------------------------
@@ -934,7 +940,9 @@ class SeasonCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\U0001f4e2 {type_label} channel for **{name}** set to #{channel.name} by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division {channel_type}-channel | Success\n"
+            f"  division: {name}\n"
+            f"  channel: #{channel.name}",
         )
 
     @division.command(
@@ -1113,8 +1121,11 @@ class SeasonCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u2795 Round **{assigned_number}** added to **{div.name}** by **{interaction.user.display_name}** "
-            f"(Format: {fmt.value}, Track: {track_name or 'Mystery'}, Scheduled: {sched.isoformat()} UTC)",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round add | Success\n"
+            f"  division: {div.name}\n"
+            f"  round: {assigned_number}, format: {fmt.value}\n"
+            f"  track: {track_name or 'Mystery'}\n"
+            f"  scheduled_at: {sched.isoformat()} UTC",
         )
 
     @round_add.autocomplete("track")
@@ -1263,8 +1274,9 @@ class SeasonCog(commands.Cog):
             )
             await self.bot.output_router.post_log(
                 interaction.guild_id,
-                f"\u270f\ufe0f Round **{round_number}** in **{pend_div.name}** amended in pending setup "
-                f"by **{interaction.user.display_name}**",
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round amend (pending) | Success\n"
+                f"  division: {pend_div.name}\n"
+                f"  round: {round_number}",
             )
             return
 
@@ -1418,7 +1430,9 @@ class SeasonCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u2796 Round **{round_number}** deleted from **{division_name}** by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round delete | Success\n"
+            f"  division: {division_name}\n"
+            f"  round: {round_number}",
         )
 
     @round.command(
@@ -1526,7 +1540,9 @@ class SeasonCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u274c Round **{round_number}** in **{division_name}** cancelled by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round cancel | Success\n"
+            f"  division: {division_name}\n"
+            f"  round: {round_number}",
         )
 
     # ------------------------------------------------------------------
@@ -2255,8 +2271,9 @@ class _ConfirmView(discord.ui.View):
         await interaction.followup.send(msg, ephemeral=True)
         await self._cog.bot.output_router.post_log(
             interaction.guild_id,
-            f"\u270f\ufe0f Round **{self._round_id}** amended by **{interaction.user.display_name}** "
-            f"({', '.join(f'`{f}`' for f, _ in self._amendments)})",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round amend | Success\n"
+            f"  round_id: {self._round_id}\n"
+            f"  fields: {', '.join(f for f, _ in self._amendments)}",
         )
         self.stop()
 

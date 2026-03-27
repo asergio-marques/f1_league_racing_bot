@@ -453,9 +453,10 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         try:
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 server_id,
-                f"⚠️ **Bot restarted mid-result-submission** for round {round_id}. "
-                "Any sessions submitted before the restart have been cleared and the "
-                "submission wizard has been re-opened. Please re-submit all sessions.",
+                f"System | Bot restarted mid-result-submission | Notice\n"
+                f"  round_id: {round_id}\n"
+                "  Sessions submitted before restart have been cleared. "
+                "Submission wizard re-opened — please re-submit all sessions.",
             )
         except Exception:
             log.exception(
@@ -512,10 +513,9 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
         try:
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 server_id,
-                f"⚠️ **Bot restarted mid-amendment** for round {round_id} "
-                f"({session_type.replace('_', ' ').title()}). "
-                "The amendment channel has been deleted. "
-                "Please re-run `/round results amend` to re-submit.",
+                f"System | Bot restarted mid-amendment | Notice\n"
+                f"  round_id: {round_id}, session: {session_type.replace('_', ' ').title()}\n"
+                "  Amendment channel deleted. Please re-run /round results amend.",
             )
         except Exception:
             log.exception(

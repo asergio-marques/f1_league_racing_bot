@@ -113,8 +113,9 @@ class TrackCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"🏆 Track params updated for **{resolved}** by **{interaction.user.display_name}**: "
-            f"\u03bc=`{mu}`, \u03c3=`{sigma}`",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /track set | Success\n"
+            f"  track: {resolved}\n"
+            f"  mu: {mu}, sigma: {sigma}",
         )
     # ------------------------------------------------------------------
     # /track reset
@@ -168,8 +169,10 @@ class TrackCog(commands.Cog):
             )
             await self.bot.output_router.post_log(
                 interaction.guild_id,
-                f"↩️ Track params reset for **{resolved}** to packaged defaults "
-                f"by **{interaction.user.display_name}** (was \u03bc=`{old[0]}`, \u03c3=`{old[1]}`)",
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /track reset | Success\n"
+                f"  track: {resolved}\n"
+                f"  old_mu: {old[0]}, old_sigma: {old[1]}\n"
+                f"  new_mu: {default_mu}, new_sigma: {default_sigma}",
             )
     # ------------------------------------------------------------------
     # /track info

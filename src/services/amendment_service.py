@@ -172,8 +172,11 @@ class AmendmentService:
             )
             await bot.output_router.post_log(
                 server_id,
-                f"🔧 **Amendment** by {actor} — Round #{round_id}: `{field}` changed "
-                f"from `{old_value}` to `{db_value}`",
+                f"{actor.display_name} (<@{actor.id}>) | /round amend (field) | Success\n"
+                f"  round_id: {round_id}\n"
+                f"  field: {field}\n"
+                f"  old: {old_value}\n"
+                f"  new: {db_value}",
             )
 
         # 7. Re-run missed phases (non-MYSTERY only)
@@ -493,8 +496,8 @@ async def approve_amendment(
     if server_id:
         await bot.output_router.post_log(
             server_id,
-            f"\U0001f4dd AMENDMENT_APPROVED by <@{approved_by}> — season {season_id}: "
-            "season points updated; cascading all standings."
+            f"<@{approved_by}> | AMENDMENT_APPROVED | Success\n"
+            f"  season_id: {season_id}"
         )
 
     # Cascade-recompute all divisions

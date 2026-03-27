@@ -74,10 +74,11 @@ class InitCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             server_id,
-            f"⚙️ Bot configuration **{action}** by **{interaction.user.display_name}**.\n"
-            f"  Interaction role: {interaction_role.name}\n"
-            f"  Interaction channel: #{interaction_channel.name}\n"
-            f"  Log channel: #{log_channel.name}",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot-init | Success\n"
+            f"  action: {action}\n"
+            f"  interaction_role: {interaction_role.name} (<@&{interaction_role.id}>)\n"
+            f"  interaction_channel: #{interaction_channel.name}\n"
+            f"  log_channel: #{log_channel.name}",
         )
         log.info(
             "Bot configured for server %s by %s (force=%s)",

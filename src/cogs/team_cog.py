@@ -79,8 +79,9 @@ class TeamCog(commands.Cog):
         await interaction.response.send_message(msg, ephemeral=True)
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"🏈 Team **\"{name}\"** added by **{interaction.user.display_name}**"
-            + (f" into {div_count} division(s) of Season {setup_season.season_number}" if setup_season is not None else ""),
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team add | Success\n"
+            f"  team: {name}"
+            + (f"\n  season: {setup_season.season_number}, divisions: {div_count}" if setup_season is not None else ""),
         )
 
     # ------------------------------------------------------------------
@@ -141,8 +142,9 @@ class TeamCog(commands.Cog):
         await interaction.response.send_message(msg, ephemeral=True)
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"🗑️ Team **\"{name}\"** removed by **{interaction.user.display_name}**"
-            + (f" from {div_count} division(s) of Season {setup_season.season_number}" if setup_season is not None and team_in_season else ""),
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team remove | Success\n"
+            f"  team: {name}"
+            + (f"\n  season: {setup_season.season_number}, divisions: {div_count}" if setup_season is not None and team_in_season else ""),
         )
 
     # ------------------------------------------------------------------
@@ -196,8 +198,10 @@ class TeamCog(commands.Cog):
         await interaction.response.send_message(msg, ephemeral=True)
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"✏️ Team **\"{current_name}\"** renamed to **\"{new_name}\"** by **{interaction.user.display_name}**"
-            + (f" across {div_count} division(s) of Season {setup_season.season_number}" if setup_season is not None else ""),
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team rename | Success\n"
+            f"  old_name: {current_name}\n"
+            f"  new_name: {new_name}"
+            + (f"\n  season: {setup_season.season_number}, divisions: {div_count}" if setup_season is not None else ""),
         )
 
     # ------------------------------------------------------------------
@@ -370,8 +374,8 @@ class TeamCog(commands.Cog):
         await interaction.response.send_message(msg, ephemeral=True)
         await self.bot.output_router.post_log(
             interaction.guild_id,
-            f"🏆 Reserve team role **{'set to ' + role.name if role else 'cleared'}** "
-            f"by **{interaction.user.display_name}**",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team reserve-role | Success\n"
+            + (f"  role: {role.name} (<@&{role.id}>)" if role else "  role: cleared"),
         )
 
 
