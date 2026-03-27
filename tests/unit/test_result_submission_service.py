@@ -155,6 +155,19 @@ def test_validate_submission_block_position_gap():
     assert "gap" in combined.lower() or "position" in combined.lower()
 
 
+def test_validate_submission_block_duplicate_driver():
+    # Driver 100 appears at positions 1 and 2
+    lines = [
+        "1, <@100>, <@&300>, Soft, 1:23.456, N/A",
+        "2, <@100>, <@&300>, Soft, 1:24.000, +0:00.544",
+    ]
+    result = _make_qual_block(lines)
+    assert isinstance(result, list)
+    assert all(isinstance(r, str) for r in result)
+    combined = " ".join(result)
+    assert "more than once" in combined.lower()
+
+
 def test_validate_submission_block_wrong_team_driver():
     # Driver 100 is assigned to team 300, but submits team 400
     lines = [
