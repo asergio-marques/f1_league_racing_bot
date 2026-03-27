@@ -129,6 +129,46 @@ async def main() -> None:
 
         bot.scheduler_service.register_season_end_callback(_season_end_cb)
 
+        # Register signup auto-close callback and recover any timers lost on restart (T021)
+        from services.signup_module_service import SignupModuleService as _SignupModuleSvc
+        from db.connection import get_connection as _get_conn
+        from datetime import datetime as _dt, timezone as _tz
+
+        async def _signup_close_cb(server_id: int) -> None:
+            from cogs.module_cog import execute_forced_close
+            await execute_forced_close(server_id, bot, audit_action="SIGNUP_AUTO_CLOSE")
+
+        bot.scheduler_service.register_signup_close_callback(_signup_close_cb)
+
+        async def _recover_signup_close_timers() -> None:
+            async with _get_conn(DB_PATH) as _db:
+                _cur = await _db.execute(
+                    "SELECT server_id, close_at FROM signup_module_config WHERE close_at IS NOT NULL"
+                )
+                _rows = await _cur.fetchall()
+            now_utc = _dt.now(_tz.utc)
+            for _row in _rows:
+                _server_id = _row["server_id"]
+                _close_at_iso = _row["close_at"]
+                try:
+                    _close_dt = _dt.fromisoformat(_close_at_iso)
+                    if _close_dt.tzinfo is None:
+                        _close_dt = _close_dt.replace(tzinfo=_tz.utc)
+                except ValueError:
+                    log.warning("on_ready: invalid close_at value for server %s: %r", _server_id, _close_at_iso)
+                    continue
+                if _close_dt <= now_utc:
+                    log.info("on_ready: signup close_at is past for server %s — running forced close", _server_id)
+                    from cogs.module_cog import execute_forced_close
+                    await execute_forced_close(_server_id, bot, audit_action="SIGNUP_AUTO_CLOSE")
+                else:
+                    job_id = f"signup_close_{_server_id}"
+                    if bot.scheduler_service._scheduler.get_job(job_id) is None:
+                        log.info("on_ready: re-arming signup close timer for server %s at %s", _server_id, _close_at_iso)
+                        bot.scheduler_service.schedule_signup_close_timer(_server_id, _close_at_iso)
+
+        await _recover_signup_close_timers()
+
         # Close any submission channels that were left open by a previous run.
         # Their wait_for loops died with the process, so we reset them here
         # so /test-mode advance can re-trigger submission.

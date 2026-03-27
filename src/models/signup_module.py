@@ -35,13 +35,22 @@ class WizardState(str, Enum):
 @dataclass
 class SignupModuleConfig:
     server_id: int
-    signup_channel_id: int
-    base_role_id: int
-    signed_up_role_id: int
+    signup_channel_id: int | None
+    base_role_id: int | None
+    signed_up_role_id: int | None
     signups_open: bool
     signup_button_message_id: int | None
     selected_tracks: list[str]
     signup_closed_message_id: int | None = None
+    close_at: str | None = None
+
+
+@dataclass
+class SignupDivisionConfig:
+    id: int
+    server_id: int
+    division_id: int
+    lineup_channel_id: int | None
 
 
 @dataclass

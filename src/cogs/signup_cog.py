@@ -1,8 +1,9 @@
 """SignupCog — /signup command group for managing the signup module.
 
 Commands:
-  /signup config channel  <channel>           — set signup channel
-  /signup config roles    <base> <signed_up>  — set roles
+  /signup channel  <channel>                  — set signup channel
+  /signup base-role <role>                    — set base (eligible) role
+  /signup complete-role <role>               — set signed-up completion role
   /signup config view                         — view current config
   /signup nationality toggle                  — toggle nationality requirement
   /signup time-type toggle                    — cycle time type setting
@@ -10,7 +11,7 @@ Commands:
   /signup time-slot add   <day> <time>        — add availability slot
   /signup time-slot remove <slot_id>          — remove slot by sequence ID
   /signup time-slot list                      — list all slots
-  /signup open [track_ids]                    — open signup window
+  /signup open [track_ids] [close_time]       — open signup window
   /signup close                               — close signup window
 """
 from __future__ import annotations
@@ -29,7 +30,7 @@ from db.database import get_connection
 from models.driver_profile import DriverState
 from models.signup_module import SignupModuleConfig, SignupModuleSettings
 from models.track import TRACK_IDS
-from utils.channel_guard import admin_only, channel_guard
+from utils.channel_guard import admin_only, channel_guard, server_admin_only
 
 log = logging.getLogger(__name__)
 
@@ -43,8 +44,9 @@ _DAY_CHOICES = [
     app_commands.Choice(name="Sunday", value="7"),
 ]
 
-# Commands exempt from the signup-module-enabled check
-_EXEMPT_COMMANDS = {"channel", "roles", "view"}
+# Commands exempt from the signup-module-enabled check (config-view only; the
+# new channel/role config commands require the module to already be enabled)
+_EXEMPT_COMMANDS = {"view"}
 
 _MAX_SLOTS = 25
 
@@ -642,51 +644,8 @@ class SignupCog(commands.Cog):
     async def config_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-
-        if not await self.bot.module_service.is_signup_enabled(server_id):
-            await interaction.response.send_message(
-                "\u274c The Signup module is not enabled.", ephemeral=True
-            )
-            return
-
-        # Check bot has send_messages + manage_channels on channel
-        guild = interaction.guild
-        assert guild is not None
-        bot_member = guild.get_member(self.bot.user.id)  # type: ignore[union-attr]
-        if bot_member:
-            perms = channel.permissions_for(bot_member)
-            if not (perms.send_messages and (perms.manage_channels or perms.manage_roles)):
-                await interaction.response.send_message(
-                    f"❌ Bot is missing required permissions on {channel.mention}.",
-                    ephemeral=True,
-                )
-                return
-
-        existing = await self.bot.signup_module_service.get_config(server_id)
-        if existing:
-            existing.signup_channel_id = channel.id
-            await self.bot.signup_module_service.save_config(existing)
-        else:
-            new_cfg = SignupModuleConfig(
-                server_id=server_id,
-                signup_channel_id=channel.id,
-                base_role_id=0,
-                signed_up_role_id=0,
-                signups_open=False,
-                signup_button_message_id=None,
-                selected_tracks=[],
-            )
-            await self.bot.signup_module_service.save_config(new_cfg)
-
-        await interaction.response.send_message(
-            f"✅ Signup channel set to {channel.mention}.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            server_id,
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup config channel | Success\n"
-            f"  channel: #{channel.name}",
-        )
+        # Deprecated: use /signup channel instead. Kept for backwards compat.
+        await self.signup_channel(interaction, channel)
 
     @config_group.command(name="roles", description="Set the signup roles.")
     @app_commands.describe(
@@ -701,24 +660,27 @@ class SignupCog(commands.Cog):
         base_role: discord.Role,
         signed_up_role: discord.Role,
     ) -> None:
+        # Deprecated: use /signup base-role and /signup complete-role.
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        existing = await self.bot.signup_module_service.get_config(server_id)
-        if existing:
-            existing.base_role_id = base_role.id
-            existing.signed_up_role_id = signed_up_role.id
-            await self.bot.signup_module_service.save_config(existing)
-        else:
-            new_cfg = SignupModuleConfig(
-                server_id=server_id,
-                signup_channel_id=0,
-                base_role_id=base_role.id,
-                signed_up_role_id=signed_up_role.id,
-                signups_open=False,
-                signup_button_message_id=None,
-                selected_tracks=[],
+        cfg = await self.bot.signup_module_service.get_config(server_id)
+        if cfg is None:
+            await interaction.response.send_message(
+                "❌ Signup module is not configured.", ephemeral=True
             )
-            await self.bot.signup_module_service.save_config(new_cfg)
-
+            return
+        cfg.base_role_id = base_role.id
+        cfg.signed_up_role_id = signed_up_role.id
+        await self.bot.signup_module_service.save_config(cfg)
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as db:
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, NULL, 'SIGNUP_BASE_ROLE_SET', '', ?, ?)",
+                (server_id, interaction.user.id, str(interaction.user),
+                 json.dumps({"base_role_id": base_role.id, "signed_up_role_id": signed_up_role.id}), now),
+            )
+            await db.commit()
         await interaction.response.send_message("✅ Signup roles configured.", ephemeral=True)
         await self.bot.output_router.post_log(
             server_id,
@@ -741,12 +703,15 @@ class SignupCog(commands.Cog):
         embed = discord.Embed(title="Signup Module Configuration", color=discord.Color.blue())
 
         if cfg:
-            ch = guild.get_channel(cfg.signup_channel_id)
-            embed.add_field(name="Channel", value=ch.mention if ch else "*(not found)*", inline=False)
-            br = guild.get_role(cfg.base_role_id)
-            embed.add_field(name="Base Role", value=br.mention if br else "*(not found)*", inline=True)
-            sr = guild.get_role(cfg.signed_up_role_id)
-            embed.add_field(name="Signed-Up Role", value=sr.mention if sr else "*(not found)*", inline=True)
+            ch = guild.get_channel(cfg.signup_channel_id) if cfg.signup_channel_id else None
+            ch_val = ch.mention if ch else ("*(not configured)*" if cfg.signup_channel_id is None else "*(not found)*")
+            embed.add_field(name="Channel", value=ch_val, inline=False)
+            br = guild.get_role(cfg.base_role_id) if cfg.base_role_id else None
+            br_val = br.mention if br else ("*(not configured)*" if cfg.base_role_id is None else "*(not found)*")
+            embed.add_field(name="Base Role", value=br_val, inline=True)
+            sr = guild.get_role(cfg.signed_up_role_id) if cfg.signed_up_role_id else None
+            sr_val = sr.mention if sr else ("*(not configured)*" if cfg.signed_up_role_id is None else "*(not found)*")
+            embed.add_field(name="Signed-Up Role", value=sr_val, inline=True)
             embed.add_field(name="Signups Open", value="Yes" if cfg.signups_open else "No", inline=True)
         else:
             embed.add_field(name="Channel", value="Not set", inline=False)
@@ -762,6 +727,216 @@ class SignupCog(commands.Cog):
         embed.add_field(name="Time Image Required", value=img_val, inline=True)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # ── /signup channel (T011) ─────────────────────────────────────────
+
+    @signup.command(name="channel", description="Set the signup channel and apply permission overwrites.")
+    @app_commands.describe(channel="Channel for signup interactions")
+    @channel_guard
+    @server_admin_only
+    async def signup_channel(
+        self, interaction: discord.Interaction, channel: discord.TextChannel
+    ) -> None:
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+        guild = interaction.guild
+        assert guild is not None
+
+        cfg = await self.bot.signup_module_service.get_config(server_id)
+        if cfg is None:
+            await interaction.response.send_message(
+                "❌ Signup module is not configured.", ephemeral=True
+            )
+            return
+
+        # Guard: must not be the bot interaction channel
+        server_cfg = await self.bot.config_service.get_server_config(server_id)
+        if server_cfg and channel.id == server_cfg.interaction_channel_id:
+            await interaction.response.send_message(
+                "❌ The signup channel cannot be the same as the bot interaction channel.",
+                ephemeral=True,
+            )
+            return
+
+        # Check bot perms
+        bot_member = guild.get_member(self.bot.user.id)  # type: ignore[union-attr]
+        if bot_member:
+            perms = channel.permissions_for(bot_member)
+            if not (perms.manage_channels or perms.manage_roles):
+                await interaction.response.send_message(
+                    f"❌ Bot is missing `manage_roles` permission on {channel.mention}.",
+                    ephemeral=True,
+                )
+                return
+
+        await interaction.response.defer(ephemeral=True)
+        old_channel_id = cfg.signup_channel_id
+
+        # Revert bot-applied overwrites on old channel (if changing)
+        if old_channel_id and old_channel_id != channel.id:
+            old_channel = guild.get_channel(old_channel_id)
+            if old_channel and isinstance(old_channel, discord.TextChannel):
+                try:
+                    await old_channel.edit(overwrites={})
+                except Exception:
+                    log.warning("signup_channel: could not revert overwrites on old channel %s", old_channel_id)
+
+        # Apply overwrites to new channel
+        interaction_role = guild.get_role(server_cfg.interaction_role_id) if server_cfg else None
+        base_role = guild.get_role(cfg.base_role_id) if cfg.base_role_id else None
+        overwrites: dict = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+        }
+        if base_role:
+            overwrites[base_role] = discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=False,
+                use_application_commands=True,
+            )
+        if interaction_role:
+            overwrites[interaction_role] = discord.PermissionOverwrite(
+                view_channel=True, send_messages=True
+            )
+        try:
+            await channel.edit(overwrites=overwrites)
+        except Exception as exc:
+            await interaction.followup.send(
+                f"❌ Failed to apply channel permission overwrites: {exc}", ephemeral=True
+            )
+            return
+
+        # Persist
+        cfg.signup_channel_id = channel.id
+        await self.bot.signup_module_service.save_config(cfg)
+
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as db:
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, NULL, 'SIGNUP_CHANNEL_SET', ?, ?, ?)",
+                (server_id, interaction.user.id, str(interaction.user),
+                 json.dumps({"channel_id": old_channel_id}),
+                 json.dumps({"channel_id": channel.id}), now),
+            )
+            await db.commit()
+
+        await interaction.followup.send(
+            f"✅ Signup channel set to {channel.mention}.", ephemeral=True
+        )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup channel | Success\n"
+            f"  channel: #{channel.name}",
+        )
+
+    # ── /signup base-role (T012) ───────────────────────────────────────
+
+    @signup.command(name="base-role", description="Set the role that grants eligibility to sign up.")
+    @app_commands.describe(role="Role granted to all members eligible to sign up")
+    @channel_guard
+    @server_admin_only
+    async def signup_base_role(
+        self, interaction: discord.Interaction, role: discord.Role
+    ) -> None:
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+        guild = interaction.guild
+        assert guild is not None
+
+        cfg = await self.bot.signup_module_service.get_config(server_id)
+        if cfg is None:
+            await interaction.response.send_message(
+                "❌ Signup module is not configured.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        old_role_id = cfg.base_role_id
+
+        # Re-apply channel overwrites: remove old role overwrite, add new
+        if cfg.signup_channel_id:
+            ch = guild.get_channel(cfg.signup_channel_id)
+            if ch and isinstance(ch, discord.TextChannel):
+                try:
+                    if old_role_id and old_role_id != role.id:
+                        old_role = guild.get_role(old_role_id)
+                        if old_role:
+                            await ch.set_permissions(old_role, overwrite=None)
+                    await ch.set_permissions(
+                        role,
+                        view_channel=True,
+                        send_messages=False,
+                        use_application_commands=True,
+                    )
+                except Exception:
+                    log.warning("signup_base_role: could not update channel overwrites")
+
+        cfg.base_role_id = role.id
+        await self.bot.signup_module_service.save_config(cfg)
+
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as db:
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, NULL, 'SIGNUP_BASE_ROLE_SET', ?, ?, ?)",
+                (server_id, interaction.user.id, str(interaction.user),
+                 json.dumps({"role_id": old_role_id}),
+                 json.dumps({"role_id": role.id}), now),
+            )
+            await db.commit()
+
+        await interaction.followup.send(
+            f"✅ Signup base role set to {role.mention}.", ephemeral=True
+        )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup base-role | Success\n"
+            f"  role: {role.name} (<@&{role.id}>)",
+        )
+
+    # ── /signup complete-role (T013) ───────────────────────────────────
+
+    @signup.command(name="complete-role", description="Set the role granted on successful signup completion.")
+    @app_commands.describe(role="Role granted when a driver's signup is approved")
+    @channel_guard
+    @server_admin_only
+    async def signup_complete_role(
+        self, interaction: discord.Interaction, role: discord.Role
+    ) -> None:
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        cfg = await self.bot.signup_module_service.get_config(server_id)
+        if cfg is None:
+            await interaction.response.send_message(
+                "❌ Signup module is not configured.", ephemeral=True
+            )
+            return
+
+        old_role_id = cfg.signed_up_role_id
+        cfg.signed_up_role_id = role.id
+        await self.bot.signup_module_service.save_config(cfg)
+
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as db:
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, NULL, 'SIGNUP_COMPLETE_ROLE_SET', ?, ?, ?)",
+                (server_id, interaction.user.id, str(interaction.user),
+                 json.dumps({"role_id": old_role_id}),
+                 json.dumps({"role_id": role.id}), now),
+            )
+            await db.commit()
+
+        await interaction.response.send_message(
+            f"✅ Signup complete role set to {role.mention}.", ephemeral=True
+        )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup complete-role | Success\n"
+            f"  role: {role.name} (<@&{role.id}>)",
+        )
 
     # ── /signup nationality toggle (T020) ──────────────────────────────
 
@@ -1019,7 +1194,8 @@ class SignupCog(commands.Cog):
 
     @signup.command(name="open", description="Open the signup window.")
     @app_commands.describe(
-        track_ids="Optional: space- or comma-separated track IDs (e.g. '01 03 12')"
+        track_ids="Optional: space- or comma-separated track IDs (e.g. '01 03 12')",
+        close_time="Optional: auto-close UTC datetime in ISO 8601 format (e.g. 2025-06-15T20:00:00)",
     )
     @channel_guard
     @admin_only
@@ -1027,6 +1203,7 @@ class SignupCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         track_ids: str | None = None,
+        close_time: str | None = None,
     ) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
@@ -1040,6 +1217,22 @@ class SignupCog(commands.Cog):
         if cfg.signups_open:
             await interaction.response.send_message(
                 "❌ Signups are already open.", ephemeral=True
+            )
+            return
+
+        # Guard: all three config values must be set
+        missing = []
+        if cfg.signup_channel_id is None:
+            missing.append("`signup channel` (use `/signup channel`)")
+        if cfg.base_role_id is None:
+            missing.append("`base role` (use `/signup base-role`)")
+        if cfg.signed_up_role_id is None:
+            missing.append("`complete role` (use `/signup complete-role`)")
+        if missing:
+            await interaction.response.send_message(
+                "❌ Signup module is missing required configuration:\n"
+                + "\n".join(f"  • {m}" for m in missing),
+                ephemeral=True,
             )
             return
 
@@ -1061,6 +1254,27 @@ class SignupCog(commands.Cog):
             )
             return
 
+        # Parse close_time
+        close_at_iso: str | None = None
+        if close_time and close_time.strip():
+            try:
+                parsed_close = datetime.fromisoformat(close_time.strip())
+                if parsed_close.tzinfo is None:
+                    parsed_close = parsed_close.replace(tzinfo=timezone.utc)
+                if parsed_close <= datetime.now(timezone.utc):
+                    await interaction.response.send_message(
+                        "❌ `close_time` must be a future datetime.", ephemeral=True
+                    )
+                    return
+                close_at_iso = parsed_close.astimezone(timezone.utc).isoformat()
+            except ValueError:
+                await interaction.response.send_message(
+                    "❌ `close_time` is not a valid ISO 8601 datetime "
+                    "(e.g. `2025-06-15T20:00:00`).",
+                    ephemeral=True,
+                )
+                return
+
         # Parse track_ids
         track_list: list[str] = []
         if track_ids and track_ids.strip():
@@ -1080,7 +1294,8 @@ class SignupCog(commands.Cog):
         settings = await self.bot.signup_module_service.get_settings(server_id)
         guild = interaction.guild
         assert guild is not None
-        signup_channel = guild.get_channel(cfg.signup_channel_id)
+        signup_channel = guild.get_channel(cfg.signup_channel_id) if cfg.signup_channel_id else None
+        base_role = guild.get_role(cfg.base_role_id) if cfg.base_role_id else None
         if signup_channel is None or not isinstance(signup_channel, discord.TextChannel):
             await interaction.followup.send(
                 "❌ Configured signup channel not found.", ephemeral=True
@@ -1107,6 +1322,8 @@ class SignupCog(commands.Cog):
         img_label = "Required" if settings.time_image_required else "Not required"
         nat_label = "Required" if settings.nationality_required else "Not required"
 
+        role_mention = base_role.mention if base_role else ""
+        role_line = f"\n\n{role_mention} — click below to sign up!" if role_mention else ""
         info_embed = discord.Embed(
             title="🏁 Driver Signups Are Open!",
             description=(
@@ -1116,13 +1333,15 @@ class SignupCog(commands.Cog):
                 + f"\n\n**Time type:** {tt_label}"
                 + f"\n**Time image proof:** {img_label}"
                 + f"\n**Nationality:** {nat_label}"
+                + role_line
             ),
             color=discord.Color.green(),
         )
 
         view = SignupButtonView()
+        allowed_mentions = discord.AllowedMentions(roles=[base_role]) if base_role else discord.AllowedMentions.none()
         try:
-            posted_msg = await signup_channel.send(embed=info_embed, view=view)
+            posted_msg = await signup_channel.send(embed=info_embed, view=view, allowed_mentions=allowed_mentions)
         except Exception as exc:
             await interaction.followup.send(
                 f"❌ Failed to post signup message: {exc}", ephemeral=True
@@ -1132,6 +1351,10 @@ class SignupCog(commands.Cog):
         await self.bot.signup_module_service.set_window_open(
             server_id, posted_msg.id, track_list
         )
+
+        if close_at_iso:
+            await self.bot.signup_module_service.set_close_at(server_id, close_at_iso)
+            self.bot.scheduler_service.schedule_signup_close_timer(server_id, close_at_iso)
 
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
@@ -1144,8 +1367,13 @@ class SignupCog(commands.Cog):
             )
             await db.commit()
 
+        close_notice = (
+            f" Auto-close scheduled for `{close_at_iso}`."
+            if close_at_iso
+            else ""
+        )
         await interaction.followup.send(
-            f"✅ Signups opened. Button posted in {signup_channel.mention}.",
+            f"✅ Signups opened. Button posted in {signup_channel.mention}.{close_notice}",
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
@@ -1166,6 +1394,15 @@ class SignupCog(commands.Cog):
         if cfg is None or not cfg.signups_open:
             await interaction.response.send_message(
                 "❌ Signups are not currently open.", ephemeral=True
+            )
+            return
+
+        # Guard: auto-close timer is armed — manual close is blocked (T019)
+        if cfg.close_at is not None:
+            await interaction.response.send_message(
+                f"❌ Signups will auto-close at `{cfg.close_at}`. "
+                "Cancel the timer first with `/signup cancel-timer` if you need to close manually.",
+                ephemeral=True,
             )
             return
 

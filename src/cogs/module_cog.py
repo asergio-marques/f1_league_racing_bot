@@ -139,9 +139,6 @@ class ModuleCog(commands.Cog):
     )
     @app_commands.describe(
         module_name="Module to enable",
-        channel="(signup only) The channel designated for signup interactions",
-        base_role="(signup only) Role granted to members eligible to sign up",
-        signed_up_role="(signup only) Role granted on successful signup completion",
     )
     @app_commands.choices(module_name=_MODULE_CHOICES)
     @channel_guard
@@ -150,9 +147,6 @@ class ModuleCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         module_name: app_commands.Choice[str],
-        channel: discord.TextChannel | None = None,
-        base_role: discord.Role | None = None,
-        signed_up_role: discord.Role | None = None,
     ) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
@@ -161,7 +155,7 @@ class ModuleCog(commands.Cog):
         elif module_name.value == "results":
             await self._enable_results(interaction, server_id)
         else:
-            await self._enable_signup(interaction, server_id, channel, base_role, signed_up_role)
+            await self._enable_signup(interaction, server_id)
 
     # ── /module disable ────────────────────────────────────────────────
 
@@ -421,15 +415,12 @@ class ModuleCog(commands.Cog):
             "✅ Results & Standings module disabled.", ephemeral=True
         )
 
-    # ── Signup enable (T017) ───────────────────────────────────────────
+    # ── Signup enable (T010) ───────────────────────────────────────────
 
     async def _enable_signup(
         self,
         interaction: discord.Interaction,
         server_id: int,
-        channel: discord.TextChannel | None,
-        base_role: discord.Role | None,
-        signed_up_role: discord.Role | None,
     ) -> None:
         # Guard already-enabled
         if await self.bot.module_service.is_signup_enabled(server_id):
@@ -438,69 +429,15 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        # Validate required params
-        if channel is None or base_role is None or signed_up_role is None:
-            await interaction.response.send_message(
-                "❌ `channel`, `base_role`, and `signed_up_role` are required when enabling the signup module.",
-                ephemeral=True,
-            )
-            return
-
-        # Guard: channel must not be the interaction channel itself (FR-017)
-        cfg = await self.bot.config_service.get_server_config(server_id)
-        if cfg and channel.id == cfg.interaction_channel_id:
-            await interaction.response.send_message(
-                "❌ The signup channel cannot be the same as the bot interaction channel.",
-                ephemeral=True,
-            )
-            return
-
-        # Check bot has manage_channels on the channel
-        guild = interaction.guild
-        assert guild is not None
-        bot_member = guild.get_member(self.bot.user.id)  # type: ignore[union-attr]
-        if bot_member:
-            perms = channel.permissions_for(bot_member)
-            if not perms.manage_channels and not perms.manage_roles:
-                await interaction.response.send_message(
-                    f"❌ Bot is missing `manage_channels` permission on {channel.mention}.",
-                    ephemeral=True,
-                )
-                return
-
         await interaction.response.defer(ephemeral=True)
 
-        # Apply permission overwrites
-        try:
-            interaction_role = guild.get_role(cfg.interaction_role_id) if cfg else None
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                base_role: discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=False,
-                    use_application_commands=True,
-                ),
-                guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-            }
-            if interaction_role:
-                overwrites[interaction_role] = discord.PermissionOverwrite(
-                    view_channel=True, send_messages=True
-                )
-            await channel.edit(overwrites=overwrites)
-        except Exception as exc:
-            await interaction.followup.send(
-                f"❌ Failed to apply channel permission overwrites: {exc}",
-                ephemeral=True,
-            )
-            return
-
-        # Upsert SignupModuleConfig
+        # Upsert a bare config row — channel/role fields all NULL
         from models.signup_module import SignupModuleConfig
         new_cfg = SignupModuleConfig(
             server_id=server_id,
-            signup_channel_id=channel.id,
-            base_role_id=base_role.id,
-            signed_up_role_id=signed_up_role.id,
+            signup_channel_id=None,
+            base_role_id=None,
+            signed_up_role_id=None,
             signups_open=False,
             signup_button_message_id=None,
             selected_tracks=[],
@@ -520,24 +457,18 @@ class ModuleCog(commands.Cog):
             )
             await db.commit()
 
-        # Post initial "signups closed" notice to the signup channel
-        closed_msg_id: int | None = None
-        try:
-            closed_msg = await channel.send("🔒 Signups are currently closed.")
-            closed_msg_id = closed_msg.id
-        except Exception:
-            log.exception("_enable_signup: could not post initial closed message")
-        if closed_msg_id is not None:
-            await self.bot.signup_module_service.save_closed_message_id(server_id, closed_msg_id)
-
         await self.bot.output_router.post_log(
             server_id,
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable signup | Success\n"
-            f"  channel: #{channel.name}\n"
-            f"  base_role: {base_role.name} (<@&{base_role.id}>)\n"
-            f"  signed_up_role: {signed_up_role.name} (<@&{signed_up_role.id}>)",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable signup | Success",
         )
-        await interaction.followup.send("✅ Signup module enabled.", ephemeral=True)
+        await interaction.followup.send(
+            "✅ Signup module enabled.\n"
+            "Next steps — configure with:\n"
+            "  • `/signup channel <channel>`\n"
+            "  • `/signup base-role <role>`\n"
+            "  • `/signup complete-role <role>`",
+            ephemeral=True,
+        )
 
     # ── Signup disable (T018) ──────────────────────────────────────────
 
@@ -558,17 +489,20 @@ class ModuleCog(commands.Cog):
         if signup_cfg and signup_cfg.signups_open:
             await execute_forced_close(server_id, self.bot, audit_action="SIGNUP_FORCE_CLOSE")
 
-        # Remove bot-applied permission overwrites (only those set by _enable_signup)
-        if signup_cfg:
+        # Cancel any active signup close timer
+        self.bot.scheduler_service.cancel_signup_close_timer(server_id)
+
+        # Remove bot-applied permission overwrites (only those set by /signup channel)
+        if signup_cfg and signup_cfg.signup_channel_id is not None:
             guild = self.bot.get_guild(server_id)
             if guild:
                 channel = guild.get_channel(signup_cfg.signup_channel_id)
                 if channel and isinstance(channel, discord.TextChannel):
-                    # Build the exact set of targets we set during _enable_signup
                     targets_to_revert = [guild.default_role, guild.me]
-                    base_role = guild.get_role(signup_cfg.base_role_id)
-                    if base_role:
-                        targets_to_revert.append(base_role)
+                    if signup_cfg.base_role_id is not None:
+                        base_role = guild.get_role(signup_cfg.base_role_id)
+                        if base_role:
+                            targets_to_revert.append(base_role)
                     server_cfg = await self.bot.config_service.get_server_config(server_id)
                     if server_cfg:
                         interaction_role = guild.get_role(server_cfg.interaction_role_id)
