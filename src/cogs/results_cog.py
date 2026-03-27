@@ -795,6 +795,11 @@ class ResultsCog(commands.Cog):
                 f"\u2705 Standings for **{division}** synced to the standings channel.",
                 ephemeral=True,
             )
+            await self.bot.output_router.post_log(
+                interaction.guild_id,
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results standings sync | Success\n"
+                f"  division: {division}",
+            )
         elif status == "no_rounds":
             await interaction.followup.send(
                 f"\u2139\ufe0f No completed rounds found for **{division}**. No standings to post.",

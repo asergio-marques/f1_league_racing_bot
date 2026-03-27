@@ -394,6 +394,10 @@ class WizardService:
             view=self._build_step_view(first_state, server_id, discord_user_id, snapshot.team_names),
         )
 
+        await self._output_router.post_log(
+            server_id,
+            f"{member.display_name} (<@{member.id}>) | Signup | Started",
+        )
         return channel
 
     async def handle_message(
@@ -428,6 +432,12 @@ class WizardService:
         wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
         if wizard is None:
             return
+
+        prior_profile = await self._driver_service.get_profile(server_id, discord_user_id)
+        is_correction = (
+            prior_profile is not None
+            and prior_profile.current_state == DriverState.PENDING_DRIVER_CORRECTION
+        )
 
         d = wizard.draft_answers
         record = SignupRecord(
@@ -483,6 +493,14 @@ class WizardService:
                     panel_text,
                     view=AdminReviewView(server_id, discord_user_id, self._bot),  # type: ignore[arg-type]
                 )
+
+        member = guild.get_member(int(discord_user_id))
+        display_name = member.display_name if member else discord_user_id
+        log_action = "Correction submitted" if is_correction else "Submitted"
+        await self._output_router.post_log(
+            server_id,
+            f"{display_name} (<@{discord_user_id}>) | Signup | {log_action}",
+        )
 
     async def withdraw(
         self,
@@ -567,6 +585,14 @@ class WizardService:
             "This channel will be automatically deleted in 24 hours.",
         )
 
+        driver_member = guild.get_member(int(discord_user_id))
+        driver_name = driver_member.display_name if driver_member else discord_user_id
+        await self._output_router.post_log(
+            server_id,
+            f"{actor.display_name} (<@{actor.id}>) | Signup | Approved\n"
+            f"  driver: {driver_name} (<@{discord_user_id}>)",
+        )
+
     async def reject_signup(
         self,
         server_id: int,
@@ -600,6 +626,13 @@ class WizardService:
             + (f"\n**Reason:** {reason}" if reason else "")
             + "\nThis channel will be automatically deleted in 24 hours.",
         )
+
+        driver_member = guild.get_member(int(discord_user_id))
+        driver_name = driver_member.display_name if driver_member else discord_user_id
+        msg = f"{actor.display_name} (<@{actor.id}>) | Signup | Rejected\n  driver: {driver_name} (<@{discord_user_id}>)"
+        if reason:
+            msg += f"\n  reason: {reason}"
+        await self._output_router.post_log(server_id, msg)
 
     async def request_changes(
         self,
@@ -650,6 +683,13 @@ class WizardService:
         self._correction_tasks[ckey] = asyncio.create_task(
             self._correction_timeout_after_delay(server_id, discord_user_id)
         )
+
+        driver_member = guild.get_member(int(discord_user_id))
+        driver_name = driver_member.display_name if driver_member else discord_user_id
+        msg = f"{actor.display_name} (<@{actor.id}>) | Signup | Correction requested\n  driver: {driver_name} (<@{discord_user_id}>)"
+        if reason:
+            msg += f"\n  reason: {reason}"
+        await self._output_router.post_log(server_id, msg)
 
     async def select_correction_parameter(
         self,
