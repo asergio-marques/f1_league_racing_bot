@@ -80,8 +80,11 @@ class DriverCog(commands.Cog):
             f"   State       : {profile.current_state.value}\n"
             f"   Former driver: {former}",
             ephemeral=True,
-        )
-        log.info(
+        )        await self.bot.output_router.post_log(
+            server_id,
+            f"🔄 Driver re-keyed by **{interaction.user.display_name}**: "
+            f"`{resolved_old_id}` → **{new_user.display_name}** (`{new_user_id}`)",
+        )        log.info(
             "Driver profile re-keyed on server %s: %s → %s by %s",
             server_id, resolved_old_id, new_user_id, actor_name,
         )
@@ -147,7 +150,7 @@ class DriverCog(commands.Cog):
         )
         if profile is None:
             await interaction.followup.send(
-                f"⛔ No driver profile found for {user.mention}.", ephemeral=True
+                f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
             )
             return
 
@@ -169,11 +172,14 @@ class DriverCog(commands.Cog):
 
         verb = "Assigned" if result["was_unassigned"] else "Moved"
         await interaction.followup.send(
-            f"✅ {verb} {user.mention} to **{result['team_name']}** "
+            f"✅ {verb} **{user.display_name}** to **{result['team_name']}** "
             f"in **{result['division_name']}**.",
             ephemeral=True,
-        )
-        log.info(
+        )        await self.bot.output_router.post_log(
+            server_id,
+            f"🏎️ {verb} **{user.display_name}** to **{result['team_name']}** "
+            f"in **{result['division_name']}** by **{interaction.user.display_name}**",
+        )        log.info(
             "assign: server=%s user=%s → team=%s division=%s by %s",
             server_id, user.id, team, division_name, actor_name,
         )
@@ -234,7 +240,7 @@ class DriverCog(commands.Cog):
         )
         if profile is None:
             await interaction.followup.send(
-                f"⛔ No driver profile found for {user.mention}.", ephemeral=True
+                f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
             )
             return
 
@@ -255,8 +261,13 @@ class DriverCog(commands.Cog):
 
         suffix = "" if result["has_remaining_assignments"] else " (now Unassigned)"
         await interaction.followup.send(
-            f"✅ Removed {user.mention} from **{result['division_name']}**{suffix}.",
+            f"✅ Removed **{user.display_name}** from **{result['division_name']}**{suffix}.",
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"❌ Unassigned **{user.display_name}** from **{result['division_name']}**{suffix} "
+            f"by **{interaction.user.display_name}**",
         )
         log.info(
             "unassign: server=%s user=%s from division=%s by %s",
@@ -303,7 +314,7 @@ class DriverCog(commands.Cog):
         )
         if profile is None:
             await interaction.followup.send(
-                f"⛔ No driver profile found for {user.mention}.", ephemeral=True
+                f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
             )
             return
 
@@ -322,8 +333,13 @@ class DriverCog(commands.Cog):
             return
 
         await interaction.followup.send(
-            f"✅ {user.mention} has been sacked. All roles and season assignments removed.",
+            f"✅ **{user.display_name}** has been sacked. All roles and season assignments removed.",
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"⛔ **{user.display_name}** sacked by **{interaction.user.display_name}**. "
+            "All roles and season assignments removed.",
         )
         log.info(
             "sack: server=%s user=%s by %s",

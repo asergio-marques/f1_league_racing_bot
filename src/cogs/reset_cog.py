@@ -97,6 +97,13 @@ class ResetCog(commands.Cog):
             footer = "Server config preserved — bot remains active in this channel."
 
         mode_label = "fully reset" if full else "reset"
+        log_mode = "Full reset (config deleted)" if full else "Partial reset (config preserved)"
+        await self.bot.output_router.post_log(
+            server_id,
+            f"🗑️ Server data **{mode_label}** by **{interaction.user.display_name}**.\n"
+            f"  Mode: {log_mode}\n"
+            f"  Deleted: **{seasons}** season(s), **{divisions}** division(s), **{rounds}** round(s)",
+        )
         await interaction.followup.send(
             f"✅ Server data {mode_label}.\n"
             f"Deleted: **{seasons}** season(s), **{divisions}** division(s), "

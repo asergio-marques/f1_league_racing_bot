@@ -89,6 +89,11 @@ class TestModeCog(commands.Cog):
                 f"or `/test-mode review` to inspect season status.{config_note}"
             )
             await interaction.followup.send(msg, ephemeral=True)
+            await self.bot.output_router.post_log(
+                interaction.guild_id,
+                f"🧪 Test mode **enabled** by **{interaction.user.display_name}**"
+                + (f". Seeded configs: {', '.join(new_configs)}" if new_configs else ""),
+            )
         else:
             # Defer so the flush (multiple Discord API calls) has time to complete
             await interaction.response.defer(ephemeral=True)
@@ -109,6 +114,11 @@ class TestModeCog(commands.Cog):
             if removed:
                 msg += f"\n🗑️ Removed **{removed}** fake driver(s)."
             await interaction.followup.send(msg, ephemeral=True)
+            await self.bot.output_router.post_log(
+                interaction.guild_id,
+                f"🧪 Test mode **disabled** by **{interaction.user.display_name}**"
+                + (f". Removed {removed} fake driver(s)." if removed else ""),
+            )
 
     # ------------------------------------------------------------------
     # /test-mode advance
@@ -280,8 +290,12 @@ class TestModeCog(commands.Cog):
             f"**{entry['division_name']}** — **{entry['track_name']}**. "
             f"Outputs posted to the configured forecast and log channels.",
             ephemeral=True,
+        )        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"⏩ **{interaction.user.display_name}** advanced Phase {phase_number} for "
+            f"**{entry['division_name']}** \u2014 **{entry['track_name']}** "
+            f"(Round {entry['round_number']})",
         )
-
     # ------------------------------------------------------------------
     # /test-mode review
     # ------------------------------------------------------------------
@@ -352,12 +366,15 @@ class TestModeCog(commands.Cog):
 
         await interaction.response.send_message(
             f"✅ former_driver flag updated.\n"
-            f"   User     : {user.mention}\n"
+            f"   User     : {user.display_name}\n"
             f"   Old value: {old_val}\n"
             f"   New value: {new_val}",
             ephemeral=True,
-        )
-        log.info(
+        )        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"🧪 former_driver flag for **{user.display_name}** set to `{new_val}` "
+            f"by **{interaction.user.display_name}**",
+        )        log.info(
             "set-former-driver on server %s: user=%s %s→%s by %s",
             interaction.guild_id, user.id, old_val, new_val, interaction.user,
         )
@@ -422,6 +439,11 @@ class TestModeCog(commands.Cog):
             f"✅ Added fake driver **{result['display_name']}** to **{result['team_name']}**.\n"
             f"Mention string (copy-paste into results): `{mention_str}`",
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"🧪 Fake driver **{result['display_name']}** added to **{result['team_name']}** "
+            f"in **{division}** by **{interaction.user.display_name}**",
         )
 
     # /test-mode roster list -----------------------------------------------
@@ -524,6 +546,11 @@ class TestModeCog(commands.Cog):
         else:
             await interaction.response.send_message(
                 f"✅ Removed **{result}** fake driver(s) from **{division}**.", ephemeral=True
+            )
+            await self.bot.output_router.post_log(
+                interaction.guild_id,
+                f"🧪 Removed **{result}** fake driver(s) from **{division}** "
+                f"by **{interaction.user.display_name}**",
             )
 
     # (submit-results removed — use /test-mode advance which now handles result submission)

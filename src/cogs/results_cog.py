@@ -79,6 +79,10 @@ class ResultsCog(commands.Cog):
         await interaction.followup.send(
             f"\u2705 Config **{name}** created. All positions default to 0 points.", ephemeral=True
         )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\U0001f4c4 Points config **{name}** created by **{interaction.user.display_name}**",
+        )
 
     @config_group.command(name="remove", description="Remove a named points configuration.")
     @app_commands.describe(name="Config name to remove")
@@ -96,6 +100,10 @@ class ResultsCog(commands.Cog):
             )
             return
         await interaction.followup.send(f"\u2705 Config **{name}** removed.", ephemeral=True)
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\U0001f5d1\ufe0f Points config **{name}** removed by **{interaction.user.display_name}**",
+        )
 
     @config_group.command(name="session", description="Set points for a finishing position in a session type.")
     @app_commands.describe(
@@ -134,6 +142,11 @@ class ResultsCog(commands.Cog):
             f"\u2705 Set **{session.name}** position {position} \u2192 {points} pts in config **{name}**.",
             ephemeral=True,
         )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u270f\ufe0f Config **{name}** updated by **{interaction.user.display_name}**: "
+            f"{session.name} P{position} \u2192 {points} pts",
+        )
 
     @config_group.command(name="fl", description="Set the fastest-lap bonus for a race session type.")
     @app_commands.describe(
@@ -169,6 +182,11 @@ class ResultsCog(commands.Cog):
         await interaction.followup.send(
             f"\u2705 Set fastest-lap bonus for **{session.name}** \u2192 {points} pts in config **{name}**.",
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u270f\ufe0f Config **{name}** FL bonus updated by **{interaction.user.display_name}**: "
+            f"{session.name} \u2192 {points} pts",
         )
 
     @config_group.command(name="fl-plimit", description="Set the position eligibility limit for fastest-lap bonus.")
@@ -206,6 +224,11 @@ class ResultsCog(commands.Cog):
             f"\u2705 Set fastest-lap position limit for **{session.name}** \u2192 top {limit} eligible in config **{name}**.",
             ephemeral=True,
         )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u270f\ufe0f Config **{name}** FL position limit updated by **{interaction.user.display_name}**: "
+            f"{session.name} \u2192 top {limit}",
+        )
 
     @config_group.command(name="append", description="Attach a server config to the current season in SETUP.")
     @app_commands.describe(name="Config name to attach")
@@ -230,6 +253,10 @@ class ResultsCog(commands.Cog):
             return
         await interaction.followup.send(
             f"\u2705 Config **{name}** attached to the current season.", ephemeral=True
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\U0001f4ce Config **{name}** attached to season by **{interaction.user.display_name}**",
         )
 
     @config_group.command(name="detach", description="Detach a config from the current season in SETUP.")
@@ -260,6 +287,10 @@ class ResultsCog(commands.Cog):
             return
         await interaction.followup.send(
             f"\u2705 Config **{name}** detached from the current season.", ephemeral=True
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\U0001f4cb Config **{name}** detached from season by **{interaction.user.display_name}**",
         )
 
     # ------------------------------------------------------------------
@@ -394,10 +425,18 @@ class ResultsCog(commands.Cog):
             await interaction.followup.send(
                 "\u2705 Amendment mode enabled. Modification store initialised.", ephemeral=True
             )
+            await self.bot.output_router.post_log(
+                interaction.guild_id,
+                f"\u270f\ufe0f Amendment mode **enabled** by **{interaction.user.display_name}**",
+            )
         else:
             try:
                 await disable_amendment_mode(self.bot.db_path, season.id)
                 await interaction.followup.send("\u2705 Amendment mode disabled.", ephemeral=True)
+                await self.bot.output_router.post_log(
+                    interaction.guild_id,
+                    f"\u270f\ufe0f Amendment mode **disabled** by **{interaction.user.display_name}**",
+                )
             except AmendmentModifiedError:
                 await interaction.followup.send(
                     "\u274c Cannot disable amendment mode \u2014 uncommitted changes exist. "
@@ -432,6 +471,10 @@ class ResultsCog(commands.Cog):
         await revert_modification_store(self.bot.db_path, season.id)
         await interaction.followup.send(
             "\u2705 Modification store reverted to current season points.", ephemeral=True
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u21a9\ufe0f Amendment modification store reverted by **{interaction.user.display_name}**",
         )
 
     @amend_group.command(name="session", description="Set points in the modification store for a session position.")
@@ -474,6 +517,11 @@ class ResultsCog(commands.Cog):
             f"\u2705 Updated in modification store: **{name}** {session.name} P{position} \u2192 {points} pts.",
             ephemeral=True,
         )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u270f\ufe0f Amendment store updated by **{interaction.user.display_name}**: "
+            f"**{name}** {session.name} P{position} \u2192 {points} pts",
+        )
 
     @amend_group.command(name="fl", description="Set fastest-lap bonus in the modification store.")
     @app_commands.describe(
@@ -511,6 +559,11 @@ class ResultsCog(commands.Cog):
             f"\u2705 Updated in modification store: **{name}** {session.name} FL bonus \u2192 {points} pts.",
             ephemeral=True,
         )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u270f\ufe0f Amendment store FL bonus updated by **{interaction.user.display_name}**: "
+            f"**{name}** {session.name} \u2192 {points} pts",
+        )
 
     @amend_group.command(name="fl-plimit", description="Set fastest-lap position limit in the modification store.")
     @app_commands.describe(
@@ -547,6 +600,11 @@ class ResultsCog(commands.Cog):
         await interaction.followup.send(
             f"\u2705 Updated in modification store: **{name}** {session.name} FL position limit \u2192 top {limit}.",
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\u270f\ufe0f Amendment store FL position limit updated by **{interaction.user.display_name}**: "
+            f"**{name}** {session.name} \u2192 top {limit}",
         )
 
     @amend_group.command(name="review", description="Review modification store changes and approve or reject.")
@@ -617,6 +675,11 @@ class ResultsCog(commands.Cog):
             await interaction.followup.send(
                 "\u2705 Amendment approved. All standings recomputed and reposted.", ephemeral=True
             )
+            await self.bot.output_router.post_log(
+                interaction.guild_id,
+                f"\u2714\ufe0f Amendment approved by **{interaction.user.display_name}**. "
+                "Standings recomputed and reposted.",
+            )
 
     # ------------------------------------------------------------------
     # /results reserves group — T026
@@ -676,6 +739,11 @@ class ResultsCog(commands.Cog):
         state_str = "visible" if new_value else "hidden"
         await interaction.followup.send(
             f"\u2705 Reserve visibility for **{division}** set to **{state_str}**.", ephemeral=True
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"\U0001f465 Reserve driver visibility for **{division}** set to **{state_str}** "
+            f"by **{interaction.user.display_name}**",
         )
 
     # ------------------------------------------------------------------

@@ -77,6 +77,11 @@ class TeamCog(commands.Cog):
             msg = f'✅ Team "{name}" added with role {role.mention}.'
 
         await interaction.response.send_message(msg, ephemeral=True)
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"🏈 Team **\"{name}\"** added by **{interaction.user.display_name}**"
+            + (f" into {div_count} division(s) of Season {setup_season.season_number}" if setup_season is not None else ""),
+        )
 
     # ------------------------------------------------------------------
     # /team remove  (FR-004, FR-005, FR-006)
@@ -134,6 +139,11 @@ class TeamCog(commands.Cog):
             msg = f'✅ Team "{name}" removed from the server list.'
 
         await interaction.response.send_message(msg, ephemeral=True)
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"🗑️ Team **\"{name}\"** removed by **{interaction.user.display_name}**"
+            + (f" from {div_count} division(s) of Season {setup_season.season_number}" if setup_season is not None and team_in_season else ""),
+        )
 
     # ------------------------------------------------------------------
     # /team rename  (FR-007, FR-008, FR-009)
@@ -184,6 +194,11 @@ class TeamCog(commands.Cog):
             msg = f'✅ Team "{current_name}" renamed to "{new_name}".'
 
         await interaction.response.send_message(msg, ephemeral=True)
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"✏️ Team **\"{current_name}\"** renamed to **\"{new_name}\"** by **{interaction.user.display_name}**"
+            + (f" across {div_count} division(s) of Season {setup_season.season_number}" if setup_season is not None else ""),
+        )
 
     # ------------------------------------------------------------------
     # /team list  (FR-010, FR-011)
@@ -311,7 +326,11 @@ class TeamCog(commands.Cog):
                     }
                     for seat_num in range(1, team["max_seats"] + 1):
                         uid = filled.get(seat_num)
-                        driver_str = f"<@{uid}>" if uid else "*(empty)*"
+                        if uid:
+                            member = interaction.guild.get_member(int(uid)) if interaction.guild else None
+                            driver_str = member.display_name if member else uid
+                        else:
+                            driver_str = "*(empty)*"
                         lines.append(f"    Seat {seat_num}: {driver_str}")
             lines.append("")
 
@@ -349,6 +368,11 @@ class TeamCog(commands.Cog):
             msg = "✅ Reserve team role cleared."
 
         await interaction.response.send_message(msg, ephemeral=True)
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"🏆 Reserve team role **{'set to ' + role.name if role else 'cleared'}** "
+            f"by **{interaction.user.display_name}**",
+        )
 
 
 # ---------------------------------------------------------------------------
