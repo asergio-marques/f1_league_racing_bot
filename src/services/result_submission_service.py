@@ -301,7 +301,11 @@ async def enter_penalty_state(
         )
         sr_rows = await sr_cursor.fetchall()
 
-    session_types_present = [SessionType(r["session_type"]) for r in sr_rows]
+    _stype_order = list(SessionType)
+    session_types_present = sorted(
+        [SessionType(r["session_type"]) for r in sr_rows],
+        key=lambda s: _stype_order.index(s),
+    )
 
     # ------------------------------------------------------------------
     # Step 3: Build state and post the penalty review prompt
@@ -322,6 +326,15 @@ async def enter_penalty_state(
     msg = await sub_channel.send(content, view=view)
     state.prompt_message_id = msg.id
     bot.add_view(view, message_id=msg.id)  # type: ignore[attr-defined]
+
+    # Persist the prompt message ID so recovery can delete it before reposting.
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels SET prompt_message_id = ? WHERE round_id = ?",
+            (msg.id, round_id),
+        )
+        await db.commit()
+
     log.info(
         "enter_penalty_state: penalty review prompt posted for round %s (msg=%s)",
         round_id,
@@ -668,7 +681,7 @@ async def amend_session_result(
         # Immutability guard: reject writes to archived seasons
         cursor = await db.execute(
             """
-            SELECT s.status AS season_status, s.server_id
+            SELECT s.status AS season_status, s.server_id, s.id AS season_id
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
@@ -682,6 +695,7 @@ async def amend_session_result(
                 f"Round {round_id} belongs to an archived season — results cannot be amended."
             )
         server_id_for_profile: int | None = season_row["server_id"] if season_row else None
+        season_id: int | None = season_row["season_id"] if season_row else None
 
         # Mark all current rows as superseded
         await db.execute(
@@ -756,15 +770,29 @@ async def amend_session_result(
             )
         await db.commit()
 
-    # Cascade standings and repost
+    # Apply points from the config so points_awarded / fastest_lap_bonus are populated
+    # before standings computation. (ParsedRaceRow / ParsedQualifyingRow carry no pts.)
+    if season_id is not None and config_name is not None:
+        await _apply_points_from_config(
+            db_path, session_result_id, season_id, config_name, session_type
+        )
+
+    # Delete old Discord messages, repost all session results + standings for the
+    # amended round, then cascade-recompute and repost subsequent rounds' standings.
     from services import standings_service, results_post_service  # lazy imports
 
     rctx = await _get_round_context(db_path, round_id)
     server_id = rctx["server_id"]
     guild = bot.get_guild(server_id)
-    await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
     if guild is not None:
-        await results_post_service.repost_round_results(db_path, round_id, division_id, guild)
+        await results_post_service.delete_and_repost_final_results(
+            db_path, round_id, division_id, guild
+        )
+        await results_post_service.repost_subsequent_standings(
+            db_path, division_id, round_id, guild
+        )
+    else:
+        await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
 
     await bot.output_router.post_log(
         server_id,
@@ -1115,6 +1143,55 @@ def validate_submission_block(
             errors.append(
                 f"Team <@&{role_id}> has {count} drivers submitted — maximum is 2."
             )
+
+    if errors:
+        return errors
+
+    # Race ordering: positions must respect time-type hierarchy.
+    # Lead-lap times (abs/delta) → lapped drivers (lap gap) → non-finishers (DNS/DNF/DSQ).
+    # A lower position number must never have a higher category than a subsequent driver.
+    if not is_qualifying:
+        def _race_time_category(row: "ParsedRaceRow") -> int:
+            tt = row.total_time.upper()
+            if tt in _OUTCOME_LITERALS:
+                return 2  # DNS / DNF / DSQ
+            if _LAP_GAP_RE.match(row.total_time):
+                return 1  # lapped finisher
+            return 0      # lead-lap finisher (absolute or delta time)
+
+        _CATEGORY_LABEL = {0: "lead-lap time", 1: "lap gap (+x Laps)", 2: "DNS/DNF/DSQ"}
+        rows_by_pos = sorted(parsed_rows, key=lambda r: r.position)
+        max_cat = 0
+        for row in rows_by_pos:
+            cat = _race_time_category(row)
+            if cat < max_cat:
+                errors.append(
+                    f"Row {row.position}: driver <@{row.driver_user_id}> has a "
+                    f"{_CATEGORY_LABEL[cat]} but appears after a "
+                    f"{_CATEGORY_LABEL[max_cat]} entry. "
+                    "Finishing order must be: lead-lap finishers first, "
+                    "then lapped drivers (+x Laps), then DNS/DNF/DSQ."
+                )
+                break
+            max_cat = max(max_cat, cat)
+
+        # Within lapped drivers, lap counts must be non-decreasing with position.
+        _LAP_INT_RE = re.compile(r"(\d+)")
+        prev_lap_count: int | None = None
+        for row in rows_by_pos:
+            if _LAP_GAP_RE.match(row.total_time):
+                m = _LAP_INT_RE.search(row.total_time)
+                if m:
+                    lap_count = int(m.group(1))
+                    if prev_lap_count is not None and lap_count < prev_lap_count:
+                        errors.append(
+                            f"Row {row.position}: driver <@{row.driver_user_id}> "
+                            f"is {lap_count} lap(s) behind but appears after a driver "
+                            f"who is {prev_lap_count} lap(s) behind. "
+                            "Lap counts must be non-decreasing with position."
+                        )
+                        break
+                    prev_lap_count = lap_count
 
     if errors:
         return errors
@@ -1617,6 +1694,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # ------------------------------------------------------------------
     # 8. Per-session collection loop
     # ------------------------------------------------------------------
+    cancelled_sessions: set[SessionType] = set()
     for session_type in sessions:
         label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
 
@@ -1656,6 +1734,11 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                     driver_rows=[],
                 )
                 await sub_channel.send(f"✅ **{label}** marked as CANCELLED.")
+                await results_channel.send(
+                    f"🚫 **Round {round_number} — {label}** ({division_name}): "
+                    "This session was cancelled."
+                )
+                cancelled_sessions.add(session_type)
                 break
 
             # Validate the block
@@ -1785,5 +1868,12 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # ------------------------------------------------------------------
     # 9+10. Enter penalty-review state (posts interim results/standings,
     #       keeps channel open, posts penalty review prompt).
+    #       Skip entirely if every session was cancelled — nothing to review.
     # ------------------------------------------------------------------
+    if cancelled_sessions == set(sessions):
+        await sub_channel.send(
+            "⏭️ All sessions for this round were cancelled — no penalty review required."
+        )
+        await close_submission_channel(sub_channel.id, round_id, guild, db_path)
+        return
     await enter_penalty_state(bot, guild, round_id, division_id, sub_channel, season_id=season_id)

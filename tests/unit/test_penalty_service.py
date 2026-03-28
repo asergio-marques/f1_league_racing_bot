@@ -177,6 +177,94 @@ def test_time_penalty_rejected_if_result_negative():
     assert "negative" in result.lower()
 
 
+def test_negative_penalty_rejected_when_exceeds_existing_time_penalty():
+    """Negative penalty whose absolute value exceeds the driver's current penalty is rejected."""
+    result = validate_penalty_input(
+        driver_user_id=100,
+        session_type=SessionType.FEATURE_RACE,
+        penalty_value="-10s",
+        current_time_penalty_s=5,
+    )
+    assert isinstance(result, str)
+    assert "5s" in result
+
+
+def test_negative_penalty_accepted_when_equal_to_existing_time_penalty():
+    """Negative penalty exactly cancelling the driver's full existing penalty is valid."""
+    result = validate_penalty_input(
+        driver_user_id=100,
+        session_type=SessionType.FEATURE_RACE,
+        penalty_value="-5s",
+        current_time_penalty_s=5,
+    )
+    assert isinstance(result, StagedPenalty)
+    assert result.penalty_seconds == -5
+
+
+def test_negative_penalty_accepted_when_less_than_existing_time_penalty():
+    """Negative penalty smaller in magnitude than the existing penalty is valid."""
+    result = validate_penalty_input(
+        driver_user_id=100,
+        session_type=SessionType.FEATURE_RACE,
+        penalty_value="-3s",
+        current_time_penalty_s=5,
+    )
+    assert isinstance(result, StagedPenalty)
+    assert result.penalty_seconds == -3
+
+
+def test_negative_penalty_rejected_when_no_existing_time_penalty():
+    """Negative penalty is rejected when the driver has no existing time penalty (0s)."""
+    result = validate_penalty_input(
+        driver_user_id=100,
+        session_type=SessionType.FEATURE_RACE,
+        penalty_value="-5s",
+        current_time_penalty_s=0,
+    )
+    assert isinstance(result, str)
+    assert "0s" in result
+
+
+def test_negative_penalty_check_skipped_when_current_penalty_unknown():
+    """When current_time_penalty_s is None the check is skipped and the penalty is accepted."""
+    result = validate_penalty_input(
+        driver_user_id=100,
+        session_type=SessionType.FEATURE_RACE,
+        penalty_value="-10s",
+        current_time_penalty_s=None,
+    )
+    assert isinstance(result, StagedPenalty)
+    assert result.penalty_seconds == -10
+
+
+def test_negative_penalty_cumulative_second_reduction_rejected():
+    """Simulate staging two successive -3s penalties when the driver has 3s applied.
+
+    First -3s: effective remaining = 3 - 3 = 0  → accepted.
+    Second -3s: effective remaining = 0          → rejected (nothing left to remove).
+    """
+    # First penalty: DB value = 3, no staged adjustments yet → passes.
+    first = validate_penalty_input(
+        driver_user_id=100,
+        session_type=SessionType.FEATURE_RACE,
+        penalty_value="-3s",
+        current_time_penalty_s=3,
+    )
+    assert isinstance(first, StagedPenalty)
+    assert first.penalty_seconds == -3
+
+    # Wizard now adjusts: DB (3) + staged (-3) = 0 effective remaining.
+    effective_after_first = 3 + first.penalty_seconds  # = 0
+    second = validate_penalty_input(
+        driver_user_id=100,
+        session_type=SessionType.FEATURE_RACE,
+        penalty_value="-3s",
+        current_time_penalty_s=effective_after_first,
+    )
+    assert isinstance(second, str)
+    assert "0s" in second
+
+
 async def test_apply_negative_penalty_reorders(tmp_path):
     """Driver with a -10s penalty moves above a driver with no penalty."""
     from db.database import get_connection, run_migrations

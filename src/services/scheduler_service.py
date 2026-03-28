@@ -237,9 +237,10 @@ class SchedulerService:
     # ------------------------------------------------------------------
 
     def schedule_round(self, rnd: Round) -> None:
-        """Register Phase 1/2/3 DateTrigger jobs for *rnd*.
+        """Register DateTrigger jobs for *rnd*.
 
-        MYSTERY rounds: no phases scheduled.
+        MYSTERY rounds: schedule the notice job (T−5 days) and the result
+        submission job (round start time), but no weather phase jobs.
         Jobs use replace_existing=True so re-scheduling an amended round is safe.
         """
         if rnd.format == RoundFormat.MYSTERY:
@@ -247,16 +248,27 @@ class SchedulerService:
             if scheduled_at.tzinfo is None:
                 scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
             fire_at = scheduled_at - timedelta(days=5)
-            job_id = f"mystery_r{rnd.id}"
+            notice_job_id = f"mystery_r{rnd.id}"
             self._scheduler.add_job(
                 _mystery_notice_job,
                 trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
-                id=job_id,
+                id=notice_job_id,
                 replace_existing=True,
                 name=f"Mystery notice for round {rnd.id}",
                 kwargs={"round_id": rnd.id},
             )
-            log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
+            log.info("Scheduled %s at %s", notice_job_id, fire_at.isoformat())
+            # Also schedule result submission at round start time
+            results_job_id = f"results_r{rnd.id}"
+            self._scheduler.add_job(
+                _result_submission_job_wrapper,
+                trigger=DateTrigger(run_date=scheduled_at, timezone="UTC"),
+                id=results_job_id,
+                replace_existing=True,
+                name=f"Result submission for round {rnd.id}",
+                kwargs={"round_id": rnd.id},
+            )
+            log.info("Scheduled %s at %s", results_job_id, scheduled_at.isoformat())
             return
 
         scheduled_at = rnd.scheduled_at
@@ -351,13 +363,8 @@ class SchedulerService:
         Used when the results module is enabled but the weather module is not,
         so ``schedule_round`` (which creates all weather + results jobs together)
         was not called at approval time.
-
-        MYSTERY rounds are skipped — their result submission is handled via a
-        DB-state fallback in get_next_pending_phase (no APScheduler job needed).
         """
         for rnd in rounds:
-            if rnd.format == RoundFormat.MYSTERY:
-                continue
             scheduled_at = rnd.scheduled_at
             if scheduled_at.tzinfo is None:
                 scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)

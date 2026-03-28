@@ -267,6 +267,25 @@ async def main() -> None:
         bot.add_view(_view)
 
     log.info("All cogs loaded. Starting bot...")
+
+    @bot.command(name="sync", hidden=True)
+    @commands.is_owner()
+    async def guild_sync(ctx: commands.Context) -> None:
+        """Owner-only: clear guild command overrides and do a global sync."""
+        # Remove any guild-specific copies (e.g. left over from a previous copy_global_to).
+        bot.tree.clear_commands(guild=ctx.guild)
+        await bot.tree.sync(guild=ctx.guild)
+        # Re-sync globally so Discord has the latest command schema.
+        synced = await bot.tree.sync()
+        try:
+            await ctx.message.delete()
+        except discord.HTTPException:
+            pass
+        await ctx.send(
+            f"✅ Cleared guild overrides and synced {len(synced)} global command(s).",
+            delete_after=15,
+        )
+
     async with bot:
         await bot.start(TOKEN)
 
@@ -358,7 +377,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         cursor = await db.execute(
             """
             SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
-                   rsc.results_posted, rsc.staged_penalties,
+                   rsc.results_posted, rsc.staged_penalties, rsc.prompt_message_id,
                    r.division_id, s.server_id
             FROM round_submission_channels rsc
             JOIN rounds r    ON r.id  = rsc.round_id
@@ -375,6 +394,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         in_penalty_review: int = row["in_penalty_review"]
         results_posted: int = row["results_posted"]
         staged_penalties_json: str | None = row["staged_penalties"]
+        prompt_message_id: int | None = row["prompt_message_id"]
         division_id: int = row["division_id"]
         server_id: int = row["server_id"]
 
@@ -425,6 +445,15 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
                         )
 
                 from services.result_submission_service import enter_penalty_state
+
+                # Delete the previous penalty review prompt to avoid confusion
+                # from duplicate messages after restart.
+                if prompt_message_id is not None:
+                    try:
+                        old_msg = await channel.fetch_message(prompt_message_id)
+                        await old_msg.delete()
+                    except (discord.NotFound, discord.HTTPException):
+                        pass  # Already deleted or unavailable — proceed anyway
 
                 await enter_penalty_state(
                     bot, guild, round_id, division_id, channel,
@@ -491,10 +520,14 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         # Notify the log channel so the LM knows to re-submit any sessions
         # that were in progress when the bot was terminated.
         try:
+            async with get_connection(bot.db_path) as _rdb:  # type: ignore[attr-defined]
+                _rcur = await _rdb.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
+                _rrow = await _rcur.fetchone()
+            _round_label = f"R{_rrow['round_number']}" if _rrow else f"id={round_id}"
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 server_id,
                 f"System | Bot restarted mid-result-submission | Notice\n"
-                f"  round_id: {round_id}\n"
+                f"  round: {_round_label}\n"
                 "  Sessions submitted before restart have been cleared. "
                 "Submission wizard re-opened — please re-submit all sessions.",
             )
@@ -551,10 +584,14 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
 
         # Notify the log channel so the LM knows to re-run the command.
         try:
+            async with get_connection(bot.db_path) as _rdb:  # type: ignore[attr-defined]
+                _rcur = await _rdb.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
+                _rrow = await _rcur.fetchone()
+            _round_label = f"R{_rrow['round_number']}" if _rrow else f"id={round_id}"
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 server_id,
                 f"System | Bot restarted mid-amendment | Notice\n"
-                f"  round_id: {round_id}, session: {session_type.replace('_', ' ').title()}\n"
+                f"  round: {_round_label}, session: {session_type.replace('_', ' ').title()}\n"
                 "  Amendment channel deleted. Please re-run /round results amend.",
             )
         except Exception:

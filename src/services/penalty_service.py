@@ -39,6 +39,7 @@ def validate_penalty_input(
     session_type: SessionType,
     penalty_value: str,
     current_time_ms: int | None = None,
+    current_time_penalty_s: int | None = None,
 ) -> StagedPenalty | str:
     """Parse penalty_value for the given session.
 
@@ -51,6 +52,10 @@ def validate_penalty_input(
         current_time_ms: The driver's current total race time in milliseconds.
             When provided, negative penalties are rejected if they would make
             the resulting time negative.  Pass ``None`` to skip this check.
+        current_time_penalty_s: The driver's currently applied time penalty in
+            seconds (``post_race_time_penalties`` column).  When provided,
+            negative penalties are rejected if their absolute value exceeds
+            this figure — you cannot remove more penalty than was applied.
     """
     pv = penalty_value.strip().upper()
 
@@ -72,6 +77,13 @@ def validate_penalty_input(
     seconds = int(m.group(1))
     if seconds == 0:
         return "Penalty must be a non-zero number of seconds."
+
+    if seconds < 0 and current_time_penalty_s is not None:
+        if abs(seconds) > current_time_penalty_s:
+            return (
+                f"A {seconds}s penalty cannot be applied — the driver only has "
+                f"{current_time_penalty_s}s of time penalties in this session."
+            )
 
     if seconds < 0 and current_time_ms is not None:
         resulting_ms = current_time_ms + seconds * 1000

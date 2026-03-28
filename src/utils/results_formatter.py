@@ -103,7 +103,9 @@ def format_race_table(
 ) -> str:
     """Render a race result as a plain-text mention list.
 
-    Format per line: {pos}. @Driver (@&Team) — {total_time}{penalty_suffix} — {pts} pts
+    Format per line:
+      {pos}. @Driver (@&Team) — {total_time} — {fastest_lap} — {time_penalties} — {pts} pts
+
     Uses display names when member_display/team_display are provided,
     otherwise falls back to Discord mention strings.
 
@@ -118,10 +120,14 @@ def format_race_table(
         driver_ref = (member_display or {}).get(row.driver_user_id) or f"<@{row.driver_user_id}>"
         team_ref = (team_display or {}).get(row.team_role_id) or f"<@&{row.team_role_id}>"
         total_time = row.total_time or row.outcome.value
-        penalty_suffix = f" (+{row.time_penalties})" if row.time_penalties and row.time_penalties not in ("—", "N/A") else ""
+        fl = (row.fastest_lap or "").strip()
+        fl_display = fl if fl and fl.upper() not in ("N/A", "") else "—"
+        tp = (row.time_penalties or "").strip()
+        tp_display = tp if tp and tp.upper() not in ("N/A", "") else "—"
         pts = points_by_driver.get(row.driver_user_id, 0)
         lines.append(
-            f"**{row.finishing_position}.** {driver_ref} ({team_ref}) — {total_time}{penalty_suffix} — **{pts} pts**"
+            f"**{row.finishing_position}.** {driver_ref} ({team_ref})"
+            f" — {total_time} — {fl_display} — {tp_display} — **{pts} pts**"
         )
         if row.fastest_lap_bonus > 0:
             fl_driver_id = row.driver_user_id

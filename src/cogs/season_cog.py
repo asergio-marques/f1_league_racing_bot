@@ -170,6 +170,11 @@ class SeasonCog(commands.Cog):
             "When done, run `/season review` to review and approve.",
             ephemeral=True,
         )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season setup | Success\n"
+            f"  season: Season #{cfg.season_number} (F1 {cfg.game_edition})",
+        )
 
     @season.command(
         name="review",
@@ -402,8 +407,7 @@ class SeasonCog(commands.Cog):
                 if channel is not None:
                     await channel.send(
                         "\U0001f4e2 **Season Cancelled**\n"
-                        "The active season has been cancelled by an administrator. "
-                        "All data has been deleted."
+                        "The active season has been cancelled by an administrator."
                     )
             except Exception:
                 log.exception("Failed to post cancellation notice for division %s", div.name)
@@ -414,12 +418,10 @@ class SeasonCog(commands.Cog):
                 self.bot.scheduler_service.cancel_round(rnd.id)
         self.bot.scheduler_service.cancel_season_end(interaction.guild_id)
 
-        await self.bot.season_service.delete_season(season.id)
-
-        await self.bot.season_service.increment_previous_season_number(interaction.guild_id)
+        await self.bot.season_service.cancel_season(season.id)
 
         await interaction.followup.send(
-            "\u2705 Season cancelled and all data deleted.",
+            "\u2705 Season cancelled.",
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
@@ -1583,6 +1585,22 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        # Guard: block cancel if results have already been submitted for this round
+        from db.database import get_connection
+        async with get_connection(self.bot.db_path) as _db:
+            _cur = await _db.execute(
+                "SELECT COUNT(*) FROM session_results WHERE round_id = ? AND status = 'ACTIVE'",
+                (rnd.id,),
+            )
+            _row = await _cur.fetchone()
+        if _row and _row[0] > 0:
+            await interaction.response.send_message(
+                f"\u274c Cannot cancel Round {round_number} — results have already been "
+                "submitted for this round.",
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.defer(ephemeral=True)
 
         self.bot.scheduler_service.cancel_round(rnd.id)
@@ -1703,7 +1721,11 @@ class SeasonCog(commands.Cog):
 
         if chosen_session_type is None:
             # Ask user to select which session to amend (ephemeral in the command channel)
-            session_types_present = [SessionType(r["session_type"]) for r in sr_rows]
+            _stype_order = list(SessionType)
+            session_types_present = sorted(
+                [SessionType(r["session_type"]) for r in sr_rows],
+                key=lambda s: _stype_order.index(s),
+            )
             _LABEL = {
                 SessionType.SPRINT_QUALIFYING: "Sprint Qualifying",
                 SessionType.SPRINT_RACE: "Sprint Race",
@@ -1874,18 +1896,35 @@ class SeasonCog(commands.Cog):
             cancel_task = self.bot.loop.create_task(cancel_view.wait())
 
             import asyncio as _asyncio
+            _AMEND_TIMEOUT_S = 300  # 5 minutes
             done, pending = await _asyncio.wait(
                 {done_task, cancel_task},
                 return_when=_asyncio.FIRST_COMPLETED,
+                timeout=_AMEND_TIMEOUT_S,
             )
             for t in pending:
                 t.cancel()
+
+            if not done:
+                # Timed out — no input received within 5 minutes
+                await self.bot.output_router.post_log(
+                    interaction.guild_id,
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_TIMEOUT | "
+                    f"round {rnd.round_number} session {chosen_session_type.value}",
+                )
+                await _cleanup_channel()
+                return
 
             if cancelled_flag[0] or (cancel_task in done and not cancelled_flag[0]):
                 # Cancel button was clicked (cancel_view.wait() finished) or flag set
                 cancelled_flag[0] = True
 
             if cancelled_flag[0]:
+                await self.bot.output_router.post_log(
+                    interaction.guild_id,
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_CANCELLED | "
+                    f"round {rnd.round_number} session {chosen_session_type.value}",
+                )
                 await _cleanup_channel()
                 await interaction.followup.send("ℹ️ Amendment cancelled.", ephemeral=True)
                 return
@@ -1910,24 +1949,40 @@ class SeasonCog(commands.Cog):
                 pass
 
             if isinstance(parsed, list) and parsed and isinstance(parsed[0], str):
-                # Error list
-                error_lines = "\n".join(f"• {e}" for e in parsed[:10])
-                await amend_channel.send(
-                    f"❌ Validation errors:\n{error_lines}\nPlease resubmit."
+                # Validation failed — log and delete channel
+                await self.bot.output_router.post_log(
+                    interaction.guild_id,
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_REJECTED | "
+                    f"round {rnd.round_number} session {chosen_session_type.value}\n"
+                    f"  errors: {'; '.join(parsed[:10])}",
                 )
-                continue
+                await _cleanup_channel()
+                await interaction.followup.send(
+                    "❌ Amendment rejected — validation errors were found. "
+                    "Check the log channel for details, then re-run `/round results amend`.",
+                    ephemeral=True,
+                )
+                return
 
             # Validate FL override references a driver in the submitted results
             if fl_amend_override is not None:
                 submitted_driver_ids = {r.driver_user_id for r in parsed}
                 if fl_amend_override not in submitted_driver_ids:
                     fl_member = amend_channel.guild.get_member(int(fl_amend_override)) if amend_channel.guild else None
-                    fl_name = fl_member.display_name if fl_member else fl_amend_override
-                    await amend_channel.send(
-                        f"❌ FL override **{fl_name}** is not in the submitted results. "
-                        "Please resubmit."
+                    fl_name = fl_member.display_name if fl_member else str(fl_amend_override)
+                    await self.bot.output_router.post_log(
+                        interaction.guild_id,
+                        f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_REJECTED | "
+                        f"round {rnd.round_number} session {chosen_session_type.value}\n"
+                        f"  error: FL override {fl_name} not in submitted results",
                     )
-                    continue
+                    await _cleanup_channel()
+                    await interaction.followup.send(
+                        f"❌ Amendment rejected — FL override **{fl_name}** is not in the submitted results. "
+                        "Re-run `/round results amend` to try again.",
+                        ephemeral=True,
+                    )
+                    return
 
             # Valid — determine config name
             from services.season_points_service import get_season_config_names
@@ -1947,19 +2002,41 @@ class SeasonCog(commands.Cog):
                 config_name = cfg_view.selected or config_names[0]
 
             from services.result_submission_service import amend_session_result
-            await amend_session_result(
-                self.bot.db_path,
-                rnd.id,
-                div.id,
-                chosen_session_type,
-                parsed,  # type: ignore[arg-type]
-                config_name,
-                interaction.user.id,
-                interaction.client,
-                fl_driver_override=fl_amend_override,
+            try:
+                await amend_session_result(
+                    self.bot.db_path,
+                    rnd.id,
+                    div.id,
+                    chosen_session_type,
+                    parsed,  # type: ignore[arg-type]
+                    config_name,
+                    interaction.user.id,
+                    interaction.client,
+                    fl_driver_override=fl_amend_override,
+                )
+            except Exception as exc:
+                import traceback as _tb
+                error_summary = f"{type(exc).__name__}: {exc}"
+                await self.bot.output_router.post_log(
+                    interaction.guild_id,
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_FAILED | "
+                    f"round {rnd.round_number} session {chosen_session_type.value}\n"
+                    f"  error: {error_summary}\n"
+                    f"```\n{_tb.format_exc()[-1500:]}\n```",
+                )
+                await _cleanup_channel()
+                await interaction.followup.send(
+                    "❌ Amendment failed due to an internal error. Check the log channel for details.",
+                    ephemeral=True,
+                )
+                return
+
+            await self.bot.output_router.post_log(
+                interaction.guild_id,
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_SUCCESS | "
+                f"round {rnd.round_number} session {chosen_session_type.value} "
+                f"config: {config_name}",
             )
-            await amend_channel.send("✅ Results amended successfully. This channel will be deleted.")
-            await _asyncio.sleep(3)
             await _cleanup_channel()
             await interaction.followup.send(
                 "✅ Session amended and standings updated.", ephemeral=True
@@ -2094,10 +2171,44 @@ class SeasonCog(commands.Cog):
             return
 
         divisions = await season_svc.get_divisions(cfg.season_id)
+        div_rounds: dict[int, list] = {}
+        for div_db in divisions:
+            div_rounds[div_db.id] = await season_svc.get_division_rounds(div_db.id)
+
+        # ── Gate 0: every division must have at least one round ────────────────
+        empty_divs = [d.name for d in divisions if not div_rounds[d.id]]
+        if empty_divs:
+            names = ", ".join(f"**{n}**" for n in empty_divs)
+            msg = (
+                f"\u274c Season cannot be approved \u2014 the following divisions have no rounds: "
+                f"{names}. Add at least one round to each division first."
+            )
+            await interaction.response.send_message(msg, ephemeral=True)
+            return
+
+        # ── Gate 0b: no two rounds in the same division may share a datetime ──
+        duplicate_errors: list[str] = []
+        for div_db in divisions:
+            seen: set = set()
+            for rnd in div_rounds[div_db.id]:
+                if rnd.scheduled_at in seen:
+                    duplicate_errors.append(
+                        f"**{div_db.name}** has multiple rounds scheduled at `{rnd.scheduled_at}`"
+                    )
+                    break
+                seen.add(rnd.scheduled_at)
+        if duplicate_errors:
+            bullet_list = "\n\u2022 ".join(duplicate_errors)
+            msg = (
+                f"\u274c Season cannot be approved \u2014 duplicate round times detected:\n\u2022 {bullet_list}\n"
+                f"Reschedule rounds so each has a unique datetime within its division."
+            )
+            await interaction.response.send_message(msg, ephemeral=True)
+            return
+
         all_rounds = []
         for div_db in divisions:
-            rounds_db = await season_svc.get_division_rounds(div_db.id)
-            for rnd in rounds_db:
+            for rnd in div_rounds[div_db.id]:
                 await season_svc.create_sessions_for_round(rnd.id, rnd.format)
                 all_rounds.append(rnd)
 

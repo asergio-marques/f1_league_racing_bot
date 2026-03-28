@@ -173,7 +173,7 @@ class AmendmentService:
             await bot.output_router.post_log(
                 server_id,
                 f"{actor.display_name} (<@{actor.id}>) | /round amend (field) | Success\n"
-                f"  round_id: {round_id}\n"
+                f"  round: {updated_round.round_number}\n"
                 f"  field: {field}\n"
                 f"  old: {old_value}\n"
                 f"  new: {db_value}",

@@ -95,6 +95,24 @@ This registers:
 
 ---
 
+## Prefix Commands (Bot Owner)
+
+These are traditional `!` prefix commands restricted to the **bot owner** (the account that owns the Discord application). They are hidden from the slash command menu.
+
+### `!sync` — Sync slash command tree
+
+Clears any guild-scoped command overrides and pushes the latest global slash command schema. Use this immediately after deploying changes to avoid waiting up to an hour for Discord's default propagation delay.
+
+**What it does:**
+1. Clears any guild-specific command overrides for the current server
+2. Syncs the cleared guild state (removes leftover duplicates)
+3. Pushes the full global command tree to Discord
+4. Confirms with the count of synced commands (message auto-deletes after 15 seconds)
+
+> **Note:** The bot requires **Manage Messages** in the channel you run this from to delete your `!sync` invocation. If it lacks that permission the command still runs successfully — the original message just won't be removed.
+
+---
+
 ## Slash Commands
 
 ### `/bot-init` — One-time server setup
@@ -722,7 +740,27 @@ No parameters. Displays a diff of the staged changes against the current season 
 ---
 
 #### Reserve Driver Visibility
+##### `/results standings sync` — Force a full standings repost for a division
+*Access: Trusted admin*
 
+| Parameter | Type | Required | Description |
+|-----------|------|----------|--------------|
+| `division` | String | ✅ | Division name |
+
+Deletes every existing standings Discord message for the division and reposts fresh standings for each round that has results, in round order. Useful after manual data corrections or if standings messages were accidentally deleted.
+
+---
+
+##### `/results rounds sync` — Force a full results repost for a division
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|--------------|
+| `division` | String | ✅ | Division name |
+
+Deletes every existing session results Discord message for the division and reposts fresh results for each session of each round, in round order. Useful after manual data corrections or if results messages were accidentally deleted.
+
+---
 ##### `/results reserves toggle` — Toggle reserve driver visibility in standings
 *Access: Trusted admin*
 

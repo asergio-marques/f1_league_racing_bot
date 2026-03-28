@@ -491,3 +491,124 @@ def test_extract_fl_override_non_matching_first_line():
     assert fl_id is None
     assert remaining is lines
 
+
+# ---------------------------------------------------------------------------
+# Race result ordering — lap-gap / outcome hierarchy
+# ---------------------------------------------------------------------------
+
+def _make_race_block(lines):
+    return validate_submission_block(
+        lines,
+        session_type=SessionType.FEATURE_RACE,
+        division_driver_ids={100, 200, 300, 400},
+        team_role_ids={500, 600, 700, 800},
+        reserve_team_role_id=None,
+        driver_team_map={100: 500, 200: 600, 300: 700, 400: 800},
+    )
+
+
+def test_race_ordering_lap_gap_before_lead_lap_rejected():
+    """A driver with '+1 Lap' must not appear before a driver with a lead-lap time."""
+    lines = [
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
+        "2, <@200>, <@&600>, +1 Lap, 1:26.000, N/A",
+        "3, <@300>, <@&700>, +5.321, 1:27.000, N/A",   # lead-lap delta after a lap-gap
+    ]
+    result = _make_race_block(lines)
+    assert isinstance(result, list)
+    assert all(isinstance(r, str) for r in result)
+    combined = " ".join(result)
+    assert "lap" in combined.lower() or "order" in combined.lower() or "lead" in combined.lower()
+
+
+def test_race_ordering_outcome_before_lead_lap_rejected():
+    """A DNS/DNF/DSQ must not appear before a driver with a lead-lap time."""
+    lines = [
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
+        "2, <@200>, <@&600>, DNS, N/A, N/A",
+        "3, <@300>, <@&700>, +5.321, 1:27.000, N/A",   # lead-lap after DNS
+    ]
+    result = _make_race_block(lines)
+    assert isinstance(result, list)
+    assert all(isinstance(r, str) for r in result)
+
+
+def test_race_ordering_outcome_before_lap_gap_rejected():
+    """A DNS/DNF/DSQ must not appear before a lapped driver."""
+    lines = [
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
+        "2, <@200>, <@&600>, DNF, N/A, N/A",
+        "3, <@300>, <@&700>, +1 Lap, 1:27.000, N/A",   # lap-gap after DNF
+    ]
+    result = _make_race_block(lines)
+    assert isinstance(result, list)
+    assert all(isinstance(r, str) for r in result)
+
+
+def test_race_ordering_valid_full_field_accepted():
+    """Correct ordering: lead-lap → lap-gap → DNS/DSQ is accepted."""
+    lines = [
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
+        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A",
+        "3, <@300>, <@&700>, +1 Lap, 1:27.000, N/A",
+        "4, <@400>, <@&800>, DNS, N/A, N/A",
+    ]
+    result = _make_race_block(lines)
+    assert isinstance(result, list)
+    assert all(isinstance(r, ParsedRaceRow) for r in result)
+
+
+def test_race_ordering_all_lead_lap_accepted():
+    """All drivers finishing on the lead lap (no gaps) is always valid."""
+    lines = [
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
+        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A",
+        "3, <@300>, <@&700>, +10.000, 1:27.000, N/A",
+        "4, <@400>, <@&800>, +15.444, 1:28.000, N/A",
+    ]
+    result = _make_race_block(lines)
+    assert isinstance(result, list)
+    assert all(isinstance(r, ParsedRaceRow) for r in result)
+
+
+def test_race_ordering_decreasing_lap_count_rejected():
+    """A driver 2 laps down cannot appear ahead of a driver 1 lap down."""
+    lines = [
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
+        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A",
+        "3, <@300>, <@&700>, +2 Laps, 1:27.000, N/A",
+        "4, <@400>, <@&800>, +1 Lap, 1:28.000, N/A",  # 1 < 2 — invalid
+    ]
+    result = _make_race_block(lines)
+    assert isinstance(result, list)
+    assert all(isinstance(r, str) for r in result)
+    combined = " ".join(result)
+    assert "lap" in combined.lower()
+
+
+def test_race_ordering_increasing_lap_count_accepted():
+    """Correctly ordered lapped drivers (1 then 2 laps down) must be accepted."""
+    lines = [
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
+        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A",
+        "3, <@300>, <@&700>, +1 Lap, 1:27.000, N/A",
+        "4, <@400>, <@&800>, +2 Laps, 1:28.000, N/A",
+    ]
+    result = _make_race_block(lines)
+    assert isinstance(result, list)
+    assert all(isinstance(r, ParsedRaceRow) for r in result)
+
+
+def test_race_ordering_equal_lap_count_accepted():
+    """Two drivers on the same lap count (both +1 Lap) is valid."""
+    lines = [
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
+        "2, <@200>, <@&600>, +1 Lap, 1:26.000, N/A",
+        "3, <@300>, <@&700>, +1 Lap, 1:27.000, N/A",
+        "4, <@400>, <@&800>, DNS, N/A, N/A",
+    ]
+    result = _make_race_block(lines)
+    assert isinstance(result, list)
+    assert all(isinstance(r, ParsedRaceRow) for r in result)
+
+

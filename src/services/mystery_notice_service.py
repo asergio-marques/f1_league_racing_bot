@@ -56,4 +56,9 @@ async def run_mystery_notice(round_id: int, bot: "Bot") -> None:
     )
     if msg is not None:
         await store_forecast_message(round_id, row["division_id"], 0, msg, bot.db_path)
+
+    async with get_connection(bot.db_path) as db:
+        await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = ?", (round_id,))
+        await db.commit()
+
     log.info("Mystery notice posted for round %s.", round_id)

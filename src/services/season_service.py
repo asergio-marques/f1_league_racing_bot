@@ -129,6 +129,20 @@ class SeasonService:
             row = await cursor.fetchone()
         return row[0] if row else 0
 
+    async def count_persisted_seasons(self, server_id: int) -> int:
+        """Return the count of all persisted (non-SETUP) seasons for *server_id*.
+
+        Includes ACTIVE, COMPLETED, and CANCELLED seasons — every season whose
+        number has already been committed.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT COUNT(id) FROM seasons WHERE server_id = ? AND status != 'SETUP'",
+                (server_id,),
+            )
+            row = await cursor.fetchone()
+        return row[0] if row else 0
+
     async def complete_season(self, season_id: int) -> None:
         """Transition a season to COMPLETED (archive it in-place)."""
         async with get_connection(self._db_path) as db:
@@ -138,11 +152,20 @@ class SeasonService:
             )
             await db.commit()
 
+    async def cancel_season(self, season_id: int) -> None:
+        """Transition a season to CANCELLED (immutable, all data preserved)."""
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE seasons SET status = 'CANCELLED' WHERE id = ?",
+                (season_id,),
+            )
+            await db.commit()
+
     async def assert_season_mutable(self, season: "Season") -> None:
-        """Raise SeasonImmutableError if *season* is COMPLETED."""
-        if season.status == SeasonStatus.COMPLETED:
+        """Raise SeasonImmutableError if *season* is COMPLETED or CANCELLED."""
+        if season.status in (SeasonStatus.COMPLETED, SeasonStatus.CANCELLED):
             raise SeasonImmutableError(
-                f"Season {season.season_number} is archived (COMPLETED) and cannot be modified."
+                f"Season {season.season_number} is archived and cannot be modified."
             )
 
     async def save_pending_snapshot(
@@ -172,8 +195,10 @@ class SeasonService:
                 row = await cursor.fetchone()
                 season_number: int = row[0] if row else 1
             else:
-                # First snapshot: season_number = completed seasons + 1
-                season_number = await self.count_completed_seasons(server_id) + 1
+                # First snapshot: season_number = count of all persisted seasons + 1.
+                # Persisted seasons (ACTIVE, COMPLETED, CANCELLED) have already used their
+                # number, so the next season is simply one higher than that tally.
+                season_number = await self.count_persisted_seasons(server_id) + 1
 
             if existing_season_id != 0:
                 # Save division_results_config keyed by division name so we can
@@ -967,7 +992,7 @@ class SeasonService:
             row = await cursor.fetchone()
             division_id = row["division_id"] if row else None
 
-            if row and row["season_status"] == "COMPLETED":
+            if row and row["season_status"] in ("COMPLETED", "CANCELLED"):
                 raise SeasonImmutableError(
                     f"Round {round_id} belongs to an archived season and cannot be cancelled."
                 )
