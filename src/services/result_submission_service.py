@@ -1147,6 +1147,55 @@ def validate_submission_block(
     if errors:
         return errors
 
+    # Race ordering: positions must respect time-type hierarchy.
+    # Lead-lap times (abs/delta) → lapped drivers (lap gap) → non-finishers (DNS/DNF/DSQ).
+    # A lower position number must never have a higher category than a subsequent driver.
+    if not is_qualifying:
+        def _race_time_category(row: "ParsedRaceRow") -> int:
+            tt = row.total_time.upper()
+            if tt in _OUTCOME_LITERALS:
+                return 2  # DNS / DNF / DSQ
+            if _LAP_GAP_RE.match(row.total_time):
+                return 1  # lapped finisher
+            return 0      # lead-lap finisher (absolute or delta time)
+
+        _CATEGORY_LABEL = {0: "lead-lap time", 1: "lap gap (+x Laps)", 2: "DNS/DNF/DSQ"}
+        rows_by_pos = sorted(parsed_rows, key=lambda r: r.position)
+        max_cat = 0
+        for row in rows_by_pos:
+            cat = _race_time_category(row)
+            if cat < max_cat:
+                errors.append(
+                    f"Row {row.position}: driver <@{row.driver_user_id}> has a "
+                    f"{_CATEGORY_LABEL[cat]} but appears after a "
+                    f"{_CATEGORY_LABEL[max_cat]} entry. "
+                    "Finishing order must be: lead-lap finishers first, "
+                    "then lapped drivers (+x Laps), then DNS/DNF/DSQ."
+                )
+                break
+            max_cat = max(max_cat, cat)
+
+        # Within lapped drivers, lap counts must be non-decreasing with position.
+        _LAP_INT_RE = re.compile(r"(\d+)")
+        prev_lap_count: int | None = None
+        for row in rows_by_pos:
+            if _LAP_GAP_RE.match(row.total_time):
+                m = _LAP_INT_RE.search(row.total_time)
+                if m:
+                    lap_count = int(m.group(1))
+                    if prev_lap_count is not None and lap_count < prev_lap_count:
+                        errors.append(
+                            f"Row {row.position}: driver <@{row.driver_user_id}> "
+                            f"is {lap_count} lap(s) behind but appears after a driver "
+                            f"who is {prev_lap_count} lap(s) behind. "
+                            "Lap counts must be non-decreasing with position."
+                        )
+                        break
+                    prev_lap_count = lap_count
+
+    if errors:
+        return errors
+
     # G1: derive Best Lap for qualifying DNF entries that have a valid gap
     if is_qualifying:
         p1_row = next((r for r in parsed_rows if r.position == 1), None)
