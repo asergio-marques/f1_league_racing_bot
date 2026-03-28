@@ -2094,10 +2094,44 @@ class SeasonCog(commands.Cog):
             return
 
         divisions = await season_svc.get_divisions(cfg.season_id)
+        div_rounds: dict[int, list] = {}
+        for div_db in divisions:
+            div_rounds[div_db.id] = await season_svc.get_division_rounds(div_db.id)
+
+        # ── Gate 0: every division must have at least one round ────────────────
+        empty_divs = [d.name for d in divisions if not div_rounds[d.id]]
+        if empty_divs:
+            names = ", ".join(f"**{n}**" for n in empty_divs)
+            msg = (
+                f"\u274c Season cannot be approved \u2014 the following divisions have no rounds: "
+                f"{names}. Add at least one round to each division first."
+            )
+            await interaction.response.send_message(msg, ephemeral=True)
+            return
+
+        # ── Gate 0b: no two rounds in the same division may share a datetime ──
+        duplicate_errors: list[str] = []
+        for div_db in divisions:
+            seen: set = set()
+            for rnd in div_rounds[div_db.id]:
+                if rnd.scheduled_at in seen:
+                    duplicate_errors.append(
+                        f"**{div_db.name}** has multiple rounds scheduled at `{rnd.scheduled_at}`"
+                    )
+                    break
+                seen.add(rnd.scheduled_at)
+        if duplicate_errors:
+            bullet_list = "\n\u2022 ".join(duplicate_errors)
+            msg = (
+                f"\u274c Season cannot be approved \u2014 duplicate round times detected:\n\u2022 {bullet_list}\n"
+                f"Reschedule rounds so each has a unique datetime within its division."
+            )
+            await interaction.response.send_message(msg, ephemeral=True)
+            return
+
         all_rounds = []
         for div_db in divisions:
-            rounds_db = await season_svc.get_division_rounds(div_db.id)
-            for rnd in rounds_db:
+            for rnd in div_rounds[div_db.id]:
                 await season_svc.create_sessions_for_round(rnd.id, rnd.format)
                 all_rounds.append(rnd)
 
