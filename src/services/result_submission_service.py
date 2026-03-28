@@ -301,7 +301,11 @@ async def enter_penalty_state(
         )
         sr_rows = await sr_cursor.fetchall()
 
-    session_types_present = [SessionType(r["session_type"]) for r in sr_rows]
+    _stype_order = list(SessionType)
+    session_types_present = sorted(
+        [SessionType(r["session_type"]) for r in sr_rows],
+        key=lambda s: _stype_order.index(s),
+    )
 
     # ------------------------------------------------------------------
     # Step 3: Build state and post the penalty review prompt

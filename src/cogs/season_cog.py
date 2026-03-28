@@ -1705,7 +1705,11 @@ class SeasonCog(commands.Cog):
 
         if chosen_session_type is None:
             # Ask user to select which session to amend (ephemeral in the command channel)
-            session_types_present = [SessionType(r["session_type"]) for r in sr_rows]
+            _stype_order = list(SessionType)
+            session_types_present = sorted(
+                [SessionType(r["session_type"]) for r in sr_rows],
+                key=lambda s: _stype_order.index(s),
+            )
             _LABEL = {
                 SessionType.SPRINT_QUALIFYING: "Sprint Qualifying",
                 SessionType.SPRINT_RACE: "Sprint Race",
