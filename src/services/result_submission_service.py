@@ -1694,6 +1694,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # ------------------------------------------------------------------
     # 8. Per-session collection loop
     # ------------------------------------------------------------------
+    cancelled_sessions: set[SessionType] = set()
     for session_type in sessions:
         label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
 
@@ -1733,6 +1734,11 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                     driver_rows=[],
                 )
                 await sub_channel.send(f"✅ **{label}** marked as CANCELLED.")
+                await results_channel.send(
+                    f"🚫 **Round {round_number} — {label}** ({division_name}): "
+                    "This session was cancelled."
+                )
+                cancelled_sessions.add(session_type)
                 break
 
             # Validate the block
@@ -1862,5 +1868,12 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # ------------------------------------------------------------------
     # 9+10. Enter penalty-review state (posts interim results/standings,
     #       keeps channel open, posts penalty review prompt).
+    #       Skip entirely if every session was cancelled — nothing to review.
     # ------------------------------------------------------------------
+    if cancelled_sessions == set(sessions):
+        await sub_channel.send(
+            "⏭️ All sessions for this round were cancelled — no penalty review required."
+        )
+        await close_submission_channel(sub_channel.id, round_id, guild, db_path)
+        return
     await enter_penalty_state(bot, guild, round_id, division_id, sub_channel, season_id=season_id)

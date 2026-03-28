@@ -1585,6 +1585,22 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        # Guard: block cancel if results have already been submitted for this round
+        from db.database import get_connection
+        async with get_connection(self.bot.db_path) as _db:
+            _cur = await _db.execute(
+                "SELECT COUNT(*) FROM session_results WHERE round_id = ? AND status = 'ACTIVE'",
+                (rnd.id,),
+            )
+            _row = await _cur.fetchone()
+        if _row and _row[0] > 0:
+            await interaction.response.send_message(
+                f"\u274c Cannot cancel Round {round_number} — results have already been "
+                "submitted for this round.",
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.defer(ephemeral=True)
 
         self.bot.scheduler_service.cancel_round(rnd.id)
