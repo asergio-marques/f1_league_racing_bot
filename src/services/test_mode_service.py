@@ -196,9 +196,9 @@ async def get_next_pending_phase(
 
     # ── Fallback: any round whose result submission is still pending ───────────
     # Result submission is always detected via DB state, not via the APScheduler
-    # job store, because:
-    #   - results_r{id} jobs for past dates auto-fire immediately when added (test mode)
-    #   - MYSTERY rounds never get a results_r APScheduler job at all
+    # job store, because results_r{id} jobs for past dates auto-fire immediately
+    # when added in test mode — using the job store would cause double-triggering.
+    # MYSTERY rounds gate result submission on phase1_done=1 (notice sent first).
     # A round needs results when the results module is enabled, all applicable
     # scheduler-backed work is done (no pending jobs above), and no ACTIVE
     # session_result exists for it.
