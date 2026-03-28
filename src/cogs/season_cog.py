@@ -1880,18 +1880,35 @@ class SeasonCog(commands.Cog):
             cancel_task = self.bot.loop.create_task(cancel_view.wait())
 
             import asyncio as _asyncio
+            _AMEND_TIMEOUT_S = 300  # 5 minutes
             done, pending = await _asyncio.wait(
                 {done_task, cancel_task},
                 return_when=_asyncio.FIRST_COMPLETED,
+                timeout=_AMEND_TIMEOUT_S,
             )
             for t in pending:
                 t.cancel()
+
+            if not done:
+                # Timed out — no input received within 5 minutes
+                await self.bot.output_router.post_log(
+                    interaction.guild_id,
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_TIMEOUT | "
+                    f"round {rnd.round_number} session {chosen_session_type.value}",
+                )
+                await _cleanup_channel()
+                return
 
             if cancelled_flag[0] or (cancel_task in done and not cancelled_flag[0]):
                 # Cancel button was clicked (cancel_view.wait() finished) or flag set
                 cancelled_flag[0] = True
 
             if cancelled_flag[0]:
+                await self.bot.output_router.post_log(
+                    interaction.guild_id,
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_CANCELLED | "
+                    f"round {rnd.round_number} session {chosen_session_type.value}",
+                )
                 await _cleanup_channel()
                 await interaction.followup.send("ℹ️ Amendment cancelled.", ephemeral=True)
                 return
@@ -1916,24 +1933,40 @@ class SeasonCog(commands.Cog):
                 pass
 
             if isinstance(parsed, list) and parsed and isinstance(parsed[0], str):
-                # Error list
-                error_lines = "\n".join(f"• {e}" for e in parsed[:10])
-                await amend_channel.send(
-                    f"❌ Validation errors:\n{error_lines}\nPlease resubmit."
+                # Validation failed — log and delete channel
+                await self.bot.output_router.post_log(
+                    interaction.guild_id,
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_REJECTED | "
+                    f"round {rnd.round_number} session {chosen_session_type.value}\n"
+                    f"  errors: {'; '.join(parsed[:10])}",
                 )
-                continue
+                await _cleanup_channel()
+                await interaction.followup.send(
+                    "❌ Amendment rejected — validation errors were found. "
+                    "Check the log channel for details, then re-run `/round results amend`.",
+                    ephemeral=True,
+                )
+                return
 
             # Validate FL override references a driver in the submitted results
             if fl_amend_override is not None:
                 submitted_driver_ids = {r.driver_user_id for r in parsed}
                 if fl_amend_override not in submitted_driver_ids:
                     fl_member = amend_channel.guild.get_member(int(fl_amend_override)) if amend_channel.guild else None
-                    fl_name = fl_member.display_name if fl_member else fl_amend_override
-                    await amend_channel.send(
-                        f"❌ FL override **{fl_name}** is not in the submitted results. "
-                        "Please resubmit."
+                    fl_name = fl_member.display_name if fl_member else str(fl_amend_override)
+                    await self.bot.output_router.post_log(
+                        interaction.guild_id,
+                        f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_REJECTED | "
+                        f"round {rnd.round_number} session {chosen_session_type.value}\n"
+                        f"  error: FL override {fl_name} not in submitted results",
                     )
-                    continue
+                    await _cleanup_channel()
+                    await interaction.followup.send(
+                        f"❌ Amendment rejected — FL override **{fl_name}** is not in the submitted results. "
+                        "Re-run `/round results amend` to try again.",
+                        ephemeral=True,
+                    )
+                    return
 
             # Valid — determine config name
             from services.season_points_service import get_season_config_names
@@ -1953,19 +1986,41 @@ class SeasonCog(commands.Cog):
                 config_name = cfg_view.selected or config_names[0]
 
             from services.result_submission_service import amend_session_result
-            await amend_session_result(
-                self.bot.db_path,
-                rnd.id,
-                div.id,
-                chosen_session_type,
-                parsed,  # type: ignore[arg-type]
-                config_name,
-                interaction.user.id,
-                interaction.client,
-                fl_driver_override=fl_amend_override,
+            try:
+                await amend_session_result(
+                    self.bot.db_path,
+                    rnd.id,
+                    div.id,
+                    chosen_session_type,
+                    parsed,  # type: ignore[arg-type]
+                    config_name,
+                    interaction.user.id,
+                    interaction.client,
+                    fl_driver_override=fl_amend_override,
+                )
+            except Exception as exc:
+                import traceback as _tb
+                error_summary = f"{type(exc).__name__}: {exc}"
+                await self.bot.output_router.post_log(
+                    interaction.guild_id,
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_FAILED | "
+                    f"round {rnd.round_number} session {chosen_session_type.value}\n"
+                    f"  error: {error_summary}\n"
+                    f"```\n{_tb.format_exc()[-1500:]}\n```",
+                )
+                await _cleanup_channel()
+                await interaction.followup.send(
+                    "❌ Amendment failed due to an internal error. Check the log channel for details.",
+                    ephemeral=True,
+                )
+                return
+
+            await self.bot.output_router.post_log(
+                interaction.guild_id,
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_SUCCESS | "
+                f"round {rnd.round_number} session {chosen_session_type.value} "
+                f"config: {config_name}",
             )
-            await amend_channel.send("✅ Results amended successfully. This channel will be deleted.")
-            await _asyncio.sleep(3)
             await _cleanup_channel()
             await interaction.followup.send(
                 "✅ Session amended and standings updated.", ephemeral=True

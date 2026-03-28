@@ -520,10 +520,14 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         # Notify the log channel so the LM knows to re-submit any sessions
         # that were in progress when the bot was terminated.
         try:
+            async with get_connection(bot.db_path) as _rdb:  # type: ignore[attr-defined]
+                _rcur = await _rdb.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
+                _rrow = await _rcur.fetchone()
+            _round_label = f"R{_rrow['round_number']}" if _rrow else f"id={round_id}"
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 server_id,
                 f"System | Bot restarted mid-result-submission | Notice\n"
-                f"  round_id: {round_id}\n"
+                f"  round: {_round_label}\n"
                 "  Sessions submitted before restart have been cleared. "
                 "Submission wizard re-opened — please re-submit all sessions.",
             )
@@ -580,10 +584,14 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
 
         # Notify the log channel so the LM knows to re-run the command.
         try:
+            async with get_connection(bot.db_path) as _rdb:  # type: ignore[attr-defined]
+                _rcur = await _rdb.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
+                _rrow = await _rcur.fetchone()
+            _round_label = f"R{_rrow['round_number']}" if _rrow else f"id={round_id}"
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 server_id,
                 f"System | Bot restarted mid-amendment | Notice\n"
-                f"  round_id: {round_id}, session: {session_type.replace('_', ' ').title()}\n"
+                f"  round: {_round_label}, session: {session_type.replace('_', ' ').title()}\n"
                 "  Amendment channel deleted. Please re-run /round results amend.",
             )
         except Exception:
