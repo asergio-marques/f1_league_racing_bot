@@ -402,8 +402,7 @@ class SeasonCog(commands.Cog):
                 if channel is not None:
                     await channel.send(
                         "\U0001f4e2 **Season Cancelled**\n"
-                        "The active season has been cancelled by an administrator. "
-                        "All data has been deleted."
+                        "The active season has been cancelled by an administrator."
                     )
             except Exception:
                 log.exception("Failed to post cancellation notice for division %s", div.name)
@@ -414,12 +413,10 @@ class SeasonCog(commands.Cog):
                 self.bot.scheduler_service.cancel_round(rnd.id)
         self.bot.scheduler_service.cancel_season_end(interaction.guild_id)
 
-        await self.bot.season_service.delete_season(season.id)
-
-        await self.bot.season_service.increment_previous_season_number(interaction.guild_id)
+        await self.bot.season_service.cancel_season(season.id)
 
         await interaction.followup.send(
-            "\u2705 Season cancelled and all data deleted.",
+            "\u2705 Season cancelled.",
             ephemeral=True,
         )
         await self.bot.output_router.post_log(

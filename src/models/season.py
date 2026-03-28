@@ -11,6 +11,7 @@ class SeasonStatus(str, Enum):
     SETUP = "SETUP"
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
 
 
 @dataclass
