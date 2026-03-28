@@ -46,7 +46,8 @@ async def db_path(tmp_path):
                 signups_open             INTEGER NOT NULL DEFAULT 0,
                 signup_button_message_id INTEGER,
                 selected_tracks_json     TEXT NOT NULL DEFAULT '[]',
-                signup_closed_message_id INTEGER
+                signup_closed_message_id INTEGER,
+                close_at                 TEXT
             );
 
             CREATE TABLE signup_module_settings (
