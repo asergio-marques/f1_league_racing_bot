@@ -229,7 +229,8 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
     )
 
     def __init__(self, state: PenaltyReviewState, session_type: SessionType) -> None:
-        super().__init__()
+        session_label = session_type.value.replace("_", " ").title()
+        super().__init__(title=f"Add Penalty — {session_label}")
         self.state = state
         self.session_type = session_type
 
@@ -261,7 +262,7 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
         async with get_connection(self.state.db_path) as db:
             cursor = await db.execute(
                 """
-                SELECT dsr.id, dsr.total_time
+                SELECT dsr.id, dsr.total_time, dsr.post_race_time_penalties
                 FROM session_results sr
                 JOIN driver_session_results dsr ON dsr.session_result_id = sr.id
                 WHERE sr.round_id = ? AND sr.session_type = ? AND sr.status = 'ACTIVE'
@@ -283,6 +284,21 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
         current_time_ms: int | None = None
         if dr_row["total_time"]:
             current_time_ms = _time_to_ms(dr_row["total_time"])
+        current_time_penalty_s: int | None = dr_row["post_race_time_penalties"]
+
+        # Adjust for TIME penalties already staged in this wizard session for the
+        # same driver+session — a second negative penalty must not exceed whatever
+        # headroom remains after previously staged reductions.
+        if current_time_penalty_s is not None:
+            staged_adjustment = sum(
+                sp.penalty_seconds
+                for sp in self.state.staged
+                if sp.driver_user_id == driver_user_id
+                and sp.session_type == self.session_type
+                and sp.penalty_type == "TIME"
+                and sp.penalty_seconds is not None
+            )
+            current_time_penalty_s += staged_adjustment
 
         # Validate the penalty value (T017)
         result = validate_penalty_input(
@@ -290,6 +306,7 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
             session_type=self.session_type,
             penalty_value=self.penalty_input.value,
             current_time_ms=current_time_ms,
+            current_time_penalty_s=current_time_penalty_s,
         )
         if isinstance(result, str):
             await interaction.followup.send(f"❌ {result}", ephemeral=True)
