@@ -32,6 +32,33 @@ _CID_AV_APPROVE       = "pw_av_approve"
 
 
 # ---------------------------------------------------------------------------
+# Time-penalty parsing helper
+# ---------------------------------------------------------------------------
+
+def _parse_penalty_seconds(raw: str | None) -> int:
+    """Parse a ``time_penalties`` TEXT value to integer seconds.
+
+    Accepts formats stored by the submission validator: ``"SS.mmm"``,
+    ``"M:SS.mmm"``, ``"H:MM:SS.mmm"``, ``"N/A"``, or ``None``.
+    Returns 0 for ``None``, ``"N/A"``, or any unparseable value.
+    """
+    if not raw or raw.strip().upper() == "N/A":
+        return 0
+    s = raw.strip().lstrip("+")
+    try:
+        parts = s.split(":")
+        if len(parts) == 1:
+            return int(float(parts[0]))
+        if len(parts) == 2:
+            return int(parts[0]) * 60 + int(float(parts[1]))
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(float(parts[2]))
+    except (ValueError, IndexError):
+        return 0
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # State
 # ---------------------------------------------------------------------------
 
@@ -262,7 +289,7 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
         async with get_connection(self.state.db_path) as db:
             cursor = await db.execute(
                 """
-                SELECT dsr.id, dsr.total_time, dsr.post_race_time_penalties
+                SELECT dsr.id, dsr.total_time, dsr.time_penalties, dsr.post_race_time_penalties
                 FROM session_results sr
                 JOIN driver_session_results dsr ON dsr.session_result_id = sr.id
                 WHERE sr.round_id = ? AND sr.session_type = ? AND sr.status = 'ACTIVE'
@@ -284,21 +311,26 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
         current_time_ms: int | None = None
         if dr_row["total_time"]:
             current_time_ms = _time_to_ms(dr_row["total_time"])
-        current_time_penalty_s: int | None = dr_row["post_race_time_penalties"]
+        # Total removable budget = original race time penalty + any wizard-applied penalty.
+        # post_race_time_penalties is NULL (Python None) when no wizard penalty has been
+        # applied yet; treat it as 0 so the negative-penalty guard always runs.
+        _base_pen_s: int = _parse_penalty_seconds(dr_row["time_penalties"])
+        _post_pen_raw = dr_row["post_race_time_penalties"]
+        _post_pen_s: int = int(_post_pen_raw) if _post_pen_raw is not None else 0
+        current_time_penalty_s: int = _base_pen_s + _post_pen_s
 
         # Adjust for TIME penalties already staged in this wizard session for the
         # same driver+session — a second negative penalty must not exceed whatever
         # headroom remains after previously staged reductions.
-        if current_time_penalty_s is not None:
-            staged_adjustment = sum(
-                sp.penalty_seconds
-                for sp in self.state.staged
-                if sp.driver_user_id == driver_user_id
-                and sp.session_type == self.session_type
-                and sp.penalty_type == "TIME"
-                and sp.penalty_seconds is not None
-            )
-            current_time_penalty_s += staged_adjustment
+        staged_adjustment = sum(
+            sp.penalty_seconds
+            for sp in self.state.staged
+            if sp.driver_user_id == driver_user_id
+            and sp.session_type == self.session_type
+            and sp.penalty_type == "TIME"
+            and sp.penalty_seconds is not None
+        )
+        current_time_penalty_s += staged_adjustment
 
         # Validate the penalty value (T017)
         result = validate_penalty_input(
