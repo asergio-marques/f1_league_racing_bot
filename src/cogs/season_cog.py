@@ -170,6 +170,11 @@ class SeasonCog(commands.Cog):
             "When done, run `/season review` to review and approve.",
             ephemeral=True,
         )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season setup | Success\n"
+            f"  season: Season #{cfg.season_number} (F1 {cfg.game_edition})",
+        )
 
     @season.command(
         name="review",
