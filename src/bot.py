@@ -131,7 +131,7 @@ async def main() -> None:
 
         # Register signup auto-close callback and recover any timers lost on restart (T021)
         from services.signup_module_service import SignupModuleService as _SignupModuleSvc
-        from db.connection import get_connection as _get_conn
+        from db.database import get_connection as _get_conn
         from datetime import datetime as _dt, timezone as _tz
 
         async def _signup_close_cb(server_id: int) -> None:
