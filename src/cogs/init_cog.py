@@ -77,8 +77,8 @@ class InitCog(commands.Cog):
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot-init | Success\n"
             f"  action: {action}\n"
             f"  interaction_role: {interaction_role.name} (<@&{interaction_role.id}>)\n"
-            f"  interaction_channel: #{interaction_channel.name}\n"
-            f"  log_channel: #{log_channel.name}",
+            f"  interaction_channel: <#{interaction_channel.id}>\n"
+            f"  log_channel: <#{log_channel.id}>",
         )
         log.info(
             "Bot configured for server %s by %s (force=%s)",

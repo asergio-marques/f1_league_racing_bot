@@ -10,9 +10,12 @@ No other channel receives bot messages.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Optional
 
 import discord
+
+_MENTION_RE = re.compile(r"(<@&?\d+>)")
 
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
@@ -48,8 +51,14 @@ class OutputRouter:
     async def post_log(self, server_id: int, content: str) -> None:
         """Post *content* to the server's calculation log channel.
 
+        Mention syntax (<@id>, <@&id>) is wrapped in backticks so Discord
+        renders them as plain text rather than interactive mentions.
+        Channel links (<#id>) are left as-is so they remain clickable.
+        A separator line is appended for readability.
         On failure, attempts to surface an alert to the interaction channel.
         """
+        content = _MENTION_RE.sub(r"`\1`", content)
+        content = content + "\n" + "\u2015" * 36
         config = await self._bot.config_service.get_server_config(server_id)
         if config is None:
             log.error("post_log: no server config found for server_id=%s", server_id)
@@ -110,7 +119,7 @@ class OutputRouter:
             # Discord messages have a 2000-char limit; chunk if needed
             last_msg: Optional[discord.Message] = None
             for chunk in _chunk_message(content):
-                last_msg = await channel.send(chunk)
+                last_msg = await channel.send(chunk, allowed_mentions=discord.AllowedMentions.none())
             return last_msg
         except discord.Forbidden as exc:
             log.error(

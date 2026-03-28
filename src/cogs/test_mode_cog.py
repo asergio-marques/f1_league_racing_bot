@@ -72,6 +72,7 @@ class TestModeCog(commands.Cog):
                 )
                 season_row = await season_cursor.fetchone()
 
+            new_configs: list[str] = []
             config_note = ""
             if season_row is not None:
                 new_configs = await ensure_test_configs(

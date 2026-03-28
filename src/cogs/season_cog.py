@@ -2238,8 +2238,9 @@ class SeasonCog(commands.Cog):
 
         await self.bot.output_router.post_log(
             cfg.server_id,
-            f"✅ **Season #{cfg.season_number}** approved and activated "
-            f"by **{interaction.user.display_name}** (ID: {cfg.season_id})",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season approve | Success\n"
+            f"  season: {cfg.season_number}\n"
+            f"  season_id: {cfg.season_id}",
         )
         log.info("Season %s activated for server %s by %s", cfg.season_id, cfg.server_id, interaction.user)
 
