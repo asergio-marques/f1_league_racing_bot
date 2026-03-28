@@ -358,7 +358,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         cursor = await db.execute(
             """
             SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
-                   rsc.results_posted, rsc.staged_penalties,
+                   rsc.results_posted, rsc.staged_penalties, rsc.prompt_message_id,
                    r.division_id, s.server_id
             FROM round_submission_channels rsc
             JOIN rounds r    ON r.id  = rsc.round_id
@@ -375,6 +375,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         in_penalty_review: int = row["in_penalty_review"]
         results_posted: int = row["results_posted"]
         staged_penalties_json: str | None = row["staged_penalties"]
+        prompt_message_id: int | None = row["prompt_message_id"]
         division_id: int = row["division_id"]
         server_id: int = row["server_id"]
 
@@ -425,6 +426,15 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
                         )
 
                 from services.result_submission_service import enter_penalty_state
+
+                # Delete the previous penalty review prompt to avoid confusion
+                # from duplicate messages after restart.
+                if prompt_message_id is not None:
+                    try:
+                        old_msg = await channel.fetch_message(prompt_message_id)
+                        await old_msg.delete()
+                    except (discord.NotFound, discord.HTTPException):
+                        pass  # Already deleted or unavailable — proceed anyway
 
                 await enter_penalty_state(
                     bot, guild, round_id, division_id, channel,

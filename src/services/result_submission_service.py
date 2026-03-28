@@ -326,6 +326,15 @@ async def enter_penalty_state(
     msg = await sub_channel.send(content, view=view)
     state.prompt_message_id = msg.id
     bot.add_view(view, message_id=msg.id)  # type: ignore[attr-defined]
+
+    # Persist the prompt message ID so recovery can delete it before reposting.
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels SET prompt_message_id = ? WHERE round_id = ?",
+            (msg.id, round_id),
+        )
+        await db.commit()
+
     log.info(
         "enter_penalty_state: penalty review prompt posted for round %s (msg=%s)",
         round_id,
