@@ -810,3 +810,55 @@ class ResultsCog(commands.Cog):
                 f"\u274c Division '{division}' has no standings channel configured.",
                 ephemeral=True,
             )
+
+    # ------------------------------------------------------------------
+    # /results rounds group
+    # ------------------------------------------------------------------
+
+    rounds_group = app_commands.Group(
+        name="rounds", description="Round results commands", parent=results_group
+    )
+
+    @rounds_group.command(name="sync", description="Force a results repost for all rounds in a division.")
+    @app_commands.describe(division="Division name")
+    @channel_guard
+    @admin_only
+    async def rounds_sync(self, interaction: discord.Interaction, division: str) -> None:
+        if not await self._module_gate(interaction):
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        if season is None:
+            await interaction.followup.send("\u274c No active season.", ephemeral=True)
+            return
+
+        divisions = await self.bot.season_service.get_divisions(season.id)
+        div = next((d for d in divisions if d.name.lower() == division.lower()), None)
+        if div is None:
+            await interaction.followup.send(f"\u274c Division '{division}' not found.", ephemeral=True)
+            return
+
+        from services.results_post_service import repost_results_for_division
+        status = await repost_results_for_division(self.bot.db_path, div.id, interaction.guild)
+
+        if status == "ok":
+            await interaction.followup.send(
+                f"\u2705 Results for all rounds in **{division}** synced to the results channel.",
+                ephemeral=True,
+            )
+            await self.bot.output_router.post_log(
+                interaction.guild_id,
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results rounds sync | Success\n"
+                f"  division: {division}",
+            )
+        elif status == "no_rounds":
+            await interaction.followup.send(
+                f"\u2139\ufe0f No completed rounds found for **{division}**. No results to post.",
+                ephemeral=True,
+            )
+        else:  # no_channel
+            await interaction.followup.send(
+                f"\u274c Division '{division}' has no results channel configured.",
+                ephemeral=True,
+            )

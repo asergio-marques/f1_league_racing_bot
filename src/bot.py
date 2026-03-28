@@ -267,6 +267,25 @@ async def main() -> None:
         bot.add_view(_view)
 
     log.info("All cogs loaded. Starting bot...")
+
+    @bot.command(name="sync", hidden=True)
+    @commands.is_owner()
+    async def guild_sync(ctx: commands.Context) -> None:
+        """Owner-only: clear guild command overrides and do a global sync."""
+        # Remove any guild-specific copies (e.g. left over from a previous copy_global_to).
+        bot.tree.clear_commands(guild=ctx.guild)
+        await bot.tree.sync(guild=ctx.guild)
+        # Re-sync globally so Discord has the latest command schema.
+        synced = await bot.tree.sync()
+        try:
+            await ctx.message.delete()
+        except discord.HTTPException:
+            pass
+        await ctx.send(
+            f"✅ Cleared guild overrides and synced {len(synced)} global command(s).",
+            delete_after=15,
+        )
+
     async with bot:
         await bot.start(TOKEN)
 

@@ -681,7 +681,7 @@ async def amend_session_result(
         # Immutability guard: reject writes to archived seasons
         cursor = await db.execute(
             """
-            SELECT s.status AS season_status, s.server_id
+            SELECT s.status AS season_status, s.server_id, s.id AS season_id
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
@@ -695,6 +695,7 @@ async def amend_session_result(
                 f"Round {round_id} belongs to an archived season — results cannot be amended."
             )
         server_id_for_profile: int | None = season_row["server_id"] if season_row else None
+        season_id: int | None = season_row["season_id"] if season_row else None
 
         # Mark all current rows as superseded
         await db.execute(
@@ -769,15 +770,29 @@ async def amend_session_result(
             )
         await db.commit()
 
-    # Cascade standings and repost
+    # Apply points from the config so points_awarded / fastest_lap_bonus are populated
+    # before standings computation. (ParsedRaceRow / ParsedQualifyingRow carry no pts.)
+    if season_id is not None and config_name is not None:
+        await _apply_points_from_config(
+            db_path, session_result_id, season_id, config_name, session_type
+        )
+
+    # Delete old Discord messages, repost all session results + standings for the
+    # amended round, then cascade-recompute and repost subsequent rounds' standings.
     from services import standings_service, results_post_service  # lazy imports
 
     rctx = await _get_round_context(db_path, round_id)
     server_id = rctx["server_id"]
     guild = bot.get_guild(server_id)
-    await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
     if guild is not None:
-        await results_post_service.repost_round_results(db_path, round_id, division_id, guild)
+        await results_post_service.delete_and_repost_final_results(
+            db_path, round_id, division_id, guild
+        )
+        await results_post_service.repost_subsequent_standings(
+            db_path, division_id, round_id, guild
+        )
+    else:
+        await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
 
     await bot.output_router.post_log(
         server_id,

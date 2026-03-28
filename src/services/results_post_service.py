@@ -170,17 +170,17 @@ async def post_standings(
 async def _get_standings_message_id(
     db_path: str, division_id: int, round_id: int
 ) -> int | None:
-    """Return the standings_message_id from the latest snapshot for this division."""
+    """Return the standings_message_id for the given round's snapshot."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
             SELECT standings_message_id
             FROM driver_standings_snapshots
-            WHERE division_id = ?
-            ORDER BY round_id DESC, standing_position ASC
+            WHERE division_id = ? AND round_id = ?
+            ORDER BY standing_position ASC
             LIMIT 1
             """,
-            (division_id,),
+            (division_id, round_id),
         )
         row = await cursor.fetchone()
     return row["standings_message_id"] if row and row["standings_message_id"] else None
@@ -383,12 +383,147 @@ async def _get_show_reserves(db_path: str, division_id: int) -> bool:
     return bool(val) if val is not None else True
 
 
+async def repost_results_for_division(
+    db_path: str,
+    division_id: int,
+    guild: discord.Guild,
+) -> str:
+    """Delete and repost all session results messages for every round in the division.
+
+    For each round that has at least one ACTIVE session result:
+    - Deletes the existing Discord results message for each session (if any).
+    - Reposts a fresh results table and saves the new ``results_message_id``.
+
+    Returns one of three status strings:
+    - ``"ok"``         — results reposted successfully
+    - ``"no_rounds"``  — no completed rounds exist for this division
+    - ``"no_channel"`` — no results channel is configured for the division
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT d.id, drc.results_channel_id
+            FROM divisions d
+            LEFT JOIN division_results_config drc ON drc.division_id = d.id
+            WHERE d.id = ?
+            """,
+            (division_id,),
+        )
+        div_row = await cursor.fetchone()
+
+    if div_row is None:
+        return "no_rounds"
+
+    results_ch_id: int | None = div_row["results_channel_id"]
+    if not results_ch_id:
+        return "no_channel"
+
+    rc = guild.get_channel(results_ch_id)
+    if rc is None:
+        log.warning(
+            "repost_results_for_division: results channel %s not found in guild",
+            results_ch_id,
+        )
+        return "no_channel"
+
+    # Fetch all rounds with at least one ACTIVE session, ordered by round_number
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT DISTINCT r.id AS round_id, r.round_number, r.track_name, r.format
+            FROM rounds r
+            JOIN session_results sr ON sr.round_id = r.id
+            WHERE r.division_id = ? AND sr.status = 'ACTIVE'
+            ORDER BY r.round_number
+            """,
+            (division_id,),
+        )
+        round_rows = await cursor.fetchall()
+
+    if not round_rows:
+        return "no_rounds"
+
+    from models.session_result import OutcomeModifier as _OM
+
+    for rnd in round_rows:
+        round_id: int = rnd["round_id"]
+        round_number: int = rnd["round_number"]
+        track_name: str = rnd["track_name"] or "Unknown"
+        is_sprint: bool = str(rnd["format"]).upper() == "SPRINT"
+
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT id, round_id, division_id, session_type, status, config_name,
+                       submitted_by, submitted_at, results_message_id
+                FROM session_results
+                WHERE round_id = ? AND status = 'ACTIVE'
+                ORDER BY id
+                """,
+                (round_id,),
+            )
+            session_rows = await cursor.fetchall()
+
+        for sr_row in session_rows:
+            session_result = _sr_from_row(sr_row)
+
+            # Delete the existing Discord message for this session (if any)
+            old_msg_id: int | None = sr_row["results_message_id"]
+            if old_msg_id is not None:
+                try:
+                    old_msg = await rc.fetch_message(old_msg_id)
+                    await old_msg.delete()
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                    log.warning(
+                        "repost_results_for_division: could not delete results message %s: %s",
+                        old_msg_id,
+                        exc,
+                    )
+                async with get_connection(db_path) as db:
+                    await db.execute(
+                        "UPDATE session_results SET results_message_id = NULL WHERE id = ?",
+                        (sr_row["id"],),
+                    )
+                    await db.commit()
+
+            # Load driver rows and repost
+            async with get_connection(db_path) as db:
+                cursor = await db.execute(
+                    """
+                    SELECT id, session_result_id, driver_user_id, team_role_id,
+                           finishing_position, outcome, tyre, best_lap, gap, total_time,
+                           fastest_lap, time_penalties, post_steward_total_time,
+                           post_race_time_penalties, points_awarded, fastest_lap_bonus,
+                           is_superseded
+                    FROM driver_session_results
+                    WHERE session_result_id = ? AND is_superseded = 0
+                    ORDER BY finishing_position
+                    """,
+                    (sr_row["id"],),
+                )
+                driver_rows_raw = await cursor.fetchall()
+
+            driver_rows = [_dr_from_row(r) for r in driver_rows_raw]
+            points_map = {
+                r.driver_user_id: r.points_awarded + r.fastest_lap_bonus
+                for r in driver_rows
+            }
+
+            await post_session_results(
+                db_path, session_result, driver_rows, points_map, rc, guild,
+                round_number, track_name, is_sprint,
+            )
+
+    return "ok"
+
+
 async def repost_standings_for_division(
     db_path: str,
     division_id: int,
     guild: discord.Guild,
 ) -> str:
-    """Repost the current standings for a division to its configured standings channel.
+    """Delete and repost standings messages for *every* round in the division that
+    has had results posted.
 
     Returns one of three status strings for the caller to surface to the admin:
     - ``"ok"``         — standings reposted successfully
@@ -398,27 +533,23 @@ async def repost_standings_for_division(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT r.id AS round_id, r.round_number, r.track_name, drc.standings_channel_id
+            SELECT DISTINCT r.id AS round_id, r.round_number, r.track_name,
+                   drc.standings_channel_id
             FROM rounds r
             JOIN session_results sr ON sr.round_id = r.id
             LEFT JOIN division_results_config drc ON drc.division_id = r.division_id
             WHERE r.division_id = ?
               AND sr.status = 'ACTIVE'
-            ORDER BY r.round_number DESC
-            LIMIT 1
+            ORDER BY r.round_number
             """,
             (division_id,),
         )
-        row = await cursor.fetchone()
+        rows = await cursor.fetchall()
 
-    if row is None:
+    if not rows:
         return "no_rounds"
 
-    round_id: int = row["round_id"]
-    round_number: int = row["round_number"]
-    track_name: str = row["track_name"] or "Unknown"
-    standings_ch_id: int | None = row["standings_channel_id"]
-
+    standings_ch_id: int | None = rows[0]["standings_channel_id"]
     if not standings_ch_id:
         return "no_channel"
 
@@ -430,13 +561,44 @@ async def repost_standings_for_division(
         )
         return "no_channel"
 
-    driver_snaps = await standings_service.compute_driver_standings(db_path, division_id, round_id)
-    team_snaps = await standings_service.compute_team_standings(db_path, division_id, round_id)
     show_reserves = await _get_show_reserves(db_path, division_id)
-    await post_standings(
-        db_path, division_id, round_id, round_number, track_name, sc,
-        driver_snaps, team_snaps, guild, show_reserves,
-    )
+
+    for row in rows:
+        round_id: int = row["round_id"]
+        round_number: int = row["round_number"]
+        track_name: str = row["track_name"] or "Unknown"
+
+        # Delete the existing standings message for this round (if any)
+        existing_msg_id = await _get_standings_message_id(db_path, division_id, round_id)
+        if existing_msg_id is not None:
+            try:
+                old_msg = await sc.fetch_message(existing_msg_id)
+                await old_msg.delete()
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                log.warning(
+                    "repost_standings_for_division: could not delete standings message %s: %s",
+                    existing_msg_id,
+                    exc,
+                )
+            async with get_connection(db_path) as db:
+                await db.execute(
+                    "UPDATE driver_standings_snapshots SET standings_message_id = NULL "
+                    "WHERE round_id = ? AND division_id = ?",
+                    (round_id, division_id),
+                )
+                await db.commit()
+
+        driver_snaps = await standings_service.compute_driver_standings(
+            db_path, division_id, round_id
+        )
+        team_snaps = await standings_service.compute_team_standings(
+            db_path, division_id, round_id
+        )
+        await post_standings(
+            db_path, division_id, round_id, round_number, track_name, sc,
+            driver_snaps, team_snaps, guild, show_reserves,
+        )
+
     return "ok"
 
 
