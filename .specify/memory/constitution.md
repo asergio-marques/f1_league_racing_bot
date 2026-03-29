@@ -1,6 +1,47 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-03-29 — v2.6.0 → v2.7.0: Penalty posting channel + appeals workflow formalized]
+  Version change    : 2.6.0 → 2.7.0
+  Bump rationale    : MINOR — "Penalty and protest adjudication" promoted from planned
+                      future scope to formally in-scope (Principle VI item 10). Principle
+                      XII extended with two new subsections:
+                        1. Penalty Announcements: penalties applied via the wizard MUST
+                           be posted to a configured per-division penalty announcement
+                           channel (module-introduced channel, fallback to results channel).
+                        2. Penalty Appeals: a second review tier allowing interaction-role
+                           members to appeal their own penalty; resolved by a tier-2 admin
+                           via Uphold / Overturn; outcome posted to the same channel.
+                      New data entities: PenaltyRecord, AppealRecord. DivisionResultsConfig
+                      amended to add penalty_channel_id.
+  Feature branch    : 026-penalty-posting-appeals (created 2026-03-29 from main)
+  Modified principles:
+    - Principle VI (Incremental Scope Expansion) — item 10 (penalty adjudication) added
+      to in-scope; corresponding entry removed from planned future scope.
+    - Principle XII (Race Results & Championship Integrity) — Amendment & Penalty section
+      extended: Penalty Announcements and Penalty Appeals subsections added.
+  Added sections    :
+    - Data & State Management: New Entities (v2.7.0) — PenaltyRecord, AppealRecord;
+      DivisionResultsConfig amendment note (penalty_channel_id).
+  Removed sections  : None
+  Templates confirmed aligned:
+    ✅ .specify/templates/plan-template.md       — dynamic Constitution Check; no changes.
+    ✅ .specify/templates/spec-template.md       — generic structure; no stale references.
+    ✅ .specify/templates/tasks-template.md      — generic; aligns with I–XII.
+    ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+    ✅ .specify/templates/checklist-template.md  — no impact.
+  Deferred TODOs    :
+    - Exact command naming for appeal submission and review commands to be defined in
+      the feature specification.
+    - Whether appeals are driver-initiated only or also administratively triggered to be
+      confirmed in the feature specification.
+    - Whether a penalty announcement channel is required before the module may be enabled
+      (or only before a penalty can be posted) to be defined in the feature specification.
+  Follow-up TODOs   :
+    - The existing penalty wizard in DriverSessionResult uses loose text fields
+      (post_race_time_penalties, post_stewarding_total_time); these MUST be superseded
+      by PenaltyRecord rows in the feature increment. Migration required.
+
 [2026-03-27 — v2.5.0 → v2.6.0: Signup close timer, lineup announcements, module-config decoupling]
   Version change    : 2.5.0 → 2.6.0
   Bump rationale    : MINOR — Three governance additions:
@@ -775,11 +816,14 @@ domains are formally in-scope as of this version:
    (DNF, DNS, DSQ), and result amendments with full audit trail.
 9. **Championship standings computation and display**: points accumulation per driver per
    division, tiebreaking, and derivation of current and final standings.
+10. **Penalty adjudication and appeals**: application of post-race penalties (time
+    penalties, disqualifications) via a stewards workflow, posting of penalty decisions
+    to a dedicated channel, and a second-level appeals process allowing interaction-role
+    members to contest a penalty, resolved by a tier-2 admin.
 
 The following domains are **planned future scope** — each will be formally ratified as an
 independent feature increment before any implementation begins:
 
-- **Penalty and protest adjudication**.
 - **Season history and statistics**: aggregated career records and cross-season metrics
   derived from the Season Archive (see Data & State Management).
 - Financial or licensing workflows.
@@ -1140,6 +1184,39 @@ governs the **Results & Standings optional module** (Principle X).
   (default false) tracks uncommitted changes; it is set on any modification and cleared
   on approval or revert.
 
+#### Penalty Announcements
+
+- When a penalty (time penalty or DSQ) is applied via the penalty wizard, the bot MUST
+  post a penalty announcement notice to the division's configured **penalty announcement
+  channel** (`penalty_channel_id` on `DivisionResultsConfig`).
+- The announcement MUST include: the affected driver's display name, the round name, the
+  session type, the penalty type and magnitude (e.g., "+5 seconds" or "DSQ"), a reason if
+  provided by the tier-2 admin, and the Discord display name of the admin who applied it.
+- If no penalty announcement channel is configured for a division, announcements fall back
+  to that division's results channel.
+- The penalty announcement channel is a module-introduced channel category governed by
+  Principle VII. Configuring it is not required for module activation; if absent the
+  fallback ensures the notice is always posted.
+
+#### Penalty Appeals
+
+- Any driver holding the interaction role MAY submit an appeal against a penalty applied
+  to their own result record. Each penalty MAY have at most one active appeal at any time.
+- Appeals follow a two-outcome lifecycle: **Pending** (submitted, awaiting review) →
+  **Upheld** (penalty stands) or **Overturned** (penalty reversed).
+- A tier-2 admin MUST resolve every appeal by selecting Uphold or Overturn via a guided
+  interaction. The review decision MUST produce an audit log entry (Principle V).
+- On **Overturn**: the associated `PenaltyRecord` is voided; the affected
+  `DriverSessionResult` is reverted to its pre-penalty state; standings for the affected
+  round and all subsequent rounds in that division MUST be recomputed and reposted
+  atomically, consistent with the amendment recomputation rule above.
+- On **Uphold**: the penalty record and session result remain unchanged.
+- The appeal outcome — including the reviewer's display name and decision reason — MUST
+  be posted as a follow-up notice to the same channel where the original penalty
+  announcement was posted.
+- A driver MAY NOT submit a second appeal on a penalty that has already been upheld or
+  overturned (each penalty is a one-appeal-lifetime limit).
+
 #### Standings Computation
 
 - **Driver standings**: all drivers who have participated in a division, ranked by (1)
@@ -1493,6 +1570,41 @@ for team-level aggregates):
 - `position_finish_counts` (TEXT — JSON map)
 - `position_first_round` (TEXT — JSON map)
 
+### New Entities (v2.7.0)
+
+**PenaltyRecord** (per `DriverSessionResult` — one row per applied penalty):
+- `penalty_id` (INTEGER PK, server-scoped auto-increment)
+- `driver_session_result_id` (INTEGER, FK → DriverSessionResult)
+- `penalty_type` (ENUM: TIME_PENALTY / DSQ)
+- `time_seconds` (INTEGER, nullable — magnitude in seconds; null for DSQ)
+- `reason` (TEXT, nullable — free-text reason supplied by the tier-2 admin)
+- `applied_by` (TEXT — Discord User ID of the tier-2 admin who applied the penalty)
+- `applied_at` (TEXT — UTC ISO 8601 timestamp)
+- `voided` (BOOLEAN, default false — set to true when an AppealRecord with status
+  OVERTURNED is resolved against this penalty)
+- `announcement_channel_id` (TEXT, nullable — the channel ID where the penalty notice
+  was posted; retained to enable the appeal outcome follow-up post to the same channel)
+- Replaces the loose `post_race_time_penalties` and `post_stewarding_total_time` fields
+  on DriverSessionResult; those fields are retained for backwards compatibility during
+  migration but are superseded by PenaltyRecord rows.
+
+**AppealRecord** (per `PenaltyRecord` — at most one per penalty lifetime):
+- `appeal_id` (INTEGER PK, server-scoped auto-increment)
+- `penalty_id` (INTEGER, FK → PenaltyRecord)
+- `status` (ENUM: PENDING / UPHELD / OVERTURNED, default PENDING)
+- `submitted_by` (TEXT — Discord User ID of the driver submitting the appeal)
+- `submitted_at` (TEXT — UTC ISO 8601 timestamp)
+- `reviewed_by` (TEXT, nullable — Discord User ID of the reviewing tier-2 admin)
+- `reviewed_at` (TEXT, nullable — UTC ISO 8601 timestamp)
+- `review_reason` (TEXT, nullable — free-text outcome reason supplied by the reviewer)
+- Uniquely keyed on `penalty_id`; a second appeal row for the same penalty MUST be
+  rejected at the data layer.
+
+*Amendment to DivisionResultsConfig (v2.4.0 entity, updated v2.7.0)*:
+- `penalty_channel_id` (TEXT, nullable) added — when set, penalty announcements and
+  appeal outcomes for this division are posted to this channel; if null, the bot falls
+  back to `results_channel_id`.
+
 ### New Entities (v2.6.0)
 
 **SignupDivisionConfig** (per server, per division — owned by the signup module):
@@ -1535,4 +1647,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.6.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-27
+**Version**: 2.7.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-29
