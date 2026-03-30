@@ -5,7 +5,7 @@
 
 ## Summary
 
-Extends the post-submission penalty review wizard (spec 023) with a three-state round result lifecycle (`PROVISIONAL` → `POST_RACE_PENALTY` → `FINAL`). When the tier-2 admin approves the penalty review, the transient submission channel now transitions to an **Appeals Review** state rather than closing — closing only once the appeals review is approved too. Every results and standings post gains a standard heading and lifecycle label. A new `verdict_announcement_service` posts one announcement per applied penalty or appeal correction to a per-division configured verdicts channel (fallback: results channel). The existing `AddPenaltyModal` is expanded with mandatory description and justification fields (same modal reused for appeals). `round results amend` is gated to rounds in `FINAL` state only.
+Extends the post-submission penalty review wizard (spec 023) with a three-state round result lifecycle (`PROVISIONAL` → `POST_RACE_PENALTY` → `FINAL`). When the tier-2 admin approves the penalty review, the transient submission channel now transitions to an **Appeals Review** state rather than closing — closing only once the appeals review is approved too. Every results and standings post gains a standard heading and lifecycle label. A new `verdict_announcement_service` posts one announcement per applied penalty or appeal correction to the per-division configured verdicts channel. The existing `AddPenaltyModal` is expanded with mandatory description and justification fields (same modal reused for appeals). `round results amend` is gated to rounds in `FINAL` state only.
 
 ## Technical Context
 
@@ -31,7 +31,7 @@ Extends the post-submission penalty review wizard (spec 023) with a three-state 
 | IV. Three-Phase Weather Pipeline | ✅ PASS | Entirely separate module; zero overlap with weather pipeline. |
 | V. Observability & Change Audit Trail | ✅ PASS | Audit log entries written for each penalty and appeal approval, including description and justification (FR-020). No silent mutations. |
 | VI. Incremental Scope Expansion | ✅ PASS | Penalty adjudication and appeals formally ratified as in-scope item 10 (constitution v2.7.0). |
-| VII. Output Channel Discipline | ✅ PASS | Verdicts channel is a module-introduced channel documented in spec (FR-011). Fallback to results channel specified. Bot does not post to unregistered channels. |
+| VII. Output Channel Discipline | ✅ PASS | Verdicts channel is a module-introduced channel documented in spec (FR-011). Required for season approval (FR-026). Bot skips announcement if channel is inaccessible; does not post to unregistered channels. |
 | VIII. Driver Profile Integrity | ✅ PASS | Driver state machine unaffected; existing driver lookup in wizard reused without modification. |
 | IX. Team & Division Structural Integrity | ✅ PASS | No team-level changes; division structure unaffected. |
 | X. Modular Feature Architecture | ✅ PASS | Feature lives in the Results & Standings module; `/division verdicts-channel` checks module-enabled gate. |
@@ -79,20 +79,23 @@ src/
 │   ├── season_service.py                           # MODIFY — get_divisions_with_results_config query
 │   │                                               #           extended to include penalty_channel_id
 │   └── verdict_announcement_service.py             # NEW — post one announcement per penalty/correction
-│                                                   #        to verdicts channel or results channel fallback
+│                                                   #        to verdicts channel; skip if inaccessible
 └── cogs/
     ├── results_cog.py                              # MODIFY — gate `round results amend` to FINAL state only
     └── season_cog.py                               # MODIFY — /division verdicts-channel command;
                                                     #           /season review shows verdicts channel;
                                                     #           /season approve blocks if verdicts channel
                                                     #           missing on any division (Gate 2 extension)
+bot.py                                              # MODIFY — register AppealsReviewView for restart
+                                                    #           recovery: re-post appeals prompt for
+                                                    #           rounds in POST_RACE_PENALTY state
 
 tests/
 ├── unit/
 │   ├── test_penalty_wizard.py                      # MODIFY — expanded modal fields, appeals view behaviour
 │   ├── test_results_post_service.py                # MODIFY — assert heading and label on all post types
-│   └── test_verdict_announcement_service.py        # NEW — announcement formatting, channel fallback,
-│                                                   #        empty-staged list produces no post
+│   └── test_verdict_announcement_service.py        # NEW — announcement formatting, inaccessible channel
+│                                                   #        skips cleanly, empty-staged list produces no post
 └── integration/
     └── test_round_lifecycle.py                     # NEW/MODIFY — full three-state lifecycle:
                                                     #   PROVISIONAL → POST_RACE_PENALTY → FINAL

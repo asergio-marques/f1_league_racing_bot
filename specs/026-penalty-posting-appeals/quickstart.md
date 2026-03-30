@@ -88,7 +88,7 @@ python -m pytest tests/unit/test_penalty_wizard.py tests/unit/test_results_post_
 
 - Requires tier-2 admin role
 - Bot validates channel accessibility before storing
-- If not configured, announcements fall back to the division's results channel
+- If the channel is inaccessible, announcements are skipped without blocking finalization (no fallback)
 
 ---
 

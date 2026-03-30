@@ -70,7 +70,6 @@ All other rows default to `PROVISIONAL` via the column default.
 |--------|------|-------------|-------------|
 | `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | |
 | `driver_session_result_id` | INTEGER | NOT NULL, FK → `driver_session_results(id)` | The result row this appeal correction modifies |
-| `penalty_record_id` | INTEGER | NULL, FK → `penalty_records(id)` | Associated penalty, if correction targets a specific one |
 | `status` | TEXT | NOT NULL DEFAULT 'UPHELD' | `UPHELD` (correction applied) or `OVERTURNED` (no change; reserved for future use) |
 | `penalty_type` | TEXT | NOT NULL | `TIME_PENALTY` or `DSQ` — the corrected value |
 | `time_seconds` | INTEGER | NULL | Corrected signed seconds; NULL for DSQ; same sign convention as PenaltyRecord |
@@ -95,7 +94,7 @@ All other rows default to `PROVISIONAL` via the column default.
 | `penalty_channel_id` | *(absent)* | `TEXT NULL` — Discord channel ID for verdict announcements |
 
 **Population**: Set via `/division verdicts-channel <division> <channel>`.  
-**Fallback**: If `NULL`, the bot uses `results_channel_id` for all verdict announcements.
+**Behaviour if inaccessible**: If the channel is deleted or the bot cannot post to it, the announcement is skipped (logged) without blocking finalization. No fallback channel is used.
 
 **Season review / approval impact**: `season_service.get_divisions_with_results_config()` must extend its SELECT and LEFT JOIN to include `drc.penalty_channel_id` so that `season_cog` can display it in `/season review` and enforce it as a blocker in `/season approve` Gate 2.
 
@@ -147,7 +146,6 @@ CREATE TABLE IF NOT EXISTS penalty_records (
 CREATE TABLE IF NOT EXISTS appeal_records (
     id                       INTEGER PRIMARY KEY AUTOINCREMENT,
     driver_session_result_id INTEGER NOT NULL REFERENCES driver_session_results(id),
-    penalty_record_id        INTEGER REFERENCES penalty_records(id),
     status                   TEXT    NOT NULL DEFAULT 'UPHELD',
     penalty_type             TEXT    NOT NULL,
     time_seconds             INTEGER,

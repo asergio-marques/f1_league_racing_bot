@@ -51,16 +51,12 @@ Translation is performed by `verdict_announcement_service.translate_penalty(pena
 ## Channel Resolution
 
 ```
-if division_results_config.penalty_channel_id is not None:
-    target = bot.get_channel(int(penalty_channel_id))
-    if target is None:
-        # channel deleted or inaccessible — fall back
-        target = bot.get_channel(int(results_channel_id))
-else:
-    target = bot.get_channel(int(results_channel_id))
+if division_results_config.penalty_channel_id is None:
+    return   # no verdicts channel configured — skip silently
 
+target = bot.get_channel(int(penalty_channel_id))
 if target is None:
-    log_error("announcement skipped — both channels inaccessible")
+    log_error("announcement skipped — verdicts channel inaccessible")
     return   # does NOT block finalization
 ```
 

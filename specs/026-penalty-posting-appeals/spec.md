@@ -13,7 +13,7 @@ This specification extends the inline post-submission penalty review flow define
 2. When the tier-2 admin approves the penalty review (existing `Approve` button in `ApprovalView`), the transient submission channel no longer closes immediately. Instead it transitions to an **Appeals Review** state, and the round is marked `POST_RACE_PENALTY`. The channel closes only when the appeals review is approved, at which point the round becomes `FINAL`.
 3. Every results and standings post gains a standard heading (`Season {N} {Division Name} Round {X} — {Session Name}`) and a lifecycle label (`Provisional Results`, `Post-Race Penalty Results`, or `Final Results`).
 4. The existing `AddPenaltyModal` (which already has two fields: driver and penalty value) is expanded with two new mandatory fields: **description** and **justification**. This same modal is reused for the appeals wizard.
-5. When a penalty is staged and approved, an announcement is posted to the division's configured **verdicts channel** (fallback: results channel) using the populated description and justification fields.
+5. When a penalty is staged and approved, an announcement is posted to the division's configured **verdicts channel** using the populated description and justification fields. If the verdicts channel is inaccessible, the announcement is skipped without blocking finalization.
 6. `round results amend` (full re-entry amendment) is restricted to rounds in `FINAL` state.
 
 **Terminology mapping to spec 023**:
@@ -53,7 +53,7 @@ A tier-2 admin submits session results for a round. The posted results and stand
 
 A tier-2 admin runs `/division verdicts-channel` with a division name and a Discord channel. The bot stores that channel as the division's verdict announcement target. Subsequent penalty and appeal announcements for that division are posted there.
 
-**Why this priority**: Without the verdicts channel, announcements fall back to the results channel — which works but is not the intended configuration for production use.
+**Why this priority**: A verdicts channel is required for season approval (FR-026) and is the sole designated destination for all verdict announcements.
 
 **Independent Test**: Can be fully tested by running the command, then approving one staged penalty, and verifying the announcement appears in the specified channel and not in the results channel.
 
@@ -71,7 +71,7 @@ A tier-2 admin runs `/division verdicts-channel` with a division name and a Disc
 
 ### User Story 3 — Penalty Announcements (Priority: P3)
 
-When the penalty review **Approve** button is clicked and there are staged penalties, the bot posts a formatted announcement to the division's configured verdicts channel (or fallback) for each applied penalty. The announcement includes the session context header, the affected driver mentioned by Discord tag, the penalty in descriptive language, and the description and justification the admin entered in the modal.
+When the penalty review **Approve** button is clicked and there are staged penalties, the bot posts a formatted announcement to the division's configured verdicts channel for each applied penalty. The announcement includes the session context header, the affected driver mentioned by Discord tag, the penalty in descriptive language, and the description and justification the admin entered in the modal.
 
 **Why this priority**: Announcements make stewards' decisions publicly visible; this is the primary new output of the feature.
 
@@ -132,7 +132,7 @@ The existing `AddPenaltyModal` (currently: driver field + penalty value field) i
 - What if zero penalties were staged but the admin still clicks Approve in the penalty review? The round transitions to `POST_RACE_PENALTY`, a `Post-Race Penalty Results` post is made (identical to the `Provisional Results` post), and the appeals review prompt appears. This is valid.
 - What if zero appeal corrections are staged? The admin clicks Approve in the appeals review; the round transitions to `FINAL` with `Final Results` identical to `Post-Race Penalty Results`. Valid.
 - What if a driver receives two separate penalties in the same penalty review session? Each penalty entry in the staged list produces its own individual announcement when approved.
-- What if the verdicts channel is deleted or inaccessible at the time an announcement is attempted? The bot catches the channel error, logs it, and falls back to the results channel. If both are inaccessible, the error is logged and the announcement is skipped without blocking finalization.
+- What if the verdicts channel is deleted or inaccessible at the time an announcement is attempted? The bot catches the channel error, logs it, and skips the announcement without blocking finalization. No fallback channel is used.
 - What about existing finalized rounds (from before this feature)? Rounds with `finalized = 1` in the legacy schema are treated as `FINAL`; they already completed the only review stage that existed at the time. No re-review is required.
 - What is the `result_status` field scoped to — round or session? The lifecycle state is tracked at the **round** level (one state per round), since the penalty wizard and appeals wizard both operate across all sessions of a round simultaneously. The `result_status` from the constitution's `SessionResult` entity is effectively uniform for all sessions of the same round because they are all advanced together by the wizard approval.
 
@@ -159,13 +159,13 @@ The existing `AddPenaltyModal` (currently: driver field + penalty value field) i
 
 - **FR-011**: A new `/division verdicts-channel <division> <channel>` command MUST be implemented for tier-2 admins. It sets `penalty_channel_id` on the division's `DivisionResultsConfig` record.
 - **FR-012**: The command MUST validate that the supplied channel exists and is accessible by the bot before storing it.
-- **FR-013**: If no `penalty_channel_id` is configured for a division, the bot MUST fall back to `results_channel_id` for all verdict announcements.
+- **FR-013**: If the `penalty_channel_id` channel is inaccessible or the bot cannot post to it, the announcement MUST be skipped (logged, not raised as an error) and finalization MUST NOT be blocked. No fallback channel is used.
 - **FR-025**: When the Results module is enabled, `/season review` MUST display the configured verdicts channel (or `*(not configured)*`) for each division, in the same per-division block as the results and standings channels.
 - **FR-026**: When the Results module is enabled, `/season approve` MUST be rejected if any division does not have a `penalty_channel_id` configured. The error message MUST identify each unconfigured division and instruct the admin to run `/division verdicts-channel <division> <channel>`.
 
 **Penalty & Appeal Announcement Format**
 
-- **FR-014**: When the penalty review is approved with one or more staged penalties, the bot MUST post one announcement per penalty to the verdicts channel (or fallback). Each announcement MUST contain exactly:
+- **FR-014**: When the penalty review is approved with one or more staged penalties, the bot MUST post one announcement per penalty to the verdicts channel. Each announcement MUST contain exactly:
   1. Header: `Season {N} {Division Name} Round {X} — {Session Name}`
   2. Driver: Discord mention of the penalised driver
   3. Penalty: descriptive translation of the magnitude (FR-015)
@@ -194,7 +194,7 @@ The existing `AddPenaltyModal` (currently: driver field + penalty value field) i
 
 - **Round** (amended): `finalized` (BOOLEAN) replaced by `result_status` (ENUM: `PROVISIONAL` / `POST_RACE_PENALTY` / `FINAL`, default `PROVISIONAL`). Migration: `finalized = 1` → `FINAL`; `finalized = 0` → `PROVISIONAL`.
 - **PenaltyRecord** (new, linked to `DriverSessionResult`): stores `penalty_type`, `time_seconds` (nullable), `description` (TEXT NOT NULL), `justification` (TEXT NOT NULL), `applied_by`, `applied_at`, and `announcement_channel_id`. Replaces the loose `post_race_time_penalties` / `post_stewarding_total_time` fields on `DriverSessionResult` for new records.
-- **AppealRecord** (new, linked to `PenaltyRecord` or standalone): stores `status` (PENDING / UPHELD / OVERTURNED), `description` (TEXT NOT NULL), `justification` (TEXT NOT NULL), `submitted_by`, `submitted_at`, `reviewed_by`, `reviewed_at`, `review_reason`. One per penalty maximum.
+- **AppealRecord** (new): stores `status` (`UPHELD` / `OVERTURNED` — `PENDING` is reserved for the future driver-initiated appeals tier, not implemented in spec 026; all records in this increment are written as `UPHELD`), `description` (TEXT NOT NULL), `justification` (TEXT NOT NULL), `submitted_by`, `submitted_at`, `reviewed_by`, `reviewed_at`, `review_reason`. One per applied correction.
 - **DivisionResultsConfig** (amended): gains `penalty_channel_id` (TEXT, nullable), populated via `/division verdicts-channel`.
 
 ## Assumptions
@@ -205,13 +205,13 @@ The existing `AddPenaltyModal` (currently: driver field + penalty value field) i
 - Negative time corrections (time added back to benefit a driver) follow the same signed-integer mechanics already implemented in spec 023; the only change is that the value is now stored in a `PenaltyRecord` row rather than a loose column.
 - The appeals review wizard uses the exact same `AddPenaltyModal` class as the penalty wizard (after the two new fields are added). There is no separate modal class for appeals.
 - Verdict announcements are posted one per penalty/correction at the time of approval (not at the time of staging).
-- When the verdicts channel is deleted or inaccessible, the bot falls back to the results channel. If both are unavailable, the announcement is skipped without blocking finalization.
+- When the verdicts channel is deleted or inaccessible, the announcement is skipped (logged, not raised) without blocking finalization. No fallback channel is used.
 - `round results amend` restriction to `FINAL` state applies to the existing full re-entry amendment flow; it does not apply to the penalty/appeals wizard flows themselves (those are the mechanism that drives rounds toward `FINAL`).
 
 ## Dependencies
 
 - Spec 023 (Inline Post-Submission Penalty Review) — this feature modifies the `ApprovalView.approve_btn` behaviour and the `finalize_round` function in `result_submission_service.py`, and the `PenaltyReviewState` dataclass.
-- `DivisionResultsConfig` and `results_channel_id` — prerequisite for the announcement fallback.
+- `DivisionResultsConfig` — required for the `penalty_channel_id` lookup used by the announcement service.
 - `rounds.finalized` column — replaced by `rounds.result_status`; migration required.
 - Tier-2 admin permission guard (`_require_lm` in `penalty_wizard.py`) — reused unchanged for the appeals wizard.
 
@@ -220,7 +220,7 @@ The existing `AddPenaltyModal` (currently: driver field + penalty value field) i
 ### Measurable Outcomes
 
 - **SC-001**: Every results or standings post produced by the bot for a round carries a lifecycle label (`Provisional Results`, `Post-Race Penalty Results`, or `Final Results`) and the standard session heading — zero unlabeled posts permitted.
-- **SC-002**: Every approved penalty or appeal correction produces one announcement per entry in the verdicts channel (or fallback) with all five required fields present.
+- **SC-002**: Every approved penalty or appeal correction produces one announcement per entry in the verdicts channel with all five required fields present, provided the channel is accessible.
 - **SC-003**: The Discord modal's built-in required-field validation prevents submission of the penalty/appeal modal without both the description and justification fields — this is enforced at the Discord client level with no additional server-side step needed.
 - **SC-004**: `round results amend` is rejected for every round not in `FINAL` state and accepted for every round in `FINAL` state — no false positives or false negatives in any test scenario.
 - **SC-005**: The division verdicts channel can be configured and updated by a tier-2 admin in a single command interaction.

@@ -1200,22 +1200,24 @@ governs the **Results & Standings optional module** (Principle X).
 
 #### Penalty Appeals
 
-- Any driver holding the interaction role MAY submit an appeal against a penalty applied
-  to their own result record. Each penalty MAY have at most one active appeal at any time.
-- Appeals follow a two-outcome lifecycle: **Pending** (submitted, awaiting review) →
-  **Upheld** (penalty stands) or **Overturned** (penalty reversed).
-- A tier-2 admin MUST resolve every appeal by selecting Uphold or Overturn via a guided
-  interaction. The review decision MUST produce an audit log entry (Principle V).
-- On **Overturn**: the associated `PenaltyRecord` is voided; the affected
-  `DriverSessionResult` is reverted to its pre-penalty state; standings for the affected
-  round and all subsequent rounds in that division MUST be recomputed and reposted
-  atomically, consistent with the amendment recomputation rule above.
-- On **Uphold**: the penalty record and session result remain unchanged.
-- The appeal outcome — including the reviewer's display name and decision reason — MUST
-  be posted as a follow-up notice to the same channel where the original penalty
-  announcement was posted.
-- A driver MAY NOT submit a second appeal on a penalty that has already been upheld or
-  overturned (each penalty is a one-appeal-lifetime limit).
+- The appeals stage is fully admin-driven. After the penalty review is approved, a tier-2
+  admin runs an appeals review wizard (mirroring the penalty review wizard) in the same
+  transient submission channel. The admin stages corrections and approves them; no driver
+  submission step exists in this increment.
+- Appeals follow a two-outcome lifecycle: **Upheld** (correction applied to the result) or
+  **Overturned** (no change; reserved for future use). Every correction staged and approved
+  in this increment is stored as `UPHELD`. A `PENDING` state and driver-initiated appeal
+  submission are explicitly deferred to a future stewarding module.
+- The appeals review MUST produce an audit log entry per correction, including description
+  and justification (Principle V).
+- On approving corrections: the affected `DriverSessionResult` rows are updated; standings
+  for the affected round and all subsequent rounds in that division MUST be recomputed and
+  reposted atomically, consistent with the amendment recomputation rule above.
+- On approving with no staged corrections: the round advances to `FINAL` with results
+  identical to the `Post-Race Penalty Results` post. No result changes occur.
+- Each applied correction MUST produce one announcement post to the division's configured
+  verdicts channel (if accessible). Announcement skipped silently if channel is
+  inaccessible; finalization is never blocked by an announcement failure.
 
 #### Standings Computation
 
