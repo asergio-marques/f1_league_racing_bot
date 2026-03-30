@@ -35,6 +35,216 @@ _RACE_SESSION_CHOICES = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Bulk-parse helper (T012)
+# ---------------------------------------------------------------------------
+
+def _parse_bulk_lines(text: str) -> tuple[list[tuple[int, int]], list[str]]:
+    """Parse multi-line '<position>, <points>' text.
+
+    Rules:
+    - Blank lines are skipped.
+    - position must be a positive integer (>= 1).
+    - points must be a non-negative integer (>= 0).
+    - If a position appears more than once the last value wins; the duplicate
+      is noted in the error list.
+    - Returns (valid_pairs_in_input_order_deduped, error_messages).
+    """
+    seen: dict[int, int] = {}  # position -> points (last-wins tracking)
+    errors: list[str] = []
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split(",", 1)
+        if len(parts) != 2:
+            errors.append(f"Malformed line (expected 'position, points'): {line!r}")
+            continue
+        pos_str, pts_str = parts[0].strip(), parts[1].strip()
+        try:
+            position = int(pos_str)
+            if pos_str != str(position):  # reject floats like "1.5"
+                raise ValueError
+        except ValueError:
+            errors.append(f"Invalid position {pos_str!r} on line: {line!r}")
+            continue
+        try:
+            points = int(pts_str)
+            if pts_str != str(points):
+                raise ValueError
+        except ValueError:
+            errors.append(f"Invalid points {pts_str!r} on line: {line!r}")
+            continue
+        if position < 1:
+            errors.append(f"Position must be >= 1, got {position} on line: {line!r}")
+            continue
+        if points < 0:
+            errors.append(f"Points must be >= 0, got {points} on line: {line!r}")
+            continue
+        if position in seen:
+            errors.append(
+                f"Duplicate position {position}: previous value {seen[position]} overridden by {points}"
+            )
+        seen[position] = points
+
+    valid = list(seen.items())
+    return valid, errors
+
+
+# ---------------------------------------------------------------------------
+# Bulk modal classes (T013 / T014)
+# ---------------------------------------------------------------------------
+
+class BulkConfigSessionModal(discord.ui.Modal, title="Bulk Set Session Points"):
+    """Modal for bulk-setting session points in a named config."""
+
+    entries: discord.ui.TextInput = discord.ui.TextInput(
+        label="position, points — one per line",
+        style=discord.TextStyle.paragraph,
+        placeholder="1, 25\n2, 18\n3, 15",
+        required=True,
+        max_length=2000,
+    )
+
+    def __init__(
+        self,
+        config_name: str,
+        session: app_commands.Choice,
+        db_path: str,
+        guild_id: int,
+    ) -> None:
+        super().__init__()
+        self._config_name = config_name
+        self._session = session
+        self._db_path = db_path
+        self._guild_id = guild_id
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+        await interaction.response.defer(ephemeral=True)
+        valid, errors = _parse_bulk_lines(self.entries.value)
+        if not valid and not errors:
+            await interaction.followup.send("No entries provided.", ephemeral=True)
+            return
+
+        applied: list[str] = []
+        for position, points in valid:
+            try:
+                await points_config_service.set_session_points(
+                    self._db_path,
+                    self._guild_id,
+                    self._config_name,
+                    SessionType(self._session.value),
+                    position,
+                    points,
+                )
+                applied.append(f"P{position} → {points} pts")
+            except ConfigNotFoundError:
+                await interaction.followup.send(
+                    f"\u274c Config **{self._config_name}** not found.", ephemeral=True
+                )
+                return
+            except Exception as exc:
+                errors.append(f"P{position}: unexpected error — {exc}")
+
+        lines: list[str] = []
+        if applied:
+            lines.append(
+                f"\u2705 Applied to config **{self._config_name}** ({self._session.name}):\n"
+                + "\n".join(f"  {a}" for a in applied)
+            )
+        if errors:
+            lines.append("\u26a0\ufe0f Errors:\n" + "\n".join(f"  • {e}" for e in errors))
+        await interaction.followup.send("\n".join(lines) or "Done.", ephemeral=True)
+
+        if applied:
+            await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
+                self._guild_id,
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+                f"| /results config bulk-session | {len(applied)} change(s)\n"
+                f"  config: {self._config_name}, session: {self._session.name}",
+            )
+
+
+class BulkAmendSessionModal(discord.ui.Modal, title="Bulk Amend Session Points"):
+    """Modal for bulk-amending session points in the modification store."""
+
+    entries: discord.ui.TextInput = discord.ui.TextInput(
+        label="position, points — one per line",
+        style=discord.TextStyle.paragraph,
+        placeholder="1, 25\n2, 18\n3, 15",
+        required=True,
+        max_length=2000,
+    )
+
+    def __init__(
+        self,
+        config_name: str,
+        session: app_commands.Choice,
+        db_path: str,
+        guild_id: int,
+    ) -> None:
+        super().__init__()
+        self._config_name = config_name
+        self._session = session
+        self._db_path = db_path
+        self._guild_id = guild_id
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+        from services.amendment_service import AmendmentNotActiveError, modify_session_points
+
+        await interaction.response.defer(ephemeral=True)
+
+        season = await interaction.client.season_service.get_season_for_server(self._guild_id)  # type: ignore[attr-defined]
+        if season is None:
+            await interaction.followup.send("\u274c No active season.", ephemeral=True)
+            return
+
+        valid, errors = _parse_bulk_lines(self.entries.value)
+        if not valid and not errors:
+            await interaction.followup.send("No entries provided.", ephemeral=True)
+            return
+
+        applied: list[str] = []
+        for position, points in valid:
+            try:
+                await modify_session_points(
+                    self._db_path,
+                    season.id,
+                    self._config_name,
+                    self._session.value,
+                    position,
+                    points,
+                )
+                applied.append(f"P{position} → {points} pts")
+            except AmendmentNotActiveError:
+                await interaction.followup.send(
+                    "\u274c Amendment mode is not active.", ephemeral=True
+                )
+                return
+            except Exception as exc:
+                errors.append(f"P{position}: unexpected error — {exc}")
+
+        lines: list[str] = []
+        if applied:
+            lines.append(
+                f"\u2705 Amended in modification store for config **{self._config_name}** "
+                f"({self._session.name}):\n"
+                + "\n".join(f"  {a}" for a in applied)
+            )
+        if errors:
+            lines.append("\u26a0\ufe0f Errors:\n" + "\n".join(f"  • {e}" for e in errors))
+        await interaction.followup.send("\n".join(lines) or "Done.", ephemeral=True)
+
+        if applied:
+            await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
+                self._guild_id,
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+                f"| /results amend bulk-session | {len(applied)} change(s)\n"
+                f"  config: {self._config_name}, session: {self._session.name}",
+            )
+
+
 class ResultsCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -396,6 +606,26 @@ class ResultsCog(commands.Cog):
         formatted = results_formatter.format_config_view(name, entries_by_session, fl_by_session)
         await interaction.followup.send(formatted, ephemeral=True)
 
+    @config_group.command(
+        name="bulk-session",
+        description="Bulk-set points for multiple positions in a session type via a modal.",
+    )
+    @app_commands.describe(name="Config name", session="Session type")
+    @app_commands.choices(session=_SESSION_CHOICES)
+    @channel_guard
+    @admin_only
+    async def bulk_config_session(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        session: app_commands.Choice[str],
+    ) -> None:
+        if not await self._module_gate(interaction):
+            return
+        await interaction.response.send_modal(
+            BulkConfigSessionModal(name, session, self.bot.db_path, interaction.guild_id)
+        )
+
     # ------------------------------------------------------------------
     # /results amend group — T025
     # ------------------------------------------------------------------
@@ -617,6 +847,26 @@ class ResultsCog(commands.Cog):
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend fl-plimit | Success\n"
             f"  config: {name}\n"
             f"  session: {session.name}, fl_position_limit: {limit}",
+        )
+
+    @amend_group.command(
+        name="bulk-session",
+        description="Bulk-update points in the modification store for multiple positions via a modal.",
+    )
+    @app_commands.describe(name="Config name", session="Session type")
+    @app_commands.choices(session=_SESSION_CHOICES)
+    @channel_guard
+    @admin_only
+    async def bulk_amend_session(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        session: app_commands.Choice[str],
+    ) -> None:
+        if not await self._module_gate(interaction):
+            return
+        await interaction.response.send_modal(
+            BulkAmendSessionModal(name, session, self.bot.db_path, interaction.guild_id)
         )
 
     @amend_group.command(name="review", description="Review modification store changes and approve or reject.")

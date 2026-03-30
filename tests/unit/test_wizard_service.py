@@ -33,45 +33,50 @@ def _normalise(raw: str):
 
 
 class TestValidateNationality:
-    def test_two_letter_lowercase_accepted(self):
-        assert _validate("gb") == "gb"
+    def test_full_adjective_accepted(self):
+        assert _validate("British") == "British"
 
-    def test_two_letter_uppercase_normalised_to_lowercase(self):
-        assert _validate("GB") == "gb"
+    def test_full_adjective_case_insensitive(self):
+        assert _validate("british") == "British"
+        assert _validate("BRITISH") == "British"
 
-    def test_mixed_case_normalised(self):
-        assert _validate("Gb") == "gb"
+    def test_country_name_accepted(self):
+        assert _validate("United Kingdom") == "British"
 
-    def test_other_accepted_lowercase(self):
-        assert _validate("other") == "other"
+    def test_country_name_case_insensitive(self):
+        assert _validate("united kingdom") == "British"
+        assert _validate("GERMANY") == "German"
 
-    def test_other_accepted_uppercase(self):
-        assert _validate("OTHER") == "other"
+    def test_other_lowercase_accepted(self):
+        assert _validate("other") == "Other"
 
-    def test_other_accepted_mixed_case(self):
-        assert _validate("Other") == "other"
+    def test_other_uppercase_accepted(self):
+        assert _validate("OTHER") == "Other"
 
-    def test_one_letter_returns_none(self):
-        assert _validate("g") is None
+    def test_other_mixed_case_accepted(self):
+        assert _validate("Other") == "Other"
 
-    def test_three_letters_returns_none(self):
-        assert _validate("gbr") is None
+    def test_two_letter_iso_code_rejected_gb(self):
+        """GB was the old format — must now be rejected."""
+        assert _validate("gb") is None
 
-    def test_empty_string_returns_none(self):
+    def test_two_letter_iso_code_rejected_us(self):
+        assert _validate("us") is None
+
+    def test_unknown_string_rejected(self):
+        assert _validate("xyzzy") is None
+
+    def test_empty_string_rejected(self):
         assert _validate("") is None
 
-    def test_digit_in_code_returns_none(self):
-        assert _validate("g1") is None
-
-    def test_whitespace_only_returns_none(self):
-        assert _validate("  ") is None
-
     def test_leading_trailing_whitespace_stripped(self):
-        # Validator strips before checking
-        assert _validate("  gb  ") == "gb"
+        assert _validate("  British  ") == "British"
 
-    def test_non_ascii_returns_none(self):
-        assert _validate("ñe") is None
+    def test_german_country_name_stored_as_adjective(self):
+        assert _validate("Germany") == "German"
+
+    def test_usa_alias_accepted(self):
+        assert _validate("USA") == "American"
 
 
 # ---------------------------------------------------------------------------

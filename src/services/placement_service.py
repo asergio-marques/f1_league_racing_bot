@@ -9,6 +9,7 @@ import discord
 
 from db.database import get_connection
 from models.driver_profile import DriverProfile, DriverState
+from models.signup_module import AvailabilitySlot
 from models.team import TeamRoleConfig
 
 log = logging.getLogger(__name__)
@@ -307,6 +308,77 @@ class PlacementService:
                 "notes": row["notes"],
                 "total_lap_ms": total_ms,
                 "total_lap_fmt": _fmt_ms(total_ms) if total_ms is not None else "—",
+            })
+        return results
+
+    # ------------------------------------------------------------------
+    # Export unassigned drivers (T017)
+    # ------------------------------------------------------------------
+
+    async def get_unassigned_drivers_for_export(
+        self, server_id: int, slots: list[AvailabilitySlot]
+    ) -> list[dict]:
+        """Return all Unassigned drivers seeded, each row enriched for CSV export.
+
+        Each row dict contains:
+          seed, display_name, discord_user_id, driver_type, total_lap_fmt,
+          slot_presence (dict {slot_sequence_id: bool}),
+          preferred_team_1, preferred_team_2, preferred_team_3,
+          platform, platform_id
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT
+                    dp.discord_user_id,
+                    sr.server_display_name,
+                    sr.discord_username,
+                    sr.platform,
+                    sr.platform_id,
+                    sr.availability_slot_ids,
+                    sr.driver_type,
+                    sr.preferred_teams,
+                    sr.total_lap_ms,
+                    sr.updated_at           AS approved_at
+                FROM driver_profiles dp
+                LEFT JOIN signup_records sr
+                    ON sr.server_id = dp.server_id
+                    AND sr.discord_user_id = dp.discord_user_id
+                WHERE dp.server_id = ?
+                  AND dp.current_state = 'UNASSIGNED'
+                ORDER BY
+                    sr.total_lap_ms ASC NULLS LAST,
+                    sr.updated_at ASC
+                """,
+                (server_id,),
+            )
+            rows = await cursor.fetchall()
+
+        slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
+        results = []
+        for i, row in enumerate(rows, start=1):
+            total_ms = row["total_lap_ms"]
+            slot_ids_raw: list[int] = json.loads(row["availability_slot_ids"] or "[]")
+            slot_presence = {s.slot_sequence_id: (s.slot_sequence_id in slot_ids_raw) for s in slots_ordered}
+
+            preferred_teams_raw: list[str] = json.loads(row["preferred_teams"] or "[]")
+            preferred_team_1 = preferred_teams_raw[0] if len(preferred_teams_raw) > 0 else ""
+            preferred_team_2 = preferred_teams_raw[1] if len(preferred_teams_raw) > 1 else ""
+            preferred_team_3 = preferred_teams_raw[2] if len(preferred_teams_raw) > 2 else ""
+
+            display_name = row["server_display_name"] or row["discord_username"] or row["discord_user_id"]
+            results.append({
+                "seed": i,
+                "display_name": display_name,
+                "discord_user_id": row["discord_user_id"],
+                "driver_type": row["driver_type"] or "",
+                "total_lap_fmt": _fmt_ms(total_ms) if total_ms is not None else "",
+                "slot_presence": slot_presence,
+                "preferred_team_1": preferred_team_1,
+                "preferred_team_2": preferred_team_2,
+                "preferred_team_3": preferred_team_3,
+                "platform": row["platform"] or "",
+                "platform_id": row["platform_id"] or "",
             })
         return results
 
