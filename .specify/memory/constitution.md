@@ -1,6 +1,36 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2025-07-01 — v2.7.0 → v2.8.0: Season-signup flow alignment — close-timer scope + channel ownership]
+  Version change    : 2.7.0 → 2.8.0
+  Bump rationale    : MINOR — Two targeted amendments to Principle XI (Signup Wizard Integrity):
+                        1. Signup close timer scope narrowed: only PENDING_SIGNUP_COMPLETION
+                           drivers are transitioned to NOT_SIGNED_UP on forced close. Drivers
+                           in PENDING_ADMIN_APPROVAL or PENDING_DRIVER_CORRECTION retain their
+                           state — their completed/reviewed submissions are preserved.
+                        2. Lineup and calendar channel ownership moved to the `divisions` table.
+                           `lineup_channel_id` migrated from `signup_division_config` to
+                           `divisions`. New `calendar_channel_id` and `lineup_message_id`
+                           columns added to `divisions`. `/division calendar-channel` is no
+                           longer gated on the signup module.
+  Feature branch    : 028-season-signup-flow (created 2025-07-01 from main)
+  Modified principles:
+    - Principle XI (Signup Wizard Integrity) — signup close timer clause amended (scope
+      narrowed); lineup announcement channel clause amended (channel ownership + calendar
+      channel added; module gate removed).
+  Added sections    :
+    - Data & State Management: Division entity amended — lineup_channel_id moved from
+      SignupDivisionConfig, calendar_channel_id and lineup_message_id added.
+    - Data & State Management: SignupDivisionConfig amended — lineup_channel_id dropped.
+  Removed sections  : None
+  Templates confirmed aligned:
+    ✅ .specify/templates/plan-template.md       — dynamic Constitution Check; no changes.
+    ✅ .specify/templates/spec-template.md       — generic structure; no stale references.
+    ✅ .specify/templates/tasks-template.md      — generic; aligns with I–XII.
+    ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+    ✅ .specify/templates/checklist-template.md  — no impact.
+  Deferred TODOs    : None.
+
 [2026-03-29 — v2.6.0 → v2.7.0: Penalty posting channel + appeals workflow formalized]
   Version change    : 2.6.0 → 2.7.0
   Bump rationale    : MINOR — "Penalty and protest adjudication" promoted from planned
@@ -1077,19 +1107,29 @@ lifecycle state (Principle VIII). The following rules are non-negotiable:
 - **Signup close timer (optional)**: When signups are opened, an optional close duration MAY
   be specified. If provided, it is resolved to an absolute UTC timestamp (`close_at`) and
   persisted on the server's signup configuration. When the timer fires, signups are closed
-  automatically: all drivers in Pending Signup Completion, Pending Driver Correction, or
-  Pending Admin Approval are transitioned to Not Signed Up (applying the same cancellation
-  semantics as a manually confirmed close with in-progress drivers); the signup button is
-  removed; and a "signups closed" notice is posted in the general signup channel. The timer
-  is cleared when signups are closed manually before it fires. On bot restart, any active
-  close timer MUST be re-armed.
-- **Lineup announcement channel**: An optional per-division Discord channel may be configured
-  for the signup module to post driver lineup notices. When configured for a division, the
-  bot MUST post a formatted lineup notice to that channel whenever a driver's assignment in
-  that division changes (assign, unassign, or sack). This is a module-introduced channel
-  category governed by Principle VII. Configuring a lineup announcement channel is not
-  required for module activation or for opening signups; if not configured for a division,
-  no lineup notices are posted for that division.
+  automatically: only drivers in Pending Signup Completion are transitioned to Not Signed Up
+  (applying the same cancellation semantics as a manually confirmed close with in-progress
+  drivers); drivers in Pending Driver Correction or Pending Admin Approval retain their
+  current state — their submitted records are preserved for admin review. The signup button
+  is removed; and a "signups closed" notice is posted in the general signup channel. The
+  timer is cleared when signups are closed manually before it fires. On bot restart, any
+  active close timer MUST be re-armed.
+  *(Amended v2.8.0: close-timer now preserves PENDING_ADMIN_APPROVAL and
+  PENDING_DRIVER_CORRECTION drivers; only PENDING_SIGNUP_COMPLETION is cleared.)*
+- **Lineup and calendar announcement channels**: Optional per-division Discord channels for
+  lineup and calendar posts. Both `lineup_channel_id` and `calendar_channel_id` are stored
+  on the `divisions` table (alongside `results_channel_id`, `standings_channel_id`, etc.)
+  and are NOT scoped to the signup module. `/division calendar-channel` is available
+  whenever a season exists, without requiring the signup module to be enabled. When
+  `lineup_channel_id` is configured for a division, the bot MUST delete the previous lineup
+  message (tracked via `lineup_message_id` on the `divisions` row) and post a fresh lineup
+  message whenever a driver's assignment in that division changes (assign, unassign, or sack).
+  When `calendar_channel_id` is configured, a calendar message is posted to that channel
+  upon season approval. If neither channel is configured for a division, no messages are
+  posted for that division.
+  *(Amended v2.8.0: lineup channel ownership moved from signup_division_config to divisions;
+  calendar_channel_id and lineup_message_id added to divisions; /division calendar-channel
+  command is not module-gated.)*
 
 **Rationale**: A strictly defined, isolated wizard removes ambiguity in the onboarding process,
 protects in-progress signups from mid-flow configuration changes, ensures data integrity before
@@ -1607,13 +1647,31 @@ for team-level aggregates):
   appeal outcomes for this division are posted to this channel; if null, the bot falls
   back to `results_channel_id`.
 
+### New Entities (v2.8.0)
+
+*Amendment to Division (v1.0 entity, updated v2.8.0)*:
+- `lineup_channel_id` (INTEGER, nullable) added to `divisions` — moved from
+  `SignupDivisionConfig.lineup_channel_id`. When set, the bot deletes the previous lineup
+  message and posts a fresh one to this channel on driver assignment changes in this division
+  (Principle XI). Existing `lineup_channel_id` data is migrated from `signup_division_config`
+  in migration 027.
+- `calendar_channel_id` (INTEGER, nullable) added to `divisions` — when set, a calendar
+  message listing all rounds is posted to this channel upon season approval (Principle XI).
+- `lineup_message_id` (INTEGER, nullable) added to `divisions` — stores the Discord message
+  ID of the most recently posted lineup message for this division (Principle XI, FR-014).
+  Persisted to survive bot restarts.
+
+*Amendment to SignupDivisionConfig (v2.6.0 entity, updated v2.8.0)*:
+- `lineup_channel_id` removed — migrated to `divisions.lineup_channel_id` (migration 027).
+- Remaining columns: `id`, `server_id`, `division_id`, `UNIQUE(server_id, division_id)`.
+- The table is retained as an existence record for signup module per-division registrations.
+
 ### New Entities (v2.6.0)
 
 **SignupDivisionConfig** (per server, per division — owned by the signup module):
 - `server_id` (TEXT)
 - `division_id` (INTEGER, FK → Division)
-- `lineup_channel_id` (TEXT, nullable) — when set, the bot posts a formatted lineup notice
-  to this channel on driver assignment changes in this division (Principle XI).
+- `lineup_channel_id` (TEXT, nullable) — *removed v2.8.0; migrated to divisions table* (Principle XI).
 - Uniquely keyed on (server_id, division_id). Created lazily on first per-division signup
   configuration; if absent, no lineup notices are posted for that division.
 
