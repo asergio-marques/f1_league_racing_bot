@@ -64,6 +64,8 @@ A tier-2 admin runs `/division verdicts-channel` with a division name and a Disc
 3. **Given** no verdicts channel is configured, **When** a penalty or appeal announcement would be posted, **Then** the message falls back to the division's results channel.
 4. **Given** a verdicts channel is configured, **When** a penalty or appeal announcement is posted, **Then** it goes to the verdicts channel, not the results channel.
 5. **Given** an invalid or non-existent channel is supplied, **When** the command is run, **Then** the bot rejects it with a clear error.
+6. **Given** the Results module is enabled and a verdicts channel is configured for a division, **When** a tier-2 admin runs `/season review`, **Then** the review output lists the verdicts channel for that division alongside the results and standings channels.
+7. **Given** the Results module is enabled and a division has no verdicts channel configured, **When** a tier-2 admin runs `/season approve`, **Then** the approval is rejected with an error identifying the division and instructing the admin to run `/division verdicts-channel`.
 
 ---
 
@@ -158,6 +160,8 @@ The existing `AddPenaltyModal` (currently: driver field + penalty value field) i
 - **FR-011**: A new `/division verdicts-channel <division> <channel>` command MUST be implemented for tier-2 admins. It sets `penalty_channel_id` on the division's `DivisionResultsConfig` record.
 - **FR-012**: The command MUST validate that the supplied channel exists and is accessible by the bot before storing it.
 - **FR-013**: If no `penalty_channel_id` is configured for a division, the bot MUST fall back to `results_channel_id` for all verdict announcements.
+- **FR-025**: When the Results module is enabled, `/season review` MUST display the configured verdicts channel (or `*(not configured)*`) for each division, in the same per-division block as the results and standings channels.
+- **FR-026**: When the Results module is enabled, `/season approve` MUST be rejected if any division does not have a `penalty_channel_id` configured. The error message MUST identify each unconfigured division and instruct the admin to run `/division verdicts-channel <division> <channel>`.
 
 **Penalty & Appeal Announcement Format**
 
@@ -221,3 +225,4 @@ The existing `AddPenaltyModal` (currently: driver field + penalty value field) i
 - **SC-004**: `round results amend` is rejected for every round not in `FINAL` state and accepted for every round in `FINAL` state — no false positives or false negatives in any test scenario.
 - **SC-005**: The division verdicts channel can be configured and updated by a tier-2 admin in a single command interaction.
 - **SC-006**: The full round lifecycle (initial submission → penalty review approved → appeals review approved) produces exactly three results and standings reposts per session, each with the correct label, using only the existing wizard channel without any additional commands.
+- **SC-007**: `/season approve` is blocked for any server where the Results module is enabled and at least one division has no verdicts channel configured — and it succeeds once all divisions have a verdicts channel configured.
