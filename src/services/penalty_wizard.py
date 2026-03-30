@@ -29,6 +29,10 @@ _CID_CONFIRM          = "pw_confirm"
 _CID_APPROVE          = "pw_approve"
 _CID_AV_MAKE_CHANGES  = "pw_av_make_changes"
 _CID_AV_APPROVE       = "pw_av_approve"
+_CID_AR_APPROVE       = "ar_approve"
+_CID_AR_ADD           = "ar_add"
+_CID_AR_CONFIRM       = "ar_confirm"
+_CID_AR_MAKE_CHANGES  = "ar_make_changes"
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +76,9 @@ class PenaltyReviewState:
     db_path: str
     bot: Any
     staged: list[StagedPenalty] = field(default_factory=list)
+    staged_appeals: list[StagedPenalty] = field(default_factory=list)
     prompt_message_id: int | None = None
+    appeals_prompt_message_id: int | None = None
     round_number: int = 0
     division_name: str = ""
 
@@ -198,6 +204,47 @@ async def _refresh_prompt(state: PenaltyReviewState) -> None:
         log.warning("_refresh_prompt: failed to edit prompt: %s", exc)
 
 
+async def _render_appeals_prompt_content(state: PenaltyReviewState) -> str:
+    """Build the text content for the appeals review prompt message."""
+    lines: list[str] = [
+        f"⚖️ **Appeals Review — Round {state.round_number} | {state.division_name}**",
+        "",
+        "Post-Race Penalty Results have been posted. "
+        "Review and add any appeal corrections before approving to finalise.",
+        "",
+    ]
+    if state.staged_appeals:
+        lines.append(f"**Staged Corrections ({len(state.staged_appeals)}):**")
+        for i, sp in enumerate(state.staged_appeals, 1):
+            pl = _pen_label(sp)
+            sl = sp.session_type.value.replace("_", " ").title()
+            lines.append(
+                f"  {i}. <@{sp.driver_user_id}> | {sl} | **{pl}**  ← Remove #{i} below"
+            )
+    else:
+        lines.append(
+            "**Staged Corrections:** *(none — click Add Correction to stage one)*"
+        )
+    return "\n".join(lines)
+
+
+async def _refresh_appeals_prompt(state: PenaltyReviewState) -> None:
+    """Edit the existing appeals prompt message to reflect current staged_appeals."""
+    if state.appeals_prompt_message_id is None:
+        return
+    ch = state.bot.get_channel(state.submission_channel_id)
+    if ch is None:
+        return
+    try:
+        msg = await ch.fetch_message(state.appeals_prompt_message_id)
+        content = await _render_appeals_prompt_content(state)
+        new_view = AppealsReviewView(state)
+        await msg.edit(content=content, view=new_view)
+        state.bot.add_view(new_view, message_id=state.appeals_prompt_message_id)
+    except (discord.NotFound, discord.HTTPException) as exc:
+        log.warning("_refresh_appeals_prompt: failed to edit appeals prompt: %s", exc)
+
+
 # ---------------------------------------------------------------------------
 # Session selector (ephemeral, non-persistent)
 # ---------------------------------------------------------------------------
@@ -205,10 +252,17 @@ async def _refresh_prompt(state: PenaltyReviewState) -> None:
 class _SessionSelectView(discord.ui.View):
     """One button per non-cancelled session type in the round."""
 
-    def __init__(self, state: PenaltyReviewState, source_interaction: discord.Interaction) -> None:
+    def __init__(
+        self,
+        state: PenaltyReviewState,
+        source_interaction: discord.Interaction,
+        *,
+        use_appeals_staging: bool = False,
+    ) -> None:
         super().__init__(timeout=120)
         self.state = state
         self.source_interaction = source_interaction
+        self.use_appeals_staging = use_appeals_staging
         for stype in state.session_types_present:
             label = stype.value.replace("_", " ").title()
             btn = discord.ui.Button(label=label, style=discord.ButtonStyle.primary)
@@ -218,7 +272,11 @@ class _SessionSelectView(discord.ui.View):
     def _make_cb(self, stype: SessionType):
         async def cb(interaction: discord.Interaction) -> None:
             await interaction.response.send_modal(
-                AddPenaltyModal(state=self.state, session_type=stype)
+                AddPenaltyModal(
+                    state=self.state,
+                    session_type=stype,
+                    use_appeals_staging=self.use_appeals_staging,
+                )
             )
             self.stop()
             try:
@@ -240,7 +298,7 @@ class _SessionSelectView(discord.ui.View):
 # ---------------------------------------------------------------------------
 
 class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
-    """Two-field modal for specifying driver @mention/ID and penalty value."""
+    """Four-field modal: driver, penalty value, description, and justification."""
 
     driver_input: discord.ui.TextInput = discord.ui.TextInput(
         label="Driver (@mention or user ID)",
@@ -254,12 +312,34 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
         required=True,
         max_length=10,
     )
+    description_input: discord.ui.TextInput = discord.ui.TextInput(
+        label="Penalty description",
+        placeholder="Brief description of the incident",
+        required=True,
+        max_length=200,
+        style=discord.TextStyle.paragraph,
+    )
+    justification_input: discord.ui.TextInput = discord.ui.TextInput(
+        label="Justification",
+        placeholder="Why this penalty was applied",
+        required=True,
+        max_length=200,
+        style=discord.TextStyle.paragraph,
+    )
 
-    def __init__(self, state: PenaltyReviewState, session_type: SessionType) -> None:
+    def __init__(
+        self,
+        state: PenaltyReviewState,
+        session_type: SessionType,
+        *,
+        use_appeals_staging: bool = False,
+    ) -> None:
         session_label = session_type.value.replace("_", " ").title()
-        super().__init__(title=f"Add Penalty — {session_label}")
+        title_prefix = "Add Correction" if use_appeals_staging else "Add Penalty"
+        super().__init__(title=f"{title_prefix} — {session_label}")
         self.state = state
         self.session_type = session_type
+        self.use_appeals_staging = use_appeals_staging
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -322,9 +402,12 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
         # Adjust for TIME penalties already staged in this wizard session for the
         # same driver+session — a second negative penalty must not exceed whatever
         # headroom remains after previously staged reductions.
+        staging_list = (
+            self.state.staged_appeals if self.use_appeals_staging else self.state.staged
+        )
         staged_adjustment = sum(
             sp.penalty_seconds
-            for sp in self.state.staged
+            for sp in staging_list
             if sp.driver_user_id == driver_user_id
             and sp.session_type == self.session_type
             and sp.penalty_type == "TIME"
@@ -344,14 +427,20 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
             await interaction.followup.send(f"❌ {result}", ephemeral=True)
             return
 
-        # Stage the penalty and refresh the prompt (T017)
-        self.state.staged.append(result)
-        await _refresh_prompt(self.state)
+        # Stage the penalty (with description and justification) and refresh.
+        result.description = self.description_input.value.strip()
+        result.justification = self.justification_input.value.strip()
+        staging_list.append(result)
+        if self.use_appeals_staging:
+            await _refresh_appeals_prompt(self.state)
+        else:
+            await _refresh_prompt(self.state)
 
         pl = _pen_label(result)
         sl = self.session_type.value.replace("_", " ").title()
+        action = "Correction" if self.use_appeals_staging else "Penalty"
         await interaction.followup.send(
-            f"✅ Staged: <@{driver_user_id}> | {sl} | **{pl}**",
+            f"\u2705 Staged {action}: <@{driver_user_id}> | {sl} | **{pl}**",
             ephemeral=True,
         )
 
@@ -570,8 +659,8 @@ class PenaltyReviewView(discord.ui.View):
                 ephemeral=True,
             )
             return
-        from services.result_submission_service import finalize_round
-        await finalize_round(interaction, self.state)
+        from services.result_submission_service import finalize_penalty_review
+        await finalize_penalty_review(interaction, self.state)
 
 
 # ---------------------------------------------------------------------------
@@ -649,6 +738,194 @@ class ApprovalView(discord.ui.View):
                 ephemeral=True,
             )
             return
-        # T025: wire to finalize_round
-        from services.result_submission_service import finalize_round
-        await finalize_round(interaction, self.state)
+        # T007: wire to finalize_penalty_review
+        from services.result_submission_service import finalize_penalty_review
+        await finalize_penalty_review(interaction, self.state)
+
+
+# ---------------------------------------------------------------------------
+# Appeals review view (T008 — minimal stub; expanded in T018)
+# ---------------------------------------------------------------------------
+
+class AppealsReviewView(discord.ui.View):
+    """Persistent appeals review prompt view.
+
+    Mirrors the :class:`PenaltyReviewView` structure:
+    - ➕ Add Correction — opens ``_SessionSelectView`` in appeals mode
+    - No Changes / Confirm — finalises without corrections (with confirmation when staged)
+    - ✅ Approve — applies staged corrections and calls ``finalize_appeals_review``
+
+    Dynamic Remove buttons are added per staged_appeals entry at construction time.
+    """
+
+    def __init__(self, state: PenaltyReviewState | None = None) -> None:
+        super().__init__(timeout=None)
+        self.state = state
+
+        _no_state = state is None
+        for item in self.children:
+            if not isinstance(item, discord.ui.Button):
+                continue
+            if item.custom_id == _CID_AR_ADD:
+                item.disabled = _no_state or len(state.session_types_present) == 0  # type: ignore[union-attr]
+            elif item.custom_id == _CID_AR_APPROVE:
+                item.disabled = _no_state or len(state.staged_appeals) == 0  # type: ignore[union-attr]
+
+        # Dynamic Remove buttons — one per staged correction
+        if state is not None:
+            for idx, sp in enumerate(state.staged_appeals):
+                row_num = min(1 + idx // 5, 4)
+                btn = discord.ui.Button(
+                    label=f"Remove #{idx + 1}",
+                    style=discord.ButtonStyle.danger,
+                    custom_id=f"ar_remove_{idx}",
+                    row=row_num,
+                )
+                btn.callback = self._make_remove_cb(idx)
+                self.add_item(btn)
+
+    def _make_remove_cb(self, idx: int):
+        async def cb(interaction: discord.Interaction) -> None:
+            if self.state is None:
+                await interaction.response.send_message(
+                    "⚠️ The bot was restarted. Please wait for the appeals prompt to refresh.",
+                    ephemeral=True,
+                )
+                return
+            if not await _require_lm(interaction, self.state):
+                return
+            if idx < len(self.state.staged_appeals):
+                removed = self.state.staged_appeals.pop(idx)
+                await interaction.response.defer(ephemeral=True)
+                await _refresh_appeals_prompt(self.state)
+                pl = _pen_label(removed)
+                await interaction.followup.send(
+                    f"\U0001f5d1\ufe0f Removed: <@{removed.driver_user_id}> | {pl}",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    "⚠️ That entry no longer exists (the list may have changed).",
+                    ephemeral=True,
+                )
+        return cb
+
+    @discord.ui.button(
+        label="➕ Add Correction",
+        style=discord.ButtonStyle.primary,
+        custom_id=_CID_AR_ADD,
+        row=0,
+    )
+    async def add_correction_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if self.state is None:
+            await interaction.response.send_message(
+                "⚠️ The bot was restarted. Please wait for the appeals prompt to refresh.",
+                ephemeral=True,
+            )
+            return
+        if not await _require_lm(interaction, self.state):
+            return
+        view = _SessionSelectView(
+            state=self.state,
+            source_interaction=interaction,
+            use_appeals_staging=True,
+        )
+        await interaction.response.send_message(
+            "Select which session to apply a correction to:", view=view, ephemeral=True
+        )
+
+    @discord.ui.button(
+        label="No Changes / Confirm",
+        style=discord.ButtonStyle.secondary,
+        custom_id=_CID_AR_CONFIRM,
+        row=0,
+    )
+    async def no_changes_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if self.state is None:
+            await interaction.response.send_message(
+                "⚠️ The bot was restarted. Please wait for the appeals prompt to refresh.",
+                ephemeral=True,
+            )
+            return
+        if not await _require_lm(interaction, self.state):
+            return
+        if not self.state.staged_appeals:
+            # No corrections — finalise directly
+            await interaction.response.defer(ephemeral=True)
+            from services.result_submission_service import finalize_appeals_review
+            await finalize_appeals_review(interaction, self.state)
+        else:
+            # Ask for explicit confirmation before clearing
+            view = _AppealsConfirmClearView(state=self.state)
+            await interaction.response.send_message(
+                f"⚠️ You have **{len(self.state.staged_appeals)}** staged correction(s). "
+                "Clicking **Yes, clear and proceed** will discard all of them and finalise "
+                "the round without any appeal corrections.",
+                view=view,
+                ephemeral=True,
+            )
+
+    @discord.ui.button(
+        label="✅ Approve",
+        style=discord.ButtonStyle.success,
+        custom_id=_CID_AR_APPROVE,
+        row=0,
+    )
+    async def approve_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if self.state is None:
+            await interaction.response.send_message(
+                "⚠️ The bot was restarted. Please wait for the appeals prompt to refresh.",
+                ephemeral=True,
+            )
+            return
+        if not await _require_lm(interaction, self.state):
+            return
+        if not self.state.staged_appeals:
+            await interaction.response.send_message(
+                "⚠️ No corrections are staged. "
+                "Use **No Changes / Confirm** to finalise without corrections.",
+                ephemeral=True,
+            )
+            return
+        from services.result_submission_service import finalize_appeals_review
+        await finalize_appeals_review(interaction, self.state)
+
+
+class _AppealsConfirmClearView(discord.ui.View):
+    """Two-button confirmation for clearing the staged appeals corrections list."""
+
+    def __init__(self, state: PenaltyReviewState) -> None:
+        super().__init__(timeout=60)
+        self.state = state
+
+    @discord.ui.button(
+        label="Yes, clear and proceed with no corrections",
+        style=discord.ButtonStyle.danger,
+    )
+    async def confirm_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if not await _require_lm(interaction, self.state):
+            return
+        self.state.staged_appeals.clear()
+        await interaction.response.defer(ephemeral=True)
+        from services.result_submission_service import finalize_appeals_review
+        await finalize_appeals_review(interaction, self.state)
+        self.stop()
+
+    @discord.ui.button(
+        label="No, go back",
+        style=discord.ButtonStyle.secondary,
+    )
+    async def cancel_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        self.stop()
+

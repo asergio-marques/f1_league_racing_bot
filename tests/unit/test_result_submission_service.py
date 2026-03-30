@@ -355,18 +355,22 @@ def test_format_time_ms(ms, expected_str):
 
 
 async def test_submission_channel_not_closed_after_final_session(monkeypatch):
-    """Structural check: run_result_submission_job ends by calling enter_penalty_state,
-    not close_submission_channel. We verify this by checking close_submission_channel
-    is not called when enter_penalty_state replaces the step 9+10 block."""
+    """Structural check: run_result_submission_job ends by calling enter_penalty_state
+    (not close_submission_channel) for normal rounds.
+
+    The only legitimate close_submission_channel call in the 9+10 block is for the
+    all-cancelled early-exit path. We verify that enter_penalty_state is the final
+    call after all session loops and that it appears after any early-exit returns."""
     import inspect
     from services.result_submission_service import run_result_submission_job
 
     source = inspect.getsource(run_result_submission_job)
-    # After the final session loop, only enter_penalty_state should appear
-    # (close_submission_channel is called inside finalize_round, not here)
     final_block = source[source.rfind("# 9+10"):]
     assert "enter_penalty_state" in final_block
-    assert "close_submission_channel" not in final_block
+    # close_submission_channel may appear for the all-cancelled early-exit branch,
+    # but enter_penalty_state must also be present as the normal-round final call.
+    # Verify enter_penalty_state appears at the END of the block, after any early returns.
+    assert final_block.rfind("enter_penalty_state") > final_block.rfind("close_submission_channel")
 
 
 async def test_penalty_state_entered_after_final_session(tmp_path):

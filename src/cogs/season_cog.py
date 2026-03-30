@@ -267,9 +267,11 @@ class SeasonCog(commands.Cog):
                 weather_chan = f"<#{div.forecast_channel_id}>" if div.forecast_channel_id else "*(none)*"
                 results_chan = f"<#{div.results_channel_id}>" if div.results_channel_id else "*(none)*"
                 standings_chan = f"<#{div.standings_channel_id}>" if div.standings_channel_id else "*(none)*"
+                verdicts_chan = f"<#{div.penalty_channel_id}>" if div.penalty_channel_id else "*(not configured)*"
                 lines.append(f"  Weather channel: {weather_chan}")
                 lines.append(f"  Results channel: {results_chan}")
                 lines.append(f"  Standings channel: {standings_chan}")
+                lines.append(f"  Verdicts channel: {verdicts_chan}")
                 teams = await self.bot.team_service.get_division_teams(div.id)
                 if teams:
                     lines.append("  **Teams:** " + ", ".join(t["name"] for t in teams))
@@ -1013,6 +1015,88 @@ class SeasonCog(commands.Cog):
         await self._set_division_channel(interaction, name, channel, "standings")
 
     @division.command(
+        name="verdicts-channel",
+        description="Set the verdicts (penalty announcement) channel for a division.",
+    )
+    @app_commands.describe(name="Division name", channel="Verdicts announcement channel")
+    @channel_guard
+    @admin_only
+    async def division_verdicts_channel(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        channel: discord.TextChannel,
+    ) -> None:
+        import json as _json
+        if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
+            await interaction.response.send_message(
+                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        guild = interaction.guild
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        # Validate bot access
+        if guild is None or not channel.permissions_for(guild.me).send_messages:
+            await interaction.followup.send(
+                "\u274c Cannot access that channel. Ensure the bot has permission to post there.",
+                ephemeral=True,
+            )
+            return
+
+        season = await self.bot.season_service.get_season_for_server(server_id)
+        if season is None:
+            await interaction.followup.send(
+                "\u274c No season found. Set up a season before assigning channels.",
+                ephemeral=True,
+            )
+            return
+
+        divisions = await self.bot.season_service.get_divisions(season.id)
+        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
+        if div is None:
+            await interaction.followup.send(
+                f"\u274c Division \"{name}\" not found.",
+                ephemeral=True,
+            )
+            return
+
+        old_id = await self.bot.season_service.set_division_penalty_channel(div.id, channel.id)
+
+        # Audit log
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as db:
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, ?, 'VERDICTS_CHANNEL_SET', ?, ?, ?)",
+                (
+                    server_id,
+                    interaction.user.id,
+                    str(interaction.user),
+                    div.id,
+                    _json.dumps({"channel_id": old_id}),
+                    _json.dumps({"channel_id": channel.id}),
+                    now,
+                ),
+            )
+            await db.commit()
+
+        if old_id is None:
+            msg = f"\u2705 Verdicts channel for {name} set to #{channel.name}."
+        else:
+            msg = f"\u2705 Verdicts channel for {name} updated to #{channel.name}."
+        await interaction.followup.send(msg, ephemeral=True)
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division verdicts-channel | Success\n"
+            f"  division: {name}\n"
+            f"  channel: #{channel.name}",
+        )
+
+    @division.command(
         name="lineup-channel",
         description="Set the lineup posting channel for a division (signup module).",
     )
@@ -1700,6 +1784,15 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        # T009: amend is only permitted on FINAL rounds
+        if rnd.result_status != "FINAL":
+            await interaction.followup.send(
+                "\u274c This round cannot be amended yet. Round results must reach **FINAL** status "
+                "(approved through the full penalty review and appeals process) before they can be amended.",
+                ephemeral=True,
+            )
+            return
+
         # Load ACTIVE session_results
         async with get_connection(self.bot.db_path) as db:
             cursor = await db.execute(
@@ -2253,6 +2346,11 @@ class SeasonCog(commands.Cog):
                     errors.append(f"**{d.name}** is missing a results channel")
                 if not d.standings_channel_id:
                     errors.append(f"**{d.name}** is missing a standings channel")
+                if not d.penalty_channel_id:
+                    errors.append(
+                        f"**{d.name}** is missing a verdicts channel \u2014 "
+                        f"run /division verdicts-channel {d.name} <channel>"
+                    )
 
             async with get_connection(self.bot.db_path) as _db:
                 cursor = await _db.execute(

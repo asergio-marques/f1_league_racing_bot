@@ -22,4 +22,4 @@ class Round:
     phase2_done: bool = False
     phase3_done: bool = False
     status: str = "ACTIVE"
-    finalized: bool = False
+    result_status: str = "PROVISIONAL"

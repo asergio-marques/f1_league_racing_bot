@@ -28,6 +28,8 @@ class StagedPenalty:
     session_type: SessionType
     penalty_type: Literal["TIME", "DSQ"]
     penalty_seconds: int | None
+    description: str = ""
+    justification: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -160,15 +162,25 @@ async def apply_penalties(
     bot: discord.Client,
     *,
     _skip_post: bool = False,
-) -> None:
+) -> list[dict]:
     """Apply a list of staged penalties to the DB and cascade standings.
+
+    Inserts one row into ``penalty_records`` per staged penalty and returns
+    the list of inserted record dicts (including ``id`` from the DB).
 
     When *_skip_post* is ``True`` the internal cascade-recompute and
     ``repost_round_results`` calls are skipped.  Pass ``True`` when the
-    caller (e.g. ``finalize_round``) will handle reposting itself.
+    caller (e.g. ``finalize_penalty_review``) will handle reposting itself.
     """
+    import datetime
+
     from services import standings_service
     from services import results_post_service
+
+    # Map (session_type_value, driver_user_id) -> driver_session_results.id
+    # populated during the session loop so we can INSERT penalty_records after.
+    driver_to_dsr_id: dict[tuple[str, int], int] = {}
+    inserted_records: list[dict] = []
 
     async with get_connection(db_path) as db:
         # Load season_id for audit log
@@ -219,7 +231,9 @@ async def apply_penalties(
             )
             driver_rows = list(await cursor.fetchall())
 
-            # Apply DSQ and TIME mutations in-memory
+            # Track driver_user_id -> driver_session_result_id for penalty_records INSERT.
+            for dr in driver_rows:
+                driver_to_dsr_id[(session_type.value, int(dr["driver_user_id"]))] = dr["id"]
             dsq_ids = {sp.driver_user_id for sp in session_penalties if sp.penalty_type == "DSQ"}
             time_boosts: dict[int, int] = {
                 sp.driver_user_id: sp.penalty_seconds
@@ -255,7 +269,6 @@ async def apply_penalties(
                         update["gap"] = "N/A"
                     else:
                         update["total_time"] = "DSQ"
-                        update["post_steward_total_time"] = "DSQ"
                         update["fastest_lap"] = "N/A"
                         update["time_penalties"] = "N/A"
                 elif uid in time_boosts:
@@ -263,10 +276,6 @@ async def apply_penalties(
                     base_time = dr["total_time"] or ""
                     new_time = _apply_time_penalty(base_time, penalty_s)
                     update["total_time"] = new_time
-                    update["post_steward_total_time"] = new_time
-                    # Accumulate post-race penalties
-                    existing_pen = dr["post_race_time_penalties"] or 0
-                    update["post_race_time_penalties"] = existing_pen + penalty_s
                 updated_rows.append(update)
 
             # Re-sort positions: DSQs go last; TIME-penalised rows move accordingly
@@ -325,6 +334,49 @@ async def apply_penalties(
                     ),
                 )
 
+        # INSERT one penalty_records row per staged penalty.
+        now_str = datetime.datetime.utcnow().isoformat()
+        for sp in staged:
+            dsr_id = driver_to_dsr_id.get((sp.session_type.value, sp.driver_user_id))
+            if dsr_id is None:
+                log.warning(
+                    "apply_penalties: no dsr_id for user %s session %s — skipping record",
+                    sp.driver_user_id,
+                    sp.session_type.value,
+                )
+                continue
+            cursor = await db.execute(
+                """
+                INSERT INTO penalty_records (
+                    driver_session_result_id, penalty_type, time_seconds,
+                    description, justification, applied_by, applied_at,
+                    announcement_channel_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+                """,
+                (
+                    dsr_id,
+                    sp.penalty_type,
+                    sp.penalty_seconds,
+                    sp.description,
+                    sp.justification,
+                    str(applied_by),
+                    now_str,
+                ),
+            )
+            inserted_records.append(
+                {
+                    "id": cursor.lastrowid,
+                    "driver_session_result_id": dsr_id,
+                    "driver_user_id": sp.driver_user_id,
+                    "penalty_type": sp.penalty_type,
+                    "time_seconds": sp.penalty_seconds,
+                    "description": sp.description,
+                    "justification": sp.justification,
+                    "applied_by": str(applied_by),
+                    "announcement_channel_id": None,
+                }
+            )
+
         await db.commit()
 
     # Audit log
@@ -370,4 +422,6 @@ async def apply_penalties(
             guild = bot.get_guild(int(row3["server_id"]))
         if guild:
             await results_post_service.repost_round_results(db_path, round_id, division_id, guild)
+
+    return inserted_records
 

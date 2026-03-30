@@ -13,3 +13,4 @@ class Division:
     tier: int = 0
     results_channel_id: int | None = None
     standings_channel_id: int | None = None
+    penalty_channel_id: int | None = None
