@@ -21,6 +21,7 @@ from apscheduler.triggers.date import DateTrigger
 
 from models.driver_profile import DriverState
 from models.signup_module import SignupRecord, SignupWizardRecord, WizardState
+from utils.nationality_data import NATIONALITY_LOOKUP
 
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
@@ -848,15 +849,36 @@ class WizardService:
     async def handle_member_remove(
         self, server_id: int, discord_user_id: str, guild: discord.Guild
     ) -> None:
-        """Member left the server while in a wizard session (T047).
+        """Member left the server while an active driver state requires cleanup (T047).
 
-        Cancels all pending jobs/tasks, transitions driver to NOT_SIGNED_UP,
-        and deletes the channel immediately (no 24-hour hold).
+        Handles:
+          - COLLECTING_* states (wizard active)
+          - PENDING_ADMIN_APPROVAL / AWAITING_CORRECTION_PARAMETER (wizard UNENGAGED
+            but driver still has an active state with a signup channel to clean up)
+
+        Cancels jobs/tasks, transitions driver to NOT_SIGNED_UP, deletes the
+        signup channel immediately, and posts a log notification.
         FR-027.
         """
+        _ACTIVE_STATES_UNENGAGED_WIZARD = {
+            DriverState.PENDING_ADMIN_APPROVAL,
+            DriverState.AWAITING_CORRECTION_PARAMETER,
+        }
+
         wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
-        if wizard is None or wizard.wizard_state == WizardState.UNENGAGED:
-            return
+        wizard_is_active = wizard is not None and wizard.wizard_state != WizardState.UNENGAGED
+
+        driver = None
+        if not wizard_is_active:
+            driver = await self._driver_service.get_profile(server_id, discord_user_id)
+            if driver is None or driver.current_state not in _ACTIVE_STATES_UNENGAGED_WIZARD:
+                return
+
+        # Capture state label before cleanup
+        if wizard_is_active:
+            state_label = wizard.wizard_state.value  # type: ignore[union-attr]
+        else:
+            state_label = driver.current_state.value  # type: ignore[union-attr]
 
         # Cancel all jobs and tasks
         ckey = (server_id, discord_user_id)
@@ -877,7 +899,7 @@ class WizardService:
             )
 
         # Delete channel immediately (no hold)
-        if wizard.signup_channel_id is not None:
+        if wizard is not None and wizard.signup_channel_id is not None:
             channel = guild.get_channel(wizard.signup_channel_id)
             if channel is not None:
                 try:
@@ -888,8 +910,24 @@ class WizardService:
                         wizard.signup_channel_id,
                     )
 
-        await self._signup_svc.delete_wizard(server_id, discord_user_id)
-        raise NotImplementedError
+        if wizard is not None:
+            await self._signup_svc.delete_wizard(server_id, discord_user_id)
+
+        # Post log notification
+        try:
+            signup_record = await self._signup_svc.get_record(server_id, discord_user_id)
+            display_name = (
+                (signup_record.server_display_name or signup_record.discord_username or discord_user_id)
+                if signup_record is not None
+                else discord_user_id
+            )
+        except Exception:
+            display_name = discord_user_id
+
+        await self._output_router.post_log(
+            server_id,
+            f"Driver left server: **{display_name}** (<@{discord_user_id}>) | state: {state_label}",
+        )
 
     async def recover_wizards(self) -> None:
         """Called in on_ready: re-arm inactivity jobs for non-UNENGAGED wizards.
@@ -972,13 +1010,8 @@ class WizardService:
 
     @staticmethod
     def _validate_nationality(raw: str) -> str | None:
-        """Accept 2-letter ISO code or 'other'; return normalised lowercase."""
-        stripped = raw.strip().lower()
-        if stripped == "other":
-            return "other"
-        if re.fullmatch(r"[a-z]{2}", stripped):
-            return stripped
-        return None
+        """Accept nationality adjective, country name, or 'other'; return canonical Title-Case string."""
+        return NATIONALITY_LOOKUP.get(raw.strip().lower())
 
     _PLATFORMS = ["Steam", "EA", "Xbox", "PlayStation"]
     _DRIVER_TYPES = ["Full-Time Driver", "Reserve Driver"]
@@ -1245,8 +1278,8 @@ class WizardService:
         val = self._validate_nationality(message.content)
         if val is None:
             await message.channel.send(
-                "❌ Invalid nationality. Please enter a 2-letter country code (e.g. `gb`, `us`) "
-                "or `other`."
+                "❌ Invalid nationality. Please enter your full nationality (e.g. `British`) "
+                "or country name (e.g. `United Kingdom`), or type `other`."
             )
             return
         wizard.draft_answers["nationality"] = val
@@ -1448,7 +1481,7 @@ class WizardService:
         if state == WizardState.COLLECTING_NATIONALITY:
             return (
                 "**Step 1 — Nationality**\n"
-                "Enter your 2-letter country code (e.g. `gb`, `us`) or `other`."
+                "Enter your nationality (e.g. `British`) or country name (e.g. `United Kingdom`), or type `other`."
             )
         if state == WizardState.COLLECTING_PLATFORM:
             return "**Step 2 — Platform**\nSelect your platform using the buttons below."
@@ -1543,6 +1576,7 @@ class WizardService:
             f"**Preferred teammate:** {record.preferred_teammate or 'No Preference'}\n"
             f"**Lap times:**\n{lap_lines}\n"
             f"**Notes:** {record.notes or 'None'}\n"
+            "\nPlease wait for an admin to validate your signup.\n"
         )
 
     # ------------------------------------------------------------------
