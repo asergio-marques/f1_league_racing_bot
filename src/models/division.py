@@ -14,3 +14,6 @@ class Division:
     results_channel_id: int | None = None
     standings_channel_id: int | None = None
     penalty_channel_id: int | None = None
+    lineup_channel_id: int | None = None
+    calendar_channel_id: int | None = None
+    lineup_message_id: int | None = None

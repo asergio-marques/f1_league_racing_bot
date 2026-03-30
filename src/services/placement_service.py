@@ -325,6 +325,7 @@ class PlacementService:
         acting_user_name: str,
         guild: discord.Guild,
         discord_user_id: str,
+        season_state: str = "ACTIVE",
     ) -> dict:
         """Assign a driver to a team seat in a division.
 
@@ -491,13 +492,15 @@ class PlacementService:
                 member = None
 
         if member is not None:
-            role_ids_to_grant = [div_role_id]
-            team_cfg = await self.get_team_role_config(server_id, team_name)
-            if team_cfg is not None:
-                role_ids_to_grant.append(team_cfg.role_id)
-            await self._grant_roles(member, *role_ids_to_grant)
+            if season_state == "ACTIVE":
+                role_ids_to_grant = [div_role_id]
+                team_cfg = await self.get_team_role_config(server_id, team_name)
+                if team_cfg is not None:
+                    role_ids_to_grant.append(team_cfg.role_id)
+                await self._grant_roles(member, *role_ids_to_grant)
 
-        await self._maybe_post_lineup(server_id, division_id, guild)
+        if guild is not None:
+            await self._refresh_lineup_post(guild, division_id)
         return {"was_unassigned": was_unassigned, "team_name": team_name, "division_name": div_name}
 
     # ------------------------------------------------------------------
@@ -514,6 +517,7 @@ class PlacementService:
         acting_user_name: str,
         guild: discord.Guild,
         discord_user_id: str,
+        season_state: str = "ACTIVE",
     ) -> dict:
         """Remove a driver's assignment from one division.
 
@@ -654,12 +658,14 @@ class PlacementService:
                 member = None
 
         if member is not None:
-            roles_to_revoke = [div_role_id]
-            if team_role_id_to_revoke is not None:
-                roles_to_revoke.append(team_role_id_to_revoke)
-            await self._revoke_roles(member, *roles_to_revoke)
+            if season_state == "ACTIVE":
+                roles_to_revoke = [div_role_id]
+                if team_role_id_to_revoke is not None:
+                    roles_to_revoke.append(team_role_id_to_revoke)
+                await self._revoke_roles(member, *roles_to_revoke)
 
-        await self._maybe_post_lineup(server_id, division_id, guild)
+        if guild is not None:
+            await self._refresh_lineup_post(guild, division_id)
         return {"division_name": div_name, "has_remaining_assignments": has_remaining}
 
     # ------------------------------------------------------------------
@@ -846,75 +852,66 @@ class PlacementService:
             )
             await db.commit()
 
-        # Post lineup for each division the driver was removed from (T024)
-        for _div_id in division_ids:
-            await self._maybe_post_lineup(server_id, _div_id, guild)
+        # Refresh lineup post for each division the driver was removed from
+        if guild is not None:
+            for _div_id in division_ids:
+                await self._refresh_lineup_post(guild, _div_id)
 
     # ------------------------------------------------------------------
     # Division resolution helper (used by cogs)
     # ------------------------------------------------------------------
 
-    async def _maybe_post_lineup(
-        self, server_id: int, division_id: int, guild: discord.Guild
+    async def _refresh_lineup_post(
+        self, guild: discord.Guild, division_id: int
     ) -> None:
-        """Post the division lineup embed if all UNASSIGNED drivers are placed (T023).
+        """Delete the old lineup message (if any) and post a fresh lineup embed.
 
-        Conditions (all must pass):
-        - signup_division_config exists and has a lineup_channel_id
-        - No drivers are in UNASSIGNED state server-wide
-        - At least one driver is ASSIGNED in this division
+        Reads lineup_channel_id and lineup_message_id from the divisions table.
+        Returns silently if no lineup_channel_id is configured.
         """
         async with get_connection(self._db_path) as db:
-            # (a) Fetch division config
             cur = await db.execute(
-                "SELECT lineup_channel_id FROM signup_division_config "
-                "WHERE server_id = ? AND division_id = ?",
-                (server_id, division_id),
-            )
-            div_cfg_row = await cur.fetchone()
-
-        if div_cfg_row is None or div_cfg_row["lineup_channel_id"] is None:
-            return
-
-        lineup_channel_id: int = div_cfg_row["lineup_channel_id"]
-
-        async with get_connection(self._db_path) as db:
-            # (b) Count UNASSIGNED drivers server-wide
-            cur = await db.execute(
-                "SELECT COUNT(*) FROM driver_profiles WHERE server_id = ? AND current_state = 'UNASSIGNED'",
-                (server_id,),
-            )
-            unassigned_count = (await cur.fetchone())[0]
-
-            if unassigned_count > 0:
-                return
-
-            # (c) Count ASSIGNED drivers in this division (via driver_season_assignments)
-            cur = await db.execute(
-                """
-                SELECT COUNT(*) FROM driver_season_assignments dsa
-                JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-                WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                """,
-                (division_id,),
-            )
-            assigned_count = (await cur.fetchone())[0]
-
-        if assigned_count == 0:
-            return
-
-        # (d) Fetch teams with assigned drivers for this division
-        async with get_connection(self._db_path) as db:
-            cur = await db.execute(
-                "SELECT d.name AS div_name FROM divisions d WHERE d.id = ?",
+                "SELECT server_id, name AS div_name, lineup_channel_id, lineup_message_id "
+                "FROM divisions WHERE id = ?",
                 (division_id,),
             )
             div_row = await cur.fetchone()
-            div_name = div_row["div_name"] if div_row else str(division_id)
 
+        if div_row is None or div_row["lineup_channel_id"] is None:
+            return
+
+        lineup_channel_id: int = div_row["lineup_channel_id"]
+        lineup_message_id: int | None = div_row["lineup_message_id"]
+        div_name: str = div_row["div_name"] or str(division_id)
+        server_id: int = div_row["server_id"]
+
+        # Resolve the channel
+        channel = guild.get_channel(lineup_channel_id)
+        if channel is None:
+            try:
+                channel = await guild.fetch_channel(lineup_channel_id)
+            except (discord.NotFound, discord.HTTPException):
+                log.error(
+                    "_refresh_lineup_post: lineup channel %s not found for division %s",
+                    lineup_channel_id, division_id,
+                )
+                return
+        if not isinstance(channel, discord.TextChannel):
+            return
+
+        # Delete old message if present
+        if lineup_message_id is not None:
+            try:
+                old_msg = await channel.fetch_message(lineup_message_id)
+                await old_msg.delete()
+            except (discord.NotFound, discord.Forbidden):
+                pass  # Already gone or no permission — safe to continue
+
+        # Fetch teams with assigned drivers for this division
+        async with get_connection(self._db_path) as db:
             cur = await db.execute(
                 """
-                SELECT ti.name AS team_name, dp.discord_user_id, dp.id AS profile_id
+                SELECT ti.name AS team_name, dp.discord_user_id
                 FROM driver_season_assignments dsa
                 JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
                 JOIN team_seats ts ON ts.id = dsa.team_seat_id
@@ -926,49 +923,38 @@ class PlacementService:
             )
             assign_rows = await cur.fetchall()
 
-        # Group by team
+        # Group by team and build embed
         teams: dict[str, list[str]] = {}
         for row in assign_rows:
             teams.setdefault(row["team_name"], []).append(row["discord_user_id"])
 
-        if not teams:
-            return
-
-        # (e) Build lineup embed
-        lines = []
-        for team_name, user_ids in teams.items():
-            mentions = ", ".join(f"<@{uid}>" for uid in user_ids)
-            lines.append(f"**{team_name}**: {mentions}")
-
+        description = (
+            "\n".join(
+                f"**{t}**: {', '.join(f'<@{uid}>' for uid in uids)}"
+                for t, uids in teams.items()
+            )
+            if teams
+            else "*(no drivers assigned)*"
+        )
         embed = discord.Embed(
-            title=f"📋 {div_name} Lineup",
-            description="\n".join(lines),
+            title=f"\U0001f4cb {div_name} Lineup",
+            description=description,
             color=discord.Color.blurple(),
         )
 
-        channel = guild.get_channel(lineup_channel_id)
-        if channel is None:
-            try:
-                channel = await guild.fetch_channel(lineup_channel_id)
-            except (discord.NotFound, discord.HTTPException):
-                log.error(
-                    "_maybe_post_lineup: lineup channel %s not found for division %s",
-                    lineup_channel_id, division_id,
-                )
-                return
-
-        if not isinstance(channel, discord.TextChannel):
-            return
-
+        # Post and persist new message ID
         try:
-            await channel.send(embed=embed)
+            new_msg = await channel.send(embed=embed)
         except discord.HTTPException as exc:
-            log.error("_maybe_post_lineup: failed to post embed: %s", exc)
+            log.error("_refresh_lineup_post: failed to post embed: %s", exc)
             return
 
-        # T026: emit SIGNUP_LINEUP_POSTED audit log entry
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE divisions SET lineup_message_id = ? WHERE id = ?",
+                (new_msg.id, division_id),
+            )
             await db.execute(
                 "INSERT INTO audit_entries "
                 "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "

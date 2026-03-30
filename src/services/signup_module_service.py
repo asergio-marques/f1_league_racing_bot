@@ -575,18 +575,13 @@ class SignupModuleService:
         )
 
     async def upsert_division_config(
-        self, server_id: int, division_id: int, lineup_channel_id: int | None
+        self, server_id: int, division_id: int
     ) -> None:
-        """Create or update the lineup channel for a division."""
+        """Ensure a signup_division_config row exists for this server+division."""
         async with get_connection(self._db_path) as db:
             await db.execute(
-                """
-                INSERT INTO signup_division_config (server_id, division_id, lineup_channel_id)
-                VALUES (?, ?, ?)
-                ON CONFLICT(server_id, division_id) DO UPDATE SET
-                    lineup_channel_id = excluded.lineup_channel_id
-                """,
-                (server_id, division_id, lineup_channel_id),
+                "INSERT OR IGNORE INTO signup_division_config (server_id, division_id) VALUES (?, ?)",
+                (server_id, division_id),
             )
             await db.commit()
 
