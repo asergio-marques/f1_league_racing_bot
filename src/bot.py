@@ -249,7 +249,7 @@ async def main() -> None:
         NoPreferenceTeammateView,
     )
     from cogs.admin_review_cog import AdminReviewView, CorrectionParameterView
-    from services.penalty_wizard import PenaltyReviewView, ApprovalView
+    from services.penalty_wizard import PenaltyReviewView, ApprovalView, AppealsReviewView
 
     for _view in (
         SignupButtonView(),
@@ -263,6 +263,7 @@ async def main() -> None:
         CorrectionParameterView(),
         PenaltyReviewView(),
         ApprovalView(),
+        AppealsReviewView(),
     ):
         bot.add_view(_view)
 
@@ -378,7 +379,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
             """
             SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
                    rsc.results_posted, rsc.staged_penalties, rsc.prompt_message_id,
-                   r.division_id, s.server_id
+                   r.division_id, r.result_status, s.server_id
             FROM round_submission_channels rsc
             JOIN rounds r    ON r.id  = rsc.round_id
             JOIN divisions d ON d.id  = r.division_id
@@ -396,9 +397,47 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         staged_penalties_json: str | None = row["staged_penalties"]
         prompt_message_id: int | None = row["prompt_message_id"]
         division_id: int = row["division_id"]
+        result_status: str = row["result_status"] if row["result_status"] else "PROVISIONAL"
         server_id: int = row["server_id"]
 
         guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
+
+        if in_penalty_review and result_status == "POST_RACE_PENALTY":
+            # The bot restarted while a round was awaiting appeals review.
+            # Re-post the AppealsReviewView prompt to the submission channel.
+            if guild is None:
+                log.warning(
+                    "Recovery: guild %s not in cache, cannot restore appeals review for round %s",
+                    server_id, round_id,
+                )
+                continue
+            channel = guild.get_channel(channel_id)
+            if channel is None:
+                log.warning(
+                    "Recovery: channel %s not found, cannot restore appeals review for round %s",
+                    channel_id, round_id,
+                )
+                continue
+            try:
+                from services.result_submission_service import _build_penalty_review_state
+                from services.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
+                state = await _build_penalty_review_state(
+                    bot, round_id, division_id, channel_id
+                )
+                appeals_view = AppealsReviewView(state=state)
+                content = await _render_appeals_prompt_content(state)
+                msg = await channel.send(content, view=appeals_view)
+                state.appeals_prompt_message_id = msg.id
+                bot.add_view(appeals_view, message_id=msg.id)  # type: ignore[attr-defined]
+                log.info(
+                    "Recovery: restored appeals review prompt for round %s in channel %s",
+                    round_id, channel_id,
+                )
+            except Exception:
+                log.exception(
+                    "Recovery: failed to restore appeals review for round %s", round_id
+                )
+            continue
 
         if in_penalty_review:
             # The bot restarted while a round was awaiting penalty review.

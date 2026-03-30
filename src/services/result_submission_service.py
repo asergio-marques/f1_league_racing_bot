@@ -169,12 +169,66 @@ async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
             WHERE rsc.channel_id = ?
               AND rsc.closed = 0
               AND rsc.in_penalty_review = 1
-              AND r.finalized = 0
+              AND r.result_status != 'FINAL'
             """,
             (channel_id,),
         )
         row = await cursor.fetchone()
     return row is not None
+
+
+async def _build_penalty_review_state(
+    bot,
+    round_id: int,
+    division_id: int,
+    submission_channel_id: int,
+) -> "PenaltyReviewState":  # type: ignore[name-defined]
+    """Reconstruct a :class:`~services.penalty_wizard.PenaltyReviewState` from the DB.
+
+    Used by the bot restart-recovery path to re-post the appeals review prompt
+    after a crash during the appeals phase (``result_status = 'POST_RACE_PENALTY'``).
+    """
+    from services.penalty_wizard import PenaltyReviewState
+
+    db_path: str = bot.db_path  # type: ignore[attr-defined]
+
+    async with get_connection(db_path) as db:
+        ctx_cursor = await db.execute(
+            """
+            SELECT r.round_number, d.name AS division_name
+            FROM rounds r
+            JOIN divisions d ON d.id = r.division_id
+            WHERE r.id = ?
+            """,
+            (round_id,),
+        )
+        ctx = await ctx_cursor.fetchone()
+
+        sr_cursor = await db.execute(
+            "SELECT session_type FROM session_results WHERE round_id = ? AND status = 'ACTIVE'",
+            (round_id,),
+        )
+        sr_rows = await sr_cursor.fetchall()
+
+    round_number: int = ctx["round_number"] if ctx else 0
+    division_name: str = ctx["division_name"] if ctx else ""
+
+    _stype_order = list(SessionType)
+    session_types_present = sorted(
+        [SessionType(r["session_type"]) for r in sr_rows],
+        key=lambda s: _stype_order.index(s),
+    )
+
+    return PenaltyReviewState(
+        round_id=round_id,
+        division_id=division_id,
+        submission_channel_id=submission_channel_id,
+        session_types_present=session_types_present,
+        db_path=db_path,
+        bot=bot,
+        round_number=round_number,
+        division_name=division_name,
+    )
 
 
 async def enter_penalty_state(
@@ -262,7 +316,8 @@ async def enter_penalty_state(
                 rc = guild.get_channel(results_ch_id)
                 if rc:
                     await results_post_service.post_round_results(
-                        db_path, round_id, division_id, rc, guild
+                        db_path, round_id, division_id, rc, guild,
+                        label="Provisional Results",
                     )
 
             if standings_ch_id:
@@ -277,6 +332,7 @@ async def enter_penalty_state(
                     await results_post_service.post_standings(
                         db_path, division_id, round_id, round_number, track_name,
                         sc, driver_snaps, team_snaps, guild, show_reserves,
+                        label="Provisional Results",
                     )
 
             # Mark results as posted so restart recovery knows not to re-post.
@@ -342,21 +398,24 @@ async def enter_penalty_state(
     )
 
 
-async def finalize_round(
+async def finalize_penalty_review(
     interaction: discord.Interaction,
     state,  # PenaltyReviewState — forward-ref to avoid import cycle
 ) -> None:
-    """Apply all staged penalties, replace interim posts, mark the round finalized,
-    and close the submission channel.
+    """Apply staged penalties, repost with 'Post-Race Penalty Results' label, and
+    transition the submission channel to appeals review.
 
-    Called from :meth:`ApprovalView.approve_btn` (T025).
+    Sets rounds.result_status = 'POST_RACE_PENALTY', then posts an AppealsReviewView
+    prompt and keeps the submission channel open.
+
+    Called from :meth:`ApprovalView.approve_btn` and
+    :meth:`PenaltyReviewView.approve_btn`.
     """
     import json as _json
     from services import results_post_service as _rps
-    from services.standings_service import cascade_recompute_from_round
     from services import penalty_service as _ps
+    from services import verdict_announcement_service as _vas
 
-    # T024-a: defer as the very first statement (NFR-001)
     await interaction.response.defer(ephemeral=True)
 
     db_path: str = state.db_path
@@ -366,13 +425,10 @@ async def finalize_round(
     guild = interaction.guild
     actor_id: int = interaction.user.id
 
-    # T024-b: pre-penalty snapshot for audit log
+    # Pre-penalty snapshot for audit log
     pre_snapshot = await _snapshot_staged_drivers(db_path, round_id, division_id, state.staged)
 
-    # T022: apply staged penalties to DB (positions, times, outcomes).
-    # Check whether penalties were already committed before a previous crash by
-    # reading the staged_penalties column.  If it is already set, skip applying
-    # them again to avoid double-penalising drivers.
+    # Apply staged penalties (idempotent: staged_penalties column guards against double-apply)
     async with get_connection(db_path) as _db:
         _rsc = await _db.execute(
             "SELECT staged_penalties FROM round_submission_channels WHERE round_id = ?",
@@ -382,8 +438,6 @@ async def finalize_round(
     penalties_already_applied = bool(_rsc_row and _rsc_row["staged_penalties"] is not None)
 
     if state.staged and not penalties_already_applied:
-        # Persist the staged list to the DB BEFORE writing so a crash here
-        # doesn't leave penalties partially applied with no record.
         penalty_json = _json.dumps(
             [
                 {
@@ -391,6 +445,8 @@ async def finalize_round(
                     "session_type": sp.session_type.value,
                     "penalty_type": sp.penalty_type,
                     "penalty_seconds": sp.penalty_seconds,
+                    "description": sp.description,
+                    "justification": sp.justification,
                 }
                 for sp in state.staged
             ]
@@ -402,41 +458,51 @@ async def finalize_round(
             )
             await _db.commit()
 
-        await _ps.apply_penalties(
+        applied_records = await _ps.apply_penalties(
             db_path, round_id, division_id, state.staged,
             applied_by=actor_id, bot=bot,
             _skip_post=True,
         )
-        # Recompute points_awarded / fastest_lap_bonus for all affected sessions
         await _recompute_session_points(db_path, round_id)
 
-    # T024-c: post-penalty snapshot
+    else:
+        applied_records: list = []
+
+    # Post-penalty snapshot
     post_snapshot = await _snapshot_staged_drivers(db_path, round_id, division_id, state.staged)
 
-    # T023: delete interim posts, repost final results and standings
+    # Repost results/standings with "Post-Race Penalty Results" label
     if guild:
-        await _rps.delete_and_repost_final_results(db_path, round_id, division_id, guild)
+        await _rps.delete_and_repost_final_results(
+            db_path, round_id, division_id, guild,
+            label="Post-Race Penalty Results",
+        )
         await _rps.repost_subsequent_standings(db_path, division_id, round_id, guild)
 
-    # T024-d: mark round as finalized
+    # Set result_status = 'POST_RACE_PENALTY'
     async with get_connection(db_path) as db:
-        await db.execute("UPDATE rounds SET finalized = 1 WHERE id = ?", (round_id,))
+        await db.execute(
+            "UPDATE rounds SET result_status = 'POST_RACE_PENALTY' WHERE id = ?",
+            (round_id,),
+        )
         await db.commit()
 
-    # T024-e: audit log ROUND_FINALIZED
+    # Audit log PENALTY_REVIEW_APPROVED
     penalty_log = [
         {
             "driver_user_id": sp.driver_user_id,
             "session_type": sp.session_type.value,
             "penalty_type": sp.penalty_type,
             "penalty_seconds": sp.penalty_seconds,
+            "description": sp.description,
+            "justification": sp.justification,
         }
         for sp in state.staged
     ]
-    old_val = _json.dumps({"finalized": 0, "affected_drivers": pre_snapshot})
+    old_val = _json.dumps({"result_status": "PROVISIONAL", "affected_drivers": pre_snapshot})
     new_val = _json.dumps(
         {
-            "finalized": 1,
+            "result_status": "POST_RACE_PENALTY",
             "affected_drivers": post_snapshot,
             "penalties": penalty_log,
             "actor_id": actor_id,
@@ -452,7 +518,7 @@ async def finalize_round(
         if srv_row:
             n_penalties = len(state.staged)
             summary = (
-                f"<@{actor_id}> | ROUND_FINALIZED | Success\n"
+                f"<@{actor_id}> | PENALTY_REVIEW_APPROVED | Success\n"
                 f"  round: {state.round_number} ({state.division_name})\n"
                 + (f"  penalties: {n_penalties}\n" if n_penalties else "  penalties: none\n")
                 + f"  old={old_val}\n  new={new_val}"
@@ -462,9 +528,160 @@ async def finalize_round(
                 summary,
             )
     except Exception:
-        log.exception("finalize_round: error writing audit log for round %s", round_id)
+        log.exception("finalize_penalty_review: error writing audit log for round %s", round_id)
 
-    # T024-f: close the submission channel
+    # Post verdict announcements (non-blocking: skip silently on any error)
+    if applied_records:
+        try:
+            await _vas.post_penalty_announcements(bot, state, applied_records)
+        except Exception:
+            log.exception(
+                "finalize_penalty_review: error posting penalty announcements for round %s",
+                round_id,
+            )
+
+    # Post appeals review prompt and keep submission channel open
+    from services.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
+    appeals_view = AppealsReviewView(state=state)
+    sub_channel = guild.get_channel(state.submission_channel_id) if guild else None
+    if sub_channel is not None:
+        content = await _render_appeals_prompt_content(state)
+        msg = await sub_channel.send(content, view=appeals_view)
+        state.appeals_prompt_message_id = msg.id
+        bot.add_view(appeals_view, message_id=msg.id)  # type: ignore[attr-defined]
+
+
+async def finalize_appeals_review(
+    interaction: discord.Interaction,
+    state,  # PenaltyReviewState — forward-ref to avoid import cycle
+) -> None:
+    """Advance the round to FINAL, repost with 'Final Results' label, and close
+    the submission channel.
+
+    Called from :meth:`AppealsReviewView.approve_btn` and
+    :meth:`_AppealsConfirmClearView.confirm_btn`.
+    """
+    import datetime as _dt
+    import json as _json
+    from services import results_post_service as _rps
+    from services import penalty_service as _ps
+    from services import verdict_announcement_service as _vas
+
+    await interaction.response.defer(ephemeral=True)
+
+    db_path: str = state.db_path
+    bot = state.bot
+    round_id: int = state.round_id
+    division_id: int = state.division_id
+    guild = interaction.guild
+    actor_id: int = interaction.user.id
+
+    # Apply staged appeal corrections if any, then INSERT appeal_records.
+    applied_correction_records: list[dict] = []
+    if state.staged_appeals:
+        applied_pr = await _ps.apply_penalties(
+            db_path, round_id, division_id, state.staged_appeals,
+            applied_by=actor_id, bot=bot,
+            _skip_post=True,
+        )
+        await _recompute_session_points(db_path, round_id)
+
+        # INSERT appeal_records — order mirrors applied_pr (same ordering as staged_appeals).
+        now_str = _dt.datetime.utcnow().isoformat()
+        async with get_connection(db_path) as db:
+            for sp, pr in zip(state.staged_appeals, applied_pr):
+                dsr_id = pr["driver_session_result_id"]
+                cursor = await db.execute(
+                    """
+                    INSERT INTO appeal_records (
+                        driver_session_result_id, status, penalty_type, time_seconds,
+                        description, justification, submitted_by, submitted_at,
+                        announcement_channel_id
+                    ) VALUES (?, 'UPHELD', ?, ?, ?, ?, ?, ?, NULL)
+                    """,
+                    (
+                        dsr_id,
+                        sp.penalty_type,
+                        sp.penalty_seconds,
+                        sp.description,
+                        sp.justification,
+                        str(actor_id),
+                        now_str,
+                    ),
+                )
+                applied_correction_records.append(
+                    {
+                        "id": cursor.lastrowid,
+                        "driver_session_result_id": dsr_id,
+                        "driver_user_id": sp.driver_user_id,
+                        "penalty_type": sp.penalty_type,
+                        "time_seconds": sp.penalty_seconds,
+                        "description": sp.description,
+                        "justification": sp.justification,
+                        "submitted_by": str(actor_id),
+                        "announcement_channel_id": None,
+                    }
+                )
+            await db.commit()
+
+    # Repost results/standings with "Final Results" label
+    if guild:
+        await _rps.delete_and_repost_final_results(
+            db_path, round_id, division_id, guild,
+            label="Final Results",
+        )
+        await _rps.repost_subsequent_standings(db_path, division_id, round_id, guild)
+
+    # Set result_status = 'FINAL'
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE rounds SET result_status = 'FINAL' WHERE id = ?",
+            (round_id,),
+        )
+        await db.commit()
+
+    # Audit log APPEALS_REVIEW_APPROVED
+    old_val = _json.dumps({"result_status": "POST_RACE_PENALTY"})
+    new_val = _json.dumps(
+        {
+            "result_status": "FINAL",
+            "actor_id": actor_id,
+            "corrections": len(state.staged_appeals),
+        }
+    )
+    try:
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                (division_id,),
+            )
+            srv_row = await cursor.fetchone()
+        if srv_row:
+            n_corrections = len(state.staged_appeals)
+            summary = (
+                f"<@{actor_id}> | APPEALS_REVIEW_APPROVED | Success\n"
+                f"  round: {state.round_number} ({state.division_name})\n"
+                + (f"  corrections: {n_corrections}\n" if n_corrections else "  corrections: none\n")
+                + f"  old={old_val}\n  new={new_val}"
+            )
+            await bot.output_router.post_log(  # type: ignore[attr-defined]
+                int(srv_row["server_id"]),
+                summary,
+            )
+    except Exception:
+        log.exception("finalize_appeals_review: error writing audit log for round %s", round_id)
+
+    # Post appeal announcements (non-blocking)
+    if applied_correction_records:
+        try:
+            await _vas.post_appeal_announcements(bot, state, applied_correction_records)
+        except Exception:
+            log.exception(
+                "finalize_appeals_review: error posting appeal announcements for round %s",
+                round_id,
+            )
+
+    # Close the submission channel
     await close_submission_channel(state.submission_channel_id, round_id, guild, db_path)
 
 
@@ -786,7 +1003,8 @@ async def amend_session_result(
     guild = bot.get_guild(server_id)
     if guild is not None:
         await results_post_service.delete_and_repost_final_results(
-            db_path, round_id, division_id, guild
+            db_path, round_id, division_id, guild,
+            label="Final Results",
         )
         await results_post_service.repost_subsequent_standings(
             db_path, division_id, round_id, guild

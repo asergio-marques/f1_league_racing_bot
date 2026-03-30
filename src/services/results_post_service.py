@@ -48,12 +48,14 @@ async def _build_team_display(
     return result
 
 
-async def _get_season_number(db_path: str, round_id: int) -> int | None:
-    """Return the season_number for the season that contains this round."""
+async def _get_heading_context(
+    db_path: str, round_id: int
+) -> tuple[int | None, str]:
+    """Return (season_number, division_name) for building result headings."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT s.season_number
+            SELECT s.season_number, d.name AS division_name
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
@@ -62,7 +64,40 @@ async def _get_season_number(db_path: str, round_id: int) -> int | None:
             (round_id,),
         )
         row = await cursor.fetchone()
-    return row["season_number"] if row else None
+    if row is None:
+        return None, "Unknown"
+    return row["season_number"], row["division_name"]
+
+
+async def _get_primary_session_label(db_path: str, round_id: int) -> str:
+    """Return the formatted label for the most recently posted session of *round_id*."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT sr.session_type, r.format
+            FROM session_results sr
+            JOIN rounds r ON r.id = sr.round_id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+            ORDER BY sr.id DESC
+            LIMIT 1
+            """,
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return "Results"
+    st = SessionType(row["session_type"])
+    is_sprint = str(row["format"]).upper() == "SPRINT"
+    return results_formatter.format_session_label(st, is_sprint=is_sprint)
+
+
+def _label_from_status(result_status: str) -> str:
+    """Map a round result_status value to the user-visible lifecycle label."""
+    return {
+        "PROVISIONAL": "Provisional Results",
+        "POST_RACE_PENALTY": "Post-Race Penalty Results",
+        "FINAL": "Final Results",
+    }.get(result_status, "Results")
 
 
 # ---------------------------------------------------------------------------
@@ -78,22 +113,22 @@ async def post_session_results(
     guild: discord.Guild,
     round_number: int,
     track_name: str,
+    label: str,
     is_sprint: bool = True,
 ) -> int:
     """Format and send a single session result. Returns the Discord message ID."""
     session_type = SessionType(session_result.session_type)
-    label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
+    session_label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
 
     if session_type.is_qualifying:
         table = results_formatter.format_qualifying_table(driver_rows, points_map)
     else:
         table = results_formatter.format_race_table(driver_rows, points_map)
 
-    season_number = await _get_season_number(db_path, session_result.round_id)
-    season_prefix = f"S{season_number} — " if season_number is not None else ""
-    msg = await results_channel.send(
-        f"**{season_prefix}Round {round_number} — {track_name} | {label} Results**\n{table}"
-    )
+    season_number, division_name = await _get_heading_context(db_path, session_result.round_id)
+    season_prefix = f"Season {season_number} " if season_number is not None else ""
+    heading = f"**{season_prefix}{division_name} Round {round_number} — {session_label}**"
+    msg = await results_channel.send(f"{heading}\n{label}\n{table}")
 
     async with get_connection(db_path) as db:
         await db.execute(
@@ -120,6 +155,7 @@ async def post_standings(
     team_snapshots: list[TeamStandingsSnapshot],
     guild: discord.Guild,
     show_reserves: bool,
+    label: str,
 ) -> None:
     """Format and post (or edit-in-place) the driver and team standings."""
     # Determine reserve user IDs from the DB (is_reserve team instances)
@@ -130,11 +166,14 @@ async def post_standings(
     )
     team_text = results_formatter.format_team_standings(team_snapshots)
 
-    season_number = await _get_season_number(db_path, round_id)
-    season_suffix = f" | S{season_number}" if season_number is not None else ""
+    season_number, division_name = await _get_heading_context(db_path, round_id)
+    season_prefix = f"Season {season_number} " if season_number is not None else ""
+    primary_session_label = await _get_primary_session_label(db_path, round_id)
+    heading = f"**{season_prefix}{division_name} Round {round_number} — {primary_session_label}**"
     content = (
-        f"**Driver Standings — after Round {round_number} ({track_name}){season_suffix}**\n{driver_text}\n\n"
-        f"**Team Standings — after Round {round_number} ({track_name}){season_suffix}**\n{team_text}"
+        f"{heading}\n{label}\n\n"
+        f"**Driver Standings**\n{driver_text}\n\n"
+        f"**Team Standings**\n{team_text}"
     )
 
     # Look for existing standings message (stored in the top-ranked driver snapshot)
@@ -214,6 +253,7 @@ async def post_round_results(
     division_id: int,
     results_channel: discord.TextChannel,
     guild: discord.Guild,
+    label: str,
 ) -> None:
     """Post results for all non-cancelled sessions of a round in session order."""
     from services.result_submission_service import SESSION_ORDER_SPRINT, SESSION_ORDER_NORMAL
@@ -313,7 +353,7 @@ async def post_round_results(
 
         await post_session_results(
             db_path, session_result, driver_rows, points_map, results_channel, guild,
-            round_number, track_name, is_sprint,
+            round_number, track_name, label, is_sprint,
         )
 
 
@@ -322,6 +362,7 @@ async def repost_round_results(
     round_id: int,
     division_id: int,
     guild: discord.Guild,
+    label: str,
 ) -> None:
     """Load the division's channels and repost/edit round results and standings."""
     async with get_connection(db_path) as db:
@@ -350,7 +391,7 @@ async def repost_round_results(
     if results_ch_id:
         rc = guild.get_channel(results_ch_id)
         if rc:
-            await post_round_results(db_path, round_id, division_id, rc, guild)
+            await post_round_results(db_path, round_id, division_id, rc, guild, label)
 
     if standings_ch_id:
         sc = guild.get_channel(standings_ch_id)
@@ -365,7 +406,7 @@ async def repost_round_results(
             show_reserves = await _get_show_reserves(db_path, division_id)
             await post_standings(
                 db_path, division_id, round_id, round_number, track_name, sc,
-                driver_snaps, team_snaps, guild, show_reserves
+                driver_snaps, team_snaps, guild, show_reserves, label
             )
 
 
@@ -430,7 +471,8 @@ async def repost_results_for_division(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT DISTINCT r.id AS round_id, r.round_number, r.track_name, r.format
+            SELECT DISTINCT r.id AS round_id, r.round_number, r.track_name, r.format,
+                   r.result_status
             FROM rounds r
             JOIN session_results sr ON sr.round_id = r.id
             WHERE r.division_id = ? AND sr.status = 'ACTIVE'
@@ -450,6 +492,7 @@ async def repost_results_for_division(
         round_number: int = rnd["round_number"]
         track_name: str = rnd["track_name"] or "Unknown"
         is_sprint: bool = str(rnd["format"]).upper() == "SPRINT"
+        rnd_label: str = _label_from_status(rnd["result_status"] or "PROVISIONAL")
 
         async with get_connection(db_path) as db:
             cursor = await db.execute(
@@ -511,7 +554,7 @@ async def repost_results_for_division(
 
             await post_session_results(
                 db_path, session_result, driver_rows, points_map, rc, guild,
-                round_number, track_name, is_sprint,
+                round_number, track_name, rnd_label, is_sprint,
             )
 
     return "ok"
@@ -534,7 +577,7 @@ async def repost_standings_for_division(
         cursor = await db.execute(
             """
             SELECT DISTINCT r.id AS round_id, r.round_number, r.track_name,
-                   drc.standings_channel_id
+                   r.result_status, drc.standings_channel_id
             FROM rounds r
             JOIN session_results sr ON sr.round_id = r.id
             LEFT JOIN division_results_config drc ON drc.division_id = r.division_id
@@ -567,6 +610,7 @@ async def repost_standings_for_division(
         round_id: int = row["round_id"]
         round_number: int = row["round_number"]
         track_name: str = row["track_name"] or "Unknown"
+        rsd_label: str = _label_from_status(row["result_status"] or "PROVISIONAL")
 
         # Delete the existing standings message for this round (if any)
         existing_msg_id = await _get_standings_message_id(db_path, division_id, round_id)
@@ -596,7 +640,7 @@ async def repost_standings_for_division(
         )
         await post_standings(
             db_path, division_id, round_id, round_number, track_name, sc,
-            driver_snaps, team_snaps, guild, show_reserves,
+            driver_snaps, team_snaps, guild, show_reserves, rsd_label,
         )
 
     return "ok"
@@ -611,6 +655,7 @@ async def delete_and_repost_final_results(
     round_id: int,
     division_id: int,
     guild: discord.Guild,
+    label: str,
 ) -> None:
     """Delete all interim results/standings Discord messages for *round_id* and
     repost the final (post-penalty) versions.
@@ -723,7 +768,7 @@ async def delete_and_repost_final_results(
 
                 await post_session_results(
                     db_path, session_result, driver_rows, points_map, rc, guild,
-                    round_number, track_name, is_sprint,
+                    round_number, track_name, label, is_sprint,
                 )
 
     # ── Delete interim standings message and re-post final ─────────────────
@@ -760,7 +805,7 @@ async def delete_and_repost_final_results(
             )
             await post_standings(
                 db_path, division_id, round_id, round_number, track_name,
-                sc, driver_snaps, team_snaps, guild, show_reserves,
+                sc, driver_snaps, team_snaps, guild, show_reserves, label,
             )
 
 
@@ -784,7 +829,7 @@ async def repost_subsequent_standings(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT r.id AS round_id, r.round_number, r.track_name,
+            SELECT r.id AS round_id, r.round_number, r.track_name, r.result_status,
                    drc.standings_channel_id, drc.reserves_in_standings
             FROM rounds r
             LEFT JOIN division_results_config drc ON drc.division_id = r.division_id
@@ -801,6 +846,7 @@ async def repost_subsequent_standings(
         rnd_id: int = rnd["round_id"]
         rnd_number: int = rnd["round_number"]
         rnd_track: str = rnd["track_name"] or "Unknown"
+        rnd_label: str = _label_from_status(rnd["result_status"] or "PROVISIONAL")
         standings_ch_id: int | None = rnd["standings_channel_id"]
         show_reserves: bool = bool(rnd["reserves_in_standings"]) if rnd["reserves_in_standings"] is not None else True
 
@@ -844,7 +890,7 @@ async def repost_subsequent_standings(
         )
         await post_standings(
             db_path, division_id, rnd_id, rnd_number, rnd_track,
-            sc, driver_snaps, team_snaps, guild, show_reserves,
+            sc, driver_snaps, team_snaps, guild, show_reserves, rnd_label,
         )
 
 

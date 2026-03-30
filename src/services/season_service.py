@@ -711,6 +711,26 @@ class SeasonService:
             await db.commit()
         return old_id
 
+    async def set_division_penalty_channel(
+        self, division_id: int, channel_id: int | None
+    ) -> int | None:
+        """Upsert division_results_config.penalty_channel_id. Returns the previous value."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT penalty_channel_id FROM division_results_config WHERE division_id = ?",
+                (division_id,),
+            )
+            row = await cursor.fetchone()
+            old_id: int | None = row[0] if row else None
+            await db.execute(
+                "INSERT INTO division_results_config (division_id, penalty_channel_id) "
+                "VALUES (?, ?) "
+                "ON CONFLICT(division_id) DO UPDATE SET penalty_channel_id = excluded.penalty_channel_id",
+                (division_id, channel_id),
+            )
+            await db.commit()
+        return old_id
+
     async def get_divisions_with_results_config(
         self, season_id: int
     ) -> list[Division]:
@@ -721,7 +741,8 @@ class SeasonService:
                 """
                 SELECT d.id, d.season_id, d.name, d.mention_role_id, d.forecast_channel_id,
                        d.status, d.tier,
-                       drc.results_channel_id, drc.standings_channel_id
+                       drc.results_channel_id, drc.standings_channel_id,
+                       drc.penalty_channel_id
                 FROM divisions d
                 LEFT JOIN division_results_config drc ON drc.division_id = d.id
                 WHERE d.season_id = ?
@@ -734,6 +755,7 @@ class SeasonService:
             div = _row_to_division(r)
             div.results_channel_id = r["results_channel_id"]
             div.standings_channel_id = r["standings_channel_id"]
+            div.penalty_channel_id = r["penalty_channel_id"]
             result.append(div)
         return result
 

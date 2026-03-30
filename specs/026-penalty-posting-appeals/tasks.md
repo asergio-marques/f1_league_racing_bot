@@ -124,12 +124,12 @@ Single project — `src/`, `tests/` at repository root.
 
 **Purpose**: Test coverage and quickstart validation.
 
-- [ ] T024 [P] Run `python -m pytest tests/ -v` from repo root and confirm all pre-existing tests pass with the `result_status` / `finalized` change from T002
-- [ ] T025 Update tests/unit/test_penalty_wizard.py — add tests for `AppealsReviewView` approve-only path, expanded `AppealsReviewView` with Add/Confirm, and `finalize_penalty_review()` wiring; update any existing tests that reference `finalize_round()` or `rounds.finalized`
-- [ ] T026 [P] Update tests/unit/test_results_post_service.py — assert that every post function produces the standard heading format and includes the correct lifecycle label; cover all three label values
-- [ ] T027 [P] Create tests/unit/test_verdict_announcement_service.py — `translate_penalty()` edge cases; `post_penalty_announcements()` posts to verdicts channel when configured and accessible; skips cleanly (no exception) when `penalty_channel_id` is None or channel is inaccessible; posts nothing and does not raise when staged list is empty
-- [ ] T028 Create tests/integration/test_round_lifecycle.py — full `PROVISIONAL` → `POST_RACE_PENALTY` → `FINAL` lifecycle: three distinct post events, correct labels on each, channel-close only at FINAL, `round results amend` rejected at PROVISIONAL and POST_RACE_PENALTY, accepted at FINAL; also cover zero-staged-list transitions per FR-009 (zero penalties staged → still advances to `POST_RACE_PENALTY`) and FR-010 (zero corrections staged → still advances to `FINAL`)
-- [ ] T029 Validate full manual flow per specs/026-penalty-posting-appeals/quickstart.md
+- [X] T024 [P] Run `python -m pytest tests/ -v` from repo root and confirm all pre-existing tests pass with the `result_status` / `finalized` change from T002
+- [X] T025 Update tests/unit/test_penalty_wizard.py — add tests for `AppealsReviewView` approve-only path, expanded `AppealsReviewView` with Add/Confirm, and `finalize_penalty_review()` wiring; update any existing tests that reference `finalize_round()` or `rounds.finalized`
+- [X] T026 [P] Update tests/unit/test_results_post_service.py — assert that every post function produces the standard heading format and includes the correct lifecycle label; cover all three label values
+- [X] T027 [P] Create tests/unit/test_verdict_announcement_service.py — `translate_penalty()` edge cases; `post_penalty_announcements()` posts to verdicts channel when configured and accessible; skips cleanly (no exception) when `penalty_channel_id` is None or channel is inaccessible; posts nothing and does not raise when staged list is empty
+- [X] T028 Create tests/integration/test_round_lifecycle.py — full `PROVISIONAL` → `POST_RACE_PENALTY` → `FINAL` lifecycle: three distinct post events, correct labels on each, channel-close only at FINAL, `round results amend` rejected at PROVISIONAL and POST_RACE_PENALTY, accepted at FINAL; also cover zero-staged-list transitions per FR-009 (zero penalties staged → still advances to `POST_RACE_PENALTY`) and FR-010 (zero corrections staged → still advances to `FINAL`)
+- [X] T029 Validate full manual flow per specs/026-penalty-posting-appeals/quickstart.md
 
 ---
 
