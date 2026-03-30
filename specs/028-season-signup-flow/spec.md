@@ -36,10 +36,10 @@ After signups close and division structures are created, an admin wants to run `
 
 **Acceptance Scenarios**:
 
-1. **Given** a season is in SETUP state and a driver is UNASSIGNED, **When** an admin runs `/driver assign`, **Then** the driver is assigned to the specified division and team with no Discord role changes.
+1. **Given** a season is in SETUP state and a driver is UNASSIGNED, **When** an admin runs `/driver assign`, **Then** the driver is assigned to the specified division and team with no Discord role changes (roles will be granted in bulk when the season is approved).
 2. **Given** a season is in ACTIVE state and a driver is UNASSIGNED, **When** an admin runs `/driver assign`, **Then** the driver is assigned and Discord tier + team roles are granted immediately.
 3. **Given** no season exists, **When** an admin runs `/driver assign`, **Then** the command is rejected with a clear error message.
-4. **Given** a season is in SETUP state and a driver is ASSIGNED, **When** an admin runs `/driver unassign`, **Then** the placement is removed, driver reverts to UNASSIGNED, and no Discord role changes occur.
+4. **Given** a season is in SETUP state and a driver is ASSIGNED, **When** an admin runs `/driver unassign`, **Then** the placement is removed, driver reverts to UNASSIGNED, and no Discord role changes occur (driver never held roles; nothing to revoke).
 5. **Given** a season is in ACTIVE state and a driver is ASSIGNED, **When** an admin runs `/driver unassign`, **Then** the placement is removed and previously granted roles are revoked immediately.
 6. **Given** an admin runs `/driver sack` on a driver regardless of season state, **Then** the driver is removed from all assignments, roles revoked, and driver state reset to NOT_SIGNED_UP.
 
@@ -73,9 +73,10 @@ When a season is approved, the bot automatically posts the driver lineup to each
 
 1. **Given** a season approval is triggered and all divisions have a lineup channel configured, **When** the approval completes, **Then** a lineup message is posted to each division's lineup channel.
 2. **Given** a season approval is triggered and all divisions have a calendar channel configured, **When** the approval completes, **Then** a calendar message (listing rounds with track and date) is posted to each division's calendar channel.
-3. **Given** a division has no lineup channel configured, **When** the season is approved, **Then** lineup posting for that division is skipped silently (approval still succeeds).
-4. **Given** a division has no calendar channel configured, **When** the season is approved, **Then** calendar posting for that division is skipped silently (approval still succeeds).
-5. **Given** an admin configures a calendar channel via `/division calendar-channel`, **When** the season is later approved, **Then** the calendar is posted to that channel.
+3. **Given** drivers were assigned to divisions while the season was in SETUP state, **When** the season is approved, **Then** the bot grants tier and team Discord roles to every driver currently in ASSIGNED state across all divisions.
+4. **Given** a division has no lineup channel configured, **When** the season is approved, **Then** lineup posting for that division is skipped silently (approval still succeeds).
+5. **Given** a division has no calendar channel configured, **When** the season is approved, **Then** calendar posting for that division is skipped silently (approval still succeeds).
+6. **Given** an admin configures a calendar channel via `/division calendar-channel`, **When** the season is later approved, **Then** the calendar is posted to that channel.
 
 ---
 
@@ -112,7 +113,7 @@ After the initial lineup post goes up, an admin reassigns a driver mid-preparati
 - **FR-003**: When the signup window is force-closed, drivers in PENDING_DRIVER_CORRECTION state MUST NOT be transitioned to NOT_SIGNED_UP; they MUST retain their current state.
 - **FR-004**: `/driver assign` MUST require a season in SETUP or ACTIVE state and MUST reject the command with a clear error if no such season exists.
 - **FR-005**: `/driver unassign` MUST require a season in SETUP or ACTIVE state and MUST reject the command with a clear error if no such season exists.
-- **FR-006**: When a driver is assigned or reassigned while the season is in SETUP state, Discord tier and team roles MUST NOT be granted at assignment time; role grants MUST be deferred to the season approval step.
+- **FR-006**: When a driver is assigned or reassigned while the season is in SETUP state, Discord tier and team roles MUST NOT be granted at assignment time. Upon season approval, the bot MUST perform a bulk role-grant, giving tier and team roles to every driver currently in ASSIGNED state across all divisions of that season. Drivers unassigned during SETUP hold no roles and require no revocation.
 - **FR-007**: When a driver is assigned or reassigned while the season is in ACTIVE state, Discord tier and team roles MUST be granted immediately, matching the existing behaviour.
 - **FR-008**: `/season review` MUST include a section per division listing all currently assigned drivers grouped by team.
 - **FR-009**: `/season review` MUST explicitly identify any approved drivers (UNASSIGNED state) who have not been placed in a division, warning the admin that placement is incomplete.
@@ -129,8 +130,8 @@ After the initial lineup post goes up, an admin reassigns a driver mid-preparati
 - **Driver Assignment**: The pairing of an approved driver (UNASSIGNED state) to a division and team within a SETUP or ACTIVE season. Role grant timing is determined by the season's current state at the moment of assignment.
 - **Division Lineup Post**: A single Discord message posted to a division's lineup channel that lists current team assignments. Its message ID is stored per division so it can be deleted and replaced when assignments change.
 - **Division Calendar Post**: A Discord message posted to a division's calendar channel upon season approval. It lists each round with its track name and scheduled date.
-- **Per-Division Calendar Channel**: A new configuration field — analogous to the existing `lineup_channel_id` on `SignupDivisionConfig` — that records where the race calendar should be posted.
-- **Per-Division Lineup Message ID**: A new persisted field on `SignupDivisionConfig` that records the Discord message ID of the most recently posted lineup message for a division.
+- **Per-Division Calendar Channel**: A new `calendar_channel_id` column on the `divisions` table (alongside `results_channel_id`, `standings_channel_id`, etc.) that records where the race calendar should be posted.
+- **Per-Division Lineup Message ID**: A new `lineup_message_id` column on the `divisions` table that records the Discord message ID of the most recently posted lineup message for a division. The `lineup_channel_id` column also moves to the `divisions` table from `signup_division_config`.
 
 ## Success Criteria *(mandatory)*
 
@@ -144,10 +145,20 @@ After the initial lineup post goes up, an admin reassigns a driver mid-preparati
 
 ## Assumptions
 
-- **A-001**: The existing `/division lineup-channel` command and `SignupDivisionConfig.lineup_channel_id` field remain unchanged. New fields (`calendar_channel_id`, `lineup_message_id`) are added to the same table.
-- **A-002**: The calendar post format lists rounds chronologically with round number, track name (or "Mystery" for unrevealed tracks), and scheduled datetime (UTC).
-- **A-003**: The lineup post format groups drivers by team within each division, indicating driver type (Full-Time / Reserve) where recorded.
-- **A-004**: `/division calendar-channel` is gated on the signup module being enabled, consistent with `/division lineup-channel`.
-- **A-005**: Roles deferred during SETUP cover only the tier (division) role and team role — the signed-up (complete) role granted during wizard approval is unaffected by this change since it is already granted at that earlier stage.
+- **A-001**: Both `lineup_channel_id` and `calendar_channel_id` belong on the `divisions` table (alongside `results_channel_id`, `standings_channel_id`, etc.), not on `signup_division_config`. The `lineup_message_id` tracking field follows to the same table. The existing `/division lineup-channel` command's write target changes from `signup_division_config` to `divisions`; the `signup_division_config` table requires no new columns for this feature.
+- **A-002**: The calendar post lists rounds chronologically with round number, track name (or "Mystery" for unrevealed tracks), and scheduled datetime rendered as a Discord dynamic timestamp (`<t:UNIX:F>`) so each reader sees the time in their local timezone. This format applies only to the calendar post introduced in this feature; other existing time displays in the bot are out of scope.
+- **A-003**: The lineup post format groups drivers by team within each division, displaying each driver as a Discord mention (`@username`). Driver type (Full-Time / Reserve) is shown where recorded.
+- **A-004**: `/division calendar-channel` is NOT gated on the signup module. It is available to admins whenever a season exists, consistent with other division channel commands (`/division results-channel`, `/division standings-channel`, etc.).
+- **A-005**: Role grant timing follows a strict four-case matrix: (1) SETUP + assign → deferred; roles granted in bulk at season approval. (2) SETUP + unassign → no change; driver never held tier/team roles. (3) ACTIVE + assign → roles granted immediately. (4) ACTIVE + unassign → roles revoked immediately. The signed-up (complete) role granted during wizard approval is unaffected by this matrix — it is already granted at the earlier admin-approval stage.
 - **A-006**: When lineup or calendar posting fails due to a missing or inaccessible channel, the failure is logged but does NOT block season approval from completing.
 - **A-007**: `/driver sack` continues to function regardless of season state (existing behaviour), since removing a driver entirely is an administrative action independent of pre-season preparation.
+
+## Clarifications
+
+### Session 2026-03-30
+
+- Q: What triggers role grants for drivers assigned during SETUP — bulk at approval, or individually once ACTIVE? → A: Four-case matrix: SETUP+assign = deferred, bulk-granted at season approval; SETUP+unassign = no role change (driver never held roles); ACTIVE+assign = immediate grant; ACTIVE+unassign = immediate revoke.
+- Q: How should each driver's name appear in the lineup post? → A: Discord mention only (`@username`).
+- Q: Where should `lineup_channel_id` and `calendar_channel_id` be stored — `signup_division_config` or `divisions`? → A: Both belong on the `divisions` table. `lineup_message_id` follows to the same table. `signup_division_config` requires no new columns.
+- Q: Should `/division calendar-channel` be gated on the signup module being enabled? → A: No — available to admins whenever a season exists, same as other division channel commands.
+- Q: How should scheduled datetimes be displayed in the calendar post? → A: Discord dynamic timestamp (`<t:UNIX:F>`) only. Scope limited to the calendar post; other time displays in the bot are out of scope for this feature.
