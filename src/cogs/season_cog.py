@@ -288,6 +288,44 @@ class SeasonCog(commands.Cog):
                         f"  Round {r.round_number}: {r.format.value} "
                         f"@ {r.track_name or 'Mystery'} \u2014 {r.scheduled_at.isoformat()}"
                     )
+                # Lineup & calendar channels (US3 / FR-007)
+                lineup_chan = f"<#{div.lineup_channel_id}>" if div.lineup_channel_id else "*(not set)*"
+                cal_chan = f"<#{div.calendar_channel_id}>" if div.calendar_channel_id else "*(not set)*"
+                lines.append(f"  Lineup channel: {lineup_chan}")
+                lines.append(f"  Calendar channel: {cal_chan}")
+                # ASSIGNED drivers grouped by team
+                async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
+                    _cur = await _db.execute(
+                        """
+                        SELECT dp.discord_user_id, ti.name AS team_name
+                        FROM driver_season_assignments dsa
+                        JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+                        JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                        JOIN team_instances ti ON ti.id = ts.team_instance_id
+                        WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
+                        ORDER BY ti.name, dp.discord_user_id
+                        """,
+                        (div.id,),
+                    )
+                    assignment_rows = await _cur.fetchall()
+                if assignment_rows:
+                    by_team: dict[str, list[str]] = {}
+                    for _row in assignment_rows:
+                        by_team.setdefault(_row["team_name"], []).append(f"<@{_row['discord_user_id']}>")
+                    for t_name, mentions in by_team.items():
+                        lines.append(f"  **{t_name}**: {', '.join(mentions)}")
+                else:
+                    lines.append("  *(no drivers assigned)*")
+                lines.append("")
+            # Server-level UNASSIGNED warning (approved but unplaced drivers)
+            async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
+                _cur = await _db.execute(
+                    "SELECT COUNT(*) AS cnt FROM driver_profiles WHERE server_id = ? AND current_state = 'UNASSIGNED'",
+                    (interaction.guild_id,),
+                )
+                _unassigned_row = await _cur.fetchone()
+            if _unassigned_row and _unassigned_row["cnt"] > 0:
+                lines.append(f"⚠️ {_unassigned_row['cnt']} driver(s) UNASSIGNED — placement incomplete")
                 lines.append("")
         else:
             for div in cfg.divisions:
@@ -1111,19 +1149,14 @@ class SeasonCog(commands.Cog):
     ) -> None:
         import json as _json
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        if not await self.bot.module_service.is_signup_enabled(server_id):
-            await interaction.response.send_message(
-                "\u274c The Signup module is not enabled.", ephemeral=True
-            )
-            return
-        season = await self.bot.season_service.get_season_for_server(server_id)
+        season = await self.bot.season_service.get_season_for_server(server_id)  # type: ignore[attr-defined]
         if season is None:
             await interaction.response.send_message(
                 "\u274c No season found. Set up a season before assigning channels.",
                 ephemeral=True,
             )
             return
-        divisions = await self.bot.season_service.get_divisions(season.id)
+        divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
             await interaction.response.send_message(
@@ -1131,9 +1164,12 @@ class SeasonCog(commands.Cog):
                 ephemeral=True,
             )
             return
-        await self.bot.signup_module_service.upsert_division_config(server_id, div.id, channel.id)
         now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            await db.execute(
+                "UPDATE divisions SET lineup_channel_id = ? WHERE id = ?",
+                (channel.id, div.id),
+            )
             await db.execute(
                 "INSERT INTO audit_entries "
                 "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
@@ -1155,6 +1191,67 @@ class SeasonCog(commands.Cog):
         await self.bot.output_router.post_log(
             server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division lineup-channel | Success\n"
+            f"  division: {name}\n"
+            f"  channel: #{channel.name}",
+        )
+
+    @division.command(
+        name="calendar-channel",
+        description="Set the calendar posting channel for a division.",
+    )
+    @app_commands.describe(name="Division name", channel="Calendar channel")
+    @channel_guard
+    @admin_only
+    async def division_calendar_channel(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        channel: discord.TextChannel,
+    ) -> None:
+        import json as _json
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+        season = await self.bot.season_service.get_season_for_server(server_id)  # type: ignore[attr-defined]
+        if season is None:
+            await interaction.response.send_message(
+                "\u274c No season found. Set up a season before assigning channels.",
+                ephemeral=True,
+            )
+            return
+        divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
+        if div is None:
+            await interaction.response.send_message(
+                f"\u274c Division **{name}** not found in the current season.",
+                ephemeral=True,
+            )
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            await db.execute(
+                "UPDATE divisions SET calendar_channel_id = ? WHERE id = ?",
+                (channel.id, div.id),
+            )
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, ?, 'DIVISION_CALENDAR_CHANNEL_SET', '', ?, ?)",
+                (
+                    server_id,
+                    interaction.user.id,
+                    str(interaction.user),
+                    div.id,
+                    _json.dumps({"channel_id": channel.id}),
+                    now,
+                ),
+            )
+            await db.commit()
+        await interaction.response.send_message(
+            f"\u2705 Calendar channel for **{name}** set to {channel.mention}.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division calendar-channel | Success\n"
             f"  division: {name}\n"
             f"  channel: #{channel.name}",
         )
@@ -2431,6 +2528,75 @@ class SeasonCog(commands.Cog):
 
         # Only transition to ACTIVE after scheduling succeeds
         await season_svc.transition_to_active(cfg.season_id)
+
+        # ── T015: Bulk role grant for all ASSIGNED drivers (FR-006) ──────────
+        _guild = interaction.guild
+        if _guild is not None:
+            for _div in divisions:
+                async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
+                    _cur = await _db.execute(
+                        """
+                        SELECT dp.discord_user_id, ti.name AS team_name
+                        FROM driver_season_assignments dsa
+                        JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+                        JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                        JOIN team_instances ti ON ti.id = ts.team_instance_id
+                        WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
+                        """,
+                        (_div.id,),
+                    )
+                    _assign_rows = await _cur.fetchall()
+                for _row in _assign_rows:
+                    try:
+                        _member = _guild.get_member(int(_row["discord_user_id"])) or (
+                            await _guild.fetch_member(int(_row["discord_user_id"]))
+                        )
+                        _role_ids = [_div.mention_role_id]
+                        _team_cfg = await self.bot.placement_service.get_team_role_config(  # type: ignore[attr-defined]
+                            cfg.server_id, _row["team_name"]
+                        )
+                        if _team_cfg is not None:
+                            _role_ids.append(_team_cfg.role_id)
+                        await self.bot.placement_service._grant_roles(_member, *_role_ids)  # type: ignore[attr-defined]
+                    except Exception:
+                        log.exception(
+                            "_do_approve: role grant failed for user %s", _row["discord_user_id"]
+                        )
+
+        # ── T016: Post lineup per division (FR-010) ──────────────────────────
+        if _guild is not None:
+            for _div in divisions:
+                if _div.lineup_channel_id:
+                    try:
+                        await self.bot.placement_service._refresh_lineup_post(_guild, _div.id)  # type: ignore[attr-defined]
+                    except Exception:
+                        log.exception(
+                            "_do_approve: lineup post failed for division %s", _div.id
+                        )
+
+        # ── T017: Post calendar per division (FR-011) ─────────────────────────
+        if _guild is not None:
+            for _div in divisions:
+                if _div.calendar_channel_id:
+                    _cal_channel = _guild.get_channel(_div.calendar_channel_id)
+                    if _cal_channel is not None and isinstance(_cal_channel, discord.TextChannel):
+                        try:
+                            _rounds_for_cal = sorted(
+                                div_rounds.get(_div.id, []),
+                                key=lambda r: r.scheduled_at,
+                            )
+                            _cal_lines = [f"\U0001f4c5 **{_div.name} \u2014 Race Calendar**"]
+                            for _rnd in _rounds_for_cal:
+                                _unix = int(_rnd.scheduled_at.timestamp())
+                                _track = _rnd.track_name or "Mystery"
+                                _cal_lines.append(
+                                    f"Round {_rnd.round_number}: {_track} \u2014 <t:{_unix}:F>"
+                                )
+                            await _cal_channel.send("\n".join(_cal_lines))
+                        except discord.HTTPException:
+                            log.exception(
+                                "_do_approve: calendar post failed for division %s", _div.id
+                            )
 
         stale_keys = [uid for uid, c in self._pending.items() if c.server_id == cfg.server_id]
         for uid in stale_keys:

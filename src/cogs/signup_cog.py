@@ -1282,15 +1282,6 @@ class SignupCog(commands.Cog):
             )
             return
 
-        # Guard: active season required
-        active_season = await self.bot.season_service.get_active_season(server_id)
-        if active_season is None:
-            await interaction.response.send_message(
-                "❌ An approved season setup is required before opening signups.",
-                ephemeral=True,
-            )
-            return
-
         # Guard: at least one slot configured
         slots = await self.bot.signup_module_service.get_slots(server_id)
         if not slots:

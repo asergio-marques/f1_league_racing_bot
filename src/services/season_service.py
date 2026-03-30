@@ -76,6 +76,19 @@ class SeasonService:
             return None
         return _row_to_season(row)
 
+    async def get_setup_or_active_season(self, server_id: int) -> Season | None:
+        """Return the SETUP or ACTIVE season for *server_id*, or None."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') LIMIT 1",
+                (server_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return _row_to_season(row)
+
     async def get_setup_season(self, server_id: int) -> Season | None:
         """Return the SETUP season for *server_id*, or None."""
         async with get_connection(self._db_path) as db:
@@ -646,7 +659,8 @@ class SeasonService:
         """Return all divisions for *season_id*."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier "
+                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier, "
+                "lineup_channel_id, calendar_channel_id, lineup_message_id "
                 "FROM divisions WHERE season_id = ?",
                 (season_id,),
             )
@@ -741,6 +755,7 @@ class SeasonService:
                 """
                 SELECT d.id, d.season_id, d.name, d.mention_role_id, d.forecast_channel_id,
                        d.status, d.tier,
+                       d.lineup_channel_id, d.calendar_channel_id, d.lineup_message_id,
                        drc.results_channel_id, drc.standings_channel_id,
                        drc.penalty_channel_id
                 FROM divisions d
@@ -1131,6 +1146,7 @@ def _row_to_season(row: object) -> Season:
 
 
 def _row_to_division(row: object) -> Division:
+    keys = row.keys()
     return Division(
         id=row["id"],
         season_id=row["season_id"],
@@ -1138,7 +1154,10 @@ def _row_to_division(row: object) -> Division:
         mention_role_id=row["mention_role_id"],
         forecast_channel_id=row["forecast_channel_id"],
         status=row["status"],
-        tier=row["tier"] if "tier" in row.keys() else 0,
+        tier=row["tier"] if "tier" in keys else 0,
+        lineup_channel_id=row["lineup_channel_id"] if "lineup_channel_id" in keys else None,
+        calendar_channel_id=row["calendar_channel_id"] if "calendar_channel_id" in keys else None,
+        lineup_message_id=row["lineup_message_id"] if "lineup_message_id" in keys else None,
     )
 
 

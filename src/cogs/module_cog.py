@@ -42,11 +42,10 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
     if cfg is None:
         return
 
-    # 1. Transition in-progress drivers
+    # 1. Transition in-progress drivers (only PENDING_SIGNUP_COMPLETION; approved/correcting
+    #    drivers retain their state per FR-002/FR-003)
     in_progress_states = {
         DriverState.PENDING_SIGNUP_COMPLETION,
-        DriverState.PENDING_ADMIN_APPROVAL,
-        DriverState.PENDING_DRIVER_CORRECTION,
     }
     async with get_connection(bot.db_path) as db:
         placeholders = ",".join("?" for _ in in_progress_states)

@@ -120,10 +120,10 @@ class DriverCog(commands.Cog):
         actor_name = str(interaction.user)
 
         # Resolve season
-        season = await self.bot.season_service.get_active_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
         if season is None:
             await interaction.followup.send(
-                "⛔ No active season found.", ephemeral=True
+                "⛔ No season in SETUP or ACTIVE state found.", ephemeral=True
             )
             return
 
@@ -168,6 +168,7 @@ class DriverCog(commands.Cog):
                 acting_user_name=actor_name,
                 guild=interaction.guild,
                 discord_user_id=str(user.id),
+                season_state=season.status.value if hasattr(season.status, "value") else str(season.status),
             )
         except ValueError as exc:
             await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
@@ -216,10 +217,10 @@ class DriverCog(commands.Cog):
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
-        season = await self.bot.season_service.get_active_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
         if season is None:
             await interaction.followup.send(
-                "⛔ No active season found.", ephemeral=True
+                "⛔ No season in SETUP or ACTIVE state found.", ephemeral=True
             )
             return
 
@@ -261,6 +262,7 @@ class DriverCog(commands.Cog):
                 acting_user_name=actor_name,
                 guild=interaction.guild,
                 discord_user_id=str(user.id),
+                season_state=season.status.value if hasattr(season.status, "value") else str(season.status),
             )
         except ValueError as exc:
             await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
