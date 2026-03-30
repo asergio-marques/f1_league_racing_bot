@@ -1,6 +1,37 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-03-30 — Session reuse: Signup module modifications + minor feature additions]
+  - Constitution reused as-is; no principle amendments required at session start.
+  - Session intent: modify existing signup wizard functionality and add minor features
+    to the signup module. All proposed work falls within the already-ratified domains
+    of Principle VI (item 5: signup wizard and driver onboarding) and Principle XI
+    (Signup Wizard Integrity). Feature branch to be created from main after scope is
+    confirmed.
+  - Implementation status at session start (post-026 merge):
+      ✅ 026-penalty-posting-appeals — fully merged to main (2026-03-30).
+         Covers: PenaltyRecord and AppealRecord entities; penalty announcement channel
+         (DivisionResultsConfig.penalty_channel_id); admin-driven appeals review wizard;
+         penalty and appeal outcome posting; full test suite.
+  - No placeholder tokens present; constitution is fully resolved at v2.7.0.
+  - No version bump required; Last Amended date remains 2026-03-29 (no content amendments
+    at session start).
+  - All templates confirmed aligned with Principles I–XII:
+      ✅ .specify/templates/plan-template.md       — dynamic Constitution Check; no changes.
+      ✅ .specify/templates/spec-template.md       — generic structure; no stale references.
+      ✅ .specify/templates/tasks-template.md      — generic; aligns with I–XII.
+      ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+      ✅ .specify/templates/checklist-template.md  — no impact.
+  - Deferred TODOs (carried from v2.7.0):
+      - Exact command naming for appeal submission and review commands to be defined in
+        the feature specification.
+      - Whether the existing penalty-wizard loose-text fields on DriverSessionResult
+        (post_race_time_penalties, post_stewarding_total_time) have been fully superseded
+        by PenaltyRecord rows — migration confirmation required.
+  - Pending: user to confirm exact scope of signup modifications and new features;
+    constitution will be re-evaluated and amended once any new governance requirements
+    are identified.
+
 [2026-03-29 — v2.6.0 → v2.7.0: Penalty posting channel + appeals workflow formalized]
   Version change    : 2.6.0 → 2.7.0
   Bump rationale    : MINOR — "Penalty and protest adjudication" promoted from planned

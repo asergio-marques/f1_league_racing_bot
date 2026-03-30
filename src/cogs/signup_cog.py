@@ -16,6 +16,8 @@ Commands:
 """
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
 import re
@@ -616,10 +618,54 @@ class SignupCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member) -> None:
-        """T048: Clean up wizard state when a member leaves the server (FR-027)."""
+        """T048: Clean up wizard state when a member leaves the server (FR-027).
+
+        Also posts a log notification for UNASSIGNED and ASSIGNED drivers who
+        leave without going through the wizard path.
+        """
         await self.bot.wizard_service.handle_member_remove(  # type: ignore[attr-defined]
             member.guild.id, str(member.id), member.guild
         )
+
+        # Handle UNASSIGNED / ASSIGNED drivers (not covered by wizard_service)
+        try:
+            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                cursor = await db.execute(
+                    "SELECT current_state FROM driver_profiles "
+                    "WHERE server_id = ? AND discord_user_id = ?",
+                    (member.guild.id, str(member.id)),
+                )
+                row = await cursor.fetchone()
+            if row is None:
+                return
+            state = row["current_state"]
+            if state not in ("UNASSIGNED", "ASSIGNED"):
+                return
+            # Fetch display name from signup_records
+            try:
+                async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                    cursor = await db.execute(
+                        "SELECT server_display_name, discord_username "
+                        "FROM signup_records WHERE server_id = ? AND discord_user_id = ?",
+                        (member.guild.id, str(member.id)),
+                    )
+                    rec = await cursor.fetchone()
+                display_name = (
+                    (rec["server_display_name"] or rec["discord_username"] or str(member.id))
+                    if rec is not None
+                    else (member.display_name or str(member.id))
+                )
+            except Exception:
+                display_name = member.display_name or str(member.id)
+            await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+                member.guild.id,
+                f"Driver left server: **{display_name}** (<@{member.id}>) | state: {state}",
+            )
+        except Exception:
+            log.warning(
+                "on_member_remove: failed to post log for %s/%s",
+                member.guild.id, member.id,
+            )
 
     # ── /signup (root group) ───────────────────────────────────────────
 
@@ -1324,6 +1370,12 @@ class SignupCog(commands.Cog):
 
         role_mention = base_role.mention if base_role else ""
         role_line = f"\n\n{role_mention} — click below to sign up!" if role_mention else ""
+
+        close_line = ""
+        if close_at_iso:
+            parsed_utc = datetime.fromisoformat(close_at_iso)
+            close_line = f"\n**Auto-closes:** {parsed_utc.strftime('%Y-%m-%d %H:%M')} UTC"
+
         info_embed = discord.Embed(
             title="🏁 Driver Signups Are Open!",
             description=(
@@ -1333,6 +1385,7 @@ class SignupCog(commands.Cog):
                 + f"\n\n**Time type:** {tt_label}"
                 + f"\n**Time image proof:** {img_label}"
                 + f"\n**Nationality:** {nat_label}"
+                + close_line
                 + role_line
             ),
             color=discord.Color.green(),
@@ -1455,16 +1508,22 @@ class SignupCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
-    # /signup unassigned
+    # /signup unassigned (group with list + export subcommands)
     # ------------------------------------------------------------------
 
-    @signup.command(
+    unassigned_group = app_commands.Group(
         name="unassigned",
+        description="Commands for listing and exporting Unassigned drivers.",
+        parent=signup,
+    )
+
+    @unassigned_group.command(
+        name="list",
         description="List all Unassigned drivers, seeded by total lap time.",
     )
     @channel_guard
     @admin_only
-    async def signup_unassigned(self, interaction: discord.Interaction) -> None:
+    async def signup_unassigned_list(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         drivers = await self.bot.placement_service.get_unassigned_drivers_seeded(server_id)  # type: ignore[attr-defined]
@@ -1491,7 +1550,6 @@ class SignupCog(commands.Cog):
         if len(output) <= 1900:
             await interaction.followup.send(output, ephemeral=True)
         else:
-            # Split into chunks of ~1900 chars
             chunk, chunks = "", []
             for line in lines:
                 if len(chunk) + len(line) + 2 > 1900:
@@ -1506,3 +1564,64 @@ class SignupCog(commands.Cog):
                     await interaction.followup.send(part, ephemeral=True)
                 else:
                     await interaction.followup.send(part, ephemeral=True)
+
+    @unassigned_group.command(
+        name="export",
+        description="Export all Unassigned drivers to a CSV file.",
+    )
+    @channel_guard
+    @admin_only
+    async def signup_unassigned_export(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        slots = await self.bot.signup_module_service.get_slots(server_id)  # type: ignore[attr-defined]
+        slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
+
+        drivers = await self.bot.placement_service.get_unassigned_drivers_for_export(  # type: ignore[attr-defined]
+            server_id, slots_ordered
+        )
+        if not drivers:
+            await interaction.followup.send("No Unassigned drivers found.", ephemeral=True)
+            return
+
+        # Build CSV in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Header
+        slot_headers = [s.display_label for s in slots_ordered]
+        writer.writerow(
+            ["Seed", "Display Name", "Discord User ID", "Driver Type", "Lap Total"]
+            + slot_headers
+            + ["Preferred Team 1", "Preferred Team 2", "Preferred Team 3", "Platform", "Platform ID"]
+        )
+
+        # Rows
+        for d in drivers:
+            slot_cols = ["X" if d["slot_presence"].get(s.slot_sequence_id) else "" for s in slots_ordered]
+            writer.writerow(
+                [
+                    d["seed"],
+                    d["display_name"],
+                    d["discord_user_id"],
+                    d["driver_type"],
+                    d["total_lap_fmt"],
+                ]
+                + slot_cols
+                + [
+                    d["preferred_team_1"],
+                    d["preferred_team_2"],
+                    d["preferred_team_3"],
+                    d["platform"],
+                    d["platform_id"],
+                ]
+            )
+
+        buf = io.BytesIO(output.getvalue().encode("utf-8-sig"))
+        file = discord.File(buf, filename="unassigned_drivers.csv")
+        await interaction.followup.send(
+            f"{len(drivers)} Unassigned driver(s) exported.",
+            file=file,
+            ephemeral=True,
+        )
