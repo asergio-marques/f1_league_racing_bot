@@ -264,7 +264,10 @@ class ModuleCog(commands.Cog):
         from services.phase1_service import run_phase1
         from services.phase2_service import run_phase2
         from services.phase3_service import run_phase3
+        from services.weather_config_service import get_weather_pipeline_config
         from models.round import RoundFormat
+
+        cfg = await get_weather_pipeline_config(self.bot.db_path, server_id)
 
         now = datetime.now(timezone.utc)
         divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[union-attr]
@@ -281,9 +284,9 @@ class ModuleCog(commands.Cog):
             if scheduled_at.tzinfo is None:
                 scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
 
-            p1_horizon = scheduled_at - timedelta(days=5)
-            p2_horizon = scheduled_at - timedelta(days=2)
-            p3_horizon = scheduled_at - timedelta(hours=2)
+            p1_horizon = scheduled_at - timedelta(days=cfg.phase_1_days)
+            p2_horizon = scheduled_at - timedelta(days=cfg.phase_2_days)
+            p3_horizon = scheduled_at - timedelta(hours=cfg.phase_3_hours)
 
             if not rnd.phase1_done and now >= p1_horizon:
                 log.info("Weather enable catch-up: Phase 1 for round %s", rnd.id)
@@ -295,7 +298,12 @@ class ModuleCog(commands.Cog):
                 log.info("Weather enable catch-up: Phase 3 for round %s", rnd.id)
                 await run_phase3(rnd.id, self.bot)
 
-            self.bot.scheduler_service.schedule_round(rnd)
+            self.bot.scheduler_service.schedule_round(
+                rnd,
+                phase_1_days=cfg.phase_1_days,
+                phase_2_days=cfg.phase_2_days,
+                phase_3_hours=cfg.phase_3_hours,
+            )
 
     # ── Weather disable (T012) ─────────────────────────────────────────
 

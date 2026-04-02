@@ -27,6 +27,7 @@ log = logging.getLogger(__name__)
 _CID_ADD              = "pw_add"
 _CID_CONFIRM          = "pw_confirm"
 _CID_APPROVE          = "pw_approve"
+_CID_RESUBMIT         = "pw_resubmit"
 _CID_AV_MAKE_CHANGES  = "pw_av_make_changes"
 _CID_AV_APPROVE       = "pw_av_approve"
 _CID_AR_APPROVE       = "ar_approve"
@@ -661,6 +662,27 @@ class PenaltyReviewView(discord.ui.View):
             return
         from services.result_submission_service import finalize_penalty_review
         await finalize_penalty_review(interaction, self.state)
+
+    @discord.ui.button(
+        label="🔄 Resubmit Initial Results",
+        style=discord.ButtonStyle.danger,
+        custom_id=_CID_RESUBMIT,
+        row=0,
+    )
+    async def resubmit_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if self.state is None:
+            await interaction.response.send_message(
+                "⚠️ The bot was restarted. Please wait for the penalty prompt to refresh.",
+                ephemeral=True,
+            )
+            return
+        if not await _require_lm(interaction, self.state):
+            return
+        await interaction.response.defer(ephemeral=True)
+        from services.result_submission_service import enter_resubmit_flow
+        await enter_resubmit_flow(interaction, self.state)
 
 
 # ---------------------------------------------------------------------------

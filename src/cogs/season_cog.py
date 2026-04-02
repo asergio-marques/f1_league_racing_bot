@@ -2517,7 +2517,14 @@ class SeasonCog(commands.Cog):
         results_enabled = await self.bot.module_service.is_results_enabled(cfg.server_id)
         if weather_enabled:
             # schedule_round creates weather phase jobs AND the results_r job together
-            self.bot.scheduler_service.schedule_all_rounds(all_rounds)
+            from services.weather_config_service import get_weather_pipeline_config
+            _wcfg = await get_weather_pipeline_config(self.bot.db_path, cfg.server_id)
+            self.bot.scheduler_service.schedule_all_rounds(
+                all_rounds,
+                phase_1_days=_wcfg.phase_1_days,
+                phase_2_days=_wcfg.phase_2_days,
+                phase_3_hours=_wcfg.phase_3_hours,
+            )
         elif results_enabled:
             # Weather off but results on: schedule results_r jobs for production
             # (real future race times).  In test mode we skip this because past-dated

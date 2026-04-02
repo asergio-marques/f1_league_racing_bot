@@ -240,6 +240,7 @@ async def enter_penalty_state(
     *,
     season_id: int | None = None,
     skip_results_post: bool = False,
+    is_resubmission: bool = False,
 ) -> None:
     """Transition the submission channel to post-round penalty-review state.
 
@@ -315,9 +316,10 @@ async def enter_penalty_state(
             if results_ch_id:
                 rc = guild.get_channel(results_ch_id)
                 if rc:
+                    _results_label = "Provisional Results (amended)" if is_resubmission else "Provisional Results"
                     await results_post_service.post_round_results(
                         db_path, round_id, division_id, rc, guild,
-                        label="Provisional Results",
+                        label=_results_label,
                     )
 
             if standings_ch_id:
@@ -329,13 +331,12 @@ async def enter_penalty_state(
                     )
                     driver_snaps = await compute_driver_standings(db_path, division_id, round_id)
                     team_snaps = await compute_team_standings(db_path, division_id, round_id)
+                    _standings_label = "Provisional Results (amended)" if is_resubmission else "Provisional Results"
                     await results_post_service.post_standings(
                         db_path, division_id, round_id, round_number, track_name,
                         sc, driver_snaps, team_snaps, guild, show_reserves,
-                        label="Provisional Results",
+                        label=_standings_label,
                     )
-
-            # Mark results as posted so restart recovery knows not to re-post.
             async with get_connection(db_path) as db:
                 await db.execute(
                     "UPDATE round_submission_channels SET results_posted = 1 WHERE round_id = ?",
@@ -2095,3 +2096,264 @@ async def run_result_submission_job(round_id: int, bot) -> None:
         await close_submission_channel(sub_channel.id, round_id, guild, db_path)
         return
     await enter_penalty_state(bot, guild, round_id, division_id, sub_channel, season_id=season_id)
+
+
+# ---------------------------------------------------------------------------
+# Resubmission flow — triggered by the 🔄 Resubmit Initial Results button
+# ---------------------------------------------------------------------------
+
+async def enter_resubmit_flow(
+    interaction: discord.Interaction,
+    state,
+) -> None:
+    """Discard staged penalties, supersede existing results, and restart collection.
+
+    Called from the pw_resubmit button callback in PenaltyReviewView.
+    """
+    import asyncio
+    import json as _json
+
+    bot = state.bot
+    db_path: str = bot.db_path
+    round_id = state.round_id
+    division_id = state.division_id
+    actor_id: int = interaction.user.id
+
+    discarded_count = len(state.staged)
+    discarded_detail = [
+        {
+            "driver_user_id": sp.driver_user_id,
+            "session_type": sp.session_type.value,
+            "penalty_type": sp.penalty_type,
+            "penalty_seconds": sp.penalty_seconds,
+        }
+        for sp in state.staged
+    ]
+
+    srv_row = None
+    try:
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                (division_id,),
+            )
+            srv_row = await cursor.fetchone()
+        if srv_row:
+            await bot.output_router.post_log(
+                int(srv_row["server_id"]),
+                f"<@{actor_id}> | RESULTS_RESUBMISSION_STAGED_DISCARD | Success\n"
+                f"  round_id: {round_id} ({state.division_name})\n"
+                f"  discarded_count: {discarded_count}\n"
+                f"  discarded: {_json.dumps(discarded_detail)}",
+            )
+    except Exception:
+        log.exception("enter_resubmit_flow: error writing staged-discard audit log (round %s)", round_id)
+
+    state.staged.clear()
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_session_results SET is_superseded = 1 "
+            "WHERE session_result_id IN (SELECT id FROM session_results WHERE round_id = ?)",
+            (round_id,),
+        )
+        await db.execute("DELETE FROM session_results WHERE round_id = ?", (round_id,))
+        await db.execute(
+            "UPDATE round_submission_channels SET in_penalty_review = 0, results_posted = 0 WHERE round_id = ?",
+            (round_id,),
+        )
+        await db.commit()
+
+    sub_channel = bot.get_channel(state.submission_channel_id)
+    if sub_channel is not None:
+        await sub_channel.send(
+            "⚠️ **Results resubmission started.** "
+            "Previous provisional results will be replaced once new results are submitted."
+        )
+
+    asyncio.create_task(
+        _resubmit_collection_task(round_id, division_id, bot, sub_channel),
+        name=f"resubmit_r{round_id}",
+    )
+
+    try:
+        if srv_row:
+            await bot.output_router.post_log(
+                int(srv_row["server_id"]),
+                f"<@{actor_id}> | RESULTS_RESUBMISSION | Started\n"
+                f"  round_id: {round_id} ({state.division_name})\n"
+                f"  Previous staged penalties discarded: {discarded_count}",
+            )
+    except Exception:
+        log.exception("enter_resubmit_flow: error writing resubmission audit log (round %s)", round_id)
+
+    await interaction.followup.send(
+        "🔄 Resubmission started. Please re-enter the session results in the submission channel.",
+        ephemeral=True,
+    )
+
+
+async def _resubmit_collection_task(
+    round_id: int,
+    division_id: int,
+    bot,
+    sub_channel: discord.TextChannel | None,
+) -> None:
+    """Re-run the session collection loop against an existing submission channel.
+
+    Mirrors run_result_submission_job but skips channel creation.
+    On completion calls enter_penalty_state(..., is_resubmission=True).
+    """
+    if sub_channel is None:
+        log.error("_resubmit_collection_task: sub_channel not found for round %s", round_id)
+        return
+
+    db_path: str = bot.db_path
+    ctx = await _get_round_context(db_path, round_id)
+    if ctx is None:
+        log.error("_resubmit_collection_task: round %s not found", round_id)
+        return
+
+    server_id: int = ctx["server_id"]
+    season_id: int = ctx["season_id"]
+    division_name: str = ctx["division_name"]
+    round_number: int = ctx["round_number"]
+    round_format = RoundFormat(ctx["round_format"])
+
+    guild = bot.get_guild(server_id)
+    if guild is None:
+        log.error("_resubmit_collection_task: guild %s not found for round %s", server_id, round_id)
+        return
+
+    try:
+        (
+            division_driver_ids,
+            team_role_ids,
+            reserve_team_role_id,
+            driver_team_map,
+            reserve_driver_ids,
+        ) = await _build_division_validation_data(division_id, server_id, bot)
+    except Exception:
+        log.exception("_resubmit_collection_task: failed to build validation data for round %s", round_id)
+        await sub_channel.send("❌ Resubmission failed: could not load division data.")
+        return
+
+    from services import season_points_service
+    config_names = await season_points_service.get_attached_config_names(db_path, season_id)
+
+    sessions = get_sessions_for_format(round_format)
+    is_sprint = round_format is RoundFormat.SPRINT
+    session_list_str = ", ".join(
+        results_formatter.format_session_label(s, is_sprint=is_sprint) for s in sessions
+    )
+    await sub_channel.send(
+        f"🔄 Resubmitting results for **Round {round_number}** ({division_name})."
+        f" Sessions: {session_list_str}.\n\n"
+        "Submit results one driver per line (comma-separated), or type `CANCELLED` to skip a session."
+    )
+
+    cancelled_sessions: set[SessionType] = set()
+    for session_type in sessions:
+        label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
+        if session_type.is_qualifying:
+            format_hint = "Format: `Position, @Driver, @TeamRole, Tyre, BestLap, Gap`"
+        else:
+            format_hint = (
+                "Format: `Position, @Driver, @TeamRole, TotalTime, FastestLap, TimePenalties`\n"
+                "Optional first line: `FL: @Driver` to override fastest-lap holder."
+            )
+
+        await sub_channel.send(
+            f"📋 Submit **{label}** results (one driver per line), or type `CANCELLED`.\n{format_hint}"
+        )
+
+        while True:
+            msg = await bot.wait_for(
+                "message",
+                check=lambda m, ch=sub_channel: (m.channel.id == ch.id and not m.author.bot),
+            )
+            content = msg.content.strip()
+
+            if content.upper() == "CANCELLED":
+                await save_session_result(
+                    db_path=db_path, round_id=round_id, division_id=division_id,
+                    session_type=session_type, status="CANCELLED", config_name=None,
+                    submitted_by=msg.author.id, driver_rows=[],
+                )
+                await sub_channel.send(f"✅ **{label}** marked as CANCELLED.")
+                cancelled_sessions.add(session_type)
+                break
+
+            lines = content.splitlines()
+            fl_override: int | None = None
+            if not session_type.is_qualifying:
+                fl_override, lines = extract_fl_override(lines)
+            result = validate_submission_block(
+                lines, session_type, division_driver_ids, team_role_ids,
+                reserve_team_role_id, driver_team_map, reserve_driver_ids,
+            )
+
+            if isinstance(result[0] if result else None, str):
+                error_list = "\n".join(f"• {e}" for e in result)
+                await sub_channel.send(f"❌ Validation failed:\n{error_list}\nPlease correct and resubmit.")
+                continue
+
+            parsed_rows = result
+            if fl_override is not None:
+                submitted_ids = {r.driver_user_id for r in parsed_rows}
+                if fl_override not in submitted_ids:
+                    await sub_channel.send(
+                        f"❌ FL override <@{fl_override}> is not in the submitted results. Please correct and resubmit."
+                    )
+                    continue
+
+            selected_config: str | None = None
+            if len(config_names) == 1:
+                selected_config = config_names[0]
+                await sub_channel.send(f"✅ Auto-selected config **{selected_config}**.")
+            elif len(config_names) > 1:
+                view = _ConfigSelectView(config_names)
+                config_msg = await sub_channel.send("🔧 Select the points configuration for this session:", view=view)
+                await view.wait()
+                selected_config = view.selected
+                try:
+                    await config_msg.edit(content=f"🔧 Config selected: **{selected_config}**", view=None)
+                except discord.HTTPException:
+                    pass
+
+            if session_type.is_qualifying:
+                driver_rows_data = [_row_dict_from_qualifying(r) for r in parsed_rows]  # type: ignore[arg-type]
+            else:
+                driver_rows_data = [_row_dict_from_race(r) for r in parsed_rows]  # type: ignore[arg-type]
+
+            await save_session_result(
+                db_path=db_path, round_id=round_id, division_id=division_id,
+                session_type=session_type, status="ACTIVE", config_name=selected_config,
+                submitted_by=msg.author.id, driver_rows=driver_rows_data,
+                fl_driver_override=fl_override,
+            )
+
+            if selected_config is not None:
+                async with get_connection(db_path) as _db:
+                    _cur = await _db.execute(
+                        "SELECT id FROM session_results WHERE round_id = ? AND session_type = ?",
+                        (round_id, session_type.value),
+                    )
+                    _sr = await _cur.fetchone()
+                if _sr is not None:
+                    await _apply_points_from_config(db_path, _sr["id"], season_id, selected_config, session_type)
+
+            await sub_channel.send(f"✅ **{label}** results saved.")
+            break
+
+    if cancelled_sessions == set(sessions):
+        await sub_channel.send("⏭️ All sessions were cancelled — no penalty review required.")
+        await close_submission_channel(sub_channel.id, round_id, guild, db_path)
+        return
+
+    await enter_penalty_state(
+        bot, guild, round_id, division_id, sub_channel,
+        season_id=season_id,
+        is_resubmission=True,
+    )
+
