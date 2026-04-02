@@ -236,12 +236,24 @@ class SchedulerService:
     # Round scheduling
     # ------------------------------------------------------------------
 
-    def schedule_round(self, rnd: Round) -> None:
+    def schedule_round(
+        self,
+        rnd: Round,
+        *,
+        phase_1_days: int = 5,
+        phase_2_days: int = 2,
+        phase_3_hours: int = 2,
+    ) -> None:
         """Register DateTrigger jobs for *rnd*.
 
         MYSTERY rounds: schedule the notice job (T−5 days) and the result
         submission job (round start time), but no weather phase jobs.
         Jobs use replace_existing=True so re-scheduling an amended round is safe.
+
+        Args:
+            phase_1_days: Days before the round to fire Phase 1 (default 5).
+            phase_2_days: Days before the round to fire Phase 2 (default 2).
+            phase_3_hours: Hours before the round to fire Phase 3 (default 2).
         """
         if rnd.format == RoundFormat.MYSTERY:
             scheduled_at = rnd.scheduled_at
@@ -276,9 +288,9 @@ class SchedulerService:
             scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
 
         horizons = {
-            1: scheduled_at - timedelta(days=5),
-            2: scheduled_at - timedelta(days=2),
-            3: scheduled_at - timedelta(hours=2),
+            1: scheduled_at - timedelta(days=phase_1_days),
+            2: scheduled_at - timedelta(days=phase_2_days),
+            3: scheduled_at - timedelta(hours=phase_3_hours),
         }
 
         for phase_num, fire_at in horizons.items():
@@ -352,10 +364,22 @@ class SchedulerService:
         for row in rows:
             self.cancel_round(row[0])
 
-    def schedule_all_rounds(self, rounds: list[Round]) -> None:
+    def schedule_all_rounds(
+        self,
+        rounds: list[Round],
+        *,
+        phase_1_days: int = 5,
+        phase_2_days: int = 2,
+        phase_3_hours: int = 2,
+    ) -> None:
         """Schedule all rounds in *rounds*."""
         for rnd in rounds:
-            self.schedule_round(rnd)
+            self.schedule_round(
+                rnd,
+                phase_1_days=phase_1_days,
+                phase_2_days=phase_2_days,
+                phase_3_hours=phase_3_hours,
+            )
 
     def schedule_result_submission_jobs(self, rounds: list[Round]) -> None:
         """Schedule only the result-submission job for each round.
