@@ -1,6 +1,44 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-04-02 — Session start: Results & Weather improvements — feature branch created]
+  - Constitution footer corrected from v2.7.0 to v2.8.0. The body already contained
+    v2.8.0 amendments (New Entities v2.8.0, Principle XI v2.8.0 notes) applied during the
+    028-season-signup-flow session; the footer was inadvertently not updated at that time.
+    Last Amended date updated to 2026-04-02 to reflect this correction.
+  - Version bump rationale: no governance content changes this entry; footer is a
+    PATCH-level correction restoring accurate versioning (body and footer now agree at v2.8.0).
+  - Session intent: make targeted improvements to two existing optional modules:
+      1. Results & Standings module — improvements to flexibility and error tolerance
+         (e.g., ability to correct or amend initial submission mistakes more easily).
+      2. Weather generation module — behavioral flexibility improvements
+         (e.g., configurable or more tolerant pipeline behavior).
+    Exact scope to be defined via speckit.specify before implementation begins.
+  - Feature branch: 029-results-weather-improvements (created 2026-04-02 from main).
+  - Implementation status at session start (post-028 merge):
+      ✅ 028-season-signup-flow — fully merged to main (2026-04-02).
+         Covers: signup close-timer scope narrowed to PENDING_SIGNUP_COMPLETION only;
+         lineup_channel_id and calendar_channel_id moved to divisions table;
+         lineup_message_id added to divisions; /division calendar-channel no longer
+         module-gated.
+  - All placeholder tokens remain resolved; constitution is fully resolved at v2.8.0.
+  - No principle amendments required at session start; constitution will be re-evaluated
+    and amended once the scope of each module improvement is formally defined.
+  - All templates confirmed aligned with Principles I–XII:
+      ✅ .specify/templates/plan-template.md       — dynamic Constitution Check; no changes.
+      ✅ .specify/templates/spec-template.md       — generic structure; no stale references.
+      ✅ .specify/templates/tasks-template.md      — generic; aligns with I–XII.
+      ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+      ✅ .specify/templates/checklist-template.md  — no impact.
+  - Deferred TODOs (carried from v2.7.0):
+      - Exact command naming for appeal submission and review commands to be confirmed
+        against the 026-penalty-posting-appeals implementation.
+      - Whether the existing penalty wizard loose-text fields on DriverSessionResult
+        (post_race_time_penalties, post_stewarding_total_time) have been superseded by
+        PenaltyRecord rows — migration confirmation required.
+  - Pending: user to define exact scope of results and weather improvements; constitution
+    will be re-evaluated and amended once any new governance requirements are identified.
+
 [2025-07-01 — v2.7.0 → v2.8.0: Season-signup flow alignment — close-timer scope + channel ownership]
   Version change    : 2.7.0 → 2.8.0
   Bump rationale    : MINOR — Two targeted amendments to Principle XI (Signup Wizard Integrity):
@@ -1737,4 +1775,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.7.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-03-29
+**Version**: 2.8.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-04-02
