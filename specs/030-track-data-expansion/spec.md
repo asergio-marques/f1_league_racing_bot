@@ -95,13 +95,14 @@ name.
 
 **Acceptance Scenarios**:
 
-1. **Given** the bot is configured, **When** a tier-1 interaction-role member runs `/track
+1. **Given** the bot is configured, **When** a tier-2 admin (league manager) runs `/track
    list`, **Then** all 28 tracks are displayed sorted by numeric track ID, each row showing
    at minimum the track ID, circuit name, and grand prix name.
 2. **Given** the default 28 tracks, **When** `/track list` is issued, **Then** the output is
    ephemeral (visible only to the invoking user) and posted within 3 seconds.
-3. **Given** a user without the interaction role, **When** they attempt `/track list`,
-   **Then** the command is silently ignored per Principle I.
+3. **Given** a user who holds only the interaction role but not the season/config authority
+   role, **When** they attempt `/track list`, **Then** the command is rejected with a
+   permission error per Principle I.
 
 ---
 
@@ -165,9 +166,9 @@ name.
 #### Track Listing Command
 
 - **FR-010**: A `/track list` subcommand MUST be added to the `/track` command group. It
-  MUST be accessible to any interaction-role member (tier-1, Principle I). It displays all
-  tracks sorted by numeric track ID, each entry showing track ID, circuit name, and grand prix
-  name. The response MUST be ephemeral.
+  MUST be accessible to tier-2 admins (season/config authority, Principle I) only. It displays
+  all tracks sorted by numeric track ID, each entry showing track ID, circuit name, and grand
+  prix name. The response MUST be ephemeral.
 - **FR-011**: `/track list` MUST NOT require an active season; it queries the `tracks` table
   directly and returns all rows.
 
@@ -274,8 +275,8 @@ de Monaco (mu = 0.25, sigma = 0.05).
 - Track records and lap records (`track_records`, `lap_records` tables) are data-structure
   prerequisites only. Commands for entering, displaying, or auto-capturing records are out
   of scope for this increment and will be specified in a future feature.
-- The `/track list` command is accessible to tier-1 interaction-role members (any league
-  participant, not only admins) because it is a read-only informational command.
+- The `/track list` command is accessible to tier-2 admins (league managers) only, consistent
+  with other track and division management commands.
 - The identity of the "game" field on track/lap records is free-form text (e.g., "EA F1 25")
   to accommodate any future F1 game version without a schema change.
 - The existing `rounds.track_name` column remains a TEXT column. Rounds store the canonical
