@@ -60,6 +60,7 @@ async def main() -> None:
     from services.module_service import ModuleService
     from services.signup_module_service import SignupModuleService
     from services.wizard_service import WizardService
+    from services.attendance_service import AttendanceService
     from utils.output_router import OutputRouter as _OutputRouter  # already imported above
 
     bot.module_service = ModuleService(DB_PATH)          # type: ignore[attr-defined]
@@ -69,6 +70,7 @@ async def main() -> None:
         bot.scheduler_service,  # type: ignore[attr-defined]
         bot.output_router,  # type: ignore[attr-defined]
     )
+    bot.attendance_service = AttendanceService(DB_PATH)  # type: ignore[attr-defined]
 
     @bot.event
     async def on_ready() -> None:
@@ -222,6 +224,7 @@ async def main() -> None:
     from cogs.retry_cog import RetryCog
     from cogs.results_cog import ResultsCog
     from cogs.weather_cog import WeatherCog
+    from cogs.attendance_cog import AttendanceCog
 
     await bot.add_cog(InitCog(bot))
     await bot.add_cog(SeasonCog(bot))
@@ -237,6 +240,7 @@ async def main() -> None:
     await bot.add_cog(RetryCog(bot))
     await bot.add_cog(ResultsCog(bot))
     await bot.add_cog(WeatherCog(bot))
+    await bot.add_cog(AttendanceCog(bot))
 
     # Register ALL persistent views so button interactions survive bot restarts.
     # Views with optional __init__ params resolve driver context from channel at

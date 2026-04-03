@@ -22,6 +22,7 @@ _MODULE_CHOICES = [
     app_commands.Choice(name="weather", value="weather"),
     app_commands.Choice(name="signup", value="signup"),
     app_commands.Choice(name="results", value="results"),
+    app_commands.Choice(name="attendance", value="attendance"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -153,6 +154,8 @@ class ModuleCog(commands.Cog):
             await self._enable_weather(interaction, server_id)
         elif module_name.value == "results":
             await self._enable_results(interaction, server_id)
+        elif module_name.value == "attendance":
+            await self._enable_attendance(interaction, server_id)
         else:
             await self._enable_signup(interaction, server_id)
 
@@ -177,6 +180,8 @@ class ModuleCog(commands.Cog):
             await self._disable_weather(interaction, server_id)
         elif module_name.value == "results":
             await self._disable_results(interaction, server_id)
+        elif module_name.value == "attendance":
+            await self._disable_attendance(interaction)
         else:
             await self._disable_signup(interaction, server_id)
 
@@ -421,6 +426,118 @@ class ModuleCog(commands.Cog):
         await interaction.followup.send(
             "✅ Results & Standings module disabled.", ephemeral=True
         )
+
+        # Cascade: disable attendance if it is currently enabled
+        if await self.bot.module_service.is_attendance_enabled(server_id):
+            await self._disable_attendance(interaction, cascade=True)
+
+    # ── Attendance enable ──────────────────────────────────────────────
+
+    async def _enable_attendance(
+        self, interaction: discord.Interaction, server_id: int
+    ) -> None:
+        # 1. Guard: R&S must be enabled first
+        if not await self.bot.module_service.is_results_enabled(server_id):
+            await interaction.response.send_message(
+                "❌ The Attendance module requires the Results & Standings module to be enabled first.",
+                ephemeral=True,
+            )
+            return
+
+        # 2. Guard: no ACTIVE season
+        active_season = await self.bot.season_service.get_active_season(server_id)
+        if active_season is not None:
+            await interaction.response.send_message(
+                "❌ Attendance module cannot be enabled while a season is active.",
+                ephemeral=True,
+            )
+            return
+
+        # 3. Guard: already enabled
+        if await self.bot.module_service.is_attendance_enabled(server_id):
+            await interaction.response.send_message(
+                "⚠️ Attendance module is already enabled.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        # 4. Atomically insert config row with defaults + audit entry
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            async with get_connection(self.bot.db_path) as db:
+                await db.execute(
+                    "INSERT OR REPLACE INTO attendance_config "
+                    "(server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
+                    "rsvp_deadline_hours, no_rsvp_penalty, no_attend_penalty, no_show_penalty, "
+                    "autoreserve_threshold, autosack_threshold) "
+                    "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
+                    (server_id,),
+                )
+                await db.execute(
+                    "INSERT INTO audit_entries "
+                    "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                    "VALUES (?, ?, ?, NULL, 'ATTENDANCE_MODULE_ENABLED', '', '', ?)",
+                    (server_id, interaction.user.id, str(interaction.user), now),
+                )
+                await db.commit()
+        except Exception as exc:
+            await interaction.followup.send(
+                f"❌ Attendance module enable failed: {exc}. Module remains disabled.",
+                ephemeral=True,
+            )
+            return
+
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable attendance | Success",
+        )
+        await interaction.followup.send("✅ Attendance module enabled.", ephemeral=True)
+
+    # ── Attendance disable ─────────────────────────────────────────────
+
+    async def _disable_attendance(
+        self, interaction: discord.Interaction, *, cascade: bool = False
+    ) -> None:
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        if not cascade:
+            if not await self.bot.module_service.is_attendance_enabled(server_id):
+                await interaction.response.send_message(
+                    "⚠️ Attendance module is already disabled.", ephemeral=True
+                )
+                return
+            await interaction.response.defer(ephemeral=True)
+
+        change_type = (
+            "ATTENDANCE_MODULE_CASCADE_DISABLED" if cascade else "ATTENDANCE_MODULE_DISABLED"
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as db:
+            await db.execute(
+                "UPDATE attendance_config SET module_enabled = 0 WHERE server_id = ?",
+                (server_id,),
+            )
+            await db.execute(
+                "DELETE FROM attendance_division_config WHERE server_id = ?",
+                (server_id,),
+            )
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, NULL, ?, '', '', ?)",
+                (server_id, interaction.user.id, str(interaction.user), change_type, now),
+            )
+            await db.commit()
+
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable attendance | Success",
+        )
+        if not cascade:
+            await interaction.followup.send(
+                "✅ Attendance module disabled.", ephemeral=True
+            )
 
     # ── Signup enable (T010) ───────────────────────────────────────────
 
