@@ -100,12 +100,17 @@ convention. The `attendance` domain is new; config subcommands belong naturally 
 ### Decision 5: Cascading disable from `_disable_results` in `module_cog.py`
 
 **Decision**: In `module_cog.py::_disable_results()`, after disabling R&S, call a check:
-if attendance is enabled, call `_disable_attendance()` immediately.
+if attendance is enabled, call `_disable_attendance(interaction, cascade=True)` immediately.
+
+**Signature**: `async def _disable_attendance(self, interaction, *, cascade: bool = False)`
+- `cascade=False` (direct `/module disable attendance`): runs `defer()` + `followup.send()`.
+- `cascade=True` (called from `_disable_results`): skips `defer()`/`followup.send()` entirely
+  — the parent `_disable_results` owns the interaction. Audit entry and `post_log` still fire.
 
 **Rationale**: Per FR-007 and Principle XIII: "if the Results & Standings module is disabled
 while the Attendance module is active, the Attendance module MUST be disabled automatically."
 The cleanest hook is a direct call in `_disable_results()` after the R&S disable logic, reusing
-the same `_disable_attendance()` implementation with an appropriate cascade reason for the log.
+the same `_disable_attendance()` implementation via the `cascade` parameter.
 
 **Alternatives Considered**:
 - Event-based cascade (custom Discord event) — rejected; over-engineered for a single
@@ -277,7 +282,7 @@ if await self.bot.module_service.is_attendance_enabled(cfg.server_id):
 ### Timing invariant validation
 
 Per spec FR-020 and Principle XIII:
-- Invariant: `rsvp_notice_days × 24 > rsvp_last_notice_hours` AND `rsvp_last_notice_hours ≥ rsvp_deadline_hours`
+- Invariant: `rsvp_notice_days × 24 > rsvp_last_notice_hours` always; and `rsvp_last_notice_hours > rsvp_deadline_hours` when `last_notice_hours > 0`. Zero is a sentinel (ping disabled; second check skipped).
 - Edge case: `last_notice_hours = 0` and `deadline_hours = 0` is **valid** (last-notice ping
   disabled; RSVP locks at round start). The invariant resolves to `notice_days × 24 > 0 ≥ 0`.
 

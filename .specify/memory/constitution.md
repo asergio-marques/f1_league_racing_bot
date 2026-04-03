@@ -1488,8 +1488,10 @@ Three timing parameters govern the RSVP lifecycle and MUST satisfy the invariant
 **notice_days × 24 > last_notice_hours > deadline_hours** at all times:
 
 - `rsvp_notice_days` (default 5) — days before a round at which the RSVP embed is posted.
-- `rsvp_last_notice_hours` (default 1) — hours before a round at which drivers who have
-  not yet RSVP'd are directly notified. A value of 0 disables the last-notice ping.
+- `rsvp_last_notice_hours` (default 24) — hours before a round at which drivers who have
+  not yet RSVP'd are directly notified. A value of 0 disables the last-notice ping entirely
+  (the `> deadline_hours` comparison is skipped). Any non-zero value MUST be strictly
+  greater than `rsvp_deadline_hours`.
 - `rsvp_deadline_hours` (default 2) — hours before a round at which the RSVP choices
   become locked. A value of 0 means locking occurs at the scheduled round start time.
 

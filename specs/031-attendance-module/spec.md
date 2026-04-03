@@ -88,7 +88,8 @@ A league manager wants to define how many attendance points are awarded for each
 
 - What happens when `/module enable attendance` is run and no `AttendanceConfig` row exists yet for the server? The row must be created atomically with defaults during the enable operation.
 - What happens when the Attendance module is disabled and re-enabled? Config is cleared on disable (per Principle X rule 6); re-enabling starts fresh with defaults.
-- What is the timing invariant behaviour when `rsvp_last_notice_hours = 0` (last-notice disabled) and `rsvp_deadline_hours = 0`? Both zero means no last-notice ping and RSVP locks at round start time. The invariant `notice × 24 > last_notice > deadline` resolves to `notice × 24 > 0 > 0` which is `> 0 > 0` — a tie between last-notice and deadline at zero. The rule **must therefore be interpreted as**: `rsvp_deadline_hours ≤ rsvp_last_notice_hours < rsvp_notice_days × 24`, with 0 being valid for both `last_notice` and `deadline` simultaneously, but only valid for `last_notice` if `deadline = 0` as well.
+- What is the timing invariant behaviour when `rsvp_last_notice_hours` equals `rsvp_deadline_hours`? This is **rejected** — both values would fire at the same time. The invariant requires strict `>` for any non-zero `last_notice_hours`.
+- What is the timing invariant behaviour when `rsvp_last_notice_hours = 0`? Zero is a valid sentinel meaning the last-notice ping is **disabled** entirely. When `last_notice_hours = 0`, the `> deadline_hours` check is skipped; only `notice_days × 24 > 0` (always true for any positive `notice_days`) is enforced. `rsvp_deadline_hours` may be any non-negative value independently.
 - What happens if the channel passed to `division rsvp-channel` or `division attendance-channel` is the same as an already-registered module channel (e.g., the results channel)? This is not blocked at the configuration stage; cross-channel registration is the server admin's responsibility. Validation only enforces that a channel is set.
 - What happens when the Attendance module is enabled via test mode? The module must respect test-mode fake driver rosters; enabling and configuring it while test mode is active must be permitted.
 - What happens when `/module disable attendance` is issued while RSVP timer jobs are armed? All scheduled jobs for RSVP notices and last-notice pings must be cancelled atomically.
@@ -122,9 +123,9 @@ A league manager wants to define how many attendance points are awarded for each
 #### RSVP Timing Configuration
 
 - **FR-017**: League managers MUST be able to configure the number of days before a round at which RSVP notices are sent via `/attendance config rsvp-notice <days>`. Default value: 5.
-- **FR-018**: League managers MUST be able to configure the number of hours before a round at which un-RSVP'd drivers are pinged via `/attendance config rsvp-last-notice <hours>`. Default value: 1. A value of 0 disables the last-notice ping.
+- **FR-018**: League managers MUST be able to configure the number of hours before a round at which un-RSVP'd drivers are pinged via `/attendance config rsvp-last-notice <hours>`. Default value: 24. A value of 0 disables the last-notice ping entirely (the `> deadline_hours` comparison is skipped). Any non-zero value MUST be strictly greater than `rsvp_deadline_hours`.
 - **FR-019**: League managers MUST be able to configure the RSVP deadline in hours before a round via `/attendance config rsvp-deadline <hours>`. Default value: 2. A value of 0 means RSVP locks at the scheduled round start time.
-- **FR-020**: All three timing parameters MUST satisfy the invariant `rsvp_notice_days × 24 > rsvp_last_notice_hours` and `rsvp_last_notice_hours ≥ rsvp_deadline_hours` at all times. Any command that would violate these constraints MUST be rejected with a clear error identifying the conflicting values.
+- **FR-020**: The timing parameters MUST satisfy: `rsvp_notice_days × 24 > rsvp_last_notice_hours` at all times; and when `rsvp_last_notice_hours > 0`, additionally `rsvp_last_notice_hours > rsvp_deadline_hours`. A value of 0 for `rsvp_last_notice_hours` is a valid sentinel that disables the last-notice ping and bypasses the second comparison. Any command that would violate these constraints MUST be rejected with a clear error identifying the conflicting values.
 - **FR-021**: All three timing commands MUST be rejected if a season is currently in the `ACTIVE` state, with a clear error.
 
 #### Attendance Point Configuration
@@ -138,7 +139,7 @@ A league manager wants to define how many attendance points are awarded for each
 
 ### Key Entities
 
-- **AttendanceConfig** (per server): `module_enabled`, `rsvp_notice_days` (default 5), `rsvp_last_notice_hours` (default 1), `rsvp_deadline_hours` (default 2), `no_rsvp_penalty` (default 1), `no_attend_penalty` (default 1), `no_show_penalty` (default 1), `autoreserve_threshold` (nullable, default null), `autosack_threshold` (nullable, default null). Owned by the Attendance module. Created on first enable; cleared on disable.
+- **AttendanceConfig** (per server): `module_enabled`, `rsvp_notice_days` (default 5), `rsvp_last_notice_hours` (default 24), `rsvp_deadline_hours` (default 2), `no_rsvp_penalty` (default 1), `no_attend_penalty` (default 1), `no_show_penalty` (default 1), `autoreserve_threshold` (nullable, default null), `autosack_threshold` (nullable, default null). Owned by the Attendance module. Created on first enable; cleared on disable.
 
 - **AttendanceDivisionConfig** (per server, per division): `rsvp_channel_id` (nullable), `attendance_channel_id` (nullable). Keyed on `(server_id, division_id)`. Created lazily on first channel command for a division; cleared when the module is disabled.
 

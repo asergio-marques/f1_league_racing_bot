@@ -27,6 +27,8 @@
 
 **Checkpoint**: Foundation ready — all service methods exist; user story cog work can begin.
 
+> **FR-009 deferred**: FR-009 ("on bot restart, re-arm any RSVP notice and last-notice scheduled jobs") is deferred to the RSVP automation increment. No APScheduler jobs are created in this increment, so FR-009 is vacuously satisfied here.
+
 ---
 
 ## Phase 3: User Story 1 — Enable and Disable the Attendance Module (Priority: P1) 🎯 MVP
@@ -37,14 +39,14 @@
 
 ### Tests for User Story 1
 
-- [ ] T006 [P] [US1] Write lifecycle unit tests (`test_is_attendance_enabled_false_by_default`, `test_enable_creates_config_with_defaults`, `test_enable_sets_flag_true`, `test_disable_sets_flag_false`, `test_disable_deletes_division_configs`, `test_reenable_resets_to_defaults`) in `tests/unit/test_attendance_service.py`
+- [ ] T006 [P] [US1] Write lifecycle unit tests (`test_is_attendance_enabled_false_by_default`, `test_enable_creates_config_with_defaults`, `test_enable_sets_flag_true`, `test_disable_sets_flag_false`, `test_disable_deletes_division_configs`, `test_reenable_resets_to_defaults`, `test_enable_rollback_on_db_failure`) in `tests/unit/test_attendance_service.py` — `test_enable_rollback_on_db_failure` simulates a DB error after `INSERT attendance_config` but before `set_attendance_enabled`; asserts no partial row is left and the enabled flag remains unset (FR-004)
 
 ### Implementation for User Story 1
 
 - [ ] T007 [US1] Add `"attendance"` to `_MODULE_CHOICES` and add dispatch branches in `enable`/`disable` commands in `src/cogs/module_cog.py`
 - [ ] T008 [US1] Implement `_enable_attendance` (R&S gate, ACTIVE-season gate, already-enabled guard, `INSERT OR REPLACE attendance_config` with defaults, audit entry, `post_log`, followup) in `src/cogs/module_cog.py`
-- [ ] T009 [US1] Implement `_disable_attendance` (not-enabled guard, `UPDATE attendance_config SET module_enabled = 0`, `DELETE FROM attendance_division_config WHERE server_id = ?`, audit entry, `post_log`, followup) in `src/cogs/module_cog.py`
-- [ ] T010 [US1] Add cascade call to `_disable_attendance` inside `_disable_results` (fires when R&S disabled while attendance active; uses `ATTENDANCE_MODULE_CASCADE_DISABLED` audit change type) in `src/cogs/module_cog.py`
+- [ ] T009 [US1] Implement `_disable_attendance(self, interaction, *, cascade: bool = False)` (not-enabled guard, `UPDATE attendance_config SET module_enabled = 0`, `DELETE FROM attendance_division_config WHERE server_id = ?`, audit entry, `post_log`; when `cascade=False` also `defer()` and `followup.send("✅ Attendance module disabled.")`; when `cascade=True` skip defer/followup — parent owns the interaction) in `src/cogs/module_cog.py` — Note: FR-006 is vacuously satisfied here; `DriverRoundAttendance` is not introduced in this increment. Future disable logic MUST NOT add `DELETE` statements for that table.
+- [ ] T010 [US1] Add cascade call `await self._disable_attendance(interaction, cascade=True)` inside `_disable_results` after R&S is disabled, guarded by `if attendance_enabled` check; uses `ATTENDANCE_MODULE_CASCADE_DISABLED` audit change type in `src/cogs/module_cog.py`
 - [ ] T011 [US1] Add `attendance_on` lookup and `"  Attendance: {on/off}"` line to the modules block in `season_review` in `src/cogs/season_cog.py`
 
 **Checkpoint**: `/module enable attendance`, `/module disable attendance`, cascading disable, and `/season review` module status all work independently.
@@ -81,7 +83,7 @@
 
 ### Tests for User Story 3
 
-- [ ] T018 [P] [US3] Write timing invariant unit tests (`test_timing_invariant_valid`, `test_timing_invariant_notice_too_small`, `test_timing_invariant_deadline_exceeds_last`, `test_timing_invariant_both_zero`, `test_timing_invariant_last_equals_deadline`) in `tests/unit/test_attendance_service.py`
+- [ ] T018 [P] [US3] Write timing invariant unit tests (`test_timing_invariant_valid`, `test_timing_invariant_notice_too_small`, `test_timing_invariant_deadline_exceeds_last`, `test_timing_invariant_last_zero_sentinel_valid`, `test_timing_invariant_last_equals_deadline_rejected`) in `tests/unit/test_attendance_service.py`
 
 ### Implementation for User Story 3
 
@@ -119,7 +121,7 @@
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T030 Run full test suite and confirm all tests pass: `python -m pytest tests/ -v` from repo root
+- [ ] T030 Run full test suite and confirm all tests pass: `python -m pytest tests/ -v` from repo root — FR-011 (test-mode compatibility) is passively satisfied in this increment; no driver roster queries are performed. An explicit test will be required in the RSVP automation increment.
 
 ---
 
@@ -128,9 +130,9 @@
 ### Phase Dependencies
 
 - **Phase 1 (Setup)**: No dependencies — start immediately. T001 and T002 are parallel.
-- **Phase 2 (Foundational)**: Depends on Phase 1 complete. T004 and T005 can overlap with T003 after T001 is done; T005 depends on T003 + T004.
+- **Phase 2 (Foundational)**: Depends on Phase 1 complete. T004 can run in parallel with T003. T005 depends on both T003 and T004 completing first.
 - **Phase 3 (US1)**: Depends on Phase 2 complete. T006 (tests) can be written in parallel with T007–T011.
-- **Phase 4 (US2)**: Depends on Phase 2 complete. T013 must precede T014/T015 (both need service methods). T016 and T017 depend on T013.
+- **Phase 4 (US2)**: Depends on Phase 2 complete. T013 must precede T014/T015 (both need service methods). T016 and T017 depend on T013. T016 also depends on T011 (reads the `attendance_on` variable added to `season_review` by T011).
 - **Phase 5 (US3)**: Depends on Phase 2 complete. T019 (scaffold) must precede T020–T022.
 - **Phase 6 (US4)**: Depends on T019 complete (relies on the cog scaffold).
 - **Phase 7 (Polish)**: Depends on all phases complete.
@@ -138,7 +140,7 @@
 ### User Story Dependencies
 
 - **US1 (P1)**: Depends on Phase 2 only — no dependencies on US2/US3/US4.
-- **US2 (P2)**: Depends on Phase 2 and US1 complete (uses `is_attendance_enabled` guard). T013 service methods must precede T014/T015/T016/T017.
+- **US2 (P2)**: Depends on Phase 2 and US1 complete (uses `is_attendance_enabled` guard). T013 service methods must precede T014/T015/T016/T017. T016 additionally depends on T011 (requires `attendance_on` in `season_review` scope).
 - **US3 (P3)**: Depends on Phase 2 only (uses `validate_timing_invariant` from T003). US1 is a prerequisite at runtime (module-enabled guard) but not a build-time dependency.
 - **US4 (P4)**: Depends on T019 (attendance_cog scaffold from US3). All five commands T025–T029 are parallel with each other.
 

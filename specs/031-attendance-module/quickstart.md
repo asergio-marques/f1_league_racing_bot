@@ -86,8 +86,9 @@ Follow this order to avoid import-time and FK failures:
 ### `_disable_attendance` called from `_disable_results` (cascade)
 
 ```
-Same as above except:
-- No interaction-level defer/followup needed (parent _disable_results owns the interaction)
+Call: await self._disable_attendance(interaction, cascade=True)
+Same DB steps as above except:
+- cascade=True: skip defer() and followup.send() — parent _disable_results owns the interaction
 - Log message indicates cascade: "Attendance module auto-disabled (R&S module was disabled)"
 - audit change_type = 'ATTENDANCE_MODULE_CASCADE_DISABLED'
 ```
@@ -141,19 +142,19 @@ def validate_timing_invariant(
 ) -> str | None:
     """Return an error message string if the invariant is violated, else None.
 
-    Invariant: notice_days * 24 > last_notice_hours >= deadline_hours
-    Edge case: last_notice_hours=0 and deadline_hours=0 is valid (last-notice disabled;
-               RSVP locks at round start time).
+    Invariant: notice_days * 24 > last_notice_hours (always);
+               last_notice_hours > deadline_hours when last_notice_hours > 0.
+    A value of 0 for last_notice_hours disables the ping and skips the second check.
     """
     if notice_days * 24 <= last_notice_hours:
         return (
             f"`rsvp_notice_days` ({notice_days}) \u00d7 24 = {notice_days * 24}h "
             f"must be greater than `rsvp_last_notice_hours` ({last_notice_hours}h)."
         )
-    if last_notice_hours < deadline_hours:
+    if last_notice_hours > 0 and last_notice_hours <= deadline_hours:
         return (
             f"`rsvp_last_notice_hours` ({last_notice_hours}h) "
-            f"must be \u2265 `rsvp_deadline_hours` ({deadline_hours}h)."
+            f"must be > `rsvp_deadline_hours` ({deadline_hours}h)."
         )
     return None
 ```

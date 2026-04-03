@@ -18,7 +18,7 @@ is retained so re-enable can `INSERT OR REPLACE` cleanly.
 | `server_id` | INTEGER | PRIMARY KEY, FK → `server_configs(server_id)` ON DELETE CASCADE | — | Discord guild ID |
 | `module_enabled` | INTEGER | NOT NULL | 0 | 0 = disabled, 1 = enabled |
 | `rsvp_notice_days` | INTEGER | NOT NULL | 5 | Days before a round at which the RSVP embed is posted |
-| `rsvp_last_notice_hours` | INTEGER | NOT NULL | 1 | Hours before a round for the last-notice ping; 0 = disabled |
+| `rsvp_last_notice_hours` | INTEGER | NOT NULL | 24 | Hours before a round for the last-notice ping; 0 = disabled (bypasses `> deadline` check) |
 | `rsvp_deadline_hours` | INTEGER | NOT NULL | 2 | Hours before a round when RSVP locks; 0 = lock at round start |
 | `no_rsvp_penalty` | INTEGER | NOT NULL | 1 | Attendance points awarded for a no-RSVP infraction |
 | `no_attend_penalty` | INTEGER | NOT NULL | 1 | Attendance points awarded for a no-attend infraction |
@@ -28,10 +28,8 @@ is retained so re-enable can `INSERT OR REPLACE` cleanly.
 
 **Validation invariant** (enforced in application layer, not DB):
 
-> `rsvp_notice_days × 24 > rsvp_last_notice_hours ≥ rsvp_deadline_hours`
-
-Edge case: `rsvp_last_notice_hours = 0` AND `rsvp_deadline_hours = 0` is valid (last-notice
-ping disabled; RSVP locks at the scheduled round start time).
+> `rsvp_notice_days × 24 > rsvp_last_notice_hours` (always); and when `rsvp_last_notice_hours > 0`: `rsvp_last_notice_hours > rsvp_deadline_hours`.
+> A value of 0 for `rsvp_last_notice_hours` is a valid sentinel (last-notice ping disabled); the second comparison is skipped.
 
 ---
 
@@ -68,7 +66,7 @@ CREATE TABLE IF NOT EXISTS attendance_config (
                                  ON DELETE CASCADE,
     module_enabled           INTEGER NOT NULL DEFAULT 0,
     rsvp_notice_days         INTEGER NOT NULL DEFAULT 5,
-    rsvp_last_notice_hours   INTEGER NOT NULL DEFAULT 1,
+    rsvp_last_notice_hours   INTEGER NOT NULL DEFAULT 24,
     rsvp_deadline_hours      INTEGER NOT NULL DEFAULT 2,
     no_rsvp_penalty          INTEGER NOT NULL DEFAULT 1,
     no_attend_penalty        INTEGER NOT NULL DEFAULT 1,
@@ -100,7 +98,7 @@ Pre-conditions: R&S module enabled, no ACTIVE season.
        (server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours,
         rsvp_deadline_hours, no_rsvp_penalty, no_attend_penalty, no_show_penalty,
         autoreserve_threshold, autosack_threshold)
-   VALUES (?, 1, 5, 1, 2, 1, 1, 1, NULL, NULL)
+   VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)
 2. INSERT INTO audit_entries (change_type = 'ATTENDANCE_MODULE_ENABLED')
 3. post_log confirmation
 ```
