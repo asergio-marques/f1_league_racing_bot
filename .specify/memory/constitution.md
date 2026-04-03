@@ -1,6 +1,45 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-04-03 — Session reuse: Attendance module RSVP & check-in implementation — feature branch created]
+  - Constitution reused as-is; no principle amendments required at session start.
+  - Session intent: implement the RSVP check-in embed and button interactions;
+    reserve distribution at the RSVP deadline; last-notice ping scheduling and sending;
+    attendance recording from submitted round results (first SessionResult row hook);
+    attendance point distribution (post-penalty finalization hook); attendance pardon
+    workflow inside the penalty wizard; attendance sheet posting to the attendance channel;
+    and automatic sanction enforcement (autoreserve and autosack).
+    DriverRoundAttendance and AttendancePardon data entities to be introduced as part of
+    this increment.
+  - Feature branch: 032-attendance-rsvp-checkin (created 2026-04-03 from main).
+  - Implementation status at session start:
+      ✅ 031-attendance-module — fully merged to main (2026-04-03, PR #50); all tasks [x]
+         complete. Covers: Attendance module enable/disable lifecycle (Results & Standings
+         dependency gate, ACTIVE-season gate, cascading auto-disable on R&S disable);
+         /division rsvp-channel and /division attendance-channel commands; season approval
+         Gate 4 (both RSVP and attendance channels required per division); /attendance
+         config timing commands (rsvp-notice, rsvp-last-notice, rsvp-deadline) with
+         invariant enforcement; /attendance config penalty commands (no-rsvp-penalty,
+         no-attend-penalty, no-show-penalty, autosack, autoreserve); season review
+         attendance status and per-division channel display; full unit test suite (20
+         tests passing).
+  - All placeholder tokens remain resolved; constitution is fully resolved at v2.10.0.
+  - No version bump required; Last Amended date remains 2026-04-03 (no content amendments).
+  - All templates confirmed aligned with Principles I–XIII:
+      ✅ .specify/templates/plan-template.md       — dynamic Constitution Check; no changes.
+      ✅ .specify/templates/spec-template.md       — generic structure; no stale references.
+      ✅ .specify/templates/tasks-template.md      — generic; aligns with I–XIII.
+      ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+      ✅ .specify/templates/checklist-template.md  — no impact.
+  - Deferred TODOs (carried from v2.10.0):
+      - Exact command naming for appeal submission and review commands to be confirmed
+        against the 026-penalty-posting-appeals implementation.
+      - Whether the existing penalty wizard loose-text fields on DriverSessionResult
+        (post_race_time_penalties, post_stewarding_total_time) have been superseded by
+        PenaltyRecord rows — migration confirmation required.
+  - Pending: speckit.specify to define exact scope and task ordering for this sub-increment;
+    constitution will be re-evaluated if any new governance requirements are identified.
+
 [2026-04-03 — v2.9.0 → v2.10.0: Attendance module ratified — Principle XIII added]
   Version change    : 2.9.0 → 2.10.0
   Bump rationale    : MINOR — The Attendance module is formally ratified as a new optional
