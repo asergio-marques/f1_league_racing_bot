@@ -203,6 +203,7 @@ class SeasonCog(commands.Cog):
             weather_on = await self.bot.module_service.is_weather_enabled(interaction.guild_id)  # type: ignore[attr-defined]
             signup_on = await self.bot.module_service.is_signup_enabled(interaction.guild_id)  # type: ignore[attr-defined]
             results_on = await self.bot.module_service.is_results_enabled(interaction.guild_id)  # type: ignore[attr-defined]
+            attendance_on = await self.bot.module_service.is_attendance_enabled(interaction.guild_id)  # type: ignore[attr-defined]
             on = "✅ Enabled"
             off = "❌ Disabled"
             if signup_on:
@@ -224,6 +225,7 @@ class SeasonCog(commands.Cog):
                 f"  Weather: {on if weather_on else off}",
                 signup_line,
                 f"  Results: {on if results_on else off}",
+                f"  Attendance: {on if attendance_on else off}",
                 "",
             ]
 
@@ -293,6 +295,21 @@ class SeasonCog(commands.Cog):
                 cal_chan = f"<#{div.calendar_channel_id}>" if div.calendar_channel_id else "*(not set)*"
                 lines.append(f"  Lineup channel: {lineup_chan}")
                 lines.append(f"  Calendar channel: {cal_chan}")
+                # Attendance channels (gated on attendance module being enabled)
+                if attendance_on:
+                    att_div_cfg = await self.bot.attendance_service.get_division_config(div.id)  # type: ignore[attr-defined]
+                    rsvp_chan = (
+                        f"<#{att_div_cfg.rsvp_channel_id}>"
+                        if att_div_cfg and att_div_cfg.rsvp_channel_id
+                        else "*(not set)*"
+                    )
+                    att_chan = (
+                        f"<#{att_div_cfg.attendance_channel_id}>"
+                        if att_div_cfg and att_div_cfg.attendance_channel_id
+                        else "*(not set)*"
+                    )
+                    lines.append(f"  RSVP channel: {rsvp_chan}")
+                    lines.append(f"  Attendance channel: {att_chan}")
                 # ASSIGNED drivers grouped by team
                 async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
                     _cur = await _db.execute(
@@ -1253,6 +1270,172 @@ class SeasonCog(commands.Cog):
         await self.bot.output_router.post_log(
             server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division verdicts-channel | Success\n"
+            f"  division: {name}\n"
+            f"  channel: #{channel.name}",
+        )
+
+    @division.command(
+        name="rsvp-channel",
+        description="Set the RSVP notice channel for a division (attendance module).",
+    )
+    @app_commands.describe(name="Division name", channel="RSVP notice channel")
+    @channel_guard
+    @admin_only
+    async def division_rsvp_channel(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        channel: discord.TextChannel,
+    ) -> None:
+        import json as _json
+        if not await self.bot.module_service.is_attendance_enabled(interaction.guild_id):
+            await interaction.response.send_message(
+                "\u274c The Attendance module is not enabled.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        guild = interaction.guild
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        if guild is None or not channel.permissions_for(guild.me).send_messages:
+            await interaction.followup.send(
+                "\u274c Cannot access that channel. Ensure the bot has permission to post there.",
+                ephemeral=True,
+            )
+            return
+
+        season = await self.bot.season_service.get_season_for_server(server_id)
+        if season is None:
+            await interaction.followup.send(
+                "\u274c No season found. Set up a season before assigning channels.",
+                ephemeral=True,
+            )
+            return
+
+        divisions = await self.bot.season_service.get_divisions(season.id)
+        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
+        if div is None:
+            await interaction.followup.send(
+                f"\u274c Division \"{name}\" not found.",
+                ephemeral=True,
+            )
+            return
+
+        old_cfg = await self.bot.attendance_service.get_division_config(div.id)
+        old_id = old_cfg.rsvp_channel_id if old_cfg else None
+
+        await self.bot.attendance_service.set_rsvp_channel(div.id, server_id, channel.id)
+
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as db:
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, ?, 'RSVP_CHANNEL_SET', ?, ?, ?)",
+                (
+                    server_id,
+                    interaction.user.id,
+                    str(interaction.user),
+                    div.id,
+                    _json.dumps({"channel_id": old_id}),
+                    _json.dumps({"channel_id": str(channel.id)}),
+                    now,
+                ),
+            )
+            await db.commit()
+
+        if old_id is None:
+            msg = f"\u2705 RSVP channel for {name} set to #{channel.name}."
+        else:
+            msg = f"\u2705 RSVP channel for {name} updated to #{channel.name}."
+        await interaction.followup.send(msg, ephemeral=True)
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division rsvp-channel | Success\n"
+            f"  division: {name}\n"
+            f"  channel: #{channel.name}",
+        )
+
+    @division.command(
+        name="attendance-channel",
+        description="Set the attendance logging channel for a division (attendance module).",
+    )
+    @app_commands.describe(name="Division name", channel="Attendance logging channel")
+    @channel_guard
+    @admin_only
+    async def division_attendance_channel(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        channel: discord.TextChannel,
+    ) -> None:
+        import json as _json
+        if not await self.bot.module_service.is_attendance_enabled(interaction.guild_id):
+            await interaction.response.send_message(
+                "\u274c The Attendance module is not enabled.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        guild = interaction.guild
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        if guild is None or not channel.permissions_for(guild.me).send_messages:
+            await interaction.followup.send(
+                "\u274c Cannot access that channel. Ensure the bot has permission to post there.",
+                ephemeral=True,
+            )
+            return
+
+        season = await self.bot.season_service.get_season_for_server(server_id)
+        if season is None:
+            await interaction.followup.send(
+                "\u274c No season found. Set up a season before assigning channels.",
+                ephemeral=True,
+            )
+            return
+
+        divisions = await self.bot.season_service.get_divisions(season.id)
+        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
+        if div is None:
+            await interaction.followup.send(
+                f"\u274c Division \"{name}\" not found.",
+                ephemeral=True,
+            )
+            return
+
+        old_cfg = await self.bot.attendance_service.get_division_config(div.id)
+        old_id = old_cfg.attendance_channel_id if old_cfg else None
+
+        await self.bot.attendance_service.set_attendance_channel(div.id, server_id, channel.id)
+
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self.bot.db_path) as db:
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, ?, 'ATTENDANCE_CHANNEL_SET', ?, ?, ?)",
+                (
+                    server_id,
+                    interaction.user.id,
+                    str(interaction.user),
+                    div.id,
+                    _json.dumps({"channel_id": old_id}),
+                    _json.dumps({"channel_id": str(channel.id)}),
+                    now,
+                ),
+            )
+            await db.commit()
+
+        if old_id is None:
+            msg = f"\u2705 Attendance channel for {name} set to #{channel.name}."
+        else:
+            msg = f"\u2705 Attendance channel for {name} updated to #{channel.name}."
+        await interaction.followup.send(msg, ephemeral=True)
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division attendance-channel | Success\n"
             f"  division: {name}\n"
             f"  channel: #{channel.name}",
         )
@@ -2648,6 +2831,33 @@ class SeasonCog(commands.Cog):
                     else:
                         await interaction.response.send_message(msg, ephemeral=True)
                     return
+
+        # ── Gate 4: attendance module channel prerequisites ───────────────────
+        if await self.bot.module_service.is_attendance_enabled(cfg.server_id):
+            att_errors: list[str] = []
+            for _div in divisions:
+                att_div_cfg = await self.bot.attendance_service.get_division_config(_div.id)  # type: ignore[attr-defined]
+                if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
+                    att_errors.append(
+                        f"**{_div.name}** is missing an RSVP channel "
+                        f"(use `/division rsvp-channel {_div.name} <channel>`)"
+                    )
+                if att_div_cfg is None or not att_div_cfg.attendance_channel_id:
+                    att_errors.append(
+                        f"**{_div.name}** is missing an attendance channel "
+                        f"(use `/division attendance-channel {_div.name} <channel>`)"
+                    )
+            if att_errors:
+                bullet_list = "\n\u2022 ".join(att_errors)
+                msg = (
+                    f"\u274c Season cannot be approved \u2014 attendance module is enabled but "
+                    f"missing required channel configuration:\n\u2022 {bullet_list}"
+                )
+                if interaction.response.is_done():
+                    await interaction.followup.send(msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(msg, ephemeral=True)
+                return
 
         # Snapshot attached points configs before transitioning (FR-007)
         if await self.bot.module_service.is_results_enabled(cfg.server_id):
