@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import discord
 from discord import app_commands
@@ -323,3 +323,206 @@ class AttendanceCog(commands.Cog):
         else:
             msg = f"\u2705 Auto-reserve threshold set to **{value}** point(s)."
         await interaction.followup.send(msg, ephemeral=True)
+
+
+# ── RSVP button interaction handler (T011 / T012 / T014) ─────────────────────
+
+# Status string mapped from button action name
+_ACTION_TO_STATUS = {
+    "accept":   "ACCEPTED",
+    "tentative": "TENTATIVE",
+    "decline":  "DECLINED",
+}
+
+_STATUS_LABELS = {
+    "ACCEPTED":  "✅ Accepted",
+    "TENTATIVE": "❓ Tentative",
+    "DECLINED":  "❌ Declined",
+    "NO_RSVP":   "(no response)",
+}
+
+
+async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -> None:
+    """Handle an RSVP button press.
+
+    This function is called by _RsvpButton.callback in rsvp_service.py.
+    It performs all validation, locking, DB updates, and embed refresh.
+    """
+    # Parse action and round_id from custom_id: rsvp_{action}_r{round_id}
+    try:
+        # Strip "rsvp_" prefix, then split off "_r{round_id}" suffix
+        without_prefix = custom_id[len("rsvp_"):]       # e.g. "accept_r42"
+        action_part, round_id_str = without_prefix.rsplit("_r", 1)
+        round_id = int(round_id_str)
+        action = action_part  # "accept" | "tentative" | "decline"
+    except (ValueError, IndexError):
+        log.error("handle_rsvp_button: could not parse custom_id=%r", custom_id)
+        await interaction.response.send_message(
+            "❌ Internal error: invalid button ID.", ephemeral=True
+        )
+        return
+
+    new_status = _ACTION_TO_STATUS.get(action)
+    if new_status is None:
+        await interaction.response.send_message(
+            "❌ Internal error: unknown action.", ephemeral=True
+        )
+        return
+
+    bot = interaction.client
+    discord_user_id = interaction.user.id
+    guild_id: int = interaction.guild_id  # type: ignore[assignment]
+
+    # Look up driver profile by Discord user ID (FR-011)
+    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+        cur = await db.execute(
+            "SELECT id FROM driver_profiles WHERE server_id = ? AND CAST(discord_user_id AS INTEGER) = ?",
+            (guild_id, discord_user_id),
+        )
+        profile_row = await cur.fetchone()
+
+        if profile_row is None:
+            await interaction.response.send_message(
+                "❌ You are not registered as a driver in this server.", ephemeral=True
+            )
+            return
+        driver_profile_id: int = profile_row["id"]
+
+        # Get round info
+        cur = await db.execute(
+            """
+            SELECT r.division_id, r.scheduled_at, r.format,
+                   ac.rsvp_deadline_hours
+              FROM rounds r
+              JOIN divisions d ON d.id = r.division_id
+              JOIN seasons s ON s.id = d.season_id
+              JOIN attendance_config ac ON ac.server_id = s.server_id
+             WHERE r.id = ?
+            """,
+            (round_id,),
+        )
+        round_row = await cur.fetchone()
+
+    if round_row is None:
+        await interaction.response.send_message(
+            "❌ This round no longer exists.", ephemeral=True
+        )
+        return
+
+    division_id: int = round_row["division_id"]
+
+    # Verify the driver is in this division (full-time or reserve) (FR-011)
+    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+        cur = await db.execute(
+            """
+            SELECT ti.is_reserve
+              FROM driver_season_assignments dsa
+              JOIN team_seats ts ON ts.driver_profile_id = dsa.driver_profile_id
+              JOIN team_instances ti ON ti.id = ts.team_instance_id
+                                    AND ti.division_id = dsa.division_id
+             WHERE dsa.driver_profile_id = ?
+               AND dsa.division_id = ?
+            """,
+            (driver_profile_id, division_id),
+        )
+        assignment_row = await cur.fetchone()
+
+    if assignment_row is None:
+        await interaction.response.send_message(
+            "❌ You are not a member of this division.", ephemeral=True
+        )
+        return
+
+    is_reserve: bool = bool(assignment_row["is_reserve"])
+
+    # Parse scheduled_at and compute locking (FR-014 / FR-015 / FR-016 / FR-017)
+    scheduled_at_raw = round_row["scheduled_at"]
+    if isinstance(scheduled_at_raw, str):
+        scheduled_at = datetime.fromisoformat(scheduled_at_raw)
+    else:
+        scheduled_at = scheduled_at_raw  # type: ignore[assignment]
+    if scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+
+    deadline_hours: int = round_row["rsvp_deadline_hours"] or 0
+    now = datetime.now(timezone.utc)
+
+    # Get current rsvp_status for locking check
+    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+        cur = await db.execute(
+            """
+            SELECT rsvp_status FROM driver_round_attendance
+             WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?
+            """,
+            (round_id, division_id, driver_profile_id),
+        )
+        dra_row = await cur.fetchone()
+
+    current_status: str = dra_row["rsvp_status"] if dra_row is not None else "NO_RSVP"
+
+    # Compute lock threshold
+    if deadline_hours > 0:
+        lock_deadline_at = scheduled_at - timedelta(hours=deadline_hours)
+    else:
+        lock_deadline_at = scheduled_at  # FR-017: treat as round start
+
+    if not is_reserve:
+        # Full-time: locked after deadline (FR-014)
+        if now >= lock_deadline_at:
+            await interaction.response.send_message(
+                "❌ The RSVP deadline has passed. Your response cannot be changed.",
+                ephemeral=True,
+            )
+            return
+    else:
+        if current_status == "ACCEPTED":
+            # Reserve with ACCEPTED: locked after deadline too (FR-015)
+            if now >= lock_deadline_at:
+                await interaction.response.send_message(
+                    "❌ You have already accepted and the RSVP deadline has passed. "
+                    "Your response cannot be changed.",
+                    ephemeral=True,
+                )
+                return
+        else:
+            # Reserve not-ACCEPTED: locked only at round start (FR-016)
+            if now >= scheduled_at:
+                await interaction.response.send_message(
+                    "❌ The round has started. Your response cannot be changed.",
+                    ephemeral=True,
+                )
+                return
+
+    # No-op check (FR-013)
+    if current_status == new_status:
+        label = _STATUS_LABELS.get(new_status, new_status)
+        await interaction.response.send_message(
+            f"ℹ️ You are already marked as **{label}**.", ephemeral=True
+        )
+        return
+
+    # Upsert status
+    await bot.attendance_service.upsert_rsvp_status(  # type: ignore[attr-defined]
+        round_id=round_id,
+        division_id=division_id,
+        driver_profile_id=driver_profile_id,
+        status=new_status,
+    )
+
+    # Rebuild and edit embed in-place (FR-010 / FR-012)
+    from services.rsvp_service import _rebuild_embed_for_round, RsvpView
+    embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)  # type: ignore[attr-defined]
+    if embed_row is not None:
+        channel = bot.get_channel(int(embed_row.channel_id))
+        if channel is not None:
+            try:
+                msg = await channel.fetch_message(int(embed_row.message_id))
+                new_embed = await _rebuild_embed_for_round(round_id, division_id, bot)
+                await msg.edit(embed=new_embed, view=RsvpView(round_id=round_id))
+            except discord.HTTPException as exc:
+                log.error("handle_rsvp_button: failed to edit embed: %s", exc)
+
+    label = _STATUS_LABELS.get(new_status, new_status)
+    await interaction.response.send_message(
+        f"✅ Your RSVP has been updated to **{label}**.", ephemeral=True
+    )

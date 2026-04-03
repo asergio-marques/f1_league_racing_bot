@@ -2886,6 +2886,16 @@ class SeasonCog(commands.Cog):
             if server_config is None or not server_config.test_mode_active:
                 self.bot.scheduler_service.schedule_result_submission_jobs(all_rounds)
 
+        if await self.bot.module_service.is_attendance_enabled(cfg.server_id):
+            _att_cfg = await self.bot.attendance_service.get_or_create_config(cfg.server_id)
+            for _rnd in all_rounds:
+                self.bot.scheduler_service.schedule_attendance_round(
+                    _rnd,
+                    notice_days=_att_cfg.rsvp_notice_days,
+                    last_notice_hours=_att_cfg.rsvp_last_notice_hours,
+                    deadline_hours=_att_cfg.rsvp_deadline_hours,
+                )
+
         # Only transition to ACTIVE after scheduling succeeds
         await season_svc.transition_to_active(cfg.season_id)
 

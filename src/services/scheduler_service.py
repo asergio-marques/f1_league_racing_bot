@@ -156,6 +156,58 @@ async def _result_submission_job_wrapper(round_id: int) -> None:
     await cb(round_id)
 
 
+async def _rsvp_notice_job(round_id: int) -> None:
+    """Top-level APScheduler callable for RSVP notice jobs.
+
+    Follows the same module-level pattern as ``_mystery_notice_job`` to avoid
+    closure pickling issues with SQLAlchemyJobStore.
+    """
+    if _GLOBAL_SERVICE is None:
+        log.warning(
+            "_rsvp_notice_job fired but _GLOBAL_SERVICE is None "
+            "(round=%s) — skipping",
+            round_id,
+        )
+        return
+    cb = _GLOBAL_SERVICE._rsvp_notice_callback
+    if cb is None:
+        log.warning("No RSVP notice callback registered; skipping round %s.", round_id)
+        return
+    await cb(round_id)
+
+
+async def _rsvp_last_notice_job(round_id: int) -> None:
+    """Top-level APScheduler callable for RSVP last-notice jobs."""
+    if _GLOBAL_SERVICE is None:
+        log.warning(
+            "_rsvp_last_notice_job fired but _GLOBAL_SERVICE is None "
+            "(round=%s) — skipping",
+            round_id,
+        )
+        return
+    cb = _GLOBAL_SERVICE._rsvp_last_notice_callback
+    if cb is None:
+        log.warning("No RSVP last-notice callback registered; skipping round %s.", round_id)
+        return
+    await cb(round_id)
+
+
+async def _rsvp_deadline_job(round_id: int) -> None:
+    """Top-level APScheduler callable for RSVP deadline jobs."""
+    if _GLOBAL_SERVICE is None:
+        log.warning(
+            "_rsvp_deadline_job fired but _GLOBAL_SERVICE is None "
+            "(round=%s) — skipping",
+            round_id,
+        )
+        return
+    cb = _GLOBAL_SERVICE._rsvp_deadline_callback
+    if cb is None:
+        log.warning("No RSVP deadline callback registered; skipping round %s.", round_id)
+        return
+    await cb(round_id)
+
+
 class SchedulerService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -177,6 +229,10 @@ class SchedulerService:
         self._forecast_cleanup_callback: "Callable | None" = None
         # Result submission callback injected after bot starts
         self._result_submission_callback: "Callable | None" = None
+        # RSVP callbacks injected after bot starts
+        self._rsvp_notice_callback: "Callable | None" = None
+        self._rsvp_last_notice_callback: "Callable | None" = None
+        self._rsvp_deadline_callback: "Callable | None" = None
 
     def register_callbacks(
         self,
@@ -220,6 +276,30 @@ class SchedulerService:
         Called from bot.py on_ready after the scheduler is started.
         """
         self._result_submission_callback = callback
+
+    def register_rsvp_notice_callback(self, callback: Callable) -> None:
+        """Register the async callable invoked when an RSVP notice job fires.
+
+        The callable must accept ``(round_id: int)``.
+        Called from bot.py on_ready after the scheduler is started.
+        """
+        self._rsvp_notice_callback = callback
+
+    def register_rsvp_last_notice_callback(self, callback: Callable) -> None:
+        """Register the async callable invoked when an RSVP last-notice job fires.
+
+        The callable must accept ``(round_id: int)``.
+        Called from bot.py on_ready after the scheduler is started.
+        """
+        self._rsvp_last_notice_callback = callback
+
+    def register_rsvp_deadline_callback(self, callback: Callable) -> None:
+        """Register the async callable invoked when an RSVP deadline job fires.
+
+        The callable must accept ``(round_id: int)``.
+        Called from bot.py on_ready after the scheduler is started.
+        """
+        self._rsvp_deadline_callback = callback
 
     def start(self) -> None:
         global _GLOBAL_SERVICE
@@ -334,8 +414,88 @@ class SchedulerService:
         )
         log.info("Scheduled %s at %s", results_job_id, scheduled_at.isoformat())
 
+    def schedule_attendance_round(
+        self,
+        rnd: Round,
+        *,
+        notice_days: int,
+        last_notice_hours: int,
+        deadline_hours: int,
+    ) -> None:
+        """Register RSVP DateTrigger jobs for *rnd* (attendance module).
+
+        Jobs are only created for non-Mystery rounds whose fire time is in the future.
+        ``replace_existing=True`` makes re-scheduling amended rounds safe.
+
+        Args:
+            notice_days:       Days before round to post RSVP embed.
+            last_notice_hours: Hours before round for last-notice ping (0 = disabled, FR-030).
+            deadline_hours:    Hours before round for distribution deadline.
+        """
+        if rnd.format == RoundFormat.MYSTERY:
+            return  # FR-002: no RSVP jobs for Mystery rounds
+
+        scheduled_at = rnd.scheduled_at
+        if scheduled_at.tzinfo is None:
+            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+
+        # Notice job
+        notice_fire_at = scheduled_at - timedelta(days=notice_days)
+        notice_job_id = f"rsvp_notice_r{rnd.id}"
+        if notice_fire_at > now:
+            self._scheduler.add_job(
+                _rsvp_notice_job,
+                trigger=DateTrigger(run_date=notice_fire_at, timezone="UTC"),
+                id=notice_job_id,
+                replace_existing=True,
+                name=f"RSVP notice for round {rnd.id}",
+                kwargs={"round_id": rnd.id},
+            )
+            log.info("Scheduled %s at %s", notice_job_id, notice_fire_at.isoformat())
+        else:
+            log.info("Skipping %s — fire time %s is in the past", notice_job_id, notice_fire_at.isoformat())
+
+        # Last-notice job (FR-030: only when last_notice_hours > 0)
+        if last_notice_hours > 0:
+            last_notice_fire_at = scheduled_at - timedelta(hours=last_notice_hours)
+            last_notice_job_id = f"rsvp_last_notice_r{rnd.id}"
+            if last_notice_fire_at > now:
+                self._scheduler.add_job(
+                    _rsvp_last_notice_job,
+                    trigger=DateTrigger(run_date=last_notice_fire_at, timezone="UTC"),
+                    id=last_notice_job_id,
+                    replace_existing=True,
+                    name=f"RSVP last-notice for round {rnd.id}",
+                    kwargs={"round_id": rnd.id},
+                )
+                log.info("Scheduled %s at %s", last_notice_job_id, last_notice_fire_at.isoformat())
+            else:
+                log.info(
+                    "Skipping %s — fire time %s is in the past",
+                    last_notice_job_id, last_notice_fire_at.isoformat(),
+                )
+
+        # Deadline job
+        deadline_hours_actual = deadline_hours if deadline_hours > 0 else 0
+        deadline_fire_at = scheduled_at - timedelta(hours=deadline_hours_actual)
+        deadline_job_id = f"rsvp_deadline_r{rnd.id}"
+        if deadline_fire_at > now:
+            self._scheduler.add_job(
+                _rsvp_deadline_job,
+                trigger=DateTrigger(run_date=deadline_fire_at, timezone="UTC"),
+                id=deadline_job_id,
+                replace_existing=True,
+                name=f"RSVP deadline for round {rnd.id}",
+                kwargs={"round_id": rnd.id},
+            )
+            log.info("Scheduled %s at %s", deadline_job_id, deadline_fire_at.isoformat())
+        else:
+            log.info("Skipping %s — fire time %s is in the past", deadline_job_id, deadline_fire_at.isoformat())
+
     def cancel_round(self, round_id: int) -> None:
-        """Remove all phase jobs, the mystery-notice job, and the cleanup job for *round_id*."""
+        """Remove all phase jobs, the mystery-notice job, the cleanup job, and RSVP jobs for *round_id*."""
         for job_id in (
             f"phase1_r{round_id}",
             f"phase2_r{round_id}",
@@ -343,6 +503,9 @@ class SchedulerService:
             f"mystery_r{round_id}",
             f"cleanup_r{round_id}",
             f"results_r{round_id}",
+            f"rsvp_notice_r{round_id}",
+            f"rsvp_last_notice_r{round_id}",
+            f"rsvp_deadline_r{round_id}",
         ):
             try:
                 self._scheduler.remove_job(job_id)
@@ -432,10 +595,13 @@ class SchedulerService:
         # (rounds_with_results fallback) so that past-dated results_r jobs
         # that already auto-fired don't block or double-trigger the wizard.
         _PHASE_PREFIX_MAP = {
-            "mystery": 0,
-            "phase1":  1,
-            "phase2":  2,
-            "phase3":  3,
+            "mystery":          0,
+            "phase1":           1,
+            "phase2":           2,
+            "phase3":           3,
+            "rsvp_notice":      5,
+            "rsvp_last_notice": 6,
+            "rsvp_deadline":    7,
         }
         result: list[dict] = []
         for job in self._scheduler.get_jobs():

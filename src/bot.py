@@ -122,6 +122,22 @@ async def main() -> None:
 
         bot.scheduler_service.register_result_submission_callback(_result_submission_cb)
 
+        # Register RSVP attendance callbacks
+        from services.rsvp_service import run_rsvp_notice, run_rsvp_last_notice, run_rsvp_deadline
+
+        async def _rsvp_notice_cb(round_id: int) -> None:
+            await run_rsvp_notice(round_id, bot)
+
+        async def _rsvp_last_notice_cb(round_id: int) -> None:
+            await run_rsvp_last_notice(round_id, bot)
+
+        async def _rsvp_deadline_cb(round_id: int) -> None:
+            await run_rsvp_deadline(round_id, bot)
+
+        bot.scheduler_service.register_rsvp_notice_callback(_rsvp_notice_cb)
+        bot.scheduler_service.register_rsvp_last_notice_callback(_rsvp_last_notice_cb)
+        bot.scheduler_service.register_rsvp_deadline_callback(_rsvp_deadline_cb)
+
         # Register season-end callback (stored in _GLOBAL_SERVICE so the
         # module-level _season_end_job can reach it without pickling a closure)
         from services.season_end_service import execute_season_end as _execute_season_end
@@ -184,6 +200,10 @@ async def main() -> None:
 
         # Recover any season-end jobs that were lost during a restart
         await _recover_season_end_jobs(bot)
+
+        # Re-arm persistent RSVP embed views for all stored embed messages (T010)
+        # and run missed RSVP deadline jobs for rounds whose deadline already passed (T019)
+        await _recover_rsvp_views_and_deadlines(bot)
 
         # Wire wizard service bot reference (needed for guild/service access)
         bot.wizard_service.set_bot(bot)  # type: ignore[attr-defined]
@@ -256,6 +276,7 @@ async def main() -> None:
     )
     from cogs.admin_review_cog import AdminReviewView, CorrectionParameterView
     from services.penalty_wizard import PenaltyReviewView, ApprovalView, AppealsReviewView
+    from services.rsvp_service import RsvpView
 
     for _view in (
         SignupButtonView(),
@@ -270,6 +291,7 @@ async def main() -> None:
         PenaltyReviewView(),
         ApprovalView(),
         AppealsReviewView(),
+        RsvpView(),  # stub registration; message_id-specific re-arm done in _recover_rsvp_views_and_deadlines
     ):
         bot.add_view(_view)
 
@@ -354,6 +376,113 @@ async def _recover_season_end_jobs(bot: commands.Bot) -> None:
     could auto-fire execute_season_end for past-due seasons. That behaviour has
     been removed — league managers must explicitly run /season complete.
     """
+
+
+async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
+    """Re-arm RsvpView buttons and run missed RSVP deadline jobs on bot restart.
+
+    T010: Re-arm persistent RsvpView for every row in rsvp_embed_messages so
+    button interactions survive bot restarts (FR-007).
+
+    T019: For any round whose rsvp_deadline fire time has already passed but no
+    distribution has run (assessed by absence of assigned_team_id rows), run
+    run_rsvp_deadline immediately (FR-027).
+
+    T023: For any round whose rsvp_last_notice fire time has already passed,
+    silently skip — do NOT fire retroactively (FR-029 edge case).
+    """
+    from services.rsvp_service import RsvpView, run_rsvp_deadline
+    from db.database import get_connection as _gc
+    from datetime import datetime as _dt, timezone as _tz
+
+    # Re-arm all embed views by message_id so persistent buttons survive restarts
+    try:
+        embed_rows = await bot.attendance_service.get_all_embed_messages()  # type: ignore[attr-defined]
+    except Exception:
+        log.exception("_recover_rsvp_views_and_deadlines: failed to fetch embed messages")
+        return
+
+    for row in embed_rows:
+        try:
+            bot.add_view(RsvpView(round_id=row.round_id), message_id=int(row.message_id))
+        except Exception as exc:
+            log.warning(
+                "_recover_rsvp_views_and_deadlines: could not re-arm view for msg %s: %s",
+                row.message_id, exc,
+            )
+
+    # Check for missed deadline jobs
+    now_utc = _dt.now(_tz.utc)
+    try:
+        async with _gc(bot.db_path) as db:  # type: ignore[attr-defined]
+            cur = await db.execute(
+                """
+                SELECT DISTINCT rem.round_id, rem.division_id,
+                       r.scheduled_at,
+                       ac.rsvp_deadline_hours
+                  FROM rsvp_embed_messages rem
+                  JOIN rounds r ON r.id = rem.round_id
+                  JOIN divisions d ON d.id = r.division_id
+                  JOIN seasons s ON s.id = d.season_id
+                  JOIN attendance_config ac ON ac.server_id = s.server_id
+                 WHERE r.status = 'ACTIVE'
+                   AND s.status = 'ACTIVE'
+                """
+            )
+            round_rows = await cur.fetchall()
+    except Exception:
+        log.exception("_recover_rsvp_views_and_deadlines: failed to fetch rounds for deadline check")
+        return
+
+    for rrow in round_rows:
+        scheduled_at_raw = rrow["scheduled_at"]
+        try:
+            if isinstance(scheduled_at_raw, str):
+                scheduled_at = _dt.fromisoformat(scheduled_at_raw)
+            else:
+                scheduled_at = scheduled_at_raw
+            if scheduled_at.tzinfo is None:
+                scheduled_at = scheduled_at.replace(tzinfo=_tz.utc)
+        except (ValueError, TypeError):
+            continue
+
+        deadline_hours = rrow["rsvp_deadline_hours"] or 0
+        from datetime import timedelta as _td
+        deadline_at = scheduled_at - _td(hours=deadline_hours)
+
+        if deadline_at <= now_utc:
+            # Deadline has passed — check if distribution already ran
+            round_id = rrow["round_id"]
+            division_id = rrow["division_id"]
+            try:
+                async with _gc(bot.db_path) as db:
+                    cur = await db.execute(
+                        """
+                        SELECT COUNT(*) AS cnt
+                          FROM driver_round_attendance
+                         WHERE round_id = ?
+                           AND division_id = ?
+                           AND (assigned_team_id IS NOT NULL OR is_standby = 1)
+                        """,
+                        (round_id, division_id),
+                    )
+                    row = await cur.fetchone()
+                already_ran = row is not None and row["cnt"] > 0
+            except Exception:
+                already_ran = False
+
+            if not already_ran:
+                log.info(
+                    "_recover_rsvp_views_and_deadlines: running missed deadline for round %d / division %d",
+                    round_id, division_id,
+                )
+                try:
+                    await run_rsvp_deadline(round_id, bot)
+                except Exception:
+                    log.exception(
+                        "_recover_rsvp_views_and_deadlines: deadline run failed for round %d",
+                        round_id,
+                    )
 
 
 async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
