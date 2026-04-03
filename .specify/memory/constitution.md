@@ -1,6 +1,52 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-04-03 — v2.9.0 → v2.10.0: Attendance module ratified — Principle XIII added]
+  Version change    : 2.9.0 → 2.10.0
+  Bump rationale    : MINOR — The Attendance module is formally ratified as a new optional
+                      module. Driver check-in management and attendance tracking were
+                      previously unaddressed; this amendment:
+                        1. Adds "Driver attendance management" (check-in RSVP flow,
+                           attendance point accumulation, reserve distribution, and automatic
+                           sanction enforcement) to the formally in-scope domain list in
+                           Principle VI as item 11.
+                        2. Registers the Attendance module in Principle X's optional modules
+                           list, noting its dependency on the Results & Standings module.
+                        3. Introduces Principle XIII (Attendance & Check-in Integrity):
+                           module dependency gate, season-lifecycle constraints, RSVP notice
+                           timing invariants, reserve distribution rules, attendance point
+                           accumulation and pardon mechanics, autosack/autoreserve sanction
+                           automation, and channel discipline.
+                        4. Defines new data entities: AttendanceConfig, AttendanceDivision-
+                           Config, DriverRoundAttendance, AttendancePardon.
+  Feature branch    : 031-attendance-module (created 2026-04-03 from main)
+  Session intent    : Initial configuration of the Attendance module: governance
+                      ratification only. Implementation (commands, scheduler jobs, DB
+                      migrations, tests) to follow in dedicated sub-increments.
+  Modified principles:
+    - Principle VI (Incremental Scope Expansion) — item 11 (attendance management) added
+      to in-scope; corresponding entry removed from planned future scope (was not listed
+      there; no prior reference).
+    - Principle X (Modular Feature Architecture) — Attendance module added to optional
+      modules list with its dependency constraint.
+  Added sections    :
+    - Principle XIII: Attendance & Check-in Integrity (NEW)
+    - Data & State Management: New Entities (v2.10.0) — AttendanceConfig,
+      AttendanceDivisionConfig, DriverRoundAttendance, AttendancePardon.
+  Removed sections  : None
+  Templates confirmed aligned:
+    ✅ .specify/templates/plan-template.md       — dynamic Constitution Check; no changes.
+    ✅ .specify/templates/spec-template.md       — generic structure; no stale references.
+    ✅ .specify/templates/tasks-template.md      — generic; aligns with I–XIII.
+    ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+    ✅ .specify/templates/checklist-template.md  — no impact.
+  Deferred TODOs (carried from prior sessions):
+    - Exact command naming for appeal submission and review commands to be confirmed
+      against the 026-penalty-posting-appeals implementation.
+    - Whether the existing penalty wizard loose-text fields on DriverSessionResult
+      (post_race_time_penalties, post_stewarding_total_time) have been superseded by
+      PenaltyRecord rows — migration confirmation required.
+
 [2026-04-03 — v2.8.0 → v2.9.0: Track entity formalised + track/tier stats preparation]
   Version change    : 2.8.0 → 2.9.0
   Bump rationale    : MINOR — The Track registry has been a de-facto bot entity since v1.0.0
@@ -959,6 +1005,10 @@ domains are formally in-scope as of this version:
     penalties, disqualifications) via a stewards workflow, posting of penalty decisions
     to a dedicated channel, and a second-level appeals process allowing interaction-role
     members to contest a penalty, resolved by a tier-2 admin.
+11. **Driver attendance management**: round RSVP check-in flow, reserve distribution at
+    the RSVP deadline, attendance tracking once round results are submitted, attendance
+    point accumulation per driver, attendance pardon workflow inside the penalty wizard,
+    and automatic sanction enforcement (autoreserve and autosack thresholds).
 
 The following domains are **planned future scope** — each will be formally ratified as an
 independent feature increment before any implementation begins:
@@ -1130,6 +1180,12 @@ structured subcommand):
 - **Results & standings module**: delivers the named points-configuration store, season
   attachment, session-by-session round result submission, standings computation, and results
   and standings channel posting (Principle XII).
+- **Attendance module**: manages round RSVP notices and check-in embeds, attendance
+  tracking per round, attendance point accumulation per driver, reserve distribution at
+  the RSVP deadline, and automatic sanction enforcement (autoreserve and autosack)
+  (Principle XIII). MUST NOT be enabled while the Results & Standings module is disabled;
+  if the Results & Standings module is disabled while Attendance is active, the Attendance
+  module is disabled automatically.
 - Additional modules as ratified under Principle VI.
 
 The following rules MUST hold for every optional module:
@@ -1395,6 +1451,198 @@ governs the **Results & Standings optional module** (Principle X).
 competitive league. A deterministic, auditable computation pipeline with named configurations
 and snapshot-based standings history ensures results can always be reproduced from raw input
 and legitimately contested.
+
+### XIII. Attendance & Check-in Integrity
+
+The Attendance module governs driver RSVP check-ins before each round and the resulting
+attendance tracking and point accumulation. It operates as an optional module (Principle X)
+and depends entirely on the Results & Standings module (Principle XII). The following rules
+are non-negotiable.
+
+#### Module Dependency & Lifecycle Gate
+
+- The Attendance module MUST NOT be enabled while the Results & Standings module is
+  disabled. Any attempt MUST be rejected with a clear error.
+- If the Results & Standings module is disabled while the Attendance module is active,
+  the Attendance module MUST be disabled automatically (applying the same disable atomicity
+  rules of Principle X, rule 3).
+- The Attendance module MUST NOT be enabled once a season is in the `ACTIVE` lifecycle
+  state. It MAY only be enabled during `SETUP` or while no season exists.
+- The Attendance module activation status MUST be displayed in the season review output
+  alongside other module states.
+- The Attendance module MUST function correctly with fake driver rosters created under
+  test mode.
+
+#### Season Validation Gates
+
+- Before a season may be approved, if the Attendance module is enabled, every configured
+  division MUST have both an RSVP channel and an attendance channel configured. Missing
+  either channel for any division MUST block season approval with a clear diagnostic.
+- Both channel IDs are stored in **AttendanceDivisionConfig** (one row per division per
+  server). They are displayed in the season review alongside other division channels
+  (results, standings, weather, etc.).
+
+#### RSVP Timing Configuration
+
+Three timing parameters govern the RSVP lifecycle and MUST satisfy the invariant
+**notice_days × 24 > last_notice_hours > deadline_hours** at all times:
+
+- `rsvp_notice_days` (default 5) — days before a round at which the RSVP embed is posted.
+- `rsvp_last_notice_hours` (default 1) — hours before a round at which drivers who have
+  not yet RSVP'd are directly notified. A value of 0 disables the last-notice ping.
+- `rsvp_deadline_hours` (default 2) — hours before a round at which the RSVP choices
+  become locked. A value of 0 means locking occurs at the scheduled round start time.
+
+Any configuration command that would violate the invariant MUST be rejected with a clear
+error. All three commands MUST be rejected if a season is currently `ACTIVE`.
+
+#### RSVP Check-in Embed
+
+At `rsvp_notice_days` days before a round, the bot MUST post an RSVP embed in the
+division's configured RSVP channel. The embed MUST contain:
+
+- **Title**: `Season <X> Round <X> — <canonical_name of track>` (or `Mystery` if the
+  round type is Mystery and track identity is withheld).
+- **Fields**: scheduled datetime as a dynamic Discord timestamp; location (canonical circuit
+  name, or "Mystery" for Mystery rounds); event type (Normal / Sprint / Mystery / Endurance).
+- **Driver roster**: a mini-list per team (including the Reserve team) showing each driver's
+  display name alongside their current RSVP status indicator (empty brackets `()` if not
+  yet responded; ✅ if accepted; ❓ if tentative; ❌ if declined).
+- **Three action buttons** (horizontal): Accept (green ✅), Tentative (grey ❓), Decline
+  (red ❌). Pressing any button updates the embed's status indicator for that driver
+  atomically.
+
+RSVP status MUST be persisted in **DriverRoundAttendance** rows and is authoritative for
+all downstream operations.
+
+#### RSVP Locking Rules
+
+- **Full-time drivers**: RSVP choice locks at the `rsvp_deadline_hours` threshold. No
+  changes are permitted after that point.
+- **Reserve drivers**: RSVP choice locks at the scheduled round start time, but ONLY if
+  they have accepted the check-in. A reserve who remains tentative or declined is
+  locked out at round start regardless.
+- After the RSVP deadline, the bot MUST process the reserve distribution (see below) and
+  post a standby/assignment message to the division's RSVP channel.
+
+#### Reserve Distribution
+
+Once the RSVP deadline is reached, reserves who have confirmed `ACCEPTED` are distributed
+to teams in the following priority order:
+
+1. Teams where at least one driver failed to RSVP (no response).
+2. Teams where at least one driver declined.
+3. Teams where at least one driver is tentative.
+
+Within each priority tier, tie-breaking is applied in order:
+1. Number of `ACCEPTED` drivers already assigned to the team (lowest first — prefer teams
+   with zero confirmed drivers).
+2. Constructors' Championship position in that division (lowest-ranked team first).
+
+Reserves are picked in the order they confirmed `ACCEPTED` (earliest timestamp wins).
+Every time a reserve changes their status back to `ACCEPTED`, their timestamp resets.
+
+Reserves confirmed `ACCEPTED` who remain unplaced are classified as **on standby**. After
+distribution is determined, the bot MUST post a message in the division's RSVP channel:
+- Mentioning each assigned reserve by Discord user and stating which team they are
+  racing for.
+- Mentioning each standby reserve and informing them they are on standby and should be
+  ready to substitute.
+
+#### Attendance Recording
+
+Once the initial round results are submitted (first `SessionResult` row accepted for the
+round), the bot MUST populate attendance status in each `DriverRoundAttendance` row:
+- A driver is counted as **attended** if they appear in any submitted session result for
+  that round (any `DriverSessionResult` row for that round in that division), regardless
+  of outcome modifier.
+- Drivers seated in the Reserve team of that division for this round are excluded from
+  attendance tracking.
+
+Attendance points are NOT distributed at this stage; they are deferred to post-penalty
+finalization (see below).
+
+#### Attendance Pardon Workflow
+
+A dedicated **Attendance Pardon** button MUST be available in the penalty wizard,
+exclusively during the penalty review stage (NOT during the appeals stage). When pressed,
+a modal form MUST request:
+
+1. The Discord User ID of the driver being pardoned.
+2. The type of attendance event being waived: NO_RSVP, NO_ATTEND, or NO_SHOW.
+3. A free-text justification (logged to the calculation log channel; never displayed
+   elsewhere for privacy reasons).
+
+Pardon validation rules:
+- A NO_RSVP pardon requires the driver's RSVP status to be NO_RSVP.
+- A NO_ATTEND pardon requires the driver to have not attended (and RSVP status is
+  irrelevant for this pardon type).
+- A NO_SHOW pardon requires the driver to have been RSVP `ACCEPTED` but not attended.
+- Multiple pardons for the same driver are permitted (e.g., both NO_RSVP and NO_ATTEND
+  can be waived to eliminate both penalties for a driver who did not RSVP and did not
+  attend).
+
+Staged attendance pardons MUST be displayed alongside staged penalties in the penalty
+review summary.
+
+After post-race penalties are approved, attendance pardons can no longer be applied for
+that round.
+
+#### Attendance Point Distribution
+
+Attendance points are distributed once the post-race pen­alty results are finalised
+(approved), to prevent erroneous automatic sanctions due to provisional result errors.
+Points are awarded per driver per round as follows:
+
+| RSVP status | Attended | Points gained |
+|-------------|----------|---------------|
+| NO_RSVP | Attended | `no_rsvp_penalty` |
+| NO_RSVP | Did not attend | `no_rsvp_penalty` + `no_attend_penalty` |
+| Any (ACCEPTED/TENTATIVE/DECLINED) | Attended | 0 |
+| ACCEPTED | Did not attend | `no_show_penalty` |
+| TENTATIVE or DECLINED | Did not attend | 0 |
+
+Pardons waive the corresponding point award(s). A driver who receives a pardon for a given
+event type does NOT accumulate points for that event.
+
+#### Attendance Sheet Posting
+
+Once post-race penalties are approved and posted, the bot MUST post an updated attendance
+sheet to the division's configured attendance channel. The post MUST:
+
+- List all drivers in descending order of total accumulated attendance points (most first).
+- Format each entry as `@mention — X attendance points`.
+- Append the following footer at the end:
+  > Drivers who reach `<autoreserve_threshold>` points will be moved to reserve.
+  > Drivers who reach `<autosack_threshold>` points will be removed from all driving roles
+  > in all divisions.
+  If either threshold is disabled (value 0 / null), the corresponding sentence MUST be
+  omitted.
+
+#### Automatic Sanction Enforcement (Autoreserve & Autosack)
+
+After attendance points are distributed, the bot MUST evaluate each driver's total:
+
+- **Autoreserve** (`autoreserve_threshold`, default disabled): if a full-time driver's
+  total attendance points meet or exceed this threshold, the bot MUST unassign them from
+  their current team seat and assign them to the Reserve team of the same division,
+  producing an audit log entry (Principle V). This action MUST NOT be applied to drivers
+  already seated in the Reserve team.
+- **Autosack** (`autosack_threshold`, default disabled): if a driver's total attendance
+  points meet or exceed this threshold, the bot MUST remove them from all team seats
+  across all divisions (equivalent to `/driver sack`), producing an audit log entry per
+  division affected (Principle V). Autosack supersedes autoreserve when both thresholds
+  are met simultaneously.
+
+Both thresholds are evaluated in a single pass after point distribution. A threshold value
+of 0 or null means the corresponding sanction is disabled.
+
+**Rationale**: Reliable attendance management is essential for competitive fairness in a
+multi-division league. A governed RSVP workflow with clear locking semantics, a proper
+reserve distribution protocol, and an auditable point accumulation pipeline give league
+admins a transparent mechanism to enforce attendance requirements without ad-hoc manual
+intervention. Deferring attendance point distribution to post-penalty finalization prevents
+incorrect automatic sanctions from provisional result errors.
 
 ## Bot Behavior Standards
 
@@ -1756,6 +2004,64 @@ for team-level aggregates):
   appeal outcomes for this division are posted to this channel; if null, the bot falls
   back to `results_channel_id`.
 
+### New Entities (v2.10.0)
+
+**AttendanceConfig** (per server, owned by the Attendance module):
+- `server_id` (TEXT, PK)
+- `module_enabled` (BOOLEAN, default false)
+- `rsvp_notice_days` (INTEGER, default 5) — days before a round for RSVP embed posting.
+- `rsvp_last_notice_hours` (INTEGER, default 1) — hours before round for un-RSVP'd ping;
+  0 disables the last-notice ping.
+- `rsvp_deadline_hours` (INTEGER, default 2) — hours before round when RSVP choices lock;
+  0 means choices lock at round start time.
+- `no_rsvp_penalty` (INTEGER, default 1) — attendance points per no-RSVP event.
+- `no_attend_penalty` (INTEGER, default 1) — attendance points per no-attend event
+  (added on top of no_rsvp_penalty when driver also did not RSVP).
+- `no_show_penalty` (INTEGER, default 1) — attendance points per no-show-after-acceptance
+  event.
+- `autoreserve_threshold` (INTEGER, nullable — null means disabled) — total attendance
+  points at which a full-time driver is automatically moved to Reserve.
+- `autosack_threshold` (INTEGER, nullable — null means disabled) — total attendance points
+  at which a driver is automatically removed from all team seats in all divisions.
+
+**AttendanceDivisionConfig** (per server, per division, owned by the Attendance module):
+- `server_id` (TEXT)
+- `division_id` (INTEGER, FK → Division)
+- `rsvp_channel_id` (TEXT, nullable) — channel for RSVP embeds and reserve distribution
+  notices. Required before season approval when module is enabled.
+- `attendance_channel_id` (TEXT, nullable) — channel for post-round attendance sheet posts.
+  Required before season approval when module is enabled.
+- Uniquely keyed on (server_id, division_id).
+
+**DriverRoundAttendance** (per driver, per round, per division — one row per driver per
+round while the Attendance module is enabled):
+- `attendance_id` (INTEGER PK, server-scoped auto-increment)
+- `round_id` (INTEGER, FK → Round)
+- `division_id` (INTEGER, FK → Division)
+- `driver_id` (TEXT, FK → DriverProfile within server scope)
+- `rsvp_status` (ENUM: ACCEPTED / TENTATIVE / DECLINED / NO_RSVP, default NO_RSVP)
+- `rsvp_timestamp` (TEXT, nullable — UTC ISO 8601; last time driver set status to
+  ACCEPTED; reset each time driver returns to ACCEPTED)
+- `rsvp_locked` (BOOLEAN, default false — set true at deadline or round start per locking
+  rules in Principle XIII)
+- `attended` (BOOLEAN, nullable — null until initial round results are submitted; true if
+  driver appears in any DriverSessionResult for this round and division)
+- `points_awarded` (INTEGER, nullable — null until post-race penalties are finalized;
+  net points after pardons applied)
+- `total_points_after` (INTEGER, nullable — cumulative attendance points for this driver
+  in this division after this round's distribution)
+
+**AttendancePardon** (per driver, per round, per attendance event type):
+- `pardon_id` (INTEGER PK, server-scoped auto-increment)
+- `attendance_id` (INTEGER, FK → DriverRoundAttendance)
+- `pardon_type` (ENUM: NO_RSVP / NO_ATTEND / NO_SHOW)
+- `justification` (TEXT, nullable — logged to calculation log channel only; never
+  displayed in public-facing output)
+- `applied_by` (TEXT — Discord User ID of the tier-2 admin who applied the pardon)
+- `applied_at` (TEXT — UTC ISO 8601 timestamp)
+- Uniquely keyed on (attendance_id, pardon_type) — at most one pardon per event type
+  per driver per round.
+
 ### New Entities (v2.9.0)
 
 **Track** (bot-packaged static registry — 27 circuits as of this version):
@@ -1851,4 +2157,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.9.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-04-03
+**Version**: 2.10.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-04-03
