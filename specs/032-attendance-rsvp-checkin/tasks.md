@@ -28,8 +28,8 @@
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
 - [ ] T002 Add `DriverRoundAttendance` and `RsvpEmbedMessage` dataclasses to `src/models/attendance.py`
-- [ ] T003 Add `driver_round_attendance` CRUD to `src/services/attendance_service.py`: `bulk_insert_attendance_rows`, `upsert_rsvp_status`, `get_attendance_rows`, `get_attendance_row_for_driver`
-- [ ] T004 Add `rsvp_embed_messages` CRUD to `src/services/attendance_service.py`: `insert_embed_message`, `get_embed_message`, `get_all_active_embed_messages`
+- [ ] T003 Add `driver_round_attendance` CRUD to `src/services/attendance_service.py`: `bulk_insert_attendance_rows`, `upsert_rsvp_status` (must set `accepted_at = utcnow()` when transitioning to ACCEPTED, reset on re-Accept after a non-Accept, set NULL when transitioning away from ACCEPTED — per FR-022), `get_attendance_rows`, `get_attendance_row_for_driver`
+- [ ] T004 Add `rsvp_embed_messages` CRUD to `src/services/attendance_service.py`: `insert_embed_message`, `get_embed_message`, `get_all_embed_messages` (returns all rows unconditionally — locking is enforced at interaction time, not at view re-arm time)
 
 **Checkpoint**: Foundation ready — all data access methods available; user story implementation can begin.
 
@@ -54,7 +54,7 @@ exist with `NO_RSVP` status. Confirm `rsvp_embed_messages` has one row with the 
 - [ ] T007 [US1] Add `schedule_attendance_round(rnd, cfg)` method with `DateTrigger` for notice job and extend `cancel_round` to also remove `rsvp_notice_r{round_id}` in `src/services/scheduler_service.py`
 - [ ] T008 [US1] Implement `run_rsvp_notice(round_id)` in `src/services/rsvp_service.py`: query full-time + reserve roster via `driver_season_assignments → team_seats → team_instances`, call `build_rsvp_embed`, post to RSVP channel, bulk-insert `driver_round_attendance` rows, store `message_id` + `channel_id` in `rsvp_embed_messages`; skip + audit log if no RSVP channel (FR-008); bypass if Mystery round (FR-002)
 - [ ] T009 [US1] Extend `_do_approve` in `src/cogs/season_cog.py` to call `scheduler_service.schedule_attendance_round(rnd, att_cfg)` for each non-Mystery round when attendance module is enabled, following the existing `is_weather_enabled` / `is_results_enabled` guard pattern
-- [ ] T010 [US1] Register `register_rsvp_notice_callback` and add `rsvp_embed_messages` view re-arm loop (`bot.add_view(RsvpView(), message_id=row.message_id)` for all active rows) in `src/bot.py` startup block
+- [ ] T010 [US1] Register `register_rsvp_notice_callback` and add `rsvp_embed_messages` view re-arm loop (`bot.add_view(RsvpView(), message_id=row.message_id)` for all rows from `get_all_embed_messages`) in `src/bot.py` startup block
 
 **Checkpoint**: End-to-end US1 flow works — approval schedules job, job fires, embed posted, rows created.
 
@@ -71,7 +71,7 @@ press Accept, Tentative, and Decline. Verify the embed updates each time. Have a
 user press a button and verify the ephemeral error. Press the same button twice and verify
 the ephemeral acknowledgement and no DB change.
 
-- [ ] T011 [US2] Implement `RsvpView` class (`timeout=None`) with three `discord.ui.Button` components, `custom_id` values `rsvp_accept_r{round_id}`, `rsvp_tentative_r{round_id}`, `rsvp_decline_r{round_id}` in `src/cogs/attendance_cog.py`; extract `round_id` from `custom_id` prefix in each handler
+- [ ] T011 [US2] Implement `RsvpView` class (`timeout=None`) with three `discord.ui.Button` components, `custom_id` values `rsvp_accept_r{round_id}`, `rsvp_tentative_r{round_id}`, `rsvp_decline_r{round_id}` in `src/cogs/attendance_cog.py`; parse `round_id` from the `_r{round_id}` suffix of `custom_id` in each handler
 - [ ] T012 [US2] Add interaction logic to each button handler in `src/cogs/attendance_cog.py`: look up driver by Discord user ID in `driver_season_assignments`, reject non-members with ephemeral error (FR-011); check `rsvp_status` for no-op and reply ephemerally (FR-013); call `attendance_service.upsert_rsvp_status`; fetch message from `rsvp_embed_messages`; rebuild embed with `build_rsvp_embed` and edit message in-place (FR-010, FR-012)
 - [ ] T013 [US2] Add `bot.add_view(RsvpView())` to the persistent-views registration block in `src/bot.py`
 
@@ -107,8 +107,8 @@ then by standings position, and reserve ordering by `accepted_at` timestamp. Ver
 classification when reserves exceed vacancies. Verify no announcement posted when no reserves
 accepted.
 
-- [ ] T015 [P] [US4] Implement `run_reserve_distribution(round_id, division_id)` in `src/services/rsvp_service.py`: query accepted reserves ordered by `accepted_at` ASC; rank candidate teams by priority tier (FR-020) then tie-break by accepted-full-timer count then by `team_standings_snapshots.standing_position` (most recent `round_id` in division, fallback to alphabetical by team name when no snapshot exists, FR-021); assign reserves to vacancies per FR-023; classify unplaced reserves as standby (FR-024); write `assigned_team_id` + `is_standby` to `driver_round_attendance`
-- [ ] T016 [P] [US4] Add `_rsvp_deadline_job(round_id)` module-level async callable and `register_rsvp_deadline_callback` method to `src/services/scheduler_service.py`
+- [ ] T015 [P] [US4] Implement `run_reserve_distribution(round_id, division_id)` in `src/services/rsvp_service.py`: query accepted reserves ordered by `accepted_at` ASC; rank candidate teams by priority tier (FR-020) then tie-break by accepted-full-timer count then by `team_standings_snapshots.standing_position` (most recent `round_id` in division, fallback to alphabetical by team name when no snapshot exists, FR-021); assign reserves to vacancies per FR-023; classify unplaced reserves as standby (FR-024); write `assigned_team_id` + `is_standby` to `driver_round_attendance`; note: only non-Reserve teams are distribution candidates — the Reserve team is the supply pool (`is_reserve = 1`) and MUST NOT appear in the candidate ranking
+- [ ] T016 [P] [US4] Add `_rsvp_deadline_job(round_id)` module-level async callable and `register_rsvp_deadline_callback` method to `src/services/scheduler_service.py` following the same pattern as T006
 - [ ] T017 [US4] Implement `run_rsvp_deadline(round_id)` in `src/services/rsvp_service.py`: call `run_reserve_distribution` per division; fetch `rsvp_embed_messages` rows and edit each embed to remove or disable buttons; post assignment announcement to RSVP channel if any reserves were eligible (FR-025, FR-026)
 - [ ] T018 [US4] Extend `schedule_attendance_round` to add deadline `DateTrigger` job and extend `cancel_round` to also remove `rsvp_deadline_r{round_id}` in `src/services/scheduler_service.py`
 - [ ] T019 [US4] Register `register_rsvp_deadline_callback` and add missed-deadline recovery on startup (run `run_rsvp_deadline` immediately for any round whose deadline has already passed while bot was offline, FR-027) in `src/bot.py`
@@ -138,13 +138,27 @@ is 0.
 
 ---
 
-## Phase 8: Polish & Tests
+## Phase 8: Test Mode Integration
+
+**Purpose**: Wire RSVP jobs into `/test-mode advance` and add `/test-mode rsvp set-status`.
+
+**Dependencies**: Depends on Phase 3 (US1) for T027/T028 (RSVP service callables must exist); depends on Phase 2 (Foundational) for T029 (`upsert_rsvp_status` must exist).
+
+- [ ] T027 Extend `_PHASE_PREFIX_MAP` in `src/services/scheduler_service.py` `get_pending_advance_jobs` to include `rsvp_notice` → phase 5, `rsvp_last_notice` → phase 6, `rsvp_deadline` → phase 7 (per research decision #9)
+- [ ] T028 Extend the `advance` dispatcher in `src/cogs/test_mode_cog.py` to handle phase numbers 5, 6, 7: call `run_rsvp_notice(round_id, bot)`, `run_rsvp_last_notice(round_id, bot)`, `run_rsvp_deadline(round_id, bot)` respectively
+- [ ] T029 Implement `/test-mode rsvp set-status` command in `src/cogs/test_mode_cog.py` (gated on test mode active): parameters `driver_id` (Discord user ID, mandatory), `status` (accepted/tentative/declined, mandatory), `division` (mandatory); locate `DriverRoundAttendance` row for the active round in that division; call `upsert_rsvp_status` with same `accepted_at` rules as a real button press; rebuild and edit the RSVP embed in-place (FR-031)
+
+**Checkpoint**: `/test-mode advance` fires RSVP jobs in correct scheduled order; `/test-mode rsvp set-status` allows fake-driver status management for test validation.
+
+---
+
+## Phase 9: Polish & Tests
 
 **Purpose**: Unit tests and integration validation.
 
 - [ ] T024 [P] Write `tests/unit/test_rsvp_service.py`: distribution algorithm unit tests (priority ordering, tie-breaking with standings, tie-breaking with fallback, accepted_at timestamp ordering, standby classification, no-announcement when no reserves accepted); service method CRUD round-trips
 - [ ] T025 [P] Write `tests/unit/test_rsvp_embed_builder.py`: embed content unit tests (title format, Mystery bypass, status indicator strings for all four statuses, per-team roster grouping)
-- [ ] T026 Run quickstart.md validation end-to-end: apply migration, approve season, fire notice job manually, press buttons, fire last-notice job, fire deadline job; confirm all outputs match quickstart expectations
+- [ ] T026 Run quickstart.md validation end-to-end using test mode: enable test mode, add fake roster via `/test-mode roster add`, approve season, use `/test-mode advance` to fire notice job (phase 5), use `/test-mode rsvp set-status` to set RSVP statuses for fake drivers, use `/test-mode advance` to fire last-notice job (phase 6) and deadline job (phase 7); confirm all outputs match quickstart expectations (FR-031, constitution §XIII test mode clause)
 
 ---
 
@@ -159,7 +173,8 @@ is 0.
 - **Phase 5 (US3)**: Depends on Phase 4 — locking logic amends handlers created in US2
 - **Phase 6 (US4)**: Depends on Phase 2 + Phase 3 (scheduler infrastructure from US1, DRA rows); independent of US2/US3
 - **Phase 7 (US5)**: Depends on Phase 2 + Phase 3 (scheduler infrastructure from US1, DRA rows); independent of US2/US3/US4
-- **Phase 8 (Polish)**: Depends on all user story phases
+- **Phase 8 (Test Mode Integration)**: Depends on Phase 3 (US1) for T027/T028; Phase 2 for T029
+- **Phase 9 (Polish)**: Depends on all user story phases and Phase 8
 
 ### User Story Dependencies
 
@@ -177,6 +192,8 @@ is 0.
 - T015 (rsvp_service.py) and T016 (scheduler_service.py) can run in parallel
 - T020 (scheduler_service.py) and T021 (rsvp_service.py) can run in parallel
 - T024 and T025 (different test files) can run in parallel
+- T018 appends to `cancel_round` and `schedule_attendance_round` as established by T007 — amend those methods, do not rewrite them
+- T022 likewise appends to both as extended by T018 — amend, do not rewrite
 
 ---
 
@@ -223,7 +240,8 @@ T023 bot.py wiring
 
 **MVP scope (Phase 1 → Phase 4)**: The bot posts RSVP embeds and drivers can respond via
 buttons. 18 tasks. Covers US1 + US2, the two P1 stories. Verifiable end-to-end without
-distribution or pings.
+distribution or pings. ⚠️ RSVP locking (FR-014–FR-017) is not enforced until Phase 5
+(US3) — do not deploy against an active season until Phase 5 is complete.
 
 **Full scope (Phase 1 → Phase 7)**: All 23 implementation tasks. US3 adds correct reserve
 locking; US4 adds distribution; US5 adds last-notice pings. US4 and US5 can be developed
@@ -245,7 +263,8 @@ in parallel after US1 is complete.
 | Phase 5 | US3 (P2) | 1 | T014 |
 | Phase 6 | US4 (P2) | 5 | T015–T019 |
 | Phase 7 | US5 (P2) | 4 | T020–T023 |
-| Phase 8 | Polish | 3 | T024–T026 |
-| **Total** | | **26** | |
+| Phase 8 | Test Mode Integration | 3 | T027–T029 |
+| Phase 9 | Polish | 3 | T024–T026 |
+| **Total** | | **29** | |
 
-**Parallel opportunities identified**: 5 (T005/T006, T015/T016, T020/T021, T024/T025, Phase 6+Phase 7 concurrent after US1)
+**Parallel opportunities identified**: 6 (T005/T006, T015/T016, T020/T021, T024/T025, Phase 6+Phase 7 concurrent after US1, T027+T028 concurrent with T029 within Phase 8)

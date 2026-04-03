@@ -336,6 +336,22 @@ already responded and all reserve drivers are not mentioned.
 - **FR-030**: When `rsvp_last_notice_hours` is 0, no last-notice job MUST be created or
   armed for any round.
 
+**Test Mode Integration**
+
+- **FR-031**: A `/test-mode rsvp set-status` command MUST be available to league managers
+  when test mode is active. It MUST accept the following parameters:
+  - `driver_id` (mandatory) — the Discord user ID (snowflake) of the driver whose status
+    is being set.
+  - `status` (mandatory) — one of `accepted`, `tentative`, or `declined`.
+  - `division` (mandatory) — the name of the division whose active RSVP round to update.
+  The command MUST locate the `DriverRoundAttendance` row for the identified driver in the
+  active (not yet started) round for that division and update the `rsvp_status` field
+  accordingly, applying the same `accepted_at` management rules as a real button press
+  (FR-022). The RSVP embed MUST be edited in-place to reflect the updated status. The
+  command MUST be rejected with a clear ephemeral error if test mode is not active, if no
+  active RSVP embed exists for the division, or if the driver has no `DriverRoundAttendance`
+  row for the current round.
+
 ### Key Entities *(include if feature involves data)*
 
 - **DriverRoundAttendance** (new): RSVP state per driver per round per division. Records

@@ -155,14 +155,32 @@ by a future increment.
 
 ## 9. test_mode_service Integration
 
-**No changes required for this increment.**
+**Decision**: RSVP jobs (`rsvp_notice_r{id}`, `rsvp_last_notice_r{id}`,
+`rsvp_deadline_r{id}`) ARE included in the `/test-mode advance` queue. They are
+assigned phase numbers 5, 6, and 7 respectively and added to `_PHASE_PREFIX_MAP`
+in `get_pending_advance_jobs`. The `advance` dispatcher in `test_mode_cog.py` is
+extended to call the appropriate RSVP service function for each new phase number.
 
-**Rationale**: `get_pending_advance_jobs` in `test_mode_service.py` uses
-`_PHASE_PREFIX_MAP` to recognise advance-queue jobs. The `rsvp_*` jobs should NOT
-appear in the test-mode advance queue — they are attendance booking jobs, not
-race-phase progression events. Test mode for the RSVP timers will be handled in a
-separate future increment (or tested via unit/integration tests injecting mock times
-directly). This keeps the advance command's responsibility narrowly scoped.
+**Rationale**: The `/test-mode advance` command fires events in scheduled order
+(`next_run_time ASC, round_id ASC, phase_number ASC`). RSVP jobs are genuine
+scheduler events with real `next_run_time` values — excluding them would require a
+separate trigger mechanism and create an inconsistent testing experience.
+Including them keeps the advance command as the single entry point for all
+time-driven bot actions in test mode, which is the established convention.
+
+**Phase number mapping** (updated `_PHASE_PREFIX_MAP` in `scheduler_service.py`):
+
+| Prefix | Phase number | Dispatches to |
+|--------|-------------|---------------|
+| `mystery` | 0 | `run_mystery_notice` |
+| `phase1` | 1 | `run_phase1` |
+| `phase2` | 2 | `run_phase2` |
+| `phase3` | 3 | `run_phase3` |
+| `rsvp_notice` | 5 | `run_rsvp_notice` |
+| `rsvp_last_notice` | 6 | `run_rsvp_last_notice` |
+| `rsvp_deadline` | 7 | `run_rsvp_deadline` |
+
+(Phase 4 = result submission; detected via DB fallback, not `_PHASE_PREFIX_MAP`.)
 
 ---
 
