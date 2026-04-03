@@ -260,6 +260,105 @@ class TestModeCog(commands.Cog):
             asyncio.create_task(run_result_submission_job(entry["round_id"], self.bot))
             return
 
+        # ── RSVP notice (phase_number=5) ─────────────────────────────────────────
+        if phase_number == 5:
+            from services.rsvp_service import run_rsvp_notice
+            if entry["job_id"] is not None:
+                self.bot.scheduler_service.cancel_job(entry["job_id"])  # type: ignore[attr-defined]
+            try:
+                await run_rsvp_notice(entry["round_id"], self.bot)
+            except Exception:
+                log.exception(
+                    "Test mode advance: unhandled error in rsvp_notice for round_id=%d",
+                    entry["round_id"],
+                )
+                await interaction.followup.send(
+                    f"❌ An internal error occurred while firing the RSVP notice for "
+                    f"**{entry['division_name']}** — **Round {entry['round_number']}**. "
+                    "Check the bot logs for details.",
+                    ephemeral=True,
+                )
+                return
+            await interaction.followup.send(
+                f"📨 Fired **RSVP notice** for "
+                f"**{entry['division_name']}** — **Round {entry['round_number']}** "
+                f"(**{entry['track_name']}**). Embed posted to the RSVP channel.",
+                ephemeral=True,
+            )
+            await self.bot.output_router.post_log(
+                interaction.guild_id,
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
+                f"  phase: rsvp_notice\n"
+                f"  division: {entry['division_name']}\n"
+                f"  round: {entry['round_number']}",
+            )
+            return
+
+        # ── RSVP last-notice (phase_number=6) ────────────────────────────────────
+        if phase_number == 6:
+            from services.rsvp_service import run_rsvp_last_notice
+            if entry["job_id"] is not None:
+                self.bot.scheduler_service.cancel_job(entry["job_id"])  # type: ignore[attr-defined]
+            try:
+                await run_rsvp_last_notice(entry["round_id"], self.bot)
+            except Exception:
+                log.exception(
+                    "Test mode advance: unhandled error in rsvp_last_notice for round_id=%d",
+                    entry["round_id"],
+                )
+                await interaction.followup.send(
+                    f"❌ An internal error occurred while firing the RSVP last-notice for "
+                    f"**{entry['division_name']}** — **Round {entry['round_number']}**.",
+                    ephemeral=True,
+                )
+                return
+            await interaction.followup.send(
+                f"⏰ Fired **RSVP last-notice** for "
+                f"**{entry['division_name']}** — **Round {entry['round_number']}**.",
+                ephemeral=True,
+            )
+            await self.bot.output_router.post_log(
+                interaction.guild_id,
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
+                f"  phase: rsvp_last_notice\n"
+                f"  division: {entry['division_name']}\n"
+                f"  round: {entry['round_number']}",
+            )
+            return
+
+        # ── RSVP deadline (phase_number=7) ────────────────────────────────────────
+        if phase_number == 7:
+            from services.rsvp_service import run_rsvp_deadline
+            if entry["job_id"] is not None:
+                self.bot.scheduler_service.cancel_job(entry["job_id"])  # type: ignore[attr-defined]
+            try:
+                await run_rsvp_deadline(entry["round_id"], self.bot)
+            except Exception:
+                log.exception(
+                    "Test mode advance: unhandled error in rsvp_deadline for round_id=%d",
+                    entry["round_id"],
+                )
+                await interaction.followup.send(
+                    f"❌ An internal error occurred while firing the RSVP deadline for "
+                    f"**{entry['division_name']}** — **Round {entry['round_number']}**.",
+                    ephemeral=True,
+                )
+                return
+            await interaction.followup.send(
+                f"🏁 Fired **RSVP deadline** for "
+                f"**{entry['division_name']}** — **Round {entry['round_number']}**. "
+                f"Reserve distribution complete.",
+                ephemeral=True,
+            )
+            await self.bot.output_router.post_log(
+                interaction.guild_id,
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
+                f"  phase: rsvp_deadline\n"
+                f"  division: {entry['division_name']}\n"
+                f"  round: {entry['round_number']}",
+            )
+            return
+
         # ── Normal weather phase dispatch ───────────────────────────────────────
         phase_runners = {1: run_phase1, 2: run_phase2, 3: run_phase3}
         runner = phase_runners[phase_number]
@@ -573,3 +672,159 @@ class TestModeCog(commands.Cog):
             )
 
     # (submit-results removed — use /test-mode advance which now handles result submission)
+
+    # ------------------------------------------------------------------
+    # /test-mode rsvp (subgroup) — T029
+    # ------------------------------------------------------------------
+
+    rsvp = app_commands.Group(
+        name="rsvp",
+        description="Test-mode RSVP utilities.",
+        parent=test_mode,
+        guild_only=True,
+        default_permissions=None,
+    )
+
+    # /test-mode rsvp set-status ------------------------------------------
+
+    @rsvp.command(
+        name="set-status",
+        description="Manually set a driver's RSVP status (test mode only).",
+    )
+    @app_commands.describe(
+        driver_id="Discord user ID of the driver to update.",
+        status="RSVP status to set (accepted / tentative / declined).",
+        division="Division name whose active RSVP round to update.",
+    )
+    @app_commands.choices(status=[
+        app_commands.Choice(name="accepted",  value="ACCEPTED"),
+        app_commands.Choice(name="tentative", value="TENTATIVE"),
+        app_commands.Choice(name="declined",  value="DECLINED"),
+    ])
+    @channel_guard
+    @admin_only
+    async def rsvp_set_status(
+        self,
+        interaction: discord.Interaction,
+        driver_id: str,
+        status: app_commands.Choice[str],
+        division: str,
+    ) -> None:
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "ℹ️ Test mode is not active.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        guild_id: int = interaction.guild_id  # type: ignore[assignment]
+        new_status: str = status.value
+
+        # Resolve driver_profile_id from the given Discord user ID
+        try:
+            discord_uid = int(driver_id)
+        except ValueError:
+            await interaction.followup.send(
+                "❌ `driver_id` must be a numeric Discord user ID.", ephemeral=True
+            )
+            return
+
+        from db.database import get_connection as _gc
+
+        async with _gc(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            cur = await db.execute(
+                "SELECT id FROM driver_profiles WHERE server_id = ? AND CAST(discord_user_id AS INTEGER) = ?",
+                (guild_id, discord_uid),
+            )
+            profile_row = await cur.fetchone()
+
+        if profile_row is None:
+            await interaction.followup.send(
+                f"❌ No driver profile found for user ID `{driver_id}`.", ephemeral=True
+            )
+            return
+        driver_profile_id: int = profile_row["id"]
+
+        # Resolve division_id by name in the active season
+        async with _gc(self.bot.db_path) as db:
+            cur = await db.execute(
+                """
+                SELECT d.id AS division_id
+                  FROM divisions d
+                  JOIN seasons s ON s.id = d.season_id
+                 WHERE s.server_id = ? AND s.status = 'ACTIVE'
+                   AND LOWER(d.name) = LOWER(?)
+                """,
+                (guild_id, division),
+            )
+            div_row = await cur.fetchone()
+
+        if div_row is None:
+            await interaction.followup.send(
+                f"❌ Division **{division}** not found in the active season.", ephemeral=True
+            )
+            return
+        division_id: int = div_row["division_id"]
+
+        # Find the active RSVP embed row for this division (a round that has an embed)
+        embed_row = await self.bot.attendance_service.get_all_embed_messages()  # type: ignore[attr-defined]
+        target_embed = next(
+            (r for r in embed_row if r.division_id == division_id),
+            None,
+        )
+        if target_embed is None:
+            await interaction.followup.send(
+                f"❌ No active RSVP embed found for division **{division}**.", ephemeral=True
+            )
+            return
+        round_id: int = target_embed.round_id
+
+        # Verify the driver has a DRA row for this round
+        dra = await self.bot.attendance_service.get_attendance_row_for_driver(  # type: ignore[attr-defined]
+            round_id=round_id,
+            division_id=division_id,
+            driver_profile_id=driver_profile_id,
+        )
+        if dra is None:
+            await interaction.followup.send(
+                f"❌ Driver `{driver_id}` has no attendance row for this round. "
+                "Run `/test-mode advance` to fire the RSVP notice first.",
+                ephemeral=True,
+            )
+            return
+
+        # Apply the status update (same accepted_at logic as a real button press)
+        await self.bot.attendance_service.upsert_rsvp_status(  # type: ignore[attr-defined]
+            round_id=round_id,
+            division_id=division_id,
+            driver_profile_id=driver_profile_id,
+            status=new_status,
+        )
+
+        # Rebuild and edit the RSVP embed in-place
+        from services.rsvp_service import _rebuild_embed_for_round, RsvpView
+        channel = self.bot.get_channel(int(target_embed.channel_id))
+        if channel is not None:
+            try:
+                msg = await channel.fetch_message(int(target_embed.message_id))
+                new_embed = await _rebuild_embed_for_round(round_id, division_id, self.bot)
+                await msg.edit(embed=new_embed, view=RsvpView(round_id=round_id))
+            except Exception as exc:
+                log.warning("rsvp_set_status: failed to edit embed: %s", exc)
+
+        await interaction.followup.send(
+            f"✅ Set RSVP status for `{driver_id}` in **{division}** to **{new_status.lower()}**.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode rsvp set-status | Success\n"
+            f"  driver_id: {driver_id}\n"
+            f"  division: {division}\n"
+            f"  status: {new_status}\n"
+            f"  round_id: {round_id}",
+        )

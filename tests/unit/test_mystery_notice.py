@@ -80,23 +80,25 @@ def _mystery_round(round_id: int = 42) -> Round:
 
 class TestScheduleRoundMystery:
 
-    def test_schedules_exactly_one_job(self):
+    def test_schedules_exactly_two_jobs(self):
+        # Mystery rounds schedule mystery notice + results submission
         svc = _make_scheduler_no_db()
         svc.schedule_round(_mystery_round())
-        assert svc._scheduler.add_job.call_count == 1
+        assert svc._scheduler.add_job.call_count == 2
 
     def test_job_id_is_mystery_r(self):
         svc = _make_scheduler_no_db()
         svc.schedule_round(_mystery_round(round_id=42))
-        job_id = svc._scheduler.add_job.call_args.kwargs.get("id")
+        # First call is the mystery notice job
+        job_id = svc._scheduler.add_job.call_args_list[0].kwargs.get("id")
         assert job_id == "mystery_r42"
 
     def test_no_phase_jobs_created(self):
         svc = _make_scheduler_no_db()
         svc.schedule_round(_mystery_round())
-        job_id = svc._scheduler.add_job.call_args.kwargs.get("id", "")
-        assert job_id.startswith("mystery_r")
-        assert "phase" not in job_id
+        job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
+        assert any(jid.startswith("mystery_r") for jid in job_ids)
+        assert not any("phase" in jid for jid in job_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -119,11 +121,12 @@ class TestCancelRoundIncludesMystery:
         assert "phase2_r7" in removed
         assert "phase3_r7" in removed
 
-    def test_removes_four_job_ids_total(self):
+    def test_removes_nine_job_ids_total(self):
         svc = _make_scheduler_no_db()
         svc.cancel_round(7)
-        # phase1, phase2, phase3, mystery, cleanup, results = 6 job IDs
-        assert svc._scheduler.remove_job.call_count == 6
+        # phase1, phase2, phase3, mystery, cleanup, results,
+        # rsvp_notice, rsvp_last_notice, rsvp_deadline = 9 job IDs
+        assert svc._scheduler.remove_job.call_count == 9
 
 
 # ---------------------------------------------------------------------------

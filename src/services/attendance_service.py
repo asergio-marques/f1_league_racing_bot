@@ -1,8 +1,14 @@
 """AttendanceService — read/write attendance module configuration."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from db.database import get_connection
-from models.attendance import AttendanceConfig, AttendanceDivisionConfig
+from models.attendance import (
+    AttendanceConfig,
+    AttendanceDivisionConfig,
+    DriverRoundAttendance,
+    RsvpEmbedMessage,
+)
 
 
 def validate_timing_invariant(
@@ -193,3 +199,175 @@ class AttendanceService:
                 (value, server_id),
             )
             await db.commit()
+
+    # ── driver_round_attendance CRUD ───────────────────────────────────────
+
+    async def bulk_insert_attendance_rows(
+        self,
+        round_id: int,
+        division_id: int,
+        driver_profile_ids: list[int],
+    ) -> None:
+        """Insert NO_RSVP rows for every driver in the list (ignore if already exists)."""
+        async with get_connection(self._db_path) as db:
+            await db.executemany(
+                """
+                INSERT OR IGNORE INTO driver_round_attendance
+                    (round_id, division_id, driver_profile_id)
+                VALUES (?, ?, ?)
+                """,
+                [(round_id, division_id, dp_id) for dp_id in driver_profile_ids],
+            )
+            await db.commit()
+
+    async def upsert_rsvp_status(
+        self,
+        round_id: int,
+        division_id: int,
+        driver_profile_id: int,
+        status: str,
+    ) -> None:
+        """Update rsvp_status and manage accepted_at per FR-022.
+
+        - Transitioning TO 'ACCEPTED': set accepted_at to current UTC time.
+        - Re-accepting after a non-ACCEPTED status: reset accepted_at to current UTC time.
+        - Transitioning AWAY from 'ACCEPTED': set accepted_at to NULL.
+        """
+        now_iso = datetime.now(timezone.utc).isoformat()
+        if status == "ACCEPTED":
+            async with get_connection(self._db_path) as db:
+                await db.execute(
+                    """
+                    UPDATE driver_round_attendance
+                       SET rsvp_status = ?,
+                           accepted_at = ?
+                     WHERE round_id = ?
+                       AND division_id = ?
+                       AND driver_profile_id = ?
+                    """,
+                    (status, now_iso, round_id, division_id, driver_profile_id),
+                )
+                await db.commit()
+        else:
+            async with get_connection(self._db_path) as db:
+                await db.execute(
+                    """
+                    UPDATE driver_round_attendance
+                       SET rsvp_status = ?,
+                           accepted_at = NULL
+                     WHERE round_id = ?
+                       AND division_id = ?
+                       AND driver_profile_id = ?
+                    """,
+                    (status, round_id, division_id, driver_profile_id),
+                )
+                await db.commit()
+
+    async def get_attendance_rows(
+        self,
+        round_id: int,
+        division_id: int,
+    ) -> list[DriverRoundAttendance]:
+        """Return all DRA rows for a (round, division) pair."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT * FROM driver_round_attendance WHERE round_id = ? AND division_id = ?",
+                (round_id, division_id),
+            )
+            rows = await cursor.fetchall()
+        return [_dra_from_row(r) for r in rows]
+
+    async def get_attendance_row_for_driver(
+        self,
+        round_id: int,
+        division_id: int,
+        driver_profile_id: int,
+    ) -> DriverRoundAttendance | None:
+        """Return the DRA row for a specific driver, or None if not found."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT * FROM driver_round_attendance
+                 WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?
+                """,
+                (round_id, division_id, driver_profile_id),
+            )
+            row = await cursor.fetchone()
+        return _dra_from_row(row) if row is not None else None
+
+    # ── rsvp_embed_messages CRUD ───────────────────────────────────────────
+
+    async def insert_embed_message(
+        self,
+        round_id: int,
+        division_id: int,
+        message_id: str,
+        channel_id: str,
+    ) -> None:
+        """Store (or replace) the RSVP embed message IDs for a (round, division) pair."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                """
+                INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, posted_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(round_id, division_id)
+                DO UPDATE SET message_id = excluded.message_id,
+                              channel_id = excluded.channel_id,
+                              posted_at  = excluded.posted_at
+                """,
+                (round_id, division_id, message_id, channel_id, now_iso),
+            )
+            await db.commit()
+
+    async def get_embed_message(
+        self,
+        round_id: int,
+        division_id: int,
+    ) -> RsvpEmbedMessage | None:
+        """Return the embed message row for a (round, division) pair, or None."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT * FROM rsvp_embed_messages WHERE round_id = ? AND division_id = ?",
+                (round_id, division_id),
+            )
+            row = await cursor.fetchone()
+        return _rem_from_row(row) if row is not None else None
+
+    async def get_all_embed_messages(self) -> list[RsvpEmbedMessage]:
+        """Return all rsvp_embed_messages rows unconditionally.
+
+        Locking is enforced at interaction time, not at view re-arm time.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute("SELECT * FROM rsvp_embed_messages")
+            rows = await cursor.fetchall()
+        return [_rem_from_row(r) for r in rows]
+
+
+# ── Row-to-dataclass helpers ───────────────────────────────────────────────
+
+
+def _dra_from_row(row: object) -> DriverRoundAttendance:
+    return DriverRoundAttendance(
+        id=row["id"],
+        round_id=row["round_id"],
+        division_id=row["division_id"],
+        driver_profile_id=row["driver_profile_id"],
+        rsvp_status=row["rsvp_status"],
+        accepted_at=row["accepted_at"],
+        assigned_team_id=row["assigned_team_id"],
+        is_standby=bool(row["is_standby"]),
+        attended=bool(row["attended"]) if row["attended"] is not None else None,
+    )
+
+
+def _rem_from_row(row: object) -> RsvpEmbedMessage:
+    return RsvpEmbedMessage(
+        id=row["id"],
+        round_id=row["round_id"],
+        division_id=row["division_id"],
+        message_id=row["message_id"],
+        channel_id=row["channel_id"],
+        posted_at=row["posted_at"],
+    )

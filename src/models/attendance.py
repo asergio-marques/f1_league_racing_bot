@@ -24,3 +24,26 @@ class AttendanceDivisionConfig:
     server_id: int
     rsvp_channel_id: str | None
     attendance_channel_id: str | None
+
+
+@dataclass
+class DriverRoundAttendance:
+    id: int
+    round_id: int
+    division_id: int
+    driver_profile_id: int
+    rsvp_status: str        # NO_RSVP | ACCEPTED | TENTATIVE | DECLINED
+    accepted_at: str | None
+    assigned_team_id: int | None
+    is_standby: bool
+    attended: bool | None   # None until results submitted (future increment)
+
+
+@dataclass
+class RsvpEmbedMessage:
+    id: int
+    round_id: int
+    division_id: int
+    message_id: str
+    channel_id: str
+    posted_at: str
