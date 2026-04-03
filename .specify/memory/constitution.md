@@ -1,6 +1,47 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-04-03 — v2.8.0 → v2.9.0: Track entity formalised + track/tier stats preparation]
+  Version change    : 2.8.0 → 2.9.0
+  Bump rationale    : MINOR — The Track registry has been a de-facto bot entity since v1.0.0
+                      (used for weather parameter resolution and round identification) but was
+                      never formally defined as a governed data entity. This amendment:
+                        1. Formally defines the Track entity in Data & State Management,
+                           expanding its documented dataset to include canonical name, country,
+                           circuit name, and weather defaults alongside the existing server-
+                           override mechanism.
+                        2. Notes that the Track entity is the authoritative lookup basis for
+                           future track-based and tier-based statistics derivable from
+                           SessionResult + Round data (Principle VI planned: season history
+                           and statistics).
+                      No new governance principle is required; the changes land entirely in
+                      Data & State Management and are a natural extension of the existing
+                      season/division lifecycle and future statistics roadmap.
+  Feature branch    : 030-track-data-expansion (created 2026-04-03 from main)
+  Session intent    : Expand the Track dataset (names, country, circuit identity) and enable
+                      track-based/tier-based stats queries in preparation for future modules.
+                      Minor finetuning to division commands to align with richer Track data.
+                      README to be updated as needed.
+  Modified principles: None
+  Added sections    :
+    - Data & State Management: New Entities (v2.9.0) — formal Track entity definition.
+  Removed sections  : None
+  Templates confirmed aligned:
+    ✅ .specify/templates/plan-template.md       — dynamic Constitution Check; no changes.
+    ✅ .specify/templates/spec-template.md       — generic structure; no stale references.
+    ✅ .specify/templates/tasks-template.md      — generic; aligns with I–XII.
+    ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+    ✅ .specify/templates/checklist-template.md  — no impact.
+  Deferred TODOs (carried from prior sessions):
+    - Exact command naming for appeal submission and review commands to be confirmed
+      against the 026-penalty-posting-appeals implementation.
+    - Whether the existing penalty wizard loose-text fields on DriverSessionResult
+      (post_race_time_penalties, post_stewarding_total_time) have been superseded by
+      PenaltyRecord rows — migration confirmation required.
+  Pending: speckit.specify to define exact scope of track entity expansion and division
+    command finetuning; constitution will be re-evaluated if any new governance requirements
+    are identified during that process.
+
 [2026-04-02 — Session start: Results & Weather improvements — feature branch created]
   - Constitution footer corrected from v2.7.0 to v2.8.0. The body already contained
     v2.8.0 amendments (New Entities v2.8.0, Principle XI v2.8.0 notes) applied during the
@@ -1715,6 +1756,41 @@ for team-level aggregates):
   appeal outcomes for this division are posted to this channel; if null, the bot falls
   back to `results_channel_id`.
 
+### New Entities (v2.9.0)
+
+**Track** (bot-packaged static registry — 27 circuits as of this version):
+
+The Track registry is the authoritative lookup table for all circuit data used across
+rounds, weather generation, and future statistics. Each entry is bot-packaged and
+immutable at the registry level; individual weather parameters may be overridden
+per server via the `track_rpc_params` DB table (`/track config`).
+
+Fields per track entry:
+
+- `track_id` (TEXT — zero-padded two-digit string, e.g. `"01"`, `"27"`; stable PK within
+  the registry; referenced by rounds and by autocomplete commands).
+- `canonical_name` (TEXT — the short display name used in all bot output, e.g.
+  `"United Kingdom"`, `"Las Vegas"`).
+- `country` (TEXT — the country or territory in which the circuit is located, e.g.
+  `"Great Britain"`, `"United States"`).
+- `circuit_name` (TEXT — the formal circuit/venue name, e.g. `"Silverstone Circuit"`,
+  `"Las Vegas Strip Circuit"`).
+- `mu_default` (REAL — bot-packaged mean rain probability; fractional 0–1).
+- `sigma_default` (REAL — bot-packaged Beta dispersion; fractional 0–1).
+
+The effective `(mu, sigma)` pair resolved at Phase 1 is: the server override stored in
+`track_rpc_params` if present; otherwise `(mu_default, sigma_default)`.
+
+**Track-based and tier-based statistics** (future module preparation):
+
+Track-based stats (e.g., a driver's finishing positions or points scored at a specific
+circuit) are derivable by joining `DriverSessionResult` → `SessionResult` → `Round`
+→ `Track`. Tier-based stats (e.g., aggregated performance within a specific division tier)
+are derivable by further joining via `Division.tier`. No additional entity is introduced
+at this governance layer; the `Track` entity formalisation and the existing `Division.tier`
+column are the authoritative structural prerequisites for these queries in the planned
+"Season history and statistics" module (Principle VI).
+
 ### New Entities (v2.8.0)
 
 *Amendment to Division (v1.0 entity, updated v2.8.0)*:
@@ -1775,4 +1851,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.8.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-04-02
+**Version**: 2.9.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-04-03
