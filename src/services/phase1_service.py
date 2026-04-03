@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from db.database import get_connection
-from models.track import get_effective_rpc_params
 from utils.math_utils import compute_rpc_beta
 from utils.message_builder import phase1_message, phase_log_message
 
@@ -50,28 +49,25 @@ async def run_phase1(round_id: int, bot: "Bot") -> None:
         log.error("Phase 1: round %s has no track_name", round_id)
         return
 
-    # --- Resolve effective (mu, sigma) — server override > packaged default ---
+    # --- Resolve (mu, sigma) from the tracks table (migration 029+) ---
     async with get_connection(bot.db_path) as db:
-        override_cursor = await db.execute(
-            "SELECT mu_rain_pct, sigma_rain_pct FROM track_rpc_params WHERE track_name = ?",
+        track_cursor = await db.execute(
+            "SELECT mu, sigma FROM tracks WHERE name = ?",
             (track_name,),
         )
-        override_row = await override_cursor.fetchone()
+        track_row = await track_cursor.fetchone()
 
-    override_mu = override_row["mu_rain_pct"] if override_row else None
-    override_sigma = override_row["sigma_rain_pct"] if override_row else None
-
-    try:
-        mu, sigma = get_effective_rpc_params(track_name, override_mu, override_sigma)
-    except ValueError as exc:
-        # FR-015: no packaged default AND no server override — block Phase 1
+    if track_row is None:
         err_msg = (
-            f"\u26a0\ufe0f Phase 1 BLOCKED for round {round_id} ({track_name}): {exc} "
-            "Please run `/track config` for this track before the T\u22125d window expires."
+            f"\u26a0\ufe0f Phase 1 BLOCKED for round {round_id} ({track_name}): "
+            "no track row found in the database — check that migration 029 has run."
         )
         log.error(err_msg)
         await bot.output_router.post_log(row["server_id"], err_msg)
         return
+
+    mu = track_row["mu"]
+    sigma = track_row["sigma"]
 
     # --- Draw Rpc from Beta distribution ---
     try:

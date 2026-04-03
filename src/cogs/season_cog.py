@@ -34,7 +34,7 @@ from db.database import get_connection
 from models.division import Division
 from models.round import RoundFormat
 from services import season_points_service
-from models.track import TRACK_DEFAULTS, TRACK_IDS
+import services.track_service as track_service
 from services.season_service import SeasonImmutableError
 from utils.channel_guard import channel_guard, admin_only
 from utils.message_builder import format_division_list, format_round_list, format_roster_block
@@ -824,6 +824,129 @@ class SeasonCog(commands.Cog):
         )
 
     @division.command(
+        name="amend",
+        description="Amend a division's name, tier, or role during season setup.",
+    )
+    @app_commands.describe(
+        name="Current name of the division",
+        new_name="New name for the division (optional)",
+        tier="New tier number (optional, must be unique within this season)",
+        role="New Discord role (optional)",
+    )
+    @channel_guard
+    @admin_only
+    async def division_amend(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        new_name: str | None = None,
+        tier: int | None = None,
+        role: discord.Role | None = None,
+    ) -> None:
+        import json as _json
+
+        if new_name is None and tier is None and role is None:
+            await interaction.response.send_message(
+                "\u274c Provide at least one of: `new_name`, `tier`, `role`.",
+                ephemeral=True,
+            )
+            return
+
+        season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
+        if season_id is None:
+            await interaction.response.send_message(
+                "\u274c `/division amend` is only permitted during season setup.",
+                ephemeral=True,
+            )
+            return
+
+        divisions = await self.bot.season_service.get_divisions(season_id)
+        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
+        if div is None:
+            await interaction.response.send_message(
+                f"\u274c Division `{name}` not found.",
+                ephemeral=True,
+            )
+            return
+
+        if new_name is not None and any(
+            d.name.lower() == new_name.lower() for d in divisions if d.id != div.id
+        ):
+            await interaction.response.send_message(
+                f"\u274c A division named **{new_name}** already exists.",
+                ephemeral=True,
+            )
+            return
+
+        old_value = _json.dumps({
+            "name": div.name,
+            "tier": div.tier,
+            "mention_role_id": div.mention_role_id,
+        })
+
+        set_clauses: list[str] = []
+        params: list = []
+        if new_name is not None:
+            set_clauses.append("name = ?")
+            params.append(new_name)
+        if tier is not None:
+            set_clauses.append("tier = ?")
+            params.append(tier)
+        if role is not None:
+            set_clauses.append("mention_role_id = ?")
+            params.append(role.id)
+        params.append(div.id)
+
+        new_value = _json.dumps({
+            "name": new_name if new_name is not None else div.name,
+            "tier": tier if tier is not None else div.tier,
+            "mention_role_id": role.id if role is not None else div.mention_role_id,
+        })
+        now = datetime.now(timezone.utc).isoformat()
+
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            await db.execute(
+                f"UPDATE divisions SET {', '.join(set_clauses)} WHERE id = ?",
+                params,
+            )
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, ?, 'DIVISION_AMENDED', ?, ?, ?)",
+                (
+                    interaction.guild_id,
+                    interaction.user.id,
+                    str(interaction.user),
+                    div.id,
+                    old_value,
+                    new_value,
+                    now,
+                ),
+            )
+            await db.commit()
+
+        cfg = self._get_pending_for_server(interaction.guild_id)
+        if cfg is not None:
+            await self._reload_pending_from_db(cfg)
+
+        updated_divisions = await self.bot.season_service.get_divisions(season_id)
+        await interaction.response.send_message(
+            f"\u2705 Division **{name}** amended.\n\n"
+            + format_division_list(updated_divisions),
+            ephemeral=True,
+        )
+
+        log_parts = [f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division amend | Success",
+                     f"  division: {name}"]
+        if new_name is not None:
+            log_parts.append(f"  new_name: {new_name}")
+        if tier is not None:
+            log_parts.append(f"  tier: {tier}")
+        if role is not None:
+            log_parts.append(f"  role: {role.name}")
+        await self.bot.output_router.post_log(interaction.guild_id, "\n".join(log_parts))
+
+    @division.command(
         name="cancel",
         description="Cancel a division in the active season (irreversible).",
     )
@@ -1314,15 +1437,21 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if track_name and track_name not in TRACK_DEFAULTS:
-            track_name = TRACK_IDS.get(track_name.zfill(2), track_name)
-        if track_name and track_name not in TRACK_DEFAULTS:
-            await interaction.response.send_message(
-                f"\u274c Unknown track `{track_name}`.\n"
-                "Use `/round add` and type a number or name \u2014 autocomplete will guide you.",
-                ephemeral=True,
-            )
-            return
+        if track_name:
+            async with get_connection(self.bot.db_path) as _tdb:
+                if track_name.isdigit():
+                    _tcur = await _tdb.execute("SELECT name FROM tracks WHERE id = ?", (int(track_name),))
+                else:
+                    _tcur = await _tdb.execute("SELECT name FROM tracks WHERE name = ?", (track_name,))
+                _trow = await _tcur.fetchone()
+            if _trow is None:
+                await interaction.response.send_message(
+                    f"\u274c Unknown track `{track_name}`.\n"
+                    "Use `/round add` and type a number or name \u2014 autocomplete will guide you.",
+                    ephemeral=True,
+                )
+                return
+            track_name = _trow["name"]
 
         try:
             sched = datetime.fromisoformat(scheduled_at)
@@ -1389,10 +1518,12 @@ class SeasonCog(commands.Cog):
         current: str,
     ) -> list[app_commands.Choice[str]]:
         results: list[app_commands.Choice[str]] = []
-        for id_str, name in TRACK_IDS.items():
-            label = f"{id_str} \u2013 {name}"
+        async with get_connection(self.bot.db_path) as _tdb:
+            _tracks = await track_service.get_all_tracks(_tdb)
+        for r in _tracks:
+            label = f"{r['id']:02d} \u2013 {r['name']}"
             if current.lower() in label.lower():
-                results.append(app_commands.Choice(name=label, value=name))
+                results.append(app_commands.Choice(name=label, value=r["name"]))
         return results[:25]
 
     @round.command(
@@ -1451,14 +1582,19 @@ class SeasonCog(commands.Cog):
 
             new_track: str | None = ...
             if track:
-                resolved = TRACK_IDS.get(track.zfill(2), track)
-                if resolved not in TRACK_DEFAULTS:
+                async with get_connection(self.bot.db_path) as _tdb:
+                    if track.isdigit():
+                        _tcur = await _tdb.execute("SELECT name FROM tracks WHERE id = ?", (int(track),))
+                    else:
+                        _tcur = await _tdb.execute("SELECT name FROM tracks WHERE name = ?", (track,))
+                    _trow = await _tcur.fetchone()
+                if _trow is None:
                     await interaction.response.send_message(
                         f"\u274c Unknown track `{track}`. Use autocomplete to pick a valid track.",
                         ephemeral=True,
                     )
                     return
-                new_track = resolved
+                new_track = _trow["name"]
 
             new_dt = ...
             if scheduled_at:
@@ -1560,14 +1696,19 @@ class SeasonCog(commands.Cog):
         amendments: list[tuple[str, object]] = []
 
         if track:
-            resolved = TRACK_IDS.get(track.zfill(2), track)
-            if resolved not in TRACK_DEFAULTS:
+            async with get_connection(self.bot.db_path) as _tdb:
+                if track.isdigit():
+                    _tcur = await _tdb.execute("SELECT name FROM tracks WHERE id = ?", (int(track),))
+                else:
+                    _tcur = await _tdb.execute("SELECT name FROM tracks WHERE name = ?", (track,))
+                _trow = await _tcur.fetchone()
+            if _trow is None:
                 await interaction.response.send_message(
                     f"\u274c Unknown track `{track}`. Use autocomplete to pick a valid track.",
                     ephemeral=True,
                 )
                 return
-            amendments.append(("track_name", resolved))
+            amendments.append(("track_name", _trow["name"]))
 
         if scheduled_at:
             try:
@@ -1611,10 +1752,12 @@ class SeasonCog(commands.Cog):
         current: str,
     ) -> list[app_commands.Choice[str]]:
         results: list[app_commands.Choice[str]] = []
-        for id_str, name in TRACK_IDS.items():
-            label = f"{id_str} \u2013 {name}"
+        async with get_connection(self.bot.db_path) as _tdb:
+            _tracks = await track_service.get_all_tracks(_tdb)
+        for r in _tracks:
+            label = f"{r['id']:02d} \u2013 {r['name']}"
             if current.lower() in label.lower():
-                results.append(app_commands.Choice(name=label, value=name))
+                results.append(app_commands.Choice(name=label, value=r["name"]))
         return results[:25]
 
     @round.command(

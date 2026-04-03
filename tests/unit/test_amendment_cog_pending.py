@@ -71,15 +71,28 @@ def _make_cog(pending_cfg: PendingConfig | None) -> tuple[SeasonCog, MagicMock]:
 
 async def test_pending_amend_track_change() -> None:
     """T006-1: Track amendment updates the round dict in-memory."""
+    from unittest.mock import patch, AsyncMock, MagicMock
+
     pending = _make_pending()
     cog, _ = _make_cog(pending)
     interaction = _make_interaction()
 
-    await cog.round_amend.callback.__wrapped__.__wrapped__(cog, interaction,
-        division_name="Pro",
-        round_number=1,
-        track="Australia",
-    )
+    # Mock the DB track lookup to return the canonical name
+    mock_row = {"name": "Australia"}
+    mock_cursor = AsyncMock()
+    mock_cursor.fetchone = AsyncMock(return_value=mock_row)
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock(return_value=mock_cursor)
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
+    mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("cogs.season_cog.get_connection", return_value=mock_cm):
+        await cog.round_amend.callback.__wrapped__.__wrapped__(cog, interaction,
+            division_name="Pro",
+            round_number=1,
+            track="Australia",
+        )
 
     div = pending.divisions[0]
     rnd = next(r for r in div.rounds if r["round_number"] == 1)

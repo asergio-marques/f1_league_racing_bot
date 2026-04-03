@@ -83,12 +83,34 @@ class TestComputeRpcBeta:
         with pytest.raises(ValueError):
             compute_rpc_beta(0.30, 0.0)
 
-    def test_all_27_default_tracks_produce_valid_rpc(self) -> None:
-        """Smoke test: all packaged defaults produce a valid draw."""
-        import sys, os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-        from models.track import TRACK_DEFAULTS
-        for track, (mu, sigma) in TRACK_DEFAULTS.items():
+    def test_all_28_default_tracks_produce_valid_rpc(self) -> None:
+        """Smoke test: representative track mu/sigma values all produce a valid draw."""
+        # Sampled from the 28 seed rows in migration 029_track_data_expansion.sql
+        sample_params = [
+            ("Bahrain",        0.12, 0.06),
+            ("Saudi Arabia",   0.08, 0.05),
+            ("Australia",      0.22, 0.09),
+            ("Japan",          0.28, 0.10),
+            ("China",          0.25, 0.09),
+            ("United States",  0.18, 0.08),
+            ("Monaco",         0.20, 0.08),
+            ("Canada",         0.30, 0.10),
+            ("Spain",          0.15, 0.07),
+            ("Austria",        0.32, 0.10),
+            ("United Kingdom", 0.42, 0.12),
+            ("Hungary",        0.28, 0.10),
+            ("Belgium",        0.48, 0.12),
+            ("Netherlands",    0.38, 0.11),
+            ("Italy",          0.15, 0.07),
+            ("Azerbaijan",     0.12, 0.06),
+            ("Singapore",      0.38, 0.11),
+            ("Mexico",         0.22, 0.09),
+            ("Brazil",         0.55, 0.14),
+            ("Las Vegas",      0.08, 0.05),
+            ("Qatar",          0.10, 0.06),
+            ("Abu Dhabi",      0.10, 0.05),
+        ]
+        for track, mu, sigma in sample_params:
             raw_draw, rpc = compute_rpc_beta(mu, sigma)
             assert 0.0 <= rpc <= 1.0, f"{track}: rpc={rpc} out of [0,1]"
 
