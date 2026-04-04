@@ -37,3 +37,14 @@ async def get_track_by_name(db: "aiosqlite.Connection", name: str):
     )
     return await cursor.fetchone()
 
+
+async def get_track_name_map(db: "aiosqlite.Connection") -> dict[str, str]:
+    """Return a ``{str(id): name}`` mapping for all track rows.
+
+    Keys are plain integer strings (e.g. ``"1"``, ``"12"``).
+    Used by cogs and services that store track IDs as strings.
+    """
+    cursor = await db.execute("SELECT id, name FROM tracks ORDER BY id")
+    rows = await cursor.fetchall()
+    return {str(r["id"]): r["name"] for r in rows}
+
