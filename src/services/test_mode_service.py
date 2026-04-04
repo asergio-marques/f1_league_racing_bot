@@ -180,8 +180,44 @@ async def get_next_pending_phase(
 
     # ── Primary: scheduler job store ────────────────────────────────────────
     pending_jobs = scheduler_service.get_pending_advance_jobs(round_ids)
+
+    # Fetch results_module_enabled early — needed in both the scheduler and fallback paths.
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT module_enabled FROM results_module_config WHERE server_id = ?",
+            (server_id,),
+        )
+        rmc_row = await cursor.fetchone()
+    results_module_enabled = bool(rmc_row[0]) if rmc_row else False
+
     if pending_jobs:
         job = pending_jobs[0]
+        # Before returning this scheduler job, check if an earlier round (by
+        # scheduled_at) has a pending result submission.  Result submission is
+        # excluded from the scheduler job list, so without this check the RSVP
+        # phases of round N+1 would be returned before round N's results are done.
+        if results_module_enabled:
+            first_job_idx = next(
+                (i for i, r in enumerate(rows) if r["round_id"] == job["round_id"]),
+                len(rows),
+            )
+            for row in rows[:first_job_idx]:
+                is_mystery = str(row["format"]).upper() == "MYSTERY"
+                if is_mystery and not row["phase1_done"]:
+                    continue
+                if row["round_id"] in rounds_with_results:
+                    continue
+                if await is_round_finalized(db_path, row["round_id"]):
+                    continue
+                return PhaseEntry(
+                    round_id=row["round_id"],
+                    round_number=row["round_number"],
+                    division_id=row["division_id"],
+                    phase_number=4,
+                    track_name=row["track_name"] or ("Mystery" if is_mystery else "Unknown"),
+                    division_name=row["division_name"],
+                    job_id=None,
+                )
         rnd = round_info[job["round_id"]]
         is_mystery = str(rnd["format"]).upper() == "MYSTERY"
         return PhaseEntry(
@@ -202,14 +238,6 @@ async def get_next_pending_phase(
     # A round needs results when the results module is enabled, all applicable
     # scheduler-backed work is done (no pending jobs above), and no ACTIVE
     # session_result exists for it.
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT module_enabled FROM results_module_config WHERE server_id = ?",
-            (server_id,),
-        )
-        rmc_row = await cursor.fetchone()
-    results_module_enabled = bool(rmc_row[0]) if rmc_row else False
-
     if results_module_enabled:
         for row in rows:
             is_mystery = str(row["format"]).upper() == "MYSTERY"

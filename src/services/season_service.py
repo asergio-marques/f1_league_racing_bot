@@ -254,11 +254,50 @@ class SeasonService:
 
                 # Cascade-delete the old SETUP season manually (no ON DELETE CASCADE on
                 # seasons/divisions, though division_results_config does have it).
-                # Clean up team_instances/team_seats first to avoid orphaned rows.
+                # Clean up test drivers, driver_season_assignments, team_instances/team_seats
+                # first to avoid FK violations.
                 for div_row in div_rows:
+                    old_div_id = div_row[0]
+
+                    # Remove any test driver profiles (and their season assignments/seats)
+                    # that were placed in this division during SETUP.
+                    cursor2 = await db.execute(
+                        """
+                        SELECT dp.id AS profile_id
+                        FROM driver_profiles dp
+                        JOIN team_seats ts ON ts.driver_profile_id = dp.id
+                        JOIN team_instances ti ON ti.id = ts.team_instance_id
+                        WHERE ti.division_id = ? AND dp.is_test_driver = 1
+                        """,
+                        (old_div_id,),
+                    )
+                    test_profile_rows = await cursor2.fetchall()
+                    if test_profile_rows:
+                        test_ids = [r[0] for r in test_profile_rows]
+                        ph = ",".join("?" * len(test_ids))
+                        await db.execute(
+                            f"DELETE FROM driver_season_assignments WHERE driver_profile_id IN ({ph})",
+                            test_ids,
+                        )
+                        await db.execute(
+                            f"UPDATE team_seats SET driver_profile_id = NULL "
+                            f"WHERE driver_profile_id IN ({ph})",
+                            test_ids,
+                        )
+                        await db.execute(
+                            f"DELETE FROM driver_profiles WHERE id IN ({ph})",
+                            test_ids,
+                        )
+
+                    # Remove any real driver_season_assignments for this division
+                    await db.execute(
+                        "DELETE FROM driver_season_assignments WHERE division_id = ?",
+                        (old_div_id,),
+                    )
+
                     cursor2 = await db.execute(
                         "SELECT id FROM team_instances WHERE division_id = ?",
-                        (div_row[0],),
+                        (old_div_id,),
                     )
                     inst_rows = await cursor2.fetchall()
                     for inst_row in inst_rows:
@@ -267,10 +306,10 @@ class SeasonService:
                             (inst_row[0],),
                         )
                     await db.execute(
-                        "DELETE FROM team_instances WHERE division_id = ?", (div_row[0],)
+                        "DELETE FROM team_instances WHERE division_id = ?", (old_div_id,)
                     )
                     await db.execute(
-                        "DELETE FROM rounds WHERE division_id = ?", (div_row[0],)
+                        "DELETE FROM rounds WHERE division_id = ?", (old_div_id,)
                     )
                 await db.execute(
                     "DELETE FROM divisions WHERE season_id = ?", (existing_season_id,)
