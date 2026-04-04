@@ -1,11 +1,17 @@
 """AttendanceService — read/write attendance module configuration."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+import discord
+
 from db.database import get_connection
 from models.attendance import (
     AttendanceConfig,
     AttendanceDivisionConfig,
+    AttendancePardon,
     DriverRoundAttendance,
     RsvpEmbedMessage,
 )
@@ -102,6 +108,7 @@ class AttendanceService:
             server_id=row["server_id"],
             rsvp_channel_id=row["rsvp_channel_id"],
             attendance_channel_id=row["attendance_channel_id"],
+            attendance_message_id=row["attendance_message_id"],
         )
 
     async def set_rsvp_channel(
@@ -359,6 +366,8 @@ def _dra_from_row(row: object) -> DriverRoundAttendance:
         assigned_team_id=row["assigned_team_id"],
         is_standby=bool(row["is_standby"]),
         attended=bool(row["attended"]) if row["attended"] is not None else None,
+        points_awarded=row["points_awarded"],
+        total_points_after=row["total_points_after"],
     )
 
 
@@ -371,3 +380,534 @@ def _rem_from_row(row: object) -> RsvpEmbedMessage:
         channel_id=row["channel_id"],
         posted_at=row["posted_at"],
     )
+
+
+log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Attendance pipeline — new functions added by 033-attendance-tracking
+# ---------------------------------------------------------------------------
+
+async def record_attendance_from_results(
+    db_path: str,
+    round_id: int,
+    division_id: int,
+) -> None:
+    """Populate attended flag for every full-time driver in the division (FR-001–FR-004).
+
+    - drivers seated in the Reserve team for this round are skipped (FR-002).
+    - upgrade-only when called during progressive session submission (FR-003): a driver
+      already marked attended=1 is never reverted.
+    - during amendment recalculation this function is still called the same way but the
+      caller is responsible for passing updated DriverSessionResult rows (FR-028).
+    """
+    async with get_connection(db_path) as db:
+        # Set of driver_profile_ids who have any result row for this round.
+        # Outcome modifier is irrelevant — any row counts as attended (DSQ/DNS included).
+        cursor = await db.execute(
+            """
+            SELECT DISTINCT dp.driver_profile_id
+            FROM driver_session_results dp
+            JOIN session_results sr ON sr.id = dp.session_result_id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND dp.is_superseded = 0
+            """,
+            (round_id,),
+        )
+        attended_rows = await cursor.fetchall()
+        attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
+
+        # Full-time DRA rows for this round: exclude drivers in the Reserve team (FR-002).
+        cursor = await db.execute(
+            """
+            SELECT dra.id, dra.driver_profile_id, dra.attended
+            FROM driver_round_attendance dra
+            JOIN driver_season_assignments dsa
+                ON dsa.driver_profile_id = dra.driver_profile_id
+            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            WHERE dra.round_id = ?
+              AND dra.division_id = ?
+              AND ti.division_id = ?
+              AND ti.is_reserve = 0
+            """,
+            (round_id, division_id, division_id),
+        )
+        dra_rows = await cursor.fetchall()
+
+        for row in dra_rows:
+            dra_id = row["id"]
+            profile_id = row["driver_profile_id"]
+            current_attended = row["attended"]
+
+            if profile_id in attended_ids:
+                # Only write if upgrading NULL → 1 or 0 → 1 (FR-003).
+                if current_attended != 1:
+                    await db.execute(
+                        "UPDATE driver_round_attendance SET attended = 1 WHERE id = ?",
+                        (dra_id,),
+                    )
+            else:
+                # Only write if currently NULL — never revert 1 → 0 (FR-003).
+                if current_attended is None:
+                    await db.execute(
+                        "UPDATE driver_round_attendance SET attended = 0 WHERE id = ?",
+                        (dra_id,),
+                    )
+        await db.commit()
+
+
+async def record_attendance_from_results_full_recompute(
+    db_path: str,
+    round_id: int,
+    division_id: int,
+) -> None:
+    """Recompute attended flags without the upgrade-only constraint (FR-028/amendment).
+
+    Used exclusively by recalculate_attendance_for_round so that a deliberate result
+    correction can flip attended in either direction.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT DISTINCT dp.driver_profile_id
+            FROM driver_session_results dp
+            JOIN session_results sr ON sr.id = dp.session_result_id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND dp.is_superseded = 0
+            """,
+            (round_id,),
+        )
+        attended_rows = await cursor.fetchall()
+        attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
+
+        cursor = await db.execute(
+            """
+            SELECT dra.id, dra.driver_profile_id
+            FROM driver_round_attendance dra
+            JOIN driver_season_assignments dsa
+                ON dsa.driver_profile_id = dra.driver_profile_id
+            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            WHERE dra.round_id = ?
+              AND dra.division_id = ?
+              AND ti.division_id = ?
+              AND ti.is_reserve = 0
+            """,
+            (round_id, division_id, division_id),
+        )
+        dra_rows = await cursor.fetchall()
+
+        for row in dra_rows:
+            new_val = 1 if row["driver_profile_id"] in attended_ids else 0
+            await db.execute(
+                "UPDATE driver_round_attendance SET attended = ? WHERE id = ?",
+                (new_val, row["id"]),
+            )
+        await db.commit()
+
+
+async def distribute_attendance_points(
+    db_path: str,
+    round_id: int,
+    division_id: int,
+) -> None:
+    """Compute and persist points_awarded and total_points_after for every full-time
+    driver in the division for this round (FR-012–FR-015).
+    """
+    async with get_connection(db_path) as db:
+        # Load penalty config for this division's server.
+        cursor = await db.execute(
+            """
+            SELECT ac.no_rsvp_penalty, ac.no_attend_penalty, ac.no_show_penalty
+            FROM attendance_config ac
+            JOIN seasons s ON s.server_id = ac.server_id
+            JOIN divisions d ON d.season_id = s.id
+            WHERE d.id = ?
+            """,
+            (division_id,),
+        )
+        cfg_row = await cursor.fetchone()
+        if cfg_row is None:
+            log.warning("distribute_attendance_points: no attendance_config for division %s", division_id)
+            return
+
+        no_rsvp_pen: int = cfg_row["no_rsvp_penalty"] or 0
+        no_attend_pen: int = cfg_row["no_attend_penalty"] or 0
+        no_show_pen: int = cfg_row["no_show_penalty"] or 0
+
+        # Load full-time DRA rows for this round.
+        cursor = await db.execute(
+            """
+            SELECT dra.id, dra.driver_profile_id, dra.rsvp_status, dra.attended
+            FROM driver_round_attendance dra
+            JOIN driver_season_assignments dsa
+                ON dsa.driver_profile_id = dra.driver_profile_id
+            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            WHERE dra.round_id = ?
+              AND dra.division_id = ?
+              AND ti.division_id = ?
+              AND ti.is_reserve = 0
+              AND dra.attended IS NOT NULL
+            """,
+            (round_id, division_id, division_id),
+        )
+        dra_rows = await cursor.fetchall()
+
+        for row in dra_rows:
+            dra_id = row["id"]
+            rsvp = row["rsvp_status"]
+            attended = bool(row["attended"])
+
+            # Compute base points before pardons (US3 rules table).
+            base = 0
+            if rsvp == "NO_RSVP":
+                base = no_rsvp_pen + (no_attend_pen if not attended else 0)
+            elif rsvp == "ACCEPTED" and not attended:
+                base = no_show_pen
+            # TENTATIVE/DECLINED + no-show = 0 points
+
+            # Load pardons for this DRA row.
+            c2 = await db.execute(
+                "SELECT pardon_type FROM attendance_pardons WHERE attendance_id = ?",
+                (dra_id,),
+            )
+            pardons = {r["pardon_type"] for r in await c2.fetchall()}
+
+            # Apply pardons — each waives its matching component.
+            net = base
+            if "NO_RSVP" in pardons:
+                net -= no_rsvp_pen
+            if "NO_ATTEND" in pardons:
+                net -= no_attend_pen
+            if "NO_SHOW" in pardons:
+                net -= no_show_pen
+            net = max(0, net)  # never negative
+
+            # Compute cumulative total across all finalized rounds in division.
+            c3 = await db.execute(
+                """
+                SELECT COALESCE(SUM(dra2.points_awarded), 0) AS prior_total
+                FROM driver_round_attendance dra2
+                JOIN rounds r ON r.id = dra2.round_id
+                WHERE dra2.driver_profile_id = ?
+                  AND dra2.division_id = ?
+                  AND r.result_status IN ('POST_RACE_PENALTY', 'FINAL')
+                  AND dra2.round_id != ?
+                  AND dra2.points_awarded IS NOT NULL
+                """,
+                (row["driver_profile_id"], division_id, round_id),
+            )
+            prior_row = await c3.fetchone()
+            prior_total: int = prior_row["prior_total"] if prior_row else 0
+            total_after = prior_total + net
+
+            await db.execute(
+                """
+                UPDATE driver_round_attendance
+                SET points_awarded = ?, total_points_after = ?
+                WHERE id = ?
+                """,
+                (net, total_after, dra_id),
+            )
+        await db.commit()
+
+
+async def post_attendance_sheet(
+    bot,
+    guild: discord.Guild,
+    db_path: str,
+    round_id: int,
+    division_id: int,
+) -> None:
+    """Delete prior sheet and post a new one to the division's attendance channel (FR-016–FR-021)."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT * FROM attendance_division_config WHERE division_id = ?",
+            (division_id,),
+        )
+        row = await cursor.fetchone()
+
+    if row is None or not row["attendance_channel_id"]:
+        log.warning("post_attendance_sheet: no attendance_channel_id configured for division %s", division_id)
+        return
+
+    channel_id = int(row["attendance_channel_id"])
+    prior_msg_id = row["attendance_message_id"]
+
+    channel = guild.get_channel(channel_id)
+    if channel is None:
+        log.warning("post_attendance_sheet: channel %s not found for division %s", channel_id, division_id)
+        return
+
+    # Delete prior sheet message (FR-020).
+    if prior_msg_id:
+        try:
+            prior_msg = await channel.fetch_message(int(prior_msg_id))
+            await prior_msg.delete()
+        except discord.NotFound:
+            pass  # already gone — skip silently (FR-020)
+        except discord.HTTPException as exc:
+            log.warning("post_attendance_sheet: failed to delete prior message: %s", exc)
+
+    # Build sheet content.
+    async with get_connection(db_path) as db:
+        # Full-time drivers sorted by total_points_after DESC, then display name.
+        cursor = await db.execute(
+            """
+            SELECT dra.driver_profile_id, dra.total_points_after,
+                   dp.discord_user_id
+            FROM driver_round_attendance dra
+            JOIN driver_season_assignments dsa
+                ON dsa.driver_profile_id = dra.driver_profile_id
+            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
+            WHERE dra.round_id = ?
+              AND dra.division_id = ?
+              AND ti.division_id = ?
+              AND ti.is_reserve = 0
+              AND dra.total_points_after IS NOT NULL
+            """,
+            (round_id, division_id, division_id),
+        )
+        driver_rows = await cursor.fetchall()
+
+        cursor2 = await db.execute(
+            """
+            SELECT ac.autoreserve_threshold, ac.autosack_threshold
+            FROM attendance_config ac
+            JOIN seasons s ON s.server_id = ac.server_id
+            JOIN divisions d ON d.season_id = s.id
+            WHERE d.id = ?
+            """,
+            (division_id,),
+        )
+        cfg_row = await cursor2.fetchone()
+
+    # Sort: descending total_points_after, then alphabetical by display name.
+    def _sort_key(r):
+        member = guild.get_member(int(r["discord_user_id"]))
+        display = member.display_name if member else str(r["discord_user_id"])
+        return (-(r["total_points_after"] or 0), display.lower())
+
+    sorted_drivers = sorted(driver_rows, key=_sort_key)
+
+    lines: list[str] = ["**Attendance Standings**", ""]
+    for r in sorted_drivers:
+        pts = r["total_points_after"] or 0
+        lines.append(f"<@{r['discord_user_id']}> — {pts} attendance point{'s' if pts != 1 else ''}")
+
+    # Footer (FR-019).
+    footer_lines: list[str] = []
+    if cfg_row:
+        ar = cfg_row["autoreserve_threshold"]
+        as_ = cfg_row["autosack_threshold"]
+        if ar:
+            footer_lines.append(f"Drivers who reach {ar} points will be moved to reserve.")
+        if as_:
+            footer_lines.append(f"Drivers who reach {as_} points will be removed from all driving roles in all divisions.")
+
+    if footer_lines:
+        lines.append("")
+        lines.extend(footer_lines)
+
+    content = "\n".join(lines)
+
+    # Post new sheet and persist message ID (FR-021).
+    try:
+        new_msg = await channel.send(content)
+    except discord.HTTPException as exc:
+        log.warning("post_attendance_sheet: failed to post sheet for division %s: %s", division_id, exc)
+        return
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE attendance_division_config SET attendance_message_id = ? WHERE division_id = ?",
+            (str(new_msg.id), division_id),
+        )
+        await db.commit()
+
+
+async def enforce_attendance_sanctions(
+    bot,
+    guild: discord.Guild,
+    db_path: str,
+    round_id: int,
+    division_id: int,
+    server_id: int,
+    season_id: int,
+) -> None:
+    """Evaluate every full-time driver against autosack/autoreserve thresholds (FR-022–FR-027)."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT autoreserve_threshold, autosack_threshold FROM attendance_config WHERE server_id = ?",
+            (server_id,),
+        )
+        cfg_row = await cursor.fetchone()
+
+    if cfg_row is None:
+        return
+    autoreserve_threshold: int | None = cfg_row["autoreserve_threshold"] or None
+    autosack_threshold: int | None = cfg_row["autosack_threshold"] or None
+
+    if not autoreserve_threshold and not autosack_threshold:
+        return  # both disabled — nothing to do (FR-027)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT dra.driver_profile_id, dra.total_points_after, dp.discord_user_id
+            FROM driver_round_attendance dra
+            JOIN driver_season_assignments dsa
+                ON dsa.driver_profile_id = dra.driver_profile_id
+            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
+            WHERE dra.round_id = ?
+              AND dra.division_id = ?
+              AND ti.division_id = ?
+              AND ti.is_reserve = 0
+              AND dra.total_points_after IS NOT NULL
+            """,
+            (round_id, division_id, division_id),
+        )
+        driver_rows = await cursor.fetchall()
+
+    from services.placement_service import PlacementService
+    placement: PlacementService = bot.placement_service  # type: ignore[attr-defined]
+    acting_id = bot.user.id
+    acting_name = str(bot.user)
+
+    for row in driver_rows:
+        profile_id = row["driver_profile_id"]
+        discord_user_id = str(row["discord_user_id"])
+        total = row["total_points_after"] or 0
+
+        # Autosack supersedes autoreserve (FR-025).
+        if autosack_threshold and total >= autosack_threshold:
+            try:
+                await placement.sack_driver(
+                    server_id=server_id,
+                    driver_profile_id=profile_id,
+                    season_id=season_id,
+                    acting_user_id=acting_id,
+                    acting_user_name=acting_name,
+                    guild=guild,
+                    discord_user_id=discord_user_id,
+                )
+            except ValueError:
+                # Driver already NOT_SIGNED_UP — emit no-op log and continue (I1 edge case).
+                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                    server_id,
+                    f"ATTENDANCE_AUTOSACK | No-op | driver_profile_id={profile_id} "
+                    f"already NOT_SIGNED_UP (total={total})",
+                )
+            continue  # skip autoreserve for this driver (FR-025)
+
+        if autoreserve_threshold and total >= autoreserve_threshold:
+            # Check if already in Reserve (FR-026).
+            async with get_connection(db_path) as db:
+                cursor = await db.execute(
+                    """
+                    SELECT ti.is_reserve
+                    FROM driver_season_assignments dsa
+                    JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                    JOIN team_instances ti ON ti.id = ts.team_instance_id
+                    WHERE dsa.driver_profile_id = ?
+                      AND dsa.season_id = ?
+                      AND dsa.division_id = ?
+                    """,
+                    (profile_id, season_id, division_id),
+                )
+                seat_row = await cursor.fetchone()
+
+            if seat_row and seat_row["is_reserve"]:
+                continue  # already in Reserve — skip (FR-026)
+
+            # Look up Reserve team name for this division.
+            async with get_connection(db_path) as db:
+                cursor = await db.execute(
+                    "SELECT name FROM team_instances WHERE division_id = ? AND is_reserve = 1 LIMIT 1",
+                    (division_id,),
+                )
+                reserve_row = await cursor.fetchone()
+
+            if reserve_row is None:
+                log.warning("enforce_attendance_sanctions: no Reserve team found for division %s", division_id)
+                continue
+
+            reserve_team_name: str = reserve_row["name"]
+
+            try:
+                await placement.unassign_driver(
+                    server_id=server_id,
+                    driver_profile_id=profile_id,
+                    division_id=division_id,
+                    season_id=season_id,
+                    acting_user_id=acting_id,
+                    acting_user_name=acting_name,
+                    guild=guild,
+                    discord_user_id=discord_user_id,
+                )
+                await placement.assign_driver(
+                    server_id=server_id,
+                    driver_profile_id=profile_id,
+                    division_id=division_id,
+                    team_name=reserve_team_name,
+                    season_id=season_id,
+                    acting_user_id=acting_id,
+                    acting_user_name=acting_name,
+                    guild=guild,
+                    discord_user_id=discord_user_id,
+                )
+            except (ValueError, Exception) as exc:
+                log.warning(
+                    "enforce_attendance_sanctions: autoreserve failed for profile %s: %s",
+                    profile_id, exc,
+                )
+
+
+async def recalculate_attendance_for_round(
+    bot,
+    guild: discord.Guild,
+    db_path: str,
+    round_id: int,
+    division_id: int,
+    server_id: int,
+    season_id: int,
+) -> None:
+    """Re-run the full attendance pipeline for an amended round (FR-028–FR-031).
+
+    Upgrade-only rule does NOT apply here — this is a deliberate correction and may
+    flip attended in either direction (FR-028). Existing AttendancePardon rows are
+    preserved (FR-029). total_points_after is propagated forward through any
+    subsequent finalized rounds (FR-030).
+    """
+    # FR-028: full recompute without upgrade-only constraint.
+    await record_attendance_from_results_full_recompute(db_path, round_id, division_id)
+
+    # FR-029: pardons are already persisted — just recompute points using them.
+    await distribute_attendance_points(db_path, round_id, division_id)
+
+    # FR-030: propagate total_points_after forward through subsequent rounds.
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT id FROM rounds
+            WHERE division_id = ?
+              AND result_status IN ('POST_RACE_PENALTY', 'FINAL')
+              AND round_number > (SELECT round_number FROM rounds WHERE id = ?)
+            ORDER BY round_number ASC
+            """,
+            (division_id, round_id),
+        )
+        subsequent_rounds = await cursor.fetchall()
+
+    for sub_row in subsequent_rounds:
+        await distribute_attendance_points(db_path, sub_row["id"], division_id)
+
+    # FR-031: re-post sheet and re-evaluate sanctions.
+    await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
+    await enforce_attendance_sanctions(bot, guild, db_path, round_id, division_id, server_id, season_id)
+

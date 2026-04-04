@@ -545,3 +545,32 @@ async def approve_amendment(
                         division_id,
                     )
 
+        # T018: Attendance recalculation (033-attendance-tracking).
+        if guild and server_id and await bot.module_service.is_attendance_enabled(server_id):  # type: ignore[attr-defined]
+            from services.attendance_service import recalculate_attendance_for_round
+
+            # Find the most recently finalized round per division to recalculate.
+            async with get_connection(db_path) as db:
+                cursor = await db.execute(
+                    """
+                    SELECT id FROM rounds
+                    WHERE division_id = ?
+                      AND result_status IN ('POST_RACE_PENALTY', 'FINAL')
+                    ORDER BY round_number DESC LIMIT 1
+                    """,
+                    (division_id,),
+                )
+                latest_row = await cursor.fetchone()
+
+            if latest_row is not None:
+                try:
+                    await recalculate_attendance_for_round(
+                        bot, guild, db_path,
+                        latest_row["id"], division_id,
+                        server_id, season_id,
+                    )
+                except Exception:
+                    log.exception(
+                        "approve_amendment: recalculate_attendance_for_round failed for division %s",
+                        division_id,
+                    )

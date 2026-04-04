@@ -67,7 +67,8 @@ async def db_path(tmp_path):
                                               ON DELETE CASCADE,
                 server_id                 INTEGER NOT NULL,
                 rsvp_channel_id           TEXT,
-                attendance_channel_id     TEXT
+                attendance_channel_id     TEXT,
+                attendance_message_id     TEXT
             )
             """
         )

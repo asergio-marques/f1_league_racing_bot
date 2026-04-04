@@ -1,6 +1,57 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-04-03 — v2.10.0 → v2.10.1: PATCH — governance section reference corrected; attendance tracking branch initialised]
+  Version change    : 2.10.0 → 2.10.1
+  Bump rationale    : PATCH — Two non-semantic corrections:
+                        1. Governance section's pull-request compliance line was stale,
+                           referencing "Principles I–XII" after Principle XIII was added
+                           at v2.10.0. Corrected to "I–XIII".
+                        2. Session-initialisation entry for the attendance tracking sub-
+                           increment (feature branch 033-attendance-tracking) added to
+                           the Sync Impact Report.
+  Feature branch    : 033-attendance-tracking (created 2026-04-03 from main)
+  Session intent    : Implement the core attendance tracking features left out of scope
+                      in 032-attendance-rsvp-checkin:
+                        - Attendance recording hook (first SessionResult row accepted for
+                          the round triggers DriverRoundAttendance.attended population).
+                        - Attendance point distribution (post-penalty finalization hook;
+                          deferred from RSVP sub-increment per Principle XIII).
+                        - Attendance pardon workflow integrated into the penalty wizard
+                          (NO_RSVP / NO_ATTEND / NO_SHOW modal, staged display, approval).
+                        - Attendance sheet posting to the division's attendance channel
+                          (descending points list with threshold footer).
+                        - Autoreserve and autosack sanction enforcement after point
+                          distribution (threshold evaluation, driver seat mutations,
+                          audit log entries per Principle V).
+                      All functionality is already governed by Principle XIII; no new
+                      governance principle additions or amendments are required.
+  Implementation status at session start:
+      ✅ 031-attendance-module — fully merged to main (2026-04-03, PR #50).
+         Covers all 30 module configuration tasks; 20/20 unit tests passing.
+      🔄 032-attendance-rsvp-checkin — in progress (branch created 2026-04-03 from main);
+         latest commit: feat(032): attendance RSVP check-in & reserve distribution.
+         Covers: RSVP embed posting, driver button interactions, reserve extension window,
+         reserve distribution at RSVP deadline, last-notice ping (FR-001–FR-030; US1–US5).
+         Out of scope for that branch: attendance recording, point distribution, pardons,
+         attendance sheet, autosanctions.
+  Modified principles : None
+  Added sections      : None
+  Removed sections    : None
+  Fixes               : Governance section line — "I–XII" corrected to "I–XIII".
+  Templates confirmed aligned:
+      ✅ .specify/templates/plan-template.md       — dynamic Constitution Check; no changes.
+      ✅ .specify/templates/spec-template.md       — generic structure; no stale references.
+      ✅ .specify/templates/tasks-template.md      — generic; aligns with I–XIII.
+      ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+      ✅ .specify/templates/checklist-template.md  — no impact.
+  Deferred TODOs (carried from v2.10.0):
+      - Exact command naming for appeal submission and review commands to be confirmed
+        against the 026-penalty-posting-appeals implementation.
+      - Whether the existing penalty wizard loose-text fields on DriverSessionResult
+        (post_race_time_penalties, post_stewarding_total_time) have been fully superseded
+        by PenaltyRecord rows — migration confirmation required.
+
 [2026-04-03 — Session reuse: Attendance module RSVP & check-in implementation — feature branch created]
   - Constitution reused as-is; no principle amendments required at session start.
   - Session intent: implement the RSVP check-in embed and button interactions;
@@ -2193,7 +2244,7 @@ Amendments require:
 - **MINOR**: Addition of a new principle, section, or materially expanded guidance.
 - **PATCH**: Clarifications, wording improvements, or non-semantic refinements.
 
-All pull requests MUST include a Constitution Check confirming compliance with Principles I–XII
+All pull requests MUST include a Constitution Check confirming compliance with Principles I–XIII
 before merge. Any deliberate violation of a principle MUST be documented in the plan's
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.

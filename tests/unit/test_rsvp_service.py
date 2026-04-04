@@ -91,6 +91,8 @@ async def _make_db(tmp_path) -> str:
                 assigned_team_id  INTEGER,
                 is_standby        INTEGER NOT NULL DEFAULT 0,
                 attended          INTEGER,
+                points_awarded    INTEGER,
+                total_points_after INTEGER,
                 UNIQUE (round_id, division_id, driver_profile_id)
             );
 
@@ -471,6 +473,8 @@ async def _make_attendance_db(tmp_path) -> str:
                 assigned_team_id  INTEGER,
                 is_standby        INTEGER NOT NULL DEFAULT 0,
                 attended          INTEGER,
+                points_awarded    INTEGER,
+                total_points_after INTEGER,
                 UNIQUE (round_id, division_id, driver_profile_id)
             );
 

@@ -150,6 +150,12 @@ def _make_bot() -> MagicMock:
             pass
 
     bot.output_router = _OutputRouter()
+
+    class _ModuleService:
+        async def is_attendance_enabled(self, *args, **kwargs):
+            return False
+
+    bot.module_service = _ModuleService()
     return bot
 
 
