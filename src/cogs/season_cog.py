@@ -2913,6 +2913,7 @@ class SeasonCog(commands.Cog):
                         JOIN team_seats ts ON ts.id = dsa.team_seat_id
                         JOIN team_instances ti ON ti.id = ts.team_instance_id
                         WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
+                          AND dp.is_test_driver = 0
                         """,
                         (_div.id,),
                     )
