@@ -424,7 +424,7 @@ class SchedulerService:
     ) -> None:
         """Register RSVP DateTrigger jobs for *rnd* (attendance module).
 
-        Jobs are only created for non-Mystery rounds whose fire time is in the future.
+        Jobs are only created for rounds whose fire time is in the future.
         ``replace_existing=True`` makes re-scheduling amended rounds safe.
 
         Args:
@@ -432,9 +432,6 @@ class SchedulerService:
             last_notice_hours: Hours before round for last-notice ping (0 = disabled, FR-030).
             deadline_hours:    Hours before round for distribution deadline.
         """
-        if rnd.format == RoundFormat.MYSTERY:
-            return  # FR-002: no RSVP jobs for Mystery rounds
-
         scheduled_at = rnd.scheduled_at
         if scheduled_at.tzinfo is None:
             scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)

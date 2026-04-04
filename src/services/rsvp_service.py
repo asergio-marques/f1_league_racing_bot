@@ -248,11 +248,6 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
     if scheduled_at.tzinfo is None:
         scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
 
-    # Mystery rounds: skip (FR-002)
-    if round_format == RoundFormat.MYSTERY:
-        log.info("run_rsvp_notice: round %d is MYSTERY — skipping", round_id)
-        return
-
     # Get division RSVP channel
     att_div_cfg = await bot.attendance_service.get_division_config(division_id)
     if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
