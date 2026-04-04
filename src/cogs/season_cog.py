@@ -37,7 +37,7 @@ from services import season_points_service
 import services.track_service as track_service
 from services.season_service import SeasonImmutableError
 from utils.channel_guard import channel_guard, admin_only
-from utils.message_builder import format_division_list, format_round_list, format_roster_block
+from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 
 log = logging.getLogger(__name__)
 
@@ -288,7 +288,7 @@ class SeasonCog(commands.Cog):
                 for r in rounds_db:
                     lines.append(
                         f"  Round {r.round_number}: {r.format.value} "
-                        f"@ {r.track_name or 'Mystery'} \u2014 {r.scheduled_at.isoformat()}"
+                        f"@ {r.track_name or 'Mystery'} \u2014 {discord_ts(r.scheduled_at)}"
                     )
                 # Lineup & calendar channels (US3 / FR-007)
                 lineup_chan = f"<#{div.lineup_channel_id}>" if div.lineup_channel_id else "*(not set)*"
@@ -356,7 +356,7 @@ class SeasonCog(commands.Cog):
                 for r in div.rounds:
                     lines.append(
                         f"  Round {r['round_number']}: {r['format'].value} "
-                        f"@ {r['track_name'] or 'Mystery'} \u2014 {r['scheduled_at'].isoformat()}"
+                        f"@ {r['track_name'] or 'Mystery'} \u2014 {discord_ts(r['scheduled_at'])}"
                     )
                 lines.append("")
 
@@ -410,7 +410,7 @@ class SeasonCog(commands.Cog):
                 "Next round: "
                 + (
                     f"R{next_round.round_number} @ {next_round.track_name or 'Mystery'} "
-                    f"({next_round.scheduled_at.isoformat()})"
+                    f"{discord_ts(next_round.scheduled_at)}"
                     if next_round
                     else "None remaining"
                 )
@@ -678,12 +678,13 @@ class SeasonCog(commands.Cog):
         for dt in shifted:
             dt_aware = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
             if dt_aware < now:
-                warnings.append(f"\u26a0\ufe0f One or more shifted datetimes are in the past: {dt.isoformat()}")
+                warnings.append(f"\u26a0\ufe0f One or more shifted datetimes are in the past: {discord_ts(dt_aware)}")
                 break
         dt_counts = Counter(shifted)
         for dt, count in dt_counts.items():
             if count > 1:
-                warnings.append(f"\u26a0\ufe0f Multiple rounds share the same shifted datetime: {dt.isoformat()}")
+                dt_aware2 = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+                warnings.append(f"\u26a0\ufe0f Multiple rounds share the same shifted datetime: {discord_ts(dt_aware2)}")
                 break
 
         await interaction.response.defer(ephemeral=True)
@@ -1681,7 +1682,7 @@ class SeasonCog(commands.Cog):
         ]
         await interaction.response.send_message(
             f"\u2705 Round **{assigned_number}** added to **{div.name}**.\n"
-            f"Format: {fmt.value} | Track: {track_name or 'Mystery'} | {sched.isoformat()} UTC\n\n"
+            f"Format: {fmt.value} | Track: {track_name or 'Mystery'} | {discord_ts(sched)}\n\n"
             + format_round_list(round_models),
             ephemeral=True,
         )
@@ -2709,7 +2710,7 @@ class SeasonCog(commands.Cog):
             for rnd in div_rounds[div_db.id]:
                 if rnd.scheduled_at in seen:
                     duplicate_errors.append(
-                        f"**{div_db.name}** has multiple rounds scheduled at `{rnd.scheduled_at}`"
+                        f"**{div_db.name}** has multiple rounds scheduled at {discord_ts(rnd.scheduled_at)}"
                     )
                     break
                 seen.add(rnd.scheduled_at)

@@ -5,11 +5,24 @@ All output is plain text (no embeds) per Constitution Principle VII.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from models.division import Division
     from models.round import Round
+
+
+def discord_ts(dt: datetime, fmt: str = "F") -> str:
+    """Return a Discord dynamic timestamp string ``<t:UNIX:fmt>``.
+
+    ``dt`` is assumed UTC if naïve.  ``fmt`` defaults to ``"F"``
+    (long date + time, e.g. "Wednesday, 4 April 2026 20:00").
+    Common format codes: ``F`` full, ``f`` short, ``R`` relative, ``D`` date.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return f"<t:{int(dt.timestamp())}:{fmt}>"
 
 
 def phase1_message(division_role_id: int, track: str, rpc_pct: float) -> str:
@@ -189,7 +202,7 @@ def format_round_list(rounds: "list[Round]") -> str:
         status_tag = " ~~[CANCELLED]~~" if r.status == "CANCELLED" else ""
         lines.append(
             f"  Round {r.round_number}: {r.format.value} @ {track}"
-            f" — {r.scheduled_at.isoformat()} UTC{status_tag}"
+            f" — {discord_ts(r.scheduled_at)}{status_tag}"
         )
     return "\n".join(lines)
 
