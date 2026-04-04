@@ -543,6 +543,74 @@ async def finalize_penalty_review(
 
     # Post appeals review prompt and keep submission channel open
     from services.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
+
+    # === NEW: Attendance pipeline (033-attendance-tracking) ===
+    from services.attendance_service import (
+        record_attendance_from_results,
+        distribute_attendance_points,
+        post_attendance_sheet,
+        enforce_attendance_sanctions,
+    )
+    from datetime import datetime as _dt, timezone as _tz
+
+    async with get_connection(db_path) as _db:
+        _srv_cur = await _db.execute(
+            "SELECT s.server_id, s.id AS season_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+            (division_id,),
+        )
+        _srv_row = await _srv_cur.fetchone()
+
+    if _srv_row and await bot.module_service.is_attendance_enabled(int(_srv_row["server_id"])):  # type: ignore[attr-defined]
+        _att_server_id = int(_srv_row["server_id"])
+        _att_season_id = int(_srv_row["season_id"])
+
+        # T004: Record attendance from submitted results.
+        try:
+            await record_attendance_from_results(db_path, round_id, division_id)
+        except Exception:
+            log.exception("finalize_penalty_review: record_attendance_from_results failed for round %s", round_id)
+
+        # T010: Persist staged attendance pardons (INSERT OR IGNORE for idempotency).
+        if state.staged_pardons:
+            _now_iso = _dt.now(_tz.utc).isoformat()
+            async with get_connection(db_path) as _db:
+                for _sp in state.staged_pardons:
+                    await _db.execute(
+                        """
+                        INSERT OR IGNORE INTO attendance_pardons
+                            (attendance_id, pardon_type, justification, granted_by, granted_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (_sp.attendance_id, _sp.pardon_type, _sp.justification,
+                         _sp.grantor_id, _now_iso),
+                    )
+                await _db.commit()
+
+        # T012: Distribute attendance points.
+        try:
+            await distribute_attendance_points(db_path, round_id, division_id)
+        except Exception:
+            log.exception("finalize_penalty_review: distribute_attendance_points failed for round %s", round_id)
+
+        # T014: Post attendance sheet (non-blocking).
+        try:
+            if guild:
+                await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
+        except Exception:
+            log.exception("finalize_penalty_review: post_attendance_sheet failed for round %s", round_id)
+
+        # T016: Enforce attendance sanctions (non-blocking).
+        try:
+            if guild:
+                await enforce_attendance_sanctions(
+                    bot, guild, db_path, round_id, division_id,
+                    _att_server_id, _att_season_id,
+                )
+        except Exception:
+            log.exception("finalize_penalty_review: enforce_attendance_sanctions failed for round %s", round_id)
+
+    # === END Attendance pipeline ===
+
     appeals_view = AppealsReviewView(state=state)
     sub_channel = guild.get_channel(state.submission_channel_id) if guild else None
     if sub_channel is not None:

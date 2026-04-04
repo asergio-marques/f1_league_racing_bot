@@ -24,6 +24,7 @@ class AttendanceDivisionConfig:
     server_id: int
     rsvp_channel_id: str | None
     attendance_channel_id: str | None
+    attendance_message_id: str | None
 
 
 @dataclass
@@ -36,7 +37,19 @@ class DriverRoundAttendance:
     accepted_at: str | None
     assigned_team_id: int | None
     is_standby: bool
-    attended: bool | None   # None until results submitted (future increment)
+    attended: bool | None   # None until results submitted
+    points_awarded: int | None      # Net points after pardons; set at finalization
+    total_points_after: int | None  # Cumulative total across all rounds in division
+
+
+@dataclass
+class AttendancePardon:
+    id: int
+    attendance_id: int
+    pardon_type: str            # 'NO_RSVP' | 'NO_ATTEND' | 'NO_SHOW'
+    justification: str
+    granted_by: int             # Discord user ID
+    granted_at: str             # ISO-8601 UTC
 
 
 @dataclass

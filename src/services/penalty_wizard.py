@@ -28,6 +28,7 @@ _CID_ADD              = "pw_add"
 _CID_CONFIRM          = "pw_confirm"
 _CID_APPROVE          = "pw_approve"
 _CID_RESUBMIT         = "pw_resubmit"
+_CID_PARDON           = "att_pardon"
 _CID_AV_MAKE_CHANGES  = "pw_av_make_changes"
 _CID_AV_APPROVE       = "pw_av_approve"
 _CID_AR_APPROVE       = "ar_approve"
@@ -64,6 +65,21 @@ def _parse_penalty_seconds(raw: str | None) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Attendance pardon staging dataclass
+# ---------------------------------------------------------------------------
+
+@dataclass
+class StagedPardon:
+    """In-memory representation of a staged attendance pardon (033-attendance-tracking)."""
+    driver_user_id: int       # Discord user ID (display / audit)
+    driver_profile_id: int    # FK — driver_profiles.id
+    attendance_id: int        # FK — driver_round_attendance.id
+    pardon_type: str          # 'NO_RSVP' | 'NO_ATTEND' | 'NO_SHOW'
+    justification: str
+    grantor_id: int           # Discord user ID of staging admin
+
+
+# ---------------------------------------------------------------------------
 # State
 # ---------------------------------------------------------------------------
 
@@ -78,6 +94,7 @@ class PenaltyReviewState:
     bot: Any
     staged: list[StagedPenalty] = field(default_factory=list)
     staged_appeals: list[StagedPenalty] = field(default_factory=list)
+    staged_pardons: list[StagedPardon] = field(default_factory=list)
     prompt_message_id: int | None = None
     appeals_prompt_message_id: int | None = None
     round_number: int = 0
@@ -180,6 +197,14 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
             )
     else:
         lines.append("**Staged Penalties:** *(none — click Add Penalty to stage one)*")
+
+    if state.staged_pardons:
+        lines.append("")
+        lines.append(f"**Staged Attendance Pardons ({len(state.staged_pardons)}):**")
+        for sp in state.staged_pardons:
+            lines.append(
+                f"  • <@{sp.driver_user_id}> — **{sp.pardon_type}** *(justification logged)*"
+            )
 
     return "\n".join(lines)
 
@@ -447,6 +472,184 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
 
 
 # ---------------------------------------------------------------------------
+# Add Pardon modal (033-attendance-tracking T007)
+# ---------------------------------------------------------------------------
+
+_VALID_PARDON_TYPES = {"NO_RSVP", "NO_ATTEND", "NO_SHOW"}
+
+
+class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
+    """Three-field modal for staging an attendance pardon during penalty review."""
+
+    driver_id_input: discord.ui.TextInput = discord.ui.TextInput(
+        label="Driver Discord User ID",
+        placeholder="123456789012345678",
+        required=True,
+        max_length=25,
+    )
+    pardon_type_input: discord.ui.TextInput = discord.ui.TextInput(
+        label="Pardon Type (NO_RSVP / NO_ATTEND / NO_SHOW)",
+        placeholder="NO_RSVP",
+        required=True,
+        max_length=10,
+    )
+    justification_input: discord.ui.TextInput = discord.ui.TextInput(
+        label="Justification",
+        placeholder="Reason for granting this pardon",
+        required=True,
+        max_length=300,
+        style=discord.TextStyle.paragraph,
+    )
+
+    def __init__(self, state: PenaltyReviewState) -> None:
+        super().__init__()
+        self.state = state
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        # --- Parse driver user ID ---
+        raw_id = self.driver_id_input.value.strip()
+        try:
+            driver_user_id = int(raw_id)
+        except ValueError:
+            await interaction.followup.send(
+                "❌ Invalid Discord User ID — must be a numeric ID.", ephemeral=True
+            )
+            return
+
+        # --- Validate pardon type ---
+        pardon_type = self.pardon_type_input.value.strip().upper()
+        if pardon_type not in _VALID_PARDON_TYPES:
+            await interaction.followup.send(
+                f"❌ Invalid pardon type `{pardon_type}`. Must be one of: NO_RSVP, NO_ATTEND, NO_SHOW.",
+                ephemeral=True,
+            )
+            return
+
+        justification = self.justification_input.value.strip()
+
+        from db.database import get_connection
+        from services.driver_service import resolve_driver_profile_id
+
+        async with get_connection(self.state.db_path) as db:
+            # --- Check round is not already finalized (FR-011) ---
+            cursor = await db.execute(
+                "SELECT result_status FROM rounds WHERE id = ?",
+                (self.state.round_id,),
+            )
+            round_row = await cursor.fetchone()
+            if round_row and round_row["result_status"] == "POST_RACE_PENALTY":
+                await interaction.followup.send(
+                    "❌ Post-race penalties have already been finalized for this round. "
+                    "No further attendance pardons may be applied.",
+                    ephemeral=True,
+                )
+                return
+
+            # --- Resolve driver profile ID ---
+            profile_id = await resolve_driver_profile_id(server_id, driver_user_id, db)
+            if profile_id is None:
+                await interaction.followup.send(
+                    f"❌ No driver profile found for user ID `{driver_user_id}` in this server.",
+                    ephemeral=True,
+                )
+                return
+
+            # --- Fetch DRA row ---
+            cursor = await db.execute(
+                """
+                SELECT id, rsvp_status, attended
+                FROM driver_round_attendance
+                WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?
+                """,
+                (self.state.round_id, self.state.division_id, profile_id),
+            )
+            dra_row = await cursor.fetchone()
+
+        if dra_row is None:
+            await interaction.followup.send(
+                f"❌ No attendance row found for <@{driver_user_id}> in this round. "
+                "Ensure results have been submitted first.",
+                ephemeral=True,
+            )
+            return
+
+        attendance_id = dra_row["id"]
+        rsvp_status = dra_row["rsvp_status"]
+        attended = bool(dra_row["attended"]) if dra_row["attended"] is not None else None
+
+        # --- Validate pardon type against driver state (FR-007) ---
+        if pardon_type == "NO_RSVP" and rsvp_status != "NO_RSVP":
+            await interaction.followup.send(
+                f"❌ NO_RSVP pardon rejected: <@{driver_user_id}> has RSVP status "
+                f"`{rsvp_status}` — they did RSVP, so NO_RSVP pardon is not applicable.",
+                ephemeral=True,
+            )
+            return
+        if pardon_type == "NO_ATTEND" and attended is not False:
+            await interaction.followup.send(
+                f"❌ NO_ATTEND pardon rejected: <@{driver_user_id}> is marked as attended.",
+                ephemeral=True,
+            )
+            return
+        if pardon_type == "NO_SHOW":
+            if rsvp_status != "ACCEPTED":
+                await interaction.followup.send(
+                    f"❌ NO_SHOW pardon rejected: <@{driver_user_id}> has RSVP status "
+                    f"`{rsvp_status}` — NO_SHOW requires ACCEPTED status.",
+                    ephemeral=True,
+                )
+                return
+            if attended is not False:
+                await interaction.followup.send(
+                    f"❌ NO_SHOW pardon rejected: <@{driver_user_id}> is marked as attended.",
+                    ephemeral=True,
+                )
+                return
+
+        # --- Check for duplicate in staged_pardons (FR-008) ---
+        duplicate = any(
+            p.attendance_id == attendance_id and p.pardon_type == pardon_type
+            for p in self.state.staged_pardons
+        )
+        if duplicate:
+            await interaction.followup.send(
+                f"❌ A `{pardon_type}` pardon for <@{driver_user_id}> is already staged.",
+                ephemeral=True,
+            )
+            return
+
+        # --- Stage the pardon ---
+        pardon = StagedPardon(
+            driver_user_id=driver_user_id,
+            driver_profile_id=profile_id,
+            attendance_id=attendance_id,
+            pardon_type=pardon_type,
+            justification=justification,
+            grantor_id=interaction.user.id,
+        )
+        self.state.staged_pardons.append(pardon)
+
+        # --- Log justification to calc-log channel only (FR-010) ---
+        await self.state.bot.output_router.post_log(  # type: ignore[attr-defined]
+            server_id,
+            f"ATTENDANCE_PARDON_STAGED | <@{interaction.user.id}> granted {pardon_type} pardon\n"
+            f"  driver: <@{driver_user_id}> | round: {self.state.round_number} "
+            f"({self.state.division_name})\n"
+            f"  justification: {justification}",
+        )
+
+        await _refresh_prompt(self.state)
+        await interaction.followup.send(
+            f"✅ Pardon staged: <@{driver_user_id}> — **{pardon_type}**",
+            ephemeral=True,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Confirm-clear view (used by No Penalties / Confirm when list is non-empty)
 # ---------------------------------------------------------------------------
 
@@ -683,6 +886,25 @@ class PenaltyReviewView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         from services.result_submission_service import enter_resubmit_flow
         await enter_resubmit_flow(interaction, self.state)
+
+    @discord.ui.button(
+        label="🏳️ Attendance Pardon",
+        style=discord.ButtonStyle.secondary,
+        custom_id=_CID_PARDON,
+        row=1,
+    )
+    async def pardon_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if self.state is None:
+            await interaction.response.send_message(
+                "⚠️ The bot was restarted. Please wait for the penalty prompt to refresh.",
+                ephemeral=True,
+            )
+            return
+        if not await _require_lm(interaction, self.state):
+            return
+        await interaction.response.send_modal(AddPardonModal(state=self.state))
 
 
 # ---------------------------------------------------------------------------

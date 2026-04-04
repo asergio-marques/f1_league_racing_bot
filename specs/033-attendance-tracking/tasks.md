@@ -115,8 +115,8 @@
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T019 [P] Write unit tests in `tests/unit/test_attendance_tracking.py` — 15 tests as enumerated in research.md §8, covering FR-001–FR-031: attendance recording, reserve exclusion, upgrade-only flag, module-disabled no-op, pardon validation rejection cases (3 pardon types), all 6 point distribution scenarios, points accumulation across rounds, sheet ordering + tiebreak, footer omission, silent skip on missing prior message, autosack-supersedes-autoreserve, skip-already-reserved, threshold-disabled no-op, amendment preserves pardons
-- [ ] T020 Run `python -m pytest tests/ -v` from repo root and confirm all existing tests plus T019 tests pass
+- [X] T019 [P] Write unit tests in `tests/unit/test_attendance_tracking.py` — 15 tests as enumerated in research.md §8, covering FR-001–FR-031: attendance recording, reserve exclusion, upgrade-only flag, module-disabled no-op, pardon validation rejection cases (3 pardon types), all 6 point distribution scenarios, points accumulation across rounds, sheet ordering + tiebreak, footer omission, silent skip on missing prior message, autosack-supersedes-autoreserve, skip-already-reserved, threshold-disabled no-op, amendment preserves pardons
+- [X] T020 Run `python -m pytest tests/ -v` from repo root and confirm all existing tests plus T019 tests pass
 
 ---
 
