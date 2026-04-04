@@ -943,8 +943,8 @@ class PlacementService:
         """
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
-                "SELECT server_id, name AS div_name, lineup_channel_id, lineup_message_id "
-                "FROM divisions WHERE id = ?",
+                "SELECT s.server_id, d.name AS div_name, d.lineup_channel_id, d.lineup_message_id "
+                "FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
                 (division_id,),
             )
             div_row = await cur.fetchone()
@@ -983,7 +983,8 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
                 """
-                SELECT ti.name AS team_name, dp.discord_user_id
+                SELECT ti.name AS team_name, dp.discord_user_id,
+                       dp.is_test_driver, dp.test_display_name
                 FROM driver_season_assignments dsa
                 JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
                 JOIN team_seats ts ON ts.id = dsa.team_seat_id
@@ -998,7 +999,11 @@ class PlacementService:
         # Group by team and build embed
         teams: dict[str, list[str]] = {}
         for row in assign_rows:
-            teams.setdefault(row["team_name"], []).append(row["discord_user_id"])
+            if row["is_test_driver"]:
+                label = row["test_display_name"] or f"Driver {row['discord_user_id']}"
+            else:
+                label = f"<@{row['discord_user_id']}>"
+            teams.setdefault(row["team_name"], []).append(label)
 
         description = (
             "\n".join(

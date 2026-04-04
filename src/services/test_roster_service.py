@@ -70,10 +70,10 @@ async def _next_synthetic_id(db_path: str) -> int:
 
 
 async def _get_active_season_id(server_id: int, db_path: str) -> int | None:
-    """Return the active season ID for a server, or None if none exists."""
+    """Return the active or setup season ID for a server, or None if none exists."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id FROM seasons WHERE server_id = ? AND status = 'ACTIVE'",
+            "SELECT id FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP')",
             (server_id,),
         )
         row = await cursor.fetchone()
@@ -116,7 +116,7 @@ async def add_test_driver(
     """
     season_id = await _get_active_season_id(server_id, db_path)
     if season_id is None:
-        return "No active season found."
+        return "No active or setup season found."
 
     division_id = await _get_division_id(server_id, season_id, division_name, db_path)
     if division_id is None:
@@ -216,7 +216,7 @@ async def list_test_drivers(
     """
     season_id = await _get_active_season_id(server_id, db_path)
     if season_id is None:
-        return "No active season found."
+        return "No active or setup season found."
 
     division_id = await _get_division_id(server_id, season_id, division_name, db_path)
     if division_id is None:
@@ -262,7 +262,7 @@ async def clear_test_drivers(
     """
     season_id = await _get_active_season_id(server_id, db_path)
     if season_id is None:
-        return "No active season found."
+        return "No active or setup season found."
 
     division_id = await _get_division_id(server_id, season_id, division_name, db_path)
     if division_id is None:
