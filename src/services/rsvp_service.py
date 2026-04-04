@@ -278,6 +278,21 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
         )
         return
 
+    # Delete any old RSVP embed messages for this division (previous rounds)
+    old_embeds = await bot.attendance_service.get_all_embed_messages()
+    for _old in old_embeds:
+        if _old.division_id != division_id:
+            continue
+        if _old.round_id == round_id:
+            continue  # shouldn't exist yet, but skip defensively
+        _old_ch = bot.get_channel(int(_old.channel_id))
+        if _old_ch is not None:
+            try:
+                _old_msg = await _old_ch.fetch_message(int(_old.message_id))
+                await _old_msg.delete()
+            except discord.HTTPException:
+                pass  # Already gone or no permission — safe to continue
+
     # Query roster
     roster = await query_division_roster(bot.db_path, division_id)
 
