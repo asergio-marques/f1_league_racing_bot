@@ -45,7 +45,7 @@ A user with the configured interaction role, while test mode is active, issues a
 2. **Given** Phase 1 has been triggered for a round via advance-phase, **When** the user issues advance-phase again, **Then** the bot executes Phase 2 for the appropriate next pending phase, using the rain probability value calculated during Phase 1 of that round.
 3. **Given** Phase 2 has been triggered for a round via advance-phase, **When** the user issues advance-phase again, **Then** the bot executes Phase 3, using the session weather slot types drawn during Phase 2 of that round.
 4. **Given** all phases for all rounds of all divisions have been executed, **When** the user issues the advance-phase command, **Then** the bot responds informing the user that there are no remaining phases to advance.
-5. **Given** test mode is active and a Mystery Round is the next pending round, **When** the user issues advance-phase, **Then** the bot skips that round's phases and advances to the next non-Mystery round's Phase 1.
+5. **Given** test mode is active and a Mystery Round is the next pending round, **When** the user issues advance-phase, **Then** the bot fires the mystery-round notice for that round (in place of weather phases); result submission for that round then appears next in the advancement queue.
 6. **Given** test mode is not active, **When** a user issues the advance-phase command, **Then** the bot silently ignores it.
 
 ---
@@ -62,7 +62,7 @@ A user with the configured interaction role, while test mode is active, issues a
 
 1. **Given** test mode is active and a season has been configured and approved, **When** the user issues the season configuration review command, **Then** the bot responds with a structured summary listing each division, each round per division with its format, track name, scheduled date, and the completion status (done/pending) of each of the three phases.
 2. **Given** some phases have already been advanced, **When** the user issues the review command, **Then** completed phases are clearly distinguished from pending ones in the summary.
-3. **Given** a Mystery Round exists in the configured season, **When** the review command is issued, **Then** the Mystery Round appears in the summary with a clear indication that its phases are not applicable.
+3. **Given** a Mystery Round exists in the configured season, **When** the review command is issued, **Then** the Mystery Round appears in the summary with a clear indication that its weather phases (P1/P2/P3) are not applicable.
 4. **Given** test mode is not active, **When** the review command is issued, **Then** the bot silently ignores it.
 
 ---
@@ -87,10 +87,10 @@ A user with the configured interaction role, while test mode is active, issues a
 - **FR-006**: The advance-phase command MUST determine the "next pending phase" as the chronologically earliest phase (by its normally-scheduled trigger time) that has not yet been executed across all divisions and all rounds.
 - **FR-007**: When the advance-phase command is invoked, the bot MUST execute the target phase in full — performing all calculations and posting all outputs to the relevant forecast and log channels — identically to how it would behave during scheduled operation.
 - **FR-008**: When no pending phases remain, the advance-phase command MUST respond to the user informing them that all phases for the season have been completed.
-- **FR-009**: Mystery rounds MUST be skipped entirely by the advance-phase command; no phase is executed for them.
+- **FR-009**: Mystery rounds MUST NOT execute weather Phases 1, 2, or 3 via the advance-phase command. The mystery-round notice (phase 0) MUST fire when the round is next in the queue; result submission (phase 4) MUST fire once the notice has been sent, treated identically to non-Mystery rounds for those two steps.
 - **FR-010**: While test mode is active, the bot MUST provide a season configuration review command.
 - **FR-011**: The season configuration review command MUST present a structured summary of all configured divisions and their rounds, including for each round: its format, track, scheduled date, and the completion status (executed/pending) of each phase.
-- **FR-012**: Mystery rounds MUST be listed in the review summary with a clear indication that their phases do not apply.
+- **FR-012**: Mystery rounds MUST be listed in the review summary with a clear indication that their weather phases (P1/P2/P3) do not apply.
 - **FR-013**: Both the advance-phase and review commands MUST be silently ignored when test mode is not active.
 - **FR-014**: The advance-phase and review commands MUST be subject to the same role and channel access restrictions as all other bot commands.
 - **FR-015**: When in test mode, configured round dates and times MUST be ignored for the purpose of phase eligibility. Any pending phase may be advanced immediately regardless of whether its real-world trigger horizon (T−5 days, T−2 days, T−2 hours) has been reached. Round dates and times are used only to determine the ordering of the phase advancement queue.

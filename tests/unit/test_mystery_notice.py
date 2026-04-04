@@ -5,6 +5,7 @@ Covers NFR-003 cases:
   2. schedule_round for MYSTERY schedules exactly one mystery_r job (FR-001)
   3. cancel_round removes mystery_r job id (FR-002)
   4. run_mystery_notice posts to forecast channel only, not log channel (FR-005, FR-008)
+  5. schedule_attendance_round treats MYSTERY identically to other formats (RSVP jobs)
 """
 from __future__ import annotations
 
@@ -78,6 +79,18 @@ def _mystery_round(round_id: int = 42) -> Round:
     )
 
 
+def _future_round(round_id: int, fmt: RoundFormat) -> Round:
+    """Round scheduled far in the future so all RSVP job fire-times are still pending."""
+    return Round(
+        id=round_id,
+        division_id=1,
+        round_number=1,
+        format=fmt,
+        track_name=None if fmt == RoundFormat.MYSTERY else "Bahrain",
+        scheduled_at=datetime(2099, 6, 1, 14, 0, 0, tzinfo=timezone.utc),
+    )
+
+
 class TestScheduleRoundMystery:
 
     def test_schedules_exactly_two_jobs(self):
@@ -127,6 +140,83 @@ class TestCancelRoundIncludesMystery:
         # phase1, phase2, phase3, mystery, cleanup, results,
         # rsvp_notice, rsvp_last_notice, rsvp_deadline = 9 job IDs
         assert svc._scheduler.remove_job.call_count == 9
+
+
+# ---------------------------------------------------------------------------
+# 5. schedule_attendance_round: MYSTERY round must produce RSVP jobs identical
+#    to any other round format (032-attendance-rsvp-checkin, fixed in 032 branch)
+# ---------------------------------------------------------------------------
+
+class TestScheduleAttendanceRoundMystery:
+    """schedule_attendance_round must treat MYSTERY identically to all other formats."""
+
+    def test_mystery_creates_rsvp_notice_job(self):
+        svc = _make_scheduler_no_db()
+        svc.schedule_attendance_round(
+            _future_round(5, RoundFormat.MYSTERY),
+            notice_days=3,
+            last_notice_hours=24,
+            deadline_hours=2,
+        )
+        job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
+        assert "rsvp_notice_r5" in job_ids
+
+    def test_mystery_creates_rsvp_deadline_job(self):
+        svc = _make_scheduler_no_db()
+        svc.schedule_attendance_round(
+            _future_round(5, RoundFormat.MYSTERY),
+            notice_days=3,
+            last_notice_hours=24,
+            deadline_hours=2,
+        )
+        job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
+        assert "rsvp_deadline_r5" in job_ids
+
+    def test_mystery_creates_last_notice_job_when_enabled(self):
+        svc = _make_scheduler_no_db()
+        svc.schedule_attendance_round(
+            _future_round(5, RoundFormat.MYSTERY),
+            notice_days=3,
+            last_notice_hours=24,
+            deadline_hours=2,
+        )
+        job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
+        assert "rsvp_last_notice_r5" in job_ids
+
+    def test_mystery_creates_same_rsvp_job_count_as_normal(self):
+        """MYSTERY and NORMAL round must produce identical RSVP job counts."""
+        svc = _make_scheduler_no_db()
+        svc.schedule_attendance_round(
+            _future_round(10, RoundFormat.MYSTERY),
+            notice_days=3,
+            last_notice_hours=24,
+            deadline_hours=2,
+        )
+        mystery_count = svc._scheduler.add_job.call_count
+
+        svc._scheduler.add_job.reset_mock()
+        svc.schedule_attendance_round(
+            _future_round(11, RoundFormat.NORMAL),
+            notice_days=3,
+            last_notice_hours=24,
+            deadline_hours=2,
+        )
+        normal_count = svc._scheduler.add_job.call_count
+
+        assert mystery_count == normal_count
+
+    def test_mystery_no_last_notice_when_disabled(self):
+        """When last_notice_hours=0, MYSTERY round gets only notice + deadline (2 jobs)."""
+        svc = _make_scheduler_no_db()
+        svc.schedule_attendance_round(
+            _future_round(5, RoundFormat.MYSTERY),
+            notice_days=3,
+            last_notice_hours=0,
+            deadline_hours=2,
+        )
+        assert svc._scheduler.add_job.call_count == 2
+        job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
+        assert "rsvp_last_notice_r5" not in job_ids
 
 
 # ---------------------------------------------------------------------------

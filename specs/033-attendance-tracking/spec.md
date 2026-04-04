@@ -285,9 +285,6 @@ any pardon granted before the amendment still applies.
   empty list (only the footer is shown if thresholds are configured).
 - `no_rsvp_penalty`, `no_attend_penalty`, and `no_show_penalty` are all 0 — all drivers
   accumulate 0 points; the sheet posts but contains no meaningful ranking; no sanctions fire.
-- Round format is Mystery — Mystery rounds have no result sessions (Principle IV) so no
-  `SessionResult` rows are ever created; attendance recording is never triggered and no
-  `DriverRoundAttendance` rows are written for that round.
 - The attendance channel has been deleted or the bot loses access to it — sheet posting fails;
   the bot logs the failure and does not block penalty finalization or sanction enforcement.
 - A driver is autosacked for the second time (already sacked from all seats) — the bot
@@ -446,8 +443,6 @@ the attendance sheet message ID tracking noted below.
 - "Driver role" referenced in FR-023 (revoked on autosack) is the Discord role automatically
   granted when a signup is approved, as described in Principle VIII and Principle XI of the
   constitution.
-- Mystery rounds never reach the result-submission stage (Principle IV), so attendance
-  recording (FR-001) and all downstream steps are naturally never triggered for Mystery rounds.
 - Multiple pardons submitted for the same driver+type in the same round are blocked at the
   data layer (unique constraint on `attendance_id, pardon_type`). The UI presents a clear
   error if the admin attempts a duplicate.
