@@ -48,7 +48,7 @@ run synchronously inside the finalization interaction
 | V | Observability & Change Audit Trail | ✅ Pass | Every autosack and autoreserve action produces an audit log entry (FR-023, FR-024, SC-006) |
 | VI | Incremental Scope Expansion | ✅ Pass | Attendance management is formally in-scope as Principle VI item 11 (added v2.10.0) |
 | VII | Output Channel Discipline | ✅ Pass | Attendance sheet posts to the division's configured `attendance_channel_id`; pardon justification logged to calc-log only (FR-010) |
-| VIII | Driver Profile Integrity | ✅ Pass | Autosack uses `DriverService.transition_state()` (state machine enforced); no direct state bypass |
+| VIII | Driver Profile Integrity | ✅ Pass | Autosack delegates to `PlacementService.sack_driver()`, which enforces `DriverService.transition_state()` internally — no direct state bypass |
 | IX | Team & Division Structural Integrity | ✅ Pass | Autoreserve moves driver to Reserve team via seat mutation; autosack unassigns from all seats; division structure not violated |
 | X | Modular Feature Architecture | ✅ Pass | Attendance module guard (is_enabled check) wraps all recording and distribution calls; module disabled = no-op (FR-004) |
 | XI | Signup Wizard Integrity | ✅ Pass | No overlap with signup wizard; attendance operates entirely in the penalty wizard stage |
@@ -129,9 +129,15 @@ See [research.md](research.md) for full research findings. Key decisions:
 2. **Pardon button**: `PenaltyReviewView` only; not `AppealsReviewView`.
 3. **Amendment hook**: `approve_amendment` in `amendment_service.py` — call
    `recalculate_attendance_for_round` after standings are recomputed.
-4. **Team sack implementation**: `DriverService.transition_state()` + direct seat
-   row mutation (no `TeamService.sack` method exists; TeamService has no unassign
-   method — seat mutations go directly to the `team_seats`-equivalent table).
+4. **Team sack implementation**: Reuse `PlacementService.sack_driver()` exactly as
+   the `/driver sack` command does — it atomically nulls all `team_seats`, deletes
+   `driver_season_assignments`, calls `DriverService.transition_state(NOT_SIGNED_UP)`,
+   and revokes all placement + signed-up roles. Pass `bot.user.id` / `str(bot.user)`
+   as the acting user. Catch `ValueError` for the already-sacked (NOT_SIGNED_UP) edge
+   case and emit a no-op audit log entry instead of raising. Autoreserve uses
+   `PlacementService.unassign_driver()` then `PlacementService.assign_driver()` to the
+   Reserve team. Do not call `DriverService.transition_state()` or mutate seat rows
+   directly.
 5. **`AttendancePardon` rows staged in-memory** (`state.staged_pardons`) during the
    penalty review window; persisted to `attendance_pardons` table at finalization.
 
@@ -169,10 +175,10 @@ finalize_penalty_review(interaction, state):
   # === NEW: Attendance pipeline ===
   if await attendance_module_enabled(db_path, division_id):
     await record_attendance_from_results(db_path, round_id, division_id)
-    await persist_staged_pardons(db_path, state.staged_pardons)
+    # INSERT state.staged_pardons into attendance_pardons table (inline block — T010)
     await distribute_attendance_points(db_path, round_id, division_id)
     await post_attendance_sheet(bot, guild, round_id, division_id)
-    await enforce_attendance_sanctions(bot, guild, round_id, division_id)
+    await enforce_attendance_sanctions(bot, guild, db_path, round_id, division_id, server_id, season_id)
   # === END Attendance pipeline ===
 
   ... [existing appeals prompt post]
@@ -190,7 +196,7 @@ finalize_penalty_review(interaction, state):
      (FR-003: only upgrade, never downgrade).
    - Else if current `attended IS NULL`: `UPDATE ... SET attended = 0`.
    - Else if current `attended = 1`: skip (FR-003: no revert).
-4. Module-disabled guard: call `attended_is_enabled` first; if False, return immediately.
+4. Module-disabled guard: call `attendance_module_enabled(db_path, division_id)` first; if False, return immediately.
 
 ### `distribute_attendance_points(db_path, round_id, division_id)`
 
@@ -219,25 +225,27 @@ finalize_penalty_review(interaction, state):
 6. `UPDATE attendance_division_config SET attendance_message_id = ? WHERE division_id = ?`
    with the new message ID.
 
-### `enforce_attendance_sanctions(bot, guild, round_id, division_id)`
+### `enforce_attendance_sanctions(bot, guild, db_path, round_id, division_id, server_id, season_id)`
 
 1. Load `AttendanceConfig` thresholds (`autoreserve_threshold`, `autosack_threshold`).
 2. If both thresholds disabled, return immediately.
 3. Load all full-time drivers with their `total_points_after` for this division's round.
 4. For each driver:
    a. **Autosack check** (if threshold enabled and `total_points_after >= autosack_threshold`):
-      - Find all divisions this server has where the driver has a seat.
-      - For each such division: unassign seat row, call
-        `DriverService.transition_state(NOT_SIGNED_UP)`, write audit log entry.
-      - Revoke Discord driver role.
+      - Call `PlacementService.sack_driver(server_id, driver_profile_id, season_id,
+        bot.user.id, str(bot.user), guild, discord_user_id)`.
+      - Catch `ValueError` (driver already NOT_SIGNED_UP) and emit a no-op audit log
+        entry instead of raising.
       - Skip autoreserve check for this driver.
    b. **Autoreserve check** (if threshold enabled and `total_points_after >= autoreserve_threshold`
       and driver not already in Reserve team of this division):
-      - Unassign current seat row for this division.
-      - Assign to Reserve team seat for this division.
+      - Call `PlacementService.unassign_driver(server_id, driver_profile_id, division_id,
+        season_id, ...)`.
+      - Look up Reserve team name; call `PlacementService.assign_driver(server_id,
+        driver_profile_id, division_id, reserve_team_name, season_id, ...)`.
       - Write audit log entry.
 
-### `recalculate_attendance_for_round(db_path, bot, guild, round_id, division_id)`
+### `recalculate_attendance_for_round(bot, guild, db_path, round_id, division_id, server_id, season_id)`
 
 *(Called from `approve_amendment` after standings recompute)*
 

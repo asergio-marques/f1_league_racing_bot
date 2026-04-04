@@ -399,7 +399,9 @@ any pardon granted before the amendment still applies.
 
 - **FR-028**: When round results are amended via the amendment flow, the bot MUST recompute
   `DriverRoundAttendance.attended` for all full-time drivers in the affected division using
-  the updated `DriverSessionResult` rows, applying FR-001 through FR-003 rules.
+  the updated `DriverSessionResult` rows, applying FR-001 and FR-002 rules; FR-003
+  (upgrade-only) does NOT apply — amendment is a deliberate correction and may flip
+  `attended` in either direction.
 - **FR-029**: Previously staged `AttendancePardon` rows for the amended round MUST be
   preserved and applied to the recalculated `points_awarded`.
 - **FR-030**: After recalculation, the bot MUST recompute `total_points_after` for all
