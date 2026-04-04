@@ -31,7 +31,7 @@ from cogs.module_cog import execute_forced_close
 from db.database import get_connection
 from models.driver_profile import DriverState
 from models.signup_module import SignupModuleConfig, SignupModuleSettings
-from models.track import TRACK_IDS
+from services import track_service
 from utils.channel_guard import admin_only, channel_guard, server_admin_only
 
 log = logging.getLogger(__name__)
@@ -1240,7 +1240,7 @@ class SignupCog(commands.Cog):
 
     @signup.command(name="open", description="Open the signup window.")
     @app_commands.describe(
-        track_ids="Optional: space- or comma-separated track IDs (e.g. '01 03 12')",
+        track_ids="Optional: space- or comma-separated track IDs (e.g. '1 3 12')",
         close_time="Optional: auto-close UTC datetime in ISO 8601 format (e.g. 2025-06-15T20:00:00)",
     )
     @channel_guard
@@ -1314,13 +1314,17 @@ class SignupCog(commands.Cog):
 
         # Parse track_ids
         track_list: list[str] = []
+        track_name_map: dict[str, str] = {}
         if track_ids and track_ids.strip():
             parts = [t.strip() for t in re.split(r"[,\s]+", track_ids.strip()) if t.strip()]
-            unknown = [t for t in parts if t not in TRACK_IDS]
+            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                track_name_map = await track_service.get_track_name_map(db)
+            unknown = [t for t in parts if t not in track_name_map]
             if unknown:
                 bad = ", ".join(f"'{t}'" for t in unknown)
                 await interaction.response.send_message(
-                    f"❌ Unknown track ID(s): {bad}.", ephemeral=True
+                    f"❌ Unknown track ID(s): {bad}. Valid IDs are 1\u2013{len(track_name_map)}.",
+                    ephemeral=True,
                 )
                 return
             track_list = parts
@@ -1350,7 +1354,7 @@ class SignupCog(commands.Cog):
                 log.warning("signup_open: could not delete closed status message")
 
         if track_list:
-            track_names = [TRACK_IDS[t] for t in track_list]
+            track_names = [track_name_map[t] for t in track_list]
             tracks_display = "\n".join(f"• {n}" for n in track_names)
         else:
             tracks_display = "No tracks specified"
