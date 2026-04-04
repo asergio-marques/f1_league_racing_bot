@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 from db.database import get_connection
 from models.pending_message import PendingMessage
+from utils.message_builder import discord_ts
 
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
@@ -153,7 +154,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "Bot") -> bool:
         warn_msg = (
             f"⚠️ Stuck retry entry id={entry.id}: message to channel "
             f"<#{entry.channel_id}> (id={entry.channel_id}) has failed "
-            f"{entry.retry_count} time(s) since {entry.enqueued_at.isoformat()}. "
+            f"{entry.retry_count} time(s) since {discord_ts(entry.enqueued_at)}. "
             f"Original failure: {entry.failure_reason}"
         )
         _safe_post_log(bot, entry.server_id, warn_msg)
@@ -195,13 +196,13 @@ async def attempt_delivery(entry: PendingMessage, bot: "Bot") -> bool:
     # --- Success (T016) ---
     await mark_delivered(db_path, entry.id)
 
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    now_str = datetime.now(timezone.utc)
     success_msg = (
-        f"✅ Retry delivery succeeded for channel <#{entry.channel_id}> "
+        f"\u2705 Retry delivery succeeded for channel <#{entry.channel_id}> "
         f"(id={entry.channel_id}). "
         f"Original failure: {entry.failure_reason}. "
         f"Retries taken: {entry.retry_count}. "
-        f"Delivered at: {now_str}."
+        f"Delivered at: {discord_ts(now_str)}."
     )
     _safe_post_log(bot, entry.server_id, success_msg)
     return True

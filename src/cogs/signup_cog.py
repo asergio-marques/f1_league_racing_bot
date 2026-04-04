@@ -33,6 +33,7 @@ from models.driver_profile import DriverState
 from models.signup_module import SignupModuleConfig, SignupModuleSettings
 from services import track_service
 from utils.channel_guard import admin_only, channel_guard, server_admin_only
+from utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
 
@@ -1369,7 +1370,7 @@ class SignupCog(commands.Cog):
         close_line = ""
         if close_at_iso:
             parsed_utc = datetime.fromisoformat(close_at_iso)
-            close_line = f"\n**Auto-closes:** {parsed_utc.strftime('%Y-%m-%d %H:%M')} UTC"
+            close_line = f"\n**Auto-closes:** {discord_ts(parsed_utc)} ({discord_ts(parsed_utc, 'R')})"
 
         info_embed = discord.Embed(
             title="🏁 Driver Signups Are Open!",
@@ -1416,7 +1417,7 @@ class SignupCog(commands.Cog):
             await db.commit()
 
         close_notice = (
-            f" Auto-close scheduled for `{close_at_iso}`."
+            f" Auto-close scheduled for {discord_ts(datetime.fromisoformat(close_at_iso))} ({discord_ts(datetime.fromisoformat(close_at_iso), 'R')})."
             if close_at_iso
             else ""
         )
