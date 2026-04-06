@@ -422,7 +422,123 @@ async def test_pardon_validation_rules():
 
 
 # ---------------------------------------------------------------------------
-# 6. test_point_distribution_all_scenarios  (US3 rules table)
+# 6. Attendance point rules — one test per spec case (US3)
+#
+# Penalty config used throughout: no_rsvp=2  no_attend=1  no_show=3
+#
+# Spec:
+#   Case A — Failure to check-in (NO_RSVP), attended      → no_rsvp_penalty
+#   Case B — Failure to check-in (NO_RSVP), did not attend → no_rsvp_penalty + no_attend_penalty
+#   Case C — Checked-in (any response),      attended      → 0
+#   Case D — Checked-in (any response),      did not attend → no_show_penalty
+# ---------------------------------------------------------------------------
+
+async def _make_single_driver_db(tmp_path, *, rsvp_status: str, attended: int) -> str:
+    """Return a DB path seeded with one full-time driver for round 1, division 10."""
+    db_file = str(tmp_path / f"test_{rsvp_status}_{attended}.db")
+    async with aiosqlite.connect(db_file) as db:
+        await _create_schema(db)
+        await _setup_division(db)
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, result_status) "
+            "VALUES (1, 10, 1, 'POST_RACE_PENALTY')"
+        )
+        await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=1)
+        await db.execute(
+            "INSERT INTO driver_round_attendance "
+            "(round_id, division_id, driver_profile_id, rsvp_status, attended) "
+            "VALUES (1, 10, 1, ?, ?)",
+            (rsvp_status, attended),
+        )
+        await db.commit()
+    return db_file
+
+
+async def _points(db_file: str) -> int:
+    async with aiosqlite.connect(db_file) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT points_awarded FROM driver_round_attendance WHERE driver_profile_id = 1"
+        )
+        row = await cur.fetchone()
+    assert row is not None, "DRA row missing after distribution"
+    return row["points_awarded"]
+
+
+# Case A — Failure to check-in, attended → no_rsvp_penalty (2)
+
+@pytest.mark.asyncio
+async def test_points_case_a_no_rsvp_attended(tmp_path):
+    """Case A: NO_RSVP + attended = no_rsvp_penalty (2)."""
+    db = await _make_single_driver_db(tmp_path, rsvp_status="NO_RSVP", attended=1)
+    await distribute_attendance_points(db, round_id=1, division_id=10)
+    assert await _points(db) == 2
+
+
+# Case B — Failure to check-in, did not attend → no_rsvp_penalty + no_attend_penalty (2+1=3)
+
+@pytest.mark.asyncio
+async def test_points_case_b_no_rsvp_absent(tmp_path):
+    """Case B: NO_RSVP + absent = no_rsvp_penalty + no_attend_penalty (2+1=3)."""
+    db = await _make_single_driver_db(tmp_path, rsvp_status="NO_RSVP", attended=0)
+    await distribute_attendance_points(db, round_id=1, division_id=10)
+    assert await _points(db) == 3
+
+
+# Case C — Checked-in, attended → 0 (all three checked-in statuses)
+
+@pytest.mark.asyncio
+async def test_points_case_c_accepted_attended(tmp_path):
+    """Case C: ACCEPTED + attended = 0."""
+    db = await _make_single_driver_db(tmp_path, rsvp_status="ACCEPTED", attended=1)
+    await distribute_attendance_points(db, round_id=1, division_id=10)
+    assert await _points(db) == 0
+
+
+@pytest.mark.asyncio
+async def test_points_case_c_tentative_attended(tmp_path):
+    """Case C: TENTATIVE + attended = 0."""
+    db = await _make_single_driver_db(tmp_path, rsvp_status="TENTATIVE", attended=1)
+    await distribute_attendance_points(db, round_id=1, division_id=10)
+    assert await _points(db) == 0
+
+
+@pytest.mark.asyncio
+async def test_points_case_c_declined_attended(tmp_path):
+    """Case C: DECLINED + attended = 0."""
+    db = await _make_single_driver_db(tmp_path, rsvp_status="DECLINED", attended=1)
+    await distribute_attendance_points(db, round_id=1, division_id=10)
+    assert await _points(db) == 0
+
+
+# Case D — Checked-in, did not attend → no_show_penalty (3)
+
+@pytest.mark.asyncio
+async def test_points_case_d_accepted_absent(tmp_path):
+    """Case D: ACCEPTED + absent = no_show_penalty (3)."""
+    db = await _make_single_driver_db(tmp_path, rsvp_status="ACCEPTED", attended=0)
+    await distribute_attendance_points(db, round_id=1, division_id=10)
+    assert await _points(db) == 3
+
+
+@pytest.mark.asyncio
+async def test_points_case_d_tentative_absent(tmp_path):
+    """Case D: TENTATIVE + absent = no_show_penalty (3)."""
+    db = await _make_single_driver_db(tmp_path, rsvp_status="TENTATIVE", attended=0)
+    await distribute_attendance_points(db, round_id=1, division_id=10)
+    assert await _points(db) == 3
+
+
+@pytest.mark.asyncio
+async def test_points_case_d_declined_absent(tmp_path):
+    """Case D: DECLINED + absent = no_show_penalty (3)."""
+    db = await _make_single_driver_db(tmp_path, rsvp_status="DECLINED", attended=0)
+    await distribute_attendance_points(db, round_id=1, division_id=10)
+    assert await _points(db) == 3
+
+
+# ---------------------------------------------------------------------------
+# 6b. test_point_distribution_all_scenarios  (US3 rules table — combined)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -437,12 +553,12 @@ async def test_point_distribution_all_scenarios(tmp_path):
 
         scenarios = [
             # (profile_id, rsvp_status, attended, expected_points)
-            (1, "NO_RSVP",   1, 2),      # no_rsvp only
-            (2, "NO_RSVP",   0, 3),      # no_rsvp + no_attend
-            (3, "ACCEPTED",  1, 0),      # no infraction
-            (4, "ACCEPTED",  0, 3),      # no_show
-            (5, "TENTATIVE", 0, 0),      # tentative + absent = 0
-            (6, "DECLINED",  0, 0),      # declined + absent = 0
+            (1, "NO_RSVP",   1, 2),      # failure to check-in, attended: no_rsvp only
+            (2, "NO_RSVP",   0, 3),      # failure to check-in, absent: no_rsvp + no_attend
+            (3, "ACCEPTED",  1, 0),      # checked-in, attended: no penalty
+            (4, "ACCEPTED",  0, 3),      # checked-in (accepted), absent: no_show
+            (5, "TENTATIVE", 0, 3),      # checked-in (tentative), absent: no_show
+            (6, "DECLINED",  0, 3),      # checked-in (declined), absent: no_show
         ]
 
         for profile_id, rsvp, att, _ in scenarios:
@@ -455,7 +571,7 @@ async def test_point_distribution_all_scenarios(tmp_path):
 
     await distribute_attendance_points(db_file, round_id=1, division_id=10)
 
-    expected = {1: 2, 2: 3, 3: 0, 4: 3, 5: 0, 6: 0}
+    expected = {1: 2, 2: 3, 3: 0, 4: 3, 5: 3, 6: 3}
     async with aiosqlite.connect(db_file) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute("SELECT driver_profile_id, points_awarded FROM driver_round_attendance ORDER BY driver_profile_id")

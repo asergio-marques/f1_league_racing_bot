@@ -560,12 +560,14 @@ async def distribute_attendance_points(
             attended = bool(row["attended"])
 
             # Compute base points before pardons (US3 rules table).
+            # "Checked-in" = any RSVP response (ACCEPTED/TENTATIVE/DECLINED).
+            # "Failure to check-in" = NO_RSVP.
             base = 0
             if rsvp == "NO_RSVP":
                 base = no_rsvp_pen + (no_attend_pen if not attended else 0)
-            elif rsvp == "ACCEPTED" and not attended:
+            elif not attended:
+                # ACCEPTED/TENTATIVE/DECLINED + no-show = no_show_penalty
                 base = no_show_pen
-            # TENTATIVE/DECLINED + no-show = 0 points
 
             # Load pardons for this DRA row.
             c2 = await db.execute(
