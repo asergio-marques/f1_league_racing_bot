@@ -488,12 +488,9 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
     1. Collect accepted reserves ordered by accepted_at ASC.
     2. Rank non-Reserve candidate teams by priority tier (FR-020), then tie-break (FR-021).
     3. Assign reserves to vacancies one-by-one; remaining reserves become standby.
-    
-    Note: Reserves with is_test_driver=1 are excluded (test mode only).
     """
     async with get_connection(bot.db_path) as db:
         # Accepted reserves ordered by accepted_at ASC (FR-022 / FR-019)
-        # Exclude test drivers
         cur = await db.execute(
             """
             SELECT dra.id         AS dra_id,
@@ -503,12 +500,10 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
               JOIN team_seats ts ON ts.driver_profile_id = dra.driver_profile_id
               JOIN team_instances ti ON ti.id = ts.team_instance_id
                                     AND ti.division_id = dra.division_id
-              JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
              WHERE dra.round_id = ?
                AND dra.division_id = ?
                AND dra.rsvp_status = 'ACCEPTED'
                AND ti.is_reserve = 1
-               AND dp.is_test_driver = 0
              ORDER BY dra.accepted_at ASC
             """,
             (round_id, division_id),
