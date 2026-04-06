@@ -122,8 +122,7 @@ derived from the configured penalty multipliers and any staged pardons.
 | NO_RSVP | Yes | `no_rsvp_penalty` |
 | NO_RSVP | No | `no_rsvp_penalty` + `no_attend_penalty` |
 | ACCEPTED / TENTATIVE / DECLINED | Yes | 0 |
-| ACCEPTED | No | `no_show_penalty` |
-| TENTATIVE or DECLINED | No | 0 |
+| ACCEPTED / TENTATIVE / DECLINED | No | `no_show_penalty` |
 
 A pardon of type NO_RSVP waives the `no_rsvp_penalty` component. A pardon of type
 NO_ATTEND waives the `no_attend_penalty` component. A pardon of type NO_SHOW waives the
@@ -141,7 +140,11 @@ NO_ATTEND waives the `no_attend_penalty` component. A pardon of type NO_SHOW wai
    **When** post-race penalties are approved, **Then** driver C accumulates `no_show_penalty`
    points.
 4. **Given** driver D has `rsvp_status = TENTATIVE` and `attended = false`, and no pardons,
-   **When** post-race penalties are approved, **Then** driver D accumulates 0 points.
+   **When** post-race penalties are approved, **Then** driver D accumulates `no_show_penalty`
+   points.
+4b. **Given** driver D2 has `rsvp_status = DECLINED` and `attended = false`, and no pardons,
+   **When** post-race penalties are approved, **Then** driver D2 accumulates `no_show_penalty`
+   points.
 5. **Given** driver E has `rsvp_status = NO_RSVP`, `attended = false`, a staged NO_RSVP
    pardon and a staged NO_ATTEND pardon, **When** post-race penalties are approved,
    **Then** driver E accumulates 0 points (both penalties waived).
