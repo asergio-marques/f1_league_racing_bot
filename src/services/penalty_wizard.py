@@ -1099,7 +1099,6 @@ class AppealsReviewView(discord.ui.View):
             return
         if not self.state.staged_appeals:
             # No corrections — finalise directly
-            await interaction.response.defer(ephemeral=True)
             from services.result_submission_service import finalize_appeals_review
             await finalize_appeals_review(interaction, self.state)
         else:
@@ -1158,7 +1157,6 @@ class _AppealsConfirmClearView(discord.ui.View):
         if not await _require_lm(interaction, self.state):
             return
         self.state.staged_appeals.clear()
-        await interaction.response.defer(ephemeral=True)
         from services.result_submission_service import finalize_appeals_review
         await finalize_appeals_review(interaction, self.state)
         self.stop()
