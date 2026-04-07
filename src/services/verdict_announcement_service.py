@@ -101,15 +101,19 @@ def _build_announcement_message(
     penalty_description: str,
     description_text: str,
     justification_text: str,
+    driver_display_name: str | None = None,
 ) -> str:
     """Build the full announcement message per contract."""
     season_prefix = f"Season {season_number} " if season_number is not None else ""
     heading = f"**{season_prefix}{division_name} Round {round_number} \u2014 {session_label}**"
     separator = "\u2501" * 35
+    driver_ref = f"<@{driver_discord_id}>"
+    if driver_display_name:
+        driver_ref += f" ({driver_display_name})"
     return (
         f"{heading}\n"
         f"{separator}\n"
-        f"**Driver**: <@{driver_discord_id}>\n"
+        f"**Driver**: {driver_ref}\n"
         f"**Penalty**: {penalty_description}\n"
         f"**Description**: {description_text}\n"
         f"**Justification**: {justification_text}"
@@ -174,14 +178,21 @@ async def post_penalty_announcements(
             st = SessionType(session_type_str)
             session_label = results_formatter.format_session_label(st, is_sprint=is_sprint)
 
-            # Resolve driver Discord ID from driver_session_results
+            # Resolve driver Discord ID (and test display name if applicable)
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
-                    "SELECT driver_user_id FROM driver_session_results WHERE id = ?",
+                    """
+                    SELECT dsr.driver_user_id, dp.test_display_name
+                    FROM driver_session_results dsr
+                    LEFT JOIN driver_profiles dp
+                          ON CAST(dp.discord_user_id AS INTEGER) = dsr.driver_user_id
+                    WHERE dsr.id = ?
+                    """,
                     (driver_session_result_id,),
                 )
                 dsr_row = await cursor.fetchone()
             driver_discord_id: int = dsr_row["driver_user_id"] if dsr_row else 0
+            test_display_name: str | None = dsr_row["test_display_name"] if dsr_row else None
 
             penalty_type = (
                 record.get("penalty_type") if hasattr(record, "get") else getattr(record, "penalty_type", "")
@@ -214,6 +225,7 @@ async def post_penalty_announcements(
                 penalty_description,
                 description_text or "*(not provided)*",
                 justification_text or "*(not provided)*",
+                driver_display_name=test_display_name,
             )
             await target_channel.send(content)
 
@@ -282,11 +294,18 @@ async def post_appeal_announcements(
 
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
-                    "SELECT driver_user_id FROM driver_session_results WHERE id = ?",
+                    """
+                    SELECT dsr.driver_user_id, dp.test_display_name
+                    FROM driver_session_results dsr
+                    LEFT JOIN driver_profiles dp
+                          ON CAST(dp.discord_user_id AS INTEGER) = dsr.driver_user_id
+                    WHERE dsr.id = ?
+                    """,
                     (driver_session_result_id,),
                 )
                 dsr_row = await cursor.fetchone()
             driver_discord_id: int = dsr_row["driver_user_id"] if dsr_row else 0
+            test_display_name: str | None = dsr_row["test_display_name"] if dsr_row else None
 
             penalty_type = (
                 record.get("penalty_type") if hasattr(record, "get") else getattr(record, "penalty_type", "")
@@ -318,6 +337,7 @@ async def post_appeal_announcements(
                 penalty_description,
                 description_text or "*(not provided)*",
                 justification_text or "*(not provided)*",
+                driver_display_name=test_display_name,
             )
             await target_channel.send(content)
 

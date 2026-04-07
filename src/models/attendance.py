@@ -60,3 +60,5 @@ class RsvpEmbedMessage:
     message_id: str
     channel_id: str
     posted_at: str
+    last_notice_msg_id: str | None = None
+    distribution_msg_id: str | None = None

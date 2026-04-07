@@ -507,6 +507,8 @@ async def _make_attendance_db(tmp_path) -> str:
                 message_id  TEXT    NOT NULL,
                 channel_id  TEXT    NOT NULL,
                 posted_at   TEXT    NOT NULL,
+                last_notice_msg_id  TEXT,
+                distribution_msg_id TEXT,
                 UNIQUE (round_id, division_id)
             );
             """

@@ -191,7 +191,7 @@ async def query_division_roster(db_path: str, division_id: int) -> list[dict]:
 def _driver_display_str(driver: dict) -> str:
     """Return a display string for a driver — test name or Discord mention."""
     if driver.get("test_display_name"):
-        return driver["test_display_name"]
+        return f"<@{driver['discord_user_id']}> ({driver['test_display_name']})"
     return f"<@{driver['discord_user_id']}>"
 
 
@@ -218,7 +218,8 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
             SELECT r.id, r.division_id, r.round_number, r.format, r.track_name,
                    r.scheduled_at,
                    s.season_number,
-                   d.name AS division_name
+                   d.name AS division_name,
+                   d.mention_role_id
               FROM rounds r
               JOIN divisions d ON d.id = r.division_id
               JOIN seasons s ON s.id = d.season_id
@@ -238,6 +239,7 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
     round_format = RoundFormat(row["format"])
     track_name: str | None = row["track_name"]
     season_number: int = row["season_number"]
+    mention_role_id: int | None = row["mention_role_id"]
     scheduled_at_raw = row["scheduled_at"]
 
     # Parse scheduled_at (stored as ISO 8601 string in SQLite)
@@ -282,11 +284,19 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
             continue  # shouldn't exist yet, but skip defensively
         _old_ch = bot.get_channel(int(_old.channel_id))
         if _old_ch is not None:
-            try:
-                _old_msg = await _old_ch.fetch_message(int(_old.message_id))
-                await _old_msg.delete()
-            except discord.HTTPException:
-                pass  # Already gone or no permission — safe to continue
+            for _mid in (_old.message_id, _old.last_notice_msg_id, _old.distribution_msg_id):
+                if _mid is None:
+                    continue
+                try:
+                    _old_msg = await _old_ch.fetch_message(int(_mid))
+                    await _old_msg.delete()
+                except discord.HTTPException:
+                    pass  # Already gone or no permission — safe to continue
+    # Remove stale DB rows so embed look-ups always find the current round
+    await bot.attendance_service.delete_stale_embed_messages(
+        division_id=division_id,
+        keep_round_id=round_id,
+    )
 
     # Query roster
     roster = await query_division_roster(bot.db_path, division_id)
@@ -332,6 +342,16 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
             division_id, exc,
         )
         return
+
+    # Ping the division role so members are notified
+    if mention_role_id:
+        try:
+            await channel.send(
+                f"<@&{mention_role_id}>",
+                allowed_mentions=discord.AllowedMentions(roles=True),
+            )
+        except discord.HTTPException as exc:
+            log.warning("run_rsvp_notice: failed to send role ping for division %d: %s", division_id, exc)
 
     # Bulk-insert DRA rows
     if all_driver_profile_ids:
@@ -426,7 +446,8 @@ async def run_rsvp_last_notice(round_id: int, bot) -> None:  # type: ignore[type
     mentions: list[str] = []
     for r in no_rsvp_rows:
         if r["test_display_name"]:
-            mentions.append(r["test_display_name"])
+            mentions.append(f"<@{r['discord_user_id']}> ({r['test_display_name']})"
+            )
         else:
             mentions.append(f"<@{r['discord_user_id']}>")
 
@@ -435,9 +456,17 @@ async def run_rsvp_last_notice(round_id: int, bot) -> None:  # type: ignore[type
         + " ".join(mentions)
     )
     try:
-        await channel.send(content)
+        last_msg = await channel.send(content)
     except discord.HTTPException as exc:
         log.error("run_rsvp_last_notice: failed to post for division %d: %s", division_id, exc)
+        return
+
+    # Track message ID so the next round's cleanup can delete it
+    await bot.attendance_service.update_embed_last_notice_msg(
+        round_id=round_id,
+        division_id=division_id,
+        msg_id=str(last_msg.id),
+    )
 
 
 # ── run_rsvp_deadline ─────────────────────────────────────────────────────────
@@ -721,7 +750,7 @@ async def _post_distribution_announcement(round_id: int, division_id: int, bot) 
 
     lines = ["📋 **Reserve Distribution Results**"]
     for row in eligible_rows:
-        driver_str = row["test_display_name"] if row["test_display_name"] else f"<@{row['discord_user_id']}>"
+        driver_str = f"<@{row['discord_user_id']}> ({row['test_display_name']})" if row["test_display_name"] else f"<@{row['discord_user_id']}>"
         if row["is_standby"]:
             lines.append(f"  {driver_str} — **Standby** (no vacancy available)")
         elif row["assigned_team_id"] is not None:
@@ -730,6 +759,14 @@ async def _post_distribution_announcement(round_id: int, division_id: int, bot) 
             lines.append(f"  {driver_str} — no assignment")
 
     try:
-        await channel.send("\n".join(lines))
+        dist_msg = await channel.send("\n".join(lines))
     except discord.HTTPException as exc:
         log.error("_post_distribution_announcement: failed for division %d: %s", division_id, exc)
+        return
+
+    # Track message ID so the next round's cleanup can delete it
+    await bot.attendance_service.update_embed_distribution_msg(
+        round_id=round_id,
+        division_id=division_id,
+        msg_id=str(dist_msg.id),
+    )

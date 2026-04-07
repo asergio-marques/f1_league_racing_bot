@@ -999,16 +999,16 @@ class PlacementService:
         # Group by team and build embed
         teams: dict[str, list[str]] = {}
         for row in assign_rows:
-            if row["is_test_driver"]:
-                label = row["test_display_name"] or f"Driver {row['discord_user_id']}"
-            else:
-                label = f"<@{row['discord_user_id']}>"
-            teams.setdefault(row["team_name"], []).append(label)
+            uid = int(row["discord_user_id"])
+            mention = f"<@{uid}>"
+            if row["is_test_driver"] and row["test_display_name"]:
+                mention = f"<@{uid}> ({row['test_display_name']})"
+            teams.setdefault(row["team_name"], []).append(mention)
 
         description = (
             "\n".join(
-                f"**{t}**: {', '.join(f'<@{uid}>' for uid in uids)}"
-                for t, uids in teams.items()
+                f"**{t}**: {', '.join(labels)}"
+                for t, labels in teams.items()
             )
             if teams
             else "*(no drivers assigned)*"

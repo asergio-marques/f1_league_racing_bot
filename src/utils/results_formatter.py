@@ -134,7 +134,8 @@ def format_race_table(
             fl_time = row.fastest_lap
     result = "\n".join(lines)
     if fl_driver_id is not None:
-        result += f"\n🏎 **Fastest lap** — <@{fl_driver_id}> — {fl_time or '—'}"
+        fl_driver_ref = (member_display or {}).get(fl_driver_id) or f"<@{fl_driver_id}>"
+        result += f"\n🏎 **Fastest lap** — {fl_driver_ref} — {fl_time or '—'}"
     return result
 
 
@@ -146,6 +147,7 @@ def format_driver_standings(
     snapshots: list[DriverStandingsSnapshot],
     reserve_user_ids: set[int],
     show_reserves: bool,
+    driver_display: dict[int, str] | None = None,
 ) -> str:
     """Render driver standings as a ranked mention list.
 
@@ -159,7 +161,8 @@ def format_driver_standings(
         if snap.driver_user_id in reserve_user_ids:
             if snap.total_points == 0 or not show_reserves:
                 continue
-        lines.append(f"{snap.standing_position}. <@{snap.driver_user_id}> — **{snap.total_points} pts**")
+        driver_ref = (driver_display or {}).get(snap.driver_user_id) or f"<@{snap.driver_user_id}>"
+        lines.append(f"{snap.standing_position}. {driver_ref} — **{snap.total_points} pts**")
     return "\n".join(lines) if lines else "No standings available."
 
 
