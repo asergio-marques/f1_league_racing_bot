@@ -19,6 +19,30 @@ log = logging.getLogger(__name__)
 # Display-name helpers
 # ---------------------------------------------------------------------------
 
+async def _build_test_driver_display(
+    db_path: str,
+    user_ids: list[int],
+) -> dict[int, str]:
+    """Return {user_id: '<@uid> (name)'} for any test drivers in *user_ids*."""
+    if not user_ids:
+        return {}
+    async with get_connection(db_path) as db:
+        placeholders = ",".join("?" * len(user_ids))
+        cursor = await db.execute(
+            f"SELECT discord_user_id, test_display_name FROM driver_profiles"
+            f" WHERE is_test_driver = 1 AND discord_user_id IN ({placeholders})",
+            [str(uid) for uid in user_ids],
+        )
+        rows = await cursor.fetchall()
+    result: dict[int, str] = {}
+    for r in rows:
+        uid = int(r["discord_user_id"])
+        name = r["test_display_name"]
+        if name:
+            result[uid] = f"<@{uid}> ({name})"
+    return result
+
+
 async def _build_member_display(
     guild: discord.Guild,
     user_ids: list[int],
@@ -120,10 +144,17 @@ async def post_session_results(
     session_type = SessionType(session_result.session_type)
     session_label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
 
+    user_ids = [r.driver_user_id for r in driver_rows]
+    test_display = await _build_test_driver_display(db_path, user_ids)
+
     if session_type.is_qualifying:
-        table = results_formatter.format_qualifying_table(driver_rows, points_map)
+        table = results_formatter.format_qualifying_table(
+            driver_rows, points_map, member_display=test_display or None
+        )
     else:
-        table = results_formatter.format_race_table(driver_rows, points_map)
+        table = results_formatter.format_race_table(
+            driver_rows, points_map, member_display=test_display or None
+        )
 
     season_number, division_name = await _get_heading_context(db_path, session_result.round_id)
     season_prefix = f"Season {season_number} " if season_number is not None else ""
@@ -161,8 +192,11 @@ async def post_standings(
     # Determine reserve user IDs from the DB (is_reserve team instances)
     reserve_user_ids: set[int] = await _get_reserve_user_ids(db_path, division_id)
 
+    driver_uids = [s.driver_user_id for s in driver_snapshots]
+    test_display = await _build_test_driver_display(db_path, driver_uids)
+
     driver_text = results_formatter.format_driver_standings(
-        driver_snapshots, reserve_user_ids, show_reserves
+        driver_snapshots, reserve_user_ids, show_reserves, driver_display=test_display or None
     )
     team_text = results_formatter.format_team_standings(team_snapshots)
 

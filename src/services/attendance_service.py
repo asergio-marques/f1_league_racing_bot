@@ -351,6 +351,53 @@ class AttendanceService:
             rows = await cursor.fetchall()
         return [_rem_from_row(r) for r in rows]
 
+    async def delete_stale_embed_messages(
+        self,
+        division_id: int,
+        keep_round_id: int,
+    ) -> None:
+        """Delete all rsvp_embed_messages rows for *division_id* except the one
+        for *keep_round_id*.  Called after a new RSVP notice is posted so that
+        stale rows from previous rounds do not confuse embed look-ups.
+        """
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "DELETE FROM rsvp_embed_messages"
+                " WHERE division_id = ? AND round_id != ?",
+                (division_id, keep_round_id),
+            )
+            await db.commit()
+
+    async def update_embed_last_notice_msg(
+        self,
+        round_id: int,
+        division_id: int,
+        msg_id: str,
+    ) -> None:
+        """Store the Discord message ID of the last-notice ping for this round."""
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE rsvp_embed_messages SET last_notice_msg_id = ?"
+                " WHERE round_id = ? AND division_id = ?",
+                (msg_id, round_id, division_id),
+            )
+            await db.commit()
+
+    async def update_embed_distribution_msg(
+        self,
+        round_id: int,
+        division_id: int,
+        msg_id: str,
+    ) -> None:
+        """Store the Discord message ID of the reserve distribution announcement."""
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE rsvp_embed_messages SET distribution_msg_id = ?"
+                " WHERE round_id = ? AND division_id = ?",
+                (msg_id, round_id, division_id),
+            )
+            await db.commit()
+
 
 # ── Row-to-dataclass helpers ───────────────────────────────────────────────
 
@@ -379,6 +426,8 @@ def _rem_from_row(row: object) -> RsvpEmbedMessage:
         message_id=row["message_id"],
         channel_id=row["channel_id"],
         posted_at=row["posted_at"],
+        last_notice_msg_id=row["last_notice_msg_id"],
+        distribution_msg_id=row["distribution_msg_id"],
     )
 
 
@@ -658,7 +707,7 @@ async def post_attendance_sheet(
         cursor = await db.execute(
             """
             SELECT dra.driver_profile_id, dra.total_points_after,
-                   dp.discord_user_id
+                   dp.discord_user_id, dp.test_display_name
             FROM driver_round_attendance dra
             JOIN driver_season_assignments dsa
                 ON dsa.driver_profile_id = dra.driver_profile_id
@@ -698,7 +747,10 @@ async def post_attendance_sheet(
     lines: list[str] = ["**Attendance Standings**", ""]
     for r in sorted_drivers:
         pts = r["total_points_after"] or 0
-        lines.append(f"<@{r['discord_user_id']}> — {pts} attendance point{'s' if pts != 1 else ''}")
+        mention = f"<@{r['discord_user_id']}>"
+        if r["test_display_name"]:
+            mention += f" ({r['test_display_name']})"
+        lines.append(f"{mention} — {pts} attendance point{'s' if pts != 1 else ''}")
 
     # Footer (FR-019).
     footer_lines: list[str] = []
