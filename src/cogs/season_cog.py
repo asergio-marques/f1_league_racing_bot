@@ -229,6 +229,68 @@ class SeasonCog(commands.Cog):
                 "",
             ]
 
+            # ── Weather config ────────────────────────────────────────
+            if weather_on:
+                from services.weather_config_service import get_weather_pipeline_config as _gwpc
+                _wcfg = await _gwpc(self.bot.db_path, interaction.guild_id)  # type: ignore[attr-defined]
+                lines += [
+                    "**Weather Config**",
+                    f"  • Phase 1 deadline: {_wcfg.phase_1_days} day(s) before race",
+                    f"  • Phase 2 deadline: {_wcfg.phase_2_days} day(s) before race",
+                    f"  • Phase 3 deadline: {_wcfg.phase_3_hours}h before race",
+                    "",
+                ]
+
+            # ── Signup config ─────────────────────────────────────────
+            if signup_on:
+                _s_cfg = await self.bot.signup_module_service.get_config(interaction.guild_id)  # type: ignore[attr-defined]
+                _s_settings = await self.bot.signup_module_service.get_settings(interaction.guild_id)  # type: ignore[attr-defined]
+                _s_slots = await self.bot.signup_module_service.get_slots(interaction.guild_id)  # type: ignore[attr-defined]
+                _signup_ch = f"<#{_s_cfg.signup_channel_id}>" if _s_cfg and _s_cfg.signup_channel_id else "*(not configured)*"
+                _signup_br = f"<@&{_s_cfg.base_role_id}>" if _s_cfg and _s_cfg.base_role_id else "*(not configured)*"
+                _signup_cr = f"<@&{_s_cfg.signed_up_role_id}>" if _s_cfg and _s_cfg.signed_up_role_id else "*(not configured)*"
+                _time_type = _s_settings.time_type.replace("_", " ").title()
+                _time_img = "Required" if _s_settings.time_image_required else "Not required"
+                _nationality = "Required" if _s_settings.nationality_required else "Not required"
+                _slot_labels = [s.display_label for s in _s_slots] if _s_slots else ["*(none configured)*"]
+                lines += [
+                    "**Signup Config**",
+                    f"  • Channel: {_signup_ch}",
+                    f"  • Base role: {_signup_br}",
+                    f"  • Sign-up role: {_signup_cr}",
+                    f"  • Time type: {_time_type}",
+                    f"  • Time image: {_time_img}",
+                    f"  • Nationality: {_nationality}",
+                    f"  • Available slots: {', '.join(_slot_labels)}",
+                    "",
+                ]
+
+            # ── Attendance server-level config ────────────────────────
+            if attendance_on:
+                att_cfg = await self.bot.attendance_service.get_config(interaction.guild_id)  # type: ignore[attr-defined]
+                if att_cfg:
+                    ar = att_cfg.autoreserve_threshold
+                    as_ = att_cfg.autosack_threshold
+                    ar_str = f"{ar} pts" if ar is not None else "*(not set)*"
+                    as_str = f"{as_} pts" if as_ is not None else "*(not set)*"
+                    ln_last = (
+                        f"{att_cfg.rsvp_last_notice_hours}h before deadline"
+                        if att_cfg.rsvp_last_notice_hours
+                        else "*(disabled)*"
+                    )
+                    lines += [
+                        "**Attendance Config**",
+                        f"  • RSVP notice: {att_cfg.rsvp_notice_days} day(s) before race",
+                        f"  • Last notice: {ln_last}",
+                        f"  • Deadline: {att_cfg.rsvp_deadline_hours}h before race",
+                        f"  • No-RSVP penalty: {att_cfg.no_rsvp_penalty} pt(s)",
+                        f"  • No-attend penalty: {att_cfg.no_attend_penalty} pt(s)",
+                        f"  • No-show penalty: {att_cfg.no_show_penalty} pt(s)",
+                        f"  • Auto-reserve threshold: {ar_str}",
+                        f"  • Auto-sack threshold: {as_str}",
+                        "",
+                    ]
+
             # ── Points configs ────────────────────────────────────────
             config_names = await season_points_service.get_season_config_names(self.bot.db_path, cfg.season_id)  # type: ignore[attr-defined]
             if config_names:
