@@ -165,7 +165,7 @@ def test_format_race_table_no_fl_footer_when_no_bonus():
 # ---------------------------------------------------------------------------
 
 
-def _make_snap(driver_user_id: int, position: int, total_points: int) -> DriverStandingsSnapshot:
+def _make_snap(driver_user_id: int, position: int, total_points: int, race_participant: bool = False) -> DriverStandingsSnapshot:
     return DriverStandingsSnapshot(
         id=0,
         round_id=1,
@@ -175,6 +175,7 @@ def _make_snap(driver_user_id: int, position: int, total_points: int) -> DriverS
         total_points=total_points,
         finish_counts={},
         first_finish_rounds={},
+        race_participant=race_participant,
     )
 
 
@@ -192,10 +193,24 @@ def test_driver_standings_reserve_with_points_shown_reserves_on():
     assert "<@200>" in result
 
 
-def test_driver_standings_reserve_zero_pts_always_hidden():
-    """Reserve with 0 points is never shown, even when show_reserves=True."""
-    snaps = [_make_snap(200, 1, 0)]
+def test_driver_standings_reserve_zero_pts_no_participation_hidden():
+    """Reserve with 0 points and no race participation is never shown."""
+    snaps = [_make_snap(200, 1, 0, race_participant=False)]
     result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=True)
+    assert "<@200>" not in result
+
+
+def test_driver_standings_reserve_dnf_shown_when_reserves_on():
+    """Reserve with 0 points but who participated (DNF) is shown when show_reserves=True."""
+    snaps = [_make_snap(200, 1, 0, race_participant=True)]
+    result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=True)
+    assert "<@200>" in result
+
+
+def test_driver_standings_reserve_dnf_hidden_when_reserves_off():
+    """Reserve with 0 points and participation is hidden when show_reserves=False."""
+    snaps = [_make_snap(200, 1, 0, race_participant=True)]
+    result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=False)
     assert "<@200>" not in result
 
 
