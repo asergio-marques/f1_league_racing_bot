@@ -74,18 +74,18 @@ the waived event type.
 1. **Given** a penalty wizard is in the penalty review stage and at least one full-time
    driver has a qualifying attendance event, **When** the tier-2 admin presses the
    "Attendance Pardon" button, **Then** a modal form opens requesting: Discord User ID,
-   pardon type (NO_RSVP / NO_ATTEND / NO_SHOW), and a free-text justification.
+   pardon type (NO_RSVP / NO_RSVP_ABSENT / RSVP_ABSENT), and a free-text justification.
 2. **Given** the admin submits a NO_RSVP pardon for driver A whose `rsvp_status` is
    `ACCEPTED`, **When** the form is submitted, **Then** the bot rejects the pardon with a
    clear error ("driver RSVP'd; NO_RSVP pardon is not applicable").
-3. **Given** the admin submits a NO_SHOW pardon for driver B whose `rsvp_status` is `NO_RSVP`,
+3. **Given** the admin submits a RSVP_ABSENT pardon for driver B whose `rsvp_status` is `NO_RSVP`,
    **When** the form is submitted, **Then** the bot rejects the pardon ("driver did not
-   RSVP; NO_SHOW pardon requires ACCEPTED status").
+   RSVP; RSVP_ABSENT pardon requires ACCEPTED, TENTATIVE, or DECLINED status").
 4. **Given** the admin submits a valid NO_RSVP pardon for driver C (`rsvp_status = NO_RSVP`),
    **When** the form is submitted, **Then** the pardon is staged; the penalty wizard summary
    is updated to show the staged pardon alongside any staged penalties; and the justification
    is logged to the calculation log channel and not displayed elsewhere.
-5. **Given** a staged NO_RSVP pardon and a staged NO_ATTEND pardon for the same driver exist,
+5. **Given** a staged NO_RSVP pardon and a staged NO_RSVP_ABSENT pardon for the same driver exist,
    **When** penalties are approved, **Then** that driver receives 0 attendance points for
    the round (both penalty events are fully waived).
 6. **Given** the wizard is in the appeals review stage (not the penalty review stage),
@@ -120,13 +120,13 @@ derived from the configured penalty multipliers and any staged pardons.
 | RSVP Status | Attended | Points Awarded |
 |---|---|---|
 | NO_RSVP | Yes | `no_rsvp_penalty` |
-| NO_RSVP | No | `no_rsvp_penalty` + `no_attend_penalty` |
+| NO_RSVP | No | `no_rsvp_penalty` + `no_rsvp_absent_penalty` |
 | ACCEPTED / TENTATIVE / DECLINED | Yes | 0 |
-| ACCEPTED / TENTATIVE / DECLINED | No | `no_show_penalty` |
+| ACCEPTED / TENTATIVE / DECLINED | No | `rsvp_absent_penalty` |
 
 A pardon of type NO_RSVP waives the `no_rsvp_penalty` component. A pardon of type
-NO_ATTEND waives the `no_attend_penalty` component. A pardon of type NO_SHOW waives the
-`no_show_penalty` component. Multiple pardons for the same driver are additive.
+NO_RSVP_ABSENT waives the `no_rsvp_absent_penalty` component. A pardon of type RSVP_ABSENT waives the
+`rsvp_absent_penalty` component. Multiple pardons for the same driver are additive.
 
 **Acceptance Scenarios**:
 
@@ -135,22 +135,22 @@ NO_ATTEND waives the `no_attend_penalty` component. A pardon of type NO_SHOW wai
    points.
 2. **Given** driver B has `rsvp_status = NO_RSVP` and `attended = false`, and no pardons,
    **When** post-race penalties are approved, **Then** driver B accumulates
-   `no_rsvp_penalty + no_attend_penalty` points.
+   `no_rsvp_penalty + no_rsvp_absent_penalty` points.
 3. **Given** driver C has `rsvp_status = ACCEPTED` and `attended = false`, and no pardons,
-   **When** post-race penalties are approved, **Then** driver C accumulates `no_show_penalty`
+   **When** post-race penalties are approved, **Then** driver C accumulates `rsvp_absent_penalty`
    points.
 4. **Given** driver D has `rsvp_status = TENTATIVE` and `attended = false`, and no pardons,
-   **When** post-race penalties are approved, **Then** driver D accumulates `no_show_penalty`
+   **When** post-race penalties are approved, **Then** driver D accumulates `rsvp_absent_penalty`
    points.
 4b. **Given** driver D2 has `rsvp_status = DECLINED` and `attended = false`, and no pardons,
-   **When** post-race penalties are approved, **Then** driver D2 accumulates `no_show_penalty`
+   **When** post-race penalties are approved, **Then** driver D2 accumulates `rsvp_absent_penalty`
    points.
 5. **Given** driver E has `rsvp_status = NO_RSVP`, `attended = false`, a staged NO_RSVP
-   pardon and a staged NO_ATTEND pardon, **When** post-race penalties are approved,
+   pardon and a staged NO_RSVP_ABSENT pardon, **When** post-race penalties are approved,
    **Then** driver E accumulates 0 points (both penalties waived).
 6. **Given** driver F has `rsvp_status = NO_RSVP`, `attended = false`, and only a staged
    NO_RSVP pardon, **When** post-race penalties are approved, **Then** driver F accumulates
-   only `no_attend_penalty` points (no_rsvp component waived; no_attend component not waived).
+   only `no_rsvp_absent_penalty` points (no_rsvp component waived; no_rsvp_absent component not waived).
 
 ---
 
@@ -286,7 +286,7 @@ any pardon granted before the amendment still applies.
 - All drivers in a division are on the Reserve team — the bot finds no full-time drivers to
   record attendance for; no `DriverRoundAttendance` rows are written; the sheet posts an
   empty list (only the footer is shown if thresholds are configured).
-- `no_rsvp_penalty`, `no_attend_penalty`, and `no_show_penalty` are all 0 — all drivers
+- `no_rsvp_penalty`, `no_rsvp_absent_penalty`, and `rsvp_absent_penalty` are all 0 — all drivers
   accumulate 0 points; the sheet posts but contains no meaningful ranking; no sanctions fire.
 - The attendance channel has been deleted or the bot loses access to it — sheet posting fails;
   the bot logs the failure and does not block penalty finalization or sanction enforcement.
@@ -321,14 +321,15 @@ any pardon granted before the amendment still applies.
   the penalty review stage of the penalty wizard. The "Attendance Pardon" button MUST NOT
   appear during the appeals review stage.
 - **FR-006**: Pressing the "Attendance Pardon" button MUST open a modal form requesting:
-  (1) Discord User ID of the driver, (2) pardon type — one of NO_RSVP, NO_ATTEND, or
-  NO_SHOW, (3) free-text justification.
+  (1) Discord User ID of the driver, (2) pardon type — one of NO_RSVP, NO_RSVP_ABSENT, or
+  RSVP_ABSENT, (3) free-text justification.
 - **FR-007**: The bot MUST validate each pardon submission against the current RSVP and
   attendance state of the named driver:
   - NO_RSVP pardon: driver's `rsvp_status` MUST be `NO_RSVP`; rejected otherwise.
-  - NO_ATTEND pardon: driver's `attended` MUST be `false`; rejected otherwise.
-  - NO_SHOW pardon: driver's `rsvp_status` MUST be `ACCEPTED` and `attended` MUST be
+  - NO_RSVP_ABSENT pardon: driver's `rsvp_status` MUST be `NO_RSVP` and `attended` MUST be
     `false`; rejected otherwise.
+  - RSVP_ABSENT pardon: driver's `rsvp_status` MUST be `ACCEPTED`, `TENTATIVE`, or `DECLINED`
+    and `attended` MUST be `false`; rejected otherwise.
 - **FR-008**: Multiple pardons of different types MAY be staged for the same driver in the
   same round; the limit is one pardon per event type per driver per round.
 - **FR-009**: Staged attendance pardons MUST be displayed in the penalty wizard summary
@@ -351,7 +352,7 @@ any pardon granted before the amendment still applies.
   the current round.
 - **FR-015**: Pardons waive the corresponding point component only; un-pardoned components
   of the same event are still applied (e.g., a NO_RSVP pardon does not waive the
-  `no_attend_penalty` component for a driver who also did not attend).
+  `no_rsvp_absent_penalty` component for a driver who also did not attend).
 
 #### Attendance Sheet Posting
 
@@ -424,7 +425,7 @@ the attendance sheet message ID tracking noted below.
   penalty wizard and applied at finalization. Uniquely constrained on
   `(attendance_id, pardon_type)`.
 - **AttendanceConfig**: Server-level configuration including `no_rsvp_penalty`,
-  `no_attend_penalty`, `no_show_penalty`, `autoreserve_threshold`, and `autosack_threshold`.
+  `no_rsvp_absent_penalty`, `rsvp_absent_penalty`, `autoreserve_threshold`, and `autosack_threshold`.
   All read-only during this feature's execution path.
 - **AttendanceDivisionConfig**: Per-division config holding `attendance_channel_id` (sheet
   destination) and `rsvp_channel_id` (owned by the RSVP sub-increment). Requires a new

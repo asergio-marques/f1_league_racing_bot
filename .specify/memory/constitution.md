@@ -18,7 +18,7 @@ SYNC IMPACT REPORT
                         - Attendance point distribution (post-penalty finalization hook;
                           deferred from RSVP sub-increment per Principle XIII).
                         - Attendance pardon workflow integrated into the penalty wizard
-                          (NO_RSVP / NO_ATTEND / NO_SHOW modal, staged display, approval).
+                          (NO_RSVP / NO_RSVP_ABSENT / RSVP_ABSENT modal, staged display, approval).
                         - Attendance sheet posting to the division's attendance channel
                           (descending points list with threshold footer).
                         - Autoreserve and autosack sanction enforcement after point
@@ -1661,16 +1661,17 @@ exclusively during the penalty review stage (NOT during the appeals stage). When
 a modal form MUST request:
 
 1. The Discord User ID of the driver being pardoned.
-2. The type of attendance event being waived: NO_RSVP, NO_ATTEND, or NO_SHOW.
+2. The type of attendance event being waived: NO_RSVP, NO_RSVP_ABSENT, or RSVP_ABSENT.
 3. A free-text justification (logged to the calculation log channel; never displayed
    elsewhere for privacy reasons).
 
 Pardon validation rules:
 - A NO_RSVP pardon requires the driver's RSVP status to be NO_RSVP.
-- A NO_ATTEND pardon requires the driver to have not attended (and RSVP status is
-  irrelevant for this pardon type).
-- A NO_SHOW pardon requires the driver to have been RSVP `ACCEPTED` but not attended.
-- Multiple pardons for the same driver are permitted (e.g., both NO_RSVP and NO_ATTEND
+- A NO_RSVP_ABSENT pardon requires the driver's RSVP status to be NO_RSVP and the driver
+  to have not attended.
+- A RSVP_ABSENT pardon requires the driver to have been RSVP `ACCEPTED`, `TENTATIVE`, or
+  `DECLINED` but not attended.
+- Multiple pardons for the same driver are permitted (e.g., both NO_RSVP and NO_RSVP_ABSENT
   can be waived to eliminate both penalties for a driver who did not RSVP and did not
   attend).
 
@@ -1689,10 +1690,9 @@ Points are awarded per driver per round as follows:
 | RSVP status | Attended | Points gained |
 |-------------|----------|---------------|
 | NO_RSVP | Attended | `no_rsvp_penalty` |
-| NO_RSVP | Did not attend | `no_rsvp_penalty` + `no_attend_penalty` |
+| NO_RSVP | Did not attend | `no_rsvp_penalty` + `no_rsvp_absent_penalty` |
 | Any (ACCEPTED/TENTATIVE/DECLINED) | Attended | 0 |
-| ACCEPTED | Did not attend | `no_show_penalty` |
-| TENTATIVE or DECLINED | Did not attend | 0 |
+| Any (ACCEPTED/TENTATIVE/DECLINED) | Did not attend | `rsvp_absent_penalty` |
 
 Pardons waive the corresponding point award(s). A driver who receives a pardon for a given
 event type does NOT accumulate points for that event.
@@ -2107,10 +2107,10 @@ for team-level aggregates):
 - `rsvp_deadline_hours` (INTEGER, default 2) — hours before round when RSVP choices lock;
   0 means choices lock at round start time.
 - `no_rsvp_penalty` (INTEGER, default 1) — attendance points per no-RSVP event.
-- `no_attend_penalty` (INTEGER, default 1) — attendance points per no-attend event
+- `no_rsvp_absent_penalty` (INTEGER, default 1) — attendance points per no-RSVP-absent event
   (added on top of no_rsvp_penalty when driver also did not RSVP).
-- `no_show_penalty` (INTEGER, default 1) — attendance points per no-show-after-acceptance
-  event.
+- `rsvp_absent_penalty` (INTEGER, default 1) — attendance points per RSVP-absent event
+  (driver RSVP'd but did not attend).
 - `autoreserve_threshold` (INTEGER, nullable — null means disabled) — total attendance
   points at which a full-time driver is automatically moved to Reserve.
 - `autosack_threshold` (INTEGER, nullable — null means disabled) — total attendance points
@@ -2146,7 +2146,7 @@ round while the Attendance module is enabled):
 **AttendancePardon** (per driver, per round, per attendance event type):
 - `pardon_id` (INTEGER PK, server-scoped auto-increment)
 - `attendance_id` (INTEGER, FK → DriverRoundAttendance)
-- `pardon_type` (ENUM: NO_RSVP / NO_ATTEND / NO_SHOW)
+- `pardon_type` (ENUM: NO_RSVP / NO_RSVP_ABSENT / RSVP_ABSENT)
 - `justification` (TEXT, nullable — logged to calculation log channel only; never
   displayed in public-facing output)
 - `applied_by` (TEXT — Discord User ID of the tier-2 admin who applied the pardon)

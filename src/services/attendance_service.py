@@ -64,8 +64,8 @@ class AttendanceService:
             rsvp_last_notice_hours=row["rsvp_last_notice_hours"],
             rsvp_deadline_hours=row["rsvp_deadline_hours"],
             no_rsvp_penalty=row["no_rsvp_penalty"],
-            no_attend_penalty=row["no_attend_penalty"],
-            no_show_penalty=row["no_show_penalty"],
+            no_rsvp_absent_penalty=row["no_rsvp_absent_penalty"],
+            rsvp_absent_penalty=row["rsvp_absent_penalty"],
             autoreserve_threshold=row["autoreserve_threshold"],
             autosack_threshold=row["autosack_threshold"],
         )
@@ -175,18 +175,18 @@ class AttendanceService:
             )
             await db.commit()
 
-    async def update_no_attend_penalty(self, server_id: int, value: int) -> None:
+    async def update_no_rsvp_absent_penalty(self, server_id: int, value: int) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET no_attend_penalty = ? WHERE server_id = ?",
+                "UPDATE attendance_config SET no_rsvp_absent_penalty = ? WHERE server_id = ?",
                 (value, server_id),
             )
             await db.commit()
 
-    async def update_no_show_penalty(self, server_id: int, value: int) -> None:
+    async def update_rsvp_absent_penalty(self, server_id: int, value: int) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET no_show_penalty = ? WHERE server_id = ?",
+                "UPDATE attendance_config SET rsvp_absent_penalty = ? WHERE server_id = ?",
                 (value, server_id),
             )
             await db.commit()
@@ -567,7 +567,7 @@ async def distribute_attendance_points(
         # Load penalty config for this division's server.
         cursor = await db.execute(
             """
-            SELECT ac.no_rsvp_penalty, ac.no_attend_penalty, ac.no_show_penalty
+            SELECT ac.no_rsvp_penalty, ac.no_rsvp_absent_penalty, ac.rsvp_absent_penalty
             FROM attendance_config ac
             JOIN seasons s ON s.server_id = ac.server_id
             JOIN divisions d ON d.season_id = s.id
@@ -581,8 +581,8 @@ async def distribute_attendance_points(
             return
 
         no_rsvp_pen: int = cfg_row["no_rsvp_penalty"] or 0
-        no_attend_pen: int = cfg_row["no_attend_penalty"] or 0
-        no_show_pen: int = cfg_row["no_show_penalty"] or 0
+        no_rsvp_absent_pen: int = cfg_row["no_rsvp_absent_penalty"] or 0
+        rsvp_absent_pen: int = cfg_row["rsvp_absent_penalty"] or 0
 
         # Load full-time DRA rows for this round.
         cursor = await db.execute(
@@ -613,10 +613,10 @@ async def distribute_attendance_points(
             # "Failure to check-in" = NO_RSVP.
             base = 0
             if rsvp == "NO_RSVP":
-                base = no_rsvp_pen + (no_attend_pen if not attended else 0)
+                base = no_rsvp_pen + (no_rsvp_absent_pen if not attended else 0)
             elif not attended:
-                # ACCEPTED/TENTATIVE/DECLINED + no-show = no_show_penalty
-                base = no_show_pen
+                # ACCEPTED/TENTATIVE/DECLINED + no-show = rsvp_absent_penalty
+                base = rsvp_absent_pen
 
             # Load pardons for this DRA row.
             c2 = await db.execute(
@@ -629,10 +629,10 @@ async def distribute_attendance_points(
             net = base
             if "NO_RSVP" in pardons:
                 net -= no_rsvp_pen
-            if "NO_ATTEND" in pardons:
-                net -= no_attend_pen
-            if "NO_SHOW" in pardons:
-                net -= no_show_pen
+            if "NO_RSVP_ABSENT" in pardons:
+                net -= no_rsvp_absent_pen
+            if "RSVP_ABSENT" in pardons:
+                net -= rsvp_absent_pen
             net = max(0, net)  # never negative
 
             # Compute cumulative total across all finalized rounds in division.
