@@ -12,11 +12,6 @@ from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnap
 
 log = logging.getLogger(__name__)
 
-# Session types that count for team standings (per constitution XII).
-_TEAM_POINTS_SESSIONS: frozenset[SessionType] = frozenset(
-    {SessionType.FEATURE_RACE, SessionType.SPRINT_RACE}
-)
-
 
 # ---------------------------------------------------------------------------
 # Points computation
@@ -260,11 +255,10 @@ async def compute_team_standings(
     division_id: int,
     up_to_round_id: int,
 ) -> list[TeamStandingsSnapshot]:
-    """Aggregate team points for all Feature Race and Sprint Race sessions up to
-    *up_to_round_id*.
+    """Aggregate team points for all sessions up to *up_to_round_id*.
 
     Sort order mirrors driver standings (FR-029): total_points DESC then finish-count
-    tiebreaks; tiebreak uses Feature Race finishes only.
+    tiebreaks; tiebreak uses Feature Race CLASSIFIED finishes only.
 
     Returns snapshots with standing_position assigned from 1.
     """
@@ -275,6 +269,7 @@ async def compute_team_standings(
                    dsr.finishing_position,
                    dsr.points_awarded,
                    dsr.fastest_lap_bonus,
+                   dsr.outcome,
                    sr.session_type,
                    r.round_number
             FROM driver_session_results dsr
@@ -287,7 +282,6 @@ async def compute_team_standings(
               )
               AND dsr.is_superseded = 0
               AND sr.status = 'ACTIVE'
-              AND sr.session_type IN ('FEATURE_RACE', 'SPRINT_RACE')
             ORDER BY r.round_number
             """,
             (division_id, up_to_round_id, up_to_round_id),
@@ -304,7 +298,7 @@ async def compute_team_standings(
         total_points[tid] += pts
 
         session_type = SessionType(row["session_type"])
-        if session_type is SessionType.FEATURE_RACE:
+        if session_type is SessionType.FEATURE_RACE and row["outcome"] == "CLASSIFIED":
             pos: int = row["finishing_position"]
             rnum: int = row["round_number"]
             finish_counts[tid][pos] = finish_counts[tid].get(pos, 0) + 1
