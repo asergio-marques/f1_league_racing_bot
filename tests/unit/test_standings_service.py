@@ -542,6 +542,28 @@ async def test_compute_team_standings_includes_zero_pt_team(db_path):
     assert zero_snap.total_points == 0
 
 
+@pytest.mark.asyncio
+async def test_compute_team_standings_includes_qualifying_points(db_path):
+    """Qualifying session points must be counted in team standings."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=13)
+        r1 = await _round(db, div_id, 1)
+        # Qualifying session
+        sr_q = await _session(db, r1, div_id, "FEATURE_QUALIFYING")
+        await _result(db, sr_q, 111, pos=1, pts=3, team=555)   # Team A: 3 qualifying pts
+        await _result(db, sr_q, 222, pos=2, pts=2, team=666)   # Team B: 2 qualifying pts
+        # Race session
+        sr_r = await _session(db, r1, div_id, "FEATURE_RACE")
+        await _result(db, sr_r, 111, pos=1, pts=25, team=555)  # Team A: 25 race pts
+        await _result(db, sr_r, 222, pos=2, pts=18, team=666)  # Team B: 18 race pts
+        await db.commit()
+
+    snaps = await compute_team_standings(db_path, div_id, r1)
+    tid_to_pts = {s.team_role_id: s.total_points for s in snaps}
+    assert tid_to_pts[555] == 28, f"Team A expected 28 pts (25+3), got {tid_to_pts[555]}"
+    assert tid_to_pts[666] == 20, f"Team B expected 20 pts (18+2), got {tid_to_pts[666]}"
+
+
 # ---------------------------------------------------------------------------
 # Reserve DNF / participation tiebreaker tests
 # ---------------------------------------------------------------------------
