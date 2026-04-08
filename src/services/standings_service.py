@@ -164,18 +164,21 @@ async def compute_driver_standings(
 
     # Aggregate
     total_points: dict[int, int] = defaultdict(int)
-    # finish_counts[driver][position] = count of Feature Race finishes at that position
+    # finish_counts[driver][position] = count of Feature Race CLASSIFIED finishes at that position
     finish_counts: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    # first_finish_rounds[driver][position] = earliest round where driver finished at position
+    # first_finish_rounds[driver][position] = earliest round where driver was CLASSIFIED at position
     first_finish_rounds: dict[int, dict[int, int]] = defaultdict(dict)
+    # Any driver that has at least one session result (even a 0-point DNF)
+    race_participants: set[int] = set()
 
     for row in rows:
         uid: int = row["driver_user_id"]
         pts = (row["points_awarded"] or 0) + (row["fastest_lap_bonus"] or 0)
         total_points[uid] += pts
+        race_participants.add(uid)
 
         session_type = SessionType(row["session_type"])
-        if session_type is SessionType.FEATURE_RACE:
+        if session_type is SessionType.FEATURE_RACE and row["outcome"] == "CLASSIFIED":
             pos: int = row["finishing_position"]
             round_num: int = row["round_number"]
             finish_counts[uid][pos] = finish_counts[uid].get(pos, 0) + 1
@@ -221,7 +224,9 @@ async def compute_driver_standings(
         # and positive first_round (ascending for tiebreak: earlier is better)
         count_vec = tuple(-fc.get(p, 0) for p in range(1, global_max_pos + 1))
         first_vec = tuple(ffr.get(p, 999999) for p in range(1, global_max_pos + 1))
-        return (-pts, count_vec, first_vec)
+        # Tiebreaker: participated in any race (even DNF) ranks above never-participated
+        not_participated = 0 if uid in race_participants else 1
+        return (-pts, count_vec, first_vec, not_participated)
 
     sorted_drivers = sorted(all_drivers, key=_sort_key)
 
@@ -239,6 +244,7 @@ async def compute_driver_standings(
                 total_points=total_points.get(uid, 0),
                 finish_counts=fc,
                 first_finish_rounds=ffr,
+                race_participant=uid in race_participants,
             )
         )
 

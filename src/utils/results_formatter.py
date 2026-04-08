@@ -159,7 +159,7 @@ def format_driver_standings(
     lines: list[str] = []
     for snap in sorted_snaps:
         if snap.driver_user_id in reserve_user_ids:
-            if snap.total_points == 0 or not show_reserves:
+            if (snap.total_points == 0 and not snap.race_participant) or not show_reserves:
                 continue
         driver_ref = (driver_display or {}).get(snap.driver_user_id) or f"<@{snap.driver_user_id}>"
         lines.append(f"{snap.standing_position}. {driver_ref} — **{snap.total_points} pts**")

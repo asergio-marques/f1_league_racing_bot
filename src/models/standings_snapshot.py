@@ -17,6 +17,9 @@ class DriverStandingsSnapshot:
     first_finish_rounds: dict[str, int]
     standings_message_id: int | None = None
     driver_profile_id: int | None = None
+    # True when the driver has at least one session result in the division (even 0-point DNF).
+    # Not persisted to DB; set during compute_driver_standings.
+    race_participant: bool = False
 
     @classmethod
     def from_row(cls, row: object) -> DriverStandingsSnapshot:

@@ -541,3 +541,90 @@ async def test_compute_team_standings_includes_zero_pt_team(db_path):
     zero_snap = next(s for s in snaps if s.team_role_id == 666)
     assert zero_snap.total_points == 0
 
+
+# ---------------------------------------------------------------------------
+# Reserve DNF / participation tiebreaker tests
+# ---------------------------------------------------------------------------
+
+
+async def _result_dnf(db, sr_id: int, uid: int, pos: int, team: int = 999) -> None:
+    """Insert a DNF result (0 points)."""
+    await db.execute(
+        "INSERT INTO driver_session_results "
+        "(session_result_id, driver_user_id, finishing_position, team_role_id, "
+        "outcome, points_awarded, fastest_lap_bonus, is_superseded) "
+        "VALUES (?, ?, ?, ?, 'DNF', 0, 0, 0)",
+        (sr_id, uid, pos, team),
+    )
+
+
+@pytest.mark.asyncio
+async def test_reserve_dnf_appears_in_standings_with_race_participant_flag(db_path):
+    """A reserve driver who DNF'd in a race appears in compute_driver_standings
+    with race_participant=True, even though they have 0 points."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=20)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        await _result(db, sr1, 111, pos=1, pts=25)       # regular driver
+        await _result_dnf(db, sr1, 999, pos=6)            # reserve driver DNF
+        await db.commit()
+
+    snaps = await compute_driver_standings(db_path, div_id, r1)
+    uid_map = {s.driver_user_id: s for s in snaps}
+    assert 999 in uid_map, "Reserve DNF driver must appear in standings"
+    assert uid_map[999].total_points == 0
+    assert uid_map[999].race_participant is True
+
+
+@pytest.mark.asyncio
+async def test_dnf_driver_ranks_above_non_participant(db_path):
+    """At equal 0 points: a driver with a DNF result ranks above a driver with no results."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=21)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        await _result_dnf(db, sr1, 111, pos=6)             # DNF — 0 pts, but participated
+
+        # Driver 222 has a non-reserve seat (so they appear even with 0 pts) but no results
+        cur = await db.execute(
+            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) VALUES (21, 222, 'ACTIVE')"
+        )
+        dp_id = cur.lastrowid
+        cur = await db.execute(
+            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) VALUES (?, 'Alpha', 2, 0)",
+            (div_id,),
+        )
+        ti_id = cur.lastrowid
+        await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) VALUES (?, 1, ?)",
+            (ti_id, dp_id),
+        )
+        await db.commit()
+
+    snaps = await compute_driver_standings(db_path, div_id, r1)
+    uid_to_pos = {s.driver_user_id: s.standing_position for s in snaps}
+    assert uid_to_pos[111] < uid_to_pos[222], (
+        "DNF driver (race_participant) should rank above never-raced driver at equal 0 pts"
+    )
+
+
+@pytest.mark.asyncio
+async def test_classified_driver_ranks_above_dnf_at_same_position(db_path):
+    """At equal 0 points: a CLASSIFIED finish (even at 0-pt position) ranks above a DNF
+    at the same finishing position."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=22)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        # Both at P6 — driver A classified, driver B DNF.  Points config gives 0 for P6.
+        await _result(db, sr1, 111, pos=6, pts=0)          # classified P6, 0 pts
+        await _result_dnf(db, sr1, 222, pos=6)              # DNF P6, 0 pts
+        await db.commit()
+
+    snaps = await compute_driver_standings(db_path, div_id, r1)
+    uid_to_pos = {s.driver_user_id: s.standing_position for s in snaps}
+    assert uid_to_pos[111] < uid_to_pos[222], (
+        "CLASSIFIED P6 (in finish_counts) should rank above DNF P6 (not in finish_counts)"
+    )
+
