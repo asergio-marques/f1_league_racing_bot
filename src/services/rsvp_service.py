@@ -547,9 +547,12 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
         # Candidate teams: non-Reserve teams in division (FR-020)
         # Priority tier:
         #   1 = has at least one NO_RSVP full-time driver
-        #   2 = all full-time drivers DECLINED
-        #   3 = all full-time drivers TENTATIVE
-        #   (teams where all full-time drivers ACCEPTED are not vacancies)
+        #   2 = at least one DECLINED (and no NO_RSVP)
+        #   3 = partial allocation: some accepted FT drivers but seats still vacant
+        #   4 = no FT drivers seated at all (all seats vacant)
+        #   5 = at least one TENTATIVE (and no NO_RSVP / DECLINED / empty seats)
+        #   (teams where all FT drivers accepted AND all seats filled are not candidates)
+        # LEFT JOINs so teams with zero FT drivers still appear (tier 4)
         cur = await db.execute(
             """
             SELECT ti.id                AS team_id,
@@ -562,8 +565,8 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
                    COUNT(dra.id) AS total_drivers,
                    MIN(tss.standing_position) AS standing_position
               FROM team_instances ti
-              JOIN team_seats ts ON ts.team_instance_id = ti.id
-              JOIN driver_round_attendance dra
+         LEFT JOIN team_seats ts ON ts.team_instance_id = ti.id
+         LEFT JOIN driver_round_attendance dra
                    ON dra.driver_profile_id = ts.driver_profile_id
                   AND dra.round_id = ?
                   AND dra.division_id = ?
@@ -594,10 +597,14 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
             tier = 1
         elif t["declined_count"] > 0:
             tier = 2
+        elif t["accepted_count"] > 0 and t["total_drivers"] < t["max_seats"]:
+            tier = 3  # partial: some accepted FT drivers, some seats physically vacant
+        elif t["total_drivers"] == 0:
+            tier = 4  # no FT drivers seated at all
         elif t["tentative_count"] > 0:
-            tier = 3
+            tier = 5
         else:
-            tier = 99  # no vacancies (all accepted)
+            tier = 99  # all accepted and fully staffed
         # FR-021 tie-break 1: fewest accepted full-time drivers
         accepted = t["accepted_count"]
         # FR-021 tie-break 2: standings position (lower = better → higher priority = lower number)
@@ -610,11 +617,14 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
     # Only teams with actual vacancies (tier < 99)
     candidate_teams = [t for t in candidate_teams if _team_sort_key(t)[0] < 99]
 
-    # Determine seats available per team (max_seats - accepted_count as proxy for vacancy count)
-    # We assign at most one reserve per full-time vacant slot (FR-023)
+    # Determine seats available per team (FR-023):
+    # count RSVP-level vacancies (NO_RSVP + DECLINED + TENTATIVE) plus physically empty
+    # seats (max_seats − total full-timers assigned)
     team_vacancy: dict[int, int] = {}
     for t in candidate_teams:
-        vacancies = t["no_rsvp_count"] + t["declined_count"] + t["tentative_count"]
+        rsvp_vacancies = t["no_rsvp_count"] + t["declined_count"] + t["tentative_count"]
+        empty_seats = max(0, t["max_seats"] - t["total_drivers"])
+        vacancies = rsvp_vacancies + empty_seats
         team_vacancy[t["team_id"]] = vacancies
 
     # Assign reserves to vacancies

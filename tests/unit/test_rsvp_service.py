@@ -1,7 +1,8 @@
 """Unit tests for rsvp_service — T024.
 
 Covers:
-  1. Distribution priority ordering (tier 1 NO_RSVP > tier 2 DECLINED > tier 3 TENTATIVE)
+  1. Distribution priority ordering (tier 1 NO_RSVP > tier 2 DECLINED > tier 3 partial
+     allocation > tier 4 no FT drivers > tier 5 TENTATIVE)
   2. Tie-breaking: fewest accepted; standings position; alphabetical team name
   3. accepted_at timestamp ordering for reserves (first-accepted = highest priority)
   4. Standby classification (reserves beyond available vacancies)
@@ -143,10 +144,10 @@ async def _insert_driver(db: aiosqlite.Connection, dp_id: int, name: str) -> Non
     )
 
 
-async def _insert_team(db: aiosqlite.Connection, team_id: int, div_id: int, name: str, is_reserve: int = 0) -> None:
+async def _insert_team(db: aiosqlite.Connection, team_id: int, div_id: int, name: str, is_reserve: int = 0, max_seats: int = 2) -> None:
     await db.execute(
-        "INSERT INTO team_instances (id, division_id, name, is_reserve, max_seats) VALUES (?, ?, ?, ?, 2)",
-        (team_id, div_id, name, is_reserve),
+        "INSERT INTO team_instances (id, division_id, name, is_reserve, max_seats) VALUES (?, ?, ?, ?, ?)",
+        (team_id, div_id, name, is_reserve, max_seats),
     )
 
 
@@ -257,6 +258,104 @@ class TestPriorityOrdering:
             reserve_row = await _get_dra(db, reserve_dra)
 
         # Reserve should be assigned to TeamA_NoRsvp (tier 1) not TeamB_Declined (tier 2)
+        assert reserve_row["assigned_team_id"] == 101
+        assert reserve_row["is_standby"] == 0
+
+
+# ---------------------------------------------------------------------------
+# 2b. Priority ordering: tier 3 (partial) fills before tier 5 (TENTATIVE)
+# ---------------------------------------------------------------------------
+
+
+class TestPriorityPartialAllocation:
+    @pytest.mark.asyncio
+    async def test_partial_team_gets_reserve_before_tentative_team(self, tmp_path):
+        """Team with an empty seat (partial allocation) gets a reserve before a team with only
+        a TENTATIVE driver and no vacant seats."""
+        db_path = await _make_db(tmp_path)
+        await _seed_base(db_path)
+
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            # Partial team: 1 accepted FT driver, 1 seat physically vacant (max_seats=2)
+            await _insert_driver(db, 1, "PartialAccepted")
+            # Tentative team: 2 FT drivers both tentative, fully staffed
+            await _insert_driver(db, 2, "Tentative1")
+            await _insert_driver(db, 3, "Tentative2")
+            # Reserve
+            await _insert_driver(db, 4, "ReserveDriver")
+
+            await _insert_team(db, 101, 10, "TeamPartial")   # tier 3: 1 accepted, 1 empty seat
+            await _insert_team(db, 102, 10, "TeamTentative") # tier 5: 2 tentative, full
+            await _insert_team(db, 103, 10, "Reserve", is_reserve=1)
+
+            await _add_driver_to_team(db, 101, 1)   # one FT driver in a 2-seat team
+            await _add_driver_to_team(db, 102, 2)
+            await _add_driver_to_team(db, 102, 3)
+            await _add_driver_to_team(db, 103, 4)
+
+            await _insert_dra(db, 42, 10, 1, "ACCEPTED")          # partial team FT driver OK
+            await _insert_dra(db, 42, 10, 2, "TENTATIVE")         # tentative team
+            await _insert_dra(db, 42, 10, 3, "TENTATIVE")
+            reserve_dra = await _insert_dra(db, 42, 10, 4, "ACCEPTED", "2025-06-01T10:00:00+00:00")
+            await db.commit()
+
+        bot = _make_bot(db_path)
+        await run_reserve_distribution(42, 10, bot)
+
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            reserve_row = await _get_dra(db, reserve_dra)
+
+        # Reserve should go to the partially-staffed team (tier 3), not the tentative team (tier 5)
+        assert reserve_row["assigned_team_id"] == 101
+        assert reserve_row["is_standby"] == 0
+
+
+# ---------------------------------------------------------------------------
+# 2c. Priority ordering: tier 4 (no FT drivers) fills before tier 5 (TENTATIVE)
+# ---------------------------------------------------------------------------
+
+
+class TestPriorityNoFtDrivers:
+    @pytest.mark.asyncio
+    async def test_unstaffed_team_gets_reserve_before_tentative_team(self, tmp_path):
+        """Team with no full-time drivers assigned at all (tier 4) receives a reserve before
+        a fully-staffed team where all drivers are TENTATIVE (tier 5)."""
+        db_path = await _make_db(tmp_path)
+        await _seed_base(db_path)
+
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            # Tentative team: 2 FT drivers both tentative
+            await _insert_driver(db, 1, "Tentative1")
+            await _insert_driver(db, 2, "Tentative2")
+            # Reserve
+            await _insert_driver(db, 3, "ReserveDriver")
+
+            # Unstaffed team: no FT drivers at all (no team_seats rows for FT drivers)
+            await _insert_team(db, 101, 10, "TeamEmpty")     # tier 4: 0 FT drivers
+            await _insert_team(db, 102, 10, "TeamTentative") # tier 5: 2 tentative FT drivers
+            await _insert_team(db, 103, 10, "Reserve", is_reserve=1)
+
+            # No FT seats in TeamEmpty — intentionally not calling _add_driver_to_team for it
+            await _add_driver_to_team(db, 102, 1)
+            await _add_driver_to_team(db, 102, 2)
+            await _add_driver_to_team(db, 103, 3)
+
+            await _insert_dra(db, 42, 10, 1, "TENTATIVE")
+            await _insert_dra(db, 42, 10, 2, "TENTATIVE")
+            reserve_dra = await _insert_dra(db, 42, 10, 3, "ACCEPTED", "2025-06-01T10:00:00+00:00")
+            await db.commit()
+
+        bot = _make_bot(db_path)
+        await run_reserve_distribution(42, 10, bot)
+
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            reserve_row = await _get_dra(db, reserve_dra)
+
+        # Reserve should go to the fully-empty team (tier 4), not the tentative team (tier 5)
         assert reserve_row["assigned_team_id"] == 101
         assert reserve_row["is_standby"] == 0
 
@@ -389,8 +488,8 @@ class TestAcceptedAtOrdering:
             await _insert_driver(db, 3, "Reserve_Early")   # accepted first
             await _insert_driver(db, 4, "Reserve_Late")    # accepted later
 
-            await _insert_team(db, 101, 10, "TeamTop")    # standing pos=1 (best vacancy)
-            await _insert_team(db, 102, 10, "TeamBottom") # standing pos=2
+            await _insert_team(db, 101, 10, "TeamTop", max_seats=1)    # standing pos=1 (best vacancy)
+            await _insert_team(db, 102, 10, "TeamBottom", max_seats=1) # standing pos=2
             await _insert_team(db, 103, 10, "Reserve", is_reserve=1)
 
             await _add_driver_to_team(db, 101, 1)
@@ -448,7 +547,7 @@ class TestStandbyClassification:
             await _insert_driver(db, 2, "ReserveA")
             await _insert_driver(db, 3, "ReserveB")   # this one should end up standby
 
-            await _insert_team(db, 101, 10, "SoloTeam")  # one vacancy
+            await _insert_team(db, 101, 10, "SoloTeam", max_seats=1)  # exactly one vacancy
             await _insert_team(db, 102, 10, "Reserve", is_reserve=1)
 
             await _add_driver_to_team(db, 101, 1)
