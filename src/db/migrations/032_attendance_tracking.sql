@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS attendance_pardons (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     attendance_id  INTEGER NOT NULL
                    REFERENCES driver_round_attendance(id) ON DELETE CASCADE,
-    pardon_type    TEXT    NOT NULL CHECK (pardon_type IN ('NO_RSVP', 'NO_RSVP_ABSENT', 'RSVP_ABSENT')),
+    pardon_type    TEXT    NOT NULL CHECK (pardon_type IN ('NO_RSVP', 'NO_ATTEND', 'NO_SHOW')),
     justification  TEXT    NOT NULL,
     granted_by     INTEGER NOT NULL,
     granted_at     TEXT    NOT NULL,

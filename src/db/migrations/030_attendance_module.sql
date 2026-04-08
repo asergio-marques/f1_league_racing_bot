@@ -10,8 +10,8 @@ CREATE TABLE IF NOT EXISTS attendance_config (
     rsvp_last_notice_hours   INTEGER NOT NULL DEFAULT 24,
     rsvp_deadline_hours      INTEGER NOT NULL DEFAULT 2,
     no_rsvp_penalty          INTEGER NOT NULL DEFAULT 1,
-    no_rsvp_absent_penalty   INTEGER NOT NULL DEFAULT 1,
-    rsvp_absent_penalty      INTEGER NOT NULL DEFAULT 1,
+    no_attend_penalty        INTEGER NOT NULL DEFAULT 1,
+    no_show_penalty          INTEGER NOT NULL DEFAULT 1,
     autoreserve_threshold    INTEGER,
     autosack_threshold       INTEGER
 );
