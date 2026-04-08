@@ -12,8 +12,8 @@ class AttendanceConfig:
     rsvp_last_notice_hours: int
     rsvp_deadline_hours: int
     no_rsvp_penalty: int
-    no_attend_penalty: int
-    no_show_penalty: int
+    no_rsvp_absent_penalty: int
+    rsvp_absent_penalty: int
     autoreserve_threshold: int | None
     autosack_threshold: int | None
 
@@ -46,7 +46,7 @@ class DriverRoundAttendance:
 class AttendancePardon:
     id: int
     attendance_id: int
-    pardon_type: str            # 'NO_RSVP' | 'NO_ATTEND' | 'NO_SHOW'
+    pardon_type: str            # 'NO_RSVP' | 'NO_RSVP_ABSENT' | 'RSVP_ABSENT'
     justification: str
     granted_by: int             # Discord user ID
     granted_at: str             # ISO-8601 UTC

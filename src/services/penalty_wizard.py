@@ -74,7 +74,7 @@ class StagedPardon:
     driver_user_id: int       # Discord user ID (display / audit)
     driver_profile_id: int    # FK — driver_profiles.id
     attendance_id: int        # FK — driver_round_attendance.id
-    pardon_type: str          # 'NO_RSVP' | 'NO_ATTEND' | 'NO_SHOW'
+    pardon_type: str          # 'NO_RSVP' | 'NO_RSVP_ABSENT' | 'RSVP_ABSENT'
     justification: str
     grantor_id: int           # Discord user ID of staging admin
 
@@ -475,7 +475,7 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
 # Add Pardon modal (033-attendance-tracking T007)
 # ---------------------------------------------------------------------------
 
-_VALID_PARDON_TYPES = {"NO_RSVP", "NO_ATTEND", "NO_SHOW"}
+_VALID_PARDON_TYPES = {"NO_RSVP", "NO_RSVP_ABSENT", "RSVP_ABSENT"}
 
 
 class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
@@ -488,10 +488,10 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
         max_length=25,
     )
     pardon_type_input: discord.ui.TextInput = discord.ui.TextInput(
-        label="Pardon Type (NO_RSVP / NO_ATTEND / NO_SHOW)",
+        label="Pardon Type (NO_RSVP / NO_RSVP_ABSENT / RSVP_ABSENT)",
         placeholder="NO_RSVP",
         required=True,
-        max_length=10,
+        max_length=15,
     )
     justification_input: discord.ui.TextInput = discord.ui.TextInput(
         label="Justification",
@@ -524,7 +524,7 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
         pardon_type = self.pardon_type_input.value.strip().upper()
         if pardon_type not in _VALID_PARDON_TYPES:
             await interaction.followup.send(
-                f"❌ Invalid pardon type `{pardon_type}`. Must be one of: NO_RSVP, NO_ATTEND, NO_SHOW.",
+                f"❌ Invalid pardon type `{pardon_type}`. Must be one of: NO_RSVP, NO_RSVP_ABSENT, RSVP_ABSENT.",
                 ephemeral=True,
             )
             return
@@ -589,23 +589,31 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
                 ephemeral=True,
             )
             return
-        if pardon_type == "NO_ATTEND" and attended is not False:
-            await interaction.followup.send(
-                f"❌ NO_ATTEND pardon rejected: <@{driver_user_id}> is marked as attended.",
-                ephemeral=True,
-            )
-            return
-        if pardon_type == "NO_SHOW":
-            if rsvp_status != "ACCEPTED":
+        if pardon_type == "NO_RSVP_ABSENT":
+            if rsvp_status != "NO_RSVP":
                 await interaction.followup.send(
-                    f"❌ NO_SHOW pardon rejected: <@{driver_user_id}> has RSVP status "
-                    f"`{rsvp_status}` — NO_SHOW requires ACCEPTED status.",
+                    f"❌ NO_RSVP_ABSENT pardon rejected: <@{driver_user_id}> has RSVP status "
+                    f"`{rsvp_status}` — NO_RSVP_ABSENT requires NO_RSVP status.",
                     ephemeral=True,
                 )
                 return
             if attended is not False:
                 await interaction.followup.send(
-                    f"❌ NO_SHOW pardon rejected: <@{driver_user_id}> is marked as attended.",
+                    f"❌ NO_RSVP_ABSENT pardon rejected: <@{driver_user_id}> is marked as attended.",
+                    ephemeral=True,
+                )
+                return
+        if pardon_type == "RSVP_ABSENT":
+            if rsvp_status not in {"ACCEPTED", "TENTATIVE", "DECLINED"}:
+                await interaction.followup.send(
+                    f"❌ RSVP_ABSENT pardon rejected: <@{driver_user_id}> has RSVP status "
+                    f"`{rsvp_status}` — RSVP_ABSENT requires ACCEPTED, TENTATIVE, or DECLINED status.",
+                    ephemeral=True,
+                )
+                return
+            if attended is not False:
+                await interaction.followup.send(
+                    f"❌ RSVP_ABSENT pardon rejected: <@{driver_user_id}> is marked as attended.",
                     ephemeral=True,
                 )
                 return
