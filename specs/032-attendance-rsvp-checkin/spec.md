@@ -123,8 +123,8 @@ distribution output matches the expected priority-and-tie-break ordering.
 
 1. **Given** the RSVP deadline is reached with accepted reserves available and teams needing
    substitutes, **When** distribution runs, **Then** reserves are assigned to teams in the
-   correct priority order (NO_RSVP teams first, then DECLINED teams, then TENTATIVE teams)
-   with correct tie-breaking applied.
+   correct priority order (NO_RSVP first, then DECLINED, then partially-staffed teams with
+   empty seats, then fully-unstaffed teams, then TENTATIVE) with correct tie-breaking applied.
 2. **Given** two teams are tied on priority and tie-breaker 1 (fewest accepted full-timers),
    **When** distribution runs, **Then** the team with the lower Constructors' Championship
    position receives the reserve first.
@@ -283,9 +283,13 @@ already responded and all reserve drivers are not mentioned.
   order:
   1. Teams where at least one full-time driver has NO_RSVP status.
   2. Teams where at least one full-time driver has DECLINED.
-  3. Teams where at least one full-time driver is TENTATIVE.
-  Teams where all full-time drivers have ACCEPTED are not distribution candidates and
-  receive no reserve assignment.
+  3. Teams that have at least one full-time driver with ACCEPTED status but fewer
+     full-time drivers assigned than `max_seats` (partial allocation — one or more seats
+     are physically vacant with no full-timer assigned).
+  4. Teams that have no full-time drivers assigned at all (all seats vacant).
+  5. Teams where at least one full-time driver is TENTATIVE.
+  Teams where all full-time drivers have ACCEPTED and all seats are filled are not
+  distribution candidates and receive no reserve assignment.
 - **FR-021**: Within each priority tier, ties MUST be broken in order by:
   1. Number of full-time drivers with ACCEPTED status (ascending; teams with zero
      accepted full-timers are ranked first).
@@ -297,9 +301,10 @@ already responded and all reserve drivers are not mentioned.
   MUST be recorded. If they change away from Accepted and back, the timestamp MUST be reset
   to the time of the most recent change to Accepted. Reserves with the earliest acceptance
   timestamp are distributed first.
-- **FR-023**: Each distribution candidate team receives at most one reserve per full-time
-  driver vacancy (i.e. one reserve per driver who did not accept). A single reserve fills
-  one slot in one team only.
+- **FR-023**: Each distribution candidate team receives at most one reserve per vacancy.
+  Vacancies include: each full-time driver who did not ACCEPT, plus each seat with no
+  full-time driver assigned at all (`max_seats − total_assigned_full_timers`). A single
+  reserve fills one slot in one team only.
 - **FR-024**: Accepted reserves not placed in any team due to no remaining vacancies MUST
   be classified as on standby.
 - **FR-025**: After distribution, if any reserves were eligible (accepted at the deadline),
