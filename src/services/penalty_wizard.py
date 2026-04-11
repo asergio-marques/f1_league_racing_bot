@@ -160,6 +160,10 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
         "",
     ]
 
+    # Collect all user IDs that may need test_display_name resolution.
+    staged_user_ids = {sp.driver_user_id for sp in state.staged}
+    staged_user_ids.update(sp.driver_user_id for sp in state.staged_pardons)
+
     async with get_connection(state.db_path) as db:
         cursor = await db.execute(
             """
@@ -172,8 +176,25 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
             (state.round_id,),
         )
         attendee_rows = await cursor.fetchall()
+
+        # Bulk-fetch test display names for staged penalty/pardon drivers.
+        test_names: dict[int, str | None] = {}
+        if staged_user_ids:
+            placeholders = ",".join("?" * len(staged_user_ids))
+            cursor = await db.execute(
+                f"SELECT discord_user_id, test_display_name FROM driver_profiles "
+                f"WHERE discord_user_id IN ({placeholders})",
+                list(staged_user_ids),
+            )
+            for row in await cursor.fetchall():
+                test_names[int(row["discord_user_id"])] = row["test_display_name"]
+
+    def _mention(user_id: int, name: str | None = None) -> str:
+        display = name if name is not None else test_names.get(user_id)
+        return f"<@{user_id}>" + (f" ({display})" if display else "")
+
     attendee_mentions = [
-        f"<@{r['driver_user_id']}>" + (f" ({r['test_display_name']})" if r["test_display_name"] else "")
+        _mention(r["driver_user_id"], r["test_display_name"])
         for r in attendee_rows
     ]
     if attendee_mentions:
@@ -188,7 +209,7 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
             pl = _pen_label(sp)
             sl = sp.session_type.value.replace("_", " ").title()
             lines.append(
-                f"  {i}. <@{sp.driver_user_id}> | {sl} | **{pl}**  ← Remove #{i} below"
+                f"  {i}. {_mention(sp.driver_user_id)} | {sl} | **{pl}**  ← Remove #{i} below"
             )
     else:
         lines.append("**Staged Penalties:** *(none — click Add Penalty to stage one)*")
@@ -198,7 +219,7 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
         lines.append(f"**Staged Attendance Pardons ({len(state.staged_pardons)}):**")
         for sp in state.staged_pardons:
             lines.append(
-                f"  • <@{sp.driver_user_id}> — **{sp.pardon_type}** *(justification logged)*"
+                f"  • {_mention(sp.driver_user_id)} — **{sp.pardon_type}** *(justification logged)*"
             )
 
     return "\n".join(lines)
