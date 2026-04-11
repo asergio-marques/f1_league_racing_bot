@@ -488,8 +488,8 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
         max_length=25,
     )
     pardon_type_input: discord.ui.TextInput = discord.ui.TextInput(
-        label="Pardon Type (NO_RSVP / NO_RSVP_ABSENT / RSVP_ABSENT)",
-        placeholder="NO_RSVP",
+        label="Pardon Type",
+        placeholder="NO_RSVP / NO_RSVP_ABSENT / RSVP_ABSENT",
         required=True,
         max_length=15,
     )
