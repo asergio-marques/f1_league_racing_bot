@@ -334,24 +334,21 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
     )
     view = RsvpView(round_id=round_id)
 
+    role_ping = f"<@&{mention_role_id}>\n" if mention_role_id else ""
+
     try:
-        msg = await channel.send(embed=embed, view=view)
+        msg = await channel.send(
+            content=role_ping or None,
+            embed=embed,
+            view=view,
+            allowed_mentions=discord.AllowedMentions(roles=bool(mention_role_id)),
+        )
     except discord.HTTPException as exc:
         log.error(
             "run_rsvp_notice: failed to post embed for division %d: %s",
             division_id, exc,
         )
         return
-
-    # Ping the division role so members are notified
-    if mention_role_id:
-        try:
-            await channel.send(
-                f"<@&{mention_role_id}>",
-                allowed_mentions=discord.AllowedMentions(roles=True),
-            )
-        except discord.HTTPException as exc:
-            log.warning("run_rsvp_notice: failed to send role ping for division %d: %s", division_id, exc)
 
     # Bulk-insert DRA rows
     if all_driver_profile_ids:
