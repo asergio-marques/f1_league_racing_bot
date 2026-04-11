@@ -163,17 +163,21 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
     async with get_connection(state.db_path) as db:
         cursor = await db.execute(
             """
-            SELECT DISTINCT dsr.driver_user_id
+            SELECT DISTINCT dsr.driver_user_id, dp.test_display_name
             FROM driver_session_results dsr
             JOIN session_results sr ON sr.id = dsr.session_result_id
+            JOIN driver_profiles dp ON dp.discord_user_id = dsr.driver_user_id
             WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND dsr.is_superseded = 0
             """,
             (state.round_id,),
         )
         attendee_rows = await cursor.fetchall()
-    attendee_mentions = [f"<@{r['driver_user_id']}>" for r in attendee_rows]
+    attendee_mentions = [
+        f"<@{r['driver_user_id']}>" + (f" ({r['test_display_name']})" if r["test_display_name"] else "")
+        for r in attendee_rows
+    ]
     if attendee_mentions:
-        lines.append(f"**Preliminary Attendees ({len(attendee_mentions)}):** {'\n- '.join(attendee_mentions)}")
+        lines.append(f"**Preliminary Attendees ({len(attendee_mentions)}):**\n {'\n- '.join(attendee_mentions)}")
     else:
         lines.append("**Preliminary Attendees:** *(none — no session results found)*")
     lines.append("")
