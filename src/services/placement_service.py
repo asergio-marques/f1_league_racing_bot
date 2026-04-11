@@ -738,7 +738,7 @@ class PlacementService:
 
         if guild is not None:
             await self._refresh_lineup_post(guild, division_id)
-        return {"division_name": div_name, "has_remaining_assignments": has_remaining}
+        return {"division_name": div_name, "has_remaining_assignments": has_remaining, "team_name": team_name}
 
     # ------------------------------------------------------------------
     # Revoke all placement roles (T014)
