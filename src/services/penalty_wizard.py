@@ -160,32 +160,23 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
         "",
     ]
 
-    if state.session_types_present:
-        lines.append("**Sessions present:**")
-        async with get_connection(state.db_path) as db:
-            for stype in state.session_types_present:
-                cursor = await db.execute(
-                    """
-                    SELECT dsr.driver_user_id, dsr.finishing_position, dsr.outcome
-                    FROM session_results sr
-                    JOIN driver_session_results dsr ON dsr.session_result_id = sr.id
-                    WHERE sr.round_id = ? AND sr.session_type = ? AND sr.status = 'ACTIVE'
-                      AND dsr.is_superseded = 0
-                    ORDER BY dsr.finishing_position
-                    """,
-                    (state.round_id, stype.value),
-                )
-                rows = await cursor.fetchall()
-        label = stype.value.replace("_", " ").title()
-        driver_strs = [
-            f"P{r['finishing_position']} <@{r['driver_user_id']}>"
-            + (f" [{r['outcome']}]" if r["outcome"] not in ("CLASSIFIED", "FINISHED") else "")
-            for r in rows
-        ]
-        lines.append(
-            f"  • **{label}**: {', '.join(driver_strs) if driver_strs else '—'}"
+    async with get_connection(state.db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT DISTINCT dsr.driver_user_id
+            FROM driver_session_results dsr
+            JOIN session_results sr ON sr.id = dsr.session_result_id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND dsr.is_superseded = 0
+            """,
+            (state.round_id,),
         )
-        lines.append("")
+        attendee_rows = await cursor.fetchall()
+    attendee_mentions = [f"<@{r['driver_user_id']}>" for r in attendee_rows]
+    if attendee_mentions:
+        lines.append(f"**Preliminary Attendees ({len(attendee_mentions)}):** {', '.join(attendee_mentions)}")
+    else:
+        lines.append("**Preliminary Attendees:** *(none — no session results found)*")
+    lines.append("")
 
     if state.staged:
         lines.append(f"**Staged Penalties ({len(state.staged)}):**")
@@ -561,13 +552,31 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
             # --- Fetch DRA row ---
             cursor = await db.execute(
                 """
-                SELECT id, rsvp_status, attended
+                SELECT id, rsvp_status
                 FROM driver_round_attendance
                 WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?
                 """,
                 (self.state.round_id, self.state.division_id, profile_id),
             )
             dra_row = await cursor.fetchone()
+
+            # --- Determine attendance from session results directly (FR-007).
+            #     The pre-computed attended flag on the DRA row is not populated
+            #     until finalize_penalty_review, so we query results here instead.
+            #     A driver is considered attended if they appear in ANY active
+            #     session result for this round. ---
+            cursor = await db.execute(
+                """
+                SELECT 1
+                FROM driver_session_results dsr
+                JOIN session_results sr ON sr.id = dsr.session_result_id
+                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+                  AND dsr.driver_profile_id = ? AND dsr.is_superseded = 0
+                LIMIT 1
+                """,
+                (self.state.round_id, profile_id),
+            )
+            attended_in_results = (await cursor.fetchone()) is not None
 
         if dra_row is None:
             await interaction.followup.send(
@@ -579,7 +588,6 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
 
         attendance_id = dra_row["id"]
         rsvp_status = dra_row["rsvp_status"]
-        attended = bool(dra_row["attended"]) if dra_row["attended"] is not None else None
 
         # --- Validate pardon type against driver state (FR-007) ---
         if pardon_type == "NO_RSVP" and rsvp_status != "NO_RSVP":
@@ -597,9 +605,9 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
                     ephemeral=True,
                 )
                 return
-            if attended is not False:
+            if attended_in_results:
                 await interaction.followup.send(
-                    f"❌ NO_RSVP_ABSENT pardon rejected: <@{driver_user_id}> is marked as attended.",
+                    f"❌ NO_RSVP_ABSENT pardon rejected: <@{driver_user_id}> is present in session results.",
                     ephemeral=True,
                 )
                 return
@@ -611,9 +619,9 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
                     ephemeral=True,
                 )
                 return
-            if attended is not False:
+            if attended_in_results:
                 await interaction.followup.send(
-                    f"❌ RSVP_ABSENT pardon rejected: <@{driver_user_id}> is marked as attended.",
+                    f"❌ RSVP_ABSENT pardon rejected: <@{driver_user_id}> is present in session results.",
                     ephemeral=True,
                 )
                 return
