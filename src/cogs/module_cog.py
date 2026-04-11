@@ -75,6 +75,21 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
             except Exception:
                 pass  # Job already fired or never existed
 
+    # Post cancellation notice in each wizard channel and schedule deletion.
+    # This mirrors the withdraw() path so drivers see a message and the channel
+    # is cleaned up after a 24-hour hold.
+    _guild = bot.get_guild(server_id)
+    if _guild is not None:
+        _wizard_svc = bot.wizard_service  # type: ignore[attr-defined]
+        for row in rows:
+            try:
+                await _wizard_svc._trigger_channel_hold(
+                    server_id, row["discord_user_id"], _guild,
+                    "🔒 Signups have closed. This channel will be automatically deleted in 24 hours.",
+                )
+            except Exception:
+                log.exception("forced_close: _trigger_channel_hold failed for driver %s", row["discord_user_id"])
+
     # 2. Delete button message
     if cfg.signup_button_message_id:
         guild = bot.get_guild(server_id)
