@@ -901,6 +901,29 @@ class PlacementService:
                     (server_id, discord_user_id),
                 )
             else:
+                # Delete attendance history rows (driver_round_attendance has a NOT NULL
+                # FK to driver_profiles with no ON DELETE CASCADE — must clean up first).
+                await db.execute(
+                    "DELETE FROM driver_round_attendance WHERE driver_profile_id = ?",
+                    (driver_profile_id,),
+                )
+                # NULL-out soft FK references in historical result/standings rows so the
+                # profile row itself can be removed without violating FK constraints.
+                await db.execute(
+                    "UPDATE driver_session_results SET driver_profile_id = NULL "
+                    "WHERE driver_profile_id = ?",
+                    (driver_profile_id,),
+                )
+                await db.execute(
+                    "UPDATE driver_standings_snapshots SET driver_profile_id = NULL "
+                    "WHERE driver_profile_id = ?",
+                    (driver_profile_id,),
+                )
+                await db.execute(
+                    "UPDATE signup_records SET driver_profile_id = NULL "
+                    "WHERE driver_profile_id = ?",
+                    (driver_profile_id,),
+                )
                 # Delete profile atomically
                 await db.execute(
                     "DELETE FROM driver_profiles WHERE id = ?", (driver_profile_id,)
