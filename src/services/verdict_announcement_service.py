@@ -345,3 +345,94 @@ async def post_appeal_announcements(
             log.exception(
                 "post_appeal_announcements: error posting announcement for record %r", record
             )
+
+
+async def post_autosanction_announcement(
+    bot,
+    db_path: str,
+    round_id: int,
+    driver_discord_id: int,
+    driver_display_name: str | None,
+    sanction_type: str,  # "AUTOSACK" or "AUTORESERVE"
+    threshold: int,
+) -> None:
+    """Post a verdict-channel announcement for an autosack or autoreserve action.
+
+    Skips silently if the verdicts channel is not configured or inaccessible.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT s.season_number, d.name AS division_name,
+                   drc.penalty_channel_id, r.round_number
+            FROM rounds r
+            JOIN divisions d ON d.id = r.division_id
+            JOIN seasons s ON s.id = d.season_id
+            LEFT JOIN division_results_config drc ON drc.division_id = d.id
+            WHERE r.id = ?
+            """,
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+
+    if row is None:
+        log.warning("post_autosanction_announcement: could not load context for round %s", round_id)
+        return
+
+    penalty_channel_id_raw = row["penalty_channel_id"]
+    if penalty_channel_id_raw is None:
+        return  # no verdicts channel configured — skip silently
+
+    target_channel = bot.get_channel(int(penalty_channel_id_raw))
+    if target_channel is None:
+        log.error(
+            "post_autosanction_announcement: verdicts channel %s inaccessible — skipping",
+            penalty_channel_id_raw,
+        )
+        return
+
+    season_number: int | None = row["season_number"]
+    division_name: str = row["division_name"]
+    round_number: int = row["round_number"]
+
+    driver_ref = f"<@{driver_discord_id}>"
+    if driver_display_name:
+        driver_ref += f" ({driver_display_name})"
+
+    if sanction_type == "AUTOSACK":
+        penalty_label = "Sacked"
+        description_text = "Sacked due to accumulation of attendance points."
+        justification_text = (
+            f"{driver_ref} has reached the {threshold} attendance point limit in order to be "
+            "removed from their full-time seat. Therefore, they have been removed from all "
+            "driving seats effective immediately, and their current full-time seat will be "
+            "offered to another driver."
+        )
+    else:  # AUTORESERVE
+        penalty_label = "Moved to Reserve"
+        description_text = "Moved to Reserve due to accumulation of attendance points."
+        justification_text = (
+            f"{driver_ref} has reached the {threshold} attendance point limit in order to be "
+            "removed from their full-time seat. Therefore, they have been demoted to a reserve "
+            "driver effective immediately, and their current full-time seat will be offered to "
+            "another driver."
+        )
+
+    content = _build_announcement_message(
+        season_number,
+        division_name,
+        round_number,
+        "Attendance Sanction",
+        driver_discord_id,
+        penalty_label,
+        description_text,
+        justification_text,
+        driver_display_name=driver_display_name,
+    )
+    try:
+        await target_channel.send(content)
+    except Exception:
+        log.exception(
+            "post_autosanction_announcement: error posting announcement for driver %s",
+            driver_discord_id,
+        )

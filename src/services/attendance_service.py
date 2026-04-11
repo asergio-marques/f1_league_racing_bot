@@ -670,8 +670,13 @@ async def post_attendance_sheet(
     db_path: str,
     round_id: int,
     division_id: int,
+    sanctioned_profile_ids: set[int] | None = None,
 ) -> None:
-    """Delete prior sheet and post a new one to the division's attendance channel (FR-016–FR-021)."""
+    """Delete prior sheet and post a new one to the division's attendance channel (FR-016–FR-021).
+
+    Pass ``sanctioned_profile_ids`` to annotate those drivers with "(reached point limit)"
+    on this posting.
+    """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT * FROM attendance_division_config WHERE division_id = ?",
@@ -750,7 +755,8 @@ async def post_attendance_sheet(
         mention = f"<@{r['discord_user_id']}>"
         if r["test_display_name"]:
             mention += f" ({r['test_display_name']})"
-        lines.append(f"{mention} — {pts} attendance point{'s' if pts != 1 else ''}")
+        suffix = " *(reached point limit)*" if sanctioned_profile_ids and r["driver_profile_id"] in sanctioned_profile_ids else ""
+        lines.append(f"{mention} — {pts} attendance point{'s' if pts != 1 else ''}{suffix}")
 
     # Footer (FR-019).
     footer_lines: list[str] = []
@@ -811,7 +817,8 @@ async def enforce_attendance_sanctions(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT dra.driver_profile_id, dra.total_points_after, dp.discord_user_id
+            SELECT dra.driver_profile_id, dra.total_points_after,
+                   dp.discord_user_id, dp.test_display_name
             FROM driver_round_attendance dra
             JOIN driver_season_assignments dsa
                 ON dsa.driver_profile_id = dra.driver_profile_id
@@ -829,14 +836,23 @@ async def enforce_attendance_sanctions(
         driver_rows = await cursor.fetchall()
 
     from services.placement_service import PlacementService
+    from services import verdict_announcement_service as _vas
     placement: PlacementService = bot.placement_service  # type: ignore[attr-defined]
     acting_id = bot.user.id
     acting_name = str(bot.user)
 
+    # Track which profiles were actually sanctioned for the attendance sheet re-post.
+    sanctioned_profile_ids: set[int] = set()
+
     for row in driver_rows:
         profile_id = row["driver_profile_id"]
         discord_user_id = str(row["discord_user_id"])
+        discord_user_id_int = int(row["discord_user_id"])
+        test_display_name: str | None = row["test_display_name"]
         total = row["total_points_after"] or 0
+
+        def _driver_ref(uid: int, name: str | None) -> str:
+            return f"<@{uid}>" + (f" ({name})" if name else "")
 
         # Autosack supersedes autoreserve (FR-025).
         if autosack_threshold and total >= autosack_threshold:
@@ -849,6 +865,21 @@ async def enforce_attendance_sanctions(
                     acting_user_name=acting_name,
                     guild=guild,
                     discord_user_id=discord_user_id,
+                )
+                sanctioned_profile_ids.add(profile_id)
+                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                    server_id,
+                    f"ATTENDANCE_AUTOSACK | {_driver_ref(discord_user_id_int, test_display_name)}"
+                    f" | driver_profile_id={profile_id} | total={total} >= threshold={autosack_threshold}",
+                )
+                await _vas.post_autosanction_announcement(
+                    bot=bot,
+                    db_path=db_path,
+                    round_id=round_id,
+                    driver_discord_id=discord_user_id_int,
+                    driver_display_name=test_display_name,
+                    sanction_type="AUTOSACK",
+                    threshold=autosack_threshold,
                 )
             except ValueError:
                 # Driver already NOT_SIGNED_UP — emit no-op log and continue (I1 edge case).
@@ -915,11 +946,35 @@ async def enforce_attendance_sanctions(
                     guild=guild,
                     discord_user_id=discord_user_id,
                 )
+                sanctioned_profile_ids.add(profile_id)
+                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                    server_id,
+                    f"ATTENDANCE_AUTORESERVE | {_driver_ref(discord_user_id_int, test_display_name)}"
+                    f" | driver_profile_id={profile_id} | total={total} >= threshold={autoreserve_threshold}"
+                    f" → moved to {reserve_team_name}",
+                )
+                await _vas.post_autosanction_announcement(
+                    bot=bot,
+                    db_path=db_path,
+                    round_id=round_id,
+                    driver_discord_id=discord_user_id_int,
+                    driver_display_name=test_display_name,
+                    sanction_type="AUTORESERVE",
+                    threshold=autoreserve_threshold,
+                )
             except (ValueError, Exception) as exc:
                 log.warning(
                     "enforce_attendance_sanctions: autoreserve failed for profile %s: %s",
                     profile_id, exc,
                 )
+
+    # Refresh lineup and re-post attendance sheet with sanctioned annotations.
+    if sanctioned_profile_ids:
+        await placement._refresh_lineup_post(guild, division_id)  # type: ignore[attr-defined]
+        await post_attendance_sheet(
+            bot, guild, db_path, round_id, division_id,
+            sanctioned_profile_ids=sanctioned_profile_ids,
+        )
 
 
 async def recalculate_attendance_for_round(
