@@ -177,7 +177,7 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
         for r in attendee_rows
     ]
     if attendee_mentions:
-        lines.append(f"**Preliminary Attendees ({len(attendee_mentions)}):**\n {'\n- '.join(attendee_mentions)}")
+        lines.append(f"**Preliminary Attendees ({len(attendee_mentions)}):**\n- {'\n- '.join(attendee_mentions)}")
     else:
         lines.append("**Preliminary Attendees:** *(none — no session results found)*")
     lines.append("")
