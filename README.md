@@ -127,6 +127,15 @@ Clears any guild-scoped command overrides and pushes the latest global slash com
 
 ---
 
+### `/clean-bot` — Delete bot messages in this channel
+*Access: Trusted admin*
+
+No parameters. Scans the last 500 messages in the interaction channel and deletes every message sent by the bot. Useful for tidying up after `/season review` or other multi-message commands. Responds ephemerally with a count of deleted messages.
+
+> **Note:** Requires the bot to have **Manage Messages** in the channel (already a required bot permission).
+
+---
+
 ### `/bot-reset` — Reset server data
 *Access: Server administrator (Manage Server permission) · Can be run from any channel*
 
