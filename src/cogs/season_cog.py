@@ -2760,16 +2760,20 @@ class SeasonCog(commands.Cog):
         log.info("Recovered %d pending setup(s) from DB", len(self._pending))
 
     async def _do_approve(self, interaction: discord.Interaction) -> None:
+        # Defer immediately — approval involves heavy work (scheduling, role grants,
+        # lineup/calendar posts) that can exceed Discord's 3-second response window.
+        await interaction.response.defer(ephemeral=True)
+
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c No pending season setup.",
                 ephemeral=True,
             )
             return
 
         if cfg.season_id == 0:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c Season setup state is incomplete. Use `/bot-reset` and start again.",
                 ephemeral=True,
             )
@@ -2782,10 +2786,7 @@ class SeasonCog(commands.Cog):
             await season_svc.validate_division_tiers(cfg.season_id)
         except ValueError as exc:
             msg = f"\u26d4 Season cannot be approved. {exc}"
-            if interaction.response.is_done():
-                await interaction.followup.send(msg, ephemeral=True)
-            else:
-                await interaction.response.send_message(msg, ephemeral=True)
+            await interaction.followup.send(msg, ephemeral=True)
             return
 
         divisions = await season_svc.get_divisions(cfg.season_id)
@@ -2801,7 +2802,7 @@ class SeasonCog(commands.Cog):
                 f"\u274c Season cannot be approved \u2014 the following divisions have no rounds: "
                 f"{names}. Add at least one round to each division first."
             )
-            await interaction.response.send_message(msg, ephemeral=True)
+            await interaction.followup.send(msg, ephemeral=True)
             return
 
         # ── Gate 0b: no two rounds in the same division may share a datetime ──
@@ -2821,7 +2822,7 @@ class SeasonCog(commands.Cog):
                 f"\u274c Season cannot be approved \u2014 duplicate round times detected:\n\u2022 {bullet_list}\n"
                 f"Reschedule rounds so each has a unique datetime within its division."
             )
-            await interaction.response.send_message(msg, ephemeral=True)
+            await interaction.followup.send(msg, ephemeral=True)
             return
 
         all_rounds = []
@@ -2839,10 +2840,7 @@ class SeasonCog(commands.Cog):
                     f"\u274c Season cannot be approved \u2014 the following divisions are missing a "
                     f"weather forecast channel: {names}. Assign a weather channel to each division first."
                 )
-                if interaction.response.is_done():
-                    await interaction.followup.send(msg, ephemeral=True)
-                else:
-                    await interaction.response.send_message(msg, ephemeral=True)
+                await interaction.followup.send(msg, ephemeral=True)
                 return
 
         # ── Gate 2: R&S channel and points-config prerequisites (FR-013) ───────
@@ -2889,10 +2887,7 @@ class SeasonCog(commands.Cog):
             if errors:
                 bullet_list = "\n\u2022 ".join(errors)
                 msg = f"\u274c Season cannot be approved \u2014 R&S prerequisites not met:\n\u2022 {bullet_list}"
-                if interaction.response.is_done():
-                    await interaction.followup.send(msg, ephemeral=True)
-                else:
-                    await interaction.response.send_message(msg, ephemeral=True)
+                await interaction.followup.send(msg, ephemeral=True)
                 return
 
             # ── Gate 3: monotonic ordering check (FR-008) ────────────────────
@@ -2905,10 +2900,7 @@ class SeasonCog(commands.Cog):
                     f"\u274c Season cannot be approved \u2014 points configuration "
                     f"violates monotonic ordering:\n\u2022 {bullet_list}"
                 )
-                if interaction.response.is_done():
-                    await interaction.followup.send(msg, ephemeral=True)
-                else:
-                    await interaction.response.send_message(msg, ephemeral=True)
+                await interaction.followup.send(msg, ephemeral=True)
                 return
 
         # ── Gate 3: signup module config prerequisites ────────────────────────
@@ -2928,10 +2920,7 @@ class SeasonCog(commands.Cog):
                         f"\u274c Season cannot be approved \u2014 signup module is enabled but "
                         f"missing required configuration:\n\u2022 {bullet_list}"
                     )
-                    if interaction.response.is_done():
-                        await interaction.followup.send(msg, ephemeral=True)
-                    else:
-                        await interaction.response.send_message(msg, ephemeral=True)
+                    await interaction.followup.send(msg, ephemeral=True)
                     return
 
         # ── Gate 4: attendance module channel prerequisites ───────────────────
@@ -2955,10 +2944,7 @@ class SeasonCog(commands.Cog):
                     f"\u274c Season cannot be approved \u2014 attendance module is enabled but "
                     f"missing required channel configuration:\n\u2022 {bullet_list}"
                 )
-                if interaction.response.is_done():
-                    await interaction.followup.send(msg, ephemeral=True)
-                else:
-                    await interaction.response.send_message(msg, ephemeral=True)
+                await interaction.followup.send(msg, ephemeral=True)
                 return
 
         # Snapshot attached points configs before transitioning (FR-007)

@@ -86,8 +86,32 @@ def build_rsvp_embed(
         else:
             roster_lines.append("  *(no drivers)*")
 
+    _FIELD_MAX = 1024
     if roster_lines:
-        embed.add_field(name="🧑‍🤝‍🧑 Driver Roster", value="\n".join(roster_lines), inline=False)
+        chunk: list[str] = []
+        chunk_len = 0
+        first_field = True
+        for line in roster_lines:
+            # +1 for the newline separator
+            addition = len(line) + (1 if chunk else 0)
+            if chunk and chunk_len + addition > _FIELD_MAX:
+                embed.add_field(
+                    name="🧑‍🤝‍🧑 Driver Roster" if first_field else "\u200b",
+                    value="\n".join(chunk),
+                    inline=False,
+                )
+                first_field = False
+                chunk = [line]
+                chunk_len = len(line)
+            else:
+                chunk.append(line)
+                chunk_len += addition
+        if chunk:
+            embed.add_field(
+                name="🧑‍🤝‍🧑 Driver Roster" if first_field else "\u200b",
+                value="\n".join(chunk),
+                inline=False,
+            )
 
     return embed
 
