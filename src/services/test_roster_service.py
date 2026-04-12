@@ -271,6 +271,60 @@ async def clear_test_drivers(
     return await _delete_test_drivers_in_division(division_id, db_path)
 
 
+async def remove_test_driver(
+    server_id: int,
+    discord_user_id: int,
+    db_path: str,
+) -> str | dict:
+    """Remove a single fake driver by their synthetic Discord user ID.
+
+    Returns a dict with keys ``display_name`` and ``team_name`` on success,
+    or an error string if the profile doesn't exist or is not a test driver.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT dp.id AS profile_id,
+                   dp.test_display_name,
+                   ti.name AS team_name
+            FROM driver_profiles dp
+            LEFT JOIN team_seats ts ON ts.driver_profile_id = dp.id
+            LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
+            WHERE dp.server_id = ?
+              AND CAST(dp.discord_user_id AS INTEGER) = ?
+              AND dp.is_test_driver = 1
+            """,
+            (server_id, discord_user_id),
+        )
+        row = await cursor.fetchone()
+
+        if row is None:
+            return "No test driver found with that user ID on this server."
+
+        profile_id: int = row["profile_id"]
+        display_name: str = row["test_display_name"] or f"Driver {profile_id}"
+        team_name: str = row["team_name"] or "(unknown team)"
+
+        # Vacate the seat
+        await db.execute(
+            "UPDATE team_seats SET driver_profile_id = NULL WHERE driver_profile_id = ?",
+            (profile_id,),
+        )
+        # Remove season assignment
+        await db.execute(
+            "DELETE FROM driver_season_assignments WHERE driver_profile_id = ?",
+            (profile_id,),
+        )
+        # Delete the profile
+        await db.execute(
+            "DELETE FROM driver_profiles WHERE id = ?",
+            (profile_id,),
+        )
+        await db.commit()
+
+    return {"display_name": display_name, "team_name": team_name}
+
+
 async def clear_all_test_drivers(server_id: int, db_path: str) -> int:
     """Remove all fake drivers from all divisions in the active season.
 

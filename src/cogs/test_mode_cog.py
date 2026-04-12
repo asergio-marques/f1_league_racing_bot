@@ -561,6 +561,64 @@ class TestModeCog(commands.Cog):
             f"  division: {division}",
         )
 
+    # /test-mode roster remove --------------------------------------------
+
+    @roster.command(
+        name="remove",
+        description="Remove a single fake driver by their synthetic user ID.",
+    )
+    @app_commands.describe(
+        user_id="Synthetic user ID of the fake driver (shown in /test-mode roster list or roster add).",
+    )
+    @channel_guard
+    @admin_only
+    async def roster_remove(
+        self,
+        interaction: discord.Interaction,
+        user_id: str,
+    ) -> None:
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ This command is only available when test mode is enabled.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            discord_uid = int(user_id)
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ `user_id` must be a numeric Discord user ID.", ephemeral=True
+            )
+            return
+
+        from services.test_roster_service import remove_test_driver
+
+        result = await remove_test_driver(
+            server_id=interaction.guild_id,
+            discord_user_id=discord_uid,
+            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+        )
+
+        if isinstance(result, str):
+            await interaction.response.send_message(f"⛔ {result}", ephemeral=True)
+            return
+
+        await interaction.response.send_message(
+            f"✅ Removed fake driver **{result['display_name']}** from **{result['team_name']}**.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster remove | Success\n"
+            f"  driver: {result['display_name']}\n"
+            f"  team: {result['team_name']}\n"
+            f"  user_id: {discord_uid}",
+        )
+
     # /test-mode roster list -----------------------------------------------
 
     @roster.command(
