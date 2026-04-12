@@ -227,23 +227,42 @@ class SeasonService:
                 for div_row in div_rows:
                     old_div_id = div_row[0]
                     cursor2 = await db.execute(
-                        "SELECT name FROM divisions WHERE id = ?", (old_div_id,)
+                        "SELECT name, lineup_channel_id, calendar_channel_id "
+                        "FROM divisions WHERE id = ?",
+                        (old_div_id,),
                     )
                     name_row = await cursor2.fetchone()
                     if name_row:
                         saved_div_names[old_div_id] = name_row[0]
+                        saved_channel_cfg[old_div_id] = {
+                            "lineup_channel_id": name_row[1],
+                            "calendar_channel_id": name_row[2],
+                        }
                     cursor2 = await db.execute(
-                        "SELECT results_channel_id, standings_channel_id, reserves_in_standings "
+                        "SELECT results_channel_id, standings_channel_id, "
+                        "reserves_in_standings, penalty_channel_id "
                         "FROM division_results_config WHERE division_id = ?",
                         (old_div_id,),
                     )
                     cfg_row = await cursor2.fetchone()
                     if cfg_row:
-                        saved_channel_cfg[old_div_id] = {
+                        saved_channel_cfg.setdefault(old_div_id, {}).update({
                             "results_channel_id": cfg_row[0],
                             "standings_channel_id": cfg_row[1],
                             "reserves_in_standings": cfg_row[2],
-                        }
+                            "penalty_channel_id": cfg_row[3],
+                        })
+                    cursor2 = await db.execute(
+                        "SELECT rsvp_channel_id, attendance_channel_id "
+                        "FROM attendance_division_config WHERE division_id = ?",
+                        (old_div_id,),
+                    )
+                    att_row = await cursor2.fetchone()
+                    if att_row:
+                        saved_channel_cfg.setdefault(old_div_id, {}).update({
+                            "rsvp_channel_id": att_row[0],
+                            "attendance_channel_id": att_row[1],
+                        })
 
                 # name → channel config (for lookup when new division IDs are known)
                 channels_by_name: dict[str, dict] = {
@@ -342,22 +361,50 @@ class SeasonService:
                 )
                 div_db_id: int = cursor.lastrowid  # type: ignore[assignment]
 
-                # Restore any previously-assigned results/standings channels for
-                # this division (by name), which would otherwise be lost because
+                # Restore any previously-assigned channel config for this division
+                # (by name), which would otherwise be lost because
                 # save_pending_snapshot deletes and re-creates division rows.
                 saved = channels_by_name.get(div_data["name"])
-                if saved and (saved["results_channel_id"] or saved["standings_channel_id"]):
-                    await db.execute(
-                        "INSERT INTO division_results_config "
-                        "(division_id, results_channel_id, standings_channel_id, reserves_in_standings) "
-                        "VALUES (?, ?, ?, ?)",
-                        (
-                            div_db_id,
-                            saved["results_channel_id"],
-                            saved["standings_channel_id"],
-                            saved["reserves_in_standings"] if saved["reserves_in_standings"] is not None else 1,
-                        ),
-                    )
+                if saved:
+                    # lineup / calendar channels live directly on the divisions row
+                    if saved.get("lineup_channel_id") or saved.get("calendar_channel_id"):
+                        await db.execute(
+                            "UPDATE divisions SET lineup_channel_id = ?, calendar_channel_id = ? "
+                            "WHERE id = ?",
+                            (saved.get("lineup_channel_id"), saved.get("calendar_channel_id"), div_db_id),
+                        )
+                    # results / standings / penalty config row
+                    if (
+                        saved.get("results_channel_id")
+                        or saved.get("standings_channel_id")
+                        or saved.get("penalty_channel_id")
+                    ):
+                        await db.execute(
+                            "INSERT INTO division_results_config "
+                            "(division_id, results_channel_id, standings_channel_id, "
+                            " reserves_in_standings, penalty_channel_id) "
+                            "VALUES (?, ?, ?, ?, ?)",
+                            (
+                                div_db_id,
+                                saved.get("results_channel_id"),
+                                saved.get("standings_channel_id"),
+                                saved.get("reserves_in_standings") if saved.get("reserves_in_standings") is not None else 1,
+                                saved.get("penalty_channel_id"),
+                            ),
+                        )
+                    # attendance channels (cascade-deleted with old division row)
+                    if saved.get("rsvp_channel_id") or saved.get("attendance_channel_id"):
+                        await db.execute(
+                            "INSERT INTO attendance_division_config "
+                            "(division_id, server_id, rsvp_channel_id, attendance_channel_id) "
+                            "VALUES (?, ?, ?, ?)",
+                            (
+                                div_db_id,
+                                server_id,
+                                saved.get("rsvp_channel_id"),
+                                saved.get("attendance_channel_id"),
+                            ),
+                        )
 
                 for r in div_data["rounds"]:
                     await db.execute(
