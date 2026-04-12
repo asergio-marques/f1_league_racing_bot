@@ -328,44 +328,30 @@ class SeasonCog(commands.Cog):
             # ── Send header block ───────────────────────────────────
             await interaction.followup.send("\n".join(header_lines), ephemeral=False)
 
-            # ── Per-division blocks ───────────────────────────────────
+            # ── Per-division blocks (3 messages each) ────────────────
             db_divisions = await self.bot.season_service.get_divisions_with_results_config(cfg.season_id)
             for div in db_divisions:
                 if not div.name:
                     continue
-                div_lines: list[str] = []
                 tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
-                div_lines.append(f"\U0001f4c2 **{div.name}**{tier_tag}")
-                div_lines.append(f"  Role: <@&{div.mention_role_id}>")
-                weather_chan = f"<#{div.forecast_channel_id}>" if div.forecast_channel_id else "*(none)*"
+                div_header = f"\U0001f4c2 **{div.name}**{tier_tag}"
+
+                # ── Message 1: config (role + channels) ──────────────
+                cal_chan = f"<#{div.calendar_channel_id}>" if div.calendar_channel_id else "*(not set)*"
+                lineup_chan = f"<#{div.lineup_channel_id}>" if div.lineup_channel_id else "*(not set)*"
                 results_chan = f"<#{div.results_channel_id}>" if div.results_channel_id else "*(none)*"
                 standings_chan = f"<#{div.standings_channel_id}>" if div.standings_channel_id else "*(none)*"
                 verdicts_chan = f"<#{div.penalty_channel_id}>" if div.penalty_channel_id else "*(not configured)*"
-                div_lines.append(f"  Weather channel: {weather_chan}")
-                div_lines.append(f"  Results channel: {results_chan}")
-                div_lines.append(f"  Standings channel: {standings_chan}")
-                div_lines.append(f"  Verdicts channel: {verdicts_chan}")
-                lineup_chan = f"<#{div.lineup_channel_id}>" if div.lineup_channel_id else "*(not set)*"
-                cal_chan = f"<#{div.calendar_channel_id}>" if div.calendar_channel_id else "*(not set)*"
-                div_lines.append(f"  Lineup channel: {lineup_chan}")
-                div_lines.append(f"  Calendar channel: {cal_chan}")
-                teams = await self.bot.team_service.get_division_teams(div.id)
-                if teams:
-                    div_lines.append("  **Teams:** " + ", ".join(t["name"] for t in teams))
-                    missing_roles = [t["name"] for t in teams if t["name"] in roleless]
-                    if missing_roles:
-                        div_lines.append(
-                            "  ⚠️ **No role assigned:** "
-                            + ", ".join(f'"{n}"' for n in missing_roles)
-                            + " — result submission will reject drivers in these teams."
-                        )
-                rounds_db = await self.bot.season_service.get_division_rounds(div.id)
-                for r in rounds_db:
-                    div_lines.append(
-                        f"  Round {r.round_number}: {r.format.value} "
-                        f"@ {r.track_name or 'Mystery'} \u2014 {discord_ts(r.scheduled_at)}"
-                    )
-                # Attendance channels (gated on attendance module being enabled)
+                weather_chan = f"<#{div.forecast_channel_id}>" if div.forecast_channel_id else "*(none)*"
+                cfg_lines: list[str] = [
+                    div_header,
+                    f"  Role: <@&{div.mention_role_id}>",
+                    f"  Calendar channel: {cal_chan}",
+                    f"  Lineup channel: {lineup_chan}",
+                    f"  Results channel: {results_chan}",
+                    f"  Standings channel: {standings_chan}",
+                    f"  Verdicts channel: {verdicts_chan}",
+                ]
                 if attendance_on:
                     att_div_cfg = await self.bot.attendance_service.get_division_config(div.id)  # type: ignore[attr-defined]
                     rsvp_chan = (
@@ -378,9 +364,33 @@ class SeasonCog(commands.Cog):
                         if att_div_cfg and att_div_cfg.attendance_channel_id
                         else "*(not set)*"
                     )
-                    div_lines.append(f"  RSVP channel: {rsvp_chan}")
-                    div_lines.append(f"  Attendance channel: {att_chan}")
-                # ASSIGNED drivers grouped by team
+                    cfg_lines.append(f"  RSVP channel: {rsvp_chan}")
+                    cfg_lines.append(f"  Attendance channel: {att_chan}")
+                cfg_lines.append(f"  Weather channel: {weather_chan}")
+                await interaction.followup.send("\n".join(cfg_lines), ephemeral=False)
+
+                # ── Message 2: calendar (rounds) ──────────────────────
+                rounds_db = await self.bot.season_service.get_division_rounds(div.id)
+                cal_lines: list[str] = [f"\U0001f4c5 **{div.name}** — Calendar"]
+                for r in rounds_db:
+                    cal_lines.append(
+                        f"  Round {r.round_number}: {r.format.value} "
+                        f"@ {r.track_name or 'Mystery'} \u2014 {discord_ts(r.scheduled_at)}"
+                    )
+                await interaction.followup.send("\n".join(cal_lines), ephemeral=False)
+
+                # ── Message 3: lineup (teams + assigned drivers) ──────
+                teams = await self.bot.team_service.get_division_teams(div.id)
+                lineup_lines: list[str] = [f"\U0001f3ce\ufe0f **{div.name}** — Lineup"]
+                if teams:
+                    lineup_lines.append("  **Teams:** " + ", ".join(t["name"] for t in teams))
+                    missing_roles = [t["name"] for t in teams if t["name"] in roleless]
+                    if missing_roles:
+                        lineup_lines.append(
+                            "  ⚠️ **No role assigned:** "
+                            + ", ".join(f'"{n}"' for n in missing_roles)
+                            + " — result submission will reject drivers in these teams."
+                        )
                 async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
                     _cur = await _db.execute(
                         """
@@ -405,10 +415,10 @@ class SeasonCog(commands.Cog):
                             label = f"<@{_row['discord_user_id']}>"
                         by_team.setdefault(_row["team_name"], []).append(label)
                     for t_name, mentions in by_team.items():
-                        div_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
+                        lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
                 else:
-                    div_lines.append("  *(no drivers assigned)*")
-                await interaction.followup.send("\n".join(div_lines), ephemeral=False)
+                    lineup_lines.append("  *(no drivers assigned)*")
+                await interaction.followup.send("\n".join(lineup_lines), ephemeral=False)
 
             # ── Server-level UNASSIGNED warning ──────────────────────
             async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
