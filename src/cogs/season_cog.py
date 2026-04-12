@@ -400,7 +400,7 @@ class SeasonCog(commands.Cog):
                     by_team: dict[str, list[str]] = {}
                     for _row in assignment_rows:
                         if _row["is_test_driver"] and _row["test_display_name"]:
-                            label = f"*{_row['test_display_name']}*"
+                            label = f"<@{_row['discord_user_id']}> ({_row['test_display_name']})"
                         else:
                             label = f"<@{_row['discord_user_id']}>"
                         by_team.setdefault(_row["team_name"], []).append(label)
