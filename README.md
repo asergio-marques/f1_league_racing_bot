@@ -629,6 +629,42 @@ Only allowed when the season is in **SETUP** status.
 
 Displays position-to-points mappings and fastest-lap settings. Works for both server-level configs (SETUP) and season-attached configs (ACTIVE).
 
+##### `/results config xml-import` — Import a full points configuration from XML
+*Access: Trusted admin · Results module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Name of an existing config to update |
+| `file` | Attachment | — | `.xml` file to import; if omitted a modal is opened instead |
+
+Bulk-upserts position points and fastest-lap bonuses for one or more session types in a single operation. Existing rows not mentioned in the XML are **left untouched** (partial imports are safe). The entire import is applied atomically — any validation failure leaves the database unchanged.
+
+**Input methods:**
+- **Modal** (no `file` argument) — paste XML directly into the modal text field (up to 4 000 characters).
+- **File attachment** — attach an `.xml` file (up to 100 KB, UTF-8 encoded) to bypass the modal character limit.
+
+**XML schema:**
+
+```xml
+<config>
+  <session>
+    <type>Feature Race</type>            <!-- required; see valid values below -->
+    <position id="1">25</position>       <!-- id ≥ 1, points ≥ 0; multiple allowed -->
+    <position id="2">18</position>
+    <fastest-lap limit="10">2</fastest-lap> <!-- race sessions only; limit attr optional -->
+  </session>
+  <!-- additional <session> blocks as needed -->
+</config>
+```
+
+**Valid `<type>` values:** `Feature Race`, `Feature Qualifying`, `Sprint Race`, `Sprint Qualifying` (case-insensitive).
+
+**Validation rules:**
+- Unknown session types, negative points, position `id` < 1, or fastest-lap on a qualifying session are rejected outright.
+- Position points within each session block must be monotonically non-increasing (ties are not permitted between two positive values).
+- Duplicate `id` attributes within one session block: last value wins, a warning is shown.
+- A session block containing no `<position>` elements and no `<fastest-lap>` element is silently skipped.
+
 ---
 
 #### Round Results Commands
