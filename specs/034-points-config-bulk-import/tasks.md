@@ -28,7 +28,7 @@
 
 - [ ] T003 Define `XmlImportPayload` dataclass and `XmlImportError` exception in `src/utils/xml_import.py`
 - [ ] T004 [P] Build `_SESSION_TYPE_BY_LABEL` reverse-lookup dict (case-insensitive label → `SessionType`) in `src/utils/xml_import.py`
-- [ ] T005 Implement `parse_xml_payload(xml_text: str) -> tuple[XmlImportPayload, list[str]]` in `src/utils/xml_import.py` — lxml parse with `resolve_entities=False` and `no_network=True`; extracts `<session>` blocks; validates structure (type lookup, position id ≥ 1, points ≥ 0, FL points ≥ 0, FL limit ≥ 1 when present, FL rejected on qualifying); last-wins on duplicate position ids with warning collection; raises `XmlImportError` on hard failures
+- [ ] T005 Implement `parse_xml_payload(xml_text: str) -> tuple[XmlImportPayload, list[str]]` in `src/utils/xml_import.py` — lxml parse with `resolve_entities=False` and `no_network=True`; extracts `<session>` blocks; validates structure (type lookup, position id ≥ 1, points ≥ 0, FL points ≥ 0, FL limit ≥ 1 when present, FL rejected on qualifying); last-wins on duplicate position ids with warning collection; session blocks with no `<position>` and no `<fastest-lap>` children are excluded from the payload (not added to `positions` or `fastest_laps` dicts); raises `XmlImportError` on hard failures
 - [ ] T006 Implement `validate_payload(payload: XmlImportPayload) -> list[str]` in `src/utils/xml_import.py` — monotonic non-increasing check per session block (skip zero-points entries per existing rule); returns list of error strings
 - [ ] T007 Implement `xml_import_config(db_path, server_id, config_name, payload)` async function in `src/services/points_config_service.py` — single DB connection, resolves config_id via `_get_config_id`, upserts all position rows and FL rows from payload in one atomic transaction; raises `ConfigNotFoundError` on unknown config
 - [ ] T008 [P] Write unit tests for `parse_xml_payload` and `validate_payload` in `tests/unit/test_xml_import.py` — covers: valid full import, partial session, duplicate position id (last-wins + warning), unknown session type rejection, FL on qualifying rejection, negative/zero position id rejection, negative points rejection, invalid FL limit rejection, malformed XML, monotonic violation detection, empty payload
@@ -44,8 +44,8 @@
 **Independent Test**: `/results config xml-import name:"100%"` with valid XML → modal opens → submit → config updated → view confirms values. (Quickstart steps 1 and 2.)
 
 - [ ] T009 [US1] Implement `XmlImportModal` class in `src/cogs/results_cog.py` — `discord.ui.Modal` titled "XML Points Config Import" with a single `discord.ui.TextInput` field (`label="XML payload"`, `style=long`, `max_length=4000`); stores `config_name`, `db_path`, `guild_id`; `on_submit` defers ephemerally then calls `_run_xml_import`
-- [ ] T010 [US1] Implement `_run_xml_import(interaction, xml_text, config_name, db_path, guild_id)` async helper in `src/cogs/results_cog.py` — calls `parse_xml_payload`, reports `XmlImportError` ephemerally; calls `validate_payload`, reports failures ephemerally; calls `xml_import_config`, handles `ConfigNotFoundError` and generic DB exceptions ephemerally; on success sends ephemeral summary listing each session updated and FL changes, including any duplicate-id warnings; calls `output_router.post_log` with user info and session summary
-- [ ] T011 [US1] Add `xml_import_config` slash command to `config_group` in `src/cogs/results_cog.py` — `@config_group.command(name="xml-import")`, `@app_commands.describe`, `@channel_guard`, `@admin_only`; parameters: `name: str`, `file: discord.Attachment | None = None`; when `file is None`: calls `_module_gate` then sends `XmlImportModal`; when `file is not None`: defers ephemerally, calls `_module_gate`, reads file bytes, size-checks (> 100 KB → ephemeral error), empty-check, decodes UTF-8, calls `_run_xml_import`
+- [ ] T010 [US1] Implement `_run_xml_import(interaction, xml_text, config_name, db_path, guild_id)` async helper in `src/cogs/results_cog.py` — calls `parse_xml_payload`, reports `XmlImportError` ephemerally and posts a failure audit log entry; calls `validate_payload`, reports failures ephemerally and posts a failure audit log entry; calls `xml_import_config`, handles `ConfigNotFoundError` and generic DB exceptions ephemerally and posts a failure audit log entry; on success sends ephemeral summary listing each session updated and FL changes (including any duplicate-id warnings) and posts a success audit log entry; all audit log entries written via `output_router.post_log` with user info, config name, and a brief reason/summary
+- [ ] T011 [US1] Add `config_xml_import` command handler to `config_group` in `src/cogs/results_cog.py` — `@config_group.command(name="xml-import")`, `@app_commands.describe`, `@channel_guard`, `@admin_only`; parameters: `name: str`, `file: discord.Attachment | None = None`; implement only the `file is None` branch: call `_module_gate` then send `XmlImportModal`; leave the `file is not None` branch as `pass` (stub for T012)
 
 **Checkpoint**: US1 complete — modal path fully functional end-to-end.
 
@@ -57,9 +57,7 @@
 
 **Independent Test**: `/results config xml-import name:"100%" file:import.xml` → no modal → config updated → success reply. (Quickstart step 3.)
 
-- [ ] T012 [US2] Extend the `xml_import_config` command handler in `src/cogs/results_cog.py` to handle the `file is not None` branch: defer ephemerally → `_module_gate` check → `await file.read()` → size check (> 100 KB → ephemeral error) → empty check → UTF-8 decode → `_run_xml_import`
-
-> **Note**: T012 completes the file branch already scaffolded in T011. If T011 was implemented with a stub `pass` for the file branch, T012 fills it in.
+- [ ] T012 [US2] Implement the `file is not None` branch of `config_xml_import` in `src/cogs/results_cog.py`: defer ephemerally → `_module_gate` check → `await file.read()` → size check (> 100 KB → ephemeral error) → empty check → UTF-8 decode (see T018) → `_run_xml_import`
 
 **Checkpoint**: US1 + US2 complete — both input paths functional.
 

@@ -99,7 +99,7 @@ requirements.txt                 ← CHANGE: add lxml
 |------|------|-------------|
 | `XmlImportModal` | `discord.ui.Modal` | Single `discord.ui.TextInput` field for XML. `on_submit` calls `_run_xml_import`. |
 | `_run_xml_import` | async helper | Shared logic for both modal and file paths: parse → validate → `xml_import_config` → respond + audit log. |
-| `xml_import_config` command | `@config_group.command(name="xml-import")` | Parameters: `name: str`, `file: discord.Attachment \| None`. Opens modal if `file` is None; fetches file and calls `_run_xml_import` directly otherwise. Decorated with `@channel_guard`, `@admin_only`, and `_module_gate`. |
+| `config_xml_import` command | `@config_group.command(name="xml-import")` | Parameters: `name: str`, `file: discord.Attachment \| None`. Opens modal if `file` is None; fetches file and calls `_run_xml_import` directly otherwise. Decorated with `@channel_guard`, `@admin_only`, and `_module_gate`. |
 
 #### `src/services/points_config_service.py` — detailed breakdown
 

@@ -54,6 +54,7 @@ An administrator submits malformed or logically invalid XML. The bot must reject
 2. **Given** XML contains points that increase as position number increases (non-monotonic) for any session block, **When** processed, **Then** an error is returned identifying the session and positions at fault, and the config is unchanged.
 3. **Given** XML contains an unrecognised `<type>` value, **When** processed, **Then** the entire import is rejected with an error naming the unrecognised type, and the config is unchanged.
 4. **Given** XML is structurally malformed (not parseable), **When** processed, **Then** a parse error is returned and the config is unchanged.
+5. **Given** the modal is submitted with an empty text field, **When** processed, **Then** a parse error is returned and the config is unchanged.
 
 ---
 
@@ -94,7 +95,7 @@ An administrator wants to update only a subset of session types in one import (e
 
 **XML Schema & Parsing**
 
-- **FR-005**: The system MUST accept XML structured as one or more `<session>` elements, each containing a `<type>` text element, zero or more `<position id=N>` elements (where N is a positive integer), and an optional `<fastest-lap limit=L>` element (where L is a positive integer or absent).
+- **FR-005**: The system MUST accept XML structured as a `<config>` root element containing one or more `<session>` child elements. Each `<session>` MUST contain a `<type>` text element, zero or more `<position id=N>` elements (where N is a positive integer), and an optional `<fastest-lap limit=L>` element (where L is a positive integer or absent).
 - **FR-006**: The `<type>` value MUST map to one of the four known session types using case-insensitive matching: "Sprint Qualifying", "Sprint Race", "Feature Qualifying", "Feature Race".
 - **FR-007**: If the XML contains any `<type>` value that does not match a known session type, the system MUST reject the entire import and return an error naming the unrecognised value.
 - **FR-008**: If XML is structurally malformed (unparseable), the system MUST return a parse error and leave the config unchanged.
@@ -111,9 +112,9 @@ An administrator wants to update only a subset of session types in one import (e
 
 **Apply / Rollback**
 
-- **FR-016**: Before modifying any database rows the system MUST capture a backup of existing `points_config_entries` and `points_config_fl` rows for the target config.
+- **FR-016**: The system MUST ensure no partial writes can occur by performing all database inserts/updates within a single atomic transaction; all structural and monotonic validation is completed entirely in memory before the transaction is opened, eliminating the need for a separate row backup.
 - **FR-017**: The system MUST apply all changes from the XML to the database as a single atomic transaction; either all changes persist or none do.
-- **FR-018**: If any database error occurs during the write, the system MUST roll back to the pre-import state and return a user-facing error.
+- **FR-018**: If any database error occurs during the write, the system MUST roll back the transaction and return a user-facing error, leaving the config unchanged.
 - **FR-019**: Session types absent from the XML MUST be left unchanged in the database.
 - **FR-020**: Within a session type present in the XML, position IDs absent from the XML MUST be left unchanged in the database.
 - **FR-021**: Within a session type present in the XML, if `<fastest-lap>` is absent, the existing fastest-lap entry MUST be left unchanged.
@@ -122,7 +123,7 @@ An administrator wants to update only a subset of session types in one import (e
 
 - **FR-022**: On success, the system MUST respond with a summary listing each session type updated, the positions changed, and the new fastest-lap values (if updated).
 - **FR-023**: On failure, the system MUST respond with a user-facing error message identifying the root cause (parse error, unknown session type, validation failure, or database error); the response MUST be ephemeral.
-- **FR-024**: The success summary MUST be ephemeral and MUST be posted to the audit log channel following the existing audit log pattern.
+- **FR-024**: Every import attempt (success or failure) MUST produce an audit log entry posted to the configured log channel via the existing `output_router.post_log` pattern. Success entries MUST include the config name and a summary of sessions updated. Failure entries MUST include the config name and a brief description of the rejection reason (parse error, unknown type, validation failure, or database error).
 
 ### Key Entities
 
