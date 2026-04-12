@@ -271,6 +271,17 @@ class SeasonService:
                     if did in saved_div_names
                 }
 
+                # Save attached points config names before the season row is deleted
+                # (season_points_links has ON DELETE CASCADE so they disappear with it).
+                cursor = await db.execute(
+                    "SELECT config_name FROM season_points_links "
+                    "WHERE season_id = ? ORDER BY config_name",
+                    (existing_season_id,),
+                )
+                saved_config_names: list[str] = [
+                    r[0] for r in await cursor.fetchall()
+                ]
+
                 # Cascade-delete the old SETUP season manually (no ON DELETE CASCADE on
                 # seasons/divisions, though division_results_config does have it).
                 # Clean up test drivers, driver_season_assignments, team_instances/team_seats
@@ -338,6 +349,7 @@ class SeasonService:
                 )
             else:
                 channels_by_name = {}
+                saved_config_names = []
 
             cursor = await db.execute(
                 "INSERT INTO seasons (server_id, start_date, status, season_number, game_edition) "
@@ -345,6 +357,14 @@ class SeasonService:
                 (server_id, start_date.isoformat(), season_number, game_edition),
             )
             new_season_id: int = cursor.lastrowid  # type: ignore[assignment]
+
+            # Restore season-level points config attachments under the new season ID.
+            for config_name in saved_config_names:
+                await db.execute(
+                    "INSERT OR IGNORE INTO season_points_links (season_id, config_name) "
+                    "VALUES (?, ?)",
+                    (new_season_id, config_name),
+                )
 
             for div_data in divisions:
                 cursor = await db.execute(
