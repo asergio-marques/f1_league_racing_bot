@@ -251,7 +251,7 @@ class XmlImportModal(discord.ui.Modal, title="XML Points Config Import"):
     xml_payload: discord.ui.TextInput = discord.ui.TextInput(
         label="XML payload",
         style=discord.TextStyle.paragraph,
-        placeholder="<config>\n  <session>\n    <type>Feature Race</type>\n    <position id=\"1\">25</position>\n  </session>\n</config>",
+        placeholder="<config><session><type>Race</type><position id=\"1\">25</position></session></config>",
         required=True,
         max_length=4000,
     )
