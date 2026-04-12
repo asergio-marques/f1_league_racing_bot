@@ -328,13 +328,18 @@ class SeasonCog(commands.Cog):
             # ── Send header block ───────────────────────────────────
             await interaction.followup.send("\n".join(header_lines), ephemeral=False)
 
-            # ── Per-division blocks (3 messages each) ────────────────
+            # ── Per-division blocks (4 messages each) ────────────────
             db_divisions = await self.bot.season_service.get_divisions_with_results_config(cfg.season_id)
             for div in db_divisions:
                 if not div.name:
                     continue
                 tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
-                div_header = f"\U0001f4c2 **{div.name}**{tier_tag}"
+
+                # ── Message 0: division banner ─────────────────────────
+                sep = "\u2500" * 35
+                await interaction.followup.send(
+                    f"{sep}\n# {div.name.upper()}{tier_tag}\n{sep}", ephemeral=False
+                )
 
                 # ── Message 1: config (role + channels) ──────────────
                 cal_chan = f"<#{div.calendar_channel_id}>" if div.calendar_channel_id else "*(not set)*"
@@ -344,7 +349,7 @@ class SeasonCog(commands.Cog):
                 verdicts_chan = f"<#{div.penalty_channel_id}>" if div.penalty_channel_id else "*(not configured)*"
                 weather_chan = f"<#{div.forecast_channel_id}>" if div.forecast_channel_id else "*(none)*"
                 cfg_lines: list[str] = [
-                    div_header,
+                    "\U0001f4c2 **Configuration**",
                     f"  Role: <@&{div.mention_role_id}>",
                     f"  Calendar channel: {cal_chan}",
                     f"  Lineup channel: {lineup_chan}",
@@ -371,7 +376,7 @@ class SeasonCog(commands.Cog):
 
                 # ── Message 2: calendar (rounds) ──────────────────────
                 rounds_db = await self.bot.season_service.get_division_rounds(div.id)
-                cal_lines: list[str] = [f"\U0001f4c5 **{div.name}** — Calendar"]
+                cal_lines: list[str] = ["\U0001f4c5 **Calendar**"]
                 for r in rounds_db:
                     cal_lines.append(
                         f"  Round {r.round_number}: {r.format.value} "
@@ -381,7 +386,7 @@ class SeasonCog(commands.Cog):
 
                 # ── Message 3: lineup (teams + assigned drivers) ──────
                 teams = await self.bot.team_service.get_division_teams(div.id)
-                lineup_lines: list[str] = [f"\U0001f3ce\ufe0f **{div.name}** — Lineup"]
+                lineup_lines: list[str] = ["\U0001f3ce\ufe0f **Lineup**"]
                 if teams:
                     lineup_lines.append("  **Teams:** " + ", ".join(t["name"] for t in teams))
                     missing_roles = [t["name"] for t in teams if t["name"] in roleless]
@@ -395,7 +400,7 @@ class SeasonCog(commands.Cog):
                     _cur = await _db.execute(
                         """
                         SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name,
-                               ti.name AS team_name
+                               ti.name AS team_name, ti.is_reserve
                         FROM driver_season_assignments dsa
                         JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
                         JOIN team_seats ts ON ts.id = dsa.team_seat_id
@@ -407,15 +412,21 @@ class SeasonCog(commands.Cog):
                     )
                     assignment_rows = await _cur.fetchall()
                 if assignment_rows:
-                    by_team: dict[str, list[str]] = {}
+                    regular_teams: dict[str, list[str]] = {}
+                    reserve_teams: dict[str, list[str]] = {}
                     for _row in assignment_rows:
                         if _row["is_test_driver"] and _row["test_display_name"]:
                             label = f"<@{_row['discord_user_id']}> ({_row['test_display_name']})"
                         else:
                             label = f"<@{_row['discord_user_id']}>"
-                        by_team.setdefault(_row["team_name"], []).append(label)
-                    for t_name, mentions in by_team.items():
+                        target = reserve_teams if _row["is_reserve"] else regular_teams
+                        target.setdefault(_row["team_name"], []).append(label)
+                    for t_name, mentions in regular_teams.items():
                         lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
+                    if reserve_teams:
+                        lineup_lines.append("  ---")
+                        for t_name, mentions in reserve_teams.items():
+                            lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
                 else:
                     lineup_lines.append("  *(no drivers assigned)*")
                 await interaction.followup.send("\n".join(lineup_lines), ephemeral=False)
