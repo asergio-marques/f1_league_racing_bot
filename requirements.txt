@@ -3,5 +3,6 @@ apscheduler>=3.10
 aiosqlite>=0.19
 sqlalchemy
 python-dotenv
+lxml>=5.0
 pytest>=7
 pytest-asyncio>=0.23

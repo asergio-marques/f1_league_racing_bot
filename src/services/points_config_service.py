@@ -208,3 +208,61 @@ async def list_configs(db_path: str, server_id: int) -> list[PointsConfigStore]:
         PointsConfigStore(id=r["id"], server_id=r["server_id"], config_name=r["config_name"])
         for r in rows
     ]
+
+
+async def xml_import_config(
+    db_path: str,
+    server_id: int,
+    config_name: str,
+    payload: "XmlImportPayload",
+) -> None:
+    """Atomically upsert all position and fastest-lap rows from *payload*.
+
+    Raises :class:`ConfigNotFoundError` if *config_name* does not exist for
+    *server_id*.  All writes happen inside a single DB connection; the
+    aiosqlite context manager rolls back automatically on any exception before
+    ``db.commit()``.
+    """
+    from utils.xml_import import XmlImportPayload  # local import — avoids circular at module level  # noqa: F401
+
+    async with get_connection(db_path) as db:
+        config_id = await _get_config_id(db, server_id, config_name)
+
+        # --- position rows ------------------------------------------------
+        for session_type, pos_dict in payload.positions.items():
+            for position, points in pos_dict.items():
+                await db.execute(
+                    """
+                    INSERT INTO points_config_entries (config_id, session_type, position, points)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(config_id, session_type, position)
+                    DO UPDATE SET points = excluded.points
+                    """,
+                    (config_id, session_type.value, position, points),
+                )
+
+        # --- fastest-lap rows ---------------------------------------------
+        for session_type, (fl_pts, fl_limit) in payload.fastest_laps.items():
+            if fl_limit is None:
+                # Preserve existing fl_position_limit if row already exists
+                cursor = await db.execute(
+                    "SELECT fl_position_limit FROM points_config_fl "
+                    "WHERE config_id = ? AND session_type = ?",
+                    (config_id, session_type.value),
+                )
+                existing = await cursor.fetchone()
+                fl_limit = existing["fl_position_limit"] if existing else None
+
+            await db.execute(
+                """
+                INSERT INTO points_config_fl (config_id, session_type, fl_points, fl_position_limit)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(config_id, session_type)
+                DO UPDATE SET
+                    fl_points = excluded.fl_points,
+                    fl_position_limit = excluded.fl_position_limit
+                """,
+                (config_id, session_type.value, fl_pts, fl_limit),
+            )
+
+        await db.commit()
