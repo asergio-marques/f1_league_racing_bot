@@ -384,7 +384,8 @@ class SeasonCog(commands.Cog):
                 async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
                     _cur = await _db.execute(
                         """
-                        SELECT dp.discord_user_id, ti.name AS team_name
+                        SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name,
+                               ti.name AS team_name
                         FROM driver_season_assignments dsa
                         JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
                         JOIN team_seats ts ON ts.id = dsa.team_seat_id
@@ -398,7 +399,11 @@ class SeasonCog(commands.Cog):
                 if assignment_rows:
                     by_team: dict[str, list[str]] = {}
                     for _row in assignment_rows:
-                        by_team.setdefault(_row["team_name"], []).append(f"<@{_row['discord_user_id']}>")
+                        if _row["is_test_driver"] and _row["test_display_name"]:
+                            label = f"*{_row['test_display_name']}*"
+                        else:
+                            label = f"<@{_row['discord_user_id']}>"
+                        by_team.setdefault(_row["team_name"], []).append(label)
                     for t_name, mentions in by_team.items():
                         div_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
                 else:
