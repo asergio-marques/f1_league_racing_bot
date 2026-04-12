@@ -326,7 +326,7 @@ class SeasonCog(commands.Cog):
                 header_lines.append("")
 
             # ── Send header block ───────────────────────────────────
-            await interaction.followup.send("\n".join(header_lines), ephemeral=True)
+            await interaction.followup.send("\n".join(header_lines), ephemeral=False)
 
             # ── Per-division blocks ───────────────────────────────────
             db_divisions = await self.bot.season_service.get_divisions_with_results_config(cfg.season_id)
@@ -403,7 +403,7 @@ class SeasonCog(commands.Cog):
                         div_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
                 else:
                     div_lines.append("  *(no drivers assigned)*")
-                await interaction.followup.send("\n".join(div_lines), ephemeral=True)
+                await interaction.followup.send("\n".join(div_lines), ephemeral=False)
 
             # ── Server-level UNASSIGNED warning ──────────────────────
             async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
@@ -415,12 +415,12 @@ class SeasonCog(commands.Cog):
             if _unassigned_row and _unassigned_row["cnt"] > 0:
                 await interaction.followup.send(
                     f"⚠️ {_unassigned_row['cnt']} driver(s) UNASSIGNED — placement incomplete",
-                    ephemeral=True,
+                    ephemeral=False,
                 )
             await interaction.followup.send("Use the button below to approve.", view=view, ephemeral=True)
         else:
             # Pending (not yet persisted) path — header then one block per division
-            await interaction.followup.send("\n".join(header_lines), ephemeral=True)
+            await interaction.followup.send("\n".join(header_lines), ephemeral=False)
             for div in cfg.divisions:
                 if not div.name:
                     continue
@@ -435,7 +435,7 @@ class SeasonCog(commands.Cog):
                         f"  Round {r['round_number']}: {r['format'].value} "
                         f"@ {r['track_name'] or 'Mystery'} \u2014 {discord_ts(r['scheduled_at'])}"
                     )
-                await interaction.followup.send("\n".join(div_lines), ephemeral=True)
+                await interaction.followup.send("\n".join(div_lines), ephemeral=False)
             await interaction.followup.send("Use the button below to approve.", view=view, ephemeral=True)
 
     @season.command(
