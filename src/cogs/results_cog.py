@@ -245,6 +245,116 @@ class BulkAmendSessionModal(discord.ui.Modal, title="Bulk Amend Session Points")
             )
 
 
+class XmlImportModal(discord.ui.Modal, title="XML Points Config Import"):
+    """Modal for importing a full XML points configuration payload."""
+
+    xml_payload: discord.ui.TextInput = discord.ui.TextInput(
+        label="XML payload",
+        style=discord.TextStyle.paragraph,
+        placeholder="<config>\n  <session>\n    <type>Feature Race</type>\n    <position id=\"1\">25</position>\n  </session>\n</config>",
+        required=True,
+        max_length=4000,
+    )
+
+    def __init__(
+        self,
+        config_name: str,
+        db_path: str,
+        guild_id: int,
+    ) -> None:
+        super().__init__()
+        self._config_name = config_name
+        self._db_path = db_path
+        self._guild_id = guild_id
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+        await interaction.response.defer(ephemeral=True)
+        await _run_xml_import(
+            interaction,
+            self.xml_payload.value,
+            self._config_name,
+            self._db_path,
+            self._guild_id,
+        )
+
+
+async def _run_xml_import(
+    interaction: discord.Interaction,
+    xml_text: str,
+    config_name: str,
+    db_path: str,
+    guild_id: int,
+) -> None:
+    """Shared logic for modal and file-attachment XML import paths.
+
+    Parses, validates, persists, and replies with an ephemeral summary.
+    Posts an audit log entry on both success and failure.
+    """
+    from services.points_config_service import ConfigNotFoundError, xml_import_config
+    from utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
+
+    def _audit(msg: str) -> None:
+        interaction.client.output_router.post_log(  # type: ignore[attr-defined]
+            guild_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+            f"| /results config xml-import | config: {config_name}\n  {msg}",
+        )
+
+    # --- parse ------------------------------------------------------------
+    try:
+        payload, warnings = parse_xml_payload(xml_text)
+    except XmlImportError as exc:
+        error_text = "\n".join(f"  • {e}" for e in exc.errors)
+        await interaction.followup.send(
+            f"❌ XML parse/validation failed:\n{error_text}", ephemeral=True
+        )
+        _audit(f"FAILED (parse error): {'; '.join(exc.errors)}")
+        return
+
+    # --- semantic validation (monotonic ordering) -------------------------
+    mono_errors = validate_payload(payload)
+    if mono_errors:
+        error_text = "\n".join(f"  • {e}" for e in mono_errors)
+        await interaction.followup.send(
+            f"❌ Points ordering validation failed:\n{error_text}", ephemeral=True
+        )
+        _audit(f"FAILED (monotonic violation): {'; '.join(mono_errors)}")
+        return
+
+    # --- persist ----------------------------------------------------------
+    try:
+        await xml_import_config(db_path, guild_id, config_name, payload)
+    except ConfigNotFoundError:
+        await interaction.followup.send(
+            f"❌ Config **{config_name}** not found.", ephemeral=True
+        )
+        _audit("FAILED (config not found)")
+        return
+    except Exception as exc:
+        await interaction.followup.send(
+            f"❌ Database error: {exc}", ephemeral=True
+        )
+        _audit(f"FAILED (db error): {exc}")
+        return
+
+    # --- success reply ----------------------------------------------------
+    lines: list[str] = []
+    for session_type, pos_dict in payload.positions.items():
+        lines.append(f"  **{session_type.label()}**: {len(pos_dict)} position(s) updated")
+    for session_type, (fl_pts, fl_limit) in payload.fastest_laps.items():
+        limit_text = f", limit P{fl_limit}" if fl_limit is not None else ""
+        lines.append(f"  **{session_type.label()}** FL: {fl_pts} pts{limit_text}")
+    if warnings:
+        lines.append("⚠️ Warnings:")
+        lines.extend(f"  • {w}" for w in warnings)
+
+    summary = "\n".join(lines) or "No changes."
+    await interaction.followup.send(
+        f"✅ Config **{config_name}** updated:\n{summary}", ephemeral=True
+    )
+    _audit(f"SUCCESS: {len(payload.positions)} session(s), {len(payload.fastest_laps)} FL row(s)")
+
+
 class ResultsCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -625,6 +735,55 @@ class ResultsCog(commands.Cog):
         await interaction.response.send_modal(
             BulkConfigSessionModal(name, session, self.bot.db_path, interaction.guild_id)
         )
+
+    @config_group.command(
+        name="xml-import",
+        description="Import a full points configuration from an XML payload (modal or file attachment).",
+    )
+    @app_commands.describe(name="Config name", file="Optional XML file attachment (skips modal)")
+    @channel_guard
+    @admin_only
+    async def config_xml_import(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        file: discord.Attachment | None = None,
+    ) -> None:
+        if not await self._module_gate(interaction):
+            return
+
+        if file is None:
+            await interaction.response.send_modal(
+                XmlImportModal(name, self.bot.db_path, interaction.guild_id)
+            )
+        else:
+            await interaction.response.defer(ephemeral=True)
+
+            raw = await file.read()
+
+            if len(raw) > 100_000:
+                await interaction.followup.send(
+                    "❌ File is too large (max 100 KB).", ephemeral=True
+                )
+                return
+
+            if not raw:
+                await interaction.followup.send(
+                    "❌ The attached file is empty.", ephemeral=True
+                )
+                return
+
+            try:
+                xml_text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                await interaction.followup.send(
+                    "❌ File could not be decoded as UTF-8.", ephemeral=True
+                )
+                return
+
+            await _run_xml_import(
+                interaction, xml_text, name, self.bot.db_path, interaction.guild_id
+            )
 
     # ------------------------------------------------------------------
     # /results amend group — T025

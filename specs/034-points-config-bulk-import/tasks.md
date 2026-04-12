@@ -15,8 +15,8 @@
 
 **Purpose**: Add the new dependency and register the new utility module.
 
-- [ ] T001 Add `lxml` to `requirements.txt`
-- [ ] T002 Create empty `src/utils/xml_import.py` with module docstring and `__all__`
+- [X] T001 Add `lxml` to `requirements.txt`
+- [X] T002 Create empty `src/utils/xml_import.py` with module docstring and `__all__`
 
 ---
 
@@ -26,12 +26,12 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T003 Define `XmlImportPayload` dataclass and `XmlImportError` exception in `src/utils/xml_import.py`
-- [ ] T004 [P] Build `_SESSION_TYPE_BY_LABEL` reverse-lookup dict (case-insensitive label → `SessionType`) in `src/utils/xml_import.py`
-- [ ] T005 Implement `parse_xml_payload(xml_text: str) -> tuple[XmlImportPayload, list[str]]` in `src/utils/xml_import.py` — lxml parse with `resolve_entities=False` and `no_network=True`; extracts `<session>` blocks; validates structure (type lookup, position id ≥ 1, points ≥ 0, FL points ≥ 0, FL limit ≥ 1 when present, FL rejected on qualifying); last-wins on duplicate position ids with warning collection; session blocks with no `<position>` and no `<fastest-lap>` children are excluded from the payload (not added to `positions` or `fastest_laps` dicts); raises `XmlImportError` on hard failures
-- [ ] T006 Implement `validate_payload(payload: XmlImportPayload) -> list[str]` in `src/utils/xml_import.py` — monotonic non-increasing check per session block (skip zero-points entries per existing rule); returns list of error strings
-- [ ] T007 Implement `xml_import_config(db_path, server_id, config_name, payload)` async function in `src/services/points_config_service.py` — single DB connection, resolves config_id via `_get_config_id`, upserts all position rows and FL rows from payload in one atomic transaction; raises `ConfigNotFoundError` on unknown config
-- [ ] T008 [P] Write unit tests for `parse_xml_payload` and `validate_payload` in `tests/unit/test_xml_import.py` — covers: valid full import, partial session, duplicate position id (last-wins + warning), unknown session type rejection, FL on qualifying rejection, negative/zero position id rejection, negative points rejection, invalid FL limit rejection, malformed XML, monotonic violation detection, empty payload
+- [X] T003 Define `XmlImportPayload` dataclass and `XmlImportError` exception in `src/utils/xml_import.py`
+- [X] T004 [P] Build `_SESSION_TYPE_BY_LABEL` reverse-lookup dict (case-insensitive label → `SessionType`) in `src/utils/xml_import.py`
+- [X] T005 Implement `parse_xml_payload(xml_text: str) -> tuple[XmlImportPayload, list[str]]` in `src/utils/xml_import.py` — lxml parse with `resolve_entities=False` and `no_network=True`; extracts `<session>` blocks; validates structure (type lookup, position id ≥ 1, points ≥ 0, FL points ≥ 0, FL limit ≥ 1 when present, FL rejected on qualifying); last-wins on duplicate position ids with warning collection; session blocks with no `<position>` and no `<fastest-lap>` children are excluded from the payload (not added to `positions` or `fastest_laps` dicts); raises `XmlImportError` on hard failures
+- [X] T006 Implement `validate_payload(payload: XmlImportPayload) -> list[str]` in `src/utils/xml_import.py` — monotonic non-increasing check per session block (skip zero-points entries per existing rule); returns list of error strings
+- [X] T007 Implement `xml_import_config(db_path, server_id, config_name, payload)` async function in `src/services/points_config_service.py` — single DB connection, resolves config_id via `_get_config_id`, upserts all position rows and FL rows from payload in one atomic transaction; raises `ConfigNotFoundError` on unknown config
+- [X] T008 [P] Write unit tests for `parse_xml_payload` and `validate_payload` in `tests/unit/test_xml_import.py` — covers: valid full import, partial session, duplicate position id (last-wins + warning), unknown session type rejection, FL on qualifying rejection, negative/zero position id rejection, negative points rejection, invalid FL limit rejection, malformed XML, monotonic violation detection, empty payload
 
 **Checkpoint**: Foundation ready — `src/utils/xml_import.py` + `xml_import_config` + unit tests all passing.
 
@@ -43,9 +43,9 @@
 
 **Independent Test**: `/results config xml-import name:"100%"` with valid XML → modal opens → submit → config updated → view confirms values. (Quickstart steps 1 and 2.)
 
-- [ ] T009 [US1] Implement `XmlImportModal` class in `src/cogs/results_cog.py` — `discord.ui.Modal` titled "XML Points Config Import" with a single `discord.ui.TextInput` field (`label="XML payload"`, `style=long`, `max_length=4000`); stores `config_name`, `db_path`, `guild_id`; `on_submit` defers ephemerally then calls `_run_xml_import`
-- [ ] T010 [US1] Implement `_run_xml_import(interaction, xml_text, config_name, db_path, guild_id)` async helper in `src/cogs/results_cog.py` — calls `parse_xml_payload`, reports `XmlImportError` ephemerally and posts a failure audit log entry; calls `validate_payload`, reports failures ephemerally and posts a failure audit log entry; calls `xml_import_config`, handles `ConfigNotFoundError` and generic DB exceptions ephemerally and posts a failure audit log entry; on success sends ephemeral summary listing each session updated and FL changes (including any duplicate-id warnings) and posts a success audit log entry; all audit log entries written via `output_router.post_log` with user info, config name, and a brief reason/summary
-- [ ] T011 [US1] Add `config_xml_import` command handler to `config_group` in `src/cogs/results_cog.py` — `@config_group.command(name="xml-import")`, `@app_commands.describe`, `@channel_guard`, `@admin_only`; parameters: `name: str`, `file: discord.Attachment | None = None`; implement only the `file is None` branch: call `_module_gate` then send `XmlImportModal`; leave the `file is not None` branch as `pass` (stub for T012)
+- [X] T009 [US1] Implement `XmlImportModal` class in `src/cogs/results_cog.py` — `discord.ui.Modal` titled "XML Points Config Import" with a single `discord.ui.TextInput` field (`label="XML payload"`, `style=long`, `max_length=4000`); stores `config_name`, `db_path`, `guild_id`; `on_submit` defers ephemerally then calls `_run_xml_import`
+- [X] T010 [US1] Implement `_run_xml_import(interaction, xml_text, config_name, db_path, guild_id)` async helper in `src/cogs/results_cog.py` — calls `parse_xml_payload`, reports `XmlImportError` ephemerally and posts a failure audit log entry; calls `validate_payload`, reports failures ephemerally and posts a failure audit log entry; calls `xml_import_config`, handles `ConfigNotFoundError` and generic DB exceptions ephemerally and posts a failure audit log entry; on success sends ephemeral summary listing each session updated and FL changes (including any duplicate-id warnings) and posts a success audit log entry; all audit log entries written via `output_router.post_log` with user info, config name, and a brief reason/summary
+- [X] T011 [US1] Add `config_xml_import` command handler to `config_group` in `src/cogs/results_cog.py` — `@config_group.command(name="xml-import")`, `@app_commands.describe`, `@channel_guard`, `@admin_only`; parameters: `name: str`, `file: discord.Attachment | None = None`; implement only the `file is None` branch: call `_module_gate` then send `XmlImportModal`; leave the `file is not None` branch as `pass` (stub for T012)
 
 **Checkpoint**: US1 complete — modal path fully functional end-to-end.
 
@@ -57,7 +57,7 @@
 
 **Independent Test**: `/results config xml-import name:"100%" file:import.xml` → no modal → config updated → success reply. (Quickstart step 3.)
 
-- [ ] T012 [US2] Implement the `file is not None` branch of `config_xml_import` in `src/cogs/results_cog.py`: defer ephemerally → `_module_gate` check → `await file.read()` → size check (> 100 KB → ephemeral error) → empty check → UTF-8 decode (see T018) → `_run_xml_import`
+- [X] T012 [US2] Implement the `file is not None` branch of `config_xml_import` in `src/cogs/results_cog.py`: defer ephemerally → `_module_gate` check → `await file.read()` → size check (> 100 KB → ephemeral error) → empty check → UTF-8 decode (see T018) → `_run_xml_import`
 
 **Checkpoint**: US1 + US2 complete — both input paths functional.
 
@@ -69,8 +69,8 @@
 
 **Independent Test**: Submit XML with P1=10, P2=20 (monotonic violation) → ephemeral error identifies the violation → `/results config view` confirms no change. (Quickstart steps 4–6.)
 
-- [ ] T013 [US3] Verify atomicity of `xml_import_config` by ensuring it uses a single `async with get_connection(db_path) as db` context with `await db.commit()` only on success — any exception before commit leaves the DB unchanged (already enforced by aiosqlite context manager rollback); confirm this in service implementation from T007
-- [ ] T014 [US3] Write unit tests for all validation-failure paths in `tests/unit/test_xml_import.py` (if not already covered in T008): parse error → `XmlImportError` raised; unknown session type → `XmlImportError`; monotonic violation → `validate_payload` returns non-empty errors; structural errors → `XmlImportError` with full error list
+- [X] T013 [US3] Verify atomicity of `xml_import_config` by ensuring it uses a single `async with get_connection(db_path) as db` context with `await db.commit()` only on success — any exception before commit leaves the DB unchanged (already enforced by aiosqlite context manager rollback); confirm this in service implementation from T007
+- [X] T014 [US3] Write unit tests for all validation-failure paths in `tests/unit/test_xml_import.py` (if not already covered in T008): parse error → `XmlImportError` raised; unknown session type → `XmlImportError`; monotonic violation → `validate_payload` returns non-empty errors; structural errors → `XmlImportError` with full error list
 
 > **Note**: T013 is a verification/review task. If T007 already handles it correctly, it closes immediately. T014 extends T008's coverage with explicit rollback-path assertions.
 
@@ -84,8 +84,8 @@
 
 **Independent Test**: Import XML with only a Feature Race block → Sprint Qualifying, Sprint Race, Feature Qualifying entries are unmodified. (Quickstart step 2.)
 
-- [ ] T015 [US4] Verify partial-session semantics in `parse_xml_payload` — session types absent from XML must not appear in `XmlImportPayload.positions` or `XmlImportPayload.fastest_laps`; session blocks with no `<position>` children result in an empty positions dict for that session type (not added to payload); confirm in unit tests in `tests/unit/test_xml_import.py`
-- [ ] T016 [US4] Verify that `xml_import_config` only upserts rows for session types and positions present in the payload — untouched rows are never written; add a targeted unit/integration assertion confirming DB rows for absent sessions are unchanged after import
+- [X] T015 [US4] Verify partial-session semantics in `parse_xml_payload` — session types absent from XML must not appear in `XmlImportPayload.positions` or `XmlImportPayload.fastest_laps`; session blocks with no `<position>` children result in an empty positions dict for that session type (not added to payload); confirm in unit tests in `tests/unit/test_xml_import.py`
+- [X] T016 [US4] Verify that `xml_import_config` only upserts rows for session types and positions present in the payload — untouched rows are never written; add a targeted unit/integration assertion confirming DB rows for absent sessions are unchanged after import
 
 **Checkpoint**: All 4 user stories complete.
 
@@ -95,9 +95,9 @@
 
 **Purpose**: Final wiring, edge cases confirmed, and requirements traceability.
 
-- [ ] T017 [P] Confirm `lxml` is importable in the bot's Python environment (`python -c "import lxml.etree"`) and add a comment in `src/utils/xml_import.py` noting the required install (`pip install lxml` / `apt install python3-lxml`)
-- [ ] T018 [P] Confirm UTF-8 decode error on file attachment is handled gracefully in the file path of the command handler — add a `try/except UnicodeDecodeError` wrapping the decode step in `src/cogs/results_cog.py`; return ephemeral "File could not be decoded as UTF-8" error
-- [ ] T019 Run the full test suite (`python -m pytest tests/ -v`) and confirm all tests pass
+- [X] T017 [P] Confirm `lxml` is importable in the bot's Python environment (`python -c "import lxml.etree"`) and add a comment in `src/utils/xml_import.py` noting the required install (`pip install lxml` / `apt install python3-lxml`)
+- [X] T018 [P] Confirm UTF-8 decode error on file attachment is handled gracefully in the file path of the command handler — add a `try/except UnicodeDecodeError` wrapping the decode step in `src/cogs/results_cog.py`; return ephemeral "File could not be decoded as UTF-8" error
+- [X] T019 Run the full test suite (`python -m pytest tests/ -v`) and confirm all tests pass
 
 ---
 
