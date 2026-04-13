@@ -14,6 +14,40 @@ from utils import results_formatter
 
 log = logging.getLogger(__name__)
 
+_MSG_MAX = 1990  # Leave a small margin under Discord's 2000-char limit
+
+
+def _split_content(text: str) -> list[str]:
+    """Split *text* into chunks ≤ _MSG_MAX chars, breaking on newlines where possible."""
+    if len(text) <= _MSG_MAX:
+        return [text]
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for line in text.splitlines(keepends=True):
+        if current_len + len(line) > _MSG_MAX and current:
+            chunks.append("".join(current).rstrip("\n"))
+            current = [line]
+            current_len = len(line)
+        else:
+            current.append(line)
+            current_len += len(line)
+    if current:
+        chunks.append("".join(current).rstrip("\n"))
+    return chunks or [text[:_MSG_MAX]]
+
+
+async def _send_chunked(channel: discord.TextChannel, content: str) -> discord.Message:
+    """Send *content* to *channel*, splitting into multiple messages if needed.
+
+    Returns the first (header) message so its ID can be persisted.
+    """
+    chunks = _split_content(content)
+    first_msg = await channel.send(chunks[0])
+    for chunk in chunks[1:]:
+        await channel.send(chunk)
+    return first_msg
+
 
 # ---------------------------------------------------------------------------
 # Display-name helpers
@@ -159,7 +193,7 @@ async def post_session_results(
     season_number, division_name = await _get_heading_context(db_path, session_result.round_id)
     season_prefix = f"Season {season_number} " if season_number is not None else ""
     heading = f"**{season_prefix}{division_name} Round {round_number} — {session_label}**"
-    msg = await results_channel.send(f"{heading}\n{label}\n{table}")
+    msg = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
 
     async with get_connection(db_path) as db:
         await db.execute(
@@ -217,13 +251,18 @@ async def post_standings(
     if existing_msg_id is not None:
         try:
             existing_msg = await standings_channel.fetch_message(existing_msg_id)
-            await existing_msg.edit(content=content)
-            sent_msg = existing_msg
+            # Only edit in-place when the content fits in a single message; otherwise
+            # fall through to delete-and-resend so we can chunk across multiple messages.
+            if len(content) <= _MSG_MAX:
+                await existing_msg.edit(content=content)
+                sent_msg = existing_msg
+            else:
+                await existing_msg.delete()
         except (discord.NotFound, discord.HTTPException):
             sent_msg = None
 
     if sent_msg is None:
-        sent_msg = await standings_channel.send(content)
+        sent_msg = await _send_chunked(standings_channel, content)
 
     # Persist the message ID on the top-ranked driver snapshot
     if driver_snapshots:
