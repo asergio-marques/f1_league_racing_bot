@@ -51,6 +51,9 @@ class _FakeBot:
         self.scheduler_service = _FakeScheduler()
         self.output_router = _FakeRouter()
 
+    def get_guild(self, guild_id: int):  # noqa: ANN201
+        return None  # No Discord connection in tests; role revocation is skipped
+
 
 async def _seed_server(db_path: str, server_id: int = 1) -> tuple[int, list[int]]:
     """Seed a fully active season with two rounds. Returns (season_id, round_ids)."""

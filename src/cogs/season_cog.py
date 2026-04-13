@@ -578,6 +578,13 @@ class SeasonCog(commands.Cog):
 
         await self.bot.season_service.cancel_season(season.id)
 
+        # Revoke division, team, and signup roles from all assigned drivers
+        if interaction.guild is not None:
+            from services.season_end_service import _revoke_season_roles
+            await _revoke_season_roles(
+                interaction.guild_id, season.id, interaction.guild, self.bot
+            )
+
         await interaction.followup.send(
             "\u2705 Season cancelled.",
             ephemeral=True,
