@@ -407,13 +407,14 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             # 1. Fetch profile and validate state
             cursor = await db.execute(
-                "SELECT current_state FROM driver_profiles WHERE id = ? AND server_id = ?",
+                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ? AND server_id = ?",
                 (driver_profile_id, server_id),
             )
             row = await cursor.fetchone()
             if row is None:
                 raise ValueError("Driver profile not found.")
             current_state = DriverState(row["current_state"])
+            is_test_driver: bool = bool(row["is_test_driver"])
             if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
                 raise ValueError(
                     f"Driver must be Unassigned or Assigned to be placed "
@@ -563,7 +564,7 @@ class PlacementService:
             except discord.HTTPException:
                 member = None
 
-        if member is not None:
+        if member is not None and not is_test_driver:
             if season_state == "ACTIVE":
                 role_ids_to_grant = [div_role_id]
                 team_cfg = await self.get_team_role_config(server_id, team_name)
@@ -599,13 +600,14 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             # 1. Validate driver state
             cursor = await db.execute(
-                "SELECT current_state FROM driver_profiles WHERE id = ? AND server_id = ?",
+                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ? AND server_id = ?",
                 (driver_profile_id, server_id),
             )
             row = await cursor.fetchone()
             if row is None:
                 raise ValueError("Driver profile not found.")
             current_state = DriverState(row["current_state"])
+            is_test_driver: bool = bool(row["is_test_driver"])
             if current_state != DriverState.ASSIGNED:
                 raise ValueError(
                     f"Driver must be in Assigned state to be unassigned "
@@ -729,7 +731,7 @@ class PlacementService:
             except discord.HTTPException:
                 member = None
 
-        if member is not None:
+        if member is not None and not is_test_driver:
             if season_state == "ACTIVE":
                 roles_to_revoke = [div_role_id]
                 if team_role_id_to_revoke is not None:
@@ -814,7 +816,7 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             # Validate state
             cursor = await db.execute(
-                "SELECT current_state, former_driver FROM driver_profiles "
+                "SELECT current_state, former_driver, is_test_driver FROM driver_profiles "
                 "WHERE id = ? AND server_id = ?",
                 (driver_profile_id, server_id),
             )
@@ -823,6 +825,7 @@ class PlacementService:
                 raise ValueError("Driver profile not found.")
             current_state = DriverState(row["current_state"])
             former_driver = bool(row["former_driver"])
+            is_test_driver: bool = bool(row["is_test_driver"])
             if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
                 raise ValueError(
                     f"Driver must be Unassigned or Assigned to be sacked "
@@ -851,7 +854,7 @@ class PlacementService:
             except discord.HTTPException:
                 member = None
 
-        if member is not None:
+        if member is not None and not is_test_driver:
             if season_id is not None:
                 await self.revoke_all_placement_roles(server_id, driver_profile_id, season_id, member)
             # Revoke the signed-up role granted at approval
