@@ -769,14 +769,29 @@ async def _post_distribution_announcement(round_id: int, division_id: int, bot) 
         eligible_rows = await cur.fetchall()
 
     if not eligible_rows:
+        log.info(
+            "_post_distribution_announcement: no eligible accepted reserves for "
+            "round %d / division %d — skipping announcement (FR-026)",
+            round_id, division_id,
+        )
         return  # FR-026: no announcement if no eligible reserves
 
     att_div_cfg = await bot.attendance_service.get_division_config(division_id)
     if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
+        log.warning(
+            "_post_distribution_announcement: no attendance config or rsvp_channel_id "
+            "for division %d — skipping announcement",
+            division_id,
+        )
         return
 
     channel = bot.get_channel(int(att_div_cfg.rsvp_channel_id))
     if channel is None:
+        log.warning(
+            "_post_distribution_announcement: RSVP channel %s not in bot cache "
+            "for division %d — skipping announcement",
+            att_div_cfg.rsvp_channel_id, division_id,
+        )
         return
 
     lines = ["📋 **Reserve Distribution Results**"]
