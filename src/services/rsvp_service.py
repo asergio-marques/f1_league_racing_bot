@@ -402,14 +402,15 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
 async def run_rsvp_last_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
     """Post the last-notice ping for *round_id*.
 
-    Mentions only full-time drivers (is_reserve = 0) with rsvp_status = 'NO_RSVP'.
-    Silently skips if there are no such drivers (FR-029).
+    Always posts a visibility message to the RSVP channel with a Discord relative
+    timestamp to the race.  When full-time drivers still have rsvp_status = 'NO_RSVP'
+    they are also mentioned with a reminder to respond.
     """
     async with get_connection(bot.db_path) as db:
         # Round + division context
         cur = await db.execute(
             """
-            SELECT r.division_id, r.round_number,
+            SELECT r.division_id, r.round_number, r.scheduled_at,
                    d.name AS division_name
               FROM rounds r
               JOIN divisions d ON d.id = r.division_id
@@ -424,6 +425,26 @@ async def run_rsvp_last_notice(round_id: int, bot) -> None:  # type: ignore[type
         return
 
     division_id: int = row["division_id"]
+
+    scheduled_at_raw = row["scheduled_at"]
+    if isinstance(scheduled_at_raw, str):
+        from datetime import datetime as _dt
+        scheduled_at = _dt.fromisoformat(scheduled_at_raw)
+    else:
+        scheduled_at = scheduled_at_raw
+    if scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+    unix_ts = int(scheduled_at.timestamp())
+
+    att_div_cfg = await bot.attendance_service.get_division_config(division_id)
+    if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
+        log.warning("run_rsvp_last_notice: no RSVP channel for division %d — skipping", division_id)
+        return
+
+    channel = bot.get_channel(int(att_div_cfg.rsvp_channel_id))
+    if channel is None:
+        log.error("run_rsvp_last_notice: RSVP channel not found for division %d", division_id)
+        return
 
     # Find full-time drivers still at NO_RSVP
     async with get_connection(bot.db_path) as db:
@@ -447,35 +468,27 @@ async def run_rsvp_last_notice(round_id: int, bot) -> None:  # type: ignore[type
         )
         no_rsvp_rows = await cur.fetchall()
 
-    if not no_rsvp_rows:
+    if no_rsvp_rows:
+        mentions: list[str] = []
+        for r in no_rsvp_rows:
+            if r["test_display_name"]:
+                mentions.append(f"<@{r['discord_user_id']}> ({r['test_display_name']})")
+            else:
+                mentions.append(f"<@{r['discord_user_id']}>")
+        content = (
+            f"⏰ **RSVP Reminder** — the race is <t:{unix_ts}:R>. "
+            f"Please confirm your attendance:\n" + " ".join(mentions)
+        )
+    else:
         log.info(
-            "run_rsvp_last_notice: no non-responding full-time drivers for round %d / division %d — skipping",
+            "run_rsvp_last_notice: all full-time drivers responded for round %d / division %d — posting visibility notice",
             round_id, division_id,
         )
-        return
+        content = (
+            f"✅ All drivers have responded. The race is <t:{unix_ts}:R> — "
+            f"please review your attendance if anything has changed."
+        )
 
-    att_div_cfg = await bot.attendance_service.get_division_config(division_id)
-    if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
-        log.warning("run_rsvp_last_notice: no RSVP channel for division %d — skipping", division_id)
-        return
-
-    channel = bot.get_channel(int(att_div_cfg.rsvp_channel_id))
-    if channel is None:
-        log.error("run_rsvp_last_notice: RSVP channel not found for division %d", division_id)
-        return
-
-    mentions: list[str] = []
-    for r in no_rsvp_rows:
-        if r["test_display_name"]:
-            mentions.append(f"<@{r['discord_user_id']}> ({r['test_display_name']})"
-            )
-        else:
-            mentions.append(f"<@{r['discord_user_id']}>")
-
-    content = (
-        f"⏰ **RSVP Reminder** — please confirm your attendance:\n"
-        + " ".join(mentions)
-    )
     try:
         last_msg = await channel.send(content)
     except discord.HTTPException as exc:
@@ -508,7 +521,7 @@ async def run_rsvp_deadline(round_id: int, bot) -> None:  # type: ignore[type-ar
 
     division_id: int = row["division_id"]
 
-    await run_reserve_distribution(round_id, division_id, bot)
+    reserves_placed = await run_reserve_distribution(round_id, division_id, bot)
 
     # Disable the RSVP embed buttons
     embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)
@@ -527,8 +540,11 @@ async def run_rsvp_deadline(round_id: int, bot) -> None:  # type: ignore[type-ar
                 except discord.HTTPException as exc:
                     log.error("run_rsvp_deadline: failed to disable embed buttons for round %d: %s", round_id, exc)
 
-    # Post assignment announcement
-    await _post_distribution_announcement(round_id, division_id, bot)
+    # Post assignment announcement (or a notice when no reserves were needed)
+    if reserves_placed:
+        await _post_distribution_announcement(round_id, division_id, bot)
+    else:
+        await _post_no_reserve_notice(round_id, division_id, bot)
 
 
 async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None:  # type: ignore[type-arg]
@@ -562,7 +578,7 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
 
     if not accepted_reserves:
         log.info("run_reserve_distribution: no accepted reserves for round %d / division %d", round_id, division_id)
-        return
+        return False
 
     async with get_connection(bot.db_path) as db:
         # Candidate teams: non-Reserve teams in division (FR-020)
@@ -683,6 +699,7 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
         "run_reserve_distribution: round %d / division %d — %d assigned, %d standby",
         round_id, division_id, len(assignments), len(standby_ids),
     )
+    return bool(assignments or standby_ids)
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -740,6 +757,41 @@ async def _rebuild_embed_for_round(round_id: int, division_id: int, bot) -> disc
         scheduled_at=scheduled_at,
         round_format=RoundFormat(row["format"]),
         teams=embed_teams,
+    )
+
+
+async def _post_no_reserve_notice(round_id: int, division_id: int, bot) -> None:  # type: ignore[type-arg]
+    """Post a notice that no reserves were placed because all seats were filled."""
+    att_div_cfg = await bot.attendance_service.get_division_config(division_id)
+    if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
+        log.warning(
+            "_post_no_reserve_notice: no attendance config or rsvp_channel_id "
+            "for division %d — skipping",
+            division_id,
+        )
+        return
+
+    channel = bot.get_channel(int(att_div_cfg.rsvp_channel_id))
+    if channel is None:
+        log.warning(
+            "_post_no_reserve_notice: RSVP channel %s not in bot cache "
+            "for division %d — skipping",
+            att_div_cfg.rsvp_channel_id, division_id,
+        )
+        return
+
+    try:
+        dist_msg = await channel.send(
+            "✅ **Reserve Distribution** — No reserves were placed; all seats are filled."
+        )
+    except discord.HTTPException as exc:
+        log.error("_post_no_reserve_notice: failed for division %d: %s", division_id, exc)
+        return
+
+    await bot.attendance_service.update_embed_distribution_msg(
+        round_id=round_id,
+        division_id=division_id,
+        msg_id=str(dist_msg.id),
     )
 
 
