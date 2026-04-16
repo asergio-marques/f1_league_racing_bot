@@ -104,6 +104,7 @@ async def get_next_pending_phase(
                 r.phase1_done,
                 r.phase2_done,
                 r.phase3_done,
+                r.result_status,
                 d.name         AS division_name
             FROM rounds r
             JOIN divisions d ON d.id  = r.division_id
@@ -181,43 +182,140 @@ async def get_next_pending_phase(
     # ── Primary: scheduler job store ────────────────────────────────────────
     pending_jobs = scheduler_service.get_pending_advance_jobs(round_ids)
 
-    # Fetch results_module_enabled early — needed in both the scheduler and fallback paths.
+    # Fetch module flags, RSVP embed state, and finalized status.
+    # These are used by _first_pending_for_row which drives both the
+    # earlier-round priority check and the all-misfired DB fallback.
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
+        rmc_cursor = await db.execute(
             "SELECT module_enabled FROM results_module_config WHERE server_id = ?",
             (server_id,),
         )
-        rmc_row = await cursor.fetchone()
-    results_module_enabled = bool(rmc_row[0]) if rmc_row else False
+        rmc_row = await rmc_cursor.fetchone()
+        results_module_enabled = bool(rmc_row[0]) if rmc_row else False
+
+        wm_cursor = await db.execute(
+            "SELECT weather_module_enabled FROM server_configs WHERE server_id = ?",
+            (server_id,),
+        )
+        wm_row = await wm_cursor.fetchone()
+        weather_module_enabled = bool(wm_row[0]) if wm_row else False
+
+        att_cursor = await db.execute(
+            "SELECT module_enabled FROM attendance_config WHERE server_id = ?",
+            (server_id,),
+        )
+        att_row = await att_cursor.fetchone()
+        attendance_module_enabled = bool(att_row[0]) if att_row else False
+
+        # RSVP embed state: keyed by round_id (one row per round since each
+        # round belongs to exactly one division).
+        if attendance_module_enabled:
+            rsvp_cursor = await db.execute(
+                """
+                SELECT rem.round_id, rem.last_notice_msg_id, rem.distribution_msg_id
+                FROM rsvp_embed_messages rem
+                JOIN rounds r ON r.id = rem.round_id
+                JOIN divisions d ON d.id = r.division_id
+                JOIN seasons s ON s.id = d.season_id
+                WHERE s.server_id = ?
+                """,
+                (server_id,),
+            )
+            rsvp_state: dict[int, Any] = {
+                r["round_id"]: r for r in await rsvp_cursor.fetchall()
+            }
+        else:
+            rsvp_state = {}
+
+    def _first_pending_for_row(row: Any) -> "PhaseEntry | None":
+        """Return the first pending phase for *row* detected from DB state only.
+
+        Canonical order mirrors APScheduler fire-time ordering with defaults:
+          normal:  P1(1) → RSVP-notice(5) → P2(2) → RSVP-last(6) → P3(3) → RSVP-deadline(7) → results(4)
+          mystery: notice(0) → RSVP-notice(5) → RSVP-last(6) → RSVP-deadline(7) → results(4)
+
+        Used for two purposes:
+          1. Priority check: detect misfired/absent work in earlier rounds before
+             returning the first scheduler job.
+          2. Empty-jobs fallback: iterate all rounds when the scheduler has nothing
+             (all jobs auto-fired or evicted by misfire_grace_time).
+        """
+        rid = row["round_id"]
+        is_mystery = str(row["format"]).upper() == "MYSTERY"
+
+        # Skip rounds that are fully done or already in results processing.
+        # result_status is the canonical post-submission state machine:
+        #   PROVISIONAL → ACTIVE (not started) | FINAL/POST_RACE_PENALTY → done/in-review.
+        # rounds.finalized is a legacy column (never set by current code); use result_status.
+        if row["result_status"] in ("FINAL", "POST_RACE_PENALTY"):
+            return None
+
+        def _make(phase: int) -> PhaseEntry:
+            return PhaseEntry(
+                round_id=rid,
+                round_number=row["round_number"],
+                division_id=row["division_id"],
+                phase_number=phase,
+                track_name=row["track_name"] or ("Mystery" if is_mystery else "Unknown"),
+                division_name=row["division_name"],
+                job_id=None,
+            )
+
+        # ── Phase 0 / Phase 1: mystery notice or weather P1 ──────────────
+        if is_mystery:
+            if not row["phase1_done"]:
+                return _make(0)
+        else:
+            if weather_module_enabled and not row["phase1_done"]:
+                return _make(1)
+
+        # ── Phase 5: RSVP notice ──────────────────────────────────────────
+        if attendance_module_enabled and rid not in rsvp_state:
+            return _make(5)
+
+        # ── Phase 2: weather P2 (normal rounds only) ──────────────────────
+        if not is_mystery and weather_module_enabled and not row["phase2_done"]:
+            return _make(2)
+
+        # ── Phase 6: RSVP last-notice ─────────────────────────────────────
+        if attendance_module_enabled:
+            rsvp = rsvp_state.get(rid)
+            if rsvp is not None and not rsvp["last_notice_msg_id"]:
+                return _make(6)
+
+        # ── Phase 3: weather P3 (normal rounds only) ──────────────────────
+        if not is_mystery and weather_module_enabled and not row["phase3_done"]:
+            return _make(3)
+
+        # ── Phase 7: RSVP deadline ────────────────────────────────────────
+        if attendance_module_enabled:
+            rsvp = rsvp_state.get(rid)
+            if rsvp is not None and not rsvp["distribution_msg_id"]:
+                return _make(7)
+
+        # ── Phase 4: result submission ────────────────────────────────────
+        if results_module_enabled:
+            if rid not in rounds_with_results and row["result_status"] == "PROVISIONAL":
+                return _make(4)
+
+        return None
 
     if pending_jobs:
         job = pending_jobs[0]
-        # Before returning this scheduler job, check if an earlier round (by
-        # scheduled_at) has a pending result submission.  Result submission is
-        # excluded from the scheduler job list, so without this check the RSVP
-        # phases of round N+1 would be returned before round N's results are done.
-        if results_module_enabled:
-            first_job_idx = next(
-                (i for i, r in enumerate(rows) if r["round_id"] == job["round_id"]),
-                len(rows),
-            )
-            for row in rows[:first_job_idx]:
-                is_mystery = str(row["format"]).upper() == "MYSTERY"
-                if is_mystery and not row["phase1_done"]:
-                    continue
-                if row["round_id"] in rounds_with_results:
-                    continue
-                if await is_round_finalized(db_path, row["round_id"]):
-                    continue
-                return PhaseEntry(
-                    round_id=row["round_id"],
-                    round_number=row["round_number"],
-                    division_id=row["division_id"],
-                    phase_number=4,
-                    track_name=row["track_name"] or ("Mystery" if is_mystery else "Unknown"),
-                    division_name=row["division_name"],
-                    job_id=None,
-                )
+        # Before returning this scheduler job, check all earlier rounds (by
+        # scheduled_at) for any pending work that the scheduler cannot see —
+        # misfired/evicted phase jobs, result submission (excluded from
+        # pending_jobs), or RSVP phases that were never created for past-dated
+        # rounds.  Ensures chronological advance order is preserved even when
+        # the job store is incomplete.
+        first_job_idx = next(
+            (i for i, r in enumerate(rows) if r["round_id"] == job["round_id"]),
+            len(rows),
+        )
+        for row in rows[:first_job_idx]:
+            entry = _first_pending_for_row(row)
+            if entry is not None:
+                return entry
         rnd = round_info[job["round_id"]]
         is_mystery = str(rnd["format"]).upper() == "MYSTERY"
         return PhaseEntry(
@@ -230,34 +328,15 @@ async def get_next_pending_phase(
             job_id=job["job_id"],
         )
 
-    # ── Fallback: any round whose result submission is still pending ───────────
-    # Result submission is always detected via DB state, not via the APScheduler
-    # job store, because results_r{id} jobs for past dates auto-fire immediately
-    # when added in test mode — using the job store would cause double-triggering.
-    # MYSTERY rounds gate result submission on phase1_done=1 (notice sent first).
-    # A round needs results when the results module is enabled, all applicable
-    # scheduler-backed work is done (no pending jobs above), and no ACTIVE
-    # session_result exists for it.
-    if results_module_enabled:
-        for row in rows:
-            is_mystery = str(row["format"]).upper() == "MYSTERY"
-            if is_mystery and not row["phase1_done"]:
-                continue  # mystery notice not yet sent
-            if row["round_id"] in rounds_with_results:
-                continue
-            # Skip rounds that are finalized (penalty review approved) — their
-            # results submission is fully complete, not a pending phase.
-            if await is_round_finalized(db_path, row["round_id"]):
-                continue
-            return PhaseEntry(
-                round_id=row["round_id"],
-                round_number=row["round_number"],
-                division_id=row["division_id"],
-                phase_number=4,
-                track_name=row["track_name"] or ("Mystery" if is_mystery else "Unknown"),
-                division_name=row["division_name"],
-                job_id=None,
-            )
+    # ── DB fallback: all scheduler jobs have misfired or been evicted ─────────
+    # Walk rounds in scheduled_at order and return the first pending phase
+    # detected from DB state alone.  Covers the common test-mode scenario where
+    # all rounds are past-dated and every job auto-fired or was evicted by
+    # APScheduler's misfire_grace_time, leaving the job store empty.
+    for row in rows:
+        entry = _first_pending_for_row(row)
+        if entry is not None:
+            return entry
 
     return None
 
@@ -345,13 +424,14 @@ async def build_review_summary(
             """
             SELECT
                 r.id          AS round_id,
+                r.round_number,
                 r.format,
                 r.track_name,
                 r.scheduled_at,
                 r.phase1_done,
                 r.phase2_done,
                 r.phase3_done,
-                r.finalized,
+                r.result_status,
                 d.name        AS division_name,
                 d.id          AS division_id
             FROM rounds r
@@ -422,8 +502,9 @@ async def build_review_summary(
 
     for div_name, div_rounds in divisions.items():
         lines.append(f"**{div_name}**")
-        for i, row in enumerate(div_rounds, start=1):
+        for row in div_rounds:
             rid = row["round_id"]
+            rnum = row["round_number"]
             track = row["track_name"] or "TBA"
             try:
                 date_str = str(row["scheduled_at"])[:10]
@@ -447,7 +528,7 @@ async def build_review_summary(
 
             # ── Result submission ─────────────────────────────────────────
             if results_module_enabled:
-                if row["finalized"]:
+                if row["result_status"] == "FINAL":
                     res = "✅ finalized"
                 elif rid in rounds_with_results:
                     res = "⏸️ pending review"
@@ -472,7 +553,7 @@ async def build_review_summary(
                 )
                 parts.append(f"RSVP: {notice_s}  Last: {last_notice_s}  Deadline: {deadline_s}")
 
-            line = f"  Round {i} · {track:<15} · {date_str}  " + "  |  ".join(parts)
+            line = f"  Round {rnum} · {track:<15} · {date_str}  " + "  |  ".join(parts)
             lines.append(line)
 
         lines.append("")  # blank line between divisions

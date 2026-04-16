@@ -349,3 +349,188 @@ async def test_review_mystery_round_shows_notice_not_phases() -> None:
         assert "P3:" not in summary
     finally:
         os.unlink(db_path)
+
+
+# ---------------------------------------------------------------------------
+# Scheduler path — misfired-job / empty-store fallback
+# ---------------------------------------------------------------------------
+# A stub scheduler that returns a configurable set of pending jobs, used to
+# exercise the `scheduler_service is not None` code path.  Returning an empty
+# list simulates all APScheduler jobs having misfired or been evicted.
+# ---------------------------------------------------------------------------
+
+class _StubScheduler:
+    def __init__(self, pending_jobs: list[dict] | None = None) -> None:
+        self._jobs = pending_jobs or []
+
+    def get_pending_advance_jobs(self, round_ids: set[int]) -> list[dict]:  # noqa: ARG002
+        return [j for j in self._jobs if j["round_id"] in round_ids]
+
+    def get_job_ids_for_rounds(self, round_ids: set[int]) -> set[str]:  # noqa: ARG002
+        return set()
+
+
+async def _seed_with_weather(db_path: str, rounds: list[dict]) -> None:
+    """Seed like _seed but also enable the weather module."""
+    await _seed(db_path, rounds)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE server_configs SET weather_module_enabled = 1 WHERE server_id = 1"
+        )
+        await db.commit()
+
+
+async def _seed_with_attendance(db_path: str, rounds: list[dict]) -> None:
+    """Seed like _seed_with_weather but also enable the attendance module."""
+    await _seed_with_weather(db_path, rounds)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_config "
+            "(server_id, module_enabled) VALUES (1, 1)"
+        )
+        await db.commit()
+
+
+async def test_misfired_fallback_returns_phase1() -> None:
+    """Empty scheduler + weather enabled → phase 1 returned via DB flag fallback."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        await _seed_with_weather(db_path, [
+            {"track_name": "Monza", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
+        ])
+        result = await get_next_pending_phase(1, db_path, _StubScheduler())
+        assert result is not None
+        assert result["phase_number"] == 1
+        assert result["track_name"] == "Monza"
+    finally:
+        os.unlink(db_path)
+
+
+async def test_misfired_fallback_respects_phase_flags() -> None:
+    """phase1_done=1, phase2_done=0 → fallback returns phase 2, not phase 1."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        await _seed_with_weather(db_path, [
+            {"track_name": "Spa", "phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
+        ])
+        result = await get_next_pending_phase(1, db_path, _StubScheduler())
+        assert result is not None
+        assert result["phase_number"] == 2
+    finally:
+        os.unlink(db_path)
+
+
+async def test_misfired_fallback_weather_disabled_skips_phases() -> None:
+    """Weather module disabled → weather phases never returned even with empty scheduler."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        # _seed leaves weather_module_enabled=0 (default)
+        await _seed(db_path, [
+            {"track_name": "Monza", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
+        ])
+        result = await get_next_pending_phase(1, db_path, _StubScheduler())
+        assert result is None
+    finally:
+        os.unlink(db_path)
+
+
+async def test_misfired_fallback_canonical_order() -> None:
+    """Canonical order: P1 → RSVP-notice → P2 → RSVP-last → P3 → RSVP-deadline.
+
+    Steps through one full round by calling get_next_pending_phase and manually
+    advancing the relevant DB flag / RSVP row between each call.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        await _seed_with_attendance(db_path, [
+            {"track_name": "Monaco", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
+        ])
+        stub = _StubScheduler()
+
+        # Step 1 — phase 1
+        r = await get_next_pending_phase(1, db_path, stub)
+        assert r is not None and r["phase_number"] == 1
+        async with get_connection(db_path) as db:
+            await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = 1")
+            await db.commit()
+
+        # Step 2 — RSVP notice (phase 5)
+        r = await get_next_pending_phase(1, db_path, stub)
+        assert r is not None and r["phase_number"] == 5
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO rsvp_embed_messages "
+                "(round_id, division_id, message_id, channel_id, posted_at) "
+                "VALUES (1, 1, 'msg1', 'ch1', '2026-01-01T00:00:00')"
+            )
+            await db.commit()
+
+        # Step 3 — phase 2
+        r = await get_next_pending_phase(1, db_path, stub)
+        assert r is not None and r["phase_number"] == 2
+        async with get_connection(db_path) as db:
+            await db.execute("UPDATE rounds SET phase2_done = 1 WHERE id = 1")
+            await db.commit()
+
+        # Step 4 — RSVP last-notice (phase 6)
+        r = await get_next_pending_phase(1, db_path, stub)
+        assert r is not None and r["phase_number"] == 6
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE rsvp_embed_messages SET last_notice_msg_id = 'msg2' "
+                "WHERE round_id = 1 AND division_id = 1"
+            )
+            await db.commit()
+
+        # Step 5 — phase 3
+        r = await get_next_pending_phase(1, db_path, stub)
+        assert r is not None and r["phase_number"] == 3
+        async with get_connection(db_path) as db:
+            await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = 1")
+            await db.commit()
+
+        # Step 6 — RSVP deadline (phase 7)
+        r = await get_next_pending_phase(1, db_path, stub)
+        assert r is not None and r["phase_number"] == 7
+    finally:
+        os.unlink(db_path)
+
+
+async def test_earlier_misfired_round_beats_later_scheduler_job() -> None:
+    """Earlier round with misfired phases must be advanced before a later
+    round whose scheduler job is still pending."""
+    earlier = (datetime.now(timezone.utc) - timedelta(days=10)).strftime(
+        "%Y-%m-%dT%H:%M:%S"
+    )
+    later = (datetime.now(timezone.utc) + timedelta(days=5)).strftime(
+        "%Y-%m-%dT%H:%M:%S"
+    )
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        await _seed_with_weather(db_path, [
+            {"track_name": "Bahrain",  "scheduled_at": earlier, "phase1_done": 0, "division_id": 1},
+            {"track_name": "Monza",    "scheduled_at": later,   "phase1_done": 0, "division_id": 1},
+        ])
+        # Scheduler only knows about round 2 (round 1 jobs evicted after misfire)
+        stub = _StubScheduler([{
+            "job_id": "phase1_r2",
+            "round_id": 2,
+            "phase_number": 1,
+            "next_run_time": datetime.now(timezone.utc) + timedelta(days=5),
+        }])
+        result = await get_next_pending_phase(1, db_path, stub)
+        assert result is not None
+        assert result["track_name"] == "Bahrain"   # earlier round wins
+        assert result["phase_number"] == 1
+    finally:
+        os.unlink(db_path)
