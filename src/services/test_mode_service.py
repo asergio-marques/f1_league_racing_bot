@@ -277,13 +277,38 @@ async def is_round_finalized(db_path: str, round_id: int) -> bool:
 # Review summary
 # ---------------------------------------------------------------------------
 
-async def build_review_summary(server_id: int, db_path: str) -> str:
+def _phase_status(done: bool, job_id: str, live_ids: set[str] | None) -> str:
+    """Return a status emoji for a single phase slot.
+
+    ✅ — phase complete (DB flag set)
+    ⏳ — pending; scheduler job is present (will fire automatically)
+    ⚠️  — pending; scheduler job is absent (misfired, never created, or
+          already auto-fired — must use /test-mode advance)
+
+    When *live_ids* is None (no scheduler available) pending phases show ⏳.
+    """
+    if done:
+        return "✅"
+    if live_ids is None:
+        return "⏳"
+    return "⏳" if job_id in live_ids else "⚠️"
+
+
+async def build_review_summary(
+    server_id: int,
+    db_path: str,
+    scheduler_service: Any = None,
+) -> str:
     """Return a formatted multi-line string summarising all rounds and phase status.
 
     Groups results by division (insertion order), then by round (scheduled_at).
     Covers weather phases (P1-P3), result submission, and RSVP phases (notice /
     last-notice / deadline) based on DB state — so it reflects actual progress
     regardless of whether scheduler jobs have fired or been evicted.
+
+    When *scheduler_service* is supplied, each pending phase is annotated:
+      ⏳ = job is present in APScheduler (will fire automatically)
+      ⚠️  = job is absent (misfired, evicted, or never created — needs /advance)
 
     Returns an informative message string if no active season exists.
     """
@@ -377,6 +402,14 @@ async def build_review_summary(server_id: int, db_path: str) -> str:
     if not rows:
         return f"**Season: {season_name} — ACTIVE**\n\nNo rounds have been configured yet."
 
+    # Live scheduler job IDs — populated when a scheduler_service is available.
+    round_ids: set[int] = {r["round_id"] for r in rows}
+    live_ids: set[str] | None = (
+        scheduler_service.get_job_ids_for_rounds(round_ids)
+        if scheduler_service is not None
+        else None
+    )
+
     # Group by division
     divisions: dict[str, list] = {}
     for row in rows:
@@ -390,6 +423,7 @@ async def build_review_summary(server_id: int, db_path: str) -> str:
     for div_name, div_rounds in divisions.items():
         lines.append(f"**{div_name}**")
         for i, row in enumerate(div_rounds, start=1):
+            rid = row["round_id"]
             track = row["track_name"] or "TBA"
             try:
                 date_str = str(row["scheduled_at"])[:10]
@@ -401,37 +435,49 @@ async def build_review_summary(server_id: int, db_path: str) -> str:
 
             parts: list[str] = []
 
-            # ── Weather phases ────────────────────────────────────────────
+            # ── Weather / mystery notice phases ───────────────────────────
             if is_mystery:
-                notice = "✅" if row["phase1_done"] else "⏳"
+                notice = _phase_status(bool(row["phase1_done"]), f"mystery_r{rid}", live_ids)
                 parts.append(f"Notice: {notice}")
             else:
-                p1 = "✅" if row["phase1_done"] else "⏳"
-                p2 = "✅" if row["phase2_done"] else "⏳"
-                p3 = "✅" if row["phase3_done"] else "⏳"
+                p1 = _phase_status(bool(row["phase1_done"]), f"phase1_r{rid}", live_ids)
+                p2 = _phase_status(bool(row["phase2_done"]), f"phase2_r{rid}", live_ids)
+                p3 = _phase_status(bool(row["phase3_done"]), f"phase3_r{rid}", live_ids)
                 parts.append(f"P1: {p1}  P2: {p2}  P3: {p3}")
 
             # ── Result submission ─────────────────────────────────────────
             if results_module_enabled:
                 if row["finalized"]:
                     res = "✅ finalized"
-                elif row["round_id"] in rounds_with_results:
+                elif rid in rounds_with_results:
                     res = "⏸️ pending review"
                 else:
-                    res = "⏳"
+                    res = _phase_status(False, f"results_r{rid}", live_ids)
                 parts.append(f"Results: {res}")
 
             # ── RSVP / attendance phases ──────────────────────────────────
             if attendance_module_enabled:
-                rsvp = rsvp_rows.get((row["round_id"], row["division_id"]))
-                notice_s      = "✅" if rsvp is not None else "⏳"
-                last_notice_s = "✅" if (rsvp and rsvp["last_notice_msg_id"]) else "⏳"
-                deadline_s    = "✅" if (rsvp and rsvp["distribution_msg_id"]) else "⏳"
+                rsvp = rsvp_rows.get((rid, row["division_id"]))
+                notice_s = (
+                    "✅" if rsvp is not None
+                    else _phase_status(False, f"rsvp_notice_r{rid}", live_ids)
+                )
+                last_notice_s = (
+                    "✅" if (rsvp and rsvp["last_notice_msg_id"])
+                    else _phase_status(False, f"rsvp_last_notice_r{rid}", live_ids)
+                )
+                deadline_s = (
+                    "✅" if (rsvp and rsvp["distribution_msg_id"])
+                    else _phase_status(False, f"rsvp_deadline_r{rid}", live_ids)
+                )
                 parts.append(f"RSVP: {notice_s}  Last: {last_notice_s}  Deadline: {deadline_s}")
 
             line = f"  Round {i} · {track:<15} · {date_str}  " + "  |  ".join(parts)
             lines.append(line)
 
         lines.append("")  # blank line between divisions
+
+    if live_ids is not None:
+        lines.append("*Legend: ✅ done  ⏳ pending (job scheduled)  ⚠️ pending (no job — use /test-mode advance)*")
 
     return "\n".join(lines).rstrip()

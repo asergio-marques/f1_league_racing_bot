@@ -427,6 +427,7 @@ class TestModeCog(commands.Cog):
         summary = await build_review_summary(
             interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]
+            self.bot.scheduler_service,  # type: ignore[attr-defined]
         )
         # Discord message limit is 2000 characters; chunk if needed.
         chunks = [summary[i:i + 2000] for i in range(0, len(summary), 2000)]
