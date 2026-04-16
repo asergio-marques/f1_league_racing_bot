@@ -428,7 +428,11 @@ class TestModeCog(commands.Cog):
             interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]
         )
-        await interaction.response.send_message(summary, ephemeral=True)
+        # Discord message limit is 2000 characters; chunk if needed.
+        chunks = [summary[i:i + 2000] for i in range(0, len(summary), 2000)]
+        await interaction.response.send_message(chunks[0], ephemeral=True)
+        for chunk in chunks[1:]:
+            await interaction.followup.send(chunk, ephemeral=True)
 
     # ------------------------------------------------------------------
     # /test-mode set-former-driver

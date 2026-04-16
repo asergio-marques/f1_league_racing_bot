@@ -49,6 +49,55 @@ async def _send_chunked(channel: discord.TextChannel, content: str) -> discord.M
     return first_msg
 
 
+async def _delete_with_continuations(
+    channel: discord.TextChannel,
+    anchor_msg_id: int,
+    label: str = "message",
+) -> None:
+    """Delete the anchor message and any immediately-following bot continuation messages.
+
+    When a result/standings post exceeds 2000 chars it is split into multiple
+    consecutive messages via :func:`_send_chunked`.  Only the first message ID is
+    persisted; this helper deletes it *and* any subsequent messages in the same
+    channel that were authored by the same user (the bot), stopping as soon as it
+    encounters a message from someone else.
+
+    Args:
+        channel:       The Discord text channel to operate on.
+        anchor_msg_id: The stored message ID of the first (anchor) chunk.
+        label:         Log context string for warning messages.
+    """
+    try:
+        anchor = await channel.fetch_message(anchor_msg_id)
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+        log.warning("_delete_with_continuations: could not fetch %s %s: %s", label, anchor_msg_id, exc)
+        return
+
+    bot_user_id: int = anchor.author.id
+
+    # Collect continuation messages (up to 5; we realistically only need 1-2)
+    continuations: list[discord.Message] = []
+    try:
+        async for msg in channel.history(after=anchor, limit=5, oldest_first=True):
+            if msg.author.id != bot_user_id:
+                break  # Non-bot message — stop; don't delete anything beyond here
+            continuations.append(msg)
+    except discord.HTTPException as exc:
+        log.warning("_delete_with_continuations: history fetch failed for %s: %s", label, exc)
+
+    # Delete continuations first (oldest → newest), then the anchor
+    for msg in continuations:
+        try:
+            await msg.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+            log.warning("_delete_with_continuations: could not delete continuation %s: %s", msg.id, exc)
+
+    try:
+        await anchor.delete()
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+        log.warning("_delete_with_continuations: could not delete %s %s: %s", label, anchor_msg_id, exc)
+
+
 # ---------------------------------------------------------------------------
 # Display-name helpers
 # ---------------------------------------------------------------------------
@@ -583,18 +632,12 @@ async def repost_results_for_division(
         for sr_row in session_rows:
             session_result = _sr_from_row(sr_row)
 
-            # Delete the existing Discord message for this session (if any)
+            # Delete the existing Discord message(s) for this session (if any)
             old_msg_id: int | None = sr_row["results_message_id"]
             if old_msg_id is not None:
-                try:
-                    old_msg = await rc.fetch_message(old_msg_id)
-                    await old_msg.delete()
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-                    log.warning(
-                        "repost_results_for_division: could not delete results message %s: %s",
-                        old_msg_id,
-                        exc,
-                    )
+                await _delete_with_continuations(
+                    rc, old_msg_id, label="results message"
+                )
                 async with get_connection(db_path) as db:
                     await db.execute(
                         "UPDATE session_results SET results_message_id = NULL WHERE id = ?",
@@ -685,18 +728,12 @@ async def repost_standings_for_division(
         track_name: str = row["track_name"] or "Unknown"
         rsd_label: str = _label_from_status(row["result_status"] or "PROVISIONAL")
 
-        # Delete the existing standings message for this round (if any)
+        # Delete the existing standings message(s) for this round (if any)
         existing_msg_id = await _get_standings_message_id(db_path, division_id, round_id)
         if existing_msg_id is not None:
-            try:
-                old_msg = await sc.fetch_message(existing_msg_id)
-                await old_msg.delete()
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-                log.warning(
-                    "repost_standings_for_division: could not delete standings message %s: %s",
-                    existing_msg_id,
-                    exc,
-                )
+            await _delete_with_continuations(
+                sc, existing_msg_id, label="standings message"
+            )
             async with get_connection(db_path) as db:
                 await db.execute(
                     "UPDATE driver_standings_snapshots SET standings_message_id = NULL "
@@ -793,16 +830,9 @@ async def delete_and_repost_final_results(
                 # Delete old interim Discord message
                 old_msg_id: int | None = sr_row["results_message_id"]
                 if old_msg_id is not None:
-                    try:
-                        old_msg = await rc.fetch_message(old_msg_id)
-                        await old_msg.delete()
-                    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-                        log.warning(
-                            "delete_and_repost_final_results: could not delete interim "
-                            "results message %s: %s",
-                            old_msg_id,
-                            exc,
-                        )
+                    await _delete_with_continuations(
+                        rc, old_msg_id, label="interim results message"
+                    )
 
                     # Clear stale message_id so post_session_results inserts a fresh one
                     async with get_connection(db_path) as db:
@@ -850,16 +880,9 @@ async def delete_and_repost_final_results(
         if sc is not None:
             old_standings_msg_id = await _get_standings_message_id(db_path, division_id, round_id)
             if old_standings_msg_id is not None:
-                try:
-                    old_sm = await sc.fetch_message(old_standings_msg_id)
-                    await old_sm.delete()
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-                    log.warning(
-                        "delete_and_repost_final_results: could not delete interim "
-                        "standings message %s: %s",
-                        old_standings_msg_id,
-                        exc,
-                    )
+                await _delete_with_continuations(
+                    sc, old_standings_msg_id, label="interim standings message"
+                )
 
                 # Clear obsolete standings_message_id from all snapshots for this round
                 async with get_connection(db_path) as db:
@@ -934,16 +957,10 @@ async def repost_subsequent_standings(
         if sc is None:
             continue
 
-        # Delete old standings message
-        try:
-            old_sm = await sc.fetch_message(existing_msg_id)
-            await old_sm.delete()
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-            log.warning(
-                "repost_subsequent_standings: could not delete standings message %s: %s",
-                existing_msg_id,
-                exc,
-            )
+        # Delete old standings message(s)
+        await _delete_with_continuations(
+            sc, existing_msg_id, label="standings message"
+        )
 
         # Clear obsolete standings_message_id
         async with get_connection(db_path) as db:
