@@ -281,7 +281,9 @@ async def build_review_summary(server_id: int, db_path: str) -> str:
     """Return a formatted multi-line string summarising all rounds and phase status.
 
     Groups results by division (insertion order), then by round (scheduled_at).
-    Mystery rounds appear with 'Phases N/A' instead of P1/P2/P3 indicators.
+    Covers weather phases (P1-P3), result submission, and RSVP phases (notice /
+    last-notice / deadline) based on DB state — so it reflects actual progress
+    regardless of whether scheduler jobs have fired or been evicted.
 
     Returns an informative message string if no active season exists.
     """
@@ -298,7 +300,22 @@ async def build_review_summary(server_id: int, db_path: str) -> str:
 
         season_name = f"Season starting {season_row['start_date']}"
 
-        # All rounds for the active season
+        # Module-enabled flags
+        rmc_cursor = await db.execute(
+            "SELECT module_enabled FROM results_module_config WHERE server_id = ?",
+            (server_id,),
+        )
+        rmc_row = await rmc_cursor.fetchone()
+        results_module_enabled = bool(rmc_row[0]) if rmc_row else False
+
+        att_cursor = await db.execute(
+            "SELECT module_enabled FROM attendance_config WHERE server_id = ?",
+            (server_id,),
+        )
+        att_row = await att_cursor.fetchone()
+        attendance_module_enabled = bool(att_row[0]) if att_row else False
+
+        # All non-cancelled rounds for the active season
         cursor = await db.execute(
             """
             SELECT
@@ -309,6 +326,7 @@ async def build_review_summary(server_id: int, db_path: str) -> str:
                 r.phase1_done,
                 r.phase2_done,
                 r.phase3_done,
+                r.finalized,
                 d.name        AS division_name,
                 d.id          AS division_id
             FROM rounds r
@@ -316,11 +334,45 @@ async def build_review_summary(server_id: int, db_path: str) -> str:
             JOIN seasons   s ON s.id  = d.season_id
             WHERE s.server_id = ?
               AND s.status    = 'ACTIVE'
+              AND d.status   != 'CANCELLED'
+              AND r.status   != 'CANCELLED'
             ORDER BY d.id ASC, r.scheduled_at ASC
             """,
             (server_id,),
         )
         rows = await cursor.fetchall()
+
+        # Rounds that have at least one ACTIVE session_result
+        sr_cursor = await db.execute(
+            """
+            SELECT DISTINCT sr.round_id
+            FROM session_results sr
+            JOIN rounds r ON r.id = sr.round_id
+            JOIN divisions d ON d.id = r.division_id
+            JOIN seasons s ON s.id = d.season_id
+            WHERE s.server_id = ? AND sr.status = 'ACTIVE'
+            """,
+            (server_id,),
+        )
+        rounds_with_results: set[int] = {r["round_id"] for r in await sr_cursor.fetchall()}
+
+        # RSVP embed message rows: keyed by (round_id, division_id)
+        rsvp_cursor = await db.execute(
+            """
+            SELECT rem.round_id, rem.division_id,
+                   rem.message_id, rem.last_notice_msg_id, rem.distribution_msg_id
+            FROM rsvp_embed_messages rem
+            JOIN rounds r ON r.id = rem.round_id
+            JOIN divisions d ON d.id = r.division_id
+            JOIN seasons s ON s.id = d.season_id
+            WHERE s.server_id = ?
+            """,
+            (server_id,),
+        )
+        rsvp_rows = {
+            (r["round_id"], r["division_id"]): r
+            for r in await rsvp_cursor.fetchall()
+        }
 
     if not rows:
         return f"**Season: {season_name} — ACTIVE**\n\nNo rounds have been configured yet."
@@ -335,31 +387,51 @@ async def build_review_summary(server_id: int, db_path: str) -> str:
 
     lines: list[str] = [f"**Season: {season_name} — ACTIVE**\n"]
 
-    for div_name, rounds in divisions.items():
+    for div_name, div_rounds in divisions.items():
         lines.append(f"**{div_name}**")
-        for i, row in enumerate(rounds, start=1):
+        for i, row in enumerate(div_rounds, start=1):
             track = row["track_name"] or "TBA"
-            # Format date string
-            sched = row["scheduled_at"]
             try:
-                date_str = str(sched)[:10]  # YYYY-MM-DD
+                date_str = str(row["scheduled_at"])[:10]
             except Exception:
-                date_str = str(sched)
+                date_str = str(row["scheduled_at"])
 
             fmt = str(row["format"]).upper()
+            is_mystery = fmt == "MYSTERY"
 
-            if fmt == "MYSTERY":
-                lines.append(
-                    f"  Round {i} · {track:<15} · {date_str}  *(Mystery Round — phases N/A)*"
-                )
+            parts: list[str] = []
+
+            # ── Weather phases ────────────────────────────────────────────
+            if is_mystery:
+                notice = "✅" if row["phase1_done"] else "⏳"
+                parts.append(f"Notice: {notice}")
             else:
                 p1 = "✅" if row["phase1_done"] else "⏳"
                 p2 = "✅" if row["phase2_done"] else "⏳"
                 p3 = "✅" if row["phase3_done"] else "⏳"
-                lines.append(
-                    f"  Round {i} · {track:<15} · {date_str}  "
-                    f"P1: {p1}  P2: {p2}  P3: {p3}"
-                )
+                parts.append(f"P1: {p1}  P2: {p2}  P3: {p3}")
+
+            # ── Result submission ─────────────────────────────────────────
+            if results_module_enabled:
+                if row["finalized"]:
+                    res = "✅ finalized"
+                elif row["round_id"] in rounds_with_results:
+                    res = "⏸️ pending review"
+                else:
+                    res = "⏳"
+                parts.append(f"Results: {res}")
+
+            # ── RSVP / attendance phases ──────────────────────────────────
+            if attendance_module_enabled:
+                rsvp = rsvp_rows.get((row["round_id"], row["division_id"]))
+                notice_s      = "✅" if rsvp is not None else "⏳"
+                last_notice_s = "✅" if (rsvp and rsvp["last_notice_msg_id"]) else "⏳"
+                deadline_s    = "✅" if (rsvp and rsvp["distribution_msg_id"]) else "⏳"
+                parts.append(f"RSVP: {notice_s}  Last: {last_notice_s}  Deadline: {deadline_s}")
+
+            line = f"  Round {i} · {track:<15} · {date_str}  " + "  |  ".join(parts)
+            lines.append(line)
+
         lines.append("")  # blank line between divisions
 
     return "\n".join(lines).rstrip()

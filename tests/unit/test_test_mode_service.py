@@ -309,7 +309,7 @@ async def test_review_no_active_season() -> None:
 
 
 async def test_review_shows_phase_status() -> None:
-    """Summary includes phase completion indicators for non-Mystery rounds."""
+    """Summary includes P1/P2/P3 completion indicators for non-Mystery rounds."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
     try:
@@ -319,14 +319,15 @@ async def test_review_shows_phase_status() -> None:
         ])
         summary = await build_review_summary(1, db_path)
         assert "Monaco" in summary
-        assert "✅" in summary   # phase1 done
-        assert "⏳" in summary   # phase2/3 pending
+        assert "P1: ✅" in summary
+        assert "P2: ⏳" in summary
+        assert "P3: ⏳" in summary
     finally:
         os.unlink(db_path)
 
 
-async def test_review_mystery_round_shows_na() -> None:
-    """Mystery rounds appear in review with 'N/A' label, not P1/P2/P3."""
+async def test_review_mystery_round_shows_notice_not_phases() -> None:
+    """Mystery rounds show 'Notice' status, not P1/P2/P3."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
     try:
@@ -341,8 +342,10 @@ async def test_review_mystery_round_shows_na() -> None:
             },
         ])
         summary = await build_review_summary(1, db_path)
-        assert "N/A" in summary.upper() or "n/a" in summary.lower()
-        # Should NOT contain P1/P2/P3 status emojis for Mystery round
-        assert "Mystery" in summary or "MYSTERY" in summary
+        assert "Silverstone" in summary
+        assert "Notice: ⏳" in summary
+        assert "P1:" not in summary
+        assert "P2:" not in summary
+        assert "P3:" not in summary
     finally:
         os.unlink(db_path)
