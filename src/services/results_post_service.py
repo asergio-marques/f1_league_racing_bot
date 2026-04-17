@@ -7,7 +7,13 @@ import discord
 
 from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from models.session_result import DriverSessionResult, SessionResult
+from models.session_result import (
+    DriverSessionResult,
+    OutcomeModifier,
+    QualifyingSessionResult,
+    RaceSessionResult,
+    SessionResult,
+)
 from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 from services import standings_service
 from utils import results_formatter
@@ -214,7 +220,7 @@ def _label_from_status(result_status: str) -> str:
 async def post_session_results(
     db_path: str,
     session_result: SessionResult,
-    driver_rows: list[DriverSessionResult],
+    driver_rows: list,  # list[QualifyingSessionResult] | list[RaceSessionResult] | list[DriverSessionResult]
     points_map: dict[int, int],
     results_channel: discord.TextChannel,
     guild: discord.Guild,
@@ -366,6 +372,159 @@ async def _get_reserve_user_ids(db_path: str, division_id: int) -> set[int]:
 
 
 # ---------------------------------------------------------------------------
+# Driver-row loading helpers
+# ---------------------------------------------------------------------------
+
+async def _load_driver_rows(
+    db_path: str,
+    session_result_id: int,
+    session_type: SessionType,
+) -> list:
+    """Load driver rows for a session from new tables, falling back to legacy table.
+
+    Returns list[QualifyingSessionResult] for qualifying, list[RaceSessionResult]
+    for race.  If the new tables have no rows for this session, falls back to
+    building adapter objects from driver_session_results so that pre-migration
+    data still renders correctly.
+    """
+    from services.penalty_service import _time_to_ms, _delta_to_ms
+    import re as _re
+    _LAP_RE = _re.compile(r"^\+?(\d+) Laps?$", _re.IGNORECASE)
+
+    if session_type.is_qualifying:
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, session_result_id, driver_user_id, team_role_id, finishing_position, "
+                "outcome, tyre, best_lap, points_awarded, driver_profile_id "
+                "FROM qualifying_session_results WHERE session_result_id = ? "
+                "ORDER BY finishing_position",
+                (session_result_id,),
+            )
+            rows = await cursor.fetchall()
+        if rows:
+            return [
+                QualifyingSessionResult(
+                    id=r["id"],
+                    session_result_id=r["session_result_id"],
+                    driver_user_id=r["driver_user_id"],
+                    team_role_id=r["team_role_id"],
+                    finishing_position=r["finishing_position"],
+                    outcome=OutcomeModifier(r["outcome"]),
+                    tyre=r["tyre"],
+                    best_lap=r["best_lap"],
+                    points_awarded=r["points_awarded"] or 0,
+                    driver_profile_id=r["driver_profile_id"],
+                )
+                for r in rows
+            ]
+        # Fallback: legacy table
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT driver_user_id, team_role_id, finishing_position, outcome, tyre, "
+                "best_lap, points_awarded FROM driver_session_results "
+                "WHERE session_result_id = ? AND is_superseded = 0 ORDER BY finishing_position",
+                (session_result_id,),
+            )
+            rows = await cursor.fetchall()
+        return [
+            QualifyingSessionResult(
+                id=0, session_result_id=session_result_id,
+                driver_user_id=r["driver_user_id"], team_role_id=r["team_role_id"],
+                finishing_position=r["finishing_position"],
+                outcome=OutcomeModifier(r["outcome"]),
+                tyre=r["tyre"], best_lap=r["best_lap"],
+                points_awarded=r["points_awarded"] or 0, driver_profile_id=None,
+            )
+            for r in rows
+        ]
+
+    # Race session
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id, session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, base_time_ms, laps_behind, ingame_time_penalties_ms, "
+            "postrace_time_penalties_ms, appeal_time_penalties_ms, fastest_lap, "
+            "fastest_lap_bonus, points_awarded, driver_profile_id "
+            "FROM race_session_results WHERE session_result_id = ? "
+            "ORDER BY finishing_position",
+            (session_result_id,),
+        )
+        rows = await cursor.fetchall()
+    if rows:
+        return [
+            RaceSessionResult(
+                id=r["id"],
+                session_result_id=r["session_result_id"],
+                driver_user_id=r["driver_user_id"],
+                team_role_id=r["team_role_id"],
+                finishing_position=r["finishing_position"],
+                outcome=OutcomeModifier(r["outcome"]),
+                base_time_ms=r["base_time_ms"],
+                laps_behind=r["laps_behind"],
+                ingame_time_penalties_ms=r["ingame_time_penalties_ms"] or 0,
+                postrace_time_penalties_ms=r["postrace_time_penalties_ms"] or 0,
+                appeal_time_penalties_ms=r["appeal_time_penalties_ms"] or 0,
+                fastest_lap=r["fastest_lap"],
+                fastest_lap_bonus=r["fastest_lap_bonus"] or 0,
+                points_awarded=r["points_awarded"] or 0,
+                driver_profile_id=r["driver_profile_id"],
+            )
+            for r in rows
+        ]
+    # Fallback: build RaceSessionResult from legacy driver_session_results
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT driver_user_id, team_role_id, finishing_position, outcome, "
+            "total_time, fastest_lap, time_penalties, post_race_time_penalties, "
+            "points_awarded, fastest_lap_bonus FROM driver_session_results "
+            "WHERE session_result_id = ? AND is_superseded = 0 ORDER BY finishing_position",
+            (session_result_id,),
+        )
+        rows = await cursor.fetchall()
+    # Find P1's absolute time for delta baseline
+    p1_abs_ms: int | None = None
+    for r in rows:
+        ms = _time_to_ms(r["total_time"] or "")
+        if ms is not None:
+            p1_abs_ms = ms
+            break
+    result = []
+    for r in rows:
+        outcome = OutcomeModifier(r["outcome"])
+        total_time = r["total_time"] or ""
+        tp_ms = _time_to_ms(r["time_penalties"] or "") or 0
+        ptp_ms = _time_to_ms(r["post_race_time_penalties"] or "") or 0 if r["post_race_time_penalties"] else 0
+        base_time_ms: int | None = None
+        laps_behind: int | None = None
+        if outcome not in (OutcomeModifier.DNF, OutcomeModifier.DNS, OutcomeModifier.DSQ):
+            lap_m = _LAP_RE.match(total_time)
+            if lap_m:
+                laps_behind = int(lap_m.group(1))
+            else:
+                abs_ms = _time_to_ms(total_time)
+                if abs_ms is not None:
+                    base_time_ms = abs_ms - tp_ms
+                elif p1_abs_ms is not None:
+                    delta_ms = _delta_to_ms(total_time)
+                    if delta_ms is not None:
+                        base_time_ms = p1_abs_ms + delta_ms - tp_ms
+        result.append(RaceSessionResult(
+            id=0, session_result_id=session_result_id,
+            driver_user_id=r["driver_user_id"], team_role_id=r["team_role_id"],
+            finishing_position=r["finishing_position"], outcome=outcome,
+            base_time_ms=base_time_ms, laps_behind=laps_behind,
+            ingame_time_penalties_ms=tp_ms,
+            postrace_time_penalties_ms=ptp_ms,
+            appeal_time_penalties_ms=0,
+            fastest_lap=r["fastest_lap"],
+            fastest_lap_bonus=r["fastest_lap_bonus"] or 0,
+            points_awarded=r["points_awarded"] or 0,
+            driver_profile_id=None,
+        ))
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Round-level posting
 # ---------------------------------------------------------------------------
 
@@ -428,48 +587,13 @@ async def post_round_results(
             results_message_id=sr_row["results_message_id"],
         )
 
-        # Load driver rows
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT id, session_result_id, driver_user_id, team_role_id, finishing_position,
-                       outcome, tyre, best_lap, gap, total_time, fastest_lap, time_penalties,
-                       post_steward_total_time, post_race_time_penalties,
-                       points_awarded, fastest_lap_bonus, is_superseded
-                FROM driver_session_results
-                WHERE session_result_id = ? AND is_superseded = 0
-                ORDER BY finishing_position
-                """,
-                (session_result.id,),
-            )
-            driver_rows_raw = await cursor.fetchall()
-
-        from models.session_result import OutcomeModifier as _OM
-        driver_rows = [
-            DriverSessionResult(
-                id=r["id"],
-                session_result_id=r["session_result_id"],
-                driver_user_id=r["driver_user_id"],
-                team_role_id=r["team_role_id"],
-                finishing_position=r["finishing_position"],
-                outcome=_OM(r["outcome"]),
-                tyre=r["tyre"],
-                best_lap=r["best_lap"],
-                gap=r["gap"],
-                total_time=r["total_time"],
-                fastest_lap=r["fastest_lap"],
-                time_penalties=r["time_penalties"],
-                post_steward_total_time=r["post_steward_total_time"],
-                post_race_time_penalties=r["post_race_time_penalties"],
-                points_awarded=r["points_awarded"] or 0,
-                fastest_lap_bonus=r["fastest_lap_bonus"] or 0,
-                is_superseded=bool(r["is_superseded"]),
-            )
-            for r in driver_rows_raw
-        ]
+        # Load driver rows from new tables (QualifyingSessionResult / RaceSessionResult)
+        # with fallback to legacy driver_session_results for pre-migration sessions.
+        session_type = SessionType(session_result.session_type)
+        driver_rows = await _load_driver_rows(db_path, session_result.id, session_type)
 
         points_map = {
-            r.driver_user_id: r.points_awarded + r.fastest_lap_bonus
+            r.driver_user_id: r.points_awarded + getattr(r, "fastest_lap_bonus", 0)
             for r in driver_rows
         }
 

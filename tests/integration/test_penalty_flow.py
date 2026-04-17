@@ -476,3 +476,178 @@ async def test_gap_string_penalty_p3_gets_penalty(tmp_path):
     assert rows[1]["total_time"] == "+2.955"
     # P3 gap recalculated: 42.044s + 120s = 162.044s → "+2:42.044"
     assert rows[2]["total_time"] == "+2:42.044"
+
+
+# ---------------------------------------------------------------------------
+# T033-N: DSQ re-sorts race_session_results (new table)
+# ---------------------------------------------------------------------------
+
+
+async def _insert_race_and_new_tables(db_path: str, round_id: int, division_id: int) -> int:
+    """Insert a 2-driver FEATURE_RACE into both legacy and new tables. Returns sr_id."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
+            (round_id, division_id),
+        )
+        sr_id = cursor.lastrowid
+        # Legacy table
+        await db.execute(
+            "INSERT INTO driver_session_results "
+            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, total_time, fastest_lap, points_awarded, fastest_lap_bonus, is_superseded) "
+            "VALUES (?, 1, 100, 1, 'CLASSIFIED', '20:00.000', '1:30.000', 25, 0, 0)",
+            (sr_id,),
+        )
+        await db.execute(
+            "INSERT INTO driver_session_results "
+            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, total_time, fastest_lap, points_awarded, fastest_lap_bonus, is_superseded) "
+            "VALUES (?, 2, 200, 2, 'CLASSIFIED', '20:10.000', '1:31.000', 18, 0, 0)",
+            (sr_id,),
+        )
+        # New table: base_time_ms = total_ms (ingame=0)
+        # 20:00.000 = 1_200_000 ms; 20:10.000 = 1_210_000 ms
+        await db.execute(
+            "INSERT INTO race_session_results "
+            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, base_time_ms, laps_behind, ingame_time_penalties_ms, "
+            "postrace_time_penalties_ms, appeal_time_penalties_ms, "
+            "fastest_lap, fastest_lap_bonus, points_awarded) "
+            "VALUES (?, 1, 100, 1, 'CLASSIFIED', 1200000, NULL, 0, 0, 0, '1:30.000', 0, 25)",
+            (sr_id,),
+        )
+        await db.execute(
+            "INSERT INTO race_session_results "
+            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, base_time_ms, laps_behind, ingame_time_penalties_ms, "
+            "postrace_time_penalties_ms, appeal_time_penalties_ms, "
+            "fastest_lap, fastest_lap_bonus, points_awarded) "
+            "VALUES (?, 2, 200, 2, 'CLASSIFIED', 1210000, NULL, 0, 0, 0, '1:31.000', 0, 18)",
+            (sr_id,),
+        )
+        await db.commit()
+    return sr_id
+
+
+@pytest.mark.asyncio
+async def test_dsq_reorders_race_session_results(tmp_path):
+    """DSQ on P1 driver; race_session_results must promote P2 to P1 and move DSQ driver last."""
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+    _, division_id, round_id = await _bootstrap(db_path)
+    sr_id = await _insert_race_and_new_tables(db_path, round_id, division_id)
+
+    staged = [
+        StagedPenalty(
+            driver_user_id=1,
+            session_type=SessionType.FEATURE_RACE,
+            penalty_type="DSQ",
+            penalty_seconds=None,
+        )
+    ]
+    await apply_penalties(
+        db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True
+    )
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT driver_user_id, finishing_position, outcome "
+            "FROM race_session_results "
+            "WHERE session_result_id = ? ORDER BY finishing_position",
+            (sr_id,),
+        )
+        rows = await cursor.fetchall()
+
+    assert rows[0]["driver_user_id"] == 2
+    assert rows[0]["finishing_position"] == 1
+    assert rows[0]["outcome"] == "CLASSIFIED"
+    assert rows[1]["driver_user_id"] == 1
+    assert rows[1]["finishing_position"] == 2
+    assert rows[1]["outcome"] == "DSQ"
+
+
+# ---------------------------------------------------------------------------
+# T033-N+1: DSQ re-sorts qualifying_session_results (new table)
+# ---------------------------------------------------------------------------
+
+
+async def _insert_qualifying_and_new_tables(db_path: str, round_id: int, division_id: int) -> int:
+    """Insert a 2-driver FEATURE_QUALIFYING into both legacy and new tables. Returns sr_id."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'FEATURE_QUALIFYING', 'ACTIVE')",
+            (round_id, division_id),
+        )
+        sr_id = cursor.lastrowid
+        # Legacy table
+        await db.execute(
+            "INSERT INTO driver_session_results "
+            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, best_lap, tyre, points_awarded, fastest_lap_bonus, is_superseded) "
+            "VALUES (?, 1, 100, 1, 'CLASSIFIED', '1:20.000', 'Soft', 0, 0, 0)",
+            (sr_id,),
+        )
+        await db.execute(
+            "INSERT INTO driver_session_results "
+            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, best_lap, tyre, points_awarded, fastest_lap_bonus, is_superseded) "
+            "VALUES (?, 2, 200, 2, 'CLASSIFIED', '1:22.000', 'Medium', 0, 0, 0)",
+            (sr_id,),
+        )
+        # New qualifying table
+        await db.execute(
+            "INSERT INTO qualifying_session_results "
+            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, tyre, best_lap, points_awarded) "
+            "VALUES (?, 1, 100, 1, 'CLASSIFIED', 'Soft', '1:20.000', 0)",
+            (sr_id,),
+        )
+        await db.execute(
+            "INSERT INTO qualifying_session_results "
+            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, tyre, best_lap, points_awarded) "
+            "VALUES (?, 2, 200, 2, 'CLASSIFIED', 'Medium', '1:22.000', 0)",
+            (sr_id,),
+        )
+        await db.commit()
+    return sr_id
+
+
+@pytest.mark.asyncio
+async def test_dsq_reorders_qualifying_session_results(tmp_path):
+    """DSQ on P1 qualifier; qualifying_session_results must promote P2 to P1, DSQ driver to last."""
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+    _, division_id, round_id = await _bootstrap(db_path)
+    sr_id = await _insert_qualifying_and_new_tables(db_path, round_id, division_id)
+
+    staged = [
+        StagedPenalty(
+            driver_user_id=1,
+            session_type=SessionType.FEATURE_QUALIFYING,
+            penalty_type="DSQ",
+            penalty_seconds=None,
+        )
+    ]
+    await apply_penalties(
+        db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True
+    )
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT driver_user_id, finishing_position, outcome "
+            "FROM qualifying_session_results "
+            "WHERE session_result_id = ? ORDER BY finishing_position",
+            (sr_id,),
+        )
+        rows = await cursor.fetchall()
+
+    assert rows[0]["driver_user_id"] == 2
+    assert rows[0]["finishing_position"] == 1
+    assert rows[0]["outcome"] == "CLASSIFIED"
+    assert rows[1]["driver_user_id"] == 1
+    assert rows[1]["finishing_position"] == 2
+    assert rows[1]["outcome"] == "DSQ"

@@ -660,6 +660,8 @@ class SeasonService:
                 session_result_ids = [r[0] for r in await cursor.fetchall()]
                 if session_result_ids:
                     sph = ",".join("?" * len(session_result_ids))
+                    await db.execute(f"DELETE FROM race_session_results WHERE session_result_id IN ({sph})", session_result_ids)
+                    await db.execute(f"DELETE FROM qualifying_session_results WHERE session_result_id IN ({sph})", session_result_ids)
                     await db.execute(f"DELETE FROM driver_session_results WHERE session_result_id IN ({sph})", session_result_ids)
                 await db.execute(f"DELETE FROM session_results WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM forecast_messages WHERE round_id IN ({ph})", round_ids)

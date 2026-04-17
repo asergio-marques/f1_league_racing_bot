@@ -130,30 +130,66 @@ async def compute_driver_standings(
     Returns snapshots with standing_position assigned from 1.
     """
     async with get_connection(db_path) as db:
-        # Fetch all non-superseded driver session results up to the target round
+        # Query new-schema tables (UNION of race + qualifying).
+        # For sessions that predate the schema migration, fall back to the
+        # legacy driver_session_results table (is_superseded = 0).
+        # NOTE: migrate_to_new_result_tables.py must be run to backfill old data.
         cursor = await db.execute(
             """
-            SELECT dsr.driver_user_id,
-                   dsr.finishing_position,
-                   dsr.points_awarded,
-                   dsr.fastest_lap_bonus,
-                   dsr.outcome,
-                   sr.session_type,
-                   r.id AS round_id,
-                   r.round_number
-            FROM driver_session_results dsr
-            JOIN session_results sr ON sr.id = dsr.session_result_id
-            JOIN rounds r ON r.id = sr.round_id
-            WHERE r.division_id = ?
-              AND r.id <= ?
-              AND r.round_number <= (
-                  SELECT round_number FROM rounds WHERE id = ?
-              )
-              AND dsr.is_superseded = 0
-              AND sr.status = 'ACTIVE'
-            ORDER BY r.round_number
+            SELECT driver_user_id, finishing_position, points_awarded,
+                   fastest_lap_bonus, outcome, session_type, round_id, round_number
+            FROM (
+                SELECT rsr.driver_user_id, rsr.finishing_position,
+                       rsr.points_awarded, rsr.fastest_lap_bonus, rsr.outcome,
+                       sr.session_type, r.id AS round_id, r.round_number
+                FROM race_session_results rsr
+                JOIN session_results sr ON sr.id = rsr.session_result_id
+                JOIN rounds r ON r.id = sr.round_id
+                WHERE r.division_id = ?
+                  AND r.id <= ?
+                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+                  AND sr.status = 'ACTIVE'
+                UNION ALL
+                SELECT qsr.driver_user_id, qsr.finishing_position,
+                       qsr.points_awarded, 0 AS fastest_lap_bonus, qsr.outcome,
+                       sr.session_type, r.id AS round_id, r.round_number
+                FROM qualifying_session_results qsr
+                JOIN session_results sr ON sr.id = qsr.session_result_id
+                JOIN rounds r ON r.id = sr.round_id
+                WHERE r.division_id = ?
+                  AND r.id <= ?
+                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+                  AND sr.status = 'ACTIVE'
+                  -- Exclude sessions already in race table to avoid cross-table overlap
+                  AND qsr.session_result_id NOT IN (
+                      SELECT DISTINCT session_result_id FROM race_session_results
+                  )
+                UNION ALL
+                -- Legacy rows for sessions not yet in either new table
+                SELECT dsr.driver_user_id, dsr.finishing_position,
+                       dsr.points_awarded, dsr.fastest_lap_bonus, dsr.outcome,
+                       sr.session_type, r.id AS round_id, r.round_number
+                FROM driver_session_results dsr
+                JOIN session_results sr ON sr.id = dsr.session_result_id
+                JOIN rounds r ON r.id = sr.round_id
+                WHERE r.division_id = ?
+                  AND r.id <= ?
+                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+                  AND dsr.is_superseded = 0
+                  AND sr.status = 'ACTIVE'
+                  AND dsr.session_result_id NOT IN (
+                      SELECT DISTINCT session_result_id FROM race_session_results
+                      UNION ALL
+                      SELECT DISTINCT session_result_id FROM qualifying_session_results
+                  )
+            )
+            ORDER BY round_number
             """,
-            (division_id, up_to_round_id, up_to_round_id),
+            (
+                division_id, up_to_round_id, up_to_round_id,
+                division_id, up_to_round_id, up_to_round_id,
+                division_id, up_to_round_id, up_to_round_id,
+            ),
         )
         rows = await cursor.fetchall()
 
@@ -265,26 +301,58 @@ async def compute_team_standings(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT dsr.team_role_id,
-                   dsr.finishing_position,
-                   dsr.points_awarded,
-                   dsr.fastest_lap_bonus,
-                   dsr.outcome,
-                   sr.session_type,
-                   r.round_number
-            FROM driver_session_results dsr
-            JOIN session_results sr ON sr.id = dsr.session_result_id
-            JOIN rounds r ON r.id = sr.round_id
-            WHERE r.division_id = ?
-              AND r.id <= ?
-              AND r.round_number <= (
-                  SELECT round_number FROM rounds WHERE id = ?
-              )
-              AND dsr.is_superseded = 0
-              AND sr.status = 'ACTIVE'
-            ORDER BY r.round_number
+            SELECT team_role_id, finishing_position, points_awarded,
+                   fastest_lap_bonus, outcome, session_type, round_number
+            FROM (
+                SELECT rsr.team_role_id, rsr.finishing_position,
+                       rsr.points_awarded, rsr.fastest_lap_bonus, rsr.outcome,
+                       sr.session_type, r.round_number
+                FROM race_session_results rsr
+                JOIN session_results sr ON sr.id = rsr.session_result_id
+                JOIN rounds r ON r.id = sr.round_id
+                WHERE r.division_id = ?
+                  AND r.id <= ?
+                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+                  AND sr.status = 'ACTIVE'
+                UNION ALL
+                SELECT qsr.team_role_id, qsr.finishing_position,
+                       qsr.points_awarded, 0 AS fastest_lap_bonus, qsr.outcome,
+                       sr.session_type, r.round_number
+                FROM qualifying_session_results qsr
+                JOIN session_results sr ON sr.id = qsr.session_result_id
+                JOIN rounds r ON r.id = sr.round_id
+                WHERE r.division_id = ?
+                  AND r.id <= ?
+                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+                  AND sr.status = 'ACTIVE'
+                  AND qsr.session_result_id NOT IN (
+                      SELECT DISTINCT session_result_id FROM race_session_results
+                  )
+                UNION ALL
+                SELECT dsr.team_role_id, dsr.finishing_position,
+                       dsr.points_awarded, dsr.fastest_lap_bonus, dsr.outcome,
+                       sr.session_type, r.round_number
+                FROM driver_session_results dsr
+                JOIN session_results sr ON sr.id = dsr.session_result_id
+                JOIN rounds r ON r.id = sr.round_id
+                WHERE r.division_id = ?
+                  AND r.id <= ?
+                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+                  AND dsr.is_superseded = 0
+                  AND sr.status = 'ACTIVE'
+                  AND dsr.session_result_id NOT IN (
+                      SELECT DISTINCT session_result_id FROM race_session_results
+                      UNION ALL
+                      SELECT DISTINCT session_result_id FROM qualifying_session_results
+                  )
+            )
+            ORDER BY round_number
             """,
-            (division_id, up_to_round_id, up_to_round_id),
+            (
+                division_id, up_to_round_id, up_to_round_id,
+                division_id, up_to_round_id, up_to_round_id,
+                division_id, up_to_round_id, up_to_round_id,
+            ),
         )
         rows = await cursor.fetchall()
 

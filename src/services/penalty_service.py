@@ -198,6 +198,7 @@ async def apply_penalties(
     bot: discord.Client,
     *,
     _skip_post: bool = False,
+    _phase: Literal["PENALTY", "APPEAL"] = "PENALTY",
 ) -> list[dict]:
     """Apply a list of staged penalties to the DB and cascade standings.
 
@@ -216,6 +217,8 @@ async def apply_penalties(
     # Map (session_type_value, driver_user_id) -> driver_session_results.id
     # populated during the session loop so we can INSERT penalty_records after.
     driver_to_dsr_id: dict[tuple[str, int], int] = {}
+    # Map (session_type_value, driver_user_id) -> new table row id (race or qual)
+    driver_to_new_result_id: dict[tuple[str, int], int] = {}
     inserted_records: list[dict] = []
 
     async with get_connection(db_path) as db:
@@ -422,6 +425,119 @@ async def apply_penalties(
                     ),
                 )
 
+            # --- Update new result tables ---
+            if not session_type.is_qualifying:
+                for sp in session_penalties:
+                    if sp.penalty_type == "DSQ":
+                        await db.execute(
+                            "UPDATE race_session_results SET outcome = 'DSQ' "
+                            "WHERE session_result_id = ? AND driver_user_id = ?",
+                            (session_result_id, sp.driver_user_id),
+                        )
+                    elif sp.penalty_type == "TIME" and sp.penalty_seconds is not None:
+                        penalty_ms = sp.penalty_seconds * 1000
+                        if _phase == "APPEAL":
+                            await db.execute(
+                                "UPDATE race_session_results "
+                                "SET appeal_time_penalties_ms = appeal_time_penalties_ms + ? "
+                                "WHERE session_result_id = ? AND driver_user_id = ?",
+                                (penalty_ms, session_result_id, sp.driver_user_id),
+                            )
+                        else:
+                            await db.execute(
+                                "UPDATE race_session_results "
+                                "SET postrace_time_penalties_ms = postrace_time_penalties_ms + ? "
+                                "WHERE session_result_id = ? AND driver_user_id = ?",
+                                (penalty_ms, session_result_id, sp.driver_user_id),
+                            )
+                # Re-sort race_session_results by total_time_ms for CLASSIFIED non-lapped
+                rr_cursor = await db.execute(
+                    "SELECT id, driver_user_id, outcome, base_time_ms, laps_behind, "
+                    "ingame_time_penalties_ms, postrace_time_penalties_ms, "
+                    "appeal_time_penalties_ms, finishing_position "
+                    "FROM race_session_results WHERE session_result_id = ? "
+                    "ORDER BY finishing_position",
+                    (session_result_id,),
+                )
+                rsr_rows = list(await rr_cursor.fetchall())
+                for rr in rsr_rows:
+                    driver_to_new_result_id[(session_type.value, int(rr["driver_user_id"]))] = rr["id"]
+                sortable_rsr = []
+                fixed_rsr = []
+                for rr in rsr_rows:
+                    if (
+                        rr["outcome"] == "CLASSIFIED"
+                        and rr["laps_behind"] is None
+                        and rr["base_time_ms"] is not None
+                    ):
+                        total_ms = (
+                            rr["base_time_ms"]
+                            + rr["ingame_time_penalties_ms"]
+                            + rr["postrace_time_penalties_ms"]
+                            + rr["appeal_time_penalties_ms"]
+                        )
+                        sortable_rsr.append({"id": rr["id"], "total_ms": total_ms})
+                    else:
+                        fixed_rsr.append({"id": rr["id"], "fp": rr["finishing_position"]})
+                sortable_rsr.sort(key=lambda r: r["total_ms"])
+                next_pos = 1
+                for item in sortable_rsr:
+                    await db.execute(
+                        "UPDATE race_session_results SET finishing_position = ? WHERE id = ?",
+                        (next_pos, item["id"]),
+                    )
+                    next_pos += 1
+                fixed_rsr.sort(key=lambda r: r["fp"])
+                for item in fixed_rsr:
+                    await db.execute(
+                        "UPDATE race_session_results SET finishing_position = ? WHERE id = ?",
+                        (next_pos, item["id"]),
+                    )
+                    next_pos += 1
+            else:
+                # Qualifying: apply DSQ, then re-sort positions
+                for sp in session_penalties:
+                    if sp.penalty_type == "DSQ":
+                        await db.execute(
+                            "UPDATE qualifying_session_results SET outcome = 'DSQ' "
+                            "WHERE session_result_id = ? AND driver_user_id = ?",
+                            (session_result_id, sp.driver_user_id),
+                        )
+                # Re-sort qualifying_session_results: CLASSIFIED by best_lap_ms, then fixed last
+                qr_cursor = await db.execute(
+                    "SELECT id, driver_user_id, outcome, best_lap, finishing_position "
+                    "FROM qualifying_session_results WHERE session_result_id = ? "
+                    "ORDER BY finishing_position",
+                    (session_result_id,),
+                )
+                qsr_rows = list(await qr_cursor.fetchall())
+                for qr in qsr_rows:
+                    driver_to_new_result_id[(session_type.value, int(qr["driver_user_id"]))] = qr["id"]
+                sortable_qsr = []
+                fixed_qsr = []
+                for qr in qsr_rows:
+                    if qr["outcome"] == "CLASSIFIED":
+                        lap_ms = _time_to_ms(qr["best_lap"] or "")
+                        if lap_ms is not None:
+                            sortable_qsr.append({"id": qr["id"], "lap_ms": lap_ms})
+                            continue
+                    fixed_qsr.append({"id": qr["id"], "fp": qr["finishing_position"]})
+                sortable_qsr.sort(key=lambda r: r["lap_ms"])
+                next_pos = 1
+                for item in sortable_qsr:
+                    await db.execute(
+                        "UPDATE qualifying_session_results SET finishing_position = ? WHERE id = ?",
+                        (next_pos, item["id"]),
+                    )
+                    next_pos += 1
+                fixed_qsr.sort(key=lambda r: r["fp"])
+                for item in fixed_qsr:
+                    await db.execute(
+                        "UPDATE qualifying_session_results SET finishing_position = ? WHERE id = ?",
+                        (next_pos, item["id"]),
+                    )
+                    next_pos += 1
+
         # INSERT one penalty_records row per staged penalty.
         now_str = datetime.datetime.utcnow().isoformat()
         for sp in staged:
@@ -433,16 +549,22 @@ async def apply_penalties(
                     sp.session_type.value,
                 )
                 continue
+            new_result_id = driver_to_new_result_id.get((sp.session_type.value, sp.driver_user_id))
+            race_result_id = new_result_id if not sp.session_type.is_qualifying else None
+            qual_result_id = new_result_id if sp.session_type.is_qualifying else None
             cursor = await db.execute(
                 """
                 INSERT INTO penalty_records (
-                    driver_session_result_id, penalty_type, time_seconds,
+                    driver_session_result_id, race_result_id, qual_result_id,
+                    penalty_type, time_seconds,
                     description, justification, applied_by, applied_at,
                     announcement_channel_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
                 """,
                 (
                     dsr_id,
+                    race_result_id,
+                    qual_result_id,
                     sp.penalty_type,
                     sp.penalty_seconds,
                     sp.description,
@@ -455,6 +577,8 @@ async def apply_penalties(
                 {
                     "id": cursor.lastrowid,
                     "driver_session_result_id": dsr_id,
+                    "race_result_id": race_result_id,
+                    "qual_result_id": qual_result_id,
                     "driver_user_id": sp.driver_user_id,
                     "penalty_type": sp.penalty_type,
                     "time_seconds": sp.penalty_seconds,

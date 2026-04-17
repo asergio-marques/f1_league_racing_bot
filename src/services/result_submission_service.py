@@ -652,6 +652,7 @@ async def finalize_appeals_review(
             db_path, round_id, division_id, state.staged_appeals,
             applied_by=actor_id, bot=bot,
             _skip_post=True,
+            _phase="APPEAL",
         )
         await _recompute_session_points(db_path, round_id)
 
@@ -660,16 +661,21 @@ async def finalize_appeals_review(
         async with get_connection(db_path) as db:
             for sp, pr in zip(state.staged_appeals, applied_pr):
                 dsr_id = pr["driver_session_result_id"]
+                race_result_id = pr.get("race_result_id")
+                qual_result_id = pr.get("qual_result_id")
                 cursor = await db.execute(
                     """
                     INSERT INTO appeal_records (
-                        driver_session_result_id, status, penalty_type, time_seconds,
+                        driver_session_result_id, race_result_id, qual_result_id,
+                        status, penalty_type, time_seconds,
                         description, justification, submitted_by, submitted_at,
                         announcement_channel_id
-                    ) VALUES (?, 'UPHELD', ?, ?, ?, ?, ?, ?, NULL)
+                    ) VALUES (?, ?, ?, 'UPHELD', ?, ?, ?, ?, ?, ?, NULL)
                     """,
                     (
                         dsr_id,
+                        race_result_id,
+                        qual_result_id,
                         sp.penalty_type,
                         sp.penalty_seconds,
                         sp.description,
@@ -682,6 +688,8 @@ async def finalize_appeals_review(
                     {
                         "id": cursor.lastrowid,
                         "driver_session_result_id": dsr_id,
+                        "race_result_id": race_result_id,
+                        "qual_result_id": qual_result_id,
                         "driver_user_id": sp.driver_user_id,
                         "penalty_type": sp.penalty_type,
                         "time_seconds": sp.penalty_seconds,
@@ -893,12 +901,14 @@ async def save_session_result(
             ),
         )
         session_result_id = cursor.lastrowid
+        _profile_id_map: dict[int, int | None] = {}
         for row in driver_rows:
             driver_profile_id: int | None = None
             if server_id_for_profile is not None:
                 driver_profile_id = await resolve_driver_profile_id(
                     server_id_for_profile, row["driver_user_id"], db
                 )
+            _profile_id_map[row["driver_user_id"]] = driver_profile_id
             if driver_profile_id is not None:
                 await db.execute(
                     "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND former_driver = 0",
@@ -930,6 +940,7 @@ async def save_session_result(
                     driver_profile_id,
                 ),
             )
+        await _insert_new_tables_in_tx(db, session_result_id, session_type, driver_rows, _profile_id_map)
         await db.commit()
     return session_result_id
 
@@ -1015,7 +1026,20 @@ async def amend_session_result(
                 f"No session_results row found for round={round_id} session={session_type.value}"
             )
         session_result_id = row["id"]
+        # Clear existing rows from new tables before re-inserting
+        if session_type.is_qualifying:
+            await db.execute(
+                "DELETE FROM qualifying_session_results WHERE session_result_id = ?",
+                (session_result_id,),
+            )
+        else:
+            await db.execute(
+                "DELETE FROM race_session_results WHERE session_result_id = ?",
+                (session_result_id,),
+            )
         # Insert new rows
+        _amend_profile_map: dict[int, int | None] = {}
+        _amend_rows_normalized: list[dict] = []
         for i, dr in enumerate(new_driver_rows, start=1):
             driver_user_id = _get(dr, "driver_user_id")
             drv_profile_id: int | None = None
@@ -1023,6 +1047,21 @@ async def amend_session_result(
                 drv_profile_id = await resolve_driver_profile_id(
                     server_id_for_profile, driver_user_id, db
                 )
+            if driver_user_id is not None:
+                _amend_profile_map[driver_user_id] = drv_profile_id
+            fp = _get(dr, "position") or _get(dr, "finishing_position") or i
+            _amend_rows_normalized.append({
+                "driver_user_id": driver_user_id,
+                "team_role_id": _get(dr, "team_role_id"),
+                "finishing_position": fp,
+                "outcome": _get(dr, "outcome", OutcomeModifier.CLASSIFIED.value),
+                "tyre": _get(dr, "tyre"),
+                "best_lap": _get(dr, "best_lap"),
+                "gap": _get(dr, "gap"),
+                "total_time": _get(dr, "total_time"),
+                "fastest_lap": _get(dr, "fastest_lap"),
+                "time_penalties": _get(dr, "time_penalties"),
+            })
             if drv_profile_id is not None:
                 await db.execute(
                     "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND former_driver = 0",
@@ -1041,7 +1080,7 @@ async def amend_session_result(
                     session_result_id,
                     driver_user_id,
                     _get(dr, "team_role_id"),
-                    _get(dr, "position") or _get(dr, "finishing_position") or i,
+                    fp,
                     _get(dr, "outcome", OutcomeModifier.CLASSIFIED.value),
                     _get(dr, "tyre"),
                     _get(dr, "best_lap"),
@@ -1054,6 +1093,7 @@ async def amend_session_result(
                     drv_profile_id,
                 ),
             )
+        await _insert_new_tables_in_tx(db, session_result_id, session_type, _amend_rows_normalized, _amend_profile_map)
         await db.commit()
 
     # Apply points from the config so points_awarded / fastest_lap_bonus are populated
@@ -1766,7 +1806,7 @@ async def _apply_points_from_config(
     # Mutates driver_rows in-place with computed points_awarded / fastest_lap_bonus
     compute_points_for_session(driver_rows, config_entries, fl_config, session_type, fl_override=fl_driver_override)
 
-    # Persist the computed values
+    # Persist to legacy table
     async with get_connection(db_path) as db:
         for row in driver_rows:
             await db.execute(
@@ -1775,6 +1815,23 @@ async def _apply_points_from_config(
                 "WHERE id = ?",
                 (row.points_awarded, row.fastest_lap_bonus, row.id),
             )
+        # Also persist to new tables (keyed by session_result_id + driver_user_id)
+        if session_type.is_qualifying:
+            for row in driver_rows:
+                await db.execute(
+                    "UPDATE qualifying_session_results "
+                    "SET points_awarded = ? "
+                    "WHERE session_result_id = ? AND driver_user_id = ?",
+                    (row.points_awarded, session_result_id, row.driver_user_id),
+                )
+        else:
+            for row in driver_rows:
+                await db.execute(
+                    "UPDATE race_session_results "
+                    "SET points_awarded = ?, fastest_lap_bonus = ? "
+                    "WHERE session_result_id = ? AND driver_user_id = ?",
+                    (row.points_awarded, row.fastest_lap_bonus, session_result_id, row.driver_user_id),
+                )
         await db.commit()
 
 
@@ -1804,6 +1861,100 @@ def _row_dict_from_race(row: ParsedRaceRow) -> dict:
         "fastest_lap": fl,
         "time_penalties": tp,
     }
+
+
+async def _insert_new_tables_in_tx(
+    db,
+    session_result_id: int,
+    session_type: SessionType,
+    rows: list[dict],
+    profile_id_map: dict[int, int | None],
+) -> None:
+    """Insert rows into qualifying_session_results or race_session_results.
+
+    Must be called inside an open transaction; caller is responsible for commit.
+    *rows* must be plain dicts with keys: driver_user_id, team_role_id,
+    finishing_position, outcome, and for qualifying: tyre, best_lap;
+    for race: total_time, time_penalties, fastest_lap.
+    """
+    if session_type.is_qualifying:
+        for row in rows:
+            uid: int = row["driver_user_id"]
+            await db.execute(
+                """
+                INSERT INTO qualifying_session_results
+                    (session_result_id, driver_user_id, team_role_id, finishing_position,
+                     outcome, tyre, best_lap, points_awarded, driver_profile_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_result_id,
+                    uid,
+                    row["team_role_id"],
+                    row["finishing_position"],
+                    row.get("outcome", OutcomeModifier.CLASSIFIED.value),
+                    row.get("tyre"),
+                    row.get("best_lap"),
+                    row.get("points_awarded", 0),
+                    profile_id_map.get(uid),
+                ),
+            )
+    else:
+        # Compute base_time_ms: P1 absolute time determines reference
+        p1_abs_ms: int | None = None
+        for row in sorted(rows, key=lambda r: r["finishing_position"]):
+            tt = row.get("total_time") or ""
+            if _ABS_TIME_RE.match(tt):
+                p1_abs_ms = _parse_time_to_ms(tt)
+                break
+
+        for row in rows:
+            uid = row["driver_user_id"]
+            outcome_str = row.get("outcome", OutcomeModifier.CLASSIFIED.value)
+            outcome = OutcomeModifier(outcome_str)
+            total_time = row.get("total_time") or ""
+            tp_str = row.get("time_penalties")
+            ingame_ms = _parse_time_to_ms(tp_str) if tp_str else 0
+
+            base_time_ms: int | None = None
+            laps_behind: int | None = None
+
+            if outcome in (OutcomeModifier.DNF, OutcomeModifier.DNS, OutcomeModifier.DSQ):
+                pass  # base_time_ms stays None
+            elif _LAP_GAP_RE.match(total_time):
+                m = re.search(r"(\d+)", total_time)
+                laps_behind = int(m.group(1)) if m else 1
+            elif _ABS_TIME_RE.match(total_time):
+                base_time_ms = _parse_time_to_ms(total_time) - ingame_ms
+            elif _DELTA_TIME_RE.match(total_time) and p1_abs_ms is not None:
+                delta_ms = _parse_time_to_ms(total_time)
+                base_time_ms = p1_abs_ms + delta_ms - ingame_ms
+
+            fl = row.get("fastest_lap")
+            await db.execute(
+                """
+                INSERT INTO race_session_results
+                    (session_result_id, driver_user_id, team_role_id, finishing_position,
+                     outcome, base_time_ms, laps_behind,
+                     ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms,
+                     fastest_lap, fastest_lap_bonus, points_awarded, driver_profile_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)
+                """,
+                (
+                    session_result_id,
+                    uid,
+                    row["team_role_id"],
+                    row["finishing_position"],
+                    outcome_str,
+                    base_time_ms,
+                    laps_behind,
+                    ingame_ms,
+                    fl,
+                    row.get("fastest_lap_bonus", 0),
+                    row.get("points_awarded", 0),
+                    profile_id_map.get(uid),
+                ),
+            )
 
 
 # ---------------------------------------------------------------------------
