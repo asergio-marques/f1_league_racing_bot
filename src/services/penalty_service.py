@@ -21,6 +21,14 @@ _LAP_TIME_RE = re.compile(
     r"^(?:(?P<h>\d+):)?(?P<m>\d+):(?P<s>\d+)(?:\.(?P<ms>\d+))?$"
 )
 
+# Delta gap: +SS.mmm  |  +M:SS.mmm  |  +H:MM:SS.mmm  (leading + required)
+_DELTA_GAP_RE = re.compile(
+    r"^\+(?:(?:(?P<h>\d+):)?(?P<m>\d+):)?(?P<s>\d+)(?:\.(?P<ms>\d+))?$"
+)
+
+# Lap gap: "+N Lap(s)" or "N Lap(s)"
+_LAP_GAP_RE = re.compile(r"^\+?(\d+) Laps?$", re.IGNORECASE)
+
 
 @dataclass
 class StagedPenalty:
@@ -130,6 +138,34 @@ def _ms_to_time(ms: int) -> str:
     if hours:
         return f"{hours}:{mins:02d}:{secs:02d}.{ms_part:03d}"
     return f"{mins}:{secs:02d}.{ms_part:03d}"
+
+
+def _delta_to_ms(delta_str: str) -> int | None:
+    """Parse a delta gap string (+SS.mmm, +M:SS.mmm, +H:MM:SS.mmm) into ms.
+
+    Returns None if the string does not match the expected format.
+    """
+    m = _DELTA_GAP_RE.match((delta_str or "").strip())
+    if not m:
+        return None
+    h = int(m.group("h") or 0)
+    mins = int(m.group("m") or 0)
+    secs = int(m.group("s") or 0)
+    ms_raw = m.group("ms") or "0"
+    ms = int(ms_raw.ljust(3, "0")[:3])
+    return (h * 3600 + mins * 60 + secs) * 1000 + ms
+
+
+def _ms_to_delta(gap_ms: int) -> str:
+    """Format a gap in milliseconds as a delta string (+SS.mmm, +M:SS.mmm, etc.)."""
+    total_s, ms_part = divmod(gap_ms, 1000)
+    total_m, secs = divmod(total_s, 60)
+    hours, mins = divmod(total_m, 60)
+    if hours:
+        return f"+{hours}:{mins:02d}:{secs:02d}.{ms_part:03d}"
+    if mins:
+        return f"+{mins}:{secs:02d}.{ms_part:03d}"
+    return f"+{secs}.{ms_part:03d}"
 
 
 def _apply_time_penalty(total_time_str: str, penalty_seconds: int) -> str:
@@ -246,6 +282,7 @@ async def apply_penalties(
                 uid = int(dr["driver_user_id"])
                 update: dict = {
                     "id": dr["id"],
+                    "driver_user_id": int(dr["driver_user_id"]),
                     "outcome": dr["outcome"],
                     "total_time": dr["total_time"],
                     "post_steward_total_time": dr["post_steward_total_time"],
@@ -272,10 +309,10 @@ async def apply_penalties(
                         update["fastest_lap"] = "N/A"
                         update["time_penalties"] = "N/A"
                 elif uid in time_boosts:
-                    penalty_s = time_boosts[uid]
-                    base_time = dr["total_time"] or ""
-                    new_time = _apply_time_penalty(base_time, penalty_s)
-                    update["total_time"] = new_time
+                    # Race TIME penalties are applied in the re-sort block
+                    # below so that gap strings (e.g. "+2.955") are handled
+                    # alongside absolute times via absolute-ms conversion.
+                    pass
                 updated_rows.append(update)
 
             # Re-sort positions: DSQs go last; TIME-penalised rows move accordingly
@@ -289,12 +326,63 @@ async def apply_penalties(
                     classified.append(dr_dict)
 
             if not session_type.is_qualifying:
-                # Sort by total_time (parseable); keep original order for null/unparseable
-                def _sort_key(d: dict):
-                    ms = _time_to_ms(d["total_time"] or "")
-                    return (ms if ms is not None else 10**15, d["finishing_position"])
+                # -----------------------------------------------------------
+                # Convert all classified drivers to absolute ms so that gap
+                # strings ("+2.955", "+1:02.345") are handled alongside
+                # absolute times when applying penalties and re-sorting.
+                # -----------------------------------------------------------
 
-                classified.sort(key=_sort_key)
+                # P1's total_time is always an absolute time string; find it
+                # from the first classified row that parses as absolute.
+                p1_ms: int | None = None
+                for u in classified:
+                    ms_val = _time_to_ms(u["total_time"] or "")
+                    if ms_val is not None:
+                        p1_ms = ms_val
+                        break  # rows are ordered by finishing_position
+
+                timed: list[dict] = []           # computable absolute ms
+                lapped: list[dict] = []          # "+N Lap(s)"
+                other_classified: list[dict] = []  # DNF, DNS literals, etc.
+
+                for u in classified:
+                    tt = u["total_time"] or ""
+                    abs_ms = _time_to_ms(tt)
+                    if abs_ms is not None:
+                        u["_abs_ms"] = abs_ms
+                        timed.append(u)
+                    elif p1_ms is not None and _delta_to_ms(tt) is not None:
+                        u["_abs_ms"] = p1_ms + (_delta_to_ms(tt) or 0)
+                        timed.append(u)
+                    elif _LAP_GAP_RE.match(tt):
+                        lapped.append(u)
+                    else:
+                        other_classified.append(u)
+
+                # Apply time penalties to affected drivers' absolute ms.
+                for u in timed:
+                    uid2 = int(u["driver_user_id"])
+                    if uid2 in time_boosts:
+                        u["_abs_ms"] += time_boosts[uid2] * 1000
+
+                # Re-sort timed drivers by absolute ms.
+                timed.sort(key=lambda d: d["_abs_ms"])
+
+                # Recalculate total_time: new P1 gets absolute string; rest
+                # get a recalculated gap relative to the new P1.
+                if timed:
+                    new_p1_ms: int = timed[0]["_abs_ms"]
+                    timed[0]["total_time"] = _ms_to_time(new_p1_ms)
+                    for u in timed[1:]:
+                        u["total_time"] = _ms_to_delta(u["_abs_ms"] - new_p1_ms)
+
+                # Lapped and other-classified keep their original total_time;
+                # preserve relative order by original finishing_position.
+                lapped.sort(key=lambda d: d["finishing_position"])
+                other_classified.sort(key=lambda d: d["finishing_position"])
+
+                classified = timed + lapped + other_classified
+
             # DSQ rows keep relative order by original position
             dsq_list.sort(key=lambda d: d["finishing_position"])
 

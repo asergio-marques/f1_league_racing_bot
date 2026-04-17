@@ -17,19 +17,19 @@ from services.verdict_announcement_service import (
 
 class TestTranslatePenalty:
     def test_positive_with_sign_and_s(self):
-        assert translate_penalty("+5s") == "5 seconds removed"
+        assert translate_penalty("+5s") == "5 seconds added"
 
     def test_positive_no_sign_with_s(self):
-        assert translate_penalty("5s") == "5 seconds removed"
+        assert translate_penalty("5s") == "5 seconds added"
 
     def test_positive_no_sign_no_s(self):
-        assert translate_penalty("5") == "5 seconds removed"
+        assert translate_penalty("5") == "5 seconds added"
 
     def test_negative_with_s(self):
-        assert translate_penalty("-3s") == "3 seconds added"
+        assert translate_penalty("-3s") == "3 seconds removed"
 
     def test_negative_no_s(self):
-        assert translate_penalty("-10") == "10 seconds added"
+        assert translate_penalty("-10") == "10 seconds removed"
 
     def test_dsq_uppercase(self):
         assert translate_penalty("DSQ") == "Disqualified"
@@ -44,10 +44,10 @@ class TestTranslatePenalty:
         assert translate_penalty("  DSQ  ") == "Disqualified"
 
     def test_large_penalty(self):
-        assert translate_penalty("+30s") == "30 seconds removed"
+        assert translate_penalty("+30s") == "30 seconds added"
 
-    def test_single_second_added(self):
-        assert translate_penalty("-1s") == "1 seconds added"
+    def test_single_second_removed(self):
+        assert translate_penalty("-1s") == "1 seconds removed"
 
 
 # ---------------------------------------------------------------------------

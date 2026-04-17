@@ -36,8 +36,8 @@ def translate_penalty(penalty_str: str) -> str:
     if m:
         seconds = int(m.group(1))
         if seconds < 0:
-            return f"{abs(seconds)} seconds added"
-        return f"{seconds} seconds removed"
+            return f"{abs(seconds)} seconds removed"
+        return f"{seconds} seconds added"
     return penalty_str  # fallback: return raw value unchanged
 
 

@@ -349,3 +349,130 @@ async def test_test_mode_advance_blocked_before_finalize(tmp_path):
         await db.commit()
 
     assert await is_round_finalized(db_path, round_id) is True
+
+
+# ---------------------------------------------------------------------------
+# T033-8: Gap-string penalty — P2 has "+SS.mmm" total_time (real-world format)
+# ---------------------------------------------------------------------------
+
+
+async def _insert_race_with_gap_strings(db_path: str, round_id: int, division_id: int) -> int:
+    """Insert a 3-driver race where P2 and P3 use gap strings for total_time."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
+            (round_id, division_id),
+        )
+        sr_id = cursor.lastrowid
+        # P1: driver 1 — absolute time
+        await db.execute(
+            "INSERT INTO driver_session_results "
+            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, total_time, fastest_lap, points_awarded, fastest_lap_bonus, is_superseded) "
+            "VALUES (?, 1, 100, 1, 'CLASSIFIED', '47:55.744', '1:30.000', 25, 1, 0)",
+            (sr_id,),
+        )
+        # P2: driver 2 — gap string "+2.955"
+        await db.execute(
+            "INSERT INTO driver_session_results "
+            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, total_time, fastest_lap, points_awarded, fastest_lap_bonus, is_superseded) "
+            "VALUES (?, 2, 200, 2, 'CLASSIFIED', '+2.955', '1:31.000', 18, 0, 0)",
+            (sr_id,),
+        )
+        # P3: driver 3 — gap string "+42.044"
+        await db.execute(
+            "INSERT INTO driver_session_results "
+            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, total_time, fastest_lap, points_awarded, fastest_lap_bonus, is_superseded) "
+            "VALUES (?, 3, 300, 3, 'CLASSIFIED', '+42.044', '1:32.000', 15, 0, 0)",
+            (sr_id,),
+        )
+        await db.commit()
+    return sr_id
+
+
+async def test_gap_string_penalty_p1_drops(tmp_path):
+    """P1 gets +10s; P2 total_time is a gap string '+2.955'.
+    P1 should drop to P2 with a recalculated gap; P2 should become new P1
+    with an absolute total_time."""
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+    _, division_id, round_id = await _bootstrap(db_path)
+    sr_id = await _insert_race_with_gap_strings(db_path, round_id, division_id)
+
+    staged = [
+        StagedPenalty(
+            driver_user_id=1,
+            session_type=SessionType.FEATURE_RACE,
+            penalty_type="TIME",
+            penalty_seconds=10,  # 47:55.744 + 10s = 48:05.744 > 47:58.699 (P2's absolute)
+        )
+    ]
+    await apply_penalties(
+        db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True
+    )
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT driver_user_id, finishing_position, total_time "
+            "FROM driver_session_results "
+            "WHERE session_result_id = ? AND is_superseded = 0 ORDER BY finishing_position",
+            (sr_id,),
+        )
+        rows = await cursor.fetchall()
+
+    assert rows[0]["driver_user_id"] == 2, "Driver 2 (was P2) should become new P1"
+    assert rows[1]["driver_user_id"] == 1, "Driver 1 (penalized) should drop to P2"
+    assert rows[2]["driver_user_id"] == 3, "Driver 3 should remain P3"
+
+    # New P1 (driver 2) gets absolute total_time: 47:55.744 + 2.955s = 47:58.699
+    assert rows[0]["total_time"] == "47:58.699"
+    # New P2 (driver 1, penalized) gets a recalculated gap
+    # Penalized abs = 47:55.744 + 10s = 48:05.744 = 2885744ms
+    # New P1 abs = 47:58.699 = 2878699ms  → gap = 7045ms → "+7.045"
+    assert rows[1]["total_time"] == "+7.045"
+
+
+async def test_gap_string_penalty_p3_gets_penalty(tmp_path):
+    """P3 (who has gap string '+42.044') gets +120s penalty.
+    P3's gap should be recalculated correctly; positions don't change since
+    no one can overtake a driver more than 2 minutes behind."""
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+    _, division_id, round_id = await _bootstrap(db_path)
+    sr_id = await _insert_race_with_gap_strings(db_path, round_id, division_id)
+
+    staged = [
+        StagedPenalty(
+            driver_user_id=3,
+            session_type=SessionType.FEATURE_RACE,
+            penalty_type="TIME",
+            penalty_seconds=120,
+        )
+    ]
+    await apply_penalties(
+        db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True
+    )
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT driver_user_id, finishing_position, total_time "
+            "FROM driver_session_results "
+            "WHERE session_result_id = ? AND is_superseded = 0 ORDER BY finishing_position",
+            (sr_id,),
+        )
+        rows = await cursor.fetchall()
+
+    # Positions unchanged: P1 still 1, P2 still 2, P3 still 3
+    assert rows[0]["driver_user_id"] == 1
+    assert rows[1]["driver_user_id"] == 2
+    assert rows[2]["driver_user_id"] == 3
+
+    # P1 total_time stays as absolute
+    assert rows[0]["total_time"] == "47:55.744"
+    # P2 gap recalculated (unchanged since P1 is still P1)
+    assert rows[1]["total_time"] == "+2.955"
+    # P3 gap recalculated: 42.044s + 120s = 162.044s → "+2:42.044"
+    assert rows[2]["total_time"] == "+2:42.044"
