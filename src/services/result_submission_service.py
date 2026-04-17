@@ -1061,6 +1061,8 @@ async def amend_session_result(
                 "total_time": _get(dr, "total_time"),
                 "fastest_lap": _get(dr, "fastest_lap"),
                 "time_penalties": _get(dr, "time_penalties"),
+                "postrace_penalty": _get(dr, "postrace_penalty", "N/A"),
+                "appeal_penalty": _get(dr, "appeal_penalty", "N/A"),
             })
             if drv_profile_id is not None:
                 await db.execute(
@@ -1196,9 +1198,11 @@ class ParsedQualifyingRow:
     driver_user_id: int
     team_role_id: int
     tyre: str
-    best_lap: str   # time string or DNS/DNF/DSQ
-    gap: str        # delta string or "N/A"
-    outcome: OutcomeModifier
+    best_lap: str           # time string or DNS/DNF/DSQ (in-game result)
+    gap: str                # delta string or "N/A"
+    postrace_penalty: str   # "N/A" or "DSQ"
+    appeal_penalty: str     # "N/A" or "DSQ"
+    outcome: OutcomeModifier  # derived: DSQ if any penalty=DSQ, else from best_lap
 
 
 @dataclass
@@ -1217,16 +1221,22 @@ class ParsedRaceRow:
 # ---------------------------------------------------------------------------
 
 def validate_qualifying_row(line: str) -> ParsedQualifyingRow | str:
-    """Parse and validate a single qualifying-result line (6 comma-separated fields).
+    """Parse and validate a single qualifying-result line (8 comma-separated fields).
 
-    Fields: Position, Driver mention, Team role mention, Tyre, Best Lap, Gap
+    Fields: Position, Driver mention, Team role mention, Tyre, Best Lap, Gap,
+            Postrace Penalty, Appeal Penalty
+
+    Best Lap: absolute time (e.g. 1:23.456) or in-game outcome DNS/DNF/DSQ.
+    Postrace Penalty / Appeal Penalty: N/A or DSQ only; both DSQ on the same row is invalid.
+    Outcome is derived as DSQ if either penalty field is DSQ, otherwise from Best Lap.
+
     Returns a ParsedQualifyingRow on success or an error string on failure.
     """
     parts = [p.strip() for p in line.strip().split(",")]
-    if len(parts) != 6:
-        return f"Expected 6 comma-separated fields, got {len(parts)}: `{line.strip()}`"
+    if len(parts) != 8:
+        return f"Expected 8 comma-separated fields, got {len(parts)}: `{line.strip()}`"
 
-    pos_str, driver_str, team_str, tyre, best_lap, gap = parts
+    pos_str, driver_str, team_str, tyre, best_lap, gap, postrace_penalty, appeal_penalty = parts
 
     if not pos_str.isdigit():
         return f"Position must be a positive integer, got `{pos_str}`"
@@ -1256,7 +1266,23 @@ def validate_qualifying_row(line: str) -> ParsedQualifyingRow | str:
         ):
             return f"Gap must be a delta time (e.g. +1:23.456), an absolute time, or N/A, got `{gap}`"
 
-    outcome = _parse_outcome(best_lap)
+    pp_upper = postrace_penalty.upper()
+    if pp_upper not in ("N/A", "DSQ"):
+        return f"Postrace Penalty must be N/A or DSQ, got `{postrace_penalty}`"
+
+    ap_upper = appeal_penalty.upper()
+    if ap_upper not in ("N/A", "DSQ"):
+        return f"Appeal Penalty must be N/A or DSQ, got `{appeal_penalty}`"
+
+    if pp_upper == "DSQ" and ap_upper == "DSQ":
+        return "Postrace Penalty and Appeal Penalty cannot both be DSQ on the same row."
+
+    # Derive outcome: penalty DSQ overrides in-game result
+    if pp_upper == "DSQ" or ap_upper == "DSQ":
+        outcome = OutcomeModifier.DSQ
+    else:
+        outcome = _parse_outcome(best_lap)
+
     return ParsedQualifyingRow(
         position=position,
         driver_user_id=driver_user_id,
@@ -1264,6 +1290,8 @@ def validate_qualifying_row(line: str) -> ParsedQualifyingRow | str:
         tyre=tyre,
         best_lap=best_lap,
         gap=gap,
+        postrace_penalty=postrace_penalty,
+        appeal_penalty=appeal_penalty,
         outcome=outcome,
     )
 
@@ -1519,6 +1547,37 @@ def validate_submission_block(
                         )
                         break
                     prev_lap_count = lap_count
+
+    if errors:
+        return errors
+
+    # Qualifying ordering: CLASSIFIED → DNF → DNS → DSQ
+    # Any DSQ row must appear after all DNS/DNF/CLASSIFIED rows.
+    if is_qualifying:
+        def _qual_outcome_category(row: "ParsedQualifyingRow") -> int:
+            # 0=CLASSIFIED, 1=DNF, 2=DNS, 3=DSQ
+            if row.outcome == OutcomeModifier.DSQ:
+                return 3
+            if row.outcome == OutcomeModifier.DNS:
+                return 2
+            if row.outcome == OutcomeModifier.DNF:
+                return 1
+            return 0
+
+        _QUAL_CATEGORY_LABEL = {0: "classified", 1: "DNF", 2: "DNS", 3: "DSQ"}
+        rows_by_pos = sorted(parsed_rows, key=lambda r: r.position)
+        max_qual_cat = 0
+        for row in rows_by_pos:
+            cat = _qual_outcome_category(row)
+            if cat < max_qual_cat:
+                errors.append(
+                    f"Row {row.position}: driver <@{row.driver_user_id}> has outcome "
+                    f"{_QUAL_CATEGORY_LABEL[cat]} but appears after a "
+                    f"{_QUAL_CATEGORY_LABEL[max_qual_cat]} entry. "
+                    "Qualifying order must be: classified first, then DNF, then DNS, then DSQ."
+                )
+                break
+            max_qual_cat = max(max_qual_cat, cat)
 
     if errors:
         return errors
@@ -1846,6 +1905,8 @@ def _row_dict_from_qualifying(row: ParsedQualifyingRow) -> dict:
         "tyre": row.tyre,
         "best_lap": row.best_lap,
         "gap": row.gap,
+        "postrace_penalty": row.postrace_penalty,
+        "appeal_penalty": row.appeal_penalty,
     }
 
 

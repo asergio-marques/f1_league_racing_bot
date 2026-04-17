@@ -678,6 +678,67 @@ Bulk-upserts position points and fastest-lap bonuses for one or more session typ
 
 #### Round Results Commands
 
+##### Submission format — Race session
+
+Each line of a race submission block represents one driver and must contain exactly **6 comma-separated fields**:
+
+```
+{pos}, {driver}, {team role}, {total time / gap}, {fastest lap}, {time penalties}
+```
+
+| Field | Description |
+|-------|-------------|
+| `pos` | Finishing position (integer) |
+| `driver` | Discord member mention (e.g. `<@123456789>`) |
+| `team role` | Discord role mention (e.g. `<@&987654321>`) |
+| `total time / gap` | `H:MM:SS.mmm` for P1; `+SS.mmm` for others; `DNF` or `DNS` for non-classified entries |
+| `fastest lap` | Lap time string (e.g. `1:24.000`) or `N/A` |
+| `time penalties` | `N/A`, or a penalty value to add to the total time (e.g. `+5s`) |
+
+**Example:**
+```
+1, @Driver,  @TeamRole, 1:23:45.678, 1:24.000, N/A
+2, @Other,   @TeamRole, +5.321,      1:24.000, N/A
+3, @Driver3, @TeamRole, +12.450,     1:25.100, N/A
+```
+
+---
+
+##### Submission format — Qualifying session
+
+Each line of a qualifying submission block represents one driver and must contain exactly **8 comma-separated fields**:
+
+```
+{pos}, {driver}, {team role}, {tyre}, {best lap}, {gap}, {postrace penalty}, {appeal penalty}
+```
+
+| Field | Description |
+|-------|-------------|
+| `pos` | Qualifying position (integer) |
+| `driver` | Discord member mention (e.g. `<@123456789>`) |
+| `team role` | Discord role mention (e.g. `<@&987654321>`) |
+| `tyre` | Tyre compound used on the fastest lap (e.g. `Soft`) |
+| `best lap` | Lap time string (e.g. `1:20.456`); or `DNF`, `DNS`, `DSQ` for non-classified entries |
+| `gap` | `N/A` for P1; delta time (e.g. `+0.456`) for all other classified entries |
+| `postrace penalty` | `N/A` or `DSQ` — disqualification applied after the session |
+| `appeal penalty` | `N/A` or `DSQ` — disqualification upheld on appeal |
+
+**Ordering rules:**
+- Rows must be ordered: classified entries (valid lap time) → `DNF` → `DNS` → `DSQ`. Any violation is rejected.
+- Setting both `postrace penalty` **and** `appeal penalty` to `DSQ` on the same row is invalid.
+- A driver whose either penalty field is `DSQ` has their outcome recorded as `DSQ` regardless of the `best lap` value.
+
+**Example:**
+```
+1, @Driver,  @TeamRole, Soft,   1:20.456, N/A,    N/A, N/A
+2, @Other,   @TeamRole, Medium, 1:20.789, +0.333, N/A, N/A
+3, @Driver3, @TeamRole, Soft,   DNF,      N/A,    N/A, N/A
+4, @Driver4, @TeamRole, Hard,   DNS,      N/A,    N/A, N/A
+5, @Driver5, @TeamRole, Soft,   1:19.000, N/A,    DSQ, N/A
+```
+
+---
+
 ##### Post-submission penalty review — Apply post-race penalties or disqualifications
 
 After all sessions of a round are submitted, the submission channel enters **penalty review state** instead of closing immediately. The bot posts a penalty review prompt with the following buttons:
