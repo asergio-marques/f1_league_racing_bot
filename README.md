@@ -680,8 +680,9 @@ Bulk-upserts position points and fastest-lap bonuses for one or more session typ
 
 ##### Submission format — Race session
 
-Each line of a race submission block represents one driver and must contain exactly **6 comma-separated fields**:
+Each line of a race submission block represents one driver. The number of fields depends on the context:
 
+**Event submission (6 fields):**
 ```
 {pos}, {driver}, {team role}, {total time / gap}, {fastest lap}, {time penalties}
 ```
@@ -691,25 +692,52 @@ Each line of a race submission block represents one driver and must contain exac
 | `pos` | Finishing position (integer) |
 | `driver` | Discord member mention (e.g. `<@123456789>`) |
 | `team role` | Discord role mention (e.g. `<@&987654321>`) |
-| `total time / gap` | `H:MM:SS.mmm` for P1; `+SS.mmm` for others; `DNF` or `DNS` for non-classified entries |
+| `total time / gap` | `H:MM:SS.mmm` for P1; `+M:SS.mmm` or `+SS.mmm` delta for others; `+N Lap(s)` for lapped drivers; `DNF`, `DNS`, or `DSQ` for non-classified entries |
 | `fastest lap` | Lap time string (e.g. `1:24.000`) or `N/A` |
-| `time penalties` | `N/A`, or a penalty value to add to the total time (e.g. `+5s`) |
+| `time penalties` | `N/A`, or an in-game time penalty in `M:SS.mmm` or `SS.mmm` format (e.g. `0:05.000`) |
 
-**Example:**
+**Results amend (8 fields):**
+```
+{pos}, {driver}, {team role}, {total time / gap}, {fastest lap}, {ingame penalties}, {postrace penalty}, {appeal penalty}
+```
+
+All fields above apply, plus:
+
+| Field | Description |
+|-------|-------------|
+| `ingame penalties` | `N/A`, or an in-game time penalty in `M:SS.mmm` or `SS.mmm` format (e.g. `0:05.000`) |
+| `postrace penalty` | `N/A`; a penalty in seconds (e.g. `5.000`); or `DSQ` |
+| `appeal penalty` | `N/A`; a penalty in seconds (e.g. `5.000`); or `DSQ` |
+
+**Race ordering rules:**
+- Rows must be ordered: classified entries (lead-lap or lapped times) → `DNF` → `DNS` → `DSQ`. Any violation is rejected.
+- Setting both `postrace penalty` **and** `appeal penalty` to `DSQ` on the same row is invalid (amend only).
+- A driver whose either penalty field is `DSQ` has their outcome recorded as `DSQ` regardless of the `total time` value.
+
+**Example (event submission):**
 ```
 1, @Driver,  @TeamRole, 1:23:45.678, 1:24.000, N/A
 2, @Other,   @TeamRole, +5.321,      1:24.000, N/A
 3, @Driver3, @TeamRole, +12.450,     1:25.100, N/A
 ```
 
+**Example (results amend):**
+```
+1, @Driver,  @TeamRole, 1:23:45.678, 1:24.000, N/A,       N/A,   N/A
+2, @Other,   @TeamRole, +5.321,      1:24.000, 0:05.000,  N/A,   N/A
+3, @Driver3, @TeamRole, +12.450,     1:25.100, N/A,       5.000, N/A
+4, @Driver4, @TeamRole, DNF,         N/A,      N/A,       DSQ,   N/A
+```
+
 ---
 
 ##### Submission format — Qualifying session
 
-Each line of a qualifying submission block represents one driver and must contain exactly **8 comma-separated fields**:
+Each line of a qualifying submission block represents one driver. The number of fields depends on the context:
 
+**Event submission (6 fields):**
 ```
-{pos}, {driver}, {team role}, {tyre}, {best lap}, {gap}, {postrace penalty}, {appeal penalty}
+{pos}, {driver}, {team role}, {tyre}, {best lap}, {gap}
 ```
 
 | Field | Description |
@@ -720,15 +748,33 @@ Each line of a qualifying submission block represents one driver and must contai
 | `tyre` | Tyre compound used on the fastest lap (e.g. `Soft`) |
 | `best lap` | Lap time string (e.g. `1:20.456`); or `DNF`, `DNS`, `DSQ` for non-classified entries |
 | `gap` | `N/A` for P1; delta time (e.g. `+0.456`) for all other classified entries |
+
+**Results amend (8 fields):**
+```
+{pos}, {driver}, {team role}, {tyre}, {best lap}, {gap}, {postrace penalty}, {appeal penalty}
+```
+
+All fields above apply, plus:
+
+| Field | Description |
+|-------|-------------|
 | `postrace penalty` | `N/A` or `DSQ` — disqualification applied after the session |
 | `appeal penalty` | `N/A` or `DSQ` — disqualification upheld on appeal |
 
-**Ordering rules:**
+**Ordering rules (both formats):**
 - Rows must be ordered: classified entries (valid lap time) → `DNF` → `DNS` → `DSQ`. Any violation is rejected.
-- Setting both `postrace penalty` **and** `appeal penalty` to `DSQ` on the same row is invalid.
-- A driver whose either penalty field is `DSQ` has their outcome recorded as `DSQ` regardless of the `best lap` value.
+- Setting both `postrace penalty` **and** `appeal penalty` to `DSQ` on the same row is invalid (amend only).
+- A driver whose either penalty field is `DSQ` has their outcome recorded as `DSQ` regardless of the `best lap` value (amend only).
 
-**Example:**
+**Example (event submission):**
+```
+1, @Driver,  @TeamRole, Soft,   1:20.456, N/A
+2, @Other,   @TeamRole, Medium, 1:20.789, +0.333
+3, @Driver3, @TeamRole, Soft,   DNF,      N/A
+4, @Driver4, @TeamRole, Hard,   DNS,      N/A
+```
+
+**Example (results amend):**
 ```
 1, @Driver,  @TeamRole, Soft,   1:20.456, N/A,    N/A, N/A
 2, @Other,   @TeamRole, Medium, 1:20.789, +0.333, N/A, N/A
