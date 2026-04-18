@@ -769,7 +769,7 @@ class SeasonService:
             cursor = await db.execute(
                 "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier, "
                 "lineup_channel_id, calendar_channel_id, lineup_message_id "
-                "FROM divisions WHERE season_id = ?",
+                "FROM divisions WHERE season_id = ? ORDER BY tier",
                 (season_id,),
             )
             rows = await cursor.fetchall()
@@ -869,6 +869,7 @@ class SeasonService:
                 FROM divisions d
                 LEFT JOIN division_results_config drc ON drc.division_id = d.id
                 WHERE d.season_id = ?
+                ORDER BY d.tier
                 """,
                 (season_id,),
             )
