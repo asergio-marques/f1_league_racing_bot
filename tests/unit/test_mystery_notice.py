@@ -2,8 +2,8 @@
 
 Covers NFR-003 cases:
   1. mystery_notice_message() exact content (FR-003)
-  2. schedule_round for MYSTERY schedules exactly one mystery_r job (FR-001)
-  3. cancel_round removes mystery_r job id (FR-002)
+  2. schedule_round for MYSTERY schedules weather phase jobs (FR-001)
+  3. cancel_round removes all round jobs via kwargs lookup (FR-002)
   4. run_mystery_notice posts to forecast channel only, not log channel (FR-005, FR-008)
   5. schedule_attendance_round treats MYSTERY identically to other formats (RSVP jobs)
 """
@@ -51,7 +51,7 @@ class TestMysteryNoticeMessage:
 
 
 # ---------------------------------------------------------------------------
-# 2. schedule_round schedules exactly one mystery_r job for MYSTERY (FR-001)
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _make_scheduler_no_db():
@@ -64,8 +64,18 @@ def _make_scheduler_no_db():
     mock_sched = MagicMock()
     mock_sched.add_job = MagicMock()
     mock_sched.remove_job = MagicMock()
+    mock_sched.get_jobs = MagicMock(return_value=[])
     svc._scheduler = mock_sched
     return svc
+
+
+def _make_mock_job(job_id: str, round_id: int) -> MagicMock:
+    """Create a mock APScheduler job with the given id and round_id kwarg."""
+    job = MagicMock()
+    job.id = job_id
+    job.kwargs = {"round_id": round_id}
+    job.next_run_time = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    return job
 
 
 def _mystery_round(round_id: int = 42) -> Round:
@@ -91,60 +101,103 @@ def _future_round(round_id: int, fmt: RoundFormat) -> Round:
     )
 
 
+# ---------------------------------------------------------------------------
+# 2. schedule_round schedules weather phase jobs for MYSTERY (FR-001)
+# ---------------------------------------------------------------------------
+
 class TestScheduleRoundMystery:
 
-    def test_schedules_exactly_two_jobs(self):
-        # Mystery rounds schedule mystery notice + results submission
+    def test_schedules_exactly_five_jobs(self):
+        # All rounds (including MYSTERY) schedule 5 jobs:
+        # weather_p1, weather_p2, weather_p3, cleanup, results
         svc = _make_scheduler_no_db()
-        svc.schedule_round(_mystery_round())
-        assert svc._scheduler.add_job.call_count == 2
+        svc.schedule_round(_mystery_round(), season_number=1, division_tier=1)
+        assert svc._scheduler.add_job.call_count == 5
 
-    def test_job_id_is_mystery_r(self):
+    def test_weather_p1_job_is_scheduled(self):
+        # weather_p1 replaces the old mystery_r job; it checks format at runtime
         svc = _make_scheduler_no_db()
-        svc.schedule_round(_mystery_round(round_id=42))
-        # First call is the mystery notice job
-        job_id = svc._scheduler.add_job.call_args_list[0].kwargs.get("id")
-        assert job_id == "mystery_r42"
-
-    def test_no_phase_jobs_created(self):
-        svc = _make_scheduler_no_db()
-        svc.schedule_round(_mystery_round())
+        svc.schedule_round(_mystery_round(round_id=42), season_number=3, division_tier=2)
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        assert any(jid.startswith("mystery_r") for jid in job_ids)
-        assert not any("phase" in jid for jid in job_ids)
+        assert any("weather_p1" in jid for jid in job_ids)
+
+    def test_no_legacy_mystery_r_job(self):
+        svc = _make_scheduler_no_db()
+        svc.schedule_round(_mystery_round(), season_number=1, division_tier=1)
+        job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
+        assert not any(jid.startswith("mystery_r") for jid in job_ids)
+
+    def test_all_three_weather_phase_jobs_created(self):
+        svc = _make_scheduler_no_db()
+        svc.schedule_round(_mystery_round(), season_number=1, division_tier=1)
+        job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
+        assert any("weather_p1" in jid for jid in job_ids)
+        assert any("weather_p2" in jid for jid in job_ids)
+        assert any("weather_p3" in jid for jid in job_ids)
+
+    def test_round_id_in_kwargs_for_all_jobs(self):
+        svc = _make_scheduler_no_db()
+        svc.schedule_round(_mystery_round(round_id=42), season_number=1, division_tier=1)
+        for call in svc._scheduler.add_job.call_args_list:
+            assert call.kwargs["kwargs"]["round_id"] == 42
+
+    def test_job_ids_follow_new_format(self):
+        svc = _make_scheduler_no_db()
+        svc.schedule_round(_mystery_round(round_id=42), season_number=3, division_tier=2)
+        job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
+        # New format: <event>_s{season}_d{tier}_r{round_number}
+        assert any(jid == "weather_p1_s3_d2_r1" for jid in job_ids)
 
 
 # ---------------------------------------------------------------------------
-# 3. cancel_round removes mystery_r job id (FR-002)
+# 3. cancel_round removes all round jobs via kwargs lookup (FR-002)
 # ---------------------------------------------------------------------------
 
 class TestCancelRoundIncludesMystery:
 
-    def test_removes_mystery_job(self):
+    def _setup_round_jobs(
+        self, svc, round_id: int, season: int = 1, tier: int = 1, rnum: int = 1
+    ) -> list[MagicMock]:
+        """Populate get_jobs() with a typical set of round jobs."""
+        suffix = f"_s{season}_d{tier}_r{rnum}"
+        jobs = [
+            _make_mock_job(f"weather_p1{suffix}", round_id),
+            _make_mock_job(f"weather_p2{suffix}", round_id),
+            _make_mock_job(f"weather_p3{suffix}", round_id),
+            _make_mock_job(f"cleanup{suffix}", round_id),
+            _make_mock_job(f"results{suffix}", round_id),
+        ]
+        svc._scheduler.get_jobs.return_value = jobs
+        return jobs
+
+    def test_removes_all_round_jobs(self):
         svc = _make_scheduler_no_db()
+        self._setup_round_jobs(svc, round_id=7)
+        svc.cancel_round(7)
+        assert svc._scheduler.remove_job.call_count == 5
+
+    def test_does_not_remove_other_round_jobs(self):
+        svc = _make_scheduler_no_db()
+        jobs = [
+            _make_mock_job("weather_p1_s1_d1_r1", round_id=7),
+            _make_mock_job("weather_p1_s1_d1_r2", round_id=99),
+        ]
+        svc._scheduler.get_jobs.return_value = jobs
         svc.cancel_round(7)
         removed = [c.args[0] for c in svc._scheduler.remove_job.call_args_list]
-        assert "mystery_r7" in removed
+        assert "weather_p1_s1_d1_r1" in removed
+        assert "weather_p1_s1_d1_r2" not in removed
 
-    def test_still_removes_all_phase_jobs(self):
+    def test_no_jobs_removed_when_jobstore_empty(self):
         svc = _make_scheduler_no_db()
+        svc._scheduler.get_jobs.return_value = []
         svc.cancel_round(7)
-        removed = [c.args[0] for c in svc._scheduler.remove_job.call_args_list]
-        assert "phase1_r7" in removed
-        assert "phase2_r7" in removed
-        assert "phase3_r7" in removed
-
-    def test_removes_nine_job_ids_total(self):
-        svc = _make_scheduler_no_db()
-        svc.cancel_round(7)
-        # phase1, phase2, phase3, mystery, cleanup, results,
-        # rsvp_notice, rsvp_last_notice, rsvp_deadline = 9 job IDs
-        assert svc._scheduler.remove_job.call_count == 9
+        svc._scheduler.remove_job.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
 # 5. schedule_attendance_round: MYSTERY round must produce RSVP jobs identical
-#    to any other round format (032-attendance-rsvp-checkin, fixed in 032 branch)
+#    to any other round format (032-attendance-rsvp-checkin)
 # ---------------------------------------------------------------------------
 
 class TestScheduleAttendanceRoundMystery:
@@ -154,40 +207,48 @@ class TestScheduleAttendanceRoundMystery:
         svc = _make_scheduler_no_db()
         svc.schedule_attendance_round(
             _future_round(5, RoundFormat.MYSTERY),
+            season_number=1,
+            division_tier=1,
             notice_days=3,
             last_notice_hours=24,
             deadline_hours=2,
         )
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        assert "rsvp_notice_r5" in job_ids
+        assert "rsvp_notice_s1_d1_r1" in job_ids
 
     def test_mystery_creates_rsvp_deadline_job(self):
         svc = _make_scheduler_no_db()
         svc.schedule_attendance_round(
             _future_round(5, RoundFormat.MYSTERY),
+            season_number=1,
+            division_tier=1,
             notice_days=3,
             last_notice_hours=24,
             deadline_hours=2,
         )
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        assert "rsvp_deadline_r5" in job_ids
+        assert "rsvp_deadline_s1_d1_r1" in job_ids
 
     def test_mystery_creates_last_notice_job_when_enabled(self):
         svc = _make_scheduler_no_db()
         svc.schedule_attendance_round(
             _future_round(5, RoundFormat.MYSTERY),
+            season_number=1,
+            division_tier=1,
             notice_days=3,
             last_notice_hours=24,
             deadline_hours=2,
         )
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        assert "rsvp_last_notice_r5" in job_ids
+        assert "rsvp_last_notice_s1_d1_r1" in job_ids
 
     def test_mystery_creates_same_rsvp_job_count_as_normal(self):
         """MYSTERY and NORMAL round must produce identical RSVP job counts."""
         svc = _make_scheduler_no_db()
         svc.schedule_attendance_round(
             _future_round(10, RoundFormat.MYSTERY),
+            season_number=1,
+            division_tier=1,
             notice_days=3,
             last_notice_hours=24,
             deadline_hours=2,
@@ -197,6 +258,8 @@ class TestScheduleAttendanceRoundMystery:
         svc._scheduler.add_job.reset_mock()
         svc.schedule_attendance_round(
             _future_round(11, RoundFormat.NORMAL),
+            season_number=1,
+            division_tier=1,
             notice_days=3,
             last_notice_hours=24,
             deadline_hours=2,
@@ -210,13 +273,15 @@ class TestScheduleAttendanceRoundMystery:
         svc = _make_scheduler_no_db()
         svc.schedule_attendance_round(
             _future_round(5, RoundFormat.MYSTERY),
+            season_number=1,
+            division_tier=1,
             notice_days=3,
             last_notice_hours=0,
             deadline_hours=2,
         )
         assert svc._scheduler.add_job.call_count == 2
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        assert "rsvp_last_notice_r5" not in job_ids
+        assert "rsvp_last_notice_s1_d1_r1" not in job_ids
 
 
 # ---------------------------------------------------------------------------

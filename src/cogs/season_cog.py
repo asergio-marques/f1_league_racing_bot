@@ -2964,29 +2964,37 @@ class SeasonCog(commands.Cog):
         # Schedule FIRST — if this fails the season stays SETUP in DB (fix #5)
         weather_enabled = await self.bot.module_service.is_weather_enabled(cfg.server_id)
         results_enabled = await self.bot.module_service.is_results_enabled(cfg.server_id)
+        # Mapping division_id → (season_number, tier) for human-readable job IDs
+        _div_meta: dict[int, tuple[int, int]] = {
+            div.id: (cfg.season_number, div.tier) for div in divisions
+        }
         if weather_enabled:
-            # schedule_round creates weather phase jobs AND the results_r job together
+            # schedule_round creates weather phase jobs AND the results job together
             from services.weather_config_service import get_weather_pipeline_config
             _wcfg = await get_weather_pipeline_config(self.bot.db_path, cfg.server_id)
             self.bot.scheduler_service.schedule_all_rounds(
                 all_rounds,
+                division_meta=_div_meta,
                 phase_1_days=_wcfg.phase_1_days,
                 phase_2_days=_wcfg.phase_2_days,
                 phase_3_hours=_wcfg.phase_3_hours,
             )
         elif results_enabled:
-            # Weather off but results on: schedule results_r jobs for production
+            # Weather off but results on: schedule results jobs for production
             # (real future race times).  In test mode we skip this because past-dated
             # jobs auto-fire immediately; the advance command uses DB-state detection.
             server_config = await self.bot.config_service.get_server_config(cfg.server_id)  # type: ignore[attr-defined]
             if server_config is None or not server_config.test_mode_active:
-                self.bot.scheduler_service.schedule_result_submission_jobs(all_rounds)
+                self.bot.scheduler_service.schedule_result_submission_jobs(all_rounds, division_meta=_div_meta)
 
         if await self.bot.module_service.is_attendance_enabled(cfg.server_id):
             _att_cfg = await self.bot.attendance_service.get_or_create_config(cfg.server_id)
             for _rnd in all_rounds:
+                _s_num, _d_tier = _div_meta[_rnd.division_id]
                 self.bot.scheduler_service.schedule_attendance_round(
                     _rnd,
+                    season_number=_s_num,
+                    division_tier=_d_tier,
                     notice_days=_att_cfg.rsvp_notice_days,
                     last_notice_hours=_att_cfg.rsvp_last_notice_hours,
                     deadline_hours=_att_cfg.rsvp_deadline_hours,
