@@ -734,7 +734,7 @@ class SeasonCog(commands.Cog):
         source_name: str,
         new_name: str,
         role: discord.Role,
-        tier: int = 1,
+        tier: int,
         day_offset: int = 0,
         hour_offset: float = 0.0,
     ) -> None:
