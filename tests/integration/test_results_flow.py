@@ -76,7 +76,7 @@ async def _bootstrap(db_path: str):
 
 
 # ---------------------------------------------------------------------------
-# Test: session_results and driver_session_results rows are created
+# Test: session_results and race_session_results rows are created
 # ---------------------------------------------------------------------------
 
 
@@ -123,7 +123,7 @@ async def test_save_session_result_creates_rows(db_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT COUNT(*) AS c FROM driver_session_results WHERE session_result_id = ?",
+            "SELECT COUNT(*) AS c FROM race_session_results WHERE session_result_id = ?",
             (session_result_id,),
         )
         row = await cursor.fetchone()

@@ -214,9 +214,6 @@ async def apply_penalties(
     from services import standings_service
     from services import results_post_service
 
-    # Map (session_type_value, driver_user_id) -> driver_session_results.id
-    # populated during the session loop so we can INSERT penalty_records after.
-    driver_to_dsr_id: dict[tuple[str, int], int] = {}
     # Map (session_type_value, driver_user_id) -> new table row id (race or qual)
     driver_to_new_result_id: dict[tuple[str, int], int] = {}
     inserted_records: list[dict] = []
@@ -255,175 +252,6 @@ async def apply_penalties(
                 )
                 continue
             session_result_id: int = sr_row["id"]
-
-            # Fetch all driver rows for this session (non-superseded)
-            cursor = await db.execute(
-                """
-                SELECT id, driver_user_id, finishing_position, outcome, total_time,
-                       fastest_lap, time_penalties, post_steward_total_time,
-                       post_race_time_penalties, best_lap, tyre, gap
-                FROM driver_session_results
-                WHERE session_result_id = ? AND is_superseded = 0
-                ORDER BY finishing_position
-                """,
-                (session_result_id,),
-            )
-            driver_rows = list(await cursor.fetchall())
-
-            # Track driver_user_id -> driver_session_result_id for penalty_records INSERT.
-            for dr in driver_rows:
-                driver_to_dsr_id[(session_type.value, int(dr["driver_user_id"]))] = dr["id"]
-            dsq_ids = {sp.driver_user_id for sp in session_penalties if sp.penalty_type == "DSQ"}
-            time_boosts: dict[int, int] = {
-                sp.driver_user_id: sp.penalty_seconds
-                for sp in session_penalties
-                if sp.penalty_type == "TIME" and sp.penalty_seconds is not None
-            }
-
-            updated_rows: list[dict] = []
-            for dr in driver_rows:
-                uid = int(dr["driver_user_id"])
-                update: dict = {
-                    "id": dr["id"],
-                    "driver_user_id": int(dr["driver_user_id"]),
-                    "outcome": dr["outcome"],
-                    "total_time": dr["total_time"],
-                    "post_steward_total_time": dr["post_steward_total_time"],
-                    "post_race_time_penalties": dr["post_race_time_penalties"],
-                    "fastest_lap": dr["fastest_lap"],
-                    "time_penalties": dr["time_penalties"],
-                    "best_lap": dr["best_lap"],
-                    "tyre": dr["tyre"],
-                    "gap": dr["gap"],
-                    "points_awarded": None,  # will be recomputed
-                    "fastest_lap_bonus": None,
-                    "finishing_position": dr["finishing_position"],
-                }
-                if uid in dsq_ids:
-                    update["outcome"] = "DSQ"
-                    update["points_awarded"] = 0
-                    update["fastest_lap_bonus"] = 0
-                    if session_type.is_qualifying:
-                        update["best_lap"] = "DSQ"
-                        update["tyre"] = "N/A"
-                        update["gap"] = "N/A"
-                    else:
-                        update["total_time"] = "DSQ"
-                        update["fastest_lap"] = "N/A"
-                        update["time_penalties"] = "N/A"
-                elif uid in time_boosts:
-                    # Race TIME penalties are applied in the re-sort block
-                    # below so that gap strings (e.g. "+2.955") are handled
-                    # alongside absolute times via absolute-ms conversion.
-                    pass
-                updated_rows.append(update)
-
-            # Re-sort positions: DSQs go last; TIME-penalised rows move accordingly
-            # Qualifying: by best_lap (no total_time); Race: by total_time
-            classified = []
-            dsq_list = []
-            for dr_dict in updated_rows:
-                if dr_dict["outcome"] == "DSQ":
-                    dsq_list.append(dr_dict)
-                else:
-                    classified.append(dr_dict)
-
-            if not session_type.is_qualifying:
-                # -----------------------------------------------------------
-                # Convert all classified drivers to absolute ms so that gap
-                # strings ("+2.955", "+1:02.345") are handled alongside
-                # absolute times when applying penalties and re-sorting.
-                # -----------------------------------------------------------
-
-                # P1's total_time is always an absolute time string; find it
-                # from the first classified row that parses as absolute.
-                p1_ms: int | None = None
-                for u in classified:
-                    ms_val = _time_to_ms(u["total_time"] or "")
-                    if ms_val is not None:
-                        p1_ms = ms_val
-                        break  # rows are ordered by finishing_position
-
-                timed: list[dict] = []           # computable absolute ms
-                lapped: list[dict] = []          # "+N Lap(s)"
-                other_classified: list[dict] = []  # DNF, DNS literals, etc.
-
-                for u in classified:
-                    tt = u["total_time"] or ""
-                    abs_ms = _time_to_ms(tt)
-                    if abs_ms is not None:
-                        u["_abs_ms"] = abs_ms
-                        timed.append(u)
-                    elif p1_ms is not None and _delta_to_ms(tt) is not None:
-                        u["_abs_ms"] = p1_ms + (_delta_to_ms(tt) or 0)
-                        timed.append(u)
-                    elif _LAP_GAP_RE.match(tt):
-                        lapped.append(u)
-                    else:
-                        other_classified.append(u)
-
-                # Apply time penalties to affected drivers' absolute ms.
-                for u in timed:
-                    uid2 = int(u["driver_user_id"])
-                    if uid2 in time_boosts:
-                        u["_abs_ms"] += time_boosts[uid2] * 1000
-
-                # Re-sort timed drivers by absolute ms.
-                timed.sort(key=lambda d: d["_abs_ms"])
-
-                # Recalculate total_time: new P1 gets absolute string; rest
-                # get a recalculated gap relative to the new P1.
-                if timed:
-                    new_p1_ms: int = timed[0]["_abs_ms"]
-                    timed[0]["total_time"] = _ms_to_time(new_p1_ms)
-                    for u in timed[1:]:
-                        u["total_time"] = _ms_to_delta(u["_abs_ms"] - new_p1_ms)
-
-                # Lapped and other-classified keep their original total_time;
-                # preserve relative order by original finishing_position.
-                lapped.sort(key=lambda d: d["finishing_position"])
-                other_classified.sort(key=lambda d: d["finishing_position"])
-
-                classified = timed + lapped + other_classified
-
-            # DSQ rows keep relative order by original position
-            dsq_list.sort(key=lambda d: d["finishing_position"])
-
-            reordered = classified + dsq_list
-            for new_pos, dr_dict in enumerate(reordered, start=1):
-                dr_dict["finishing_position"] = new_pos
-
-            # Persist mutations
-            for dr_dict in reordered:
-                await db.execute(
-                    """
-                    UPDATE driver_session_results
-                    SET outcome = ?,
-                        total_time = ?,
-                        post_steward_total_time = ?,
-                        post_race_time_penalties = ?,
-                        fastest_lap = ?,
-                        time_penalties = ?,
-                        best_lap = ?,
-                        tyre = ?,
-                        gap = ?,
-                        finishing_position = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        dr_dict["outcome"],
-                        dr_dict["total_time"],
-                        dr_dict["post_steward_total_time"],
-                        dr_dict["post_race_time_penalties"],
-                        dr_dict["fastest_lap"],
-                        dr_dict["time_penalties"],
-                        dr_dict["best_lap"],
-                        dr_dict["tyre"],
-                        dr_dict["gap"],
-                        dr_dict["finishing_position"],
-                        dr_dict["id"],
-                    ),
-                )
 
             # --- Update new result tables ---
             if not session_type.is_qualifying:
@@ -541,28 +369,26 @@ async def apply_penalties(
         # INSERT one penalty_records row per staged penalty.
         now_str = datetime.datetime.utcnow().isoformat()
         for sp in staged:
-            dsr_id = driver_to_dsr_id.get((sp.session_type.value, sp.driver_user_id))
-            if dsr_id is None:
+            new_result_id = driver_to_new_result_id.get((sp.session_type.value, sp.driver_user_id))
+            if new_result_id is None:
                 log.warning(
-                    "apply_penalties: no dsr_id for user %s session %s — skipping record",
+                    "apply_penalties: no result row for user %s session %s — skipping record",
                     sp.driver_user_id,
                     sp.session_type.value,
                 )
                 continue
-            new_result_id = driver_to_new_result_id.get((sp.session_type.value, sp.driver_user_id))
             race_result_id = new_result_id if not sp.session_type.is_qualifying else None
             qual_result_id = new_result_id if sp.session_type.is_qualifying else None
             cursor = await db.execute(
                 """
                 INSERT INTO penalty_records (
-                    driver_session_result_id, race_result_id, qual_result_id,
+                    race_result_id, qual_result_id,
                     penalty_type, time_seconds,
                     description, justification, applied_by, applied_at,
                     announcement_channel_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
                 """,
                 (
-                    dsr_id,
                     race_result_id,
                     qual_result_id,
                     sp.penalty_type,
@@ -576,7 +402,6 @@ async def apply_penalties(
             inserted_records.append(
                 {
                     "id": cursor.lastrowid,
-                    "driver_session_result_id": dsr_id,
                     "race_result_id": race_result_id,
                     "qual_result_id": qual_result_id,
                     "driver_user_id": sp.driver_user_id,

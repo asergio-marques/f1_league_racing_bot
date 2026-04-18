@@ -40,9 +40,8 @@ class SessionResult:
 
 @dataclass
 class DriverSessionResult:
-    """Legacy model — used by old driver_session_results rows and by
-    compute_points_for_session (which is session-type-agnostic).
-    New code should prefer QualifyingSessionResult / RaceSessionResult."""
+    """DTO used by compute_points_for_session (session-type-agnostic).
+    New persistence uses QualifyingSessionResult / RaceSessionResult instead."""
     id: int
     session_result_id: int
     driver_user_id: int

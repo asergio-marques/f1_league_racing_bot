@@ -11,7 +11,7 @@ import discord
 from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from models.round import RoundFormat
-from models.session_result import DriverSessionResult, OutcomeModifier
+from models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
 from utils import results_formatter
 
 log = logging.getLogger(__name__)
@@ -660,20 +660,18 @@ async def finalize_appeals_review(
         now_str = _dt.datetime.utcnow().isoformat()
         async with get_connection(db_path) as db:
             for sp, pr in zip(state.staged_appeals, applied_pr):
-                dsr_id = pr["driver_session_result_id"]
                 race_result_id = pr.get("race_result_id")
                 qual_result_id = pr.get("qual_result_id")
                 cursor = await db.execute(
                     """
                     INSERT INTO appeal_records (
-                        driver_session_result_id, race_result_id, qual_result_id,
+                        race_result_id, qual_result_id,
                         status, penalty_type, time_seconds,
                         description, justification, submitted_by, submitted_at,
                         announcement_channel_id
-                    ) VALUES (?, ?, ?, 'UPHELD', ?, ?, ?, ?, ?, ?, NULL)
+                    ) VALUES (?, ?, 'UPHELD', ?, ?, ?, ?, ?, ?, NULL)
                     """,
                     (
-                        dsr_id,
                         race_result_id,
                         qual_result_id,
                         sp.penalty_type,
@@ -687,7 +685,6 @@ async def finalize_appeals_review(
                 applied_correction_records.append(
                     {
                         "id": cursor.lastrowid,
-                        "driver_session_result_id": dsr_id,
                         "race_result_id": race_result_id,
                         "qual_result_id": qual_result_id,
                         "driver_user_id": sp.driver_user_id,
@@ -765,7 +762,7 @@ async def finalize_appeals_review(
 async def _recompute_session_points(db_path: str, round_id: int) -> None:
     """Re-run ``_apply_points_from_config`` for every ACTIVE session in *round_id*
     so that ``points_awarded`` and ``fastest_lap_bonus`` reflect any position changes
-    caused by penalties applied to ``driver_session_results``.
+    caused by penalties applied to the new result tables.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -820,13 +817,17 @@ async def _snapshot_staged_drivers(
         placeholders = ",".join("?" * len(driver_ids))
         cursor = await db.execute(
             f"""
-            SELECT dsr.driver_user_id, dsr.finishing_position, dsr.post_race_time_penalties
-            FROM driver_session_results dsr
-            JOIN session_results sr ON sr.id = dsr.session_result_id
-            WHERE sr.round_id = ? AND dsr.driver_user_id IN ({placeholders})
-              AND dsr.is_superseded = 0
+            SELECT driver_user_id, finishing_position, postrace_time_penalties_ms
+            FROM race_session_results rsr
+            JOIN session_results sr ON sr.id = rsr.session_result_id
+            WHERE sr.round_id = ? AND rsr.driver_user_id IN ({placeholders})
+            UNION ALL
+            SELECT driver_user_id, finishing_position, 0 AS postrace_time_penalties_ms
+            FROM qualifying_session_results qsr
+            JOIN session_results sr ON sr.id = qsr.session_result_id
+            WHERE sr.round_id = ? AND qsr.driver_user_id IN ({placeholders})
             """,
-            (round_id, *driver_ids),
+            (round_id, *driver_ids, round_id, *driver_ids),
         )
         dsr_rows = await cursor.fetchall()
 
@@ -842,7 +843,7 @@ async def _snapshot_staged_drivers(
                 "driver_user_id": uid,
                 "finishing_position": r["finishing_position"],
                 "total_points": pts_map.get(uid, 0),
-                "post_race_time_penalties": r["post_race_time_penalties"],
+                "post_race_time_penalties": r["postrace_time_penalties_ms"],
             }
         )
     return result
@@ -859,7 +860,7 @@ async def save_session_result(
     driver_rows: list[dict],
     fl_driver_override: int | None = None,
 ) -> int:
-    """INSERT session_results + driver_session_results; return session_result_id."""
+    """INSERT session_results + new result tables; return session_result_id."""
     from services.season_service import SeasonImmutableError
     from services.driver_service import resolve_driver_profile_id
 
@@ -914,32 +915,6 @@ async def save_session_result(
                     "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND former_driver = 0",
                     (driver_profile_id,),
                 )
-            await db.execute(
-                """
-                INSERT INTO driver_session_results
-                    (session_result_id, driver_user_id, team_role_id, finishing_position,
-                     outcome, tyre, best_lap, gap, total_time, fastest_lap, time_penalties,
-                     post_steward_total_time, post_race_time_penalties,
-                     points_awarded, fastest_lap_bonus, is_superseded, driver_profile_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, 0, ?)
-                """,
-                (
-                    session_result_id,
-                    row["driver_user_id"],
-                    row["team_role_id"],
-                    row["finishing_position"],
-                    row.get("outcome", OutcomeModifier.CLASSIFIED.value),
-                    row.get("tyre"),
-                    row.get("best_lap"),
-                    row.get("gap"),
-                    row.get("total_time"),
-                    row.get("fastest_lap"),
-                    row.get("time_penalties"),
-                    row.get("points_awarded", 0),
-                    row.get("fastest_lap_bonus", 0),
-                    driver_profile_id,
-                ),
-            )
         await _insert_new_tables_in_tx(db, session_result_id, session_type, driver_rows, _profile_id_map)
         await db.commit()
     return session_result_id
@@ -994,17 +969,7 @@ async def amend_session_result(
         server_id_for_profile: int | None = season_row["server_id"] if season_row else None
         season_id: int | None = season_row["season_id"] if season_row else None
 
-        # Mark all current rows as superseded
-        await db.execute(
-            """
-            UPDATE driver_session_results SET is_superseded = 1
-            WHERE session_result_id = (
-                SELECT id FROM session_results
-                WHERE round_id = ? AND session_type = ?
-            )
-            """,
-            (round_id, session_type.value),
-        )
+        # Mark all current rows as superseded in new tables
         # Update the session_results header
         await db.execute(
             """
@@ -1037,7 +1002,7 @@ async def amend_session_result(
                 "DELETE FROM race_session_results WHERE session_result_id = ?",
                 (session_result_id,),
             )
-        # Insert new rows
+        # Insert new driver rows
         _amend_profile_map: dict[int, int | None] = {}
         _amend_rows_normalized: list[dict] = []
         for i, dr in enumerate(new_driver_rows, start=1):
@@ -1069,32 +1034,6 @@ async def amend_session_result(
                     "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND former_driver = 0",
                     (drv_profile_id,),
                 )
-            await db.execute(
-                """
-                INSERT INTO driver_session_results
-                    (session_result_id, driver_user_id, team_role_id, finishing_position,
-                     outcome, tyre, best_lap, gap, total_time, fastest_lap, time_penalties,
-                     post_steward_total_time, post_race_time_penalties,
-                     points_awarded, fastest_lap_bonus, is_superseded, driver_profile_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, 0, ?)
-                """,
-                (
-                    session_result_id,
-                    driver_user_id,
-                    _get(dr, "team_role_id"),
-                    fp,
-                    _get(dr, "outcome", OutcomeModifier.CLASSIFIED.value),
-                    _get(dr, "tyre"),
-                    _get(dr, "best_lap"),
-                    _get(dr, "gap"),
-                    _get(dr, "total_time"),
-                    _get(dr, "fastest_lap"),
-                    _get(dr, "ingame_penalties"),
-                    _get(dr, "points_awarded", 0),
-                    _get(dr, "fastest_lap_bonus", 0),
-                    drv_profile_id,
-                ),
-            )
         await _insert_new_tables_in_tx(db, session_result_id, session_type, _amend_rows_normalized, _amend_profile_map)
         await db.commit()
 
@@ -1934,8 +1873,8 @@ async def _apply_points_from_config(
 ) -> None:
     """Load season config entries, compute points for each driver row, and UPDATE the DB.
 
-    This is called after save_session_result so that driver_session_results.points_awarded
-    and fastest_lap_bonus are populated from the chosen points configuration.
+    This is called after save_session_result so that the new result tables have
+    points_awarded and fastest_lap_bonus populated from the chosen points configuration.
     """
     from services.standings_service import compute_points_for_session  # lazy import
 
@@ -1958,13 +1897,22 @@ async def _apply_points_from_config(
         fl_row = await fl_cursor.fetchone()
 
         # Load driver result rows for this session
-        dsr_cursor = await db.execute(
-            "SELECT id, driver_user_id, team_role_id, finishing_position, "
-            "outcome, fastest_lap "
-            "FROM driver_session_results "
-            "WHERE session_result_id = ? AND is_superseded = 0",
-            (session_result_id,),
-        )
+        if session_type.is_qualifying:
+            dsr_cursor = await db.execute(
+                "SELECT id, driver_user_id, team_role_id, finishing_position, "
+                "outcome, NULL AS fastest_lap "
+                "FROM qualifying_session_results "
+                "WHERE session_result_id = ?",
+                (session_result_id,),
+            )
+        else:
+            dsr_cursor = await db.execute(
+                "SELECT id, driver_user_id, team_role_id, finishing_position, "
+                "outcome, fastest_lap "
+                "FROM race_session_results "
+                "WHERE session_result_id = ?",
+                (session_result_id,),
+            )
         dsr_rows = await dsr_cursor.fetchall()
 
         # Load FL driver override (if any) from the session header
@@ -2028,16 +1976,8 @@ async def _apply_points_from_config(
     # Mutates driver_rows in-place with computed points_awarded / fastest_lap_bonus
     compute_points_for_session(driver_rows, config_entries, fl_config, session_type, fl_override=fl_driver_override)
 
-    # Persist to legacy table
+    # Persist to new tables (keyed by session_result_id + driver_user_id)
     async with get_connection(db_path) as db:
-        for row in driver_rows:
-            await db.execute(
-                "UPDATE driver_session_results "
-                "SET points_awarded = ?, fastest_lap_bonus = ? "
-                "WHERE id = ?",
-                (row.points_awarded, row.fastest_lap_bonus, row.id),
-            )
-        # Also persist to new tables (keyed by session_result_id + driver_user_id)
         if session_type.is_qualifying:
             for row in driver_rows:
                 await db.execute(
@@ -2614,11 +2554,6 @@ async def enter_resubmit_flow(
     state.staged.clear()
 
     async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE driver_session_results SET is_superseded = 1 "
-            "WHERE session_result_id IN (SELECT id FROM session_results WHERE round_id = ?)",
-            (round_id,),
-        )
         await db.execute("DELETE FROM session_results WHERE round_id = ?", (round_id,))
         await db.execute(
             "UPDATE round_submission_channels SET in_penalty_review = 0, results_posted = 0 WHERE round_id = ?",

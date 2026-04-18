@@ -913,7 +913,12 @@ class PlacementService:
                 # NULL-out soft FK references in historical result/standings rows so the
                 # profile row itself can be removed without violating FK constraints.
                 await db.execute(
-                    "UPDATE driver_session_results SET driver_profile_id = NULL "
+                    "UPDATE race_session_results SET driver_profile_id = NULL "
+                    "WHERE driver_profile_id = ?",
+                    (driver_profile_id,),
+                )
+                await db.execute(
+                    "UPDATE qualifying_session_results SET driver_profile_id = NULL "
                     "WHERE driver_profile_id = ?",
                     (driver_profile_id,),
                 )

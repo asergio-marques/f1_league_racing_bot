@@ -108,13 +108,25 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
 
     await db.execute(
         """
-        CREATE TABLE driver_session_results (
+        CREATE TABLE race_session_results (
             id INTEGER PRIMARY KEY,
             session_result_id INTEGER NOT NULL,
-            driver_profile_id INTEGER NOT NULL,
+            driver_profile_id INTEGER,
             driver_user_id INTEGER NOT NULL,
             finishing_position INTEGER NOT NULL DEFAULT 1,
-            is_superseded INTEGER NOT NULL DEFAULT 0,
+            outcome TEXT
+        )
+        """
+    )
+
+    await db.execute(
+        """
+        CREATE TABLE qualifying_session_results (
+            id INTEGER PRIMARY KEY,
+            session_result_id INTEGER NOT NULL,
+            driver_profile_id INTEGER,
+            driver_user_id INTEGER NOT NULL,
+            finishing_position INTEGER NOT NULL DEFAULT 1,
             outcome TEXT
         )
         """
@@ -236,7 +248,7 @@ async def _add_session_result(db, *, round_id, driver_profile_id, user_id, outco
     cur = await db.execute("SELECT last_insert_rowid()")
     sr_id = (await cur.fetchone())[0]
     await db.execute(
-        "INSERT INTO driver_session_results (session_result_id, driver_profile_id, driver_user_id, outcome) VALUES (?, ?, ?, ?)",
+        "INSERT INTO race_session_results (session_result_id, driver_profile_id, driver_user_id, outcome) VALUES (?, ?, ?, ?)",
         (sr_id, driver_profile_id, user_id, outcome),
     )
 
@@ -369,7 +381,7 @@ async def test_record_attendance_full_recompute_can_flip_to_absent(tmp_path):
 
     # Remove result rows to simulate amendment correcting a wrong entry
     async with aiosqlite.connect(db_file) as db:
-        await db.execute("DELETE FROM driver_session_results")
+        await db.execute("DELETE FROM race_session_results")
         await db.execute("DELETE FROM session_results")
         await db.commit()
 

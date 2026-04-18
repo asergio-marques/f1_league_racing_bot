@@ -80,17 +80,19 @@ async def _insert_session_with_drivers(db_path: str, round_id: int, division_id:
         )
         sr_id = cursor.lastrowid
         await db.execute(
-            "INSERT INTO driver_session_results "
+            "INSERT INTO race_session_results "
             "(session_result_id, driver_user_id, team_role_id, finishing_position, "
-            "outcome, total_time, is_superseded, points_awarded, fastest_lap_bonus) "
-            "VALUES (?, 1, 100, 1, 'CLASSIFIED', '20:00.000', 0, 25, 0)",
+            "outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, "
+            "appeal_time_penalties_ms, points_awarded, fastest_lap_bonus) "
+            "VALUES (?, 1, 100, 1, 'CLASSIFIED', 1200000, 0, 0, 0, 25, 0)",
             (sr_id,),
         )
         await db.execute(
-            "INSERT INTO driver_session_results "
+            "INSERT INTO race_session_results "
             "(session_result_id, driver_user_id, team_role_id, finishing_position, "
-            "outcome, total_time, is_superseded, points_awarded, fastest_lap_bonus) "
-            "VALUES (?, 2, 200, 2, 'CLASSIFIED', '20:10.000', 0, 18, 0)",
+            "outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, "
+            "appeal_time_penalties_ms, points_awarded, fastest_lap_bonus) "
+            "VALUES (?, 2, 200, 2, 'CLASSIFIED', 1210000, 0, 0, 0, 18, 0)",
             (sr_id,),
         )
         await db.commit()
@@ -346,14 +348,14 @@ async def test_penalty_records_inserted_when_staged(tmp_path):
     sr_id = await _insert_session_with_drivers(db_path, round_id, division_id)
     await _insert_submission_channel(db_path, round_id)
 
-    # Get the DSR id for driver 1
+    # Get the race_session_results id for driver 1
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id FROM driver_session_results WHERE session_result_id = ? AND driver_user_id = 1",
+            "SELECT id FROM race_session_results WHERE session_result_id = ? AND driver_user_id = 1",
             (sr_id,),
         )
-        dsr_row = await cursor.fetchone()
-    dsr_id = dsr_row["id"]
+        rsr_row = await cursor.fetchone()
+    race_result_id = rsr_row["id"]
 
     bot = _make_bot()
     guild = _make_guild()
@@ -385,8 +387,8 @@ async def test_penalty_records_inserted_when_staged(tmp_path):
     # Check penalty_records was inserted
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT COUNT(*) AS cnt FROM penalty_records WHERE driver_session_result_id = ?",
-            (dsr_id,),
+            "SELECT COUNT(*) AS cnt FROM penalty_records WHERE race_result_id = ?",
+            (race_result_id,),
         )
         row = await cursor.fetchone()
     assert row["cnt"] == 1

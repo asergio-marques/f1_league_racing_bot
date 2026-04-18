@@ -178,19 +178,9 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
                 FROM qualifying_session_results qsr
                 JOIN session_results sr ON sr.id = qsr.session_result_id
                 WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-                UNION ALL
-                SELECT dsr.driver_user_id
-                FROM driver_session_results dsr
-                JOIN session_results sr ON sr.id = dsr.session_result_id
-                WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND dsr.is_superseded = 0
-                  AND dsr.session_result_id NOT IN (
-                      SELECT DISTINCT session_result_id FROM race_session_results
-                      UNION ALL
-                      SELECT DISTINCT session_result_id FROM qualifying_session_results
-                  )
             )
             """,
-            (state.round_id, state.round_id, state.round_id),
+            (state.round_id, state.round_id),
         )
         pre_attendees = await cursor.fetchall()
         # Fetch test display names separately
@@ -472,27 +462,6 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
                     if base_ms is not None:
                         current_time_ms = base_ms + ingame_ms + postrace_ms + appeal_ms
                     current_time_penalty_s = (ingame_ms + postrace_ms + appeal_ms) // 1000
-                else:
-                    # Fallback: legacy driver_session_results
-                    cursor = await db.execute(
-                        """
-                        SELECT dsr.total_time, dsr.time_penalties, dsr.post_race_time_penalties
-                        FROM session_results sr
-                        JOIN driver_session_results dsr ON dsr.session_result_id = sr.id
-                        WHERE sr.round_id = ? AND sr.session_type = ? AND sr.status = 'ACTIVE'
-                          AND dsr.driver_user_id = ? AND dsr.is_superseded = 0
-                        """,
-                        (self.state.round_id, self.session_type.value, driver_user_id),
-                    )
-                    dr_row = await cursor.fetchone()
-                    if dr_row is not None:
-                        driver_found = True
-                        if dr_row["total_time"]:
-                            current_time_ms = _time_to_ms(dr_row["total_time"])
-                        _base_pen_s = _parse_penalty_seconds(dr_row["time_penalties"])
-                        _post_pen_raw = dr_row["post_race_time_penalties"]
-                        _post_pen_s = int(_post_pen_raw) if _post_pen_raw is not None else 0
-                        current_time_penalty_s = _base_pen_s + _post_pen_s
         else:
             async with get_connection(self.state.db_path) as db:
                 cursor = await db.execute(
@@ -505,17 +474,6 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
                     (self.state.round_id, self.session_type.value, driver_user_id),
                 )
                 driver_found = (await cursor.fetchone()) is not None
-                if not driver_found:
-                    cursor = await db.execute(
-                        """
-                        SELECT 1 FROM session_results sr
-                        JOIN driver_session_results dsr ON dsr.session_result_id = sr.id
-                        WHERE sr.round_id = ? AND sr.session_type = ? AND sr.status = 'ACTIVE'
-                          AND dsr.driver_user_id = ? AND dsr.is_superseded = 0
-                        """,
-                        (self.state.round_id, self.session_type.value, driver_user_id),
-                    )
-                    driver_found = (await cursor.fetchone()) is not None
 
         if not driver_found:
             sl = self.session_type.value.replace("_", " ").title()
@@ -690,16 +648,9 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
                     JOIN session_results sr ON sr.id = qsr.session_result_id
                     WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
                       AND qsr.driver_profile_id = ?
-                    UNION ALL
-                    SELECT dsr.driver_profile_id
-                    FROM driver_session_results dsr
-                    JOIN session_results sr ON sr.id = dsr.session_result_id
-                    WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-                      AND dsr.driver_profile_id = ? AND dsr.is_superseded = 0
                 ) LIMIT 1
                 """,
                 (self.state.round_id, profile_id,
-                 self.state.round_id, profile_id,
                  self.state.round_id, profile_id),
             )
             attended_in_results = (await cursor.fetchone()) is not None

@@ -456,12 +456,19 @@ async def record_attendance_from_results(
         # Outcome modifier is irrelevant — any row counts as attended (DSQ/DNS included).
         cursor = await db.execute(
             """
-            SELECT DISTINCT dp.driver_profile_id
-            FROM driver_session_results dp
-            JOIN session_results sr ON sr.id = dp.session_result_id
-            WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND dp.is_superseded = 0
+            SELECT DISTINCT driver_profile_id FROM (
+                SELECT rsr.driver_profile_id
+                FROM race_session_results rsr
+                JOIN session_results sr ON sr.id = rsr.session_result_id
+                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+                UNION ALL
+                SELECT qsr.driver_profile_id
+                FROM qualifying_session_results qsr
+                JOIN session_results sr ON sr.id = qsr.session_result_id
+                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+            ) WHERE driver_profile_id IS NOT NULL
             """,
-            (round_id,),
+            (round_id, round_id),
         )
         attended_rows = await cursor.fetchall()
         attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
@@ -519,12 +526,19 @@ async def record_attendance_from_results_full_recompute(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT DISTINCT dp.driver_profile_id
-            FROM driver_session_results dp
-            JOIN session_results sr ON sr.id = dp.session_result_id
-            WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND dp.is_superseded = 0
+            SELECT DISTINCT driver_profile_id FROM (
+                SELECT rsr.driver_profile_id
+                FROM race_session_results rsr
+                JOIN session_results sr ON sr.id = rsr.session_result_id
+                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+                UNION ALL
+                SELECT qsr.driver_profile_id
+                FROM qualifying_session_results qsr
+                JOIN session_results sr ON sr.id = qsr.session_result_id
+                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+            ) WHERE driver_profile_id IS NOT NULL
             """,
-            (round_id,),
+            (round_id, round_id),
         )
         attended_rows = await cursor.fetchall()
         attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
