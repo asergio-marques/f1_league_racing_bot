@@ -220,7 +220,7 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
         return f"<@{user_id}>" + (f" ({display})" if display else "")
 
     attendee_mentions = [
-        _mention(r["driver_user_id"], r["test_display_name"])
+        _mention(r.driver_user_id, r.test_display_name)
         for r in attendee_rows
     ]
     if attendee_mentions:
