@@ -1455,9 +1455,9 @@ class SeasonCog(commands.Cog):
             await db.commit()
 
         if old_id is None:
-            msg = f"\u2705 RSVP channel for {name} set to #{channel.name}."
+            msg = f"\u2705 RSVP channel for {name} set to {channel.mention}."
         else:
-            msg = f"\u2705 RSVP channel for {name} updated to #{channel.name}."
+            msg = f"\u2705 RSVP channel for {name} updated to {channel.mention}."
         await interaction.followup.send(msg, ephemeral=True)
         await self.bot.output_router.post_log(
             server_id,
@@ -1538,9 +1538,9 @@ class SeasonCog(commands.Cog):
             await db.commit()
 
         if old_id is None:
-            msg = f"\u2705 Attendance channel for {name} set to #{channel.name}."
+            msg = f"\u2705 Attendance channel for {name} set to {channel.mention}."
         else:
-            msg = f"\u2705 Attendance channel for {name} updated to #{channel.name}."
+            msg = f"\u2705 Attendance channel for {name} updated to {channel.mention}."
         await interaction.followup.send(msg, ephemeral=True)
         await self.bot.output_router.post_log(
             server_id,
