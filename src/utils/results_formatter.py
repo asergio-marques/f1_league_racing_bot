@@ -113,19 +113,30 @@ def format_session_label(session_type: SessionType, *, is_sprint: bool = True) -
 # Session result tables
 # ---------------------------------------------------------------------------
 
+def _pen_col(ms: int) -> str:
+    """Format a penalty column value from milliseconds. Returns '+Xs', '-Xs', or '—'."""
+    if ms == 0:
+        return "—"
+    sign = "+" if ms > 0 else ""
+    return f"{sign}{ms // 1000}s"
+
+
 def format_qualifying_table(
     driver_rows: list[QualifyingSessionResult],
     points_by_driver: dict[int, int],
     member_display: dict[int, str] | None = None,
     team_display: dict[int, str] | None = None,
+    dsq_phase_map: dict[int, str] | None = None,
 ) -> str:
     """Render a qualifying result as a plain-text mention list.
 
-    Format per line: {pos}. @Driver (@&Team) — {tyre} — {best_lap} — {gap} — {pts} pts
+    Format per line:
+      {pos}. @Driver (@&Team) — {tyre} — {best_lap} — {gap} — {postrace_pen} — {appeal_pen} — {pts} pts
 
     Gap is computed on the fly as (driver_best_lap_ms - P1_best_lap_ms).  P1 shows "—"
     for gap.  Non-classified drivers show their outcome in the best_lap field and "—"
-    for gap.
+    for gap.  Postrace/appeal penalty columns show "DSQ" when a wizard-applied DSQ is
+    recorded in penalty_records/appeal_records for this result row; otherwise "—".
     """
     sorted_rows = sorted(driver_rows, key=lambda r: r.finishing_position)
 
@@ -151,10 +162,15 @@ def format_qualifying_table(
             if driver_ms is not None and p1_ms is not None:
                 gap_display = _ms_to_gap(driver_ms - p1_ms)
 
+        phase = (dsq_phase_map or {}).get(row.id)
+        postrace_pen = "DSQ" if phase == "PENALTY" else "—"
+        appeal_pen = "DSQ" if phase == "APPEAL" else "—"
+
         pts = points_by_driver.get(row.driver_user_id, 0)
         lines.append(
             f"**{row.finishing_position}.** {driver_ref} ({team_ref})"
-            f" — {tyre} — {best_lap_display} — {gap_display} — **{pts} pts**"
+            f" — {tyre} — {best_lap_display} — {gap_display}"
+            f" — {postrace_pen} — {appeal_pen} — **{pts} pts**"
         )
     return "\n".join(lines)
 
@@ -164,18 +180,21 @@ def format_race_table(
     points_by_driver: dict[int, int],
     member_display: dict[int, str] | None = None,
     team_display: dict[int, str] | None = None,
+    dsq_phase_map: dict[int, str] | None = None,
 ) -> str:
     """Render a race result as a plain-text mention list.
 
     Format per line:
-      {pos}. @Driver (@&Team) — {total_time_or_interval} — {fastest_lap} — {penalty} — {pts} pts
+      {pos}. @Driver (@&Team) — {total_time_or_interval} — {fastest_lap} — {ingame_pen} — {postrace_pen} — {appeal_pen} — {pts} pts
 
     Display rules:
     - P1: total_time = base_time_ms + ingame + postrace + appeal, formatted as M:SS.mmm
     - P2+ classified non-lapped: interval = driver_total_ms - P1_total_ms, as +SS.mmm
     - Lapped: shows "+N Lap(s)"
     - DNS/DNF/DSQ: shows the outcome literal
-    - penalty column: postrace + appeal in seconds (shown as e.g. "+5s" or "—" when 0)
+    - ingame_pen: game-applied penalty in seconds (e.g. "+5s" or "—" when 0)
+    - postrace_pen: steward-applied penalty in seconds
+    - appeal_pen: appeal-phase adjustment in seconds
 
     A fastest-lap footnote is appended when any driver has fastest_lap_bonus > 0.
     """
@@ -214,18 +233,18 @@ def format_race_table(
         fl = (row.fastest_lap or "").strip()
         fl_display = fl if fl else "—"
 
-        # Post-race penalty column: postrace + appeal in whole seconds
-        total_penalty_ms = row.postrace_time_penalties_ms + row.appeal_time_penalties_ms
-        if total_penalty_ms != 0:
-            sign = "+" if total_penalty_ms > 0 else ""
-            pen_display = f"{sign}{total_penalty_ms // 1000}s"
-        else:
-            pen_display = "—"
+        # Individual penalty columns; DSQ overrides the ms-derived value
+        phase = (dsq_phase_map or {}).get(row.id)
+        ingame_pen_display = _pen_col(row.ingame_time_penalties_ms)
+        postrace_pen_display = "DSQ" if phase == "PENALTY" else _pen_col(row.postrace_time_penalties_ms)
+        appeal_pen_display = "DSQ" if phase == "APPEAL" else _pen_col(row.appeal_time_penalties_ms)
 
         pts = points_by_driver.get(row.driver_user_id, 0)
         lines.append(
             f"**{row.finishing_position}.** {driver_ref} ({team_ref})"
-            f" — {time_display} — {fl_display} — {pen_display} — **{pts} pts**"
+            f" — {time_display} — {fl_display}"
+            f" — {ingame_pen_display} — {postrace_pen_display} — {appeal_pen_display}"
+            f" — **{pts} pts**"
         )
         if row.fastest_lap_bonus > 0:
             fl_driver_id = row.driver_user_id

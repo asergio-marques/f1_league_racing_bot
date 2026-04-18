@@ -217,6 +217,41 @@ def _label_from_status(result_status: str) -> str:
 # Session-level posting
 # ---------------------------------------------------------------------------
 
+async def _load_dsq_phase_map(
+    db_path: str,
+    result_ids: list[int],
+    *,
+    is_qualifying: bool,
+) -> dict[int, str]:
+    """Return a mapping of result-row id -> 'PENALTY' or 'APPEAL' for DSQ entries.
+
+    APPEAL overrides PENALTY when both exist for the same row (appeals are applied last).
+    """
+    if not result_ids:
+        return {}
+    ph = ",".join("?" * len(result_ids))
+    fk_col = "qual_result_id" if is_qualifying else "race_result_id"
+    phase_map: dict[int, str] = {}
+    async with get_connection(db_path) as db:
+        # Penalty phase DSQs
+        cursor = await db.execute(
+            f"SELECT {fk_col} AS rid FROM penalty_records "
+            f"WHERE {fk_col} IN ({ph}) AND penalty_type = 'DSQ'",
+            result_ids,
+        )
+        for row in await cursor.fetchall():
+            phase_map[row["rid"]] = "PENALTY"
+        # Appeal phase DSQs (override)
+        cursor = await db.execute(
+            f"SELECT {fk_col} AS rid FROM appeal_records "
+            f"WHERE {fk_col} IN ({ph}) AND penalty_type = 'DSQ'",
+            result_ids,
+        )
+        for row in await cursor.fetchall():
+            phase_map[row["rid"]] = "APPEAL"
+    return phase_map
+
+
 async def post_session_results(
     db_path: str,
     session_result: SessionResult,
@@ -236,13 +271,20 @@ async def post_session_results(
     user_ids = [r.driver_user_id for r in driver_rows]
     test_display = await _build_test_driver_display(db_path, user_ids)
 
+    result_ids = [r.id for r in driver_rows]
+    dsq_phase_map = await _load_dsq_phase_map(
+        db_path, result_ids, is_qualifying=session_type.is_qualifying
+    )
+
     if session_type.is_qualifying:
         table = results_formatter.format_qualifying_table(
-            driver_rows, points_map, member_display=test_display or None
+            driver_rows, points_map, member_display=test_display or None,
+            dsq_phase_map=dsq_phase_map,
         )
     else:
         table = results_formatter.format_race_table(
-            driver_rows, points_map, member_display=test_display or None
+            driver_rows, points_map, member_display=test_display or None,
+            dsq_phase_map=dsq_phase_map,
         )
 
     season_number, division_name = await _get_heading_context(db_path, session_result.round_id)
