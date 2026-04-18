@@ -286,6 +286,15 @@ class AttendanceCog(commands.Cog):
 
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         value = None if points == 0 else points
+        if value is not None:
+            cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+            if cfg and cfg.autoreserve_threshold:
+                await interaction.response.send_message(
+                    "\u274c Cannot set auto-sack while auto-reserve is active. "
+                    "Disable auto-reserve first (`/attendance config autoreserve 0`).",
+                    ephemeral=True,
+                )
+                return
         await interaction.response.defer(ephemeral=True)
         await self.bot.attendance_service.update_autosack_threshold(server_id, value)  # type: ignore[attr-defined]
         if value is None:
@@ -316,6 +325,15 @@ class AttendanceCog(commands.Cog):
 
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         value = None if points == 0 else points
+        if value is not None:
+            cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+            if cfg and cfg.autosack_threshold:
+                await interaction.response.send_message(
+                    "\u274c Cannot set auto-reserve while auto-sack is active. "
+                    "Disable auto-sack first (`/attendance config autosack 0`).",
+                    ephemeral=True,
+                )
+                return
         await interaction.response.defer(ephemeral=True)
         await self.bot.attendance_service.update_autoreserve_threshold(server_id, value)  # type: ignore[attr-defined]
         if value is None:

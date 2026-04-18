@@ -924,6 +924,36 @@ Toggles whether reserve drivers appear in the publicly posted standings for the 
 
 ---
 
+### Attendance Module
+
+All commands below require the attendance module to be enabled (`/module enable attendance`).
+
+#### `/attendance config autoreserve` — Set the auto-reserve threshold
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `points` | Integer | ✅ | Cumulative attendance-penalty threshold that triggers auto-reserve. Use `0` to disable. |
+
+When a driver's cumulative attendance-penalty total reaches this value they are automatically unassigned from their current full-time seat and moved to the reserve team of their division.
+
+> **Limitation:** Cannot be set to a non-zero value while auto-sack is active. Disable auto-sack first (`/attendance config autosack 0`). The two features are mutually exclusive.
+
+---
+
+#### `/attendance config autosack` — Set the auto-sack threshold
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `points` | Integer | ✅ | Cumulative attendance-penalty threshold that triggers auto-sack. Use `0` to disable. |
+
+When a driver's cumulative attendance-penalty total reaches this value they are automatically removed from all driving seats across all divisions and lose their driver role.
+
+> **Limitation:** Cannot be set to a non-zero value while auto-reserve is active. Disable auto-reserve first (`/attendance config autoreserve 0`). The two features are mutually exclusive.
+
+---
+
 ### Track Distribution Parameters
 
 #### `/track config` — Set per-track Beta distribution parameters
