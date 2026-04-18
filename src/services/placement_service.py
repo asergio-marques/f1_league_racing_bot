@@ -1014,36 +1014,43 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
                 """
-                SELECT ti.name AS team_name, dp.discord_user_id,
+                SELECT ti.name AS team_name, ti.is_reserve,
+                       dp.discord_user_id,
                        dp.is_test_driver, dp.test_display_name
                 FROM driver_season_assignments dsa
                 JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
                 JOIN team_seats ts ON ts.id = dsa.team_seat_id
                 JOIN team_instances ti ON ti.id = ts.team_instance_id
                 WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                ORDER BY ti.name ASC
+                ORDER BY ti.is_reserve ASC, ti.name ASC
                 """,
                 (division_id,),
             )
             assign_rows = await cur.fetchall()
 
-        # Group by team and build embed
-        teams: dict[str, list[str]] = {}
+        # Group by team, preserving regular-vs-reserve split
+        regular: dict[str, list[str]] = {}
+        reserve: dict[str, list[str]] = {}
         for row in assign_rows:
             uid = int(row["discord_user_id"])
             mention = f"<@{uid}>"
             if row["is_test_driver"] and row["test_display_name"]:
                 mention = f"<@{uid}> ({row['test_display_name']})"
-            teams.setdefault(row["team_name"], []).append(mention)
+            target = reserve if row["is_reserve"] else regular
+            target.setdefault(row["team_name"], []).append(mention)
 
-        description = (
-            "\n".join(
-                f"**{t}**: {', '.join(labels)}"
-                for t, labels in teams.items()
+        # Build embed description: regular teams first, then reserve separated by ---
+        parts: list[str] = [
+            f"**{t}**: {', '.join(labels)}" for t, labels in regular.items()
+        ]
+        if reserve:
+            if parts:
+                parts.append("---")
+            parts.extend(
+                f"**{t}**: {', '.join(labels)}" for t, labels in reserve.items()
             )
-            if teams
-            else "*(no drivers assigned)*"
-        )
+
+        description = "\n".join(parts) if parts else "*(no drivers assigned)*"
         embed = discord.Embed(
             title=f"\U0001f4cb {div_name} Lineup",
             description=description,
