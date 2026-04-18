@@ -907,6 +907,17 @@ class SeasonService:
                 await db.execute(f"DELETE FROM sessions WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM rounds WHERE division_id = ?", (division_id,))
 
+            # team_seats → team_instances: no cascade, must be deleted manually
+            await db.execute(
+                "DELETE FROM team_seats WHERE team_instance_id IN "
+                "(SELECT id FROM team_instances WHERE division_id = ?)",
+                (division_id,),
+            )
+            await db.execute("DELETE FROM team_instances WHERE division_id = ?", (division_id,))
+            # driver_season_assignments.division_id has no cascade
+            await db.execute(
+                "DELETE FROM driver_season_assignments WHERE division_id = ?", (division_id,)
+            )
             await db.execute("DELETE FROM divisions WHERE id = ?", (division_id,))
             await db.commit()
 
