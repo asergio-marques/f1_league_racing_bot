@@ -85,8 +85,6 @@ def validate_penalty_input(
         return "Invalid penalty. Use seconds (e.g. `5`, `+5s`, `-3s`) or `DSQ`."
 
     seconds = int(m.group(1))
-    if seconds == 0:
-        return "Penalty must be a non-zero number of seconds."
 
     if seconds < 0 and current_time_penalty_s is not None:
         if abs(seconds) > current_time_penalty_s:

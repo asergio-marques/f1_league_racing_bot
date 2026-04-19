@@ -97,13 +97,14 @@ def test_validate_invalid_penalty_value():
     assert isinstance(result, str)
 
 
-def test_validate_zero_not_accepted():
+def test_validate_zero_accepted():
     result = validate_penalty_input(
         driver_user_id=100,
         session_type=SessionType.FEATURE_RACE,
         penalty_value="0",
     )
-    assert isinstance(result, str)
+    assert isinstance(result, StagedPenalty)
+    assert result.penalty_seconds == 0
 
 
 # ---------------------------------------------------------------------------
