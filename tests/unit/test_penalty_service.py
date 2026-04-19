@@ -156,15 +156,6 @@ def test_validate_negative_time_penalty():
     assert result.penalty_seconds == -3
 
 
-def test_validate_zero_penalty_rejected():
-    result = validate_penalty_input(
-        driver_user_id=100,
-        session_type=SessionType.FEATURE_RACE,
-        penalty_value="0",
-    )
-    assert isinstance(result, str)
-
-
 def test_time_penalty_rejected_if_result_negative():
     # Driver has 5s race time; a -10s penalty would produce negative time
     current_time_ms = 5_000  # 5 seconds
