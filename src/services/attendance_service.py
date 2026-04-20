@@ -628,8 +628,9 @@ async def distribute_attendance_points(
             base = 0
             if rsvp == "NO_RSVP":
                 base = no_rsvp_pen + (no_rsvp_absent_pen if not attended else 0)
-            elif not attended:
-                # ACCEPTED/TENTATIVE/DECLINED + no-show = rsvp_absent_penalty
+            elif rsvp != "TENTATIVE" and not attended:
+                # ACCEPTED/DECLINED + no-show = rsvp_absent_penalty
+                # TENTATIVE + no-show = 0 (uncertain RSVP carries no commitment penalty)
                 base = rsvp_absent_pen
 
             # Load pardons for this DRA row.

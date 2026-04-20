@@ -540,10 +540,10 @@ async def test_points_case_d_accepted_absent(tmp_path):
 
 @pytest.mark.asyncio
 async def test_points_case_d_tentative_absent(tmp_path):
-    """Case D: TENTATIVE + absent = rsvp_absent_penalty (3)."""
+    """TENTATIVE + absent = 0 (no penalty — uncertain RSVP carries no commitment)."""
     db = await _make_single_driver_db(tmp_path, rsvp_status="TENTATIVE", attended=0)
     await distribute_attendance_points(db, round_id=1, division_id=10)
-    assert await _points(db) == 3
+    assert await _points(db) == 0
 
 
 @pytest.mark.asyncio
@@ -574,7 +574,7 @@ async def test_point_distribution_all_scenarios(tmp_path):
             (2, "NO_RSVP",   0, 3),      # failure to check-in, absent: no_rsvp + no_rsvp_absent
             (3, "ACCEPTED",  1, 0),      # checked-in, attended: no penalty
             (4, "ACCEPTED",  0, 3),      # checked-in (accepted), absent: rsvp_absent
-            (5, "TENTATIVE", 0, 3),      # checked-in (tentative), absent: rsvp_absent
+            (5, "TENTATIVE", 0, 0),      # checked-in (tentative), absent: no penalty
             (6, "DECLINED",  0, 3),      # checked-in (declined), absent: rsvp_absent
         ]
 
@@ -588,7 +588,7 @@ async def test_point_distribution_all_scenarios(tmp_path):
 
     await distribute_attendance_points(db_file, round_id=1, division_id=10)
 
-    expected = {1: 2, 2: 3, 3: 0, 4: 3, 5: 3, 6: 3}
+    expected = {1: 2, 2: 3, 3: 0, 4: 3, 5: 0, 6: 3}
     async with aiosqlite.connect(db_file) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute("SELECT driver_profile_id, points_awarded FROM driver_round_attendance ORDER BY driver_profile_id")

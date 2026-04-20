@@ -689,10 +689,10 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
                 )
                 return
         if pardon_type == "RSVP_ABSENT":
-            if rsvp_status not in {"ACCEPTED", "TENTATIVE", "DECLINED"}:
+            if rsvp_status not in {"ACCEPTED", "DECLINED"}:
                 await interaction.followup.send(
                     f"❌ RSVP_ABSENT pardon rejected: <@{driver_user_id}> has RSVP status "
-                    f"`{rsvp_status}` — RSVP_ABSENT requires ACCEPTED, TENTATIVE, or DECLINED status.",
+                    f"`{rsvp_status}` — RSVP_ABSENT requires ACCEPTED or DECLINED status.",
                     ephemeral=True,
                 )
                 return
