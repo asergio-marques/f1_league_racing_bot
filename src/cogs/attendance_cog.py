@@ -214,7 +214,7 @@ class AttendanceCog(commands.Cog):
 
     @config.command(
         name="absent-penalty",
-        description="Penalty for any absent driver without an ACCEPTED RSVP (NO_RSVP+absent, TENTATIVE+absent, DECLINED+absent; stacks with no-RSVP penalty for NO_RSVP drivers).",
+        description="Penalty for absent drivers without ACCEPTED RSVP (stacks with no-RSVP penalty for NO_RSVP drivers).",
     )
     @app_commands.describe(points="Penalty points (≥ 0)")
     @channel_guard
