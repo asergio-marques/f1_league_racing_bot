@@ -342,6 +342,50 @@ class AttendanceCog(commands.Cog):
             msg = f"\u2705 Auto-reserve threshold set to **{value}** point(s)."
         await interaction.followup.send(msg, ephemeral=True)
 
+    # ── /attendance config show ────────────────────────────────────────────
+
+    @config.command(
+        name="show",
+        description="Show the current attendance configuration for this server.",
+    )
+    @channel_guard
+    @admin_only
+    async def config_show(self, interaction: discord.Interaction) -> None:
+        if not await self._guard_module_enabled(interaction):
+            return
+
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+        cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+        if cfg is None:
+            await interaction.response.send_message(
+                "\u274c No attendance configuration found. Enable the module first.",
+                ephemeral=True,
+            )
+            return
+
+        def _fmt_opt(value: int | None) -> str:
+            return str(value) if value is not None else "disabled"
+
+        lines = [
+            "**Attendance Configuration**",
+            "",
+            "**Timing**",
+            f"  RSVP notice: **{cfg.rsvp_notice_days}** day(s) before race",
+            f"  Last reminder: **{cfg.rsvp_last_notice_hours}** hr(s) before race"
+            + (" *(disabled)*" if cfg.rsvp_last_notice_hours == 0 else ""),
+            f"  RSVP deadline: **{cfg.rsvp_deadline_hours}** hr(s) before race",
+            "",
+            "**Penalties**",
+            f"  No-RSVP: **{cfg.no_rsvp_penalty}** pt(s)",
+            f"  No-RSVP + absent (extra): **{cfg.no_rsvp_absent_penalty}** pt(s)",
+            f"  RSVP'd + absent: **{cfg.rsvp_absent_penalty}** pt(s)",
+            "",
+            "**Auto-actions**",
+            f"  Auto-reserve threshold: **{_fmt_opt(cfg.autoreserve_threshold)}**",
+            f"  Auto-sack threshold: **{_fmt_opt(cfg.autosack_threshold)}**",
+        ]
+        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
 
 # ── RSVP button interaction handler (T011 / T012 / T014) ─────────────────────
 
