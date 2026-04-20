@@ -210,16 +210,16 @@ class AttendanceCog(commands.Cog):
             f"\u2705 No-RSVP penalty set to **{points}** point(s).", ephemeral=True
         )
 
-    # ── /attendance config no-rsvp-absent-penalty ────────────────────────────────
+    # ── /attendance config absent-penalty ────────────────────────────────────────
 
     @config.command(
-        name="no-rsvp-absent-penalty",
-        description="Extra penalty when a no-RSVP driver also fails to attend (stacks with no-RSVP penalty).",
+        name="absent-penalty",
+        description="Penalty for any absent driver without an ACCEPTED RSVP (NO_RSVP+absent, TENTATIVE+absent, DECLINED+absent; stacks with no-RSVP penalty for NO_RSVP drivers).",
     )
     @app_commands.describe(points="Penalty points (≥ 0)")
     @channel_guard
     @admin_only
-    async def config_no_rsvp_absent_penalty(
+    async def config_absent_penalty(
         self, interaction: discord.Interaction, points: int
     ) -> None:
         if not await self._guard_module_enabled(interaction):
@@ -232,16 +232,16 @@ class AttendanceCog(commands.Cog):
 
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_no_rsvp_absent_penalty(server_id, points)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_absent_penalty(server_id, points)  # type: ignore[attr-defined]
         await interaction.followup.send(
-            f"\u2705 No-RSVP-absent penalty set to **{points}** point(s).", ephemeral=True
+            f"\u2705 Absent penalty set to **{points}** point(s).", ephemeral=True
         )
 
     # ── /attendance config rsvp-absent-penalty ────────────────────────────────
 
     @config.command(
         name="rsvp-absent-penalty",
-        description="Penalty for a driver who RSVP'd (any response) but did not attend.",
+        description="Penalty for a driver who RSVP'd ACCEPTED but did not attend.",
     )
     @app_commands.describe(points="Penalty points (≥ 0)")
     @channel_guard
@@ -377,7 +377,7 @@ class AttendanceCog(commands.Cog):
             "",
             "**Penalties**",
             f"  No-RSVP: **{cfg.no_rsvp_penalty}** pt(s)",
-            f"  No-RSVP + absent (extra): **{cfg.no_rsvp_absent_penalty}** pt(s)",
+            f"  Absent penalty: **{cfg.absent_penalty}** pt(s)",
             f"  RSVP'd + absent: **{cfg.rsvp_absent_penalty}** pt(s)",
             "",
             "**Auto-actions**",

@@ -960,7 +960,7 @@ When a driver's cumulative attendance-penalty total reaches this value they are 
 No parameters. Displays the full attendance configuration for this server as an ephemeral message, including:
 
 - **Timing** — RSVP notice days, last-reminder hours, and RSVP deadline hours
-- **Penalties** — No-RSVP penalty, No-RSVP-absent extra penalty, and RSVP'd-but-absent penalty
+- **Penalties** — No-RSVP penalty, absent penalty (NO_RSVP/TENTATIVE/DECLINED + absent), and RSVP'd-accepted-but-absent penalty
 - **Auto-actions** — Auto-reserve threshold and auto-sack threshold (both shown as `disabled` when set to `0`)
 
 ---

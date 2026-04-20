@@ -490,7 +490,7 @@ class ModuleCog(commands.Cog):
                 await db.execute(
                     "INSERT OR REPLACE INTO attendance_config "
                     "(server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-                    "rsvp_deadline_hours, no_rsvp_penalty, no_rsvp_absent_penalty, rsvp_absent_penalty, "
+                    "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, rsvp_absent_penalty, "
                     "autoreserve_threshold, autosack_threshold) "
                     "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
                     (server_id,),

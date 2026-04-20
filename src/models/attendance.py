@@ -12,7 +12,7 @@ class AttendanceConfig:
     rsvp_last_notice_hours: int
     rsvp_deadline_hours: int
     no_rsvp_penalty: int
-    no_rsvp_absent_penalty: int
+    absent_penalty: int
     rsvp_absent_penalty: int
     autoreserve_threshold: int | None
     autosack_threshold: int | None
