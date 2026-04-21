@@ -197,7 +197,7 @@ class TestDeleteForecastMessage:
 class TestDeleteForecastMessageTestModeGuard:
 
     async def test_test_mode_suppresses_delete_keeps_row(self, tmp_path):
-        """SC-003: while test mode active, Discord delete is skipped, row retained."""
+        """Test mode no longer suppresses deletion — behaves identically to live mode."""
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path, test_mode=1)
         await store_forecast_message(1, 1, 1, _make_mock_message(999), db_path)
@@ -205,17 +205,17 @@ class TestDeleteForecastMessageTestModeGuard:
         bot = _make_bot(db_path, test_mode_active=True)
         await delete_forecast_message(round_id=1, division_id=1, phase_number=1, bot=bot)
 
-        # Discord delete NOT called
-        bot.get_channel.assert_not_called()
+        # Discord delete IS called (same as live mode)
+        channel = bot.get_channel.return_value
+        partial = channel.get_partial_message.return_value
+        partial.delete.assert_awaited_once()
 
-        # Row still present
+        # Row removed
         row = await _get_stored_row(db_path, 1, 1, 1)
-        assert row is not None
-        assert row["message_id"] == 999
+        assert row is None
 
     async def test_delete_forecast_message_skips_in_test_mode(self, tmp_path):
-        """T013: _discord_delete is never called and the DB row is retained
-        when test_mode_active is True."""
+        """Test mode no longer suppresses deletion — _discord_delete is called normally."""
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path, test_mode=1)
         await store_forecast_message(1, 1, 2, _make_mock_message(42), db_path)
@@ -224,16 +224,16 @@ class TestDeleteForecastMessageTestModeGuard:
         with patch(
             "services.forecast_cleanup_service._discord_delete",
             new_callable=AsyncMock,
+            return_value=True,
         ) as mock_discord_delete:
             await delete_forecast_message(round_id=1, division_id=1, phase_number=2, bot=bot)
 
-        # _discord_delete must not have been called at all
-        mock_discord_delete.assert_not_called()
+        # _discord_delete IS called
+        mock_discord_delete.assert_called_once()
 
-        # DB row must still exist
+        # DB row removed
         row = await _get_stored_row(db_path, 1, 1, 2)
-        assert row is not None
-        assert row["message_id"] == 42
+        assert row is None
 
 
 # ---------------------------------------------------------------------------

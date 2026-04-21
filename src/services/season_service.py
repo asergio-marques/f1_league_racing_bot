@@ -227,23 +227,42 @@ class SeasonService:
                 for div_row in div_rows:
                     old_div_id = div_row[0]
                     cursor2 = await db.execute(
-                        "SELECT name FROM divisions WHERE id = ?", (old_div_id,)
+                        "SELECT name, lineup_channel_id, calendar_channel_id "
+                        "FROM divisions WHERE id = ?",
+                        (old_div_id,),
                     )
                     name_row = await cursor2.fetchone()
                     if name_row:
                         saved_div_names[old_div_id] = name_row[0]
+                        saved_channel_cfg[old_div_id] = {
+                            "lineup_channel_id": name_row[1],
+                            "calendar_channel_id": name_row[2],
+                        }
                     cursor2 = await db.execute(
-                        "SELECT results_channel_id, standings_channel_id, reserves_in_standings "
+                        "SELECT results_channel_id, standings_channel_id, "
+                        "reserves_in_standings, penalty_channel_id "
                         "FROM division_results_config WHERE division_id = ?",
                         (old_div_id,),
                     )
                     cfg_row = await cursor2.fetchone()
                     if cfg_row:
-                        saved_channel_cfg[old_div_id] = {
+                        saved_channel_cfg.setdefault(old_div_id, {}).update({
                             "results_channel_id": cfg_row[0],
                             "standings_channel_id": cfg_row[1],
                             "reserves_in_standings": cfg_row[2],
-                        }
+                            "penalty_channel_id": cfg_row[3],
+                        })
+                    cursor2 = await db.execute(
+                        "SELECT rsvp_channel_id, attendance_channel_id "
+                        "FROM attendance_division_config WHERE division_id = ?",
+                        (old_div_id,),
+                    )
+                    att_row = await cursor2.fetchone()
+                    if att_row:
+                        saved_channel_cfg.setdefault(old_div_id, {}).update({
+                            "rsvp_channel_id": att_row[0],
+                            "attendance_channel_id": att_row[1],
+                        })
 
                 # name → channel config (for lookup when new division IDs are known)
                 channels_by_name: dict[str, dict] = {
@@ -252,13 +271,63 @@ class SeasonService:
                     if did in saved_div_names
                 }
 
+                # Save attached points config names before the season row is deleted
+                # (season_points_links has ON DELETE CASCADE so they disappear with it).
+                cursor = await db.execute(
+                    "SELECT config_name FROM season_points_links "
+                    "WHERE season_id = ? ORDER BY config_name",
+                    (existing_season_id,),
+                )
+                saved_config_names: list[str] = [
+                    r[0] for r in await cursor.fetchall()
+                ]
+
                 # Cascade-delete the old SETUP season manually (no ON DELETE CASCADE on
                 # seasons/divisions, though division_results_config does have it).
-                # Clean up team_instances/team_seats first to avoid orphaned rows.
+                # Clean up test drivers, driver_season_assignments, team_instances/team_seats
+                # first to avoid FK violations.
                 for div_row in div_rows:
+                    old_div_id = div_row[0]
+
+                    # Remove any test driver profiles (and their season assignments/seats)
+                    # that were placed in this division during SETUP.
+                    cursor2 = await db.execute(
+                        """
+                        SELECT dp.id AS profile_id
+                        FROM driver_profiles dp
+                        JOIN team_seats ts ON ts.driver_profile_id = dp.id
+                        JOIN team_instances ti ON ti.id = ts.team_instance_id
+                        WHERE ti.division_id = ? AND dp.is_test_driver = 1
+                        """,
+                        (old_div_id,),
+                    )
+                    test_profile_rows = await cursor2.fetchall()
+                    if test_profile_rows:
+                        test_ids = [r[0] for r in test_profile_rows]
+                        ph = ",".join("?" * len(test_ids))
+                        await db.execute(
+                            f"DELETE FROM driver_season_assignments WHERE driver_profile_id IN ({ph})",
+                            test_ids,
+                        )
+                        await db.execute(
+                            f"UPDATE team_seats SET driver_profile_id = NULL "
+                            f"WHERE driver_profile_id IN ({ph})",
+                            test_ids,
+                        )
+                        await db.execute(
+                            f"DELETE FROM driver_profiles WHERE id IN ({ph})",
+                            test_ids,
+                        )
+
+                    # Remove any real driver_season_assignments for this division
+                    await db.execute(
+                        "DELETE FROM driver_season_assignments WHERE division_id = ?",
+                        (old_div_id,),
+                    )
+
                     cursor2 = await db.execute(
                         "SELECT id FROM team_instances WHERE division_id = ?",
-                        (div_row[0],),
+                        (old_div_id,),
                     )
                     inst_rows = await cursor2.fetchall()
                     for inst_row in inst_rows:
@@ -267,10 +336,10 @@ class SeasonService:
                             (inst_row[0],),
                         )
                     await db.execute(
-                        "DELETE FROM team_instances WHERE division_id = ?", (div_row[0],)
+                        "DELETE FROM team_instances WHERE division_id = ?", (old_div_id,)
                     )
                     await db.execute(
-                        "DELETE FROM rounds WHERE division_id = ?", (div_row[0],)
+                        "DELETE FROM rounds WHERE division_id = ?", (old_div_id,)
                     )
                 await db.execute(
                     "DELETE FROM divisions WHERE season_id = ?", (existing_season_id,)
@@ -280,6 +349,7 @@ class SeasonService:
                 )
             else:
                 channels_by_name = {}
+                saved_config_names = []
 
             cursor = await db.execute(
                 "INSERT INTO seasons (server_id, start_date, status, season_number, game_edition) "
@@ -287,6 +357,14 @@ class SeasonService:
                 (server_id, start_date.isoformat(), season_number, game_edition),
             )
             new_season_id: int = cursor.lastrowid  # type: ignore[assignment]
+
+            # Restore season-level points config attachments under the new season ID.
+            for config_name in saved_config_names:
+                await db.execute(
+                    "INSERT OR IGNORE INTO season_points_links (season_id, config_name) "
+                    "VALUES (?, ?)",
+                    (new_season_id, config_name),
+                )
 
             for div_data in divisions:
                 cursor = await db.execute(
@@ -303,22 +381,50 @@ class SeasonService:
                 )
                 div_db_id: int = cursor.lastrowid  # type: ignore[assignment]
 
-                # Restore any previously-assigned results/standings channels for
-                # this division (by name), which would otherwise be lost because
+                # Restore any previously-assigned channel config for this division
+                # (by name), which would otherwise be lost because
                 # save_pending_snapshot deletes and re-creates division rows.
                 saved = channels_by_name.get(div_data["name"])
-                if saved and (saved["results_channel_id"] or saved["standings_channel_id"]):
-                    await db.execute(
-                        "INSERT INTO division_results_config "
-                        "(division_id, results_channel_id, standings_channel_id, reserves_in_standings) "
-                        "VALUES (?, ?, ?, ?)",
-                        (
-                            div_db_id,
-                            saved["results_channel_id"],
-                            saved["standings_channel_id"],
-                            saved["reserves_in_standings"] if saved["reserves_in_standings"] is not None else 1,
-                        ),
-                    )
+                if saved:
+                    # lineup / calendar channels live directly on the divisions row
+                    if saved.get("lineup_channel_id") or saved.get("calendar_channel_id"):
+                        await db.execute(
+                            "UPDATE divisions SET lineup_channel_id = ?, calendar_channel_id = ? "
+                            "WHERE id = ?",
+                            (saved.get("lineup_channel_id"), saved.get("calendar_channel_id"), div_db_id),
+                        )
+                    # results / standings / penalty config row
+                    if (
+                        saved.get("results_channel_id")
+                        or saved.get("standings_channel_id")
+                        or saved.get("penalty_channel_id")
+                    ):
+                        await db.execute(
+                            "INSERT INTO division_results_config "
+                            "(division_id, results_channel_id, standings_channel_id, "
+                            " reserves_in_standings, penalty_channel_id) "
+                            "VALUES (?, ?, ?, ?, ?)",
+                            (
+                                div_db_id,
+                                saved.get("results_channel_id"),
+                                saved.get("standings_channel_id"),
+                                saved.get("reserves_in_standings") if saved.get("reserves_in_standings") is not None else 1,
+                                saved.get("penalty_channel_id"),
+                            ),
+                        )
+                    # attendance channels (cascade-deleted with old division row)
+                    if saved.get("rsvp_channel_id") or saved.get("attendance_channel_id"):
+                        await db.execute(
+                            "INSERT INTO attendance_division_config "
+                            "(division_id, server_id, rsvp_channel_id, attendance_channel_id) "
+                            "VALUES (?, ?, ?, ?)",
+                            (
+                                div_db_id,
+                                server_id,
+                                saved.get("rsvp_channel_id"),
+                                saved.get("attendance_channel_id"),
+                            ),
+                        )
 
                 for r in div_data["rounds"]:
                     await db.execute(
@@ -554,6 +660,8 @@ class SeasonService:
                 session_result_ids = [r[0] for r in await cursor.fetchall()]
                 if session_result_ids:
                     sph = ",".join("?" * len(session_result_ids))
+                    await db.execute(f"DELETE FROM race_session_results WHERE session_result_id IN ({sph})", session_result_ids)
+                    await db.execute(f"DELETE FROM qualifying_session_results WHERE session_result_id IN ({sph})", session_result_ids)
                     await db.execute(f"DELETE FROM driver_session_results WHERE session_result_id IN ({sph})", session_result_ids)
                 await db.execute(f"DELETE FROM session_results WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM forecast_messages WHERE round_id IN ({ph})", round_ids)
@@ -661,7 +769,7 @@ class SeasonService:
             cursor = await db.execute(
                 "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier, "
                 "lineup_channel_id, calendar_channel_id, lineup_message_id "
-                "FROM divisions WHERE season_id = ?",
+                "FROM divisions WHERE season_id = ? ORDER BY tier",
                 (season_id,),
             )
             rows = await cursor.fetchall()
@@ -761,6 +869,7 @@ class SeasonService:
                 FROM divisions d
                 LEFT JOIN division_results_config drc ON drc.division_id = d.id
                 WHERE d.season_id = ?
+                ORDER BY d.tier
                 """,
                 (season_id,),
             )
@@ -799,6 +908,17 @@ class SeasonService:
                 await db.execute(f"DELETE FROM sessions WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM rounds WHERE division_id = ?", (division_id,))
 
+            # team_seats → team_instances: no cascade, must be deleted manually
+            await db.execute(
+                "DELETE FROM team_seats WHERE team_instance_id IN "
+                "(SELECT id FROM team_instances WHERE division_id = ?)",
+                (division_id,),
+            )
+            await db.execute("DELETE FROM team_instances WHERE division_id = ?", (division_id,))
+            # driver_season_assignments.division_id has no cascade
+            await db.execute(
+                "DELETE FROM driver_season_assignments WHERE division_id = ?", (division_id,)
+            )
             await db.execute("DELETE FROM divisions WHERE id = ?", (division_id,))
             await db.commit()
 

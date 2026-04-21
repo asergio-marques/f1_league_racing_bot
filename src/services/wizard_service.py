@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 import discord
 from apscheduler.triggers.date import DateTrigger
 
+from db.database import get_connection
 from models.driver_profile import DriverState
 from models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from utils.nationality_data import NATIONALITY_LOOKUP
@@ -108,6 +109,12 @@ class WizardService:
     def set_bot(self, bot: "Bot") -> None:
         """Bind the bot instance for Discord API and service access."""
         self._bot = bot
+
+    async def _get_track_name_map(self) -> dict[str, str]:
+        """Return {str(id): name} for all tracks from the database."""
+        from services import track_service
+        async with get_connection(self._db_path) as db:
+            return await track_service.get_track_name_map(db)
 
     # ------------------------------------------------------------------
     # Convenience accessors (safe after set_bot is called)
@@ -386,12 +393,13 @@ class WizardService:
         fire_at = datetime.now(timezone.utc) + timedelta(hours=24)
         await self._arm_inactivity_job(server_id, discord_user_id, fire_at)
 
+        track_map = await self._get_track_name_map()
         # Revoke write if first step is button-only, then post first prompt
         if first_state in WizardService._BUTTON_ONLY_STATES:
             await self._revoke_driver_write(channel, member)
         await channel.send(
             f"Welcome to the signup wizard, {member.mention}!\n"
-            + self._prompt_for_state(first_state, snapshot),
+            + self._prompt_for_state(first_state, snapshot, track_name_map=track_map),
             view=self._build_step_view(first_state, server_id, discord_user_id, snapshot.team_names),
         )
 
@@ -485,11 +493,12 @@ class WizardService:
             channel = guild.get_channel(wizard.signup_channel_id)
             if channel and isinstance(channel, discord.TextChannel):
                 from cogs.admin_review_cog import AdminReviewView  # type: ignore[import]
+                track_map = await self._get_track_name_map()
                 slot_labels = {
                     s.slot_sequence_id: s.display_label
                     for s in (wizard.config_snapshot.slots if wizard.config_snapshot else [])
                 }
-                panel_text = self._format_review_panel(record, slot_labels)
+                panel_text = self._format_review_panel(record, slot_labels, track_name_map=track_map)
                 await channel.send(
                     panel_text,
                     view=AdminReviewView(server_id, discord_user_id, self._bot),  # type: ignore[arg-type]
@@ -767,9 +776,10 @@ class WizardService:
                 await self._grant_driver_write(channel, member)
             team_names = wizard.config_snapshot.team_names if wizard.config_snapshot else []
             reason_line = f"\n**Reason:** {correction_reason}" if correction_reason else ""
+            track_map = await self._get_track_name_map()
             await channel.send(
                 f"{mention} Please re-submit your **{parameter.replace('_', ' ')}**:{reason_line}\n"
-                + self._prompt_for_state(target_state, wizard.config_snapshot, wizard),
+                + self._prompt_for_state(target_state, wizard.config_snapshot, wizard, track_name_map=track_map),
                 view=self._build_step_view(target_state, server_id, discord_user_id, team_names),
             )
 
@@ -1041,6 +1051,7 @@ class WizardService:
         snapshot = wizard.config_snapshot
         assert snapshot is not None
 
+        track_map = await self._get_track_name_map()
         state = wizard.wizard_state
         _SEQUENCE = [
             WizardState.COLLECTING_NATIONALITY,
@@ -1087,7 +1098,7 @@ class WizardService:
                 wizard.last_activity_at = datetime.now(timezone.utc).isoformat()
                 await self._signup_svc.save_wizard(wizard)
                 await channel.send(
-                    self._prompt_for_state(state, snapshot, wizard),
+                    self._prompt_for_state(state, snapshot, wizard, track_name_map=track_map),
                     view=self._build_step_view(state, wizard.server_id, wizard.discord_user_id, snapshot.team_names),
                 )
                 await self._reset_inactivity_job(wizard.server_id, wizard.discord_user_id)
@@ -1117,7 +1128,7 @@ class WizardService:
                 await self._revoke_driver_write(channel, member)
 
         await channel.send(
-            self._prompt_for_state(next_state, snapshot, wizard),
+            self._prompt_for_state(next_state, snapshot, wizard, track_name_map=track_map),
             view=self._build_step_view(next_state, wizard.server_id, wizard.discord_user_id, snapshot.team_names),
         )
 
@@ -1475,8 +1486,8 @@ class WizardService:
         state: WizardState,
         snapshot,  # ConfigSnapshot
         wizard: SignupWizardRecord | None = None,
+        track_name_map: dict[str, str] | None = None,
     ) -> str:
-        from models.track import TRACK_IDS  # type: ignore[import-not-found]
 
         if state == WizardState.COLLECTING_NATIONALITY:
             return (
@@ -1513,7 +1524,7 @@ class WizardService:
             idx = wizard.current_lap_track_index if wizard else 0
             if snapshot.selected_track_ids and idx < len(snapshot.selected_track_ids):
                 track_id = snapshot.selected_track_ids[idx]
-                track_name = TRACK_IDS.get(track_id, track_id)
+                track_name = (track_name_map or {}).get(track_id, track_id)
                 label = (
                     "Time Trial"
                     if snapshot.time_type == "TIME_TRIAL"
@@ -1540,8 +1551,8 @@ class WizardService:
     def _format_review_panel(
         record: SignupRecord,
         slot_labels: dict[int, str] | None = None,
+        track_name_map: dict[str, str] | None = None,
     ) -> str:
-        from models.track import TRACK_IDS  # type: ignore[import-not-found]
 
         if slot_labels:
             availability_str = ", ".join(
@@ -1558,7 +1569,7 @@ class WizardService:
         )
         lap_lines = (
             "\n".join(
-                f"  • {TRACK_IDS.get(tid, tid)}: `{t}`"
+                f"  • {(track_name_map or {}).get(tid, tid)}: `{t}`"
                 for tid, t in record.lap_times.items()
             )
             if record.lap_times else "  (none required)"
@@ -1632,6 +1643,7 @@ class WizardService:
                 record = await self._signup_svc.get_record(server_id, discord_user_id)
                 if record is not None:
                     from cogs.admin_review_cog import AdminReviewView  # type: ignore[import]
+                    track_map = await self._get_track_name_map()
                     slot_labels = {
                         s.slot_sequence_id: s.display_label
                         for s in (wizard.config_snapshot.slots if wizard.config_snapshot else [])
@@ -1640,7 +1652,7 @@ class WizardService:
                         "⏰ Parameter selection timed out. Here is the review panel again:",
                     )
                     await channel.send(
-                        self._format_review_panel(record, slot_labels),
+                        self._format_review_panel(record, slot_labels, track_name_map=track_map),
                         view=AdminReviewView(server_id, discord_user_id, self._bot),  # type: ignore[arg-type]
                     )
 
@@ -1695,11 +1707,12 @@ class WizardService:
             channel = guild.get_channel(wizard.signup_channel_id)
             if isinstance(channel, discord.TextChannel):
                 from cogs.admin_review_cog import AdminReviewView  # type: ignore[import]
+                track_map = await self._get_track_name_map()
                 slot_labels = {
                     s.slot_sequence_id: s.display_label
                     for s in (wizard.config_snapshot.slots if wizard.config_snapshot else [])
                 }
                 await channel.send(
-                    self._format_review_panel(record, slot_labels),
+                    self._format_review_panel(record, slot_labels, track_name_map=track_map),
                     view=AdminReviewView(server_id, discord_user_id, self._bot),  # type: ignore[arg-type]
                 )

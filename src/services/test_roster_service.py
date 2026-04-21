@@ -70,10 +70,10 @@ async def _next_synthetic_id(db_path: str) -> int:
 
 
 async def _get_active_season_id(server_id: int, db_path: str) -> int | None:
-    """Return the active season ID for a server, or None if none exists."""
+    """Return the active or setup season ID for a server, or None if none exists."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id FROM seasons WHERE server_id = ? AND status = 'ACTIVE'",
+            "SELECT id FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP')",
             (server_id,),
         )
         row = await cursor.fetchone()
@@ -116,7 +116,7 @@ async def add_test_driver(
     """
     season_id = await _get_active_season_id(server_id, db_path)
     if season_id is None:
-        return "No active season found."
+        return "No active or setup season found."
 
     division_id = await _get_division_id(server_id, season_id, division_name, db_path)
     if division_id is None:
@@ -216,7 +216,7 @@ async def list_test_drivers(
     """
     season_id = await _get_active_season_id(server_id, db_path)
     if season_id is None:
-        return "No active season found."
+        return "No active or setup season found."
 
     division_id = await _get_division_id(server_id, season_id, division_name, db_path)
     if division_id is None:
@@ -262,13 +262,67 @@ async def clear_test_drivers(
     """
     season_id = await _get_active_season_id(server_id, db_path)
     if season_id is None:
-        return "No active season found."
+        return "No active or setup season found."
 
     division_id = await _get_division_id(server_id, season_id, division_name, db_path)
     if division_id is None:
         return f"Division '{division_name}' not found in the active season."
 
     return await _delete_test_drivers_in_division(division_id, db_path)
+
+
+async def remove_test_driver(
+    server_id: int,
+    discord_user_id: int,
+    db_path: str,
+) -> str | dict:
+    """Remove a single fake driver by their synthetic Discord user ID.
+
+    Returns a dict with keys ``display_name`` and ``team_name`` on success,
+    or an error string if the profile doesn't exist or is not a test driver.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT dp.id AS profile_id,
+                   dp.test_display_name,
+                   ti.name AS team_name
+            FROM driver_profiles dp
+            LEFT JOIN team_seats ts ON ts.driver_profile_id = dp.id
+            LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
+            WHERE dp.server_id = ?
+              AND CAST(dp.discord_user_id AS INTEGER) = ?
+              AND dp.is_test_driver = 1
+            """,
+            (server_id, discord_user_id),
+        )
+        row = await cursor.fetchone()
+
+        if row is None:
+            return "No test driver found with that user ID on this server."
+
+        profile_id: int = row["profile_id"]
+        display_name: str = row["test_display_name"] or f"Driver {profile_id}"
+        team_name: str = row["team_name"] or "(unknown team)"
+
+        # Vacate the seat
+        await db.execute(
+            "UPDATE team_seats SET driver_profile_id = NULL WHERE driver_profile_id = ?",
+            (profile_id,),
+        )
+        # Remove season assignment
+        await db.execute(
+            "DELETE FROM driver_season_assignments WHERE driver_profile_id = ?",
+            (profile_id,),
+        )
+        # Delete the profile
+        await db.execute(
+            "DELETE FROM driver_profiles WHERE id = ?",
+            (profile_id,),
+        )
+        await db.commit()
+
+    return {"display_name": display_name, "team_name": team_name}
 
 
 async def clear_all_test_drivers(server_id: int, db_path: str) -> int:

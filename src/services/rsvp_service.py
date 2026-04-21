@@ -86,8 +86,32 @@ def build_rsvp_embed(
         else:
             roster_lines.append("  *(no drivers)*")
 
+    _FIELD_MAX = 1024
     if roster_lines:
-        embed.add_field(name="🧑‍🤝‍🧑 Driver Roster", value="\n".join(roster_lines), inline=False)
+        chunk: list[str] = []
+        chunk_len = 0
+        first_field = True
+        for line in roster_lines:
+            # +1 for the newline separator
+            addition = len(line) + (1 if chunk else 0)
+            if chunk and chunk_len + addition > _FIELD_MAX:
+                embed.add_field(
+                    name="🧑‍🤝‍🧑 Driver Roster" if first_field else "\u200b",
+                    value="\n".join(chunk),
+                    inline=False,
+                )
+                first_field = False
+                chunk = [line]
+                chunk_len = len(line)
+            else:
+                chunk.append(line)
+                chunk_len += addition
+        if chunk:
+            embed.add_field(
+                name="🧑‍🤝‍🧑 Driver Roster" if first_field else "\u200b",
+                value="\n".join(chunk),
+                inline=False,
+            )
 
     return embed
 
@@ -191,7 +215,7 @@ async def query_division_roster(db_path: str, division_id: int) -> list[dict]:
 def _driver_display_str(driver: dict) -> str:
     """Return a display string for a driver — test name or Discord mention."""
     if driver.get("test_display_name"):
-        return driver["test_display_name"]
+        return f"<@{driver['discord_user_id']}> ({driver['test_display_name']})"
     return f"<@{driver['discord_user_id']}>"
 
 
@@ -218,7 +242,8 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
             SELECT r.id, r.division_id, r.round_number, r.format, r.track_name,
                    r.scheduled_at,
                    s.season_number,
-                   d.name AS division_name
+                   d.name AS division_name,
+                   d.mention_role_id
               FROM rounds r
               JOIN divisions d ON d.id = r.division_id
               JOIN seasons s ON s.id = d.season_id
@@ -238,6 +263,7 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
     round_format = RoundFormat(row["format"])
     track_name: str | None = row["track_name"]
     season_number: int = row["season_number"]
+    mention_role_id: int | None = row["mention_role_id"]
     scheduled_at_raw = row["scheduled_at"]
 
     # Parse scheduled_at (stored as ISO 8601 string in SQLite)
@@ -247,11 +273,6 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
         scheduled_at = scheduled_at_raw
     if scheduled_at.tzinfo is None:
         scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-
-    # Mystery rounds: skip (FR-002)
-    if round_format == RoundFormat.MYSTERY:
-        log.info("run_rsvp_notice: round %d is MYSTERY — skipping", round_id)
-        return
 
     # Get division RSVP channel
     att_div_cfg = await bot.attendance_service.get_division_config(division_id)
@@ -277,6 +298,29 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
             channel_id_str, division_id,
         )
         return
+
+    # Delete any old RSVP embed messages for this division (previous rounds)
+    old_embeds = await bot.attendance_service.get_all_embed_messages()
+    for _old in old_embeds:
+        if _old.division_id != division_id:
+            continue
+        if _old.round_id == round_id:
+            continue  # shouldn't exist yet, but skip defensively
+        _old_ch = bot.get_channel(int(_old.channel_id))
+        if _old_ch is not None:
+            for _mid in (_old.message_id, _old.last_notice_msg_id, _old.distribution_msg_id):
+                if _mid is None:
+                    continue
+                try:
+                    _old_msg = await _old_ch.fetch_message(int(_mid))
+                    await _old_msg.delete()
+                except discord.HTTPException:
+                    pass  # Already gone or no permission — safe to continue
+    # Remove stale DB rows so embed look-ups always find the current round
+    await bot.attendance_service.delete_stale_embed_messages(
+        division_id=division_id,
+        keep_round_id=round_id,
+    )
 
     # Query roster
     roster = await query_division_roster(bot.db_path, division_id)
@@ -314,8 +358,15 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
     )
     view = RsvpView(round_id=round_id)
 
+    role_ping = f"<@&{mention_role_id}>\n" if mention_role_id else ""
+
     try:
-        msg = await channel.send(embed=embed, view=view)
+        msg = await channel.send(
+            content=role_ping or None,
+            embed=embed,
+            view=view,
+            allowed_mentions=discord.AllowedMentions(roles=bool(mention_role_id)),
+        )
     except discord.HTTPException as exc:
         log.error(
             "run_rsvp_notice: failed to post embed for division %d: %s",
@@ -351,14 +402,15 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
 async def run_rsvp_last_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
     """Post the last-notice ping for *round_id*.
 
-    Mentions only full-time drivers (is_reserve = 0) with rsvp_status = 'NO_RSVP'.
-    Silently skips if there are no such drivers (FR-029).
+    Always posts a visibility message to the RSVP channel with a Discord relative
+    timestamp to the race.  When full-time drivers still have rsvp_status = 'NO_RSVP'
+    they are also mentioned with a reminder to respond.
     """
     async with get_connection(bot.db_path) as db:
         # Round + division context
         cur = await db.execute(
             """
-            SELECT r.division_id, r.round_number,
+            SELECT r.division_id, r.round_number, r.scheduled_at,
                    d.name AS division_name
               FROM rounds r
               JOIN divisions d ON d.id = r.division_id
@@ -373,6 +425,26 @@ async def run_rsvp_last_notice(round_id: int, bot) -> None:  # type: ignore[type
         return
 
     division_id: int = row["division_id"]
+
+    scheduled_at_raw = row["scheduled_at"]
+    if isinstance(scheduled_at_raw, str):
+        from datetime import datetime as _dt
+        scheduled_at = _dt.fromisoformat(scheduled_at_raw)
+    else:
+        scheduled_at = scheduled_at_raw
+    if scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+    unix_ts = int(scheduled_at.timestamp())
+
+    att_div_cfg = await bot.attendance_service.get_division_config(division_id)
+    if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
+        log.warning("run_rsvp_last_notice: no RSVP channel for division %d — skipping", division_id)
+        return
+
+    channel = bot.get_channel(int(att_div_cfg.rsvp_channel_id))
+    if channel is None:
+        log.error("run_rsvp_last_notice: RSVP channel not found for division %d", division_id)
+        return
 
     # Find full-time drivers still at NO_RSVP
     async with get_connection(bot.db_path) as db:
@@ -396,38 +468,39 @@ async def run_rsvp_last_notice(round_id: int, bot) -> None:  # type: ignore[type
         )
         no_rsvp_rows = await cur.fetchall()
 
-    if not no_rsvp_rows:
+    if no_rsvp_rows:
+        mentions: list[str] = []
+        for r in no_rsvp_rows:
+            if r["test_display_name"]:
+                mentions.append(f"<@{r['discord_user_id']}> ({r['test_display_name']})")
+            else:
+                mentions.append(f"<@{r['discord_user_id']}>")
+        content = (
+            f"⏰ **RSVP Reminder** — the race is <t:{unix_ts}:R>. "
+            f"Please confirm your attendance:\n" + " ".join(mentions)
+        )
+    else:
         log.info(
-            "run_rsvp_last_notice: no non-responding full-time drivers for round %d / division %d — skipping",
+            "run_rsvp_last_notice: all full-time drivers responded for round %d / division %d — posting visibility notice",
             round_id, division_id,
         )
-        return
+        content = (
+            f"✅ All drivers have responded. The race is <t:{unix_ts}:R> — "
+            f"please review your attendance if anything has changed."
+        )
 
-    att_div_cfg = await bot.attendance_service.get_division_config(division_id)
-    if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
-        log.warning("run_rsvp_last_notice: no RSVP channel for division %d — skipping", division_id)
-        return
-
-    channel = bot.get_channel(int(att_div_cfg.rsvp_channel_id))
-    if channel is None:
-        log.error("run_rsvp_last_notice: RSVP channel not found for division %d", division_id)
-        return
-
-    mentions: list[str] = []
-    for r in no_rsvp_rows:
-        if r["test_display_name"]:
-            mentions.append(r["test_display_name"])
-        else:
-            mentions.append(f"<@{r['discord_user_id']}>")
-
-    content = (
-        f"⏰ **RSVP Reminder** — please confirm your attendance:\n"
-        + " ".join(mentions)
-    )
     try:
-        await channel.send(content)
+        last_msg = await channel.send(content)
     except discord.HTTPException as exc:
         log.error("run_rsvp_last_notice: failed to post for division %d: %s", division_id, exc)
+        return
+
+    # Track message ID so the next round's cleanup can delete it
+    await bot.attendance_service.update_embed_last_notice_msg(
+        round_id=round_id,
+        division_id=division_id,
+        msg_id=str(last_msg.id),
+    )
 
 
 # ── run_rsvp_deadline ─────────────────────────────────────────────────────────
@@ -448,7 +521,7 @@ async def run_rsvp_deadline(round_id: int, bot) -> None:  # type: ignore[type-ar
 
     division_id: int = row["division_id"]
 
-    await run_reserve_distribution(round_id, division_id, bot)
+    reserves_placed = await run_reserve_distribution(round_id, division_id, bot)
 
     # Disable the RSVP embed buttons
     embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)
@@ -467,8 +540,11 @@ async def run_rsvp_deadline(round_id: int, bot) -> None:  # type: ignore[type-ar
                 except discord.HTTPException as exc:
                     log.error("run_rsvp_deadline: failed to disable embed buttons for round %d: %s", round_id, exc)
 
-    # Post assignment announcement
-    await _post_distribution_announcement(round_id, division_id, bot)
+    # Post assignment announcement (or a notice when no reserves were needed)
+    if reserves_placed:
+        await _post_distribution_announcement(round_id, division_id, bot)
+    else:
+        await _post_no_reserve_notice(round_id, division_id, bot)
 
 
 async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None:  # type: ignore[type-arg]
@@ -502,15 +578,18 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
 
     if not accepted_reserves:
         log.info("run_reserve_distribution: no accepted reserves for round %d / division %d", round_id, division_id)
-        return
+        return False
 
     async with get_connection(bot.db_path) as db:
         # Candidate teams: non-Reserve teams in division (FR-020)
         # Priority tier:
         #   1 = has at least one NO_RSVP full-time driver
-        #   2 = all full-time drivers DECLINED
-        #   3 = all full-time drivers TENTATIVE
-        #   (teams where all full-time drivers ACCEPTED are not vacancies)
+        #   2 = at least one DECLINED (and no NO_RSVP)
+        #   3 = partial allocation: some accepted FT drivers but seats still vacant
+        #   4 = no FT drivers seated at all (all seats vacant)
+        #   5 = at least one TENTATIVE (and no NO_RSVP / DECLINED / empty seats)
+        #   (teams where all FT drivers accepted AND all seats filled are not candidates)
+        # LEFT JOINs so teams with zero FT drivers still appear (tier 4)
         cur = await db.execute(
             """
             SELECT ti.id                AS team_id,
@@ -523,13 +602,20 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
                    COUNT(dra.id) AS total_drivers,
                    MIN(tss.standing_position) AS standing_position
               FROM team_instances ti
-              JOIN team_seats ts ON ts.team_instance_id = ti.id
-              JOIN driver_round_attendance dra
+         LEFT JOIN team_seats ts ON ts.team_instance_id = ti.id
+         LEFT JOIN driver_round_attendance dra
                    ON dra.driver_profile_id = ts.driver_profile_id
                   AND dra.round_id = ?
                   AND dra.division_id = ?
+              LEFT JOIN team_role_configs trc
+                   ON trc.team_name = ti.name
+                  AND trc.server_id = (
+                      SELECT s.server_id FROM seasons s
+                        JOIN divisions d ON d.season_id = s.id
+                       WHERE d.id = ?
+                  )
               LEFT JOIN team_standings_snapshots tss
-                   ON tss.team_instance_id = ti.id
+                   ON tss.team_role_id = trc.role_id
                   AND tss.round_id = (
                       SELECT MAX(r2.id) FROM rounds r2
                        WHERE r2.division_id = ? AND r2.id < ?
@@ -538,55 +624,74 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
                AND ti.is_reserve = 0
              GROUP BY ti.id, ti.name, ti.max_seats
             """,
-            (round_id, division_id, division_id, round_id, division_id),
+            (round_id, division_id, division_id, division_id, round_id, division_id),
         )
         team_rows = await cur.fetchall()
 
-    def _team_sort_key(t) -> tuple:
-        # FR-020: priority tier
-        if t["no_rsvp_count"] > 0:
-            tier = 1
+    def _static_tier(t) -> int:
+        """Tier based solely on RSVP/seat state, used for eligibility filtering."""
+        if t["total_drivers"] == 0:
+            return 1  # all FT seats physically vacant
         elif t["declined_count"] > 0:
-            tier = 2
+            return 2
+        elif t["no_rsvp_count"] > 0:
+            return 3
+        elif t["total_drivers"] < t["max_seats"]:
+            return 4  # at least one FT seat physically vacant (partial)
         elif t["tentative_count"] > 0:
-            tier = 3
+            return 6
         else:
-            tier = 99  # no vacancies (all accepted)
-        # FR-021 tie-break 1: fewest accepted full-time drivers
-        accepted = t["accepted_count"]
-        # FR-021 tie-break 2: standings position (lower = better → higher priority = lower number)
-        pos = t["standing_position"] if t["standing_position"] is not None else 9999
-        # FR-021 tie-break 3: alphabetical by team name
-        name = t["team_name"].lower()
-        return (tier, accepted, pos, name)
+            return 99  # all ACCEPTED and fully staffed — excluded
 
-    candidate_teams = sorted(team_rows, key=_team_sort_key)
-    # Only teams with actual vacancies (tier < 99)
-    candidate_teams = [t for t in candidate_teams if _team_sort_key(t)[0] < 99]
+    candidate_teams = sorted(team_rows, key=lambda t: (_static_tier(t), t["team_name"].lower()))
+    # Only teams with at least one vacancy (ACCEPTED seats are never counted)
+    candidate_teams = [t for t in candidate_teams if _static_tier(t) < 99]
 
-    # Determine seats available per team (max_seats - accepted_count as proxy for vacancy count)
-    # We assign at most one reserve per full-time vacant slot (FR-023)
+    # Vacancy = NO_RSVP + DECLINED + TENTATIVE + physically empty seats.
+    # ACCEPTED seats are excluded — they are filled and not available.
     team_vacancy: dict[int, int] = {}
     for t in candidate_teams:
-        vacancies = t["no_rsvp_count"] + t["declined_count"] + t["tentative_count"]
-        team_vacancy[t["team_id"]] = vacancies
+        rsvp_vacancies = t["no_rsvp_count"] + t["declined_count"] + t["tentative_count"]
+        empty_seats = max(0, t["max_seats"] - t["total_drivers"])
+        team_vacancy[t["team_id"]] = rsvp_vacancies + empty_seats
 
-    # Assign reserves to vacancies
+    # Assign reserves to vacancies, re-sorting before each allocation.
+    # Priority tiers (re-evaluated per round):
+    #   1 — all FT seats physically vacant (total_drivers == 0)
+    #   2 — ≥1 DECLINED full-time driver
+    #   3 — ≥1 NO_RSVP full-time driver
+    #   4 — ≥1 physically vacant FT seat (partial: some drivers assigned)
+    #   5 — already received ≥1 reserve this round (second+ fill); teams from tiers 1–4
+    #       are demoted here so every needy team gets its first reserve before any team
+    #       receives a second one.  TENTATIVE-only teams stay at tier 6.
+    #   6 — ≥1 TENTATIVE full-time driver
+    # Tie-break within a tier: standings position → team name.
     assignments: list[tuple[int, int]] = []  # (dra_id, team_id)
     standby_ids: list[int] = []
+    reserves_assigned: dict[int, int] = {t["team_id"]: 0 for t in candidate_teams}
 
-    team_index = 0
+    def _current_sort_key(t) -> tuple:
+        tid = t["team_id"]
+        static = _static_tier(t)
+        # Demote to tier 5 once a reserve has been placed, but never below tier 6
+        # so TENTATIVE-only teams that already received a reserve don't leap ahead
+        # of fresh TENTATIVE teams.
+        tier = max(5, static) if reserves_assigned[tid] >= 1 else static
+        pos = t["standing_position"] if t["standing_position"] is not None else 9999
+        name = t["team_name"].lower()
+        return (tier, pos, name)
+
     for reserve in accepted_reserves:
         dra_id = reserve["dra_id"]
-        # Advance past full teams
-        while team_index < len(candidate_teams) and team_vacancy[candidate_teams[team_index]["team_id"]] <= 0:
-            team_index += 1
-        if team_index < len(candidate_teams):
-            team_id = candidate_teams[team_index]["team_id"]
-            assignments.append((dra_id, team_id))
-            team_vacancy[team_id] -= 1
-        else:
+        eligible = [t for t in candidate_teams if team_vacancy[t["team_id"]] > 0]
+        if not eligible:
             standby_ids.append(dra_id)
+            continue
+        eligible.sort(key=_current_sort_key)
+        team_id = eligible[0]["team_id"]
+        assignments.append((dra_id, team_id))
+        team_vacancy[team_id] -= 1
+        reserves_assigned[team_id] += 1
 
     # Write results
     async with get_connection(bot.db_path) as db:
@@ -606,6 +711,7 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
         "run_reserve_distribution: round %d / division %d — %d assigned, %d standby",
         round_id, division_id, len(assignments), len(standby_ids),
     )
+    return bool(assignments or standby_ids)
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -666,6 +772,41 @@ async def _rebuild_embed_for_round(round_id: int, division_id: int, bot) -> disc
     )
 
 
+async def _post_no_reserve_notice(round_id: int, division_id: int, bot) -> None:  # type: ignore[type-arg]
+    """Post a notice that no reserves were placed because all seats were filled."""
+    att_div_cfg = await bot.attendance_service.get_division_config(division_id)
+    if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
+        log.warning(
+            "_post_no_reserve_notice: no attendance config or rsvp_channel_id "
+            "for division %d — skipping",
+            division_id,
+        )
+        return
+
+    channel = bot.get_channel(int(att_div_cfg.rsvp_channel_id))
+    if channel is None:
+        log.warning(
+            "_post_no_reserve_notice: RSVP channel %s not in bot cache "
+            "for division %d — skipping",
+            att_div_cfg.rsvp_channel_id, division_id,
+        )
+        return
+
+    try:
+        dist_msg = await channel.send(
+            "✅ **Reserve Distribution** — No reserves were placed; all seats are filled."
+        )
+    except discord.HTTPException as exc:
+        log.error("_post_no_reserve_notice: failed for division %d: %s", division_id, exc)
+        return
+
+    await bot.attendance_service.update_embed_distribution_msg(
+        round_id=round_id,
+        division_id=division_id,
+        msg_id=str(dist_msg.id),
+    )
+
+
 async def _post_distribution_announcement(round_id: int, division_id: int, bot) -> None:  # type: ignore[type-arg]
     """Post the reserve distribution assignment announcement (FR-025 / FR-026)."""
     async with get_connection(bot.db_path) as db:
@@ -692,19 +833,34 @@ async def _post_distribution_announcement(round_id: int, division_id: int, bot) 
         eligible_rows = await cur.fetchall()
 
     if not eligible_rows:
+        log.info(
+            "_post_distribution_announcement: no eligible accepted reserves for "
+            "round %d / division %d — skipping announcement (FR-026)",
+            round_id, division_id,
+        )
         return  # FR-026: no announcement if no eligible reserves
 
     att_div_cfg = await bot.attendance_service.get_division_config(division_id)
     if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
+        log.warning(
+            "_post_distribution_announcement: no attendance config or rsvp_channel_id "
+            "for division %d — skipping announcement",
+            division_id,
+        )
         return
 
     channel = bot.get_channel(int(att_div_cfg.rsvp_channel_id))
     if channel is None:
+        log.warning(
+            "_post_distribution_announcement: RSVP channel %s not in bot cache "
+            "for division %d — skipping announcement",
+            att_div_cfg.rsvp_channel_id, division_id,
+        )
         return
 
     lines = ["📋 **Reserve Distribution Results**"]
     for row in eligible_rows:
-        driver_str = row["test_display_name"] if row["test_display_name"] else f"<@{row['discord_user_id']}>"
+        driver_str = f"<@{row['discord_user_id']}> ({row['test_display_name']})" if row["test_display_name"] else f"<@{row['discord_user_id']}>"
         if row["is_standby"]:
             lines.append(f"  {driver_str} — **Standby** (no vacancy available)")
         elif row["assigned_team_id"] is not None:
@@ -713,6 +869,14 @@ async def _post_distribution_announcement(round_id: int, division_id: int, bot) 
             lines.append(f"  {driver_str} — no assignment")
 
     try:
-        await channel.send("\n".join(lines))
+        dist_msg = await channel.send("\n".join(lines))
     except discord.HTTPException as exc:
         log.error("_post_distribution_announcement: failed for division %d: %s", division_id, exc)
+        return
+
+    # Track message ID so the next round's cleanup can delete it
+    await bot.attendance_service.update_embed_distribution_msg(
+        round_id=round_id,
+        division_id=division_id,
+        msg_id=str(dist_msg.id),
+    )

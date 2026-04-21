@@ -109,16 +109,6 @@ async def delete_forecast_message(
     message_id: int = row["message_id"]
     channel_id: int = row["forecast_channel_id"]
 
-    # --- Test-mode guard (T012 / FR-012) ---
-    config = await bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
-    if config is not None and config.test_mode_active:
-        log.debug(
-            "delete_forecast_message: test mode active for server=%s — skipping deletion "
-            "(round=%s div=%s phase=%s)",
-            server_id, round_id, division_id, phase_number,
-        )
-        return
-
     # --- Attempt Discord deletion ---
     _delete_ok = await _discord_delete(bot, channel_id, message_id)
 

@@ -75,6 +75,21 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
             except Exception:
                 pass  # Job already fired or never existed
 
+    # Post cancellation notice in each wizard channel and schedule deletion.
+    # This mirrors the withdraw() path so drivers see a message and the channel
+    # is cleaned up after a 24-hour hold.
+    _guild = bot.get_guild(server_id)
+    if _guild is not None:
+        _wizard_svc = bot.wizard_service  # type: ignore[attr-defined]
+        for row in rows:
+            try:
+                await _wizard_svc._trigger_channel_hold(
+                    server_id, row["discord_user_id"], _guild,
+                    "🔒 Signups have closed. This channel will be automatically deleted in 24 hours.",
+                )
+            except Exception:
+                log.exception("forced_close: _trigger_channel_hold failed for driver %s", row["discord_user_id"])
+
     # 2. Delete button message
     if cfg.signup_button_message_id:
         guild = bot.get_guild(server_id)
@@ -276,35 +291,41 @@ class ModuleCog(commands.Cog):
 
         now = datetime.now(timezone.utc)
         divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[union-attr]
+        season_number: int = getattr(season, "season_number", 0)
+        div_meta: dict[int, tuple[int, int]] = {
+            div.id: (season_number, div.tier) for div in divisions
+        }
         all_rounds = []
         for div in divisions:
             rounds = await self.bot.season_service.get_division_rounds(div.id)
             all_rounds.extend(rounds)
 
         for rnd in all_rounds:
-            if rnd.format == RoundFormat.MYSTERY:
-                continue
-
             scheduled_at = rnd.scheduled_at
             if scheduled_at.tzinfo is None:
                 scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
 
-            p1_horizon = scheduled_at - timedelta(days=cfg.phase_1_days)
-            p2_horizon = scheduled_at - timedelta(days=cfg.phase_2_days)
-            p3_horizon = scheduled_at - timedelta(hours=cfg.phase_3_hours)
+            # Catch-up phase execution only applies to non-mystery rounds
+            if rnd.format != RoundFormat.MYSTERY:
+                p1_horizon = scheduled_at - timedelta(days=cfg.phase_1_days)
+                p2_horizon = scheduled_at - timedelta(days=cfg.phase_2_days)
+                p3_horizon = scheduled_at - timedelta(hours=cfg.phase_3_hours)
 
-            if not rnd.phase1_done and now >= p1_horizon:
-                log.info("Weather enable catch-up: Phase 1 for round %s", rnd.id)
-                await run_phase1(rnd.id, self.bot)
-            if not rnd.phase2_done and now >= p2_horizon:
-                log.info("Weather enable catch-up: Phase 2 for round %s", rnd.id)
-                await run_phase2(rnd.id, self.bot)
-            if not rnd.phase3_done and now >= p3_horizon:
-                log.info("Weather enable catch-up: Phase 3 for round %s", rnd.id)
-                await run_phase3(rnd.id, self.bot)
+                if not rnd.phase1_done and now >= p1_horizon:
+                    log.info("Weather enable catch-up: Phase 1 for round %s", rnd.id)
+                    await run_phase1(rnd.id, self.bot)
+                if not rnd.phase2_done and now >= p2_horizon:
+                    log.info("Weather enable catch-up: Phase 2 for round %s", rnd.id)
+                    await run_phase2(rnd.id, self.bot)
+                if not rnd.phase3_done and now >= p3_horizon:
+                    log.info("Weather enable catch-up: Phase 3 for round %s", rnd.id)
+                    await run_phase3(rnd.id, self.bot)
 
+            s_num, d_tier = div_meta.get(rnd.division_id, (0, 0))
             self.bot.scheduler_service.schedule_round(
                 rnd,
+                season_number=s_num,
+                division_tier=d_tier,
                 phase_1_days=cfg.phase_1_days,
                 phase_2_days=cfg.phase_2_days,
                 phase_3_hours=cfg.phase_3_hours,
@@ -469,7 +490,7 @@ class ModuleCog(commands.Cog):
                 await db.execute(
                     "INSERT OR REPLACE INTO attendance_config "
                     "(server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-                    "rsvp_deadline_hours, no_rsvp_penalty, no_attend_penalty, no_show_penalty, "
+                    "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
                     "autoreserve_threshold, autosack_threshold) "
                     "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
                     (server_id,),

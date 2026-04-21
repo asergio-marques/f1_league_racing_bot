@@ -7,17 +7,130 @@ import discord
 
 from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from models.session_result import DriverSessionResult, SessionResult
+from models.session_result import (
+    DriverSessionResult,
+    OutcomeModifier,
+    QualifyingSessionResult,
+    RaceSessionResult,
+    SessionResult,
+)
 from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 from services import standings_service
 from utils import results_formatter
 
 log = logging.getLogger(__name__)
 
+_MSG_MAX = 1990  # Leave a small margin under Discord's 2000-char limit
+
+
+def _split_content(text: str) -> list[str]:
+    """Split *text* into chunks ≤ _MSG_MAX chars, breaking on newlines where possible."""
+    if len(text) <= _MSG_MAX:
+        return [text]
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for line in text.splitlines(keepends=True):
+        if current_len + len(line) > _MSG_MAX and current:
+            chunks.append("".join(current).rstrip("\n"))
+            current = [line]
+            current_len = len(line)
+        else:
+            current.append(line)
+            current_len += len(line)
+    if current:
+        chunks.append("".join(current).rstrip("\n"))
+    return chunks or [text[:_MSG_MAX]]
+
+
+async def _send_chunked(channel: discord.TextChannel, content: str) -> discord.Message:
+    """Send *content* to *channel*, splitting into multiple messages if needed.
+
+    Returns the first (header) message so its ID can be persisted.
+    """
+    chunks = _split_content(content)
+    first_msg = await channel.send(chunks[0])
+    for chunk in chunks[1:]:
+        await channel.send(chunk)
+    return first_msg
+
+
+async def _delete_with_continuations(
+    channel: discord.TextChannel,
+    anchor_msg_id: int,
+    label: str = "message",
+) -> None:
+    """Delete the anchor message and any immediately-following bot continuation messages.
+
+    When a result/standings post exceeds 2000 chars it is split into multiple
+    consecutive messages via :func:`_send_chunked`.  Only the first message ID is
+    persisted; this helper deletes it *and* any subsequent messages in the same
+    channel that were authored by the same user (the bot), stopping as soon as it
+    encounters a message from someone else.
+
+    Args:
+        channel:       The Discord text channel to operate on.
+        anchor_msg_id: The stored message ID of the first (anchor) chunk.
+        label:         Log context string for warning messages.
+    """
+    try:
+        anchor = await channel.fetch_message(anchor_msg_id)
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+        log.warning("_delete_with_continuations: could not fetch %s %s: %s", label, anchor_msg_id, exc)
+        return
+
+    bot_user_id: int = anchor.author.id
+
+    # Collect continuation messages (up to 5; we realistically only need 1-2)
+    continuations: list[discord.Message] = []
+    try:
+        async for msg in channel.history(after=anchor, limit=5, oldest_first=True):
+            if msg.author.id != bot_user_id:
+                break  # Non-bot message — stop; don't delete anything beyond here
+            continuations.append(msg)
+    except discord.HTTPException as exc:
+        log.warning("_delete_with_continuations: history fetch failed for %s: %s", label, exc)
+
+    # Delete continuations first (oldest → newest), then the anchor
+    for msg in continuations:
+        try:
+            await msg.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+            log.warning("_delete_with_continuations: could not delete continuation %s: %s", msg.id, exc)
+
+    try:
+        await anchor.delete()
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+        log.warning("_delete_with_continuations: could not delete %s %s: %s", label, anchor_msg_id, exc)
+
 
 # ---------------------------------------------------------------------------
 # Display-name helpers
 # ---------------------------------------------------------------------------
+
+async def _build_test_driver_display(
+    db_path: str,
+    user_ids: list[int],
+) -> dict[int, str]:
+    """Return {user_id: '<@uid> (name)'} for any test drivers in *user_ids*."""
+    if not user_ids:
+        return {}
+    async with get_connection(db_path) as db:
+        placeholders = ",".join("?" * len(user_ids))
+        cursor = await db.execute(
+            f"SELECT discord_user_id, test_display_name FROM driver_profiles"
+            f" WHERE is_test_driver = 1 AND discord_user_id IN ({placeholders})",
+            [str(uid) for uid in user_ids],
+        )
+        rows = await cursor.fetchall()
+    result: dict[int, str] = {}
+    for r in rows:
+        uid = int(r["discord_user_id"])
+        name = r["test_display_name"]
+        if name:
+            result[uid] = f"<@{uid}> ({name})"
+    return result
+
 
 async def _build_member_display(
     guild: discord.Guild,
@@ -104,10 +217,45 @@ def _label_from_status(result_status: str) -> str:
 # Session-level posting
 # ---------------------------------------------------------------------------
 
+async def _load_dsq_phase_map(
+    db_path: str,
+    result_ids: list[int],
+    *,
+    is_qualifying: bool,
+) -> dict[int, str]:
+    """Return a mapping of result-row id -> 'PENALTY' or 'APPEAL' for DSQ entries.
+
+    APPEAL overrides PENALTY when both exist for the same row (appeals are applied last).
+    """
+    if not result_ids:
+        return {}
+    ph = ",".join("?" * len(result_ids))
+    fk_col = "qual_result_id" if is_qualifying else "race_result_id"
+    phase_map: dict[int, str] = {}
+    async with get_connection(db_path) as db:
+        # Penalty phase DSQs
+        cursor = await db.execute(
+            f"SELECT {fk_col} AS rid FROM penalty_records "
+            f"WHERE {fk_col} IN ({ph}) AND penalty_type = 'DSQ'",
+            result_ids,
+        )
+        for row in await cursor.fetchall():
+            phase_map[row["rid"]] = "PENALTY"
+        # Appeal phase DSQs (override)
+        cursor = await db.execute(
+            f"SELECT {fk_col} AS rid FROM appeal_records "
+            f"WHERE {fk_col} IN ({ph}) AND penalty_type = 'DSQ'",
+            result_ids,
+        )
+        for row in await cursor.fetchall():
+            phase_map[row["rid"]] = "APPEAL"
+    return phase_map
+
+
 async def post_session_results(
     db_path: str,
     session_result: SessionResult,
-    driver_rows: list[DriverSessionResult],
+    driver_rows: list,  # list[QualifyingSessionResult] | list[RaceSessionResult] | list[DriverSessionResult]
     points_map: dict[int, int],
     results_channel: discord.TextChannel,
     guild: discord.Guild,
@@ -120,15 +268,29 @@ async def post_session_results(
     session_type = SessionType(session_result.session_type)
     session_label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
 
+    user_ids = [r.driver_user_id for r in driver_rows]
+    test_display = await _build_test_driver_display(db_path, user_ids)
+
+    result_ids = [r.id for r in driver_rows]
+    dsq_phase_map = await _load_dsq_phase_map(
+        db_path, result_ids, is_qualifying=session_type.is_qualifying
+    )
+
     if session_type.is_qualifying:
-        table = results_formatter.format_qualifying_table(driver_rows, points_map)
+        table = results_formatter.format_qualifying_table(
+            driver_rows, points_map, member_display=test_display or None,
+            dsq_phase_map=dsq_phase_map,
+        )
     else:
-        table = results_formatter.format_race_table(driver_rows, points_map)
+        table = results_formatter.format_race_table(
+            driver_rows, points_map, member_display=test_display or None,
+            dsq_phase_map=dsq_phase_map,
+        )
 
     season_number, division_name = await _get_heading_context(db_path, session_result.round_id)
     season_prefix = f"Season {season_number} " if season_number is not None else ""
     heading = f"**{season_prefix}{division_name} Round {round_number} — {session_label}**"
-    msg = await results_channel.send(f"{heading}\n{label}\n{table}")
+    msg = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
 
     async with get_connection(db_path) as db:
         await db.execute(
@@ -161,8 +323,11 @@ async def post_standings(
     # Determine reserve user IDs from the DB (is_reserve team instances)
     reserve_user_ids: set[int] = await _get_reserve_user_ids(db_path, division_id)
 
+    driver_uids = [s.driver_user_id for s in driver_snapshots]
+    test_display = await _build_test_driver_display(db_path, driver_uids)
+
     driver_text = results_formatter.format_driver_standings(
-        driver_snapshots, reserve_user_ids, show_reserves
+        driver_snapshots, reserve_user_ids, show_reserves, driver_display=test_display or None
     )
     team_text = results_formatter.format_team_standings(team_snapshots)
 
@@ -183,13 +348,18 @@ async def post_standings(
     if existing_msg_id is not None:
         try:
             existing_msg = await standings_channel.fetch_message(existing_msg_id)
-            await existing_msg.edit(content=content)
-            sent_msg = existing_msg
+            # Only edit in-place when the content fits in a single message; otherwise
+            # fall through to delete-and-resend so we can chunk across multiple messages.
+            if len(content) <= _MSG_MAX:
+                await existing_msg.edit(content=content)
+                sent_msg = existing_msg
+            else:
+                await existing_msg.delete()
         except (discord.NotFound, discord.HTTPException):
             sent_msg = None
 
     if sent_msg is None:
-        sent_msg = await standings_channel.send(content)
+        sent_msg = await _send_chunked(standings_channel, content)
 
     # Persist the message ID on the top-ranked driver snapshot
     if driver_snapshots:
@@ -241,6 +411,81 @@ async def _get_reserve_user_ids(db_path: str, division_id: int) -> set[int]:
         )
         rows = await cursor.fetchall()
     return {int(r["discord_user_id"]) for r in rows if r["discord_user_id"]}
+
+
+# ---------------------------------------------------------------------------
+# Driver-row loading helpers
+# ---------------------------------------------------------------------------
+
+async def _load_driver_rows(
+    db_path: str,
+    session_result_id: int,
+    session_type: SessionType,
+) -> list:
+    """Load driver rows for a session from new tables.
+
+    Returns list[QualifyingSessionResult] for qualifying, list[RaceSessionResult]
+    for race.
+    """
+
+    if session_type.is_qualifying:
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, session_result_id, driver_user_id, team_role_id, finishing_position, "
+                "outcome, tyre, best_lap, points_awarded, driver_profile_id "
+                "FROM qualifying_session_results WHERE session_result_id = ? "
+                "ORDER BY finishing_position",
+                (session_result_id,),
+            )
+            rows = await cursor.fetchall()
+        return [
+            QualifyingSessionResult(
+                id=r["id"],
+                session_result_id=r["session_result_id"],
+                driver_user_id=r["driver_user_id"],
+                team_role_id=r["team_role_id"],
+                finishing_position=r["finishing_position"],
+                outcome=OutcomeModifier(r["outcome"]),
+                tyre=r["tyre"],
+                best_lap=r["best_lap"],
+                points_awarded=r["points_awarded"] or 0,
+                driver_profile_id=r["driver_profile_id"],
+            )
+            for r in rows
+        ]
+
+    # Race session
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id, session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, base_time_ms, laps_behind, ingame_time_penalties_ms, "
+            "postrace_time_penalties_ms, appeal_time_penalties_ms, fastest_lap, "
+            "fastest_lap_bonus, points_awarded, driver_profile_id "
+            "FROM race_session_results WHERE session_result_id = ? "
+            "ORDER BY finishing_position",
+            (session_result_id,),
+        )
+        rows = await cursor.fetchall()
+    return [
+        RaceSessionResult(
+            id=r["id"],
+            session_result_id=r["session_result_id"],
+            driver_user_id=r["driver_user_id"],
+            team_role_id=r["team_role_id"],
+            finishing_position=r["finishing_position"],
+            outcome=OutcomeModifier(r["outcome"]),
+            base_time_ms=r["base_time_ms"],
+            laps_behind=r["laps_behind"],
+            ingame_time_penalties_ms=r["ingame_time_penalties_ms"] or 0,
+            postrace_time_penalties_ms=r["postrace_time_penalties_ms"] or 0,
+            appeal_time_penalties_ms=r["appeal_time_penalties_ms"] or 0,
+            fastest_lap=r["fastest_lap"],
+            fastest_lap_bonus=r["fastest_lap_bonus"] or 0,
+            points_awarded=r["points_awarded"] or 0,
+            driver_profile_id=r["driver_profile_id"],
+        )
+        for r in rows
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -306,48 +551,12 @@ async def post_round_results(
             results_message_id=sr_row["results_message_id"],
         )
 
-        # Load driver rows
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT id, session_result_id, driver_user_id, team_role_id, finishing_position,
-                       outcome, tyre, best_lap, gap, total_time, fastest_lap, time_penalties,
-                       post_steward_total_time, post_race_time_penalties,
-                       points_awarded, fastest_lap_bonus, is_superseded
-                FROM driver_session_results
-                WHERE session_result_id = ? AND is_superseded = 0
-                ORDER BY finishing_position
-                """,
-                (session_result.id,),
-            )
-            driver_rows_raw = await cursor.fetchall()
-
-        from models.session_result import OutcomeModifier as _OM
-        driver_rows = [
-            DriverSessionResult(
-                id=r["id"],
-                session_result_id=r["session_result_id"],
-                driver_user_id=r["driver_user_id"],
-                team_role_id=r["team_role_id"],
-                finishing_position=r["finishing_position"],
-                outcome=_OM(r["outcome"]),
-                tyre=r["tyre"],
-                best_lap=r["best_lap"],
-                gap=r["gap"],
-                total_time=r["total_time"],
-                fastest_lap=r["fastest_lap"],
-                time_penalties=r["time_penalties"],
-                post_steward_total_time=r["post_steward_total_time"],
-                post_race_time_penalties=r["post_race_time_penalties"],
-                points_awarded=r["points_awarded"] or 0,
-                fastest_lap_bonus=r["fastest_lap_bonus"] or 0,
-                is_superseded=bool(r["is_superseded"]),
-            )
-            for r in driver_rows_raw
-        ]
+        # Load driver rows from new tables (QualifyingSessionResult / RaceSessionResult)
+        session_type = SessionType(session_result.session_type)
+        driver_rows = await _load_driver_rows(db_path, session_result.id, session_type)
 
         points_map = {
-            r.driver_user_id: r.points_awarded + r.fastest_lap_bonus
+            r.driver_user_id: r.points_awarded + getattr(r, "fastest_lap_bonus", 0)
             for r in driver_rows
         }
 
@@ -485,8 +694,6 @@ async def repost_results_for_division(
     if not round_rows:
         return "no_rounds"
 
-    from models.session_result import OutcomeModifier as _OM
-
     for rnd in round_rows:
         round_id: int = rnd["round_id"]
         round_number: int = rnd["round_number"]
@@ -510,18 +717,12 @@ async def repost_results_for_division(
         for sr_row in session_rows:
             session_result = _sr_from_row(sr_row)
 
-            # Delete the existing Discord message for this session (if any)
+            # Delete the existing Discord message(s) for this session (if any)
             old_msg_id: int | None = sr_row["results_message_id"]
             if old_msg_id is not None:
-                try:
-                    old_msg = await rc.fetch_message(old_msg_id)
-                    await old_msg.delete()
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-                    log.warning(
-                        "repost_results_for_division: could not delete results message %s: %s",
-                        old_msg_id,
-                        exc,
-                    )
+                await _delete_with_continuations(
+                    rc, old_msg_id, label="results message"
+                )
                 async with get_connection(db_path) as db:
                     await db.execute(
                         "UPDATE session_results SET results_message_id = NULL WHERE id = ?",
@@ -530,25 +731,9 @@ async def repost_results_for_division(
                     await db.commit()
 
             # Load driver rows and repost
-            async with get_connection(db_path) as db:
-                cursor = await db.execute(
-                    """
-                    SELECT id, session_result_id, driver_user_id, team_role_id,
-                           finishing_position, outcome, tyre, best_lap, gap, total_time,
-                           fastest_lap, time_penalties, post_steward_total_time,
-                           post_race_time_penalties, points_awarded, fastest_lap_bonus,
-                           is_superseded
-                    FROM driver_session_results
-                    WHERE session_result_id = ? AND is_superseded = 0
-                    ORDER BY finishing_position
-                    """,
-                    (sr_row["id"],),
-                )
-                driver_rows_raw = await cursor.fetchall()
-
-            driver_rows = [_dr_from_row(r) for r in driver_rows_raw]
+            driver_rows = await _load_driver_rows(db_path, sr_row["id"], SessionType(sr_row["session_type"]))
             points_map = {
-                r.driver_user_id: r.points_awarded + r.fastest_lap_bonus
+                r.driver_user_id: r.points_awarded + getattr(r, "fastest_lap_bonus", 0)
                 for r in driver_rows
             }
 
@@ -612,18 +797,12 @@ async def repost_standings_for_division(
         track_name: str = row["track_name"] or "Unknown"
         rsd_label: str = _label_from_status(row["result_status"] or "PROVISIONAL")
 
-        # Delete the existing standings message for this round (if any)
+        # Delete the existing standings message(s) for this round (if any)
         existing_msg_id = await _get_standings_message_id(db_path, division_id, round_id)
         if existing_msg_id is not None:
-            try:
-                old_msg = await sc.fetch_message(existing_msg_id)
-                await old_msg.delete()
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-                log.warning(
-                    "repost_standings_for_division: could not delete standings message %s: %s",
-                    existing_msg_id,
-                    exc,
-                )
+            await _delete_with_continuations(
+                sc, existing_msg_id, label="standings message"
+            )
             async with get_connection(db_path) as db:
                 await db.execute(
                     "UPDATE driver_standings_snapshots SET standings_message_id = NULL "
@@ -720,16 +899,9 @@ async def delete_and_repost_final_results(
                 # Delete old interim Discord message
                 old_msg_id: int | None = sr_row["results_message_id"]
                 if old_msg_id is not None:
-                    try:
-                        old_msg = await rc.fetch_message(old_msg_id)
-                        await old_msg.delete()
-                    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-                        log.warning(
-                            "delete_and_repost_final_results: could not delete interim "
-                            "results message %s: %s",
-                            old_msg_id,
-                            exc,
-                        )
+                    await _delete_with_continuations(
+                        rc, old_msg_id, label="interim results message"
+                    )
 
                     # Clear stale message_id so post_session_results inserts a fresh one
                     async with get_connection(db_path) as db:
@@ -740,29 +912,9 @@ async def delete_and_repost_final_results(
                         await db.commit()
 
                 # Load updated driver rows
-                async with get_connection(db_path) as db:
-                    cursor = await db.execute(
-                        """
-                        SELECT id, session_result_id, driver_user_id, team_role_id,
-                               finishing_position, outcome, tyre, best_lap, gap, total_time,
-                               fastest_lap, time_penalties, post_steward_total_time,
-                               post_race_time_penalties, points_awarded, fastest_lap_bonus,
-                               is_superseded
-                        FROM driver_session_results
-                        WHERE session_result_id = ? AND is_superseded = 0
-                        ORDER BY finishing_position
-                        """,
-                        (sr_row["id"],),
-                    )
-                    driver_rows_raw = await cursor.fetchall()
-
-                from models.session_result import OutcomeModifier as _OM
-                driver_rows = [
-                    _dr_from_row(r)
-                    for r in driver_rows_raw
-                ]
+                driver_rows = await _load_driver_rows(db_path, sr_row["id"], SessionType(sr_row["session_type"]))
                 points_map = {
-                    r.driver_user_id: r.points_awarded + r.fastest_lap_bonus
+                    r.driver_user_id: r.points_awarded + getattr(r, "fastest_lap_bonus", 0)
                     for r in driver_rows
                 }
 
@@ -777,16 +929,9 @@ async def delete_and_repost_final_results(
         if sc is not None:
             old_standings_msg_id = await _get_standings_message_id(db_path, division_id, round_id)
             if old_standings_msg_id is not None:
-                try:
-                    old_sm = await sc.fetch_message(old_standings_msg_id)
-                    await old_sm.delete()
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-                    log.warning(
-                        "delete_and_repost_final_results: could not delete interim "
-                        "standings message %s: %s",
-                        old_standings_msg_id,
-                        exc,
-                    )
+                await _delete_with_continuations(
+                    sc, old_standings_msg_id, label="interim standings message"
+                )
 
                 # Clear obsolete standings_message_id from all snapshots for this round
                 async with get_connection(db_path) as db:
@@ -861,16 +1006,10 @@ async def repost_subsequent_standings(
         if sc is None:
             continue
 
-        # Delete old standings message
-        try:
-            old_sm = await sc.fetch_message(existing_msg_id)
-            await old_sm.delete()
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-            log.warning(
-                "repost_subsequent_standings: could not delete standings message %s: %s",
-                existing_msg_id,
-                exc,
-            )
+        # Delete old standings message(s)
+        await _delete_with_continuations(
+            sc, existing_msg_id, label="standings message"
+        )
 
         # Clear obsolete standings_message_id
         async with get_connection(db_path) as db:
@@ -923,27 +1062,4 @@ def _sr_from_row(sr_row) -> "SessionResult":
         results_message_id=sr_row["results_message_id"],
     )
 
-
-def _dr_from_row(r) -> "DriverSessionResult":
-    """Construct a :class:`DriverSessionResult` from a DB row dict."""
-    from models.session_result import DriverSessionResult, OutcomeModifier
-    return DriverSessionResult(
-        id=r["id"],
-        session_result_id=r["session_result_id"],
-        driver_user_id=r["driver_user_id"],
-        team_role_id=r["team_role_id"],
-        finishing_position=r["finishing_position"],
-        outcome=OutcomeModifier(r["outcome"]),
-        tyre=r["tyre"],
-        best_lap=r["best_lap"],
-        gap=r["gap"],
-        total_time=r["total_time"],
-        fastest_lap=r["fastest_lap"],
-        time_penalties=r["time_penalties"],
-        post_steward_total_time=r["post_steward_total_time"],
-        post_race_time_penalties=r["post_race_time_penalties"],
-        points_awarded=r["points_awarded"] or 0,
-        fastest_lap_bonus=r["fastest_lap_bonus"] or 0,
-        is_superseded=bool(r["is_superseded"]),
-    )
 

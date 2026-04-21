@@ -427,8 +427,13 @@ class TestModeCog(commands.Cog):
         summary = await build_review_summary(
             interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]
+            self.bot.scheduler_service,  # type: ignore[attr-defined]
         )
-        await interaction.response.send_message(summary, ephemeral=True)
+        # Discord message limit is 2000 characters; chunk if needed.
+        chunks = [summary[i:i + 2000] for i in range(0, len(summary), 2000)]
+        await interaction.response.send_message(chunks[0], ephemeral=True)
+        for chunk in chunks[1:]:
+            await interaction.followup.send(chunk, ephemeral=True)
 
     # ------------------------------------------------------------------
     # /test-mode set-former-driver
@@ -561,6 +566,64 @@ class TestModeCog(commands.Cog):
             f"  division: {division}",
         )
 
+    # /test-mode roster remove --------------------------------------------
+
+    @roster.command(
+        name="remove",
+        description="Remove a single fake driver by their synthetic user ID.",
+    )
+    @app_commands.describe(
+        user_id="Synthetic user ID of the fake driver (shown in /test-mode roster list or roster add).",
+    )
+    @channel_guard
+    @admin_only
+    async def roster_remove(
+        self,
+        interaction: discord.Interaction,
+        user_id: str,
+    ) -> None:
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ This command is only available when test mode is enabled.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            discord_uid = int(user_id)
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ `user_id` must be a numeric Discord user ID.", ephemeral=True
+            )
+            return
+
+        from services.test_roster_service import remove_test_driver
+
+        result = await remove_test_driver(
+            server_id=interaction.guild_id,
+            discord_user_id=discord_uid,
+            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+        )
+
+        if isinstance(result, str):
+            await interaction.response.send_message(f"⛔ {result}", ephemeral=True)
+            return
+
+        await interaction.response.send_message(
+            f"✅ Removed fake driver **{result['display_name']}** from **{result['team_name']}**.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster remove | Success\n"
+            f"  driver: {result['display_name']}\n"
+            f"  team: {result['team_name']}\n"
+            f"  user_id: {discord_uid}",
+        )
+
     # /test-mode roster list -----------------------------------------------
 
     @roster.command(
@@ -689,25 +752,16 @@ class TestModeCog(commands.Cog):
 
     @rsvp.command(
         name="set-status",
-        description="Manually set a driver's RSVP status (test mode only).",
+        description="Bulk-set RSVP statuses for test drivers in a division via a modal.",
     )
     @app_commands.describe(
-        driver_id="Discord user ID of the driver to update.",
-        status="RSVP status to set (accepted / tentative / declined).",
         division="Division name whose active RSVP round to update.",
     )
-    @app_commands.choices(status=[
-        app_commands.Choice(name="accepted",  value="ACCEPTED"),
-        app_commands.Choice(name="tentative", value="TENTATIVE"),
-        app_commands.Choice(name="declined",  value="DECLINED"),
-    ])
     @channel_guard
     @admin_only
     async def rsvp_set_status(
         self,
         interaction: discord.Interaction,
-        driver_id: str,
-        status: app_commands.Choice[str],
         division: str,
     ) -> None:
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
@@ -719,38 +773,12 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        await interaction.response.defer(ephemeral=True)
-
         guild_id: int = interaction.guild_id  # type: ignore[assignment]
-        new_status: str = status.value
-
-        # Resolve driver_profile_id from the given Discord user ID
-        try:
-            discord_uid = int(driver_id)
-        except ValueError:
-            await interaction.followup.send(
-                "❌ `driver_id` must be a numeric Discord user ID.", ephemeral=True
-            )
-            return
 
         from db.database import get_connection as _gc
 
+        # Validate division exists in the active season and has an active RSVP embed
         async with _gc(self.bot.db_path) as db:  # type: ignore[attr-defined]
-            cur = await db.execute(
-                "SELECT id FROM driver_profiles WHERE server_id = ? AND CAST(discord_user_id AS INTEGER) = ?",
-                (guild_id, discord_uid),
-            )
-            profile_row = await cur.fetchone()
-
-        if profile_row is None:
-            await interaction.followup.send(
-                f"❌ No driver profile found for user ID `{driver_id}`.", ephemeral=True
-            )
-            return
-        driver_profile_id: int = profile_row["id"]
-
-        # Resolve division_id by name in the active season
-        async with _gc(self.bot.db_path) as db:
             cur = await db.execute(
                 """
                 SELECT d.id AS division_id
@@ -764,67 +792,169 @@ class TestModeCog(commands.Cog):
             div_row = await cur.fetchone()
 
         if div_row is None:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"❌ Division **{division}** not found in the active season.", ephemeral=True
             )
             return
         division_id: int = div_row["division_id"]
 
-        # Find the active RSVP embed row for this division (a round that has an embed)
-        embed_row = await self.bot.attendance_service.get_all_embed_messages()  # type: ignore[attr-defined]
-        target_embed = next(
-            (r for r in embed_row if r.division_id == division_id),
-            None,
-        )
+        embed_rows = await self.bot.attendance_service.get_all_embed_messages()  # type: ignore[attr-defined]
+        target_embed = next((r for r in embed_rows if r.division_id == division_id), None)
         if target_embed is None:
-            await interaction.followup.send(
-                f"❌ No active RSVP embed found for division **{division}**.", ephemeral=True
-            )
-            return
-        round_id: int = target_embed.round_id
-
-        # Verify the driver has a DRA row for this round
-        dra = await self.bot.attendance_service.get_attendance_row_for_driver(  # type: ignore[attr-defined]
-            round_id=round_id,
-            division_id=division_id,
-            driver_profile_id=driver_profile_id,
-        )
-        if dra is None:
-            await interaction.followup.send(
-                f"❌ Driver `{driver_id}` has no attendance row for this round. "
+            await interaction.response.send_message(
+                f"❌ No active RSVP embed found for division **{division}**. "
                 "Run `/test-mode advance` to fire the RSVP notice first.",
                 ephemeral=True,
             )
             return
 
-        # Apply the status update (same accepted_at logic as a real button press)
-        await self.bot.attendance_service.upsert_rsvp_status(  # type: ignore[attr-defined]
-            round_id=round_id,
-            division_id=division_id,
-            driver_profile_id=driver_profile_id,
-            status=new_status,
+        await interaction.response.send_modal(
+            _RsvpBulkSetModal(
+                division_name=division,
+                division_id=division_id,
+                round_id=target_embed.round_id,
+                embed_channel_id=int(target_embed.channel_id),
+                embed_message_id=int(target_embed.message_id),
+                bot=self.bot,
+            )
         )
 
-        # Rebuild and edit the RSVP embed in-place
+
+# ---------------------------------------------------------------------------
+# Modal: bulk RSVP status setter
+# ---------------------------------------------------------------------------
+
+_STATUS_MAP = {
+    "accept":   "ACCEPTED",
+    "accepted": "ACCEPTED",
+    "tentative": "TENTATIVE",
+    "decline":  "DECLINED",
+    "declined": "DECLINED",
+}
+
+
+class _RsvpBulkSetModal(discord.ui.Modal, title="Bulk Set RSVP Statuses"):
+    """Modal for bulk-setting test-driver RSVP statuses in a single division."""
+
+    entries: discord.ui.TextInput = discord.ui.TextInput(
+        label="ID, status — one entry per line",
+        style=discord.TextStyle.paragraph,
+        placeholder="900000001, accept\n900000002, tentative\n900000003, decline",
+        required=True,
+        max_length=4000,
+    )
+
+    def __init__(
+        self,
+        *,
+        division_name: str,
+        division_id: int,
+        round_id: int,
+        embed_channel_id: int,
+        embed_message_id: int,
+        bot: commands.Bot,
+    ) -> None:
+        super().__init__()
+        self._division_name = division_name
+        self._division_id = division_id
+        self._round_id = round_id
+        self._embed_channel_id = embed_channel_id
+        self._embed_message_id = embed_message_id
+        self._bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+        await interaction.response.defer(ephemeral=True)
+
+        from db.database import get_connection as _gc
         from services.rsvp_service import _rebuild_embed_for_round, RsvpView
-        channel = self.bot.get_channel(int(target_embed.channel_id))
-        if channel is not None:
-            try:
-                msg = await channel.fetch_message(int(target_embed.message_id))
-                new_embed = await _rebuild_embed_for_round(round_id, division_id, self.bot)
-                await msg.edit(embed=new_embed, view=RsvpView(round_id=round_id))
-            except Exception as exc:
-                log.warning("rsvp_set_status: failed to edit embed: %s", exc)
 
-        await interaction.followup.send(
-            f"✅ Set RSVP status for `{driver_id}` in **{division}** to **{new_status.lower()}**.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            interaction.guild_id,
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode rsvp set-status | Success\n"
-            f"  driver_id: {driver_id}\n"
-            f"  division: {division}\n"
-            f"  status: {new_status}\n"
-            f"  round_id: {round_id}",
-        )
+        guild_id: int = interaction.guild_id  # type: ignore[assignment]
+        applied: list[str] = []
+        errors: list[str] = []
+
+        for line_no, raw_line in enumerate(self.entries.value.splitlines(), start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+            parts = [p.strip() for p in line.split(",", 1)]
+            if len(parts) != 2:
+                errors.append(f"Line {line_no}: expected `ID, status` — got `{line}`")
+                continue
+            id_str, status_str = parts
+            try:
+                discord_uid = int(id_str)
+            except ValueError:
+                errors.append(f"Line {line_no}: `{id_str}` is not a valid numeric ID")
+                continue
+            new_status = _STATUS_MAP.get(status_str.lower())
+            if new_status is None:
+                errors.append(
+                    f"Line {line_no}: unknown status `{status_str}` "
+                    "(use accept, tentative, or decline)"
+                )
+                continue
+
+            async with _gc(self._bot.db_path) as db:  # type: ignore[attr-defined]
+                cur = await db.execute(
+                    "SELECT id FROM driver_profiles "
+                    "WHERE server_id = ? AND CAST(discord_user_id AS INTEGER) = ?",
+                    (guild_id, discord_uid),
+                )
+                profile_row = await cur.fetchone()
+
+            if profile_row is None:
+                errors.append(f"Line {line_no}: no driver profile for ID `{id_str}`")
+                continue
+            driver_profile_id: int = profile_row["id"]
+
+            dra = await self._bot.attendance_service.get_attendance_row_for_driver(  # type: ignore[attr-defined]
+                round_id=self._round_id,
+                division_id=self._division_id,
+                driver_profile_id=driver_profile_id,
+            )
+            if dra is None:
+                errors.append(
+                    f"Line {line_no}: driver `{id_str}` has no attendance row for this round"
+                )
+                continue
+
+            await self._bot.attendance_service.upsert_rsvp_status(  # type: ignore[attr-defined]
+                round_id=self._round_id,
+                division_id=self._division_id,
+                driver_profile_id=driver_profile_id,
+                status=new_status,
+            )
+            applied.append(f"`{id_str}` → {new_status.lower()}")
+
+        # Rebuild embed once after all updates
+        if applied:
+            channel = self._bot.get_channel(self._embed_channel_id)
+            if channel is not None:
+                try:
+                    msg = await channel.fetch_message(self._embed_message_id)
+                    new_embed = await _rebuild_embed_for_round(
+                        self._round_id, self._division_id, self._bot
+                    )
+                    await msg.edit(embed=new_embed, view=RsvpView(round_id=self._round_id))
+                except Exception as exc:
+                    log.warning("_RsvpBulkSetModal: failed to edit embed: %s", exc)
+
+        lines: list[str] = []
+        if applied:
+            lines.append(
+                f"✅ Applied {len(applied)} update(s) in **{self._division_name}**:\n"
+                + "\n".join(f"  {a}" for a in applied)
+            )
+        if errors:
+            lines.append("⚠️ Errors:\n" + "\n".join(f"  • {e}" for e in errors))
+        await interaction.followup.send("\n".join(lines) or "No valid entries.", ephemeral=True)
+
+        if applied:
+            await self._bot.output_router.post_log(  # type: ignore[attr-defined]
+                guild_id,
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+                f"| /test-mode rsvp set-status | {len(applied)} update(s)\n"
+                f"  division: {self._division_name}\n"
+                f"  round_id: {self._round_id}\n"
+                f"  changes: {', '.join(applied)}",
+            )

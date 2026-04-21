@@ -24,16 +24,14 @@ fields, and verifying the three buttons are present.
 **Acceptance Scenarios**:
 
 1. **Given** the attendance module is enabled, a division has a configured RSVP channel,
-   and a non-Mystery round is scheduled to start in exactly `rsvp_notice_days` days,
+   and a round is scheduled to start in exactly `rsvp_notice_days` days,
    **When** the scheduled notice timer fires, **Then** the bot posts an RSVP embed in that
    division's RSVP channel containing the correct title, timestamp, location, event type,
    full driver roster with `()` indicators, and three action buttons.
-2. **Given** a Mystery round is scheduled, **When** the notice timer would otherwise fire,
-   **Then** no RSVP embed is posted for that round.
-3. **Given** no RSVP channel is configured for a division at the moment the notice job fires,
+2. **Given** no RSVP channel is configured for a division at the moment the notice job fires,
    **When** the job runs, **Then** no embed is posted, no interaction channel error is
    emitted, and an audit log entry records the skip.
-4. **Given** the bot restarts before a round's notice timer has fired, **When** the bot
+3. **Given** the bot restarts before a round's notice timer has fired, **When** the bot
    comes back online, **Then** any still-pending RSVP notice jobs are re-armed and fire at
    the originally scheduled time.
 
@@ -125,8 +123,8 @@ distribution output matches the expected priority-and-tie-break ordering.
 
 1. **Given** the RSVP deadline is reached with accepted reserves available and teams needing
    substitutes, **When** distribution runs, **Then** reserves are assigned to teams in the
-   correct priority order (NO_RSVP teams first, then DECLINED teams, then TENTATIVE teams)
-   with correct tie-breaking applied.
+   correct priority order (NO_RSVP first, then DECLINED, then partially-staffed teams with
+   empty seats, then fully-unstaffed teams, then TENTATIVE) with correct tie-breaking applied.
 2. **Given** two teams are tied on priority and tie-breaker 1 (fewest accepted full-timers),
    **When** distribution runs, **Then** the team with the lower Constructors' Championship
    position receives the reserve first.
@@ -168,7 +166,7 @@ already responded and all reserve drivers are not mentioned.
 
 **Acceptance Scenarios**:
 
-1. **Given** `rsvp_last_notice_hours` is non-zero, a non-Mystery round is scheduled, and
+1. **Given** `rsvp_last_notice_hours` is non-zero, a round is scheduled, and
    the last-notice threshold is reached, **When** the job fires, **Then** the bot posts a
    message in the division's RSVP channel mentioning only the full-time drivers whose RSVP
    status is still NO_RSVP at that moment.
@@ -224,11 +222,9 @@ already responded and all reserve drivers are not mentioned.
 
 **RSVP Embed Posting**
 
-- **FR-001**: At exactly `rsvp_notice_days` days before each non-Mystery round's scheduled
+- **FR-001**: At exactly `rsvp_notice_days` days before each round's scheduled
   start time, the bot MUST automatically post an RSVP embed to the division's configured
   RSVP channel.
-- **FR-002**: For Mystery rounds, no RSVP embed MUST be posted and no RSVP notice job MUST
-  be created or armed.
 - **FR-003**: The RSVP embed title MUST follow the format
   `Season <N> Round <N> — <Track canonical name>`.
 - **FR-004**: The embed MUST include: the scheduled round datetime as a dynamic Discord
@@ -240,8 +236,8 @@ already responded and all reserve drivers are not mentioned.
   `(✅)` for Accepted, `(❓)` for Tentative, `(❌)` for Declined.
 - **FR-006**: The embed MUST include three action buttons arranged horizontally: Accept
   (green, ✅), Tentative (grey, ❓), Decline (red, ❌).
-- **FR-007**: RSVP notice jobs MUST be scheduled at season approval time for all non-Mystery
-  rounds whose notice horizon has not yet passed. On bot restart, any pending RSVP notice
+- **FR-007**: RSVP notice jobs MUST be scheduled at season approval time for all rounds
+  whose notice horizon has not yet passed. On bot restart, any pending RSVP notice
   jobs for future rounds MUST be re-armed before the bot resumes serving interactions.
 - **FR-008**: If no RSVP channel is configured for a division when a notice job fires, the
   bot MUST skip posting for that division, log an audit entry recording the skip, and
@@ -285,25 +281,36 @@ already responded and all reserve drivers are not mentioned.
   eligible for distribution.
 - **FR-020**: Teams MUST be ranked as distribution candidates in the following priority
   order:
-  1. Teams where at least one full-time driver has NO_RSVP status.
+  1. Teams where all full-time seats are physically vacant (no full-time drivers
+     assigned to the team at all).
   2. Teams where at least one full-time driver has DECLINED.
-  3. Teams where at least one full-time driver is TENTATIVE.
-  Teams where all full-time drivers have ACCEPTED are not distribution candidates and
-  receive no reserve assignment.
+  3. Teams where at least one full-time driver has NO_RSVP status.
+  4. Teams that have at least one physically vacant full-time seat
+     (`total_assigned_full_timers < max_seats`) while still having some FT drivers
+     assigned.
+  5. Teams that have already received at least one reserve allocation in the current
+     distribution run (second or subsequent fills). This tier is evaluated dynamically:
+     after each reserve is placed the receiving team is demoted to tier 5 so that every
+     needy team in tiers 1–4 receives its first reserve before any team receives a
+     second one. Teams whose only vacancy reason is TENTATIVE (tier 6) remain at tier
+     6 even after receiving a reserve.
+  6. Teams where at least one full-time driver is TENTATIVE.
+  Teams where all full-time drivers have ACCEPTED and all seats are filled are not
+  distribution candidates and receive no reserve assignment.
 - **FR-021**: Within each priority tier, ties MUST be broken in order by:
-  1. Number of full-time drivers with ACCEPTED status (ascending; teams with zero
-     accepted full-timers are ranked first).
-  2. Constructors' Championship position in the division (lowest-ranked team first,
+  1. Constructors' Championship position in the division (lowest-ranked team first,
      i.e. last place in the standings gets earliest access to reserves).
-  If championship standings are unavailable (no rounds completed yet), tied teams MUST
-  be ordered alphabetically by team name as a deterministic fallback.
+  2. Alphabetical by team name as a deterministic fallback when championship standings
+     are unavailable (no rounds completed yet) or positions are equal.
 - **FR-022**: When a reserve sets their RSVP status to Accepted, their acceptance timestamp
   MUST be recorded. If they change away from Accepted and back, the timestamp MUST be reset
   to the time of the most recent change to Accepted. Reserves with the earliest acceptance
   timestamp are distributed first.
-- **FR-023**: Each distribution candidate team receives at most one reserve per full-time
-  driver vacancy (i.e. one reserve per driver who did not accept). A single reserve fills
-  one slot in one team only.
+- **FR-023**: Each distribution candidate team receives at most one reserve per vacancy.
+  Vacancies include: each full-time driver with NO_RSVP, DECLINED, or TENTATIVE status,
+  plus each seat with no full-time driver assigned at all
+  (`max_seats − total_assigned_full_timers`). ACCEPTED seats are not vacancies and are
+  never filled by a reserve. A single reserve fills one slot in one team only.
 - **FR-024**: Accepted reserves not placed in any team due to no remaining vacancies MUST
   be classified as on standby.
 - **FR-025**: After distribution, if any reserves were eligible (accepted at the deadline),
@@ -322,7 +329,7 @@ already responded and all reserve drivers are not mentioned.
 **Last-Notice Ping**
 
 - **FR-028**: When `rsvp_last_notice_hours` is non-zero, a last-notice job MUST be
-  scheduled for each non-Mystery round at exactly `rsvp_last_notice_hours` hours before
+  scheduled for each round at exactly `rsvp_last_notice_hours` hours before
   the scheduled round start time. When the job fires, the bot MUST post a single message
   in the division's configured RSVP channel that mentions (by Discord user tag) every
   full-time driver whose `DriverRoundAttendance` status for that round is still NO_RSVP
@@ -402,7 +409,7 @@ already responded and all reserve drivers are not mentioned.
 ### Measurable Outcomes
 
 - **SC-001**: Every RSVP embed is posted within a 1-minute window of its scheduled notice
-  time across all configured divisions and active non-Mystery rounds.
+  time across all configured divisions and active rounds.
 - **SC-002**: Driver status changes (Accept / Tentative / Decline) are reflected in the
   embed within 3 seconds of a button press.
 - **SC-003**: The reserve distribution algorithm produces a deterministic, reproducible

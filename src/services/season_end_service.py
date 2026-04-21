@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 from db.database import get_connection
 
 if TYPE_CHECKING:
+    import discord
     from discord.ext.commands import Bot
     from models.season import Season
 
@@ -113,6 +114,11 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
 
     # Cancel any pending season-end scheduler job (no-op if already fired)
     bot.scheduler_service.cancel_season_end(server_id)  # type: ignore[attr-defined]
+
+    # Revoke division, team, and signup roles from all assigned drivers
+    guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
+    if guild is not None:
+        await _revoke_season_roles(server_id, season.id, guild, bot)
 
     # Write DriverHistoryEntry records for every assigned driver before archiving
     await _write_driver_history_entries(season, bot)
@@ -240,3 +246,72 @@ async def _write_driver_history_entries(season: "Season", bot: "Bot") -> None:
             len(assignments),
             season.id,
         )
+
+
+async def _revoke_season_roles(
+    server_id: int,
+    season_id: int,
+    guild: "discord.Guild",
+    bot: "Bot",
+) -> None:
+    """Revoke division roles, team roles, and the signup 'signed-up' role from
+    every non-test driver assigned in *season_id*.
+
+    Called on both season completion and cancellation.  All failures are logged
+    but do not abort the operation.
+    """
+    import discord
+
+    placement_svc = bot.placement_service  # type: ignore[attr-defined]
+
+    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+        cur = await db.execute(
+            """
+            SELECT DISTINCT dp.id AS driver_profile_id,
+                            CAST(dp.discord_user_id AS INTEGER) AS discord_user_id
+            FROM driver_season_assignments dsa
+            JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+            JOIN divisions d ON d.id = dsa.division_id
+            WHERE d.season_id = ? AND dp.is_test_driver = 0
+            """,
+            (season_id,),
+        )
+        assigned_rows = await cur.fetchall()
+
+        # Fetch the signed-up role once for the whole loop
+        cfg_cur = await db.execute(
+            "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
+            (server_id,),
+        )
+        cfg_row = await cfg_cur.fetchone()
+
+    signed_up_role_id: int | None = cfg_row["signed_up_role_id"] if cfg_row else None
+
+    for row in assigned_rows:
+        discord_uid: int = row["discord_user_id"]
+        driver_profile_id: int = row["driver_profile_id"]
+
+        member = guild.get_member(discord_uid) or None
+        if member is None:
+            try:
+                member = await guild.fetch_member(discord_uid)
+            except discord.HTTPException:
+                log.warning(
+                    "_revoke_season_roles: member %d not found in guild %d — skipping",
+                    discord_uid, server_id,
+                )
+                continue
+
+        await placement_svc.revoke_all_placement_roles(
+            server_id, driver_profile_id, season_id, member
+        )
+        if signed_up_role_id is not None:
+            signed_up_role = guild.get_role(signed_up_role_id)
+            if signed_up_role is not None and signed_up_role in member.roles:
+                await placement_svc._revoke_roles(member, signed_up_role_id)
+
+    log.info(
+        "_revoke_season_roles: processed %d driver(s) for season %d",
+        len(assigned_rows),
+        season_id,
+    )

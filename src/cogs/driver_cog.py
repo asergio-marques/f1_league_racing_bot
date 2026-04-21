@@ -174,7 +174,7 @@ class DriverCog(commands.Cog):
             await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
             return
 
-        verb = "Assigned" if result["was_unassigned"] else "Moved"
+        verb = "Assigned"
         await interaction.followup.send(
             f"✅ {verb} **{user.display_name}** to **{result['team_name']}** "
             f"in **{result['division_name']}**.",
@@ -268,9 +268,9 @@ class DriverCog(commands.Cog):
             await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
             return
 
-        suffix = "" if result["has_remaining_assignments"] else " (now Unassigned)"
+        team_part = f"from **{result['team_name']}** " if result.get("team_name") else ""
         await interaction.followup.send(
-            f"✅ Removed **{user.display_name}** from **{result['division_name']}**{suffix}.",
+            f"✅ Removed **{user.display_name}** {team_part}in **{result['division_name']}**.",
             ephemeral=True,
         )
         await self.bot.output_router.post_log(

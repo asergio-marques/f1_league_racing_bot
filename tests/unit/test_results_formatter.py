@@ -8,36 +8,53 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.session_result import DriverSessionResult, OutcomeModifier
+from models.session_result import OutcomeModifier, QualifyingSessionResult, RaceSessionResult
 from models.standings_snapshot import DriverStandingsSnapshot
 from utils.results_formatter import _collapse_trailing_zeros, format_driver_standings, format_qualifying_table, format_race_table
 
 
-def _make_dsr(
+def _make_qual(
     position: int,
     driver_user_id: int = 100,
     team_role_id: int = 200,
     outcome: OutcomeModifier = OutcomeModifier.CLASSIFIED,
-    fastest_lap: str | None = "1:23.456",
-) -> DriverSessionResult:
-    return DriverSessionResult(
+    best_lap: str | None = "1:23.456",
+) -> QualifyingSessionResult:
+    return QualifyingSessionResult(
         id=0,
         session_result_id=1,
         driver_user_id=driver_user_id,
         finishing_position=position,
         team_role_id=team_role_id,
-        tyre="Soft",
-        best_lap="1:23.456",
-        gap="N/A",
-        total_time="1:23:45.678",
-        fastest_lap=fastest_lap,
-        time_penalties=None,
         outcome=outcome,
+        tyre="Soft",
+        best_lap=best_lap,
         points_awarded=25,
+    )
+
+
+def _make_race(
+    position: int,
+    driver_user_id: int = 100,
+    team_role_id: int = 200,
+    outcome: OutcomeModifier = OutcomeModifier.CLASSIFIED,
+    fastest_lap: str | None = "1:23.456",
+) -> RaceSessionResult:
+    return RaceSessionResult(
+        id=0,
+        session_result_id=1,
+        driver_user_id=driver_user_id,
+        finishing_position=position,
+        team_role_id=team_role_id,
+        outcome=outcome,
+        base_time_ms=5025678,  # 1:23:45.678 in ms
+        laps_behind=None,
+        ingame_time_penalties_ms=0,
+        postrace_time_penalties_ms=0,
+        appeal_time_penalties_ms=0,
+        fastest_lap=fastest_lap,
         fastest_lap_bonus=0,
-        post_steward_total_time=None,
-        post_race_time_penalties=None,
-        is_superseded=False,
+        points_awarded=25,
     )
 
 
@@ -102,7 +119,7 @@ def test_collapse_single_nonzero():
 
 
 def test_format_qualifying_table_headers():
-    rows = [_make_dsr(1)]
+    rows = [_make_qual(1)]
     table = format_qualifying_table(
         rows,
         points_by_driver={100: 25},
@@ -120,7 +137,7 @@ def test_format_qualifying_table_headers():
 
 
 def test_format_race_table_headers():
-    rows = [_make_dsr(1)]
+    rows = [_make_race(1)]
     table = format_race_table(
         rows,
         points_by_driver={100: 25},
@@ -134,7 +151,7 @@ def test_format_race_table_headers():
 
 def test_format_race_table_fl_footer_shown_when_bonus():
     """When a driver has fastest_lap_bonus > 0, a FL footnote appears after the table."""
-    row = _make_dsr(1, driver_user_id=100, fastest_lap="1:23.456")
+    row = _make_race(1, driver_user_id=100, fastest_lap="1:23.456")
     row.fastest_lap_bonus = 1
     table = format_race_table(
         [row],
@@ -151,7 +168,7 @@ def test_format_race_table_fl_footer_shown_when_bonus():
 
 def test_format_race_table_no_fl_footer_when_no_bonus():
     """No FL footnote when no driver has a fastest_lap_bonus."""
-    row = _make_dsr(1, driver_user_id=100, fastest_lap="1:23.456")
+    row = _make_race(1, driver_user_id=100, fastest_lap="1:23.456")
     row.fastest_lap_bonus = 0
     table = format_race_table(
         [row],
@@ -165,7 +182,7 @@ def test_format_race_table_no_fl_footer_when_no_bonus():
 # ---------------------------------------------------------------------------
 
 
-def _make_snap(driver_user_id: int, position: int, total_points: int) -> DriverStandingsSnapshot:
+def _make_snap(driver_user_id: int, position: int, total_points: int, race_participant: bool = False) -> DriverStandingsSnapshot:
     return DriverStandingsSnapshot(
         id=0,
         round_id=1,
@@ -175,6 +192,7 @@ def _make_snap(driver_user_id: int, position: int, total_points: int) -> DriverS
         total_points=total_points,
         finish_counts={},
         first_finish_rounds={},
+        race_participant=race_participant,
     )
 
 
@@ -192,10 +210,24 @@ def test_driver_standings_reserve_with_points_shown_reserves_on():
     assert "<@200>" in result
 
 
-def test_driver_standings_reserve_zero_pts_always_hidden():
-    """Reserve with 0 points is never shown, even when show_reserves=True."""
-    snaps = [_make_snap(200, 1, 0)]
+def test_driver_standings_reserve_zero_pts_no_participation_hidden():
+    """Reserve with 0 points and no race participation is never shown."""
+    snaps = [_make_snap(200, 1, 0, race_participant=False)]
     result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=True)
+    assert "<@200>" not in result
+
+
+def test_driver_standings_reserve_dnf_shown_when_reserves_on():
+    """Reserve with 0 points but who participated (DNF) is shown when show_reserves=True."""
+    snaps = [_make_snap(200, 1, 0, race_participant=True)]
+    result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=True)
+    assert "<@200>" in result
+
+
+def test_driver_standings_reserve_dnf_hidden_when_reserves_off():
+    """Reserve with 0 points and participation is hidden when show_reserves=False."""
+    snaps = [_make_snap(200, 1, 0, race_participant=True)]
+    result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=False)
     assert "<@200>" not in result
 
 

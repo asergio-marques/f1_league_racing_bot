@@ -49,7 +49,8 @@ class AmendmentService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT r.*, d.division_id, s.server_id, "
-                "       d.forecast_channel_id, d.mention_role_id, s.status AS season_status "
+                "       d.forecast_channel_id, d.mention_role_id, d.tier AS division_tier, "
+                "       s.status AS season_status, s.season_number "
                 "FROM rounds r "
                 "JOIN divisions d ON d.id = r.division_id "
                 "JOIN seasons s ON s.id = d.season_id "
@@ -143,12 +144,20 @@ class AmendmentService:
         p2_horizon = scheduled_at - timedelta(days=2)
         p3_horizon = scheduled_at - timedelta(hours=2)
 
-        # For MYSTERY rounds, only register the notice job when T-5 is still in
-        # the future.  If T-5 has already passed the invalidation notice already
-        # informs drivers; no notice job should fire retroactively (FR-009).
-        if updated_round.format != RoundFormat.MYSTERY or now < p1_horizon:
-            if await bot.module_service.is_weather_enabled(server_id):
-                bot.scheduler_service.schedule_round(updated_round)
+        # For MYSTERY rounds, only re-schedule when T-5 is still in the future.
+        # If T-5 has already passed, the invalidation notice already informed
+        # drivers; we must not fire the mystery notice retroactively (FR-009).
+        # For non-mystery rounds we always re-schedule; overdue phases are
+        # immediately re-run below.
+        _schedule_weather = await bot.module_service.is_weather_enabled(server_id)
+        if _schedule_weather:
+            from models.round import RoundFormat as _RoundFormat
+            if updated_round.format != _RoundFormat.MYSTERY or now < p1_horizon:
+                bot.scheduler_service.schedule_round(
+                    updated_round,
+                    season_number=row["season_number"],
+                    division_tier=row["division_tier"],
+                )
 
         # Erase stored forecast messages for all phases (FR-011).
         # delete_forecast_message respects the test-mode guard; any skipped

@@ -7,15 +7,10 @@ from collections import defaultdict
 
 from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from models.session_result import DriverSessionResult, OutcomeModifier
+from models.session_result import OutcomeModifier
 from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 
 log = logging.getLogger(__name__)
-
-# Session types that count for team standings (per constitution XII).
-_TEAM_POINTS_SESSIONS: frozenset[SessionType] = frozenset(
-    {SessionType.FEATURE_RACE, SessionType.SPRINT_RACE}
-)
 
 
 # ---------------------------------------------------------------------------
@@ -135,47 +130,59 @@ async def compute_driver_standings(
     Returns snapshots with standing_position assigned from 1.
     """
     async with get_connection(db_path) as db:
-        # Fetch all non-superseded driver session results up to the target round
         cursor = await db.execute(
             """
-            SELECT dsr.driver_user_id,
-                   dsr.finishing_position,
-                   dsr.points_awarded,
-                   dsr.fastest_lap_bonus,
-                   dsr.outcome,
-                   sr.session_type,
-                   r.id AS round_id,
-                   r.round_number
-            FROM driver_session_results dsr
-            JOIN session_results sr ON sr.id = dsr.session_result_id
-            JOIN rounds r ON r.id = sr.round_id
-            WHERE r.division_id = ?
-              AND r.id <= ?
-              AND r.round_number <= (
-                  SELECT round_number FROM rounds WHERE id = ?
-              )
-              AND dsr.is_superseded = 0
-              AND sr.status = 'ACTIVE'
-            ORDER BY r.round_number
+            SELECT driver_user_id, finishing_position, points_awarded,
+                   fastest_lap_bonus, outcome, session_type, round_id, round_number
+            FROM (
+                SELECT rsr.driver_user_id, rsr.finishing_position,
+                       rsr.points_awarded, rsr.fastest_lap_bonus, rsr.outcome,
+                       sr.session_type, r.id AS round_id, r.round_number
+                FROM race_session_results rsr
+                JOIN session_results sr ON sr.id = rsr.session_result_id
+                JOIN rounds r ON r.id = sr.round_id
+                WHERE r.division_id = ?
+                  AND r.id <= ?
+                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+                  AND sr.status = 'ACTIVE'
+                UNION ALL
+                SELECT qsr.driver_user_id, qsr.finishing_position,
+                       qsr.points_awarded, 0 AS fastest_lap_bonus, qsr.outcome,
+                       sr.session_type, r.id AS round_id, r.round_number
+                FROM qualifying_session_results qsr
+                JOIN session_results sr ON sr.id = qsr.session_result_id
+                JOIN rounds r ON r.id = sr.round_id
+                WHERE r.division_id = ?
+                  AND r.id <= ?
+                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+                  AND sr.status = 'ACTIVE'
+            )
+            ORDER BY round_number
             """,
-            (division_id, up_to_round_id, up_to_round_id),
+            (
+                division_id, up_to_round_id, up_to_round_id,
+                division_id, up_to_round_id, up_to_round_id,
+            ),
         )
         rows = await cursor.fetchall()
 
     # Aggregate
     total_points: dict[int, int] = defaultdict(int)
-    # finish_counts[driver][position] = count of Feature Race finishes at that position
+    # finish_counts[driver][position] = count of Feature Race CLASSIFIED finishes at that position
     finish_counts: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    # first_finish_rounds[driver][position] = earliest round where driver finished at position
+    # first_finish_rounds[driver][position] = earliest round where driver was CLASSIFIED at position
     first_finish_rounds: dict[int, dict[int, int]] = defaultdict(dict)
+    # Any driver that has at least one session result (even a 0-point DNF)
+    race_participants: set[int] = set()
 
     for row in rows:
         uid: int = row["driver_user_id"]
         pts = (row["points_awarded"] or 0) + (row["fastest_lap_bonus"] or 0)
         total_points[uid] += pts
+        race_participants.add(uid)
 
         session_type = SessionType(row["session_type"])
-        if session_type is SessionType.FEATURE_RACE:
+        if session_type is SessionType.FEATURE_RACE and row["outcome"] == "CLASSIFIED":
             pos: int = row["finishing_position"]
             round_num: int = row["round_number"]
             finish_counts[uid][pos] = finish_counts[uid].get(pos, 0) + 1
@@ -221,7 +228,9 @@ async def compute_driver_standings(
         # and positive first_round (ascending for tiebreak: earlier is better)
         count_vec = tuple(-fc.get(p, 0) for p in range(1, global_max_pos + 1))
         first_vec = tuple(ffr.get(p, 999999) for p in range(1, global_max_pos + 1))
-        return (-pts, count_vec, first_vec)
+        # Tiebreaker: participated in any race (even DNF) ranks above never-participated
+        not_participated = 0 if uid in race_participants else 1
+        return (-pts, count_vec, first_vec, not_participated)
 
     sorted_drivers = sorted(all_drivers, key=_sort_key)
 
@@ -239,6 +248,7 @@ async def compute_driver_standings(
                 total_points=total_points.get(uid, 0),
                 finish_counts=fc,
                 first_finish_rounds=ffr,
+                race_participant=uid in race_participants,
             )
         )
 
@@ -254,37 +264,47 @@ async def compute_team_standings(
     division_id: int,
     up_to_round_id: int,
 ) -> list[TeamStandingsSnapshot]:
-    """Aggregate team points for all Feature Race and Sprint Race sessions up to
-    *up_to_round_id*.
+    """Aggregate team points for all sessions up to *up_to_round_id*.
 
     Sort order mirrors driver standings (FR-029): total_points DESC then finish-count
-    tiebreaks; tiebreak uses Feature Race finishes only.
+    tiebreaks; tiebreak uses Feature Race CLASSIFIED finishes only.
 
     Returns snapshots with standing_position assigned from 1.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT dsr.team_role_id,
-                   dsr.finishing_position,
-                   dsr.points_awarded,
-                   dsr.fastest_lap_bonus,
-                   sr.session_type,
-                   r.round_number
-            FROM driver_session_results dsr
-            JOIN session_results sr ON sr.id = dsr.session_result_id
-            JOIN rounds r ON r.id = sr.round_id
-            WHERE r.division_id = ?
-              AND r.id <= ?
-              AND r.round_number <= (
-                  SELECT round_number FROM rounds WHERE id = ?
-              )
-              AND dsr.is_superseded = 0
-              AND sr.status = 'ACTIVE'
-              AND sr.session_type IN ('FEATURE_RACE', 'SPRINT_RACE')
-            ORDER BY r.round_number
+            SELECT team_role_id, finishing_position, points_awarded,
+                   fastest_lap_bonus, outcome, session_type, round_number
+            FROM (
+                SELECT rsr.team_role_id, rsr.finishing_position,
+                       rsr.points_awarded, rsr.fastest_lap_bonus, rsr.outcome,
+                       sr.session_type, r.round_number
+                FROM race_session_results rsr
+                JOIN session_results sr ON sr.id = rsr.session_result_id
+                JOIN rounds r ON r.id = sr.round_id
+                WHERE r.division_id = ?
+                  AND r.id <= ?
+                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+                  AND sr.status = 'ACTIVE'
+                UNION ALL
+                SELECT qsr.team_role_id, qsr.finishing_position,
+                       qsr.points_awarded, 0 AS fastest_lap_bonus, qsr.outcome,
+                       sr.session_type, r.round_number
+                FROM qualifying_session_results qsr
+                JOIN session_results sr ON sr.id = qsr.session_result_id
+                JOIN rounds r ON r.id = sr.round_id
+                WHERE r.division_id = ?
+                  AND r.id <= ?
+                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+                  AND sr.status = 'ACTIVE'
+            )
+            ORDER BY round_number
             """,
-            (division_id, up_to_round_id, up_to_round_id),
+            (
+                division_id, up_to_round_id, up_to_round_id,
+                division_id, up_to_round_id, up_to_round_id,
+            ),
         )
         rows = await cursor.fetchall()
 
@@ -298,7 +318,7 @@ async def compute_team_standings(
         total_points[tid] += pts
 
         session_type = SessionType(row["session_type"])
-        if session_type is SessionType.FEATURE_RACE:
+        if session_type is SessionType.FEATURE_RACE and row["outcome"] == "CLASSIFIED":
             pos: int = row["finishing_position"]
             rnum: int = row["round_number"]
             finish_counts[tid][pos] = finish_counts[tid].get(pos, 0) + 1

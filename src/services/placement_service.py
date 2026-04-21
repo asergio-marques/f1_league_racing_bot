@@ -407,13 +407,14 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             # 1. Fetch profile and validate state
             cursor = await db.execute(
-                "SELECT current_state FROM driver_profiles WHERE id = ? AND server_id = ?",
+                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ? AND server_id = ?",
                 (driver_profile_id, server_id),
             )
             row = await cursor.fetchone()
             if row is None:
                 raise ValueError("Driver profile not found.")
             current_state = DriverState(row["current_state"])
+            is_test_driver: bool = bool(row["is_test_driver"])
             if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
                 raise ValueError(
                     f"Driver must be Unassigned or Assigned to be placed "
@@ -563,7 +564,7 @@ class PlacementService:
             except discord.HTTPException:
                 member = None
 
-        if member is not None:
+        if member is not None and not is_test_driver:
             if season_state == "ACTIVE":
                 role_ids_to_grant = [div_role_id]
                 team_cfg = await self.get_team_role_config(server_id, team_name)
@@ -599,13 +600,14 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             # 1. Validate driver state
             cursor = await db.execute(
-                "SELECT current_state FROM driver_profiles WHERE id = ? AND server_id = ?",
+                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ? AND server_id = ?",
                 (driver_profile_id, server_id),
             )
             row = await cursor.fetchone()
             if row is None:
                 raise ValueError("Driver profile not found.")
             current_state = DriverState(row["current_state"])
+            is_test_driver: bool = bool(row["is_test_driver"])
             if current_state != DriverState.ASSIGNED:
                 raise ValueError(
                     f"Driver must be in Assigned state to be unassigned "
@@ -729,7 +731,7 @@ class PlacementService:
             except discord.HTTPException:
                 member = None
 
-        if member is not None:
+        if member is not None and not is_test_driver:
             if season_state == "ACTIVE":
                 roles_to_revoke = [div_role_id]
                 if team_role_id_to_revoke is not None:
@@ -738,7 +740,7 @@ class PlacementService:
 
         if guild is not None:
             await self._refresh_lineup_post(guild, division_id)
-        return {"division_name": div_name, "has_remaining_assignments": has_remaining}
+        return {"division_name": div_name, "has_remaining_assignments": has_remaining, "team_name": team_name}
 
     # ------------------------------------------------------------------
     # Revoke all placement roles (T014)
@@ -814,7 +816,7 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             # Validate state
             cursor = await db.execute(
-                "SELECT current_state, former_driver FROM driver_profiles "
+                "SELECT current_state, former_driver, is_test_driver FROM driver_profiles "
                 "WHERE id = ? AND server_id = ?",
                 (driver_profile_id, server_id),
             )
@@ -823,6 +825,7 @@ class PlacementService:
                 raise ValueError("Driver profile not found.")
             current_state = DriverState(row["current_state"])
             former_driver = bool(row["former_driver"])
+            is_test_driver: bool = bool(row["is_test_driver"])
             if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
                 raise ValueError(
                     f"Driver must be Unassigned or Assigned to be sacked "
@@ -851,7 +854,7 @@ class PlacementService:
             except discord.HTTPException:
                 member = None
 
-        if member is not None:
+        if member is not None and not is_test_driver:
             if season_id is not None:
                 await self.revoke_all_placement_roles(server_id, driver_profile_id, season_id, member)
             # Revoke the signed-up role granted at approval
@@ -901,6 +904,34 @@ class PlacementService:
                     (server_id, discord_user_id),
                 )
             else:
+                # Delete attendance history rows (driver_round_attendance has a NOT NULL
+                # FK to driver_profiles with no ON DELETE CASCADE — must clean up first).
+                await db.execute(
+                    "DELETE FROM driver_round_attendance WHERE driver_profile_id = ?",
+                    (driver_profile_id,),
+                )
+                # NULL-out soft FK references in historical result/standings rows so the
+                # profile row itself can be removed without violating FK constraints.
+                await db.execute(
+                    "UPDATE race_session_results SET driver_profile_id = NULL "
+                    "WHERE driver_profile_id = ?",
+                    (driver_profile_id,),
+                )
+                await db.execute(
+                    "UPDATE qualifying_session_results SET driver_profile_id = NULL "
+                    "WHERE driver_profile_id = ?",
+                    (driver_profile_id,),
+                )
+                await db.execute(
+                    "UPDATE driver_standings_snapshots SET driver_profile_id = NULL "
+                    "WHERE driver_profile_id = ?",
+                    (driver_profile_id,),
+                )
+                await db.execute(
+                    "UPDATE signup_records SET driver_profile_id = NULL "
+                    "WHERE driver_profile_id = ?",
+                    (driver_profile_id,),
+                )
                 # Delete profile atomically
                 await db.execute(
                     "DELETE FROM driver_profiles WHERE id = ?", (driver_profile_id,)
@@ -943,8 +974,8 @@ class PlacementService:
         """
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
-                "SELECT server_id, name AS div_name, lineup_channel_id, lineup_message_id "
-                "FROM divisions WHERE id = ?",
+                "SELECT s.server_id, d.name AS div_name, d.lineup_channel_id, d.lineup_message_id "
+                "FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
                 (division_id,),
             )
             div_row = await cur.fetchone()
@@ -983,31 +1014,43 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
                 """
-                SELECT ti.name AS team_name, dp.discord_user_id
+                SELECT ti.name AS team_name, ti.is_reserve,
+                       dp.discord_user_id,
+                       dp.is_test_driver, dp.test_display_name
                 FROM driver_season_assignments dsa
                 JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
                 JOIN team_seats ts ON ts.id = dsa.team_seat_id
                 JOIN team_instances ti ON ti.id = ts.team_instance_id
                 WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                ORDER BY ti.name ASC
+                ORDER BY ti.is_reserve ASC, ti.name ASC
                 """,
                 (division_id,),
             )
             assign_rows = await cur.fetchall()
 
-        # Group by team and build embed
-        teams: dict[str, list[str]] = {}
+        # Group by team, preserving regular-vs-reserve split
+        regular: dict[str, list[str]] = {}
+        reserve: dict[str, list[str]] = {}
         for row in assign_rows:
-            teams.setdefault(row["team_name"], []).append(row["discord_user_id"])
+            uid = int(row["discord_user_id"])
+            mention = f"<@{uid}>"
+            if row["is_test_driver"] and row["test_display_name"]:
+                mention = f"<@{uid}> ({row['test_display_name']})"
+            target = reserve if row["is_reserve"] else regular
+            target.setdefault(row["team_name"], []).append(mention)
 
-        description = (
-            "\n".join(
-                f"**{t}**: {', '.join(f'<@{uid}>' for uid in uids)}"
-                for t, uids in teams.items()
+        # Build embed description: regular teams first, then reserve separated by ---
+        parts: list[str] = [
+            f"**{t}**: {', '.join(labels)}" for t, labels in regular.items()
+        ]
+        if reserve:
+            if parts:
+                parts.append("---")
+            parts.extend(
+                f"**{t}**: {', '.join(labels)}" for t, labels in reserve.items()
             )
-            if teams
-            else "*(no drivers assigned)*"
-        )
+
+        description = "\n".join(parts) if parts else "*(no drivers assigned)*"
         embed = discord.Embed(
             title=f"\U0001f4cb {div_name} Lineup",
             description=description,

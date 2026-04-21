@@ -245,6 +245,7 @@ async def main() -> None:
     from cogs.results_cog import ResultsCog
     from cogs.weather_cog import WeatherCog
     from cogs.attendance_cog import AttendanceCog
+    from cogs.clean_cog import CleanCog
 
     await bot.add_cog(InitCog(bot))
     await bot.add_cog(SeasonCog(bot))
@@ -261,6 +262,7 @@ async def main() -> None:
     await bot.add_cog(ResultsCog(bot))
     await bot.add_cog(WeatherCog(bot))
     await bot.add_cog(AttendanceCog(bot))
+    await bot.add_cog(CleanCog(bot))
 
     # Register ALL persistent views so button interactions survive bot restarts.
     # Views with optional __init__ params resolve driver context from channel at
@@ -592,7 +594,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
                 continue
             try:
                 # If staged_penalties is set, penalties were already written to
-                # driver_session_results before the crash.  Warn the LM before
+                # the result tables before the crash.  Warn the LM before
                 # re-posting the prompt with an empty staged list so they know
                 # not to re-add those penalties before approving.
                 if staged_penalties_json:
@@ -648,7 +650,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         # Mid-submission orphan
         # ------------------------------------------------------------------
         # 1. Delete session_results so the round is not mistaken for complete
-        #    by get_next_pending_phase (driver_session_results cascades).
+        #    by get_next_pending_phase (new result tables cascade).
         # 2. Delete the channel row and the Discord channel.
         # 3. Re-trigger the submission wizard immediately (production path).
         async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]

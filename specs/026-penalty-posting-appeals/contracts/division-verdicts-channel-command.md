@@ -52,7 +52,7 @@ When the Results module is enabled, `/season review` displays the verdicts chann
 
 ```
   Verdicts channel: #channel-name   ← if configured
-  Verdicts channel: *(not configured)*  ← if missing
+  Verdicts channel: *(not set)*  ← if missing
 ```
 
 This is driven by `season_service.get_divisions_with_results_config()` including `penalty_channel_id` in its SELECT and LEFT JOIN result.

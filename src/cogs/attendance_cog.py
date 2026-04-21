@@ -210,16 +210,16 @@ class AttendanceCog(commands.Cog):
             f"\u2705 No-RSVP penalty set to **{points}** point(s).", ephemeral=True
         )
 
-    # ── /attendance config no-attend-penalty ──────────────────────────────
+    # ── /attendance config absent-penalty ────────────────────────────────────────
 
     @config.command(
-        name="no-attend-penalty",
-        description="Set the point penalty for missing attendance without notice.",
+        name="absent-penalty",
+        description="Penalty for absent drivers without ACCEPTED RSVP (stacks with no-RSVP penalty for NO_RSVP drivers).",
     )
     @app_commands.describe(points="Penalty points (≥ 0)")
     @channel_guard
     @admin_only
-    async def config_no_attend_penalty(
+    async def config_absent_penalty(
         self, interaction: discord.Interaction, points: int
     ) -> None:
         if not await self._guard_module_enabled(interaction):
@@ -232,21 +232,21 @@ class AttendanceCog(commands.Cog):
 
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_no_attend_penalty(server_id, points)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_absent_penalty(server_id, points)  # type: ignore[attr-defined]
         await interaction.followup.send(
-            f"\u2705 No-attend penalty set to **{points}** point(s).", ephemeral=True
+            f"\u2705 Absent penalty set to **{points}** point(s).", ephemeral=True
         )
 
-    # ── /attendance config no-show-penalty ────────────────────────────────
+    # ── /attendance config rsvp-absent-penalty ────────────────────────────────
 
     @config.command(
-        name="no-show-penalty",
-        description="Set the point penalty for a no-show (RSVP'd but did not attend).",
+        name="rsvp-absent-penalty",
+        description="Penalty for a driver who RSVP'd ACCEPTED but did not attend.",
     )
     @app_commands.describe(points="Penalty points (≥ 0)")
     @channel_guard
     @admin_only
-    async def config_no_show_penalty(
+    async def config_rsvp_absent_penalty(
         self, interaction: discord.Interaction, points: int
     ) -> None:
         if not await self._guard_module_enabled(interaction):
@@ -259,9 +259,9 @@ class AttendanceCog(commands.Cog):
 
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_no_show_penalty(server_id, points)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_rsvp_absent_penalty(server_id, points)  # type: ignore[attr-defined]
         await interaction.followup.send(
-            f"\u2705 No-show penalty set to **{points}** point(s).", ephemeral=True
+            f"\u2705 RSVP-absent penalty set to **{points}** point(s).", ephemeral=True
         )
 
     # ── /attendance config autosack ────────────────────────────────────────
@@ -286,6 +286,15 @@ class AttendanceCog(commands.Cog):
 
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         value = None if points == 0 else points
+        if value is not None:
+            cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+            if cfg and cfg.autoreserve_threshold:
+                await interaction.response.send_message(
+                    "\u274c Cannot set auto-sack while auto-reserve is active. "
+                    "Disable auto-reserve first (`/attendance config autoreserve 0`).",
+                    ephemeral=True,
+                )
+                return
         await interaction.response.defer(ephemeral=True)
         await self.bot.attendance_service.update_autosack_threshold(server_id, value)  # type: ignore[attr-defined]
         if value is None:
@@ -316,6 +325,15 @@ class AttendanceCog(commands.Cog):
 
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         value = None if points == 0 else points
+        if value is not None:
+            cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+            if cfg and cfg.autosack_threshold:
+                await interaction.response.send_message(
+                    "\u274c Cannot set auto-reserve while auto-sack is active. "
+                    "Disable auto-sack first (`/attendance config autosack 0`).",
+                    ephemeral=True,
+                )
+                return
         await interaction.response.defer(ephemeral=True)
         await self.bot.attendance_service.update_autoreserve_threshold(server_id, value)  # type: ignore[attr-defined]
         if value is None:
@@ -323,6 +341,50 @@ class AttendanceCog(commands.Cog):
         else:
             msg = f"\u2705 Auto-reserve threshold set to **{value}** point(s)."
         await interaction.followup.send(msg, ephemeral=True)
+
+    # ── /attendance config show ────────────────────────────────────────────
+
+    @config.command(
+        name="show",
+        description="Show the current attendance configuration for this server.",
+    )
+    @channel_guard
+    @admin_only
+    async def config_show(self, interaction: discord.Interaction) -> None:
+        if not await self._guard_module_enabled(interaction):
+            return
+
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+        cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+        if cfg is None:
+            await interaction.response.send_message(
+                "\u274c No attendance configuration found. Enable the module first.",
+                ephemeral=True,
+            )
+            return
+
+        def _fmt_opt(value: int | None) -> str:
+            return str(value) if value is not None else "disabled"
+
+        lines = [
+            "**Attendance Configuration**",
+            "",
+            "**Timing**",
+            f"  RSVP notice: **{cfg.rsvp_notice_days}** day(s) before race",
+            f"  Last reminder: **{cfg.rsvp_last_notice_hours}** hr(s) before race"
+            + (" *(disabled)*" if cfg.rsvp_last_notice_hours == 0 else ""),
+            f"  RSVP deadline: **{cfg.rsvp_deadline_hours}** hr(s) before race",
+            "",
+            "**Penalties**",
+            f"  No-RSVP: **{cfg.no_rsvp_penalty}** pt(s)",
+            f"  Absent penalty: **{cfg.absent_penalty}** pt(s)",
+            f"  No-show (ACCEPTED + absent): **{cfg.no_show_penalty}** pt(s)",
+            "",
+            "**Auto-actions**",
+            f"  Auto-reserve threshold: **{_fmt_opt(cfg.autoreserve_threshold)}**",
+            f"  Auto-sack threshold: **{_fmt_opt(cfg.autosack_threshold)}**",
+        ]
+        await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
 
 # ── RSVP button interaction handler (T011 / T012 / T014) ─────────────────────

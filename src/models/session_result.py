@@ -40,6 +40,8 @@ class SessionResult:
 
 @dataclass
 class DriverSessionResult:
+    """DTO used by compute_points_for_session (session-type-agnostic).
+    New persistence uses QualifyingSessionResult / RaceSessionResult instead."""
     id: int
     session_result_id: int
     driver_user_id: int
@@ -58,3 +60,60 @@ class DriverSessionResult:
     fastest_lap_bonus: int
     is_superseded: bool
     driver_profile_id: int | None = None
+
+
+# ---------------------------------------------------------------------------
+# New result models
+# ---------------------------------------------------------------------------
+
+@dataclass
+class QualifyingSessionResult:
+    """One driver's qualifying result from qualifying_session_results."""
+    id: int
+    session_result_id: int
+    driver_user_id: int
+    team_role_id: int
+    finishing_position: int
+    outcome: OutcomeModifier
+    tyre: str | None
+    # Absolute best-lap time string for all classified drivers, e.g. "1:23.456".
+    # DNS/DNF/DSQ drivers carry their outcome literal here.
+    best_lap: str | None
+    points_awarded: int
+    driver_profile_id: int | None = None
+
+
+@dataclass
+class RaceSessionResult:
+    """One driver's race result from race_session_results."""
+    id: int
+    session_result_id: int
+    driver_user_id: int
+    team_role_id: int
+    finishing_position: int
+    outcome: OutcomeModifier
+    # base_time_ms: race time in ms with ingame penalties already subtracted.
+    # NULL for lapped drivers, DNF, DNS, DSQ.
+    base_time_ms: int | None
+    # laps_behind: N for drivers classified "+N Laps" behind leader; None otherwise.
+    laps_behind: int | None
+    ingame_time_penalties_ms: int   # game-applied penalty; 0 when N/A
+    postrace_time_penalties_ms: int  # steward wizard; 0 by default
+    appeal_time_penalties_ms: int    # appeals phase; 0 by default
+    fastest_lap: str | None
+    fastest_lap_bonus: int
+    points_awarded: int
+    driver_profile_id: int | None = None
+
+    @property
+    def total_time_ms(self) -> int | None:
+        """Computed total race time in ms, or None when not applicable."""
+        if self.base_time_ms is None:
+            return None
+        return (
+            self.base_time_ms
+            + self.ingame_time_penalties_ms
+            + self.postrace_time_penalties_ms
+            + self.appeal_time_penalties_ms
+        )
+

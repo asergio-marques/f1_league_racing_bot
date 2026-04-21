@@ -251,7 +251,7 @@ class XmlImportModal(discord.ui.Modal, title="XML Points Config Import"):
     xml_payload: discord.ui.TextInput = discord.ui.TextInput(
         label="XML payload",
         style=discord.TextStyle.paragraph,
-        placeholder="<config>\n  <session>\n    <type>Feature Race</type>\n    <position id=\"1\">25</position>\n  </session>\n</config>",
+        placeholder="<config><session><type>Race</type><position id=\"1\">25</position></session></config>",
         required=True,
         max_length=4000,
     )
@@ -293,8 +293,8 @@ async def _run_xml_import(
     from services.points_config_service import ConfigNotFoundError, xml_import_config
     from utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
 
-    def _audit(msg: str) -> None:
-        interaction.client.output_router.post_log(  # type: ignore[attr-defined]
+    async def _audit(msg: str) -> None:
+        await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
             guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) "
             f"| /results config xml-import | config: {config_name}\n  {msg}",
@@ -308,7 +308,7 @@ async def _run_xml_import(
         await interaction.followup.send(
             f"❌ XML parse/validation failed:\n{error_text}", ephemeral=True
         )
-        _audit(f"FAILED (parse error): {'; '.join(exc.errors)}")
+        await _audit(f"FAILED (parse error): {'; '.join(exc.errors)}")
         return
 
     # --- semantic validation (monotonic ordering) -------------------------
@@ -318,7 +318,7 @@ async def _run_xml_import(
         await interaction.followup.send(
             f"❌ Points ordering validation failed:\n{error_text}", ephemeral=True
         )
-        _audit(f"FAILED (monotonic violation): {'; '.join(mono_errors)}")
+        await _audit(f"FAILED (monotonic violation): {'; '.join(mono_errors)}")
         return
 
     # --- persist ----------------------------------------------------------
@@ -328,13 +328,13 @@ async def _run_xml_import(
         await interaction.followup.send(
             f"❌ Config **{config_name}** not found.", ephemeral=True
         )
-        _audit("FAILED (config not found)")
+        await _audit("FAILED (config not found)")
         return
     except Exception as exc:
         await interaction.followup.send(
             f"❌ Database error: {exc}", ephemeral=True
         )
-        _audit(f"FAILED (db error): {exc}")
+        await _audit(f"FAILED (db error): {exc}")
         return
 
     # --- success reply ----------------------------------------------------
@@ -352,7 +352,7 @@ async def _run_xml_import(
     await interaction.followup.send(
         f"✅ Config **{config_name}** updated:\n{summary}", ephemeral=True
     )
-    _audit(f"SUCCESS: {len(payload.positions)} session(s), {len(payload.fastest_laps)} FL row(s)")
+    await _audit(f"SUCCESS: {len(payload.positions)} session(s), {len(payload.fastest_laps)} FL row(s)")
 
 
 class ResultsCog(commands.Cog):

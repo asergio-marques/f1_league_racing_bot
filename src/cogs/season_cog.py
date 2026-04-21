@@ -37,7 +37,7 @@ from services import season_points_service
 import services.track_service as track_service
 from services.season_service import SeasonImmutableError
 from utils.channel_guard import channel_guard, admin_only
-from utils.message_builder import format_division_list, format_round_list, format_roster_block
+from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 
 log = logging.getLogger(__name__)
 
@@ -191,11 +191,15 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        await interaction.response.defer(ephemeral=False)
+
         season_num = f" (Season #{cfg.season_number} — F1 {cfg.game_edition})" if cfg.season_number > 0 else (f" (F1 {cfg.game_edition})" if cfg.game_edition > 0 else "")
-        lines = [
+        header_lines = [
             f"**Season Review{season_num}**",
             "",
         ]
+
+        view = _ApproveView(self)
 
         # Load from DB to get tier and team roster data
         if cfg.season_id != 0:
@@ -220,7 +224,7 @@ class SeasonCog(commands.Cog):
                     signup_line = f"  Signup: {on}"
             else:
                 signup_line = f"  Signup: {off}"
-            lines += [
+            header_lines += [
                 "**Modules**",
                 f"  Weather: {on if weather_on else off}",
                 signup_line,
@@ -229,22 +233,84 @@ class SeasonCog(commands.Cog):
                 "",
             ]
 
-            # ── Points configs ────────────────────────────────────────
+            # ── Weather config ────────────────────────────────────────
+            if weather_on:
+                from services.weather_config_service import get_weather_pipeline_config as _gwpc
+                _wcfg = await _gwpc(self.bot.db_path, interaction.guild_id)  # type: ignore[attr-defined]
+                header_lines += [
+                    "**Weather Config**",
+                    f"  • Phase 1 deadline: {_wcfg.phase_1_days} day(s) before race",
+                    f"  • Phase 2 deadline: {_wcfg.phase_2_days} day(s) before race",
+                    f"  • Phase 3 deadline: {_wcfg.phase_3_hours}h before race",
+                    "",
+                ]
+
+            # ── Signup config ─────────────────────────────────────────
+            if signup_on:
+                _s_cfg = await self.bot.signup_module_service.get_config(interaction.guild_id)  # type: ignore[attr-defined]
+                _s_settings = await self.bot.signup_module_service.get_settings(interaction.guild_id)  # type: ignore[attr-defined]
+                _s_slots = await self.bot.signup_module_service.get_slots(interaction.guild_id)  # type: ignore[attr-defined]
+                _signup_ch = f"<#{_s_cfg.signup_channel_id}>" if _s_cfg and _s_cfg.signup_channel_id else "*(not configured)*"
+                _signup_br = f"<@&{_s_cfg.base_role_id}>" if _s_cfg and _s_cfg.base_role_id else "*(not configured)*"
+                _signup_cr = f"<@&{_s_cfg.signed_up_role_id}>" if _s_cfg and _s_cfg.signed_up_role_id else "*(not configured)*"
+                _time_type = _s_settings.time_type.replace("_", " ").title()
+                _time_img = "Required" if _s_settings.time_image_required else "Not required"
+                _nationality = "Required" if _s_settings.nationality_required else "Not required"
+                _slot_labels = [s.display_label for s in _s_slots] if _s_slots else ["*(none configured)*"]
+                header_lines += [
+                    "**Signup Config**",
+                    f"  • Channel: {_signup_ch}",
+                    f"  • Base role: {_signup_br}",
+                    f"  • Sign-up role: {_signup_cr}",
+                    f"  • Time type: {_time_type}",
+                    f"  • Time image: {_time_img}",
+                    f"  • Nationality: {_nationality}",
+                    f"  • Available slots: {', '.join(_slot_labels)}",
+                    "",
+                ]
+
+            # ── Attendance server-level config ────────────────────────
+            if attendance_on:
+                att_cfg = await self.bot.attendance_service.get_config(interaction.guild_id)  # type: ignore[attr-defined]
+                if att_cfg:
+                    ar = att_cfg.autoreserve_threshold
+                    as_ = att_cfg.autosack_threshold
+                    ar_str = f"{ar} pts" if ar is not None else "*(not set)*"
+                    as_str = f"{as_} pts" if as_ is not None else "*(not set)*"
+                    ln_last = (
+                        f"{att_cfg.rsvp_last_notice_hours}h before deadline"
+                        if att_cfg.rsvp_last_notice_hours
+                        else "*(disabled)*"
+                    )
+                    header_lines += [
+                        "**Attendance Config**",
+                        f"  • RSVP notice: {att_cfg.rsvp_notice_days} day(s) before race",
+                        f"  • Last notice: {ln_last}",
+                        f"  • Deadline: {att_cfg.rsvp_deadline_hours}h before race",
+                        f"  • No-RSVP penalty: {att_cfg.no_rsvp_penalty} pt(s)",
+                        f"  • Absent penalty: {att_cfg.absent_penalty} pt(s)",
+                        f"  • No-show penalty: {att_cfg.no_show_penalty} pt(s)",
+                        f"  • Auto-reserve threshold: {ar_str}",
+                        f"  • Auto-sack threshold: {as_str}",
+                        "",
+                    ]
+
+            # ── Points configs (names only) ───────────────────────────
             config_names = await season_points_service.get_season_config_names(self.bot.db_path, cfg.season_id)  # type: ignore[attr-defined]
             if config_names:
-                lines.append("**Points Configs:** " + ", ".join(config_names))
+                header_lines.append("**Points Configs:** " + ", ".join(config_names))
             elif results_on:
                 server_config_tm = await self.bot.config_service.get_server_config(interaction.guild_id)  # type: ignore[attr-defined]
                 if server_config_tm is not None and server_config_tm.test_mode_active:
-                    lines.append(
+                    header_lines.append(
                         "**Points Configs:** *(none attached)* "
                         "\u26a0\ufe0f Test mode active \u2014 Standard & Half Points will be auto-seeded on approval."
                     )
                 else:
-                    lines.append("**Points Configs:** *(none attached)*")
+                    header_lines.append("**Points Configs:** *(none attached)*")
             else:
-                lines.append("**Points Configs:** *(none attached)*")
-            lines.append("")
+                header_lines.append("**Points Configs:** *(none attached)*")
+            header_lines.append("")
 
             # Pre-fetch role configs so we can warn about teams missing a role
             teams_with_roles = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
@@ -253,49 +319,44 @@ class SeasonCog(commands.Cog):
             roleless = {t["name"] for t in teams_with_roles if not t["role_id"] and not t["is_reserve"]}
             reserve_has_role = any(t["is_reserve"] and t["role_id"] for t in teams_with_roles)
             if not reserve_has_role:
-                lines.append(
+                header_lines.append(
                     "⚠️ **Reserve team has no role assigned** — use `/team reserve-role` "
                     "before approving. Drivers on the reserve team will fail result validation."
                 )
-                lines.append("")
+                header_lines.append("")
 
+            # ── Send header block ───────────────────────────────────
+            await interaction.followup.send("\n".join(header_lines), ephemeral=False)
+
+            # ── Per-division blocks (4 messages each) ────────────────
             db_divisions = await self.bot.season_service.get_divisions_with_results_config(cfg.season_id)
             for div in db_divisions:
                 if not div.name:
                     continue
                 tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
-                lines.append(f"\U0001f4c2 **{div.name}**{tier_tag}")
-                lines.append(f"  Role: <@&{div.mention_role_id}>")
-                weather_chan = f"<#{div.forecast_channel_id}>" if div.forecast_channel_id else "*(none)*"
+
+                # ── Message 0: division banner ─────────────────────────
+                sep = "\u2500" * 35
+                await interaction.followup.send(
+                    f"{sep}\n# {div.name.upper()}{tier_tag}\n{sep}", ephemeral=False
+                )
+
+                # ── Message 1: config (role + channels) ──────────────
+                cal_chan = f"<#{div.calendar_channel_id}>" if div.calendar_channel_id else "*(not set)*"
+                lineup_chan = f"<#{div.lineup_channel_id}>" if div.lineup_channel_id else "*(not set)*"
                 results_chan = f"<#{div.results_channel_id}>" if div.results_channel_id else "*(none)*"
                 standings_chan = f"<#{div.standings_channel_id}>" if div.standings_channel_id else "*(none)*"
                 verdicts_chan = f"<#{div.penalty_channel_id}>" if div.penalty_channel_id else "*(not configured)*"
-                lines.append(f"  Weather channel: {weather_chan}")
-                lines.append(f"  Results channel: {results_chan}")
-                lines.append(f"  Standings channel: {standings_chan}")
-                lines.append(f"  Verdicts channel: {verdicts_chan}")
-                teams = await self.bot.team_service.get_division_teams(div.id)
-                if teams:
-                    lines.append("  **Teams:** " + ", ".join(t["name"] for t in teams))
-                    missing_roles = [t["name"] for t in teams if t["name"] in roleless]
-                    if missing_roles:
-                        lines.append(
-                            "  ⚠️ **No role assigned:** "
-                            + ", ".join(f'"{n}"' for n in missing_roles)
-                            + " — result submission will reject drivers in these teams."
-                        )
-                rounds_db = await self.bot.season_service.get_division_rounds(div.id)
-                for r in rounds_db:
-                    lines.append(
-                        f"  Round {r.round_number}: {r.format.value} "
-                        f"@ {r.track_name or 'Mystery'} \u2014 {r.scheduled_at.isoformat()}"
-                    )
-                # Lineup & calendar channels (US3 / FR-007)
-                lineup_chan = f"<#{div.lineup_channel_id}>" if div.lineup_channel_id else "*(not set)*"
-                cal_chan = f"<#{div.calendar_channel_id}>" if div.calendar_channel_id else "*(not set)*"
-                lines.append(f"  Lineup channel: {lineup_chan}")
-                lines.append(f"  Calendar channel: {cal_chan}")
-                # Attendance channels (gated on attendance module being enabled)
+                weather_chan = f"<#{div.forecast_channel_id}>" if div.forecast_channel_id else "*(none)*"
+                cfg_lines: list[str] = [
+                    "\U0001f4c2 **Configuration**",
+                    f"  Role: <@&{div.mention_role_id}>",
+                    f"  Calendar channel: {cal_chan}",
+                    f"  Lineup channel: {lineup_chan}",
+                    f"  Results channel: {results_chan}",
+                    f"  Standings channel: {standings_chan}",
+                    f"  Verdicts channel: {verdicts_chan}",
+                ]
                 if attendance_on:
                     att_div_cfg = await self.bot.attendance_service.get_division_config(div.id)  # type: ignore[attr-defined]
                     rsvp_chan = (
@@ -308,13 +369,38 @@ class SeasonCog(commands.Cog):
                         if att_div_cfg and att_div_cfg.attendance_channel_id
                         else "*(not set)*"
                     )
-                    lines.append(f"  RSVP channel: {rsvp_chan}")
-                    lines.append(f"  Attendance channel: {att_chan}")
-                # ASSIGNED drivers grouped by team
+                    cfg_lines.append(f"  RSVP channel: {rsvp_chan}")
+                    cfg_lines.append(f"  Attendance channel: {att_chan}")
+                cfg_lines.append(f"  Weather channel: {weather_chan}")
+                await interaction.followup.send("\n".join(cfg_lines), ephemeral=False)
+
+                # ── Message 2: calendar (rounds) ──────────────────────
+                rounds_db = await self.bot.season_service.get_division_rounds(div.id)
+                cal_lines: list[str] = ["\U0001f4c5 **Calendar**"]
+                for r in rounds_db:
+                    cal_lines.append(
+                        f"  Round {r.round_number}: {r.format.value} "
+                        f"@ {r.track_name or 'Mystery'} \u2014 {discord_ts(r.scheduled_at)}"
+                    )
+                await interaction.followup.send("\n".join(cal_lines), ephemeral=False)
+
+                # ── Message 3: lineup (teams + assigned drivers) ──────
+                teams = await self.bot.team_service.get_division_teams(div.id)
+                lineup_lines: list[str] = ["\U0001f3ce\ufe0f **Lineup**"]
+                if teams:
+                    lineup_lines.append("  **Teams:** " + ", ".join(t["name"] for t in teams))
+                    missing_roles = [t["name"] for t in teams if t["name"] in roleless]
+                    if missing_roles:
+                        lineup_lines.append(
+                            "  ⚠️ **No role assigned:** "
+                            + ", ".join(f'"{n}"' for n in missing_roles)
+                            + " — result submission will reject drivers in these teams."
+                        )
                 async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
                     _cur = await _db.execute(
                         """
-                        SELECT dp.discord_user_id, ti.name AS team_name
+                        SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name,
+                               ti.name AS team_name, ti.is_reserve
                         FROM driver_season_assignments dsa
                         JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
                         JOIN team_seats ts ON ts.id = dsa.team_seat_id
@@ -326,15 +412,26 @@ class SeasonCog(commands.Cog):
                     )
                     assignment_rows = await _cur.fetchall()
                 if assignment_rows:
-                    by_team: dict[str, list[str]] = {}
+                    regular_teams: dict[str, list[str]] = {}
+                    reserve_teams: dict[str, list[str]] = {}
                     for _row in assignment_rows:
-                        by_team.setdefault(_row["team_name"], []).append(f"<@{_row['discord_user_id']}>")
-                    for t_name, mentions in by_team.items():
-                        lines.append(f"  **{t_name}**: {', '.join(mentions)}")
+                        if _row["is_test_driver"] and _row["test_display_name"]:
+                            label = f"<@{_row['discord_user_id']}> ({_row['test_display_name']})"
+                        else:
+                            label = f"<@{_row['discord_user_id']}>"
+                        target = reserve_teams if _row["is_reserve"] else regular_teams
+                        target.setdefault(_row["team_name"], []).append(label)
+                    for t_name, mentions in regular_teams.items():
+                        lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
+                    if reserve_teams:
+                        lineup_lines.append("  ---")
+                        for t_name, mentions in reserve_teams.items():
+                            lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
                 else:
-                    lines.append("  *(no drivers assigned)*")
-                lines.append("")
-            # Server-level UNASSIGNED warning (approved but unplaced drivers)
+                    lineup_lines.append("  *(no drivers assigned)*")
+                await interaction.followup.send("\n".join(lineup_lines), ephemeral=False)
+
+            # ── Server-level UNASSIGNED warning ──────────────────────
             async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
                 _cur = await _db.execute(
                     "SELECT COUNT(*) AS cnt FROM driver_profiles WHERE server_id = ? AND current_state = 'UNASSIGNED'",
@@ -342,26 +439,30 @@ class SeasonCog(commands.Cog):
                 )
                 _unassigned_row = await _cur.fetchone()
             if _unassigned_row and _unassigned_row["cnt"] > 0:
-                lines.append(f"⚠️ {_unassigned_row['cnt']} driver(s) UNASSIGNED — placement incomplete")
-                lines.append("")
+                await interaction.followup.send(
+                    f"⚠️ {_unassigned_row['cnt']} driver(s) UNASSIGNED — placement incomplete",
+                    ephemeral=False,
+                )
+            await interaction.followup.send("Use the button below to approve.", view=view, ephemeral=True)
         else:
+            # Pending (not yet persisted) path — header then one block per division
+            await interaction.followup.send("\n".join(header_lines), ephemeral=False)
             for div in cfg.divisions:
                 if not div.name:
                     continue
+                div_lines = []
                 tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
                 pending_chan = f"<#{div.channel_id}>" if div.channel_id else "*(none)*"
-                lines.append(f"\U0001f4c2 **{div.name}**{tier_tag}")
-                lines.append(f"  Role: <@&{div.role_id}>")
-                lines.append(f"  Weather channel: {pending_chan}")
+                div_lines.append(f"\U0001f4c2 **{div.name}**{tier_tag}")
+                div_lines.append(f"  Role: <@&{div.role_id}>")
+                div_lines.append(f"  Weather channel: {pending_chan}")
                 for r in div.rounds:
-                    lines.append(
+                    div_lines.append(
                         f"  Round {r['round_number']}: {r['format'].value} "
-                        f"@ {r['track_name'] or 'Mystery'} \u2014 {r['scheduled_at'].isoformat()}"
+                        f"@ {r['track_name'] or 'Mystery'} \u2014 {discord_ts(r['scheduled_at'])}"
                     )
-                lines.append("")
-
-        view = _ApproveView(self)
-        await interaction.response.send_message("\n".join(lines), view=view, ephemeral=True)
+                await interaction.followup.send("\n".join(div_lines), ephemeral=False)
+            await interaction.followup.send("Use the button below to approve.", view=view, ephemeral=True)
 
     @season.command(
         name="approve",
@@ -410,7 +511,7 @@ class SeasonCog(commands.Cog):
                 "Next round: "
                 + (
                     f"R{next_round.round_number} @ {next_round.track_name or 'Mystery'} "
-                    f"({next_round.scheduled_at.isoformat()})"
+                    f"{discord_ts(next_round.scheduled_at)}"
                     if next_round
                     else "None remaining"
                 )
@@ -476,6 +577,13 @@ class SeasonCog(commands.Cog):
         self.bot.scheduler_service.cancel_season_end(interaction.guild_id)
 
         await self.bot.season_service.cancel_season(season.id)
+
+        # Revoke division, team, and signup roles from all assigned drivers
+        if interaction.guild is not None:
+            from services.season_end_service import _revoke_season_roles
+            await _revoke_season_roles(
+                interaction.guild_id, season.id, interaction.guild, self.bot
+            )
 
         await interaction.followup.send(
             "\u2705 Season cancelled.",
@@ -626,7 +734,7 @@ class SeasonCog(commands.Cog):
         source_name: str,
         new_name: str,
         role: discord.Role,
-        tier: int = 1,
+        tier: int,
         day_offset: int = 0,
         hour_offset: float = 0.0,
     ) -> None:
@@ -678,12 +786,13 @@ class SeasonCog(commands.Cog):
         for dt in shifted:
             dt_aware = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
             if dt_aware < now:
-                warnings.append(f"\u26a0\ufe0f One or more shifted datetimes are in the past: {dt.isoformat()}")
+                warnings.append(f"\u26a0\ufe0f One or more shifted datetimes are in the past: {discord_ts(dt_aware)}")
                 break
         dt_counts = Counter(shifted)
         for dt, count in dt_counts.items():
             if count > 1:
-                warnings.append(f"\u26a0\ufe0f Multiple rounds share the same shifted datetime: {dt.isoformat()}")
+                dt_aware2 = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+                warnings.append(f"\u26a0\ufe0f Multiple rounds share the same shifted datetime: {discord_ts(dt_aware2)}")
                 break
 
         await interaction.response.defer(ephemeral=True)
@@ -1346,9 +1455,9 @@ class SeasonCog(commands.Cog):
             await db.commit()
 
         if old_id is None:
-            msg = f"\u2705 RSVP channel for {name} set to #{channel.name}."
+            msg = f"\u2705 RSVP channel for {name} set to {channel.mention}."
         else:
-            msg = f"\u2705 RSVP channel for {name} updated to #{channel.name}."
+            msg = f"\u2705 RSVP channel for {name} updated to {channel.mention}."
         await interaction.followup.send(msg, ephemeral=True)
         await self.bot.output_router.post_log(
             server_id,
@@ -1429,9 +1538,9 @@ class SeasonCog(commands.Cog):
             await db.commit()
 
         if old_id is None:
-            msg = f"\u2705 Attendance channel for {name} set to #{channel.name}."
+            msg = f"\u2705 Attendance channel for {name} set to {channel.mention}."
         else:
-            msg = f"\u2705 Attendance channel for {name} updated to #{channel.name}."
+            msg = f"\u2705 Attendance channel for {name} updated to {channel.mention}."
         await interaction.followup.send(msg, ephemeral=True)
         await self.bot.output_router.post_log(
             server_id,
@@ -1681,7 +1790,7 @@ class SeasonCog(commands.Cog):
         ]
         await interaction.response.send_message(
             f"\u2705 Round **{assigned_number}** added to **{div.name}**.\n"
-            f"Format: {fmt.value} | Track: {track_name or 'Mystery'} | {sched.isoformat()} UTC\n\n"
+            f"Format: {fmt.value} | Track: {track_name or 'Mystery'} | {discord_ts(sched)}\n\n"
             + format_round_list(round_models),
             ephemeral=True,
         )
@@ -2458,6 +2567,7 @@ class SeasonCog(commands.Cog):
                 reserve_role_id,
                 driver_team_map,
                 reserve_driver_ids,
+                amend_format=True,
             )
             try:
                 await msg.delete()
@@ -2658,16 +2768,20 @@ class SeasonCog(commands.Cog):
         log.info("Recovered %d pending setup(s) from DB", len(self._pending))
 
     async def _do_approve(self, interaction: discord.Interaction) -> None:
+        # Defer immediately — approval involves heavy work (scheduling, role grants,
+        # lineup/calendar posts) that can exceed Discord's 3-second response window.
+        await interaction.response.defer(ephemeral=True)
+
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c No pending season setup.",
                 ephemeral=True,
             )
             return
 
         if cfg.season_id == 0:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c Season setup state is incomplete. Use `/bot-reset` and start again.",
                 ephemeral=True,
             )
@@ -2680,10 +2794,7 @@ class SeasonCog(commands.Cog):
             await season_svc.validate_division_tiers(cfg.season_id)
         except ValueError as exc:
             msg = f"\u26d4 Season cannot be approved. {exc}"
-            if interaction.response.is_done():
-                await interaction.followup.send(msg, ephemeral=True)
-            else:
-                await interaction.response.send_message(msg, ephemeral=True)
+            await interaction.followup.send(msg, ephemeral=True)
             return
 
         divisions = await season_svc.get_divisions(cfg.season_id)
@@ -2699,7 +2810,7 @@ class SeasonCog(commands.Cog):
                 f"\u274c Season cannot be approved \u2014 the following divisions have no rounds: "
                 f"{names}. Add at least one round to each division first."
             )
-            await interaction.response.send_message(msg, ephemeral=True)
+            await interaction.followup.send(msg, ephemeral=True)
             return
 
         # ── Gate 0b: no two rounds in the same division may share a datetime ──
@@ -2709,7 +2820,7 @@ class SeasonCog(commands.Cog):
             for rnd in div_rounds[div_db.id]:
                 if rnd.scheduled_at in seen:
                     duplicate_errors.append(
-                        f"**{div_db.name}** has multiple rounds scheduled at `{rnd.scheduled_at}`"
+                        f"**{div_db.name}** has multiple rounds scheduled at {discord_ts(rnd.scheduled_at)}"
                     )
                     break
                 seen.add(rnd.scheduled_at)
@@ -2719,7 +2830,7 @@ class SeasonCog(commands.Cog):
                 f"\u274c Season cannot be approved \u2014 duplicate round times detected:\n\u2022 {bullet_list}\n"
                 f"Reschedule rounds so each has a unique datetime within its division."
             )
-            await interaction.response.send_message(msg, ephemeral=True)
+            await interaction.followup.send(msg, ephemeral=True)
             return
 
         all_rounds = []
@@ -2737,10 +2848,7 @@ class SeasonCog(commands.Cog):
                     f"\u274c Season cannot be approved \u2014 the following divisions are missing a "
                     f"weather forecast channel: {names}. Assign a weather channel to each division first."
                 )
-                if interaction.response.is_done():
-                    await interaction.followup.send(msg, ephemeral=True)
-                else:
-                    await interaction.response.send_message(msg, ephemeral=True)
+                await interaction.followup.send(msg, ephemeral=True)
                 return
 
         # ── Gate 2: R&S channel and points-config prerequisites (FR-013) ───────
@@ -2787,10 +2895,7 @@ class SeasonCog(commands.Cog):
             if errors:
                 bullet_list = "\n\u2022 ".join(errors)
                 msg = f"\u274c Season cannot be approved \u2014 R&S prerequisites not met:\n\u2022 {bullet_list}"
-                if interaction.response.is_done():
-                    await interaction.followup.send(msg, ephemeral=True)
-                else:
-                    await interaction.response.send_message(msg, ephemeral=True)
+                await interaction.followup.send(msg, ephemeral=True)
                 return
 
             # ── Gate 3: monotonic ordering check (FR-008) ────────────────────
@@ -2803,10 +2908,7 @@ class SeasonCog(commands.Cog):
                     f"\u274c Season cannot be approved \u2014 points configuration "
                     f"violates monotonic ordering:\n\u2022 {bullet_list}"
                 )
-                if interaction.response.is_done():
-                    await interaction.followup.send(msg, ephemeral=True)
-                else:
-                    await interaction.response.send_message(msg, ephemeral=True)
+                await interaction.followup.send(msg, ephemeral=True)
                 return
 
         # ── Gate 3: signup module config prerequisites ────────────────────────
@@ -2826,10 +2928,7 @@ class SeasonCog(commands.Cog):
                         f"\u274c Season cannot be approved \u2014 signup module is enabled but "
                         f"missing required configuration:\n\u2022 {bullet_list}"
                     )
-                    if interaction.response.is_done():
-                        await interaction.followup.send(msg, ephemeral=True)
-                    else:
-                        await interaction.response.send_message(msg, ephemeral=True)
+                    await interaction.followup.send(msg, ephemeral=True)
                     return
 
         # ── Gate 4: attendance module channel prerequisites ───────────────────
@@ -2853,10 +2952,7 @@ class SeasonCog(commands.Cog):
                     f"\u274c Season cannot be approved \u2014 attendance module is enabled but "
                     f"missing required channel configuration:\n\u2022 {bullet_list}"
                 )
-                if interaction.response.is_done():
-                    await interaction.followup.send(msg, ephemeral=True)
-                else:
-                    await interaction.response.send_message(msg, ephemeral=True)
+                await interaction.followup.send(msg, ephemeral=True)
                 return
 
         # Snapshot attached points configs before transitioning (FR-007)
@@ -2868,29 +2964,37 @@ class SeasonCog(commands.Cog):
         # Schedule FIRST — if this fails the season stays SETUP in DB (fix #5)
         weather_enabled = await self.bot.module_service.is_weather_enabled(cfg.server_id)
         results_enabled = await self.bot.module_service.is_results_enabled(cfg.server_id)
+        # Mapping division_id → (season_number, tier) for human-readable job IDs
+        _div_meta: dict[int, tuple[int, int]] = {
+            div.id: (cfg.season_number, div.tier) for div in divisions
+        }
         if weather_enabled:
-            # schedule_round creates weather phase jobs AND the results_r job together
+            # schedule_round creates weather phase jobs AND the results job together
             from services.weather_config_service import get_weather_pipeline_config
             _wcfg = await get_weather_pipeline_config(self.bot.db_path, cfg.server_id)
             self.bot.scheduler_service.schedule_all_rounds(
                 all_rounds,
+                division_meta=_div_meta,
                 phase_1_days=_wcfg.phase_1_days,
                 phase_2_days=_wcfg.phase_2_days,
                 phase_3_hours=_wcfg.phase_3_hours,
             )
         elif results_enabled:
-            # Weather off but results on: schedule results_r jobs for production
+            # Weather off but results on: schedule results jobs for production
             # (real future race times).  In test mode we skip this because past-dated
             # jobs auto-fire immediately; the advance command uses DB-state detection.
             server_config = await self.bot.config_service.get_server_config(cfg.server_id)  # type: ignore[attr-defined]
             if server_config is None or not server_config.test_mode_active:
-                self.bot.scheduler_service.schedule_result_submission_jobs(all_rounds)
+                self.bot.scheduler_service.schedule_result_submission_jobs(all_rounds, division_meta=_div_meta)
 
         if await self.bot.module_service.is_attendance_enabled(cfg.server_id):
             _att_cfg = await self.bot.attendance_service.get_or_create_config(cfg.server_id)
             for _rnd in all_rounds:
+                _s_num, _d_tier = _div_meta[_rnd.division_id]
                 self.bot.scheduler_service.schedule_attendance_round(
                     _rnd,
+                    season_number=_s_num,
+                    division_tier=_d_tier,
                     notice_days=_att_cfg.rsvp_notice_days,
                     last_notice_hours=_att_cfg.rsvp_last_notice_hours,
                     deadline_hours=_att_cfg.rsvp_deadline_hours,
@@ -2912,6 +3016,7 @@ class SeasonCog(commands.Cog):
                         JOIN team_seats ts ON ts.id = dsa.team_seat_id
                         JOIN team_instances ti ON ti.id = ts.team_instance_id
                         WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
+                          AND dp.is_test_driver = 0
                         """,
                         (_div.id,),
                     )
