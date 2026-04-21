@@ -2300,7 +2300,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     )
     mention_str = f" <@&{mention_role_id}>" if mention_role_id else ""
     await sub_channel.send(
-        f"✅ Results submission open for **Round {round_number}** ({division_name})."
+        f"✅ Results submission open for **Round {round_number}** ({division_name}) - {round_format}."
         f" Sessions: {session_list_str}.{mention_str}\n\n"
         "Submit results one driver per line (comma-separated), or type `CANCELLED` to skip a session."
     )
