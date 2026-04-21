@@ -283,8 +283,8 @@ already responded and all reserve drivers are not mentioned.
   order:
   1. Teams where all full-time seats are physically vacant (no full-time drivers
      assigned to the team at all).
-  2. Teams where at least one full-time driver has NO_RSVP status.
-  3. Teams where at least one full-time driver has DECLINED.
+  2. Teams where at least one full-time driver has DECLINED.
+  3. Teams where at least one full-time driver has NO_RSVP status.
   4. Teams that have at least one physically vacant full-time seat
      (`total_assigned_full_timers < max_seats`) while still having some FT drivers
      assigned.

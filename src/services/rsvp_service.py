@@ -632,9 +632,9 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
         """Tier based solely on RSVP/seat state, used for eligibility filtering."""
         if t["total_drivers"] == 0:
             return 1  # all FT seats physically vacant
-        elif t["no_rsvp_count"] > 0:
-            return 2
         elif t["declined_count"] > 0:
+            return 2
+        elif t["no_rsvp_count"] > 0:
             return 3
         elif t["total_drivers"] < t["max_seats"]:
             return 4  # at least one FT seat physically vacant (partial)
@@ -658,8 +658,8 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
     # Assign reserves to vacancies, re-sorting before each allocation.
     # Priority tiers (re-evaluated per round):
     #   1 — all FT seats physically vacant (total_drivers == 0)
-    #   2 — ≥1 NO_RSVP full-time driver
-    #   3 — ≥1 DECLINED full-time driver
+    #   2 — ≥1 DECLINED full-time driver
+    #   3 — ≥1 NO_RSVP full-time driver
     #   4 — ≥1 physically vacant FT seat (partial: some drivers assigned)
     #   5 — already received ≥1 reserve this round (second+ fill); teams from tiers 1–4
     #       are demoted here so every needy team gets its first reserve before any team
