@@ -629,15 +629,17 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
         team_rows = await cur.fetchall()
 
     def _static_tier(t) -> int:
-        """Tier based solely on RSVP state, used for eligibility filtering."""
-        if t["no_rsvp_count"] > 0:
-            return 1
-        elif t["declined_count"] > 0:
+        """Tier based solely on RSVP/seat state, used for eligibility filtering."""
+        if t["total_drivers"] == 0:
+            return 1  # all FT seats physically vacant
+        elif t["no_rsvp_count"] > 0:
             return 2
+        elif t["declined_count"] > 0:
+            return 3
         elif t["total_drivers"] < t["max_seats"]:
-            return 3  # physically vacant seat
+            return 4  # at least one FT seat physically vacant (partial)
         elif t["tentative_count"] > 0:
-            return 5
+            return 6
         else:
             return 99  # all ACCEPTED and fully staffed — excluded
 
@@ -655,23 +657,26 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
 
     # Assign reserves to vacancies, re-sorting before each allocation.
     # Priority tiers (re-evaluated per round):
-    #   1 — ≥1 NO_RSVP full-time driver
-    #   2 — ≥1 DECLINED full-time driver
-    #   3 — ≥1 physically vacant FT seat
-    #   4 — already received ≥1 reserve this round (second+ fill, regardless of vacancy type)
-    #   5 — ≥1 TENTATIVE full-time driver
-    # Tier 4 ensures every needy team gets its first reserve before any team
-    # receives a second one.  Tie-break within a tier: standings position → name.
+    #   1 — all FT seats physically vacant (total_drivers == 0)
+    #   2 — ≥1 NO_RSVP full-time driver
+    #   3 — ≥1 DECLINED full-time driver
+    #   4 — ≥1 physically vacant FT seat (partial: some drivers assigned)
+    #   5 — already received ≥1 reserve this round (second+ fill); teams from tiers 1–4
+    #       are demoted here so every needy team gets its first reserve before any team
+    #       receives a second one.  TENTATIVE-only teams stay at tier 6.
+    #   6 — ≥1 TENTATIVE full-time driver
+    # Tie-break within a tier: standings position → team name.
     assignments: list[tuple[int, int]] = []  # (dra_id, team_id)
     standby_ids: list[int] = []
     reserves_assigned: dict[int, int] = {t["team_id"]: 0 for t in candidate_teams}
 
     def _current_sort_key(t) -> tuple:
         tid = t["team_id"]
-        if reserves_assigned[tid] >= 1:
-            tier = 4  # already helped — deprioritise below fresh tiers 1-3
-        else:
-            tier = _static_tier(t)
+        static = _static_tier(t)
+        # Demote to tier 5 once a reserve has been placed, but never below tier 6
+        # so TENTATIVE-only teams that already received a reserve don't leap ahead
+        # of fresh TENTATIVE teams.
+        tier = max(5, static) if reserves_assigned[tid] >= 1 else static
         pos = t["standing_position"] if t["standing_position"] is not None else 9999
         name = t["team_name"].lower()
         return (tier, pos, name)

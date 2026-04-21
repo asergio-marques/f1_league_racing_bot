@@ -281,15 +281,20 @@ already responded and all reserve drivers are not mentioned.
   eligible for distribution.
 - **FR-020**: Teams MUST be ranked as distribution candidates in the following priority
   order:
-  1. Teams where at least one full-time driver has NO_RSVP status.
-  2. Teams where at least one full-time driver has DECLINED.
-  3. Teams that have at least one physically vacant full-time seat
-     (`total_assigned_full_timers < max_seats`).
-  4. Teams that have already received at least one reserve allocation in the current
+  1. Teams where all full-time seats are physically vacant (no full-time drivers
+     assigned to the team at all).
+  2. Teams where at least one full-time driver has NO_RSVP status.
+  3. Teams where at least one full-time driver has DECLINED.
+  4. Teams that have at least one physically vacant full-time seat
+     (`total_assigned_full_timers < max_seats`) while still having some FT drivers
+     assigned.
+  5. Teams that have already received at least one reserve allocation in the current
      distribution run (second or subsequent fills). This tier is evaluated dynamically:
-     after each reserve is placed the receiving team is demoted to tier 4 so that every
-     needy team receives its first reserve before any team receives a second one.
-  5. Teams where at least one full-time driver is TENTATIVE.
+     after each reserve is placed the receiving team is demoted to tier 5 so that every
+     needy team in tiers 1–4 receives its first reserve before any team receives a
+     second one. Teams whose only vacancy reason is TENTATIVE (tier 6) remain at tier
+     6 even after receiving a reserve.
+  6. Teams where at least one full-time driver is TENTATIVE.
   Teams where all full-time drivers have ACCEPTED and all seats are filled are not
   distribution candidates and receive no reserve assignment.
 - **FR-021**: Within each priority tier, ties MUST be broken in order by:
