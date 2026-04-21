@@ -734,6 +734,91 @@ async def test_sheet_footer_omits_disabled_thresholds():
 
 
 # ---------------------------------------------------------------------------
+# 11. Allocated-reserve no-show rules
+#
+# A reserve driver distributed into a full-time seat (assigned_team_id IS
+# NOT NULL) who RSVPs ACCEPTED but does not appear in results receives
+# no_show_penalty (3).  Non-allocated reserves and non-ACCEPTED statuses
+# are unaffected.
+# ---------------------------------------------------------------------------
+
+async def _make_reserve_driver_db(
+    tmp_path,
+    *,
+    attended: int,
+    assigned_team_id: int | None,
+    rsvp_status: str = "ACCEPTED",
+    with_no_show_pardon: bool = False,
+) -> str:
+    db_file = str(tmp_path / f"reserve_{rsvp_status}_{attended}_{assigned_team_id}.db")
+    async with aiosqlite.connect(db_file) as db:
+        await _create_schema(db)
+        await _setup_division(db)
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, result_status) "
+            "VALUES (1, 10, 1, 'POST_RACE_PENALTY')"
+        )
+        # Driver seated in the Reserve team (is_reserve=1, team_instance_id=2)
+        await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=2)
+        await db.execute(
+            "INSERT INTO driver_round_attendance "
+            "(id, round_id, division_id, driver_profile_id, rsvp_status, attended, assigned_team_id) "
+            "VALUES (10, 1, 10, 1, ?, ?, ?)",
+            (rsvp_status, attended, assigned_team_id),
+        )
+        if with_no_show_pardon:
+            await db.execute(
+                "INSERT INTO attendance_pardons "
+                "(attendance_id, pardon_type, justification, granted_by, granted_at) "
+                "VALUES (10, 'NO_SHOW', 'test', 999, ?)",
+                (_now_iso(),),
+            )
+        await db.commit()
+    return db_file
+
+
+@pytest.mark.asyncio
+async def test_allocated_reserve_accepted_absent_gets_no_show_penalty(tmp_path):
+    """Allocated reserve + ACCEPTED + absent = no_show_penalty (3)."""
+    db = await _make_reserve_driver_db(tmp_path, attended=0, assigned_team_id=1)
+    await distribute_attendance_points(db, round_id=1, division_id=10)
+    assert await _points(db) == 3
+
+
+@pytest.mark.asyncio
+async def test_allocated_reserve_accepted_attended_gets_zero(tmp_path):
+    """Allocated reserve + ACCEPTED + attended = 0."""
+    db = await _make_reserve_driver_db(tmp_path, attended=1, assigned_team_id=1)
+    await distribute_attendance_points(db, round_id=1, division_id=10)
+    assert await _points(db) == 0
+
+
+@pytest.mark.asyncio
+async def test_non_allocated_reserve_absent_unaffected(tmp_path):
+    """Non-allocated reserve (assigned_team_id NULL) stays excluded from scoring."""
+    db = await _make_reserve_driver_db(tmp_path, attended=0, assigned_team_id=None)
+    await distribute_attendance_points(db, round_id=1, division_id=10)
+    # points_awarded must remain NULL — the driver was not processed
+    async with aiosqlite.connect(db) as conn:
+        conn.row_factory = aiosqlite.Row
+        cur = await conn.execute(
+            "SELECT points_awarded FROM driver_round_attendance WHERE driver_profile_id = 1"
+        )
+        row = await cur.fetchone()
+    assert row["points_awarded"] is None
+
+
+@pytest.mark.asyncio
+async def test_allocated_reserve_no_show_pardon_waives_penalty(tmp_path):
+    """Allocated reserve + ACCEPTED + absent + NO_SHOW pardon = 0."""
+    db = await _make_reserve_driver_db(
+        tmp_path, attended=0, assigned_team_id=1, with_no_show_pardon=True
+    )
+    await distribute_attendance_points(db, round_id=1, division_id=10)
+    assert await _points(db) == 0
+
+
+# ---------------------------------------------------------------------------
 # 11. test_sheet_skips_delete_when_message_missing  (FR-020)
 # ---------------------------------------------------------------------------
 
