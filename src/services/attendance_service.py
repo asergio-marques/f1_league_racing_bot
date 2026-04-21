@@ -473,7 +473,8 @@ async def record_attendance_from_results(
         attended_rows = await cursor.fetchall()
         attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
 
-        # Full-time DRA rows for this round: exclude drivers in the Reserve team (FR-002).
+        # Full-time DRA rows for this round, plus allocated reserve DRA rows
+        # (assigned_team_id IS NOT NULL); unallocated reserves are excluded (FR-002).
         cursor = await db.execute(
             """
             SELECT dra.id, dra.driver_profile_id, dra.attended
@@ -485,7 +486,10 @@ async def record_attendance_from_results(
             WHERE dra.round_id = ?
               AND dra.division_id = ?
               AND ti.division_id = ?
-              AND ti.is_reserve = 0
+              AND (
+                  ti.is_reserve = 0
+                  OR (ti.is_reserve = 1 AND dra.assigned_team_id IS NOT NULL)
+              )
             """,
             (round_id, division_id, division_id),
         )
@@ -554,7 +558,10 @@ async def record_attendance_from_results_full_recompute(
             WHERE dra.round_id = ?
               AND dra.division_id = ?
               AND ti.division_id = ?
-              AND ti.is_reserve = 0
+              AND (
+                  ti.is_reserve = 0
+                  OR (ti.is_reserve = 1 AND dra.assigned_team_id IS NOT NULL)
+              )
             """,
             (round_id, division_id, division_id),
         )
