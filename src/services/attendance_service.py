@@ -450,8 +450,19 @@ async def record_attendance_from_results(
       already marked attended=1 is never reverted.
     - during amendment recalculation this function is still called the same way but the
       caller is responsible for passing updated DriverSessionResult rows (FR-028).
+    - cancelled rounds: skipped (no attendance recording for cancelled rounds).
     """
     async with get_connection(db_path) as db:
+        # Guard: skip if round is cancelled.
+        cursor = await db.execute(
+            "SELECT status FROM rounds WHERE id = ?",
+            (round_id,),
+        )
+        round_row = await cursor.fetchone()
+        if round_row is None or round_row["status"] == "CANCELLED":
+            log.info("record_attendance_from_results: skipping cancelled round %s", round_id)
+            return
+
         # Set of driver_profile_ids who have any result row for this round.
         # Outcome modifier is irrelevant — any row counts as attended (DSQ/DNS included).
         cursor = await db.execute(
@@ -525,9 +536,19 @@ async def record_attendance_from_results_full_recompute(
     """Recompute attended flags without the upgrade-only constraint (FR-028/amendment).
 
     Used exclusively by recalculate_attendance_for_round so that a deliberate result
-    correction can flip attended in either direction.
+    correction can flip attended in either direction. Skipped for cancelled rounds.
     """
     async with get_connection(db_path) as db:
+        # Guard: skip if round is cancelled.
+        cursor = await db.execute(
+            "SELECT status FROM rounds WHERE id = ?",
+            (round_id,),
+        )
+        round_row = await cursor.fetchone()
+        if round_row is None or round_row["status"] == "CANCELLED":
+            log.info("record_attendance_from_results_full_recompute: skipping cancelled round %s", round_id)
+            return
+
         cursor = await db.execute(
             """
             SELECT DISTINCT driver_profile_id FROM (
@@ -585,6 +606,16 @@ async def distribute_attendance_points(
     driver in the division for this round (FR-012–FR-015).
     """
     async with get_connection(db_path) as db:
+        # Guard: skip if round is cancelled (no penalties for cancelled rounds).
+        cursor = await db.execute(
+            "SELECT status FROM rounds WHERE id = ?",
+            (round_id,),
+        )
+        round_row = await cursor.fetchone()
+        if round_row is None or round_row["status"] == "CANCELLED":
+            log.info("distribute_attendance_points: skipping cancelled round %s", round_id)
+            return
+
         # Load penalty config for this division's server.
         cursor = await db.execute(
             """
