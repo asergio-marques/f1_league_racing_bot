@@ -160,7 +160,7 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
             rsvp_deadline_hours INTEGER NOT NULL DEFAULT 2,
             no_rsvp_penalty INTEGER NOT NULL DEFAULT 2,
             absent_penalty INTEGER NOT NULL DEFAULT 1,
-            rsvp_absent_penalty INTEGER NOT NULL DEFAULT 3,
+            no_show_penalty INTEGER NOT NULL DEFAULT 3,
             autoreserve_threshold INTEGER,
             autosack_threshold INTEGER
         )
@@ -185,7 +185,7 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
         CREATE TABLE attendance_pardons (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             attendance_id INTEGER NOT NULL REFERENCES driver_round_attendance(id) ON DELETE CASCADE,
-            pardon_type TEXT NOT NULL CHECK (pardon_type IN ('NO_RSVP', 'ABSENT', 'RSVP_ABSENT')),
+            pardon_type TEXT NOT NULL CHECK (pardon_type IN ('NO_RSVP', 'ABSENT', 'NO_SHOW')),
             justification TEXT NOT NULL,
             granted_by INTEGER NOT NULL,
             granted_at TEXT NOT NULL,
@@ -414,11 +414,11 @@ async def test_pardon_validation_rules():
         ("ABSENT",      "NO_RSVP",   False, False),  # valid
         ("ABSENT",      "TENTATIVE", False, False),  # valid
         ("ABSENT",      "DECLINED",  False, False),  # valid
-        ("RSVP_ABSENT", "NO_RSVP",   False, True),   # must have ACCEPTED status
-        ("RSVP_ABSENT", "TENTATIVE", False, True),   # must have ACCEPTED status
-        ("RSVP_ABSENT", "DECLINED",  False, True),   # must have ACCEPTED status
-        ("RSVP_ABSENT", "ACCEPTED",  True,  True),   # must be absent
-        ("RSVP_ABSENT", "ACCEPTED",  False, False),  # valid
+        ("NO_SHOW", "NO_RSVP",   False, True),   # must have ACCEPTED status
+        ("NO_SHOW", "TENTATIVE", False, True),   # must have ACCEPTED status
+        ("NO_SHOW", "DECLINED",  False, True),   # must have ACCEPTED status
+        ("NO_SHOW", "ACCEPTED",  True,  True),   # must be absent
+        ("NO_SHOW", "ACCEPTED",  False, False),  # valid
     ]
 
     for pardon_type, rsvp_status, attended, expect_reject in cases:
@@ -430,7 +430,7 @@ async def test_pardon_validation_rules():
                 rejected = True
             elif attended is not False:
                 rejected = True
-        if pardon_type == "RSVP_ABSENT":
+        if pardon_type == "NO_SHOW":
             if rsvp_status != "ACCEPTED":
                 rejected = True
             elif attended is not False:
@@ -450,7 +450,7 @@ async def test_pardon_validation_rules():
 #   Case A — NO_RSVP, attended             → no_rsvp_penalty (2)
 #   Case B — NO_RSVP, did not attend       → no_rsvp_penalty + absent_penalty (2+1=3)
 #   Case C — Any RSVP'd, attended          → 0
-#   Case D — ACCEPTED, did not attend      → rsvp_absent_penalty (3)
+#   Case D — ACCEPTED, did not attend      → no_show_penalty (3)
 #   Case E — TENTATIVE/DECLINED, absent    → absent_penalty (1)
 # ---------------------------------------------------------------------------
 
@@ -532,11 +532,11 @@ async def test_points_case_c_declined_attended(tmp_path):
     assert await _points(db) == 0
 
 
-# Case D — Checked-in, did not attend → rsvp_absent_penalty (3)
+# Case D — Checked-in, did not attend → no_show_penalty (3)
 
 @pytest.mark.asyncio
 async def test_points_case_d_accepted_absent(tmp_path):
-    """Case D: ACCEPTED + absent = rsvp_absent_penalty (3)."""
+    """Case D: ACCEPTED + absent = no_show_penalty (3)."""
     db = await _make_single_driver_db(tmp_path, rsvp_status="ACCEPTED", attended=0)
     await distribute_attendance_points(db, round_id=1, division_id=10)
     assert await _points(db) == 3
@@ -636,7 +636,7 @@ async def test_point_distribution_with_pardons(tmp_path):
         cur = await db.execute("SELECT points_awarded FROM driver_round_attendance WHERE driver_profile_id = 1")
         row = await cur.fetchone()
 
-    # no_rsvp_penalty (2) waived; no_rsvp_absent_penalty (1) still applied
+    # no_rsvp_penalty (2) waived; no_no_show_penalty (1) still applied
     assert row["points_awarded"] == 1
 
 

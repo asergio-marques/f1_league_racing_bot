@@ -928,6 +928,48 @@ Toggles whether reserve drivers appear in the publicly posted standings for the 
 
 All commands below require the attendance module to be enabled (`/module enable attendance`).
 
+#### `/attendance config rsvp-notice` — Set the RSVP notice lead time
+*Access: Trusted admin · No active season*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `days` | Integer | ✅ | Days before the race to send the first RSVP notice (≥ 1) |
+
+#### `/attendance config rsvp-last-notice` — Set the last RSVP reminder
+*Access: Trusted admin · No active season*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `hours` | Integer | ✅ | Hours before the race for the last reminder (`0` to disable) |
+
+#### `/attendance config rsvp-deadline` — Set the RSVP deadline
+*Access: Trusted admin · No active season*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `hours` | Integer | ✅ | Hours before the race when RSVPs close |
+
+#### `/attendance config no-rsvp-penalty` — Set the no-RSVP penalty
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `points` | Integer | ✅ | Points applied when a driver fails to submit any RSVP response (≥ 0) |
+
+#### `/attendance config absent-penalty` — Set the absent penalty
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `points` | Integer | ✅ | Points applied when a NO_RSVP, TENTATIVE, or DECLINED driver does not appear in results (≥ 0). Stacks with the no-RSVP penalty for NO_RSVP drivers. |
+
+#### `/attendance config no-show-penalty` — Set the no-show penalty
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `points` | Integer | ✅ | Points applied when a driver RSVPs **ACCEPTED** but does not appear in session results (≥ 0) |
+
 #### `/attendance config autoreserve` — Set the auto-reserve threshold
 *Access: Trusted admin*
 
@@ -960,7 +1002,7 @@ When a driver's cumulative attendance-penalty total reaches this value they are 
 No parameters. Displays the full attendance configuration for this server as an ephemeral message, including:
 
 - **Timing** — RSVP notice days, last-reminder hours, and RSVP deadline hours
-- **Penalties** — No-RSVP penalty, absent penalty (NO_RSVP/TENTATIVE/DECLINED + absent), and RSVP'd-accepted-but-absent penalty
+- **Penalties** — No-RSVP penalty, absent penalty (NO_RSVP/TENTATIVE/DECLINED + absent), and no-show penalty (ACCEPTED + absent)
 - **Auto-actions** — Auto-reserve threshold and auto-sack threshold (both shown as `disabled` when set to `0`)
 
 ---

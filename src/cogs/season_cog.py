@@ -289,7 +289,7 @@ class SeasonCog(commands.Cog):
                         f"  • Deadline: {att_cfg.rsvp_deadline_hours}h before race",
                         f"  • No-RSVP penalty: {att_cfg.no_rsvp_penalty} pt(s)",
                         f"  • Absent penalty: {att_cfg.absent_penalty} pt(s)",
-                        f"  • RSVP-absent penalty: {att_cfg.rsvp_absent_penalty} pt(s)",
+                        f"  • No-show penalty: {att_cfg.no_show_penalty} pt(s)",
                         f"  • Auto-reserve threshold: {ar_str}",
                         f"  • Auto-sack threshold: {as_str}",
                         "",

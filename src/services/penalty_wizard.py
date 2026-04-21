@@ -74,7 +74,7 @@ class StagedPardon:
     driver_user_id: int       # Discord user ID (display / audit)
     driver_profile_id: int    # FK — driver_profiles.id
     attendance_id: int        # FK — driver_round_attendance.id
-    pardon_type: str          # 'NO_RSVP' | 'ABSENT' | 'RSVP_ABSENT'
+    pardon_type: str          # 'NO_RSVP' | 'ABSENT' | 'NO_SHOW'
     justification: str
     grantor_id: int           # Discord user ID of staging admin
 
@@ -535,7 +535,7 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
 # Add Pardon modal (033-attendance-tracking T007)
 # ---------------------------------------------------------------------------
 
-_VALID_PARDON_TYPES = {"NO_RSVP", "ABSENT", "RSVP_ABSENT"}
+_VALID_PARDON_TYPES = {"NO_RSVP", "ABSENT", "NO_SHOW"}
 
 
 class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
@@ -549,7 +549,7 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
     )
     pardon_type_input: discord.ui.TextInput = discord.ui.TextInput(
         label="Pardon Type",
-        placeholder="NO_RSVP / ABSENT / RSVP_ABSENT",
+        placeholder="NO_RSVP / ABSENT / NO_SHOW",
         required=True,
         max_length=15,
     )
@@ -584,7 +584,7 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
         pardon_type = self.pardon_type_input.value.strip().upper()
         if pardon_type not in _VALID_PARDON_TYPES:
             await interaction.followup.send(
-                f"❌ Invalid pardon type `{pardon_type}`. Must be one of: NO_RSVP, ABSENT, RSVP_ABSENT.",
+                f"❌ Invalid pardon type `{pardon_type}`. Must be one of: NO_RSVP, ABSENT, NO_SHOW.",
                 ephemeral=True,
             )
             return
@@ -688,17 +688,17 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
                     ephemeral=True,
                 )
                 return
-        if pardon_type == "RSVP_ABSENT":
+        if pardon_type == "NO_SHOW":
             if rsvp_status != "ACCEPTED":
                 await interaction.followup.send(
-                    f"❌ RSVP_ABSENT pardon rejected: <@{driver_user_id}> has RSVP status "
-                    f"`{rsvp_status}` — RSVP_ABSENT requires ACCEPTED status.",
+                    f"❌ NO_SHOW pardon rejected: <@{driver_user_id}> has RSVP status "
+                    f"`{rsvp_status}` — NO_SHOW requires ACCEPTED status.",
                     ephemeral=True,
                 )
                 return
             if attended_in_results:
                 await interaction.followup.send(
-                    f"❌ RSVP_ABSENT pardon rejected: <@{driver_user_id}> is present in session results.",
+                    f"❌ NO_SHOW pardon rejected: <@{driver_user_id}> is present in session results.",
                     ephemeral=True,
                 )
                 return

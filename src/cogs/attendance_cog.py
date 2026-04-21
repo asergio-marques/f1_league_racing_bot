@@ -378,7 +378,7 @@ class AttendanceCog(commands.Cog):
             "**Penalties**",
             f"  No-RSVP: **{cfg.no_rsvp_penalty}** pt(s)",
             f"  Absent penalty: **{cfg.absent_penalty}** pt(s)",
-            f"  RSVP'd + absent: **{cfg.rsvp_absent_penalty}** pt(s)",
+            f"  No-show (ACCEPTED + absent): **{cfg.no_show_penalty}** pt(s)",
             "",
             "**Auto-actions**",
             f"  Auto-reserve threshold: **{_fmt_opt(cfg.autoreserve_threshold)}**",
