@@ -64,8 +64,8 @@ class AttendanceService:
             rsvp_last_notice_hours=row["rsvp_last_notice_hours"],
             rsvp_deadline_hours=row["rsvp_deadline_hours"],
             no_rsvp_penalty=row["no_rsvp_penalty"],
-            no_rsvp_absent_penalty=row["no_rsvp_absent_penalty"],
-            rsvp_absent_penalty=row["rsvp_absent_penalty"],
+            absent_penalty=row["absent_penalty"],
+            no_show_penalty=row["no_show_penalty"],
             autoreserve_threshold=row["autoreserve_threshold"],
             autosack_threshold=row["autosack_threshold"],
         )
@@ -175,18 +175,18 @@ class AttendanceService:
             )
             await db.commit()
 
-    async def update_no_rsvp_absent_penalty(self, server_id: int, value: int) -> None:
+    async def update_absent_penalty(self, server_id: int, value: int) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET no_rsvp_absent_penalty = ? WHERE server_id = ?",
+                "UPDATE attendance_config SET absent_penalty = ? WHERE server_id = ?",
                 (value, server_id),
             )
             await db.commit()
 
-    async def update_rsvp_absent_penalty(self, server_id: int, value: int) -> None:
+    async def update_no_show_penalty(self, server_id: int, value: int) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET rsvp_absent_penalty = ? WHERE server_id = ?",
+                "UPDATE attendance_config SET no_show_penalty = ? WHERE server_id = ?",
                 (value, server_id),
             )
             await db.commit()
@@ -450,23 +450,42 @@ async def record_attendance_from_results(
       already marked attended=1 is never reverted.
     - during amendment recalculation this function is still called the same way but the
       caller is responsible for passing updated DriverSessionResult rows (FR-028).
+    - cancelled rounds: skipped (no attendance recording for cancelled rounds).
     """
     async with get_connection(db_path) as db:
+        # Guard: skip if round is cancelled.
+        cursor = await db.execute(
+            "SELECT status FROM rounds WHERE id = ?",
+            (round_id,),
+        )
+        round_row = await cursor.fetchone()
+        if round_row is None or round_row["status"] == "CANCELLED":
+            log.info("record_attendance_from_results: skipping cancelled round %s", round_id)
+            return
+
         # Set of driver_profile_ids who have any result row for this round.
         # Outcome modifier is irrelevant — any row counts as attended (DSQ/DNS included).
         cursor = await db.execute(
             """
-            SELECT DISTINCT dp.driver_profile_id
-            FROM driver_session_results dp
-            JOIN session_results sr ON sr.id = dp.session_result_id
-            WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND dp.is_superseded = 0
+            SELECT DISTINCT driver_profile_id FROM (
+                SELECT rsr.driver_profile_id
+                FROM race_session_results rsr
+                JOIN session_results sr ON sr.id = rsr.session_result_id
+                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+                UNION ALL
+                SELECT qsr.driver_profile_id
+                FROM qualifying_session_results qsr
+                JOIN session_results sr ON sr.id = qsr.session_result_id
+                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+            ) WHERE driver_profile_id IS NOT NULL
             """,
-            (round_id,),
+            (round_id, round_id),
         )
         attended_rows = await cursor.fetchall()
         attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
 
-        # Full-time DRA rows for this round: exclude drivers in the Reserve team (FR-002).
+        # Full-time DRA rows for this round, plus allocated reserve DRA rows
+        # (assigned_team_id IS NOT NULL); unallocated reserves are excluded (FR-002).
         cursor = await db.execute(
             """
             SELECT dra.id, dra.driver_profile_id, dra.attended
@@ -478,7 +497,10 @@ async def record_attendance_from_results(
             WHERE dra.round_id = ?
               AND dra.division_id = ?
               AND ti.division_id = ?
-              AND ti.is_reserve = 0
+              AND (
+                  ti.is_reserve = 0
+                  OR (ti.is_reserve = 1 AND dra.assigned_team_id IS NOT NULL)
+              )
             """,
             (round_id, division_id, division_id),
         )
@@ -514,17 +536,34 @@ async def record_attendance_from_results_full_recompute(
     """Recompute attended flags without the upgrade-only constraint (FR-028/amendment).
 
     Used exclusively by recalculate_attendance_for_round so that a deliberate result
-    correction can flip attended in either direction.
+    correction can flip attended in either direction. Skipped for cancelled rounds.
     """
     async with get_connection(db_path) as db:
+        # Guard: skip if round is cancelled.
+        cursor = await db.execute(
+            "SELECT status FROM rounds WHERE id = ?",
+            (round_id,),
+        )
+        round_row = await cursor.fetchone()
+        if round_row is None or round_row["status"] == "CANCELLED":
+            log.info("record_attendance_from_results_full_recompute: skipping cancelled round %s", round_id)
+            return
+
         cursor = await db.execute(
             """
-            SELECT DISTINCT dp.driver_profile_id
-            FROM driver_session_results dp
-            JOIN session_results sr ON sr.id = dp.session_result_id
-            WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND dp.is_superseded = 0
+            SELECT DISTINCT driver_profile_id FROM (
+                SELECT rsr.driver_profile_id
+                FROM race_session_results rsr
+                JOIN session_results sr ON sr.id = rsr.session_result_id
+                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+                UNION ALL
+                SELECT qsr.driver_profile_id
+                FROM qualifying_session_results qsr
+                JOIN session_results sr ON sr.id = qsr.session_result_id
+                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+            ) WHERE driver_profile_id IS NOT NULL
             """,
-            (round_id,),
+            (round_id, round_id),
         )
         attended_rows = await cursor.fetchall()
         attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
@@ -540,7 +579,10 @@ async def record_attendance_from_results_full_recompute(
             WHERE dra.round_id = ?
               AND dra.division_id = ?
               AND ti.division_id = ?
-              AND ti.is_reserve = 0
+              AND (
+                  ti.is_reserve = 0
+                  OR (ti.is_reserve = 1 AND dra.assigned_team_id IS NOT NULL)
+              )
             """,
             (round_id, division_id, division_id),
         )
@@ -564,10 +606,20 @@ async def distribute_attendance_points(
     driver in the division for this round (FR-012–FR-015).
     """
     async with get_connection(db_path) as db:
+        # Guard: skip if round is cancelled (no penalties for cancelled rounds).
+        cursor = await db.execute(
+            "SELECT status FROM rounds WHERE id = ?",
+            (round_id,),
+        )
+        round_row = await cursor.fetchone()
+        if round_row is None or round_row["status"] == "CANCELLED":
+            log.info("distribute_attendance_points: skipping cancelled round %s", round_id)
+            return
+
         # Load penalty config for this division's server.
         cursor = await db.execute(
             """
-            SELECT ac.no_rsvp_penalty, ac.no_rsvp_absent_penalty, ac.rsvp_absent_penalty
+            SELECT ac.no_rsvp_penalty, ac.absent_penalty, ac.no_show_penalty
             FROM attendance_config ac
             JOIN seasons s ON s.server_id = ac.server_id
             JOIN divisions d ON d.season_id = s.id
@@ -581,8 +633,8 @@ async def distribute_attendance_points(
             return
 
         no_rsvp_pen: int = cfg_row["no_rsvp_penalty"] or 0
-        no_rsvp_absent_pen: int = cfg_row["no_rsvp_absent_penalty"] or 0
-        rsvp_absent_pen: int = cfg_row["rsvp_absent_penalty"] or 0
+        absent_pen: int = cfg_row["absent_penalty"] or 0
+        no_show_pen: int = cfg_row["no_show_penalty"] or 0
 
         # Load full-time DRA rows for this round.
         cursor = await db.execute(
@@ -613,10 +665,11 @@ async def distribute_attendance_points(
             # "Failure to check-in" = NO_RSVP.
             base = 0
             if rsvp == "NO_RSVP":
-                base = no_rsvp_pen + (no_rsvp_absent_pen if not attended else 0)
-            elif not attended:
-                # ACCEPTED/TENTATIVE/DECLINED + no-show = rsvp_absent_penalty
-                base = rsvp_absent_pen
+                base = no_rsvp_pen + (absent_pen if not attended else 0)
+            elif rsvp == "ACCEPTED" and not attended:
+                base = no_show_pen
+            elif rsvp in {"TENTATIVE", "DECLINED"} and not attended:
+                base = absent_pen
 
             # Load pardons for this DRA row.
             c2 = await db.execute(
@@ -629,10 +682,10 @@ async def distribute_attendance_points(
             net = base
             if "NO_RSVP" in pardons:
                 net -= no_rsvp_pen
-            if "NO_RSVP_ABSENT" in pardons:
-                net -= no_rsvp_absent_pen
-            if "RSVP_ABSENT" in pardons:
-                net -= rsvp_absent_pen
+            if "ABSENT" in pardons:
+                net -= absent_pen
+            if "NO_SHOW" in pardons:
+                net -= no_show_pen
             net = max(0, net)  # never negative
 
             # Compute cumulative total across all finalized rounds in division.
@@ -661,6 +714,74 @@ async def distribute_attendance_points(
                 """,
                 (net, total_after, dra_id),
             )
+
+        # Load allocated-reserve DRA rows: reserve-seated drivers that were
+        # distributed into a full-time seat for this round
+        # (assigned_team_id IS NOT NULL) and RSVP'd ACCEPTED.
+        # Only no_show_penalty applies; non-allocated or non-ACCEPTED reserves
+        # remain excluded from attendance scoring.
+        cursor = await db.execute(
+            """
+            SELECT dra.id, dra.driver_profile_id, dra.attended
+            FROM driver_round_attendance dra
+            JOIN driver_season_assignments dsa
+                ON dsa.driver_profile_id = dra.driver_profile_id
+            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            WHERE dra.round_id = ?
+              AND dra.division_id = ?
+              AND ti.division_id = ?
+              AND ti.is_reserve = 1
+              AND dra.assigned_team_id IS NOT NULL
+              AND dra.rsvp_status = 'ACCEPTED'
+              AND dra.attended IS NOT NULL
+            """,
+            (round_id, division_id, division_id),
+        )
+        reserve_dra_rows = await cursor.fetchall()
+
+        for row in reserve_dra_rows:
+            dra_id = row["id"]
+            attended = bool(row["attended"])
+            base = no_show_pen if not attended else 0
+
+            c2 = await db.execute(
+                "SELECT pardon_type FROM attendance_pardons WHERE attendance_id = ?",
+                (dra_id,),
+            )
+            pardons = {r["pardon_type"] for r in await c2.fetchall()}
+
+            net = base
+            if "NO_SHOW" in pardons:
+                net -= no_show_pen
+            net = max(0, net)
+
+            c3 = await db.execute(
+                """
+                SELECT COALESCE(SUM(dra2.points_awarded), 0) AS prior_total
+                FROM driver_round_attendance dra2
+                JOIN rounds r ON r.id = dra2.round_id
+                WHERE dra2.driver_profile_id = ?
+                  AND dra2.division_id = ?
+                  AND r.result_status IN ('POST_RACE_PENALTY', 'FINAL')
+                  AND dra2.round_id != ?
+                  AND dra2.points_awarded IS NOT NULL
+                """,
+                (row["driver_profile_id"], division_id, round_id),
+            )
+            prior_row = await c3.fetchone()
+            prior_total: int = prior_row["prior_total"] if prior_row else 0
+            total_after = prior_total + net
+
+            await db.execute(
+                """
+                UPDATE driver_round_attendance
+                SET points_awarded = ?, total_points_after = ?
+                WHERE id = ?
+                """,
+                (net, total_after, dra_id),
+            )
+
         await db.commit()
 
 
@@ -708,7 +829,7 @@ async def post_attendance_sheet(
 
     # Build sheet content.
     async with get_connection(db_path) as db:
-        # Full-time drivers sorted by total_points_after DESC, then display name.
+        # Full-time drivers + allocated reserves (who can accrue no-show points).
         cursor = await db.execute(
             """
             SELECT dra.driver_profile_id, dra.total_points_after,
@@ -724,8 +845,23 @@ async def post_attendance_sheet(
               AND ti.division_id = ?
               AND ti.is_reserve = 0
               AND dra.total_points_after IS NOT NULL
+            UNION
+            SELECT dra.driver_profile_id, dra.total_points_after,
+                   dp.discord_user_id, dp.test_display_name
+            FROM driver_round_attendance dra
+            JOIN driver_season_assignments dsa
+                ON dsa.driver_profile_id = dra.driver_profile_id
+            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
+            WHERE dra.round_id = ?
+              AND dra.division_id = ?
+              AND ti.division_id = ?
+              AND ti.is_reserve = 1
+              AND dra.assigned_team_id IS NOT NULL
+              AND dra.total_points_after IS NOT NULL
             """,
-            (round_id, division_id, division_id),
+            (round_id, division_id, division_id, round_id, division_id, division_id),
         )
         driver_rows = await cursor.fetchall()
 

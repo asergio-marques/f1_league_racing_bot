@@ -95,6 +95,7 @@ async def run_phase3(round_id: int, bot: "Bot") -> None:
             max_s = 4
 
         min_s = _MIN_SLOTS if slot_type == "mixed" else 1
+        min_s = min(min_s, max_s)  # guard: min cannot exceed session-type cap
         n_slots = random.randint(min_s, max_s)
 
         weights = get_phase3_weights(slot_type, rpc)

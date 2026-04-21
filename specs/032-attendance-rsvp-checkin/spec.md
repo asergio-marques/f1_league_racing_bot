@@ -281,30 +281,36 @@ already responded and all reserve drivers are not mentioned.
   eligible for distribution.
 - **FR-020**: Teams MUST be ranked as distribution candidates in the following priority
   order:
-  1. Teams where at least one full-time driver has NO_RSVP status.
+  1. Teams where all full-time seats are physically vacant (no full-time drivers
+     assigned to the team at all).
   2. Teams where at least one full-time driver has DECLINED.
-  3. Teams that have at least one full-time driver with ACCEPTED status but fewer
-     full-time drivers assigned than `max_seats` (partial allocation — one or more seats
-     are physically vacant with no full-timer assigned).
-  4. Teams that have no full-time drivers assigned at all (all seats vacant).
-  5. Teams where at least one full-time driver is TENTATIVE.
+  3. Teams where at least one full-time driver has NO_RSVP status.
+  4. Teams that have at least one physically vacant full-time seat
+     (`total_assigned_full_timers < max_seats`) while still having some FT drivers
+     assigned.
+  5. Teams that have already received at least one reserve allocation in the current
+     distribution run (second or subsequent fills). This tier is evaluated dynamically:
+     after each reserve is placed the receiving team is demoted to tier 5 so that every
+     needy team in tiers 1–4 receives its first reserve before any team receives a
+     second one. Teams whose only vacancy reason is TENTATIVE (tier 6) remain at tier
+     6 even after receiving a reserve.
+  6. Teams where at least one full-time driver is TENTATIVE.
   Teams where all full-time drivers have ACCEPTED and all seats are filled are not
   distribution candidates and receive no reserve assignment.
 - **FR-021**: Within each priority tier, ties MUST be broken in order by:
-  1. Number of full-time drivers with ACCEPTED status (ascending; teams with zero
-     accepted full-timers are ranked first).
-  2. Constructors' Championship position in the division (lowest-ranked team first,
+  1. Constructors' Championship position in the division (lowest-ranked team first,
      i.e. last place in the standings gets earliest access to reserves).
-  If championship standings are unavailable (no rounds completed yet), tied teams MUST
-  be ordered alphabetically by team name as a deterministic fallback.
+  2. Alphabetical by team name as a deterministic fallback when championship standings
+     are unavailable (no rounds completed yet) or positions are equal.
 - **FR-022**: When a reserve sets their RSVP status to Accepted, their acceptance timestamp
   MUST be recorded. If they change away from Accepted and back, the timestamp MUST be reset
   to the time of the most recent change to Accepted. Reserves with the earliest acceptance
   timestamp are distributed first.
 - **FR-023**: Each distribution candidate team receives at most one reserve per vacancy.
-  Vacancies include: each full-time driver who did not ACCEPT, plus each seat with no
-  full-time driver assigned at all (`max_seats − total_assigned_full_timers`). A single
-  reserve fills one slot in one team only.
+  Vacancies include: each full-time driver with NO_RSVP, DECLINED, or TENTATIVE status,
+  plus each seat with no full-time driver assigned at all
+  (`max_seats − total_assigned_full_timers`). ACCEPTED seats are not vacancies and are
+  never filled by a reserve. A single reserve fills one slot in one team only.
 - **FR-024**: Accepted reserves not placed in any team due to no remaining vacancies MUST
   be classified as on standby.
 - **FR-025**: After distribution, if any reserves were eligible (accepted at the deadline),

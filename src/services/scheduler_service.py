@@ -8,6 +8,7 @@ past DateTrigger + replace_existing=True).
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Callable
 
@@ -24,6 +25,10 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _GRACE_SECONDS = 300  # 5-minute misfire grace period
+
+# Regex that matches the ``_s{S}_d{D}_r{R}`` suffix appended to every round-
+# scoped job ID. Used to extract the event-type prefix for dispatch.
+_JOB_SUFFIX_RE = re.compile(r"_s\d+_d\d+_r\d+$")
 
 # Module-level service reference so APScheduler can pickle the job callable.
 # Set in SchedulerService.start(); always non-None when jobs fire.
@@ -74,43 +79,50 @@ async def _season_end_job(server_id: int, season_id: int) -> None:
     await cb(server_id, season_id)
 
 
-async def _phase_job(phase_num: int, round_id: int) -> None:
-    """Top-level APScheduler callable — avoids closure pickling issues.
+async def _weather_phase_job(phase_num: int, round_id: int) -> None:
+    """Top-level APScheduler callable for all weather-phase jobs.
 
-    APScheduler with SQLAlchemyJobStore requires picklable callables.  Inner
-    closures are not picklable, so we use a module-level function that finds
-    the running service instance via the module-level sentinel.
+    Replaces both ``_phase_job`` (for normal/sprint/endurance rounds) and the
+    old ``_mystery_notice_job`` (for mystery rounds) in a single dispatcher:
+
+    * MYSTERY + phase 1  → fires the mystery-notice callback.
+    * MYSTERY + phase 2/3 → no-op (mystery rounds have no P2/P3 forecasts).
+    * All other formats  → delegates to the registered phase callback.
+
+    APScheduler with SQLAlchemyJobStore requires picklable callables; this
+    module-level function avoids closure pickling issues.
     """
     if _GLOBAL_SERVICE is None:
         log.warning(
-            "_phase_job fired but _GLOBAL_SERVICE is None "
+            "_weather_phase_job fired but _GLOBAL_SERVICE is None "
             "(phase=%s, round=%s) — skipping",
             phase_num, round_id,
         )
         return
+
+    # Determine round format from DB so scheduling doesn't need to branch.
+    async with get_connection(_GLOBAL_SERVICE._db_path) as _db:
+        _cur = await _db.execute("SELECT format FROM rounds WHERE id = ?", (round_id,))
+        _row = await _cur.fetchone()
+    if _row is None:
+        log.warning("_weather_phase_job: round %s not found in DB — skipping", round_id)
+        return
+
+    is_mystery = _row["format"] == "MYSTERY"
+
+    if is_mystery:
+        if phase_num == 1:
+            cb = _GLOBAL_SERVICE._mystery_notice_callback
+            if cb is None:
+                log.warning("No mystery notice callback; skipping round %s.", round_id)
+                return
+            await cb(round_id)
+        # phases 2 and 3 are intentional no-ops for mystery rounds
+        return
+
     cb = _GLOBAL_SERVICE._phase_callbacks.get(phase_num)
     if cb is None:
-        log.warning("No callback registered for phase %s; skipping.", phase_num)
-        return
-    await cb(round_id)
-
-
-async def _mystery_notice_job(round_id: int) -> None:
-    """Top-level APScheduler callable for Mystery round notices.
-
-    Follows the same module-level pattern as ``_phase_job`` to avoid closure
-    pickling issues with SQLAlchemyJobStore.
-    """
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_mystery_notice_job fired but _GLOBAL_SERVICE is None "
-            "(round=%s) — skipping",
-            round_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._mystery_notice_callback
-    if cb is None:
-        log.warning("No mystery notice callback registered; skipping round %s.", round_id)
+        log.warning("No callback registered for phase %s; skipping round %s.", phase_num, round_id)
         return
     await cb(round_id)
 
@@ -320,52 +332,44 @@ class SchedulerService:
         self,
         rnd: Round,
         *,
+        season_number: int,
+        division_tier: int,
         phase_1_days: int = 5,
         phase_2_days: int = 2,
         phase_3_hours: int = 2,
     ) -> None:
         """Register DateTrigger jobs for *rnd*.
 
-        MYSTERY rounds: schedule the notice job (T−5 days) and the result
-        submission job (round start time), but no weather phase jobs.
-        Jobs use replace_existing=True so re-scheduling an amended round is safe.
+        Schedules three weather-phase jobs (``weather_p1`` / ``weather_p2`` /
+        ``weather_p3``), a cleanup job, and a result-submission job for every
+        round regardless of format.  MYSTERY-vs-normal dispatch is handled at
+        execution time by ``_weather_phase_job``, which checks the round format
+        from the database before deciding which callback to invoke:
+
+        * MYSTERY + weather_p1  → mystery-notice callback
+        * MYSTERY + weather_p2/3 → no-op
+        * Non-mystery           → normal phase callbacks
+
+        Job IDs follow the human-readable convention
+        ``<event_type>_s{season_number}_d{division_tier}_r{round_number}``
+        so they appear meaningful in APScheduler admin views.  The database
+        ``round_id`` is always stored as a kwarg for programmatic lookups.
+
+        Jobs use ``replace_existing=True`` so re-scheduling an amended round
+        is safe.
 
         Args:
-            phase_1_days: Days before the round to fire Phase 1 (default 5).
-            phase_2_days: Days before the round to fire Phase 2 (default 2).
-            phase_3_hours: Hours before the round to fire Phase 3 (default 2).
+            season_number:  Season number (for human-readable job IDs).
+            division_tier:  Division tier (for human-readable job IDs).
+            phase_1_days:   Days before round to fire Phase 1 (default 5).
+            phase_2_days:   Days before round to fire Phase 2 (default 2).
+            phase_3_hours:  Hours before round to fire Phase 3 (default 2).
         """
-        if rnd.format == RoundFormat.MYSTERY:
-            scheduled_at = rnd.scheduled_at
-            if scheduled_at.tzinfo is None:
-                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-            fire_at = scheduled_at - timedelta(days=5)
-            notice_job_id = f"mystery_r{rnd.id}"
-            self._scheduler.add_job(
-                _mystery_notice_job,
-                trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
-                id=notice_job_id,
-                replace_existing=True,
-                name=f"Mystery notice for round {rnd.id}",
-                kwargs={"round_id": rnd.id},
-            )
-            log.info("Scheduled %s at %s", notice_job_id, fire_at.isoformat())
-            # Also schedule result submission at round start time
-            results_job_id = f"results_r{rnd.id}"
-            self._scheduler.add_job(
-                _result_submission_job_wrapper,
-                trigger=DateTrigger(run_date=scheduled_at, timezone="UTC"),
-                id=results_job_id,
-                replace_existing=True,
-                name=f"Result submission for round {rnd.id}",
-                kwargs={"round_id": rnd.id},
-            )
-            log.info("Scheduled %s at %s", results_job_id, scheduled_at.isoformat())
-            return
-
         scheduled_at = rnd.scheduled_at
         if scheduled_at.tzinfo is None:
             scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+
+        _suffix = f"_s{season_number}_d{division_tier}_r{rnd.round_number}"
 
         horizons = {
             1: scheduled_at - timedelta(days=phase_1_days),
@@ -374,42 +378,38 @@ class SchedulerService:
         }
 
         for phase_num, fire_at in horizons.items():
-            job_id = f"phase{phase_num}_r{rnd.id}"
-            if self._phase_callbacks.get(phase_num) is None:
-                log.warning("No callback registered for phase %s; skipping job.", phase_num)
-                continue
-
+            job_id = f"weather_p{phase_num}{_suffix}"
             self._scheduler.add_job(
-                _phase_job,
+                _weather_phase_job,
                 trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
                 id=job_id,
                 replace_existing=True,
-                name=f"Phase {phase_num} for round {rnd.id}",
+                name=f"Weather P{phase_num} s{season_number} d{division_tier} r{rnd.round_number}",
                 kwargs={"phase_num": phase_num, "round_id": rnd.id},
             )
             log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
 
-        # Schedule post-race Phase 3 cleanup: +24 h after round start
+        # Post-race Phase 3 cleanup: +24 h after round start
+        cleanup_job_id = f"cleanup{_suffix}"
         cleanup_fire_at = scheduled_at + timedelta(hours=24)
-        cleanup_job_id = f"cleanup_r{rnd.id}"
         self._scheduler.add_job(
             _forecast_cleanup_job,
             trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
             id=cleanup_job_id,
             replace_existing=True,
-            name=f"Forecast cleanup for round {rnd.id}",
+            name=f"Forecast cleanup s{season_number} d{division_tier} r{rnd.round_number}",
             kwargs={"round_id": rnd.id},
         )
         log.info("Scheduled %s at %s", cleanup_job_id, cleanup_fire_at.isoformat())
 
-        # Schedule result submission job at round start time (FR-010)
-        results_job_id = f"results_r{rnd.id}"
+        # Result submission at round start time
+        results_job_id = f"results{_suffix}"
         self._scheduler.add_job(
             _result_submission_job_wrapper,
             trigger=DateTrigger(run_date=scheduled_at, timezone="UTC"),
             id=results_job_id,
             replace_existing=True,
-            name=f"Result submission for round {rnd.id}",
+            name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
             kwargs={"round_id": rnd.id},
         )
         log.info("Scheduled %s at %s", results_job_id, scheduled_at.isoformat())
@@ -418,53 +418,60 @@ class SchedulerService:
         self,
         rnd: Round,
         *,
+        season_number: int,
+        division_tier: int,
         notice_days: int,
         last_notice_hours: int,
         deadline_hours: int,
     ) -> None:
         """Register RSVP DateTrigger jobs for *rnd* (attendance module).
 
-        Jobs are only created for rounds whose fire time is in the future.
-        ``replace_existing=True`` makes re-scheduling amended rounds safe.
+        Job IDs follow the same ``<event_type>_s{S}_d{D}_r{R}`` convention as
+        ``schedule_round``.  Jobs are only created when their fire time is in
+        the future.  ``replace_existing=True`` makes re-scheduling amended
+        rounds safe.
 
         Args:
-            notice_days:       Days before round to post RSVP embed.
-            last_notice_hours: Hours before round for last-notice ping (0 = disabled, FR-030).
-            deadline_hours:    Hours before round for distribution deadline.
+            season_number:       Season number (for human-readable job IDs).
+            division_tier:       Division tier (for human-readable job IDs).
+            notice_days:         Days before round to post RSVP embed.
+            last_notice_hours:   Hours before round for last-notice ping (0 = disabled).
+            deadline_hours:      Hours before round for distribution deadline.
         """
         scheduled_at = rnd.scheduled_at
         if scheduled_at.tzinfo is None:
             scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
 
         now = datetime.now(timezone.utc)
+        _suffix = f"_s{season_number}_d{division_tier}_r{rnd.round_number}"
 
         # Notice job
         notice_fire_at = scheduled_at - timedelta(days=notice_days)
-        notice_job_id = f"rsvp_notice_r{rnd.id}"
+        notice_job_id = f"rsvp_notice{_suffix}"
         if notice_fire_at > now:
             self._scheduler.add_job(
                 _rsvp_notice_job,
                 trigger=DateTrigger(run_date=notice_fire_at, timezone="UTC"),
                 id=notice_job_id,
                 replace_existing=True,
-                name=f"RSVP notice for round {rnd.id}",
+                name=f"RSVP notice s{season_number} d{division_tier} r{rnd.round_number}",
                 kwargs={"round_id": rnd.id},
             )
             log.info("Scheduled %s at %s", notice_job_id, notice_fire_at.isoformat())
         else:
             log.info("Skipping %s — fire time %s is in the past", notice_job_id, notice_fire_at.isoformat())
 
-        # Last-notice job (FR-030: only when last_notice_hours > 0)
+        # Last-notice job (only when last_notice_hours > 0)
         if last_notice_hours > 0:
             last_notice_fire_at = scheduled_at - timedelta(hours=last_notice_hours)
-            last_notice_job_id = f"rsvp_last_notice_r{rnd.id}"
+            last_notice_job_id = f"rsvp_last_notice{_suffix}"
             if last_notice_fire_at > now:
                 self._scheduler.add_job(
                     _rsvp_last_notice_job,
                     trigger=DateTrigger(run_date=last_notice_fire_at, timezone="UTC"),
                     id=last_notice_job_id,
                     replace_existing=True,
-                    name=f"RSVP last-notice for round {rnd.id}",
+                    name=f"RSVP last-notice s{season_number} d{division_tier} r{rnd.round_number}",
                     kwargs={"round_id": rnd.id},
                 )
                 log.info("Scheduled %s at %s", last_notice_job_id, last_notice_fire_at.isoformat())
@@ -477,14 +484,14 @@ class SchedulerService:
         # Deadline job
         deadline_hours_actual = deadline_hours if deadline_hours > 0 else 0
         deadline_fire_at = scheduled_at - timedelta(hours=deadline_hours_actual)
-        deadline_job_id = f"rsvp_deadline_r{rnd.id}"
+        deadline_job_id = f"rsvp_deadline{_suffix}"
         if deadline_fire_at > now:
             self._scheduler.add_job(
                 _rsvp_deadline_job,
                 trigger=DateTrigger(run_date=deadline_fire_at, timezone="UTC"),
                 id=deadline_job_id,
                 replace_existing=True,
-                name=f"RSVP deadline for round {rnd.id}",
+                name=f"RSVP deadline s{season_number} d{division_tier} r{rnd.round_number}",
                 kwargs={"round_id": rnd.id},
             )
             log.info("Scheduled %s at %s", deadline_job_id, deadline_fire_at.isoformat())
@@ -492,23 +499,20 @@ class SchedulerService:
             log.info("Skipping %s — fire time %s is in the past", deadline_job_id, deadline_fire_at.isoformat())
 
     def cancel_round(self, round_id: int) -> None:
-        """Remove all phase jobs, the mystery-notice job, the cleanup job, and RSVP jobs for *round_id*."""
-        for job_id in (
-            f"phase1_r{round_id}",
-            f"phase2_r{round_id}",
-            f"phase3_r{round_id}",
-            f"mystery_r{round_id}",
-            f"cleanup_r{round_id}",
-            f"results_r{round_id}",
-            f"rsvp_notice_r{round_id}",
-            f"rsvp_last_notice_r{round_id}",
-            f"rsvp_deadline_r{round_id}",
-        ):
-            try:
-                self._scheduler.remove_job(job_id)
-                log.info("Removed job %s", job_id)
-            except Exception:
-                pass  # Job may not exist if it already fired or was never scheduled
+        """Remove all scheduler jobs belonging to *round_id*.
+
+        Iterates the live jobstore and removes every job whose ``round_id``
+        kwarg matches.  This is format-agnostic and works with both the
+        current ``<event>_s{S}_d{D}_r{R}`` ID scheme and any other jobs that
+        carry ``round_id`` in their kwargs.
+        """
+        for job in self._scheduler.get_jobs():
+            if job.kwargs.get("round_id") == round_id:
+                try:
+                    self._scheduler.remove_job(job.id)
+                    log.info("Removed job %s", job.id)
+                except Exception:
+                    pass  # Already fired or removed concurrently
 
     async def cancel_all_weather_for_server(self, server_id: int) -> None:
         """Cancel all weather (phase) jobs for every round in active/setup seasons of *server_id*."""
@@ -528,37 +532,58 @@ class SchedulerService:
         self,
         rounds: list[Round],
         *,
+        division_meta: dict[int, tuple[int, int]],
         phase_1_days: int = 5,
         phase_2_days: int = 2,
         phase_3_hours: int = 2,
     ) -> None:
-        """Schedule all rounds in *rounds*."""
+        """Schedule all rounds in *rounds*.
+
+        Args:
+            division_meta: Mapping of ``division_id`` →
+                ``(season_number, division_tier)`` used to build human-readable
+                job IDs.  Every round's ``division_id`` must have an entry.
+        """
         for rnd in rounds:
+            season_number, division_tier = division_meta[rnd.division_id]
             self.schedule_round(
                 rnd,
+                season_number=season_number,
+                division_tier=division_tier,
                 phase_1_days=phase_1_days,
                 phase_2_days=phase_2_days,
                 phase_3_hours=phase_3_hours,
             )
 
-    def schedule_result_submission_jobs(self, rounds: list[Round]) -> None:
+    def schedule_result_submission_jobs(
+        self,
+        rounds: list[Round],
+        *,
+        division_meta: dict[int, tuple[int, int]],
+    ) -> None:
         """Schedule only the result-submission job for each round.
 
         Used when the results module is enabled but the weather module is not,
         so ``schedule_round`` (which creates all weather + results jobs together)
         was not called at approval time.
+
+        Args:
+            division_meta: Mapping of ``division_id`` →
+                ``(season_number, division_tier)`` used to build human-readable
+                job IDs.  Every round's ``division_id`` must have an entry.
         """
         for rnd in rounds:
             scheduled_at = rnd.scheduled_at
             if scheduled_at.tzinfo is None:
                 scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-            job_id = f"results_r{rnd.id}"
+            season_number, division_tier = division_meta[rnd.division_id]
+            job_id = f"results_s{season_number}_d{division_tier}_r{rnd.round_number}"
             self._scheduler.add_job(
                 _result_submission_job_wrapper,
                 trigger=DateTrigger(run_date=scheduled_at, timezone="UTC"),
                 id=job_id,
                 replace_existing=True,
-                name=f"Result submission for round {rnd.id}",
+                name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
                 kwargs={"round_id": rnd.id},
             )
             log.info("Scheduled %s at %s", job_id, scheduled_at.isoformat())
@@ -587,15 +612,14 @@ class SchedulerService:
         Cleanup and season-end jobs are excluded.
         Jobs that are paused (``next_run_time is None``) are excluded.
         """
-        # result submission (results_r) is intentionally excluded here.
+        # result submission (results) is intentionally excluded here.
         # For test-mode advance, result submission is detected via DB state
-        # (rounds_with_results fallback) so that past-dated results_r jobs
+        # (rounds_with_results fallback) so that past-dated results jobs
         # that already auto-fired don't block or double-trigger the wizard.
         _PHASE_PREFIX_MAP = {
-            "mystery":          0,
-            "phase1":           1,
-            "phase2":           2,
-            "phase3":           3,
+            "weather_p1":       1,
+            "weather_p2":       2,
+            "weather_p3":       3,
             "rsvp_notice":      5,
             "rsvp_last_notice": 6,
             "rsvp_deadline":    7,
@@ -604,22 +628,20 @@ class SchedulerService:
         for job in self._scheduler.get_jobs():
             if job.next_run_time is None:
                 continue
-            job_id: str = job.id
-            if "_r" not in job_id:
+            round_id = job.kwargs.get("round_id")
+            if round_id is None or round_id not in round_ids:
                 continue
-            try:
-                prefix, round_str = job_id.rsplit("_r", 1)
-                round_id = int(round_str)
-            except ValueError:
+            # Extract event-type prefix by stripping the _s{S}_d{D}_r{R} suffix
+            m = _JOB_SUFFIX_RE.search(job.id)
+            if m is None:
                 continue
-            if round_id not in round_ids:
-                continue
-            phase = _PHASE_PREFIX_MAP.get(prefix)
+            event_type = job.id[: m.start()]
+            phase = _PHASE_PREFIX_MAP.get(event_type)
             if phase is None:
                 continue  # cleanup, season_end, etc.
             result.append(
                 {
-                    "job_id": job_id,
+                    "job_id": job.id,
                     "round_id": round_id,
                     "phase_number": phase,
                     "next_run_time": job.next_run_time,
@@ -631,7 +653,7 @@ class SchedulerService:
     def get_job_ids_for_rounds(self, round_ids: set[int]) -> set[str]:
         """Return all currently-scheduled (non-paused) job IDs that belong to
         the given round IDs.  Unlike ``get_pending_advance_jobs``, no prefix
-        filtering is applied — ``results_r``, ``cleanup_r``, etc. are all
+        filtering is applied — ``results``, ``cleanup``, etc. are all
         included.  Used by the review summary to distinguish "job queued" from
         "job absent" for each pending phase.
         """
@@ -639,14 +661,9 @@ class SchedulerService:
         for job in self._scheduler.get_jobs():
             if job.next_run_time is None:
                 continue
-            if "_r" not in job.id:
-                continue
-            try:
-                _, round_str = job.id.rsplit("_r", 1)
-                if int(round_str) in round_ids:
-                    result.add(job.id)
-            except ValueError:
-                continue
+            round_id = job.kwargs.get("round_id")
+            if round_id in round_ids:
+                result.add(job.id)
         return result
 
     # ------------------------------------------------------------------

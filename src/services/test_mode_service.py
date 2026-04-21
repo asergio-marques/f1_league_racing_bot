@@ -301,32 +301,39 @@ async def get_next_pending_phase(
         return None
 
     if pending_jobs:
-        job = pending_jobs[0]
-        # Before returning this scheduler job, check all earlier rounds (by
-        # scheduled_at) for any pending work that the scheduler cannot see —
-        # misfired/evicted phase jobs, result submission (excluded from
-        # pending_jobs), or RSVP phases that were never created for past-dated
-        # rounds.  Ensures chronological advance order is preserved even when
-        # the job store is incomplete.
-        first_job_idx = next(
-            (i for i, r in enumerate(rows) if r["round_id"] == job["round_id"]),
-            len(rows),
-        )
-        for row in rows[:first_job_idx]:
-            entry = _first_pending_for_row(row)
-            if entry is not None:
-                return entry
-        rnd = round_info[job["round_id"]]
-        is_mystery = str(rnd["format"]).upper() == "MYSTERY"
-        return PhaseEntry(
-            round_id=job["round_id"],
-            round_number=rnd["round_number"],
-            division_id=rnd["division_id"],
-            phase_number=job["phase_number"],
-            track_name=rnd["track_name"] or ("Mystery" if is_mystery else "Unknown"),
-            division_name=rnd["division_name"],
-            job_id=job["job_id"],
-        )
+        for job in pending_jobs:
+            # Before returning this scheduler job, check all earlier rounds (by
+            # scheduled_at) for any pending work that the scheduler cannot see —
+            # misfired/evicted phase jobs, result submission (excluded from
+            # pending_jobs), or RSVP phases that were never created for past-dated
+            # rounds.  Ensures chronological advance order is preserved even when
+            # the job store is incomplete.
+            first_job_idx = next(
+                (i for i, r in enumerate(rows) if r["round_id"] == job["round_id"]),
+                len(rows),
+            )
+            for row in rows[:first_job_idx]:
+                entry = _first_pending_for_row(row)
+                if entry is not None:
+                    return entry
+            # Validate this job against DB state before trusting it.  A scheduler
+            # job can become stale when phases were already completed (e.g. run via
+            # a previous advance invocation) but APScheduler still holds the job
+            # because cancel_job was never called or the job fired-and-was-missed.
+            rnd = round_info[job["round_id"]]
+            if _first_pending_for_row(rnd) is None:
+                # Round is fully done — stale scheduler job; try the next one.
+                continue
+            is_mystery = str(rnd["format"]).upper() == "MYSTERY"
+            return PhaseEntry(
+                round_id=job["round_id"],
+                round_number=rnd["round_number"],
+                division_id=rnd["division_id"],
+                phase_number=job["phase_number"],
+                track_name=rnd["track_name"] or ("Mystery" if is_mystery else "Unknown"),
+                division_name=rnd["division_name"],
+                job_id=job["job_id"],
+            )
 
     # ── DB fallback: all scheduler jobs have misfired or been evicted ─────────
     # Walk rounds in scheduled_at order and return the first pending phase

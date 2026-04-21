@@ -234,15 +234,15 @@ async def test_compute_driver_standings_countback(db_path):
         # Driver A: P1 (25 pts), Driver B: P2 (18 pts)
         # Add a second round where B scores 7 pts and A scores 0 → both on 25 pts total
         await db.execute(
-            "INSERT INTO driver_session_results "
-            "(session_result_id, driver_user_id, finishing_position, team_role_id, outcome, points_awarded, fastest_lap_bonus, is_superseded) "
-            "VALUES (?, 111, 1, 999, 'CLASSIFIED', 25, 0, 0)",
+            "INSERT INTO race_session_results "
+            "(session_result_id, driver_user_id, finishing_position, team_role_id, outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "VALUES (?, 111, 1, 999, 'CLASSIFIED', 25, 0, 0, 0, 0)",
             (sr_id,),
         )
         await db.execute(
-            "INSERT INTO driver_session_results "
-            "(session_result_id, driver_user_id, finishing_position, team_role_id, outcome, points_awarded, fastest_lap_bonus, is_superseded) "
-            "VALUES (?, 222, 2, 998, 'CLASSIFIED', 18, 0, 0)",
+            "INSERT INTO race_session_results "
+            "(session_result_id, driver_user_id, finishing_position, team_role_id, outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "VALUES (?, 222, 2, 998, 'CLASSIFIED', 18, 0, 0, 0, 0)",
             (sr_id,),
         )
         # Round 2 — driver B gets 7, driver A gets 0 → both on 25
@@ -258,15 +258,15 @@ async def test_compute_driver_standings_countback(db_path):
         )
         sr2_id = cursor.lastrowid
         await db.execute(
-            "INSERT INTO driver_session_results "
-            "(session_result_id, driver_user_id, finishing_position, team_role_id, outcome, points_awarded, fastest_lap_bonus, is_superseded) "
-            "VALUES (?, 111, 10, 999, 'CLASSIFIED', 0, 0, 0)",
+            "INSERT INTO race_session_results "
+            "(session_result_id, driver_user_id, finishing_position, team_role_id, outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "VALUES (?, 111, 10, 999, 'CLASSIFIED', 0, 0, 0, 0, 0)",
             (sr2_id,),
         )
         await db.execute(
-            "INSERT INTO driver_session_results "
-            "(session_result_id, driver_user_id, finishing_position, team_role_id, outcome, points_awarded, fastest_lap_bonus, is_superseded) "
-            "VALUES (?, 222, 3, 998, 'CLASSIFIED', 7, 0, 0)",
+            "INSERT INTO race_session_results "
+            "(session_result_id, driver_user_id, finishing_position, team_role_id, outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "VALUES (?, 222, 3, 998, 'CLASSIFIED', 7, 0, 0, 0, 0)",
             (sr2_id,),
         )
         await db.commit()
@@ -327,10 +327,11 @@ async def _session(db, round_id: int, div_id: int, session_type: str = "FEATURE_
 
 async def _result(db, sr_id: int, uid: int, pos: int, pts: int, team: int = 999) -> None:
     await db.execute(
-        "INSERT INTO driver_session_results "
+        "INSERT INTO race_session_results "
         "(session_result_id, driver_user_id, finishing_position, team_role_id, "
-        "outcome, points_awarded, fastest_lap_bonus, is_superseded) "
-        "VALUES (?, ?, ?, ?, 'CLASSIFIED', ?, 0, 0)",
+        "outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, "
+        "postrace_time_penalties_ms, appeal_time_penalties_ms) "
+        "VALUES (?, ?, ?, ?, 'CLASSIFIED', ?, 0, 0, 0, 0)",
         (sr_id, uid, pos, team, pts),
     )
 
@@ -550,8 +551,8 @@ async def test_compute_team_standings_includes_qualifying_points(db_path):
         r1 = await _round(db, div_id, 1)
         # Qualifying session
         sr_q = await _session(db, r1, div_id, "FEATURE_QUALIFYING")
-        await _result(db, sr_q, 111, pos=1, pts=3, team=555)   # Team A: 3 qualifying pts
-        await _result(db, sr_q, 222, pos=2, pts=2, team=666)   # Team B: 2 qualifying pts
+        await _result_qual(db, sr_q, 111, pos=1, pts=3, team=555)   # Team A: 3 qualifying pts
+        await _result_qual(db, sr_q, 222, pos=2, pts=2, team=666)   # Team B: 2 qualifying pts
         # Race session
         sr_r = await _session(db, r1, div_id, "FEATURE_RACE")
         await _result(db, sr_r, 111, pos=1, pts=25, team=555)  # Team A: 25 race pts
@@ -569,13 +570,25 @@ async def test_compute_team_standings_includes_qualifying_points(db_path):
 # ---------------------------------------------------------------------------
 
 
+async def _result_qual(db, sr_id: int, uid: int, pos: int, pts: int, team: int = 999) -> None:
+    """Insert a qualifying result."""
+    await db.execute(
+        "INSERT INTO qualifying_session_results "
+        "(session_result_id, driver_user_id, finishing_position, team_role_id, "
+        "outcome, points_awarded) "
+        "VALUES (?, ?, ?, ?, 'CLASSIFIED', ?)",
+        (sr_id, uid, pos, team, pts),
+    )
+
+
 async def _result_dnf(db, sr_id: int, uid: int, pos: int, team: int = 999) -> None:
     """Insert a DNF result (0 points)."""
     await db.execute(
-        "INSERT INTO driver_session_results "
+        "INSERT INTO race_session_results "
         "(session_result_id, driver_user_id, finishing_position, team_role_id, "
-        "outcome, points_awarded, fastest_lap_bonus, is_superseded) "
-        "VALUES (?, ?, ?, ?, 'DNF', 0, 0, 0)",
+        "outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, "
+        "postrace_time_penalties_ms, appeal_time_penalties_ms) "
+        "VALUES (?, ?, ?, ?, 'DNF', 0, 0, 0, 0, 0)",
         (sr_id, uid, pos, team),
     )
 

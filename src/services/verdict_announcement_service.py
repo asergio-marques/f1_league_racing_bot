@@ -66,20 +66,35 @@ async def _get_announcement_context(db_path: str, round_id: int) -> dict:
     }
 
 
-async def _get_result_context(db_path: str, driver_session_result_id: int) -> dict:
-    """Return round_number, session_type, format for the given driver result."""
+async def _get_result_context(db_path: str, race_result_id: int | None, qual_result_id: int | None) -> dict:
+    """Return round_number, session_type, format for a race or qualifying result row."""
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT r.round_number, sr.session_type, r.format, r.id AS round_id,
-                   r.division_id
-            FROM driver_session_results dsr
-            JOIN session_results sr ON sr.id = dsr.session_result_id
-            JOIN rounds r ON r.id = sr.round_id
-            WHERE dsr.id = ?
-            """,
-            (driver_session_result_id,),
-        )
+        if race_result_id is not None:
+            cursor = await db.execute(
+                """
+                SELECT r.round_number, sr.session_type, r.format, r.id AS round_id,
+                       r.division_id
+                FROM race_session_results rsr
+                JOIN session_results sr ON sr.id = rsr.session_result_id
+                JOIN rounds r ON r.id = sr.round_id
+                WHERE rsr.id = ?
+                """,
+                (race_result_id,),
+            )
+        elif qual_result_id is not None:
+            cursor = await db.execute(
+                """
+                SELECT r.round_number, sr.session_type, r.format, r.id AS round_id,
+                       r.division_id
+                FROM qualifying_session_results qsr
+                JOIN session_results sr ON sr.id = qsr.session_result_id
+                JOIN rounds r ON r.id = sr.round_id
+                WHERE qsr.id = ?
+                """,
+                (qual_result_id,),
+            )
+        else:
+            return {}
         row = await cursor.fetchone()
     if row is None:
         return {}
@@ -159,17 +174,13 @@ async def post_penalty_announcements(
 
     for record in applied_penalties:
         try:
-            # record may be a penalty_record DB row dict or a StagedPenalty-like object
-            driver_session_result_id = (
-                record.get("driver_session_result_id")
-                if hasattr(record, "get")
-                else getattr(record, "driver_session_result_id", None)
-            )
-            if driver_session_result_id is None:
-                continue
+            race_result_id = record.get("race_result_id") if hasattr(record, "get") else getattr(record, "race_result_id", None)
+            qual_result_id = record.get("qual_result_id") if hasattr(record, "get") else getattr(record, "qual_result_id", None)
+            driver_discord_id: int = record.get("driver_user_id") if hasattr(record, "get") else getattr(record, "driver_user_id", 0)
 
-            result_ctx = await _get_result_context(db_path, driver_session_result_id)
+            result_ctx = await _get_result_context(db_path, race_result_id, qual_result_id)
             if not result_ctx:
+                log.warning("post_penalty_announcements: no result context for record %r", record)
                 continue
 
             round_number: int = result_ctx["round_number"]
@@ -178,36 +189,20 @@ async def post_penalty_announcements(
             st = SessionType(session_type_str)
             session_label = results_formatter.format_session_label(st, is_sprint=is_sprint)
 
-            # Resolve driver Discord ID (and test display name if applicable)
+            # Resolve test display name
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
-                    """
-                    SELECT dsr.driver_user_id, dp.test_display_name
-                    FROM driver_session_results dsr
-                    LEFT JOIN driver_profiles dp
-                          ON CAST(dp.discord_user_id AS INTEGER) = dsr.driver_user_id
-                    WHERE dsr.id = ?
-                    """,
-                    (driver_session_result_id,),
+                    "SELECT test_display_name FROM driver_profiles WHERE CAST(discord_user_id AS INTEGER) = ?",
+                    (driver_discord_id,),
                 )
-                dsr_row = await cursor.fetchone()
-            driver_discord_id: int = dsr_row["driver_user_id"] if dsr_row else 0
-            test_display_name: str | None = dsr_row["test_display_name"] if dsr_row else None
+                dp_row = await cursor.fetchone()
+            test_display_name: str | None = dp_row["test_display_name"] if dp_row else None
 
-            penalty_type = (
-                record.get("penalty_type") if hasattr(record, "get") else getattr(record, "penalty_type", "")
-            )
-            time_seconds = (
-                record.get("time_seconds") if hasattr(record, "get") else getattr(record, "time_seconds", None)
-            )
-            description_text = (
-                record.get("description") if hasattr(record, "get") else getattr(record, "description", "")
-            )
-            justification_text = (
-                record.get("justification") if hasattr(record, "get") else getattr(record, "justification", "")
-            )
+            penalty_type = record.get("penalty_type") if hasattr(record, "get") else getattr(record, "penalty_type", "")
+            time_seconds = record.get("time_seconds") if hasattr(record, "get") else getattr(record, "time_seconds", None)
+            description_text = record.get("description") if hasattr(record, "get") else getattr(record, "description", "")
+            justification_text = record.get("justification") if hasattr(record, "get") else getattr(record, "justification", "")
 
-            # Translate penalty magnitude
             if penalty_type == "DSQ":
                 pen_str = "DSQ"
             elif time_seconds is not None:
@@ -274,16 +269,13 @@ async def post_appeal_announcements(
 
     for record in applied_corrections:
         try:
-            driver_session_result_id = (
-                record.get("driver_session_result_id")
-                if hasattr(record, "get")
-                else getattr(record, "driver_session_result_id", None)
-            )
-            if driver_session_result_id is None:
-                continue
+            race_result_id = record.get("race_result_id") if hasattr(record, "get") else getattr(record, "race_result_id", None)
+            qual_result_id = record.get("qual_result_id") if hasattr(record, "get") else getattr(record, "qual_result_id", None)
+            driver_discord_id: int = record.get("driver_user_id") if hasattr(record, "get") else getattr(record, "driver_user_id", 0)
 
-            result_ctx = await _get_result_context(db_path, driver_session_result_id)
+            result_ctx = await _get_result_context(db_path, race_result_id, qual_result_id)
             if not result_ctx:
+                log.warning("post_appeal_announcements: no result context for record %r", record)
                 continue
 
             round_number: int = result_ctx["round_number"]
@@ -294,31 +286,16 @@ async def post_appeal_announcements(
 
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
-                    """
-                    SELECT dsr.driver_user_id, dp.test_display_name
-                    FROM driver_session_results dsr
-                    LEFT JOIN driver_profiles dp
-                          ON CAST(dp.discord_user_id AS INTEGER) = dsr.driver_user_id
-                    WHERE dsr.id = ?
-                    """,
-                    (driver_session_result_id,),
+                    "SELECT test_display_name FROM driver_profiles WHERE CAST(discord_user_id AS INTEGER) = ?",
+                    (driver_discord_id,),
                 )
-                dsr_row = await cursor.fetchone()
-            driver_discord_id: int = dsr_row["driver_user_id"] if dsr_row else 0
-            test_display_name: str | None = dsr_row["test_display_name"] if dsr_row else None
+                dp_row = await cursor.fetchone()
+            test_display_name: str | None = dp_row["test_display_name"] if dp_row else None
 
-            penalty_type = (
-                record.get("penalty_type") if hasattr(record, "get") else getattr(record, "penalty_type", "")
-            )
-            time_seconds = (
-                record.get("time_seconds") if hasattr(record, "get") else getattr(record, "time_seconds", None)
-            )
-            description_text = (
-                record.get("description") if hasattr(record, "get") else getattr(record, "description", "")
-            )
-            justification_text = (
-                record.get("justification") if hasattr(record, "get") else getattr(record, "justification", "")
-            )
+            penalty_type = record.get("penalty_type") if hasattr(record, "get") else getattr(record, "penalty_type", "")
+            time_seconds = record.get("time_seconds") if hasattr(record, "get") else getattr(record, "time_seconds", None)
+            description_text = record.get("description") if hasattr(record, "get") else getattr(record, "description", "")
+            justification_text = record.get("justification") if hasattr(record, "get") else getattr(record, "justification", "")
 
             if penalty_type == "DSQ":
                 pen_str = "DSQ"

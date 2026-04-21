@@ -660,6 +660,8 @@ class SeasonService:
                 session_result_ids = [r[0] for r in await cursor.fetchall()]
                 if session_result_ids:
                     sph = ",".join("?" * len(session_result_ids))
+                    await db.execute(f"DELETE FROM race_session_results WHERE session_result_id IN ({sph})", session_result_ids)
+                    await db.execute(f"DELETE FROM qualifying_session_results WHERE session_result_id IN ({sph})", session_result_ids)
                     await db.execute(f"DELETE FROM driver_session_results WHERE session_result_id IN ({sph})", session_result_ids)
                 await db.execute(f"DELETE FROM session_results WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM forecast_messages WHERE round_id IN ({ph})", round_ids)
@@ -767,7 +769,7 @@ class SeasonService:
             cursor = await db.execute(
                 "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier, "
                 "lineup_channel_id, calendar_channel_id, lineup_message_id "
-                "FROM divisions WHERE season_id = ?",
+                "FROM divisions WHERE season_id = ? ORDER BY tier",
                 (season_id,),
             )
             rows = await cursor.fetchall()
@@ -867,6 +869,7 @@ class SeasonService:
                 FROM divisions d
                 LEFT JOIN division_results_config drc ON drc.division_id = d.id
                 WHERE d.season_id = ?
+                ORDER BY d.tier
                 """,
                 (season_id,),
             )
@@ -905,6 +908,17 @@ class SeasonService:
                 await db.execute(f"DELETE FROM sessions WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM rounds WHERE division_id = ?", (division_id,))
 
+            # team_seats → team_instances: no cascade, must be deleted manually
+            await db.execute(
+                "DELETE FROM team_seats WHERE team_instance_id IN "
+                "(SELECT id FROM team_instances WHERE division_id = ?)",
+                (division_id,),
+            )
+            await db.execute("DELETE FROM team_instances WHERE division_id = ?", (division_id,))
+            # driver_season_assignments.division_id has no cascade
+            await db.execute(
+                "DELETE FROM driver_season_assignments WHERE division_id = ?", (division_id,)
+            )
             await db.execute("DELETE FROM divisions WHERE id = ?", (division_id,))
             await db.commit()
 

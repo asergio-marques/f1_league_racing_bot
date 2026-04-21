@@ -678,6 +678,113 @@ Bulk-upserts position points and fastest-lap bonuses for one or more session typ
 
 #### Round Results Commands
 
+##### Submission format — Race session
+
+Each line of a race submission block represents one driver. The number of fields depends on the context:
+
+**Event submission (6 fields):**
+```
+{pos}, {driver}, {team role}, {total time / gap}, {fastest lap}, {time penalties}
+```
+
+| Field | Description |
+|-------|-------------|
+| `pos` | Finishing position (integer) |
+| `driver` | Discord member mention (e.g. `<@123456789>`) |
+| `team role` | Discord role mention (e.g. `<@&987654321>`) |
+| `total time / gap` | `H:MM:SS.mmm` for P1; `+M:SS.mmm` or `+SS.mmm` delta for others; `+N Lap(s)` for lapped drivers; `DNF`, `DNS`, or `DSQ` for non-classified entries |
+| `fastest lap` | Lap time string (e.g. `1:24.000`) or `N/A` |
+| `time penalties` | `N/A`, or an in-game time penalty in `M:SS.mmm` or `SS.mmm` format (e.g. `0:05.000`) |
+
+**Results amend (8 fields):**
+```
+{pos}, {driver}, {team role}, {total time / gap}, {fastest lap}, {ingame penalties}, {postrace penalty}, {appeal penalty}
+```
+
+All fields above apply, plus:
+
+| Field | Description |
+|-------|-------------|
+| `ingame penalties` | `N/A`, or an in-game time penalty in `M:SS.mmm` or `SS.mmm` format (e.g. `0:05.000`) |
+| `postrace penalty` | `N/A`; a penalty in seconds (e.g. `5.000`); or `DSQ` |
+| `appeal penalty` | `N/A`; a penalty in seconds (e.g. `5.000`); or `DSQ` |
+
+**Race ordering rules:**
+- Rows must be ordered: classified entries (lead-lap or lapped times) → `DNF` → `DNS` → `DSQ`. Any violation is rejected.
+- Setting both `postrace penalty` **and** `appeal penalty` to `DSQ` on the same row is invalid (amend only).
+- A driver whose either penalty field is `DSQ` has their outcome recorded as `DSQ` regardless of the `total time` value.
+
+**Example (event submission):**
+```
+1, @Driver,  @TeamRole, 1:23:45.678, 1:24.000, N/A
+2, @Other,   @TeamRole, +5.321,      1:24.000, N/A
+3, @Driver3, @TeamRole, +12.450,     1:25.100, N/A
+```
+
+**Example (results amend):**
+```
+1, @Driver,  @TeamRole, 1:23:45.678, 1:24.000, N/A,       N/A,   N/A
+2, @Other,   @TeamRole, +5.321,      1:24.000, 0:05.000,  N/A,   N/A
+3, @Driver3, @TeamRole, +12.450,     1:25.100, N/A,       5.000, N/A
+4, @Driver4, @TeamRole, DNF,         N/A,      N/A,       DSQ,   N/A
+```
+
+---
+
+##### Submission format — Qualifying session
+
+Each line of a qualifying submission block represents one driver. The number of fields depends on the context:
+
+**Event submission (6 fields):**
+```
+{pos}, {driver}, {team role}, {tyre}, {best lap}, {gap}
+```
+
+| Field | Description |
+|-------|-------------|
+| `pos` | Qualifying position (integer) |
+| `driver` | Discord member mention (e.g. `<@123456789>`) |
+| `team role` | Discord role mention (e.g. `<@&987654321>`) |
+| `tyre` | Tyre compound used on the fastest lap (e.g. `Soft`) |
+| `best lap` | Lap time string (e.g. `1:20.456`); or `DNF`, `DNS`, `DSQ` for non-classified entries |
+| `gap` | `N/A` for P1; delta time (e.g. `+0.456`) for all other classified entries |
+
+**Results amend (8 fields):**
+```
+{pos}, {driver}, {team role}, {tyre}, {best lap}, {gap}, {postrace penalty}, {appeal penalty}
+```
+
+All fields above apply, plus:
+
+| Field | Description |
+|-------|-------------|
+| `postrace penalty` | `N/A` or `DSQ` — disqualification applied after the session |
+| `appeal penalty` | `N/A` or `DSQ` — disqualification upheld on appeal |
+
+**Ordering rules (both formats):**
+- Rows must be ordered: classified entries (valid lap time) → `DNF` → `DNS` → `DSQ`. Any violation is rejected.
+- Setting both `postrace penalty` **and** `appeal penalty` to `DSQ` on the same row is invalid (amend only).
+- A driver whose either penalty field is `DSQ` has their outcome recorded as `DSQ` regardless of the `best lap` value (amend only).
+
+**Example (event submission):**
+```
+1, @Driver,  @TeamRole, Soft,   1:20.456, N/A
+2, @Other,   @TeamRole, Medium, 1:20.789, +0.333
+3, @Driver3, @TeamRole, Soft,   DNF,      N/A
+4, @Driver4, @TeamRole, Hard,   DNS,      N/A
+```
+
+**Example (results amend):**
+```
+1, @Driver,  @TeamRole, Soft,   1:20.456, N/A,    N/A, N/A
+2, @Other,   @TeamRole, Medium, 1:20.789, +0.333, N/A, N/A
+3, @Driver3, @TeamRole, Soft,   DNF,      N/A,    N/A, N/A
+4, @Driver4, @TeamRole, Hard,   DNS,      N/A,    N/A, N/A
+5, @Driver5, @TeamRole, Soft,   1:19.000, N/A,    DSQ, N/A
+```
+
+---
+
 ##### Post-submission penalty review — Apply post-race penalties or disqualifications
 
 After all sessions of a round are submitted, the submission channel enters **penalty review state** instead of closing immediately. The bot posts a penalty review prompt with the following buttons:
@@ -814,6 +921,89 @@ Deletes every existing session results Discord message for the division and repo
 | `division` | String | ✅ | Division name |
 
 Toggles whether reserve drivers appear in the publicly posted standings for the specified division.
+
+---
+
+### Attendance Module
+
+All commands below require the attendance module to be enabled (`/module enable attendance`).
+
+#### `/attendance config rsvp-notice` — Set the RSVP notice lead time
+*Access: Trusted admin · No active season*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `days` | Integer | ✅ | Days before the race to send the first RSVP notice (≥ 1) |
+
+#### `/attendance config rsvp-last-notice` — Set the last RSVP reminder
+*Access: Trusted admin · No active season*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `hours` | Integer | ✅ | Hours before the race for the last reminder (`0` to disable) |
+
+#### `/attendance config rsvp-deadline` — Set the RSVP deadline
+*Access: Trusted admin · No active season*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `hours` | Integer | ✅ | Hours before the race when RSVPs close |
+
+#### `/attendance config no-rsvp-penalty` — Set the no-RSVP penalty
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `points` | Integer | ✅ | Points applied when a driver fails to submit any RSVP response (≥ 0) |
+
+#### `/attendance config absent-penalty` — Set the absent penalty
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `points` | Integer | ✅ | Points applied when a NO_RSVP, TENTATIVE, or DECLINED driver does not appear in results (≥ 0). Stacks with the no-RSVP penalty for NO_RSVP drivers. |
+
+#### `/attendance config no-show-penalty` — Set the no-show penalty
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `points` | Integer | ✅ | Points applied when a driver RSVPs **ACCEPTED** but does not appear in session results (≥ 0) |
+
+#### `/attendance config autoreserve` — Set the auto-reserve threshold
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `points` | Integer | ✅ | Cumulative attendance-penalty threshold that triggers auto-reserve. Use `0` to disable. |
+
+When a driver's cumulative attendance-penalty total reaches this value they are automatically unassigned from their current full-time seat and moved to the reserve team of their division.
+
+> **Limitation:** Cannot be set to a non-zero value while auto-sack is active. Disable auto-sack first (`/attendance config autosack 0`). The two features are mutually exclusive.
+
+---
+
+#### `/attendance config autosack` — Set the auto-sack threshold
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `points` | Integer | ✅ | Cumulative attendance-penalty threshold that triggers auto-sack. Use `0` to disable. |
+
+When a driver's cumulative attendance-penalty total reaches this value they are automatically removed from all driving seats across all divisions and lose their driver role.
+
+> **Limitation:** Cannot be set to a non-zero value while auto-reserve is active. Disable auto-reserve first (`/attendance config autoreserve 0`). The two features are mutually exclusive.
+
+---
+
+#### `/attendance config show` — View the current attendance configuration
+*Access: Trusted admin*
+
+No parameters. Displays the full attendance configuration for this server as an ephemeral message, including:
+
+- **Timing** — RSVP notice days, last-reminder hours, and RSVP deadline hours
+- **Penalties** — No-RSVP penalty, absent penalty (NO_RSVP/TENTATIVE/DECLINED + absent), and no-show penalty (ACCEPTED + absent)
+- **Auto-actions** — Auto-reserve threshold and auto-sack threshold (both shown as `disabled` when set to `0`)
 
 ---
 

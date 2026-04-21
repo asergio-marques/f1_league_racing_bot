@@ -52,8 +52,8 @@ async def db_path(tmp_path):
                 rsvp_last_notice_hours   INTEGER NOT NULL DEFAULT 24,
                 rsvp_deadline_hours      INTEGER NOT NULL DEFAULT 2,
                 no_rsvp_penalty          INTEGER NOT NULL DEFAULT 1,
-                no_rsvp_absent_penalty   INTEGER NOT NULL DEFAULT 1,
-                rsvp_absent_penalty      INTEGER NOT NULL DEFAULT 1,
+                absent_penalty           INTEGER NOT NULL DEFAULT 1,
+                no_show_penalty      INTEGER NOT NULL DEFAULT 1,
                 autoreserve_threshold    INTEGER,
                 autosack_threshold       INTEGER
             )
@@ -104,7 +104,7 @@ class TestEnableCreatesConfigWithDefaults:
             await db.execute(
                 "INSERT OR REPLACE INTO attendance_config "
                 "(server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-                "rsvp_deadline_hours, no_rsvp_penalty, no_rsvp_absent_penalty, rsvp_absent_penalty, "
+                "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
                 "autoreserve_threshold, autosack_threshold) "
                 "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
                 (1,),
@@ -120,8 +120,8 @@ class TestEnableCreatesConfigWithDefaults:
         assert cfg.rsvp_last_notice_hours == 24
         assert cfg.rsvp_deadline_hours == 2
         assert cfg.no_rsvp_penalty == 1
-        assert cfg.no_rsvp_absent_penalty == 1
-        assert cfg.rsvp_absent_penalty == 1
+        assert cfg.absent_penalty == 1
+        assert cfg.no_show_penalty == 1
         assert cfg.autoreserve_threshold is None
         assert cfg.autosack_threshold is None
 
@@ -211,7 +211,7 @@ class TestReenableResetsToDefaults:
             await db.execute(
                 "INSERT OR REPLACE INTO attendance_config "
                 "(server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-                "rsvp_deadline_hours, no_rsvp_penalty, no_rsvp_absent_penalty, rsvp_absent_penalty, "
+                "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
                 "autoreserve_threshold, autosack_threshold) "
                 "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
                 (1,),
@@ -236,7 +236,7 @@ class TestEnableRollbackOnDbFailure:
             await db.execute(
                 "INSERT OR REPLACE INTO attendance_config "
                 "(server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-                "rsvp_deadline_hours, no_rsvp_penalty, no_rsvp_absent_penalty, rsvp_absent_penalty, "
+                "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
                 "autoreserve_threshold, autosack_threshold) "
                 "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
                 (1,),
@@ -359,7 +359,7 @@ class TestConfigPenaltyFieldsUpdate:
             await db.execute(
                 "INSERT OR REPLACE INTO attendance_config "
                 "(server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-                "rsvp_deadline_hours, no_rsvp_penalty, no_rsvp_absent_penalty, rsvp_absent_penalty, "
+                "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
                 "autoreserve_threshold, autosack_threshold) "
                 "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
                 (1,),
@@ -369,13 +369,13 @@ class TestConfigPenaltyFieldsUpdate:
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         await svc.update_no_rsvp_penalty(1, 3)
-        await svc.update_no_rsvp_absent_penalty(1, 2)
-        await svc.update_rsvp_absent_penalty(1, 4)
+        await svc.update_absent_penalty(1, 2)
+        await svc.update_no_show_penalty(1, 4)
         cfg = await svc.get_config(1)
         assert cfg is not None
         assert cfg.no_rsvp_penalty == 3
-        assert cfg.no_rsvp_absent_penalty == 2
-        assert cfg.rsvp_absent_penalty == 4
+        assert cfg.absent_penalty == 2
+        assert cfg.no_show_penalty == 4
 
 
 class TestAutosackZeroStoresNull:

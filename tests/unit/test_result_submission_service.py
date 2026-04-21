@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from models.points_config import SessionType
 from models.round import RoundFormat
+from models.session_result import OutcomeModifier
 from services.result_submission_service import (
     ParsedQualifyingRow,
     ParsedRaceRow,
@@ -55,28 +56,28 @@ def test_get_sessions_for_format_endurance():
 
 
 def test_validate_qualifying_row_rejects_wrong_position():
-    line = "abc, <@123>, <@&456>, Soft, 1:23.456, N/A"
+    line = "abc, <@123>, <@&456>, Soft, 1:23.456, N/A, N/A, N/A"
     result = validate_qualifying_row(line)
     assert isinstance(result, str)
     assert "Position" in result
 
 
 def test_validate_qualifying_row_rejects_invalid_mention():
-    line = "1, notamention, <@&456>, Soft, 1:23.456, N/A"
+    line = "1, notamention, <@&456>, Soft, 1:23.456, N/A, N/A, N/A"
     result = validate_qualifying_row(line)
     assert isinstance(result, str)
     assert "Discord member mention" in result
 
 
 def test_validate_qualifying_row_rejects_invalid_time():
-    line = "1, <@123>, <@&456>, Soft, badtime, N/A"
+    line = "1, <@123>, <@&456>, Soft, badtime, N/A, N/A, N/A"
     result = validate_qualifying_row(line)
     assert isinstance(result, str)
     assert "Best Lap" in result
 
 
 def test_validate_qualifying_row_success():
-    line = "1, <@123>, <@&456>, Soft, 1:23.456, N/A"
+    line = "1, <@123>, <@&456>, Soft, 1:23.456, N/A, N/A, N/A"
     result = validate_qualifying_row(line)
     assert isinstance(result, ParsedQualifyingRow)
     assert result.position == 1
@@ -85,7 +86,7 @@ def test_validate_qualifying_row_success():
 
 
 def test_validate_qualifying_row_dns():
-    line = "1, <@100>, <@&200>, N/A, DNS, N/A"
+    line = "1, <@100>, <@&200>, N/A, DNS, N/A, N/A, N/A"
     result = validate_qualifying_row(line)
     assert isinstance(result, ParsedQualifyingRow)
 
@@ -96,33 +97,33 @@ def test_validate_qualifying_row_dns():
 
 
 def test_validate_race_row_accepts_delta_format():
-    line = "2, <@200>, <@&300>, +1:23.456, 1:23.456, N/A"
+    line = "2, <@200>, <@&300>, +1:23.456, 1:23.456, N/A, N/A, N/A"
     result = validate_race_row(line, is_first=False)
     assert isinstance(result, ParsedRaceRow)
     assert result.position == 2
 
 
 def test_validate_race_row_dnf():
-    line = "3, <@300>, <@&400>, DNF, N/A, N/A"
+    line = "3, <@300>, <@&400>, DNF, N/A, N/A, N/A, N/A"
     result = validate_race_row(line, is_first=False)
     assert isinstance(result, ParsedRaceRow)
 
 
 def test_validate_race_row_dns():
-    line = "4, <@400>, <@&500>, DNS, N/A, N/A"
+    line = "4, <@400>, <@&500>, DNS, N/A, N/A, N/A, N/A"
     result = validate_race_row(line, is_first=False)
     assert isinstance(result, ParsedRaceRow)
 
 
 def test_validate_race_row_first_place_must_be_absolute():
-    line = "1, <@100>, <@&200>, +0:00.000, 1:23.456, N/A"
+    line = "1, <@100>, <@&200>, +0:00.000, 1:23.456, N/A, N/A, N/A"
     result = validate_race_row(line, is_first=True)
     assert isinstance(result, str)
     assert "absolute" in result.lower() or "1st" in result.lower()
 
 
 def test_validate_race_row_first_place_success():
-    line = "1, <@100>, <@&200>, 1:23:45.678, 1:23.456, N/A"
+    line = "1, <@100>, <@&200>, 1:23:45.678, 1:23.456, N/A, N/A, N/A"
     result = validate_race_row(line, is_first=True)
     assert isinstance(result, ParsedRaceRow)
     assert result.position == 1
@@ -141,13 +142,14 @@ def _make_qual_block(lines: list[str]) -> list[ParsedQualifyingRow | ParsedRaceR
         team_role_ids={300, 400},
         reserve_team_role_id=None,
         driver_team_map={100: 300, 200: 400},
+        amend_format=True,
     )
 
 
 def test_validate_submission_block_position_gap():
     lines = [
-        "1, <@100>, <@&300>, Soft, 1:23.456, N/A",
-        "3, <@200>, <@&400>, Soft, 1:24.000, +0:00.544",  # gap: no position 2
+        "1, <@100>, <@&300>, Soft, 1:23.456, N/A, N/A, N/A",
+        "3, <@200>, <@&400>, Soft, 1:24.000, +0:00.544, N/A, N/A",  # gap: no position 2
     ]
     result = _make_qual_block(lines)
     assert isinstance(result, list)
@@ -159,8 +161,8 @@ def test_validate_submission_block_position_gap():
 def test_validate_submission_block_duplicate_driver():
     # Driver 100 appears at positions 1 and 2
     lines = [
-        "1, <@100>, <@&300>, Soft, 1:23.456, N/A",
-        "2, <@100>, <@&300>, Soft, 1:24.000, +0:00.544",
+        "1, <@100>, <@&300>, Soft, 1:23.456, N/A, N/A, N/A",
+        "2, <@100>, <@&300>, Soft, 1:24.000, +0:00.544, N/A, N/A",
     ]
     result = _make_qual_block(lines)
     assert isinstance(result, list)
@@ -172,8 +174,8 @@ def test_validate_submission_block_duplicate_driver():
 def test_validate_submission_block_wrong_team_driver():
     # Driver 100 is assigned to team 300, but submits team 400
     lines = [
-        "1, <@100>, <@&400>, Soft, 1:23.456, N/A",
-        "2, <@200>, <@&400>, Soft, 1:24.000, +0:00.544",
+        "1, <@100>, <@&400>, Soft, 1:23.456, N/A, N/A, N/A",
+        "2, <@200>, <@&400>, Soft, 1:24.000, +0:00.544, N/A, N/A",
     ]
     result = _make_qual_block(lines)
     assert isinstance(result, list)
@@ -184,8 +186,8 @@ def test_validate_submission_block_wrong_team_driver():
 
 def test_validate_submission_block_success():
     lines = [
-        "1, <@100>, <@&300>, Soft, 1:23.456, N/A",
-        "2, <@200>, <@&400>, Soft, 1:24.000, +0:00.544",
+        "1, <@100>, <@&300>, Soft, 1:23.456, N/A, N/A, N/A",
+        "2, <@200>, <@&400>, Soft, 1:24.000, +0:00.544, N/A, N/A",
     ]
     result = _make_qual_block(lines)
     assert isinstance(result, list)
@@ -199,21 +201,21 @@ def test_validate_submission_block_success():
 
 def test_validate_qualifying_row_accepts_sub10s_gap():
     """G2: +0.039 must be accepted (was rejected by old \\d{2} pattern)."""
-    line = "2, <@200>, <@&400>, Soft, 1:23.456, +0.039"
+    line = "2, <@200>, <@&400>, Soft, 1:23.456, +0.039, N/A, N/A"
     result = validate_qualifying_row(line)
     assert isinstance(result, ParsedQualifyingRow)
 
 
 def test_validate_qualifying_row_accepts_sub10s_best_lap():
     """G2: A best lap of 9.456 (9 seconds) must be accepted."""
-    line = "1, <@100>, <@&300>, Soft, 9.456, N/A"
+    line = "1, <@100>, <@&300>, Soft, 9.456, N/A, N/A, N/A"
     result = validate_qualifying_row(line)
     assert isinstance(result, ParsedQualifyingRow)
 
 
 def test_validate_race_row_accepts_sub10s_gap():
     """G2: +0.202 delta must be accepted for race Total Time."""
-    line = "2, <@200>, <@&300>, +0.202, 1:14.532, 0.000"
+    line = "2, <@200>, <@&300>, +0.202, 1:14.532, 0.000, N/A, N/A"
     result = validate_race_row(line, is_first=False)
     assert isinstance(result, ParsedRaceRow)
 
@@ -225,14 +227,14 @@ def test_validate_race_row_accepts_sub10s_gap():
 
 def test_validate_qualifying_row_p1_gap_ignored():
     """C2: P1 gap with any value (even invalid format) must be accepted."""
-    line = "1, <@100>, <@&300>, Soft, 1:23.456, WHATEVER_IGNORED"
+    line = "1, <@100>, <@&300>, Soft, 1:23.456, WHATEVER_IGNORED, N/A, N/A"
     result = validate_qualifying_row(line)
     assert isinstance(result, ParsedQualifyingRow)
 
 
 def test_validate_qualifying_row_p2_gap_validated():
     """C2: P2+ gap is still validated — bad format must fail."""
-    line = "2, <@200>, <@&400>, Soft, 1:24.000, INVALID"
+    line = "2, <@200>, <@&400>, Soft, 1:24.000, INVALID, N/A, N/A"
     result = validate_qualifying_row(line)
     assert isinstance(result, str)
     assert "Gap" in result
@@ -245,28 +247,28 @@ def test_validate_qualifying_row_p2_gap_validated():
 
 def test_validate_race_row_dsq_fl_skipped():
     """C3: DSQ Total Time — Fastest Lap validation skipped (N/A allowed)."""
-    line = "2, <@200>, <@&300>, DSQ, N/A, 0.000"
+    line = "2, <@200>, <@&300>, DSQ, N/A, 0.000, N/A, N/A"
     result = validate_race_row(line, is_first=False)
     assert isinstance(result, ParsedRaceRow)
 
 
 def test_validate_race_row_dnf_fl_skipped():
     """C3: DNF Total Time — Fastest Lap validation skipped."""
-    line = "3, <@300>, <@&400>, DNF, N/A, 0.000"
+    line = "3, <@300>, <@&400>, DNF, N/A, 0.000, N/A, N/A"
     result = validate_race_row(line, is_first=False)
     assert isinstance(result, ParsedRaceRow)
 
 
 def test_validate_race_row_dns_fl_skipped():
     """C3: DNS Total Time — Fastest Lap validation skipped."""
-    line = "4, <@400>, <@&500>, DNS, N/A, 0.000"
+    line = "4, <@400>, <@&500>, DNS, N/A, 0.000, N/A, N/A"
     result = validate_race_row(line, is_first=False)
     assert isinstance(result, ParsedRaceRow)
 
 
 def test_validate_race_row_normal_fl_validated():
     """C3: Normal Total Time — Fastest Lap must still be valid."""
-    line = "2, <@200>, <@&300>, +5.321, BADLAP, 0.000"
+    line = "2, <@200>, <@&300>, +5.321, BADLAP, 0.000, N/A, N/A"
     result = validate_race_row(line, is_first=False)
     assert isinstance(result, str)
     assert "Fastest Lap" in result
@@ -285,15 +287,16 @@ def _make_qual_block_3(lines):
         team_role_ids={400, 500, 600},
         reserve_team_role_id=None,
         driver_team_map={100: 400, 200: 500, 300: 600},
+        amend_format=True,
     )
 
 
 def test_dnf_best_lap_derived_from_gap():
     """G1: DNF + valid gap → best_lap computed as P1_best_lap + gap."""
     lines = [
-        "1, <@100>, <@&400>, Soft, 1:11.606, N/A",   # P1 best lap = 71606ms
-        "2, <@200>, <@&500>, Soft, 1:11.645, +0.039", # normal
-        "3, <@300>, <@&600>, Soft, DNF, +0.202",       # DNF + gap → derived
+        "1, <@100>, <@&400>, Soft, 1:11.606, N/A, N/A, N/A",   # P1 best lap = 71606ms
+        "2, <@200>, <@&500>, Soft, 1:11.645, +0.039, N/A, N/A", # normal
+        "3, <@300>, <@&600>, Soft, DNF, +0.202, N/A, N/A",       # DNF + gap → derived
     ]
     result = _make_qual_block_3(lines)
     assert not isinstance(result[0], str), f"Expected parsed rows, got errors: {result}"
@@ -305,8 +308,8 @@ def test_dnf_best_lap_derived_from_gap():
 def test_dnf_best_lap_not_derived_without_valid_gap():
     """G1: DNF with N/A gap → best_lap stays as DNF."""
     lines = [
-        "1, <@100>, <@&400>, Soft, 1:11.606, N/A",
-        "2, <@200>, <@&500>, Soft, DNF, N/A",         # DNF, gap = N/A → no derivation
+        "1, <@100>, <@&400>, Soft, 1:11.606, N/A, N/A, N/A",
+        "2, <@200>, <@&500>, Soft, DNF, N/A, N/A, N/A",         # DNF, gap = N/A → no derivation
     ]
     result = validate_submission_block(
         lines,
@@ -315,10 +318,143 @@ def test_dnf_best_lap_not_derived_without_valid_gap():
         team_role_ids={400, 500},
         reserve_team_role_id=None,
         driver_team_map={100: 400, 200: 500},
+        amend_format=True,
     )
     assert not isinstance(result[0], str)
     p2 = next(r for r in result if r.position == 2)
     assert p2.best_lap == "DNF"
+
+
+# ---------------------------------------------------------------------------
+# Qualifying — postrace/appeal penalty fields (new 8-field format)
+# ---------------------------------------------------------------------------
+
+
+def test_validate_qualifying_row_postrace_dsq_sets_outcome():
+    """Postrace DSQ overrides in-game CLASSIFIED outcome."""
+    line = "1, <@100>, <@&300>, Soft, 1:20.000, N/A, DSQ, N/A"
+    result = validate_qualifying_row(line)
+    assert isinstance(result, ParsedQualifyingRow)
+    assert result.outcome == OutcomeModifier.DSQ
+    assert result.best_lap == "1:20.000"  # real lap time preserved
+    assert result.postrace_penalty == "DSQ"
+
+
+def test_validate_qualifying_row_appeal_dsq_sets_outcome():
+    """Appeal DSQ overrides in-game CLASSIFIED outcome."""
+    line = "1, <@100>, <@&300>, Soft, 1:20.000, N/A, N/A, DSQ"
+    result = validate_qualifying_row(line)
+    assert isinstance(result, ParsedQualifyingRow)
+    assert result.outcome == OutcomeModifier.DSQ
+    assert result.appeal_penalty == "DSQ"
+
+
+def test_validate_qualifying_row_both_dsq_rejected():
+    """Both penalty fields DSQ on the same row is invalid."""
+    line = "1, <@100>, <@&300>, Soft, 1:20.000, N/A, DSQ, DSQ"
+    result = validate_qualifying_row(line)
+    assert isinstance(result, str)
+    assert "both" in result.lower() or "cannot" in result.lower()
+
+
+def test_validate_qualifying_row_invalid_penalty_field():
+    """Penalty field with a value other than N/A or DSQ is rejected."""
+    line = "1, <@100>, <@&300>, Soft, 1:20.000, N/A, TIME, N/A"
+    result = validate_qualifying_row(line)
+    assert isinstance(result, str)
+    assert "Postrace Penalty" in result
+
+
+def test_validate_qualifying_row_ingame_dsq_no_penalty_fields():
+    """In-game DSQ (from best_lap) with both penalty fields N/A → outcome DSQ."""
+    line = "2, <@200>, <@&400>, Soft, DSQ, N/A, N/A, N/A"
+    result = validate_qualifying_row(line)
+    assert isinstance(result, ParsedQualifyingRow)
+    assert result.outcome == OutcomeModifier.DSQ
+    assert result.postrace_penalty == "N/A"
+    assert result.appeal_penalty == "N/A"
+
+
+def test_qualify_ordering_dsq_must_be_last():
+    """DSQ driver placed before a CLASSIFIED driver is rejected."""
+    lines = [
+        "1, <@100>, <@&300>, Soft, 1:20.000, N/A, DSQ, N/A",  # DSQ at P1
+        "2, <@200>, <@&400>, Soft, 1:22.000, +2.000, N/A, N/A",  # CLASSIFIED at P2
+    ]
+    result = validate_submission_block(
+        lines,
+        session_type=SessionType.FEATURE_QUALIFYING,
+        division_driver_ids={100, 200},
+        team_role_ids={300, 400},
+        reserve_team_role_id=None,
+        driver_team_map={100: 300, 200: 400},
+        amend_format=True,
+    )
+    assert isinstance(result, list)
+    assert all(isinstance(r, str) for r in result)
+    combined = " ".join(result)
+    assert "dsq" in combined.lower() or "order" in combined.lower()
+
+
+def test_qualify_ordering_dsq_after_classified_valid():
+    """CLASSIFIED then DSQ is valid ordering."""
+    lines = [
+        "1, <@100>, <@&300>, Soft, 1:20.000, N/A, N/A, N/A",
+        "2, <@200>, <@&400>, Soft, 1:22.000, N/A, DSQ, N/A",
+    ]
+    result = validate_submission_block(
+        lines,
+        session_type=SessionType.FEATURE_QUALIFYING,
+        division_driver_ids={100, 200},
+        team_role_ids={300, 400},
+        reserve_team_role_id=None,
+        driver_team_map={100: 300, 200: 400},
+        amend_format=True,
+    )
+    assert isinstance(result, list)
+    assert all(isinstance(r, ParsedQualifyingRow) for r in result)
+
+
+def test_qualify_ordering_dnf_before_dns_valid():
+    """DNF must appear before DNS."""
+    lines = [
+        "1, <@100>, <@&300>, Soft, 1:20.000, N/A, N/A, N/A",
+        "2, <@200>, <@&400>, Soft, DNF, N/A, N/A, N/A",
+        "3, <@300>, <@&500>, Soft, DNS, N/A, N/A, N/A",
+    ]
+    result = validate_submission_block(
+        lines,
+        session_type=SessionType.FEATURE_QUALIFYING,
+        division_driver_ids={100, 200, 300},
+        team_role_ids={300, 400, 500},
+        reserve_team_role_id=None,
+        driver_team_map={100: 300, 200: 400, 300: 500},
+        amend_format=True,
+    )
+    assert isinstance(result, list)
+    assert all(isinstance(r, ParsedQualifyingRow) for r in result)
+
+
+def test_qualify_ordering_dns_before_dnf_rejected():
+    """DNS placed before DNF is rejected (order must be DNF then DNS)."""
+    lines = [
+        "1, <@100>, <@&300>, Soft, 1:20.000, N/A, N/A, N/A",
+        "2, <@200>, <@&400>, Soft, DNS, N/A, N/A, N/A",
+        "3, <@300>, <@&500>, Soft, DNF, N/A, N/A, N/A",
+    ]
+    result = validate_submission_block(
+        lines,
+        session_type=SessionType.FEATURE_QUALIFYING,
+        division_driver_ids={100, 200, 300},
+        team_role_ids={300, 400, 500},
+        reserve_team_role_id=None,
+        driver_team_map={100: 300, 200: 400, 300: 500},
+        amend_format=True,
+    )
+    assert isinstance(result, list)
+    assert all(isinstance(r, str) for r in result)
+    combined = " ".join(result)
+    assert "dnf" in combined.lower() or "order" in combined.lower() or "dns" in combined.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -452,30 +588,30 @@ async def test_channel_not_in_penalty_review_when_flag_zero(tmp_path):
 
 def test_extract_fl_override_present():
     """A valid FL: header is stripped and the driver ID is returned."""
-    lines = ["FL: <@12345>", "1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A"]
+    lines = ["FL: <@12345>", "1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A, N/A, N/A"]
     fl_id, remaining = extract_fl_override(lines)
     assert fl_id == 12345
-    assert remaining == ["1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A"]
+    assert remaining == ["1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A, N/A, N/A"]
 
 
 def test_extract_fl_override_old_mention_format():
     """FL: <@!id> (legacy mention format) is also accepted."""
-    lines = ["FL: <@!99999>", "1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A"]
+    lines = ["FL: <@!99999>", "1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A, N/A, N/A"]
     fl_id, remaining = extract_fl_override(lines)
     assert fl_id == 99999
-    assert remaining == ["1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A"]
+    assert remaining == ["1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A, N/A, N/A"]
 
 
 def test_extract_fl_override_case_insensitive():
     """The 'FL:' prefix is matched case-insensitively."""
-    lines = ["fl: <@777>", "1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A"]
+    lines = ["fl: <@777>", "1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A, N/A, N/A"]
     fl_id, remaining = extract_fl_override(lines)
     assert fl_id == 777
 
 
 def test_extract_fl_override_absent():
     """When no FL: header is present, None is returned and lines is unchanged."""
-    lines = ["1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A"]
+    lines = ["1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A, N/A, N/A"]
     fl_id, remaining = extract_fl_override(lines)
     assert fl_id is None
     assert remaining is lines  # same object — unchanged
@@ -490,7 +626,7 @@ def test_extract_fl_override_empty_list():
 
 def test_extract_fl_override_non_matching_first_line():
     """A first line that looks like a driver row is not consumed."""
-    lines = ["1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A", "2, <@200>, <@&500>, +0:05.000, 1:26.000, N/A"]
+    lines = ["1, <@100>, <@&400>, 1:23:45.678, 1:25.000, N/A, N/A, N/A", "2, <@200>, <@&500>, +0:05.000, 1:26.000, N/A, N/A, N/A"]
     fl_id, remaining = extract_fl_override(lines)
     assert fl_id is None
     assert remaining is lines
@@ -508,15 +644,16 @@ def _make_race_block(lines):
         team_role_ids={500, 600, 700, 800},
         reserve_team_role_id=None,
         driver_team_map={100: 500, 200: 600, 300: 700, 400: 800},
+        amend_format=True,
     )
 
 
 def test_race_ordering_lap_gap_before_lead_lap_rejected():
     """A driver with '+1 Lap' must not appear before a driver with a lead-lap time."""
     lines = [
-        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
-        "2, <@200>, <@&600>, +1 Lap, 1:26.000, N/A",
-        "3, <@300>, <@&700>, +5.321, 1:27.000, N/A",   # lead-lap delta after a lap-gap
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A, N/A, N/A",
+        "2, <@200>, <@&600>, +1 Lap, 1:26.000, N/A, N/A, N/A",
+        "3, <@300>, <@&700>, +5.321, 1:27.000, N/A, N/A, N/A",   # lead-lap delta after a lap-gap
     ]
     result = _make_race_block(lines)
     assert isinstance(result, list)
@@ -528,9 +665,9 @@ def test_race_ordering_lap_gap_before_lead_lap_rejected():
 def test_race_ordering_outcome_before_lead_lap_rejected():
     """A DNS/DNF/DSQ must not appear before a driver with a lead-lap time."""
     lines = [
-        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
-        "2, <@200>, <@&600>, DNS, N/A, N/A",
-        "3, <@300>, <@&700>, +5.321, 1:27.000, N/A",   # lead-lap after DNS
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A, N/A, N/A",
+        "2, <@200>, <@&600>, DNS, N/A, N/A, N/A, N/A",
+        "3, <@300>, <@&700>, +5.321, 1:27.000, N/A, N/A, N/A",   # lead-lap after DNS
     ]
     result = _make_race_block(lines)
     assert isinstance(result, list)
@@ -540,9 +677,9 @@ def test_race_ordering_outcome_before_lead_lap_rejected():
 def test_race_ordering_outcome_before_lap_gap_rejected():
     """A DNS/DNF/DSQ must not appear before a lapped driver."""
     lines = [
-        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
-        "2, <@200>, <@&600>, DNF, N/A, N/A",
-        "3, <@300>, <@&700>, +1 Lap, 1:27.000, N/A",   # lap-gap after DNF
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A, N/A, N/A",
+        "2, <@200>, <@&600>, DNF, N/A, N/A, N/A, N/A",
+        "3, <@300>, <@&700>, +1 Lap, 1:27.000, N/A, N/A, N/A",   # lap-gap after DNF
     ]
     result = _make_race_block(lines)
     assert isinstance(result, list)
@@ -552,10 +689,10 @@ def test_race_ordering_outcome_before_lap_gap_rejected():
 def test_race_ordering_valid_full_field_accepted():
     """Correct ordering: lead-lap → lap-gap → DNS/DSQ is accepted."""
     lines = [
-        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
-        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A",
-        "3, <@300>, <@&700>, +1 Lap, 1:27.000, N/A",
-        "4, <@400>, <@&800>, DNS, N/A, N/A",
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A, N/A, N/A",
+        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A, N/A, N/A",
+        "3, <@300>, <@&700>, +1 Lap, 1:27.000, N/A, N/A, N/A",
+        "4, <@400>, <@&800>, DNS, N/A, N/A, N/A, N/A",
     ]
     result = _make_race_block(lines)
     assert isinstance(result, list)
@@ -565,10 +702,10 @@ def test_race_ordering_valid_full_field_accepted():
 def test_race_ordering_all_lead_lap_accepted():
     """All drivers finishing on the lead lap (no gaps) is always valid."""
     lines = [
-        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
-        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A",
-        "3, <@300>, <@&700>, +10.000, 1:27.000, N/A",
-        "4, <@400>, <@&800>, +15.444, 1:28.000, N/A",
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A, N/A, N/A",
+        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A, N/A, N/A",
+        "3, <@300>, <@&700>, +10.000, 1:27.000, N/A, N/A, N/A",
+        "4, <@400>, <@&800>, +15.444, 1:28.000, N/A, N/A, N/A",
     ]
     result = _make_race_block(lines)
     assert isinstance(result, list)
@@ -578,10 +715,10 @@ def test_race_ordering_all_lead_lap_accepted():
 def test_race_ordering_decreasing_lap_count_rejected():
     """A driver 2 laps down cannot appear ahead of a driver 1 lap down."""
     lines = [
-        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
-        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A",
-        "3, <@300>, <@&700>, +2 Laps, 1:27.000, N/A",
-        "4, <@400>, <@&800>, +1 Lap, 1:28.000, N/A",  # 1 < 2 — invalid
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A, N/A, N/A",
+        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A, N/A, N/A",
+        "3, <@300>, <@&700>, +2 Laps, 1:27.000, N/A, N/A, N/A",
+        "4, <@400>, <@&800>, +1 Lap, 1:28.000, N/A, N/A, N/A",  # 1 < 2 — invalid
     ]
     result = _make_race_block(lines)
     assert isinstance(result, list)
@@ -593,10 +730,10 @@ def test_race_ordering_decreasing_lap_count_rejected():
 def test_race_ordering_increasing_lap_count_accepted():
     """Correctly ordered lapped drivers (1 then 2 laps down) must be accepted."""
     lines = [
-        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
-        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A",
-        "3, <@300>, <@&700>, +1 Lap, 1:27.000, N/A",
-        "4, <@400>, <@&800>, +2 Laps, 1:28.000, N/A",
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A, N/A, N/A",
+        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A, N/A, N/A",
+        "3, <@300>, <@&700>, +1 Lap, 1:27.000, N/A, N/A, N/A",
+        "4, <@400>, <@&800>, +2 Laps, 1:28.000, N/A, N/A, N/A",
     ]
     result = _make_race_block(lines)
     assert isinstance(result, list)
@@ -606,10 +743,132 @@ def test_race_ordering_increasing_lap_count_accepted():
 def test_race_ordering_equal_lap_count_accepted():
     """Two drivers on the same lap count (both +1 Lap) is valid."""
     lines = [
-        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A",
-        "2, <@200>, <@&600>, +1 Lap, 1:26.000, N/A",
-        "3, <@300>, <@&700>, +1 Lap, 1:27.000, N/A",
-        "4, <@400>, <@&800>, DNS, N/A, N/A",
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A, N/A, N/A",
+        "2, <@200>, <@&600>, +1 Lap, 1:26.000, N/A, N/A, N/A",
+        "3, <@300>, <@&700>, +1 Lap, 1:27.000, N/A, N/A, N/A",
+        "4, <@400>, <@&800>, DNS, N/A, N/A, N/A, N/A",
+    ]
+    result = _make_race_block(lines)
+    assert isinstance(result, list)
+    assert all(isinstance(r, ParsedRaceRow) for r in result)
+
+
+# ---------------------------------------------------------------------------
+# Race — postrace/appeal penalty fields (new 8-field format)
+# ---------------------------------------------------------------------------
+
+def test_validate_race_row_postrace_dsq_sets_outcome():
+    """R1: Postrace DSQ overrides in-game CLASSIFIED outcome."""
+    line = "3, <@300>, <@&700>, +5.321, 1:27.000, N/A, DSQ, N/A"
+    result = validate_race_row(line, is_first=False)
+    assert isinstance(result, ParsedRaceRow)
+    assert result.outcome == OutcomeModifier.DSQ
+    assert result.postrace_penalty == "DSQ"
+    assert result.total_time == "+5.321"
+
+
+def test_validate_race_row_appeal_dsq_sets_outcome():
+    """R1: Appeal DSQ overrides in-game CLASSIFIED outcome."""
+    line = "3, <@300>, <@&700>, +5.321, 1:27.000, N/A, N/A, DSQ"
+    result = validate_race_row(line, is_first=False)
+    assert isinstance(result, ParsedRaceRow)
+    assert result.outcome == OutcomeModifier.DSQ
+    assert result.appeal_penalty == "DSQ"
+
+
+def test_validate_race_row_postrace_time_penalty_accepted():
+    """R2: Postrace time penalty (seconds) is accepted."""
+    line = "3, <@300>, <@&700>, +5.321, 1:27.000, N/A, 5.000, N/A"
+    result = validate_race_row(line, is_first=False)
+    assert isinstance(result, ParsedRaceRow)
+    assert result.postrace_penalty == "5.000"
+    assert result.outcome == OutcomeModifier.CLASSIFIED
+
+
+def test_validate_race_row_appeal_time_penalty_accepted():
+    """R2: Appeal time penalty (seconds) is accepted."""
+    line = "3, <@300>, <@&700>, +5.321, 1:27.000, N/A, N/A, 10.000"
+    result = validate_race_row(line, is_first=False)
+    assert isinstance(result, ParsedRaceRow)
+    assert result.appeal_penalty == "10.000"
+
+
+def test_validate_race_row_invalid_postrace_penalty_rejected():
+    """R3: Postrace penalty with invalid format is rejected."""
+    line = "3, <@300>, <@&700>, +5.321, 1:27.000, N/A, BADPENALTY, N/A"
+    result = validate_race_row(line, is_first=False)
+    assert isinstance(result, str)
+    assert "Postrace Penalty" in result
+
+
+def test_validate_race_row_invalid_appeal_penalty_rejected():
+    """R3: Appeal penalty with invalid format is rejected."""
+    line = "3, <@300>, <@&700>, +5.321, 1:27.000, N/A, N/A, BADPENALTY"
+    result = validate_race_row(line, is_first=False)
+    assert isinstance(result, str)
+    assert "Appeal Penalty" in result
+
+
+def test_race_ordering_postrace_dsq_must_be_last():
+    """R4: Driver with postrace DSQ must not appear before non-DSQ driver."""
+    lines = [
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A, DSQ, N/A",  # postrace DSQ at P1
+        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A, N/A, N/A",       # CLASSIFIED at P2
+        "3, <@300>, <@&700>, +10.000, 1:27.000, N/A, N/A, N/A",
+        "4, <@400>, <@&800>, DNS, N/A, N/A, N/A, N/A",
+    ]
+    result = _make_race_block(lines)
+    assert isinstance(result, list)
+    assert all(isinstance(r, str) for r in result)
+    combined = " ".join(result)
+    assert "dsq" in combined.lower() or "order" in combined.lower()
+
+
+def test_race_ordering_postrace_dsq_last_accepted():
+    """R4: Driver with postrace DSQ placed last is valid."""
+    lines = [
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A, N/A, N/A",
+        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A, N/A, N/A",
+        "3, <@300>, <@&700>, +10.000, 1:27.000, N/A, N/A, N/A",
+        "4, <@400>, <@&800>, +15.000, 1:28.000, N/A, DSQ, N/A",  # postrace DSQ last
+    ]
+    result = _make_race_block(lines)
+    assert isinstance(result, list)
+    assert all(isinstance(r, ParsedRaceRow) for r in result)
+
+
+def test_race_ingame_dsq_no_penalty_fields():
+    """R5: In-game DSQ (from total_time) with both penalty fields N/A → outcome DSQ."""
+    line = "4, <@400>, <@&800>, DSQ, N/A, N/A, N/A, N/A"
+    result = validate_race_row(line, is_first=False)
+    assert isinstance(result, ParsedRaceRow)
+    assert result.outcome == OutcomeModifier.DSQ
+    assert result.postrace_penalty == "N/A"
+    assert result.appeal_penalty == "N/A"
+
+
+def test_race_ordering_dns_before_dnf_rejected():
+    """R6: DNS placed before DNF is rejected (order must be DNF then DNS then DSQ)."""
+    lines = [
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A, N/A, N/A",
+        "2, <@200>, <@&600>, +5.321, 1:26.000, N/A, N/A, N/A",
+        "3, <@300>, <@&700>, DNS, N/A, N/A, N/A, N/A",
+        "4, <@400>, <@&800>, DNF, N/A, N/A, N/A, N/A",  # DNF after DNS — invalid
+    ]
+    result = _make_race_block(lines)
+    assert isinstance(result, list)
+    assert all(isinstance(r, str) for r in result)
+    combined = " ".join(result)
+    assert "dnf" in combined.lower() or "order" in combined.lower() or "dns" in combined.lower()
+
+
+def test_race_ordering_dnf_dns_dsq_accepted():
+    """R6: DNF then DNS then DSQ is valid ordering."""
+    lines = [
+        "1, <@100>, <@&500>, 1:23:45.678, 1:25.000, N/A, N/A, N/A",
+        "2, <@200>, <@&600>, DNF, N/A, N/A, N/A, N/A",
+        "3, <@300>, <@&700>, DNS, N/A, N/A, N/A, N/A",
+        "4, <@400>, <@&800>, +15.000, 1:28.000, N/A, DSQ, N/A",  # postrace DSQ last
     ]
     result = _make_race_block(lines)
     assert isinstance(result, list)
