@@ -628,58 +628,65 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
         )
         team_rows = await cur.fetchall()
 
-    def _team_sort_key(t) -> tuple:
-        # FR-020: priority tier
+    def _static_tier(t) -> int:
+        """Tier based solely on RSVP state, used for eligibility filtering."""
         if t["no_rsvp_count"] > 0:
-            tier = 1
+            return 1
         elif t["declined_count"] > 0:
-            tier = 2
-        elif t["accepted_count"] > 0 and t["total_drivers"] < t["max_seats"]:
-            tier = 3  # partial: some accepted FT drivers, some seats physically vacant
-        elif t["total_drivers"] == 0:
-            tier = 4  # no FT drivers seated at all
+            return 2
+        elif t["total_drivers"] < t["max_seats"]:
+            return 3  # physically vacant seat
         elif t["tentative_count"] > 0:
-            tier = 5
+            return 5
         else:
-            tier = 99  # all accepted and fully staffed
-        # FR-021 tie-break 1: fewest accepted full-time drivers
-        accepted = t["accepted_count"]
-        # FR-021 tie-break 2: standings position (lower = better → higher priority = lower number)
-        pos = t["standing_position"] if t["standing_position"] is not None else 9999
-        # FR-021 tie-break 3: alphabetical by team name
-        name = t["team_name"].lower()
-        return (tier, accepted, pos, name)
+            return 99  # all ACCEPTED and fully staffed — excluded
 
-    candidate_teams = sorted(team_rows, key=_team_sort_key)
-    # Only teams with actual vacancies (tier < 99)
-    candidate_teams = [t for t in candidate_teams if _team_sort_key(t)[0] < 99]
+    candidate_teams = sorted(team_rows, key=lambda t: (_static_tier(t), t["team_name"].lower()))
+    # Only teams with at least one vacancy (ACCEPTED seats are never counted)
+    candidate_teams = [t for t in candidate_teams if _static_tier(t) < 99]
 
-    # Determine seats available per team (FR-023):
-    # count RSVP-level vacancies (NO_RSVP + DECLINED + TENTATIVE) plus physically empty
-    # seats (max_seats − total full-timers assigned)
+    # Vacancy = NO_RSVP + DECLINED + TENTATIVE + physically empty seats.
+    # ACCEPTED seats are excluded — they are filled and not available.
     team_vacancy: dict[int, int] = {}
     for t in candidate_teams:
         rsvp_vacancies = t["no_rsvp_count"] + t["declined_count"] + t["tentative_count"]
         empty_seats = max(0, t["max_seats"] - t["total_drivers"])
-        vacancies = rsvp_vacancies + empty_seats
-        team_vacancy[t["team_id"]] = vacancies
+        team_vacancy[t["team_id"]] = rsvp_vacancies + empty_seats
 
-    # Assign reserves to vacancies
+    # Assign reserves to vacancies, re-sorting before each allocation.
+    # Priority tiers (re-evaluated per round):
+    #   1 — ≥1 NO_RSVP full-time driver
+    #   2 — ≥1 DECLINED full-time driver
+    #   3 — ≥1 physically vacant FT seat
+    #   4 — already received ≥1 reserve this round (second+ fill, regardless of vacancy type)
+    #   5 — ≥1 TENTATIVE full-time driver
+    # Tier 4 ensures every needy team gets its first reserve before any team
+    # receives a second one.  Tie-break within a tier: standings position → name.
     assignments: list[tuple[int, int]] = []  # (dra_id, team_id)
     standby_ids: list[int] = []
+    reserves_assigned: dict[int, int] = {t["team_id"]: 0 for t in candidate_teams}
 
-    team_index = 0
+    def _current_sort_key(t) -> tuple:
+        tid = t["team_id"]
+        if reserves_assigned[tid] >= 1:
+            tier = 4  # already helped — deprioritise below fresh tiers 1-3
+        else:
+            tier = _static_tier(t)
+        pos = t["standing_position"] if t["standing_position"] is not None else 9999
+        name = t["team_name"].lower()
+        return (tier, pos, name)
+
     for reserve in accepted_reserves:
         dra_id = reserve["dra_id"]
-        # Advance past full teams
-        while team_index < len(candidate_teams) and team_vacancy[candidate_teams[team_index]["team_id"]] <= 0:
-            team_index += 1
-        if team_index < len(candidate_teams):
-            team_id = candidate_teams[team_index]["team_id"]
-            assignments.append((dra_id, team_id))
-            team_vacancy[team_id] -= 1
-        else:
+        eligible = [t for t in candidate_teams if team_vacancy[t["team_id"]] > 0]
+        if not eligible:
             standby_ids.append(dra_id)
+            continue
+        eligible.sort(key=_current_sort_key)
+        team_id = eligible[0]["team_id"]
+        assignments.append((dra_id, team_id))
+        team_vacancy[team_id] -= 1
+        reserves_assigned[team_id] += 1
 
     # Write results
     async with get_connection(bot.db_path) as db:
