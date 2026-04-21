@@ -791,7 +791,7 @@ async def post_attendance_sheet(
 
     # Build sheet content.
     async with get_connection(db_path) as db:
-        # Full-time drivers sorted by total_points_after DESC, then display name.
+        # Full-time drivers + allocated reserves (who can accrue no-show points).
         cursor = await db.execute(
             """
             SELECT dra.driver_profile_id, dra.total_points_after,
@@ -807,8 +807,23 @@ async def post_attendance_sheet(
               AND ti.division_id = ?
               AND ti.is_reserve = 0
               AND dra.total_points_after IS NOT NULL
+            UNION
+            SELECT dra.driver_profile_id, dra.total_points_after,
+                   dp.discord_user_id, dp.test_display_name
+            FROM driver_round_attendance dra
+            JOIN driver_season_assignments dsa
+                ON dsa.driver_profile_id = dra.driver_profile_id
+            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
+            WHERE dra.round_id = ?
+              AND dra.division_id = ?
+              AND ti.division_id = ?
+              AND ti.is_reserve = 1
+              AND dra.assigned_team_id IS NOT NULL
+              AND dra.total_points_after IS NOT NULL
             """,
-            (round_id, division_id, division_id),
+            (round_id, division_id, division_id, round_id, division_id, division_id),
         )
         driver_rows = await cursor.fetchall()
 
