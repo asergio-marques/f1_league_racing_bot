@@ -1,13 +1,3 @@
-# WIP specification
-module_list.md
-results_module_specification.md
-signup_module_specification.md
-weather_module_specification.md
-stats_module_specification.md
-attendance_module_specification.md
-steward_module_specification.md
-other_changes.md
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(/docs/wip-specs/**)",
+      "Edit(/docs/wip-specs/**)"
+    ]
+  }
+}
