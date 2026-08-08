@@ -20,7 +20,7 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
     - results - When enabled, the posting of rounds' sessions' results will be done via a bot-generated image. When disabled, this shall be done via the traditional, previously implemented way (text).
     - standings - When enabled, posting of standings will be done via a bot-generated image. When disabled, this posting will be done via the traditional, previously implemented way (text).
     - attendance - When enabled, posting of the attendance table will be done via a bot-generated image. When disabled, this posting will be done via the traditional, previously implemented way (text).
-    - weather - When enabled, posting of phase 1, 2 and 3 weather generation will be done via a bot-generated image. When disabled, weather posting will be done via the traditional, previously implemented way (text).
+    - weather - When enabled, posting of phase 1, 2 and 3 weather generation, as well as the notice posted for a mystery round, will be done via a bot-generated image. When disabled, weather posting will be done via the traditional, previously implemented way (text).
     - verdicts - When enabled, posting of verdicts will be done via a bot-generated image. When disabled, verdict posting will be done via the traditional, previously implemented way (text).
     - All of the above shall be disabled by default.
     - Fallback behavior: if an error is found at any step of the image generation or posting procedure for any of the above possibilities, then the previous manner of posting this information will be utilized (text).
@@ -49,12 +49,15 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
     - By default, the filename shall be "weather_p2_template.svg".
 - <NEW COMMAND> A new "images config weather-p3-template" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 3 image.
     - By default, the filename shall be "weather_p3_template.svg".
+- <NEW COMMAND> A new "images config weather-mystery-template" command will be made available to server administrators which will take in a string standing for the filename of the template image for the notice posted for a mystery round.
+    - By default, the filename shall be "weather_mystery_template.svg".
+- The three phases of a weather forecast share no field beyond the heading fields and those naming the track, and the notice of a mystery round shares none beyond the heading fields, and are therefore drawn from four templates and not one.
 - <NEW COMMAND> A new "images config verdicts-template" command will be made available to server administrators which will take in a string standing for the filename of the template verdicts image.
     - By default, the filename shall be "verdicts_template.svg".
 - <MODIFY COMMAND> The "season review" command shall be augumented to display the enabling status of the images module, as well as all of the configurations above and if they are valid.
-    - For the configurations modified via the "images config toggle" command, there shall be a distinction between "enabled" (checkmark), "disabled" (cross), and "enabled but invalid" (warning sign). In the case of the weather template, invalid must show which exact phase is invalid; in the case of the results template, which of the qualifying and race templates is invalid; in the case of the standings template, which of the drivers and constructors templates is invalid.
+    - For the configurations modified via the "images config toggle" command, there shall be a distinction between "enabled" (checkmark), "disabled" (cross), and "enabled but invalid" (warning sign). In the case of the weather template, invalid must show which exact phase is invalid, and whether it is the template of the mystery notice; in the case of the results template, which of the qualifying and race templates is invalid; in the case of the standings template, which of the drivers and constructors templates is invalid.
 - <NEW COMMAND> A new "images config view" command will be made available to league managers which will print out all configurations above, plus the validity status of each one, in a manner similar to the addendum to "season review".
-- <NEW COMMAND> A new "images test" command will be made available to league managers, which takes in one string parameter, scoped to the following: calendar, lineup, results, standings, attendance, weather-p1, weather-p2, weather-p3, verdicts.
+- <NEW COMMAND> A new "images test" command will be made available to league managers, which takes in one string parameter, scoped to the following: calendar, lineup, results, standings, attendance, weather-p1, weather-p2, weather-p3, weather-mystery, verdicts.
     - This test command shall make use of test data specified for each type of generation.
     - Any non-fatal errors shall be posted alongside the test output.
 - <NEW COMMAND> A new "images config time-zone" command will be made available to league managers which will allow league managers to select the timezone with which to display times on images.
@@ -75,6 +78,9 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - <NEW COMMAND> A new "images config marker-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to mark the direction of a change of standing position will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the marker image files will be searched in a "resources/markers" folder located at the project root.
+- <NEW COMMAND> A new "images config weather-icon-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a weather condition will be searched.
+    - The directory will always be assumed to be a path relative to the project root.
+    - By default, the weather icon files will be searched in a "resources/weather" folder located at the project root.
 
 ### Verification of template files configured
 - Right after one of the "images config X-template" commands is used, the following verifications shall be made:
@@ -457,5 +463,92 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 ## Attendance image generation
 
 ## Weather image generation
+- A weather graphic represents the forecast of one single phase of one single round of one division. One graphic shall be generated per phase and per division, and shall replace the textual forecast of that phase. The mention of the division role shall remain message text, the graphic itself carrying none; the heading of the textual forecast is carried over neither to the message nor to the graphic, the description of the phase standing in its place.
+- Nothing is computed for the graphic, nothing is drawn for it, and no command produces a forecast that exists only as an image.
+- The graphic adds to the textual forecast an icon for the type of weather of each session and an icon for each concrete weather drawn, in the place of the emoji the textual forecast carries.
+- Four templates serve the four postings of the module: one for each of the three phases, and one for the notice posted for a round of the mystery format. Their fields are addressed by the ordinal of the session and by the ordinal of the slot, as the results graphic's are, and not by the name of a session.
+- For generation of a weather graphic of any of the three phases, the template may have the following fields, among which the mandatory fields will be verified at template file setting and before generation:
+    - season_number - Optional - Layer/widget on which the season number of the server is placed
+    - division_name - Mandatory - Layer/widget on which the name given to the division at "division add" is placed
+    - division_tier - Optional - Layer/widget on which the tier given to the division at "division add" is placed
+    - phase_description - Mandatory - Layer/widget on which the description of the phase the graphic stands for is placed as text
+    - round_number - Mandatory - Layer/widget on which the human-readable number of the round the forecast pertains to is placed as text, read from the round object definition
+    - track_name - Mandatory - Layer/widget on which the name of the track of the round is placed as text, read from the track object definition
+    - race_name - Optional - Layer/widget on which the grand prix name of the round is placed as text, read from the track object definition
+    - country_name - Optional - Layer/widget on which the country where the track of the round is located is placed as text, read from the track object definition
+    - track_image - Optional - Layer/widget on which an image representing the track of the round (e.g. country flag, track map) will be placed, searched for in the directory configured via "images config track-image-directory"
+    - rain_probability - Mandatory on the phase 1 template, optional on the other two - Layer/widget on which the likelihood of rain calculated for the round is placed as text
+- The phase 1 template holds no field beyond those above.
+- The phase 2 template may additionally have, for each session of ordinal <x>:
+    - session_<x>_group - Mandatory - Layer/widget acting as a container for every other field of the session, which shall be removed in its entirety when the round holds no session of that ordinal
+    - session_<x>_name - Mandatory - Layer/widget on which the name of the session is placed as text
+    - session_<x>_slot_type - Mandatory - Layer/widget on which the type of weather drawn for the session is placed as text
+    - session_<x>_slot_type_icon - Optional - Layer/widget on which an image representing that type of weather will be placed, searched for in the directory configured via "images config weather-icon-directory"
+- The phase 3 template may additionally have the same four fields for each session of ordinal <x>, "session_<x>_slot_type" being optional on it and its group taking the fields of its slots with it when removed, and further:
+    - session_<x>_summary - Optional - Layer/widget on which the whole sequence of weather drawn for the session is placed as a single line of text
+    - For each slot of ordinal <y>:
+        - session_<x>_slot_<y>_group - Mandatory - Layer/widget acting as a container for every other field of the slot, which shall be removed in its entirety when the session holds no slot of that ordinal
+        - session_<x>_slot_<y>_label - Mandatory - Layer/widget on which the concrete weather drawn for the slot is placed as text
+        - session_<x>_slot_<y>_icon - Optional - Layer/widget on which an image representing that concrete weather will be placed, searched for in the directory configured via "images config weather-icon-directory"
+- For generation of the notice of a mystery round, the template may have the heading fields alone: "season_number", "division_name", "division_tier" and "round_number", carrying what they carry above.
+- <x> is the ordinal of the session counted in the order in which the sessions of the round are run, beginning at 1. A round of the sprint format holds four sessions and a round of any other format two.
+- <y> is the ordinal of the slot counted in the order in which the slots of the session are run, beginning at 1, and runs to the number of slots drawn for that session, which is at most the number of weather slots the type of that session allows.
+- The sessions a template declares shall be numbered continuously from 1, and so shall the slots of each session. A gap in either numbering is a fatal error.
+- The graphic carries no Discord mention, no number of the phase, no date and no time of the round, no name of a driver and no name of a team. Neither does the message carrying it. The intermediate values of the calculation of a phase remain in the logging channel and are carried by no graphic. The notice of a mystery round carries no name of a track and no session.
+
+### Resolution of the data to be placed
+- The graphic re-presents the values the textual forecast shows and never derives them by rules of its own. A change to how the textual forecast renders any of them is a change to the graphic by the same stroke.
+- The description of the phase is fixed text: "Initial chance of rain" for phase 1, "Initial session forecast" for phase 2 and "Final session forecast" for phase 3.
+- The likelihood of rain is that calculated in phase 1, rendered as the textual phase 1 message renders it, the percent sign included. The phase 2 and phase 3 graphics carry that same value.
+- The name of the track is that recorded for the round, and is the name the textual forecast carries. The grand prix name and the country are read from the track object.
+- The track image shall be searched for in the configured track image directory under a filename equal to the name of the track, normalized in the same manner as a team name. If no matching file is found, the field shall be removed and a non-fatal error reported.
+- The name of a session is "Sprint Qualifying", "Sprint Race", "Feature Qualifying" or "Feature Race" for a round of the sprint format, and "Qualifying" or "Race" for a round of any other. It carries no qualifier of the length of the session.
+- The type of weather of a session is "Sunny", "Mixed" or "Rain". The phase 3 graphic carries the type phase 2 drew for that session.
+- The concrete weather of a slot is one of "Clear", "Light Cloud", "Overcast", "Wet" and "Very Wet".
+- The icon of a type of weather and the icon of a concrete weather shall both be searched for in the configured weather icon directory under a filename equal to that text, normalized in the same manner as a team name, so that "Sunny" yields "sunny" and "Very Wet" yields "very_wet". If no matching file is found, the field shall be removed and a non-fatal error reported.
+- The summary of a session is the whole sequence of its slots rendered as the textual phase 3 message renders it, the emphasis that message applies excluded. A session all of whose slots carry the same weather is summarised by that weather alone, and a session of a single slot by the weather of that slot.
+- The sessions are placed in the order in which they are run, and the slots of a session in the order in which they were drawn.
+- Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash.
+
+### Handling of mismatches between round and template
+- Divergences between the sessions of a round and the sessions a template declares, and between the slots drawn for a session and the slots declared for it, are treated as follows:
+    - sessions declared in excess of the sessions of the round shall have their "session_<x>_group" field removed in its entirety, taking every other field of the session with it, and no error reported;
+    - sessions of the round in excess of those the template declares are a fatal error, naming the sessions that would have been dropped;
+    - slots declared in excess of the slots drawn for a session shall have their "session_<x>_slot_<y>_group" field removed in its entirety, taking every other field of the slot with it, and no error reported;
+    - slots drawn for a session in excess of those the template declares for it are a fatal error, naming that session.
+- Each of the following is likewise a fatal error, naming what was found to be at fault:
+    - a mandatory field of the graphic that the template does not hold;
+    - a phase 2 or phase 3 template declaring no session at all, or a phase 3 template declaring a session holding no slot;
+    - a field of the catalogue of another phase, the fields of a slot on a phase 2 template included;
+    - a mandatory field whose value cannot be determined at generation;
+    - a gap in the numbering of the sessions, or in the numbering of the slots of a session.
+- An icon image for which no matching file is found causes the field to be removed and a non-fatal error to be reported, as a flag image does for the lineup graphic. A graphic carrying no icon at all is a legitimate outcome.
+- The fields that do not depend on the round are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on it cannot be verified against a round when the template is configured; at that moment it shall be verified only that a phase 2 or phase 3 template declares at least two sessions, numbered continuously from 1 and holding every mandatory field of a session, and that a phase 3 template declares for each of them at least one slot, numbered continuously from 1. At season review they shall additionally be verified against the largest number of sessions any round of the season holds, a divergence being a warning only. At generation they are verified against the round being drawn.
+
+### Generation and posting
+- Once the forecast of a phase is to be posted and the "weather" toggle of "images config toggle" is enabled, the image shall be generated following the rules above via modification of the SVG file of that phase, which shall then be converted to PNG and posted as an attachment of a message carrying the mention of the division role and nothing besides.
+- The image shall be generated anew on every occasion on which the textual forecast is currently posted: upon a phase being run at its horizon, upon a phase being run again after an amendment to the round invalidated the forecasts of that round, upon a phase being advanced by the test mode, and upon a phase being run at startup after its horizon passed while the bot was offline.
+- The chain of deletions of the textual flow is unchanged: the posting of the phase 2 forecast deletes the message of phase 1, the posting of the phase 3 forecast deletes the message of phase 2, and the message of phase 3 is deleted at the moment the textual flow currently deletes it. The previous message shall only be deleted once the message replacing it has been produced successfully, be it the image or, in the case of a fallback, the textual forecast. Deletions shall remain suppressed while the test mode is active, as they are for the textual flow.
+- The weather graphic replaces the textual forecast in the forecast channel configured for the division and there alone. The channel onto which the calculations of each phase are logged shall remain textual in its entirety.
+- The notice of a round of the mystery format shall be drawn from the template of the mystery notice, and shall carry no mention of the division role, as its textual counterpart carries none. No phase is run for such a round and no phase graphic is generated for it.
+- The notice posted when an amendment invalidates the forecasts of a round shall remain message text, the "weather" toggle notwithstanding.
+- The failure of one phase shall prevent neither the phases that follow it nor the same phase of the other divisions. A phase whose forecast fell back to the textual manner may be followed by a phase posted as an image, and the deletion of the message of the preceding phase is unaffected by the manner in which that message was posted.
+- Non-fatal errors gathered during generation shall be reported in the logging channel of the server, naming the season, the division, the round and the phase they pertain to, and never in the forecast channel of a division. Where the generation was triggered by a command, they shall additionally be reported alongside its output.
+- Should a fatal error be met at any step of the generation or posting of the forecast of a phase, the fallback behavior defined in the configuration section shall apply and the forecast of that phase be posted in the traditional textual manner instead. The error shall be reported in the logging channel and, where a command triggered the generation, to the user who invoked it.
+    - Where the posting of a generated image fails for a reason of the Discord service rather than of the generation, it is the textual forecast that shall be enqueued for retry.
+    - The "images test weather-p1", "images test weather-p2", "images test weather-p3" and "images test weather-mystery" commands are the one exception, having no textual counterpart to fall back to. A fatal error met by one of them shall be reported to the league manager who invoked it and no image posted.
+
+### Test data
+- Each of the four "images test weather-" commands shall generate one image, drawn for a division named "Test Division", of tier 1 and of season number 1, at round 1 of a track of the server's track list. The round fabricated for the three phase commands shall be of the sprint format, holding four sessions, so that the rendering of a round of the greatest number of sessions may be evaluated.
+- The "images test weather-p1" command shall fabricate a likelihood of rain that is not a whole percentage, so that its rendering may be evaluated.
+- The "images test weather-p2" command shall fabricate a type of weather for each of the four sessions, among which each of the three types appears at least once, so that each of their icons may be evaluated.
+- The "images test weather-p3" command shall fabricate slots which include, insofar as the number of sessions and of slots the template declares allows:
+    - a session of a single slot;
+    - a session all of whose slots carry the same weather, so that the summary of a session of one weather may be evaluated;
+    - a session whose slots do not all carry the same weather;
+    - a session holding the greatest number of slots the type of that session allows;
+    - each of the five concrete weather types at least once among the slots drawn, so that each of their icons may be evaluated.
+- The "images test weather-mystery" command shall generate the notice of a mystery round, which holds no session and carries no forecast.
+- Should the template declare fewer sessions than the round fabricated holds, or fewer slots than a session fabricated holds, the fatal error defined above shall be met and reported.
 
 ## Verdicts image generation
