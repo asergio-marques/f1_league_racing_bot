@@ -36,8 +36,11 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - <NEW COMMAND> A new "images config results-race-template" command will be made available to server administrators which will take in a string standing for the filename of the template image for race session results.
     - By default, the filename shall be "results_race_template.svg".
 - The results of a qualifying session and those of a race session share no columns beyond the driver, the team, the sanctions and the points, and are therefore drawn from two templates and not one. A sprint session and a feature session of the same kind share a template, the two being distinguished by the text placed on the session name field alone.
-- <NEW COMMAND> A new "images config standings-template" command will be made available to server administrators which will take in a string standing for the filename of the template standings image.
-    - By default, the filename shall be "standings_template.svg".
+- <NEW COMMAND> A new "images config standings-drivers-template" command will be made available to server administrators which will take in a string standing for the filename of the template image for the driver standings.
+    - By default, the filename shall be "standings_drivers_template.svg".
+- <NEW COMMAND> A new "images config standings-constructors-template" command will be made available to server administrators which will take in a string standing for the filename of the template image for the constructor standings.
+    - By default, the filename shall be "standings_constructors_template.svg".
+- The driver standings and the constructor standings share no columns beyond the team, the position and the points, and are therefore drawn from two templates and not one.
 - <NEW COMMAND> A new "images config attendance-template" command will be made available to server administrators which will take in a string standing for the filename of the template attendance image.
     - By default, the filename shall be "attendance_template.svg".
 - <NEW COMMAND> A new "images config weather-p1-template" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 1 image.
@@ -49,7 +52,7 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - <NEW COMMAND> A new "images config verdicts-template" command will be made available to server administrators which will take in a string standing for the filename of the template verdicts image.
     - By default, the filename shall be "verdicts_template.svg".
 - <MODIFY COMMAND> The "season review" command shall be augumented to display the enabling status of the images module, as well as all of the configurations above and if they are valid.
-    - For the configurations modified via the "images config toggle" command, there shall be a distinction between "enabled" (checkmark), "disabled" (cross), and "enabled but invalid" (warning sign). In the case of the weather template, invalid must show which exact phase is invalid; in the case of the results template, which of the qualifying and race templates is invalid.
+    - For the configurations modified via the "images config toggle" command, there shall be a distinction between "enabled" (checkmark), "disabled" (cross), and "enabled but invalid" (warning sign). In the case of the weather template, invalid must show which exact phase is invalid; in the case of the results template, which of the qualifying and race templates is invalid; in the case of the standings template, which of the drivers and constructors templates is invalid.
 - <NEW COMMAND> A new "images config view" command will be made available to league managers which will print out all configurations above, plus the validity status of each one, in a manner similar to the addendum to "season review".
 - <NEW COMMAND> A new "images test" command will be made available to league managers, which takes in one string parameter, scoped to the following: calendar, lineup, results, standings, attendance, weather-p1, weather-p2, weather-p3, verdicts.
     - This test command shall make use of test data specified for each type of generation.
@@ -69,6 +72,9 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - <NEW COMMAND> A new "images config flag-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a driver's nationality will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the flag image files will be searched in a "resources/flags" folder located at the project root.
+- <NEW COMMAND> A new "images config marker-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to mark the direction of a change of standing position will be searched.
+    - The directory will always be assumed to be a path relative to the project root.
+    - By default, the marker image files will be searched in a "resources/markers" folder located at the project root.
 
 ### Verification of template files configured
 - Right after one of the "images config X-template" commands is used, the following verifications shall be made:
@@ -293,6 +299,160 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - Should the server hold no team beyond the reserve team, the command shall be rejected with a clear error.
 
 ## Standings image generation
+- A standings graphic represents the classification of one championship of one division after one round. Two graphics are generated per round: one for the driver championship and one for the constructor championship.
+- Nothing is computed for the graphic, and no command produces standings that exist only as an image. The ranking, the position and the points are those the textual standings show.
+- The graphic adds to the textual standings the flag of each driver, the badge of each team, and the columns declared optional below. It carries no Discord mention; the name of the driver and the name of the team stand in its place.
+- Two templates serve the two championships. Their fields are addressed by the ordinal of the row, as the results graphic's are.
+- The heading and the lifecycle label of the post shall remain message text.
+- For generation of a driver standings graphic, the template may have the following fields, among which the mandatory fields will be verified at template file setting and before generation:
+    - season_number - Optional - Layer/widget on which the season number of the server is placed
+    - division_name - Mandatory - Layer/widget on which the name given to the division at "division add" is placed
+    - division_tier - Optional - Layer/widget on which the tier given to the division at "division add" is placed
+    - round_number - Mandatory - Layer/widget on which the human-readable number of the round after which the standings stand is placed as text, read from the round object definition
+    - race_name - Optional - Layer/widget on which the grand prix name of that round is placed as text, read from the track object definition
+    - result_status - Mandatory - Layer/widget on which the lifecycle label of the results of that round is placed as text
+    - For each row of ordinal <x>:
+        - row_<x>_group - Mandatory - Layer/widget acting as a container for every other field of the row, which shall be removed in its entirety when the championship holds no driver of that ordinal
+        - row_<x>_position - Mandatory - Layer/widget on which the standing position of the driver is placed as text
+        - row_<x>_driver_name - Mandatory - Layer/widget on which the name of the driver is placed as text
+        - row_<x>_driver_flag - Optional - Layer/widget on which an image representing the nationality of the driver will be placed, searched for in the directory configured via "images config flag-directory"
+        - row_<x>_team_name - Mandatory - Layer/widget on which the name of the team of the driver is placed as text
+        - row_<x>_team_image - Mandatory - Layer/widget on which an image representing that team (e.g. logo, badge, car) will be placed, searched for in the directory configured via "images config team-image-directory"
+        - row_<x>_points - Mandatory - Layer/widget on which the total points accrued by the driver are placed as text
+        - row_<x>_gap_to_leader - Optional - Layer/widget on which the points separating the driver from the first-placed driver are placed as text
+        - row_<x>_previous_position - Optional - Layer/widget on which the standing position the driver held after the preceding round is placed as text
+        - row_<x>_position_change_group - Optional - Layer/widget acting as a container for every other field of the position change, which shall be removed in its entirety when the position change of the driver cannot be determined
+        - row_<x>_position_change - Optional - Layer/widget on which the number of positions the driver has gained or lost since the preceding round is placed as text, without sign
+        - row_<x>_position_change_marker - Optional - Layer/widget on which an image marking the direction of the position change of the driver will be placed, searched for in the directory configured via "images config marker-directory"
+    - The following further fields, by which the results obtained by the driver in each round of the division are displayed alongside the classification they produced. The whole of this catalogue is optional, a template declaring none of it drawing a classification alone:
+        - For each round of ordinal <z>:
+            - round_<z>_group - Optional - Layer/widget acting as a container for every other field bearing that ordinal, the fields of the rows included, which shall be removed in its entirety when the division holds no round of that ordinal or that round is yet to be run
+            - round_<z>_number - Optional - Layer/widget on which the human-readable number of the round is placed as text
+            - round_<z>_race_name - Optional - Layer/widget on which the grand prix name of the round is placed as text, read from the track object definition
+        - For each row of ordinal <x> and each round of ordinal <z>:
+            - row_<x>_round_<z>_sprint_qualifying_result - Optional - Layer/widget on which the result obtained by the driver in the sprint qualifying session of that round is placed as text
+            - row_<x>_round_<z>_sprint_race_result - Optional - Layer/widget on which the result obtained by the driver in the sprint race session of that round is placed as text
+            - row_<x>_round_<z>_feature_qualifying_result - Optional - Layer/widget on which the result obtained by the driver in the feature qualifying session of that round is placed as text
+            - row_<x>_round_<z>_feature_race_result - Optional - Layer/widget on which the result obtained by the driver in the feature race session of that round is placed as text
+- For generation of a constructor standings graphic, the template may have the following fields, among which the mandatory fields will be verified at template file setting and before generation:
+    - season_number - Optional - Layer/widget on which the season number of the server is placed
+    - division_name - Mandatory - Layer/widget on which the name given to the division at "division add" is placed
+    - division_tier - Optional - Layer/widget on which the tier given to the division at "division add" is placed
+    - round_number - Mandatory - Layer/widget on which the human-readable number of the round after which the standings stand is placed as text, read from the round object definition
+    - race_name - Optional - Layer/widget on which the grand prix name of that round is placed as text, read from the track object definition
+    - result_status - Mandatory - Layer/widget on which the lifecycle label of the results of that round is placed as text
+    - For each row of ordinal <x>:
+        - row_<x>_group - Mandatory - Layer/widget acting as a container for every other field of the row, which shall be removed in its entirety when the championship holds no team of that ordinal
+        - row_<x>_position - Mandatory - Layer/widget on which the standing position of the team is placed as text
+        - row_<x>_team_name - Mandatory - Layer/widget on which the name of the team is placed as text
+        - row_<x>_team_image - Mandatory - Layer/widget on which an image representing the team (e.g. logo, badge, car) will be placed, searched for in the directory configured via "images config team-image-directory"
+        - row_<x>_points - Mandatory - Layer/widget on which the total points accrued by the team are placed as text
+        - row_<x>_gap_to_leader - Optional - Layer/widget on which the points separating the team from the first-placed team are placed as text
+        - row_<x>_previous_position - Optional - Layer/widget on which the standing position the team held after the preceding round is placed as text
+        - row_<x>_position_change_group - Optional - Layer/widget acting as a container for every other field of the position change, which shall be removed in its entirety when the position change of the team cannot be determined
+        - row_<x>_position_change - Optional - Layer/widget on which the number of positions the team has gained or lost since the preceding round is placed as text, without sign
+        - row_<x>_position_change_marker - Optional - Layer/widget on which an image marking the direction of the position change of the team will be placed, searched for in the directory configured via "images config marker-directory"
+    - The following further fields, by which the results obtained in each round of the division by each driver who drove the team's cars are displayed alongside the classification they produced. The whole of this catalogue is optional, a template declaring none of it drawing a classification alone:
+        - For each round of ordinal <z>:
+            - round_<z>_group - Optional - Layer/widget acting as a container for every other field bearing that ordinal, the fields of the rows included, which shall be removed in its entirety when the division holds no round of that ordinal or that round is yet to be run
+            - round_<z>_number - Optional - Layer/widget on which the human-readable number of the round is placed as text
+            - round_<z>_race_name - Optional - Layer/widget on which the grand prix name of the round is placed as text, read from the track object definition
+        - For each row of ordinal <x>, each round of ordinal <z> and each car of ordinal <w>:
+            - row_<x>_round_<z>_driver_<w>_group - Optional - Layer/widget acting as a container for every other field bearing that ordinal, which shall be removed in its entirety when no driver drove that car of the team in that round
+            - row_<x>_round_<z>_driver_<w>_name - Optional - Layer/widget on which the name of the driver who drove that car of the team in that round is placed as text
+            - row_<x>_round_<z>_driver_<w>_sprint_qualifying_result - Optional - Layer/widget on which the result obtained by that driver in the sprint qualifying session of that round is placed as text
+            - row_<x>_round_<z>_driver_<w>_sprint_race_result - Optional - Layer/widget on which the result obtained by that driver in the sprint race session of that round is placed as text
+            - row_<x>_round_<z>_driver_<w>_feature_qualifying_result - Optional - Layer/widget on which the result obtained by that driver in the feature qualifying session of that round is placed as text
+            - row_<x>_round_<z>_driver_<w>_feature_race_result - Optional - Layer/widget on which the result obtained by that driver in the feature race session of that round is placed as text
+- The constructor standings graphic has no field carrying the nationality of a driver, and none carrying the result of a team in a session.
+- <w> is a value between 1 and the number of seats configured for the team of the row.
+- <x> is the ordinal of the row counted from the top of the classification, beginning at 1, and equals the standing position recorded for the entry placed on it.
+- <z> is a value between 1 and the total number of rounds scheduled for the division.
+- The rows a template declares shall be numbered continuously from 1, and so shall the rounds and the cars of a round. A gap in any of the three numberings is a fatal error.
+- The graphic carries no image of the track, no date of any round, no name of a points configuration, and no result of any session beyond those of the fields above.
+
+### Resolution of the data to be placed
+- The graphic re-presents the values the textual standings show and never derives them by rules of its own.
+- The position and the points are those recorded in the standings of the round for which the graphic is drawn. Entries level on points are separated by the countback; two entries never share a position.
+- The composition of the driver classification is that of the textual driver standings: every non-reserve driver of the division is drawn, at zero points as at any other, and a reserve driver is drawn only where "results reserves toggle" is on and the driver holds points or has taken part in a race.
+- The composition of the constructor classification is that of the textual team standings: every non-reserve team of the division is drawn, at zero points as at any other.
+- The name of a driver shall be resolved as it is for the lineup graphic.
+- The flag image of a driver shall be searched for as it is for the lineup graphic. If the nationality is absent or no matching file is found, the field shall be removed and a non-fatal error reported.
+- The team of a row of the drivers graphic is the team of the division seating the driver at the moment of generation, which for a reserve driver is the reserve team. It is not the team whose car the driver drove in any single round.
+- The name to be placed for a constructor, and the name to be normalized to search for its team image, shall be that of the team of the division holding the Discord role its standings record, falling back to the name of the role itself should the division hold no such team. Normalization is that defined for the lineup graphic.
+- The gap to the leader is the points of the first-placed entry less those of the entry, rendered prefixed with a minus sign, and is empty for the first-placed entry.
+- The previous position and the position change are read against the standings of the round preceding the one drawn, the change being the number of positions separating the two, placed without a sign and "0" where the entry has neither gained nor lost.
+- The marker image of the position change shall be searched for in the configured marker directory under a filename equal to the direction of that change: "gained" where the entry stands higher than it did after the preceding round, "lost" where it stands lower, and "unchanged" where it stands where it stood. If no matching file is found, the field shall be removed and a non-fatal error reported.
+- The position change cannot be determined for the graphic of the first round of a division, nor for an entry the standings of the preceding round do not hold. In either case the "row_<x>_position_change_group" field shall be removed in its entirety; where the template declares no such group, the number shall be emptied and the marker removed. The previous position field is emptied in the same two cases.
+- A result cell of either graphic carries the finishing position recorded in that session of that round for the driver the cell stands for, or "DNF", "DNS" or "DSQ" where that is the outcome recorded for them. A driver dropped to the bottom of a session by a disqualification carries "DSQ" and not the position that drop gave them.
+- A result cell is emptied where the round holds no session of that type, where the round is yet to be run, where the round is recorded as cancelled, or where the driver the cell stands for took no part in that session.
+- The rounds displayed are those from the first through the one for which the graphic is drawn. A round of a later ordinal has its "round_<z>_group" field removed in its entirety. A round recorded as cancelled keeps its group, every result cell bearing its ordinal being emptied.
+- The cells of a round of the constructors graphic stand for the cars of the team one by one, and are resolved against that round alone:
+    - the drivers who drove the cars of a team in a round are those whose result in a session of that round records the Discord role of that team;
+    - a driver seated in the team is placed on the car of the ordinal of the seat they occupy in it, and a seated driver who drove no session of the round leaves that car free;
+    - a driver not seated in the team is placed on the lowest-numbered car left free in that round;
+    - a driver is never placed on two cars, nor on the cars of two teams;
+    - the name placed on a car is that of the driver who drove it in that round, resolved as it is for the lineup graphic;
+    - a car that no driver drove in a round has its "row_<x>_round_<z>_driver_<w>_group" field removed in its entirety; where the template declares no such group, the name and the result cells of that car are emptied.
+- Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash.
+
+### Handling of mismatches between standings and template
+- Divergences between the entries of a classification and the rows a template declares are treated as follows:
+    - rows declared in excess of the entries of the classification shall have their "row_<x>_group" field removed in its entirety, taking every other field of the row with it, and no error reported;
+    - entries in excess of the rows the template declares are a fatal error, naming the drivers or the teams that would have been dropped.
+- The rounds a template declares are treated as follows:
+    - rounds declared in excess of the rounds of the division shall have their "round_<z>_group" field removed in its entirety, and no error reported. Where the template declares no "round_<z>_group" for that ordinal, every field bearing it shall be removed one by one instead;
+    - rounds of the division in excess of those the template declares shall be omitted from the graphic and a non-fatal error reported naming them.
+- The cars a round of the constructors graphic declares are treated as follows:
+    - cars declared in excess of the seats configured for the team of the row shall have their "row_<x>_round_<z>_driver_<w>_group" field removed in its entirety, and no error reported. Where the template declares no such group, every field bearing that ordinal shall be removed one by one instead;
+    - drivers who drove the cars of a team in a round in excess of the cars the template declares for it shall be omitted from that round and a non-fatal error reported naming them and the round.
+- Each of the following is likewise a fatal error, naming what was found to be at fault:
+    - a mandatory field of the graphic that the template does not hold;
+    - a template declaring no row at all;
+    - a gap in the numbering of the rows, in the numbering of the rounds, or in the numbering of the cars of a round;
+    - a field of the row catalogue of the other championship;
+    - a mandatory field whose value cannot be determined at generation;
+    - a team of an entry for which no image file is found in the configured team image directory.
+- A flag image for which no matching file is found causes the field to be removed and a non-fatal error to be reported, as it does for the lineup graphic. As the request for nationality may be switched off entirely via "signup nationality toggle", a graphic with no flags at all is a legitimate outcome and no error whatsoever.
+- The fields that do not depend on the entries of a classification are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on them cannot be verified against a classification when the template is configured or at season review; at those moments it shall be verified only that the template declares at least one row, numbered continuously from 1 and holding every mandatory field of a row, that the rounds it declares, if any, are numbered continuously from 1, and that the cars each round declares, if any, are numbered continuously from 1. At generation they are verified against the classification being drawn.
+
+### Generation and posting
+- Once the standings of a round are to be posted and the "standings" toggle of "images config toggle" is enabled, both graphics shall be generated following the rules above via modification of the SVG files, which shall then be converted to PNG and posted to the standings channel of the division as two messages: the driver standings first and the constructor standings after. Each message carries the heading and the lifecycle label as message text and its graphic as an attachment.
+- The ID of each of the two messages shall be persisted.
+- Wherever the textual flow edits the standings message in place, the image flow shall instead delete it and post the new ones, persisting their IDs in the place of the old. The previous message shall only be deleted once the messages replacing it have been produced successfully, be it the graphics or, in the case of a fallback, the textual standings.
+- The graphics shall be generated anew, and the posts replaced, on every occasion on which the textual standings are currently reposted: upon the results of a round being first posted as provisional, upon the penalty phase being closed, upon the appeal phase being closed, upon the standings of a division being resynchronised by command, upon an amendment to a session being approved, upon a change to the points configuration of a season causing rounds to be recalculated, and upon that recalculation cascading to every round following the one modified.
+- The standings of a round recorded as cancelled shall not be posted, the "standings" toggle notwithstanding.
+- The standings graphics replace the textual standings in the standings channel configured for the division and there alone.
+- The results posted alongside the standings of a round are governed by the results section above, not by this one. The failure of one shall not prevent the other.
+- The failure of one championship shall not prevent the other. Where one of the two falls back, its textual message shall carry the section of that championship alone, and the other shall be posted as a graphic.
+- Non-fatal errors gathered during generation shall be reported in the logging channel of the server, naming the season, the division, the round and the championship they pertain to, and never in the standings channel of a division. Where the generation was triggered by a command, they shall additionally be reported alongside its output.
+- Should a fatal error be met at any step of the generation or posting of the standings of a championship, the fallback behavior defined in the configuration section shall apply and the standings of that championship be posted in the traditional textual manner instead. The error shall be reported in the logging channel and, where a command triggered the generation, to the user who invoked it. The failure of one division shall not prevent the others from being generated and posted as images.
+    - Where the posting of a generated image fails for a reason of the Discord service rather than of the generation, it is the textual standings that shall be enqueued for retry.
+    - The "images test standings" command is the one exception. A fatal error met by it shall be reported to the league manager who invoked it and no image posted.
+
+### Test data
+- The "images test standings" command shall generate two images, one from the drivers template and one from the constructors template. Both shall be drawn for a division named "Test Division", of tier 1 and of season number 1, holding a calendar of five rounds and standing after the third of them, so that the removal of the groups of the rounds yet to be run may be evaluated, and both shall be labelled "Final Results".
+    - Rounds 1 and 3 shall be of the normal format and round 2 of the sprint format, so that the rendering of a round bearing four sessions and of one bearing two may be evaluated.
+- The entries fabricated for each shall be one fewer than the number of rows the template declares, so that the rendering of an unused row may be evaluated, and shall be drawn from the teams of the team configuration of the server. Should the template declare a single row, one entry shall be fabricated and the unused row left unevaluated.
+- The entries of the drivers image shall include, insofar as the number of rows declared allows:
+    - the first-placed driver, whose gap field is empty;
+    - two drivers level on points, separated by the countback;
+    - a driver conferred no points at all;
+    - a driver of the reserve team;
+    - a driver who took no part in one of the rounds run;
+    - a driver who did not finish a session, one who did not start one, and one disqualified from one;
+    - a driver who gained positions since the preceding round, one who lost them, and one holding the position they held, so that each of the three marker images may be evaluated;
+    - a driver whom the standings of the preceding round do not hold.
+- The entries of the constructors image shall include, insofar as the number of rows declared allows:
+    - the first-placed team, whose gap field is empty;
+    - two teams level on points, separated by the countback;
+    - a team conferred no points at all;
+    - a team conferred no points in one of the rounds run;
+    - a team that gained positions since the preceding round, one that lost them, and one holding the position it held;
+    - a team one of whose cars was driven in one round by a reserve standing in for the driver seated on it, so that the placing of a driver not seated in the team may be evaluated;
+    - a team one of whose cars no driver drove in one round, so that the removal of the car may be evaluated.
+- The nationalities given to the fictitious drivers shall be among those the signup wizard accepts, at least one of them being that recorded for a driver who stated none.
+- Should the server hold no team beyond the reserve team, the command shall be rejected with a clear error, as there is no classification to be drawn.
 
 ## Attendance image generation
 
