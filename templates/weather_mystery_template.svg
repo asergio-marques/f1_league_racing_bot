@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     width="1200" height="675" viewBox="0 0 1200 675"
+     font-family="Inter, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif">
+
+  <!-- ===================================================================
+       Weather notice template — MYSTERY ROUND
+       Field catalogue: image_module_specification.md, "Weather image generation"
+
+       The heading fields alone. No phase description, no track, no session and
+       no forecast: no phase is run for a round of the mystery format. The
+       message carrying this graphic mentions no division role either.
+
+       Mandatory : division_name, round_number
+       Optional  : season_number, division_tier, season_number_group,
+                   division_tier_group
+       =================================================================== -->
+
+  <defs>
+    <style>
+      .eyebrow  { font-size:15px;  fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
+      .title    { font-size:34px;  fill:#F2F5F8; font-weight:700 }
+      .roundlbl { font-size:17px;  fill:#8A94A3; letter-spacing:.20em; font-weight:600 }
+      .roundnum { font-size:17px;  fill:#E8113C; letter-spacing:.20em; font-weight:700 }
+      .myst     { font-size:64px;  fill:#F2F5F8; font-weight:700; letter-spacing:.01em }
+      .body     { font-size:21px;  fill:#8A94A3 }
+      .ghost    { font-size:420px; fill:#E8113C; fill-opacity:.10; font-weight:700 }
+      .foot     { font-size:11px;  fill:#5A626E; letter-spacing:.22em; font-weight:600 }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="675" fill="#0B0D10"/>
+
+  <!-- oversized question mark, drawn before the band so nothing is obscured -->
+  <text class="ghost" x="1010" y="600" text-anchor="middle">?</text>
+
+  <!--  heading band  -->
+  <!--  Each of the two heading values carries its own group, so that a template
+        emptying one does not leave the fixed word beside it standing alone. They
+        stand apart rather than run together with a separator between them, a
+        separator being chrome that survives the emptying of the fields it
+        divides.  -->
+  <g id="season_number_group" inkscape:label="season_number_group">
+    <text class="eyebrow" x="48" y="36"><tspan>SEASON&#160;</tspan><tspan id="season_number" inkscape:label="season_number">1</tspan></text>
+  </g>
+  <g id="division_tier_group" inkscape:label="division_tier_group">
+    <text class="eyebrow" x="184" y="36"><tspan>TIER&#160;</tspan><tspan id="division_tier" inkscape:label="division_tier">1</tspan></text>
+  </g>
+  <text id="division_name" inkscape:label="division_name" class="title" x="48" y="76">Division Name</text>
+  <rect x="0" y="93" width="1200" height="3" fill="#E8113C"/>
+
+  <!--  notice  -->
+  <text class="roundlbl" x="48" y="140">
+    <tspan>ROUND&#160;</tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">4</tspan>
+  </text>
+
+  <text class="myst" x="48" y="230">Mystery Round</text>
+
+  <line x1="48" y1="278" x2="760" y2="278" stroke="#262B33" stroke-width="1"/>
+
+  <text class="body" x="48" y="326">Conditions are unknown to all — weather will be</text>
+  <text class="body" x="48" y="360">determined by the game at race time.</text>
+  <text class="body" x="48" y="418">No forecast will be issued for this round.</text>
+
+  <!--  footer  -->
+  <line x1="48" y1="628" x2="1152" y2="628" stroke="#262B33" stroke-width="1"/>
+  <text class="foot" x="48" y="654">NO FORECAST · MYSTERY ROUND</text>
+</svg>

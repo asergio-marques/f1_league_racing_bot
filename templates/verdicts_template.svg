@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     width="1200" height="1040" viewBox="0 0 1200 1040"
+     font-family="Inter, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif">
+
+  <!-- ===================================================================
+       Verdict template
+       Field catalogue: image_module_specification.md, "Verdicts image generation"
+
+       Substitutable nodes are addressed by @id. Text nodes carry their value
+       as their sole text content; <image> nodes take an xlink:href.
+       Anything without an id is static chrome and must not be touched.
+
+       One file draws all three kinds of verdict — a penalty of the penalty
+       phase, a correction of the appeal phase, and an attendance sanction —
+       and the three are told apart by the text placed on verdict_stage and
+       session_name and by nothing else. An attendance sanction carries
+       "Attendance Sanction" on both, names no team, and has its team image
+       removed; the TEAM label is inside team_name_group so that it goes with it.
+
+       This is the one graphic of the module that addresses no field by an
+       ordinal. There is no row, no session, no round beyond the one, so there
+       is nothing to count and nothing here is a fatal error for being one too
+       few. What it has instead is free text of no length anyone controls.
+
+       description and justification are wrapping fields: each declares
+       shape-inside naming a rectangle below, and the generation breaks the
+       steward's prose into lines against that rectangle's width, reduces the
+       font size until the lines fit its height, and truncates at a word
+       boundary if they will not fit even at half the size declared. Both
+       rectangles carry no fill and no stroke and are never drawn — they are
+       there to be moved, not to be seen. Narrowing one is how a league takes a
+       measure of 1104 px down to something easier on the eye; the cost is
+       fewer characters before a long verdict starts shrinking.
+
+       The line height is declared on the field as line-height and is what
+       decides how many lines the rectangle admits: 156 / 26 is six. Changing
+       either number changes the budget, so a template author moving these
+       should keep the height a whole multiple of the line height.
+
+       Column positions are dimensioned for DejaVu Sans, not for the Inter the
+       root asks for. Inter is on no host by default: this file renders in
+       Segoe UI on Windows and in DejaVu Sans in a container, and DejaVu is the
+       widest of the three. The prose fields need no such margin — they are
+       measured against whichever font the host actually has and wrap to it —
+       but driver_name, team_name and penalty are single lines and do: penalty
+       is given the full 1104 px at 34 px, about ninety characters of DejaVu,
+       which is far more than the sanctions the bot describes.
+
+       Mandatory : division_name, round_number, session_name, verdict_stage,
+                   driver_name, penalty, description, justification
+       Optional  : season_number, division_tier, race_name, driver_flag,
+                   team_name, team_image, season_number_group,
+                   division_tier_group, team_name_group
+       Declined  : none · every field of the verdict catalogue is declared
+       Groups    : team_name_group wraps the team name, the team image and the
+                   TEAM label above them, so that an attendance sanction, which
+                   names no team, does not leave the label standing over
+                   nothing. The specification allows any field to carry a group
+                   named after it and suffixed "_group", and removes that group
+                   in place of emptying the field.
+       =================================================================== -->
+
+  <defs>
+    <style>
+      .eyebrow  { font-size:15px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
+      .title    { font-size:34px; fill:#F2F5F8; font-weight:700 }
+      .phase    { font-size:16px; fill:#8A94A3; letter-spacing:.16em; font-weight:600 }
+      .roundlbl { font-size:17px; fill:#8A94A3; letter-spacing:.20em; font-weight:600 }
+      .roundnum { font-size:17px; fill:#E8113C; letter-spacing:.20em; font-weight:700 }
+      .track    { font-size:46px; fill:#F2F5F8; font-weight:700 }
+      .sub      { font-size:19px; fill:#8A94A3 }
+      .colhead  { font-size:10px; fill:#8A94A3; letter-spacing:.14em; font-weight:700 }
+      /*  inline-size states the room a single-line field is given: a value
+          wider than it is cut at a word boundary and ended with an ellipsis
+          rather than painted across the column beside it. A driver name is a
+          Discord display name of no length the league controls.  */
+      .dname    { font-size:26px; fill:#F2F5F8; font-weight:700; inline-size:700px }
+      .tname    { font-size:20px; fill:#E4E9EF; font-weight:600; inline-size:700px }
+      .verdict  { font-size:34px; fill:#F2F5F8; font-weight:700 }
+      .prose    { font-size:17px; fill:#E4E9EF }
+      .foot     { font-size:11px; fill:#5A626E; letter-spacing:.22em; font-weight:600 }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="1040" fill="#0B0D10"/>
+
+  <!--  heading band (identical across the image module's templates)  -->
+  <!--  Each of the two heading values carries its own group, so that a template
+        emptying one does not leave the fixed word beside it standing alone. They
+        stand apart rather than run together with a separator between them, a
+        separator being chrome that survives the emptying of the fields it
+        divides.  -->
+  <g id="season_number_group" inkscape:label="season_number_group">
+    <text class="eyebrow" x="48" y="36"><tspan>SEASON&#160;</tspan><tspan id="season_number" inkscape:label="season_number">1</tspan></text>
+  </g>
+  <g id="division_tier_group" inkscape:label="division_tier_group">
+    <text class="eyebrow" x="184" y="36"><tspan>TIER&#160;</tspan><tspan id="division_tier" inkscape:label="division_tier">1</tspan></text>
+  </g>
+  <text id="division_name" inkscape:label="division_name" class="title" x="48" y="76">Division Name</text>
+  <text id="verdict_stage" inkscape:label="verdict_stage" class="phase" x="1152" y="72" text-anchor="end">Post-Race Penalty</text>
+  <rect x="0" y="93" width="1200" height="3" fill="#E8113C"/>
+
+  <!--  round block  -->
+  <text class="roundlbl" x="48" y="140">
+    <tspan>ROUND&#160;</tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">9</tspan>
+  </text>
+  <text id="session_name" inkscape:label="session_name" class="track" x="48" y="188">Session Name</text>
+  <text id="race_name" inkscape:label="race_name" class="sub" x="48" y="220">Grand Prix Name</text>
+  <line x1="48" y1="252" x2="1152" y2="252" stroke="#262B33" stroke-width="1"/>
+
+  <!--  who the verdict is upon
+       The name and not the mention: a graphic cannot tag anybody, and the
+       message the graphic is attached to is what carries the mention. -->
+  <text class="colhead" x="48" y="288">DRIVER</text>
+  <image id="driver_flag" inkscape:label="driver_flag" x="48" y="300" width="42" height="28" preserveAspectRatio="xMidYMid meet"/>
+  <text id="driver_name" inkscape:label="driver_name" class="dname" x="110" y="323">Driver Name</text>
+
+  <!--  the team whose car was driven in that session, label and all
+       An attendance sanction pertains to no session and so to no car. The
+       whole block goes rather than the badge alone, a TEAM label over nothing
+       being worse than no label at all. -->
+  <g id="team_name_group" inkscape:label="team_name_group">
+    <text class="colhead" x="48" y="366">TEAM</text>
+    <image id="team_image" inkscape:label="team_image" x="48" y="378" width="32" height="32" preserveAspectRatio="xMidYMid meet"/>
+    <text id="team_name" inkscape:label="team_name" class="tname" x="110" y="401">Team Name</text>
+  </g>
+  <line x1="48" y1="438" x2="1152" y2="438" stroke="#262B33" stroke-width="1"/>
+
+  <!--  the sanction, in the words the text announcement uses  -->
+  <text class="colhead" x="48" y="474">SANCTION</text>
+  <text id="penalty" inkscape:label="penalty" class="verdict" x="48" y="518">Sanction</text>
+  <line x1="48" y1="550" x2="1152" y2="550" stroke="#262B33" stroke-width="1"/>
+
+  <!--  what the steward wrote: wrapped, and reduced if it does not fit  -->
+  <text class="colhead" x="48" y="586">DESCRIPTION</text>
+  <rect id="description_shape" inkscape:label="description_shape" x="48" y="600" width="1104" height="156" fill="none"/>
+  <text id="description" inkscape:label="description" class="prose" x="48" y="618"
+        style="shape-inside:url(#description_shape);line-height:26px">Description</text>
+
+  <text class="colhead" x="48" y="794">JUSTIFICATION</text>
+  <rect id="justification_shape" inkscape:label="justification_shape" x="48" y="808" width="1104" height="156" fill="none"/>
+  <text id="justification" inkscape:label="justification" class="prose" x="48" y="826"
+        style="shape-inside:url(#justification_shape);line-height:26px">Justification</text>
+
+  <!--  footer  -->
+  <line x1="48" y1="992" x2="1152" y2="992" stroke="#262B33" stroke-width="1"/>
+  <text class="foot" x="48" y="1018">LEAGUE RACING BOT&#160;&#160;&#160;&#183;&#160;&#160;&#160;STEWARDS' VERDICT</text>
+
+</svg>

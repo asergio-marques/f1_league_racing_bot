@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     width="1200" height="675" viewBox="0 0 1200 675"
+     font-family="Inter, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif">
+
+  <!-- ===================================================================
+       Weather forecast template - PHASE 3 (Final session forecast)
+       Field catalogue: image_module_specification.md, "Weather image generation"
+
+       Two sessions of four slots each, both numbered continuously from 1. This
+       file draws a round of the normal, endurance or mystery format. Four slots,
+       because the race of a round of the endurance format is the one session of
+       the module drawn four spells of weather; on every other format the last of
+       them is removed. A round of the sprint format is drawn from
+       weather_p3_sprint_template.svg. Slot groups nest inside their session
+       group, which takes them with it when removed.
+
+       Mandatory : division_name, phase_description, round_number, track_name,
+                   session_<x>_group, session_<x>_name,
+                   session_<x>_slot_<y>_group, session_<x>_slot_<y>_label
+       Optional  : season_number, division_tier, race_name, country_name,
+                   track_image, rain_probability, session_<x>_slot_type,
+                   session_<x>_slot_type_icon, session_<x>_summary,
+                   session_<x>_slot_<y>_icon, season_number_group,
+                   division_tier_group, race_name_group,
+                   country_name_group, track_image_group
+       =================================================================== -->
+
+  <defs>
+    <style>
+      .eyebrow  { font-size:15px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
+      .title    { font-size:34px; fill:#F2F5F8; font-weight:700 }
+      .phase    { font-size:16px; fill:#8A94A3; letter-spacing:.16em; font-weight:600 }
+      .roundlbl { font-size:17px; fill:#8A94A3; letter-spacing:.20em; font-weight:600 }
+      .roundnum { font-size:17px; fill:#E8113C; letter-spacing:.20em; font-weight:700 }
+      .track    { font-size:46px; fill:#F2F5F8; font-weight:700 }
+      .sub      { font-size:19px; fill:#8A94A3 }
+      .statlbl  { font-size:12px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
+      .statval  { font-size:40px; fill:#F2F5F8; font-weight:700 }
+      .sname3   { font-size:17px; fill:#F2F5F8; letter-spacing:.02em; font-weight:700 }
+      .stype3   { font-size:13px; fill:#8A94A3; letter-spacing:.14em; font-weight:600 }
+      .summary  { font-size:14px; fill:#8A94A3 }
+      .slotlbl  { font-size:11px; fill:#F2F5F8; letter-spacing:.03em; font-weight:600 }
+      .foot     { font-size:11px; fill:#5A626E; letter-spacing:.22em; font-weight:600 }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="675" fill="#0B0D10"/>
+
+  <!--  heading band  -->
+  <!--  Each of the two heading values carries its own group, so that a template
+        emptying one does not leave the fixed word beside it standing alone. They
+        stand apart rather than run together with a separator between them, a
+        separator being chrome that survives the emptying of the fields it
+        divides.  -->
+  <g id="season_number_group" inkscape:label="season_number_group">
+    <text class="eyebrow" x="48" y="36"><tspan>SEASON&#160;</tspan><tspan id="season_number" inkscape:label="season_number">1</tspan></text>
+  </g>
+  <g id="division_tier_group" inkscape:label="division_tier_group">
+    <text class="eyebrow" x="184" y="36"><tspan>TIER&#160;</tspan><tspan id="division_tier" inkscape:label="division_tier">1</tspan></text>
+  </g>
+  <text id="division_name" inkscape:label="division_name" class="title" x="48" y="76">Division Name</text>
+  <text id="phase_description" inkscape:label="phase_description" class="phase" x="1152" y="72" text-anchor="end">Final session forecast</text>
+  <rect x="0" y="93" width="1200" height="3" fill="#E8113C"/>
+
+  <!--  round block  -->
+  <text class="roundlbl" x="48" y="140">
+    <tspan>ROUND&#160;</tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">4</tspan>
+  </text>
+  <text id="track_name" inkscape:label="track_name" class="track" x="48" y="188">Track Name</text>
+  <!--  The grand prix name and the country each carry their own group. Run
+        together with a separator between them, as they were, the separator
+        survived the emptying of either and floated in the middle of the line.  -->
+  <g id="race_name_group" inkscape:label="race_name_group">
+    <text id="race_name" inkscape:label="race_name" class="sub" x="48" y="220">Grand Prix Name</text>
+  </g>
+  <g id="country_name_group" inkscape:label="country_name_group">
+    <text id="country_name" inkscape:label="country_name" class="sub" x="300" y="220">Country</text>
+  </g>
+
+  <text class="statlbl" x="976" y="152" text-anchor="end">RAIN PROBABILITY</text>
+  <text id="rain_probability" inkscape:label="rain_probability" class="statval" x="976" y="198"
+        text-anchor="end" style="font-variant-numeric:tabular-nums">00.0%</text>
+
+  <g id="track_image_group" inkscape:label="track_image_group">
+    <rect x="1016" y="100" width="136" height="136" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <image id="track_image" inkscape:label="track_image"
+           x="1026" y="110" width="116" height="116" preserveAspectRatio="xMidYMid meet"/>
+  </g>
+
+  <line x1="48" y1="252" x2="1152" y2="252" stroke="#262B33" stroke-width="1"/>
+
+  <!-- ================= SESSION 1 ================= -->
+  <g id="session_1_group" inkscape:label="session_1_group">
+    <rect x="48" y="272" width="1104" height="168" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <text id="session_1_name" inkscape:label="session_1_name" class="sname3" x="72" y="308">Session Name</text>
+    <image id="session_1_slot_type_icon" inkscape:label="session_1_slot_type_icon"
+           x="1102" y="290" width="22" height="22" preserveAspectRatio="xMidYMid meet"/>
+    <text id="session_1_slot_type" inkscape:label="session_1_slot_type" class="stype3" x="1092" y="308" text-anchor="end">Type</text>
+    <text id="session_1_summary" inkscape:label="session_1_summary" class="summary" x="72" y="334">Summary of the session</text>
+    <g id="session_1_slot_1_group" inkscape:label="session_1_slot_1_group">
+      <rect x="72" y="350" width="258" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_1_slot_1_icon" inkscape:label="session_1_slot_1_icon" x="186" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_1_slot_1_label" inkscape:label="session_1_slot_1_label" class="slotlbl" x="201" y="414" text-anchor="middle">Weather</text>
+    </g>
+    <g id="session_1_slot_2_group" inkscape:label="session_1_slot_2_group">
+      <rect x="336" y="350" width="258" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_1_slot_2_icon" inkscape:label="session_1_slot_2_icon" x="450" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_1_slot_2_label" inkscape:label="session_1_slot_2_label" class="slotlbl" x="465" y="414" text-anchor="middle">Weather</text>
+    </g>
+    <g id="session_1_slot_3_group" inkscape:label="session_1_slot_3_group">
+      <rect x="600" y="350" width="258" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_1_slot_3_icon" inkscape:label="session_1_slot_3_icon" x="714" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_1_slot_3_label" inkscape:label="session_1_slot_3_label" class="slotlbl" x="729" y="414" text-anchor="middle">Weather</text>
+    </g>
+    <g id="session_1_slot_4_group" inkscape:label="session_1_slot_4_group">
+      <rect x="864" y="350" width="258" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_1_slot_4_icon" inkscape:label="session_1_slot_4_icon" x="978" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_1_slot_4_label" inkscape:label="session_1_slot_4_label" class="slotlbl" x="993" y="414" text-anchor="middle">Weather</text>
+    </g>
+  </g>
+
+  <!-- ================= SESSION 2 ================= -->
+  <g id="session_2_group" inkscape:label="session_2_group">
+    <rect x="48" y="460" width="1104" height="168" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <text id="session_2_name" inkscape:label="session_2_name" class="sname3" x="72" y="496">Session Name</text>
+    <image id="session_2_slot_type_icon" inkscape:label="session_2_slot_type_icon"
+           x="1102" y="478" width="22" height="22" preserveAspectRatio="xMidYMid meet"/>
+    <text id="session_2_slot_type" inkscape:label="session_2_slot_type" class="stype3" x="1092" y="496" text-anchor="end">Type</text>
+    <text id="session_2_summary" inkscape:label="session_2_summary" class="summary" x="72" y="522">Summary of the session</text>
+    <g id="session_2_slot_1_group" inkscape:label="session_2_slot_1_group">
+      <rect x="72" y="538" width="258" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_2_slot_1_icon" inkscape:label="session_2_slot_1_icon" x="186" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_2_slot_1_label" inkscape:label="session_2_slot_1_label" class="slotlbl" x="201" y="602" text-anchor="middle">Weather</text>
+    </g>
+    <g id="session_2_slot_2_group" inkscape:label="session_2_slot_2_group">
+      <rect x="336" y="538" width="258" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_2_slot_2_icon" inkscape:label="session_2_slot_2_icon" x="450" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_2_slot_2_label" inkscape:label="session_2_slot_2_label" class="slotlbl" x="465" y="602" text-anchor="middle">Weather</text>
+    </g>
+    <g id="session_2_slot_3_group" inkscape:label="session_2_slot_3_group">
+      <rect x="600" y="538" width="258" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_2_slot_3_icon" inkscape:label="session_2_slot_3_icon" x="714" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_2_slot_3_label" inkscape:label="session_2_slot_3_label" class="slotlbl" x="729" y="602" text-anchor="middle">Weather</text>
+    </g>
+    <g id="session_2_slot_4_group" inkscape:label="session_2_slot_4_group">
+      <rect x="864" y="538" width="258" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_2_slot_4_icon" inkscape:label="session_2_slot_4_icon" x="978" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_2_slot_4_label" inkscape:label="session_2_slot_4_label" class="slotlbl" x="993" y="602" text-anchor="middle">Weather</text>
+    </g>
+  </g>
+
+  <!--  footer  -->
+  <text class="foot" x="48" y="658">FORECAST &#183; PHASE 3 OF 3</text>
+</svg>

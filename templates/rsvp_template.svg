@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     width="1200" height="675" viewBox="0 0 1200 675"
+     font-family="Inter, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif">
+
+  <!-- ===================================================================
+       Check-in call template
+       Field catalogue: image_module_specification.md, "Attendance image generation"
+
+       Substitutable nodes are addressed by @id. Text nodes carry their value
+       as their sole text content; <image> nodes take an xlink:href.
+       Anything without an id is static chrome and must not be touched.
+
+       This graphic is added to the check-in call and replaces no part of it.
+       The roster, the status of each driver and the three buttons stay in the
+       embed, which is edited in place at every press while this attachment
+       survives untouched, so nothing here may carry a driver, a status or a
+       count that changes after the call is posted.
+
+       Four sessions are declared, numbered continuously from 1: a sprint
+       round runs four, and a session of the round in excess of those declared
+       is a fatal error. A round of any other format runs two, and
+       session_3_group / session_4_group are removed in their entirety.
+
+       The country is given a cell of its own rather than a place beside the
+       grand prix name, which is how the weather templates compose the two. A
+       round of the mystery format empties the race name and the country
+       together, and a separator drawn between them would be left stranded
+       between two empty fields. Every field here that can be emptied stands
+       alone or under a label of its own for that reason.
+
+       The track name and not the grand prix name takes the large line,
+       because it is the field that carries "Mystery" for a round of the
+       mystery format and so is the one that always reads.
+
+       Mandatory : division_name, round_number, race_name, round_format,
+                   round_date, round_time, session_<x>_group,
+                   session_<x>_name
+       Optional  : season_number, division_tier, track_name, country_name,
+                   track_image, deadline_date, deadline_time,
+                   season_number_group, division_tier_group,
+                   race_name_group, country_name_group, track_image_group
+       =================================================================== -->
+
+  <defs>
+    <style>
+      .eyebrow  { font-size:15px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
+      .title    { font-size:34px; fill:#F2F5F8; font-weight:700 }
+      .phase    { font-size:16px; fill:#8A94A3; letter-spacing:.16em; font-weight:600 }
+      .roundlbl { font-size:17px; fill:#8A94A3; letter-spacing:.20em; font-weight:600 }
+      .roundnum { font-size:17px; fill:#E8113C; letter-spacing:.20em; font-weight:700 }
+      .track    { font-size:46px; fill:#F2F5F8; font-weight:700 }
+      .sub      { font-size:19px; fill:#8A94A3 }
+      .celllbl  { font-size:12px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
+      .cellval  { font-size:26px; fill:#F2F5F8; font-weight:700 }
+      .note     { font-size:15px; fill:#8A94A3 }
+      .colhead  { font-size:10px; fill:#8A94A3; letter-spacing:.14em; font-weight:700 }
+      .sname    { font-size:21px; fill:#F2F5F8; letter-spacing:.02em; font-weight:700 }
+      .foot     { font-size:11px; fill:#5A626E; letter-spacing:.22em; font-weight:600 }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="675" fill="#0B0D10"/>
+
+  <!--  heading band (identical across the image module's templates)  -->
+  <!--  Each of the two heading values carries its own group, so that a template
+        emptying one does not leave the fixed word beside it standing alone. They
+        stand apart rather than run together with a separator between them, a
+        separator being chrome that survives the emptying of the fields it
+        divides.  -->
+  <g id="season_number_group" inkscape:label="season_number_group">
+    <text class="eyebrow" x="48" y="36"><tspan>SEASON&#160;</tspan><tspan id="season_number" inkscape:label="season_number">1</tspan></text>
+  </g>
+  <g id="division_tier_group" inkscape:label="division_tier_group">
+    <text class="eyebrow" x="184" y="36"><tspan>TIER&#160;</tspan><tspan id="division_tier" inkscape:label="division_tier">1</tspan></text>
+  </g>
+  <text id="division_name" inkscape:label="division_name" class="title" x="48" y="76">Division Name</text>
+  <text class="phase" x="1152" y="72" text-anchor="end">Check-in</text>
+  <rect x="0" y="93" width="1200" height="3" fill="#E8113C"/>
+
+  <!--  round block  -->
+  <text class="roundlbl" x="48" y="140">
+    <tspan>ROUND&#160;</tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">1</tspan>
+  </text>
+  <text id="track_name" inkscape:label="track_name" class="track" x="48" y="188">Track Name</text>
+  <g id="race_name_group" inkscape:label="race_name_group">
+    <text id="race_name" inkscape:label="race_name" class="sub" x="48" y="220">Grand Prix Name</text>
+  </g>
+
+  <!--  The plate is inside the group with the image it frames. A round of the
+        mystery format records no track, and a plate left standing without one
+        is an empty frame where the circuit should be.  -->
+  <g id="track_image_group" inkscape:label="track_image_group">
+    <rect x="1016" y="100" width="136" height="136" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <image id="track_image" inkscape:label="track_image"
+           x="1026" y="110" width="116" height="116" preserveAspectRatio="xMidYMid meet"/>
+  </g>
+
+  <line x1="48" y1="252" x2="1152" y2="252" stroke="#262B33" stroke-width="1"/>
+
+  <!--  the round, four facts to a cell, each under a label of its own  -->
+  <rect x="48" y="272" width="264" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+  <text class="celllbl" x="72" y="306">FORMAT</text>
+  <text id="round_format" inkscape:label="round_format" class="cellval" x="72" y="346">Format</text>
+
+  <!--  The card and its label are inside the group. A round of the mystery
+        format names no country, and the card was left standing empty under a
+        label naming what is not there.  -->
+  <g id="country_name_group" inkscape:label="country_name_group">
+    <rect x="328" y="272" width="264" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <text class="celllbl" x="352" y="306">COUNTRY</text>
+    <text id="country_name" inkscape:label="country_name" class="cellval" x="352" y="346">Country</text>
+  </g>
+
+  <rect x="608" y="272" width="264" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+  <text class="celllbl" x="632" y="306">DATE</text>
+  <text id="round_date" inkscape:label="round_date" class="cellval" x="632" y="346">01 Jan 2025</text>
+
+  <rect x="888" y="272" width="264" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+  <text class="celllbl" x="912" y="306">START TIME</text>
+  <text id="round_time" inkscape:label="round_time" class="cellval" x="912" y="346">00:00 UTC</text>
+
+  <!--  the deadline, which is the one thing the call adds to the calendar  -->
+  <rect x="48" y="396" width="1104" height="88" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+  <rect x="48" y="408" width="4" height="64" fill="#E8113C"/>
+  <text class="celllbl" x="76" y="428">CHECK-IN CLOSES</text>
+  <text class="cellval" x="76" y="464"
+    ><tspan id="deadline_date" inkscape:label="deadline_date">01 Jan 2025</tspan
+    ><tspan>&#160;&#160;&#160;&#183;&#160;&#160;&#160;</tspan
+    ><tspan id="deadline_time" inkscape:label="deadline_time">00:00 UTC</tspan></text>
+  <text class="note" x="1128" y="448" text-anchor="end">An answer may be changed until then</text>
+
+  <!--  sessions: one card each, four across  -->
+  <text class="colhead" x="48" y="520">SESSIONS</text>
+
+  <g id="session_1_group" inkscape:label="session_1_group">
+    <rect x="48" y="540" width="258" height="90" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <rect x="60" y="540" width="234" height="3" fill="#E8113C"/>
+    <text id="session_1_name" inkscape:label="session_1_name" class="sname" x="177" y="594" text-anchor="middle">Session Name</text>
+  </g>
+
+  <g id="session_2_group" inkscape:label="session_2_group">
+    <rect x="330" y="540" width="258" height="90" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <rect x="342" y="540" width="234" height="3" fill="#E8113C"/>
+    <text id="session_2_name" inkscape:label="session_2_name" class="sname" x="459" y="594" text-anchor="middle">Session Name</text>
+  </g>
+
+  <g id="session_3_group" inkscape:label="session_3_group">
+    <rect x="612" y="540" width="258" height="90" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <rect x="624" y="540" width="234" height="3" fill="#E8113C"/>
+    <text id="session_3_name" inkscape:label="session_3_name" class="sname" x="741" y="594" text-anchor="middle">Session Name</text>
+  </g>
+
+  <g id="session_4_group" inkscape:label="session_4_group">
+    <rect x="894" y="540" width="258" height="90" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <rect x="906" y="540" width="234" height="3" fill="#E8113C"/>
+    <text id="session_4_name" inkscape:label="session_4_name" class="sname" x="1023" y="594" text-anchor="middle">Session Name</text>
+  </g>
+
+  <!--  footer  -->
+  <text class="foot" x="48" y="658">CHECK-IN CALL</text>
+  <text class="foot" x="1152" y="658" text-anchor="end">ANSWER WITH THE BUTTONS ON THIS MESSAGE</text>
+</svg>

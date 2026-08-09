@@ -214,3 +214,6 @@ __marimo__/
 *.pyc
 .venv/
 .DS_Store
+
+# Other
+resources/
