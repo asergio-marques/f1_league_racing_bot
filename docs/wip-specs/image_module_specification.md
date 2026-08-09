@@ -20,6 +20,7 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
     - results - When enabled, the posting of rounds' sessions' results will be done via a bot-generated image. When disabled, this shall be done via the traditional, previously implemented way (text).
     - standings - When enabled, posting of standings will be done via a bot-generated image. When disabled, this posting will be done via the traditional, previously implemented way (text).
     - attendance - When enabled, posting of the attendance table will be done via a bot-generated image. When disabled, this posting will be done via the traditional, previously implemented way (text).
+    - rsvp - When enabled, the check-in call posted for a round will carry a bot-generated image. When disabled, the check-in call will be posted via the traditional, previously implemented way (an embed alone).
     - weather - When enabled, posting of phase 1, 2 and 3 weather generation, as well as the notice posted for a mystery round, will be done via a bot-generated image. When disabled, weather posting will be done via the traditional, previously implemented way (text).
     - verdicts - When enabled, posting of verdicts will be done via a bot-generated image. When disabled, verdict posting will be done via the traditional, previously implemented way (text).
     - All of the above shall be disabled by default.
@@ -43,6 +44,9 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - The driver standings and the constructor standings share no columns beyond the team, the position and the points, and are therefore drawn from two templates and not one.
 - <NEW COMMAND> A new "images config attendance-template" command will be made available to server administrators which will take in a string standing for the filename of the template attendance image.
     - By default, the filename shall be "attendance_template.svg".
+- <NEW COMMAND> A new "images config rsvp-template" command will be made available to server administrators which will take in a string standing for the filename of the template image for the check-in call posted for a round.
+    - By default, the filename shall be "rsvp_template.svg".
+- The attendance sheet and the check-in call share no field beyond the heading fields and those naming the round, and are therefore drawn from two templates and not one.
 - <NEW COMMAND> A new "images config weather-p1-template" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 1 image.
     - By default, the filename shall be "weather_p1_template.svg".
 - <NEW COMMAND> A new "images config weather-p2-template" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 2 image.
@@ -57,7 +61,7 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - <MODIFY COMMAND> The "season review" command shall be augumented to display the enabling status of the images module, as well as all of the configurations above and if they are valid.
     - For the configurations modified via the "images config toggle" command, there shall be a distinction between "enabled" (checkmark), "disabled" (cross), and "enabled but invalid" (warning sign). In the case of the weather template, invalid must show which exact phase is invalid, and whether it is the template of the mystery notice; in the case of the results template, which of the qualifying and race templates is invalid; in the case of the standings template, which of the drivers and constructors templates is invalid.
 - <NEW COMMAND> A new "images config view" command will be made available to league managers which will print out all configurations above, plus the validity status of each one, in a manner similar to the addendum to "season review".
-- <NEW COMMAND> A new "images test" command will be made available to league managers, which takes in one string parameter, scoped to the following: calendar, lineup, results, standings, attendance, weather-p1, weather-p2, weather-p3, weather-mystery, verdicts.
+- <NEW COMMAND> A new "images test" command will be made available to league managers, which takes in one string parameter, scoped to the following: calendar, lineup, results, standings, attendance, rsvp, weather-p1, weather-p2, weather-p3, weather-mystery, verdicts.
     - This test command shall make use of test data specified for each type of generation.
     - Any non-fatal errors shall be posted alongside the test output.
 - <NEW COMMAND> A new "images config time-zone" command will be made available to league managers which will allow league managers to select the timezone with which to display times on images.
@@ -525,6 +529,147 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - Should the server hold no team beyond the reserve team, the command shall be rejected with a clear error, as there is no classification to be drawn.
 
 ## Attendance image generation
+- Two graphics serve the attendance module, and two templates draw them.
+    - An attendance sheet graphic represents the attendance record of one division as it stands after one round. One graphic shall be generated per division and per posting, and shall replace the textual sheet.
+    - A check-in graphic represents the call to check in for one single round of one division. One graphic shall be generated per round and per division, and shall be added to the check-in call rather than replace any part of it.
+- Nothing is computed for either graphic, nothing is decided for either, and no command produces an attendance record or a check-in call that exists only as an image.
+- The sheet adds to the textual sheet the flag of each driver, the badge of their team, and the points each round of the division conferred upon them, which are read from the record the module already persists for every round and not derived by rules of the graphic's own. It carries no Discord mention; the name of the driver stands in its place.
+- The check-in graphic adds nothing the check-in call already carries and restates the heading of its embed. The embed, its roster, its status indicators and its three buttons remain exactly as the textual flow composes them, and are altered in no respect by the "rsvp" toggle: an image carries no button, and the roster of the embed changes with every press.
+- The fields of the sheet are addressed by the ordinal of the row and by the ordinal of the round, as the standings graphic's are. Those of the check-in graphic are addressed by the ordinal of the session alone.
+- For generation of an attendance sheet graphic, the template may have the following fields, among which the mandatory fields will be verified at template file setting and before generation:
+    - season_number - Optional - Layer/widget on which the season number of the server is placed
+    - division_name - Mandatory - Layer/widget on which the name given to the division at "division add" is placed
+    - division_tier - Optional - Layer/widget on which the tier given to the division at "division add" is placed
+    - round_number - Mandatory - Layer/widget on which the human-readable number of the round after which the sheet stands is placed as text, read from the round object definition
+    - race_name - Optional - Layer/widget on which the grand prix name of that round is placed as text, read from the track object definition
+    - autoreserve_group - Optional - Layer/widget acting as a container for every other field of the autoreserve limit, which shall be removed in its entirety when the autoreserve functionality is disabled
+    - autoreserve_limit - Optional - Layer/widget on which the number of attendance points at which a driver is moved to the reserve team is placed as text, read from the configuration set via "attendance config autoreserve"
+    - autosack_group - Optional - Layer/widget acting as a container for every other field of the autosack limit, which shall be removed in its entirety when the autosack functionality is disabled
+    - autosack_limit - Optional - Layer/widget on which the number of attendance points at which a driver is removed from all driving roles is placed as text, read from the configuration set via "attendance config autosack"
+    - For each row of ordinal <x>:
+        - row_<x>_group - Mandatory - Layer/widget acting as a container for every other field of the row, which shall be removed in its entirety when the sheet holds no driver of that ordinal
+        - row_<x>_driver_name - Mandatory - Layer/widget on which the name of the driver is placed as text
+        - row_<x>_driver_flag - Optional - Layer/widget on which an image representing the nationality of the driver will be placed, searched for in the directory configured via "images config flag-directory"
+        - row_<x>_team_name - Optional - Layer/widget on which the name of the team of the driver is placed as text
+        - row_<x>_team_image - Optional - Layer/widget on which an image representing that team (e.g. logo, badge, car) will be placed, searched for in the directory configured via "images config team-image-directory"
+        - row_<x>_points - Mandatory - Layer/widget on which the total attendance points accrued by the driver are placed as text
+        - row_<x>_sanction - Optional - Layer/widget on which the annotation borne by a driver sanctioned upon this posting is placed as text
+    - The following further fields, by which the attendance points each round of the division conferred are displayed alongside the totals they produced. The whole of this catalogue is optional, a template declaring none of it drawing the totals alone:
+        - For each round of ordinal <z>:
+            - round_<z>_group - Optional - Layer/widget acting as a container for every other field bearing that ordinal, the fields of the rows included, which shall be removed in its entirety when the division holds no round of that ordinal. A round the division holds but whose attendance has yet to be finalized keeps its group and is drawn with its cells emptied
+            - round_<z>_number - Mandatory - Layer/widget on which the human-readable number of the round is placed as text. A round a template draws shall always be identified by its number, the fields below standing in addition to it and never in its place
+            - round_<z>_image - Optional - Layer/widget on which an image representing the track where the round takes place at will be placed (e.g. country flag, track map), which will be derived from the track ID and searched for in the directory configured via "images config track-image-directory"
+            - round_<z>_race_name - Optional - Layer/widget on which the grand prix name of the round is placed as text, read from the track object definition
+        - For each row of ordinal <x> and each round of ordinal <z>:
+            - row_<x>_round_<z>_points - Optional - Layer/widget on which the attendance points that round conferred upon the driver of the row are placed as text
+- For generation of a check-in graphic, the template may have the following fields, among which the mandatory fields will be verified at template file setting and before generation:
+    - season_number - Optional - Layer/widget on which the season number of the server is placed
+    - division_name - Mandatory - Layer/widget on which the name given to the division at "division add" is placed
+    - division_tier - Optional - Layer/widget on which the tier given to the division at "division add" is placed
+    - round_number - Mandatory - Layer/widget on which the human-readable number of the round the call pertains to is placed as text, read from the round object definition
+    - race_name - Mandatory - Layer/widget on which the grand prix name of the round is placed as text, read from the track object definition
+    - track_name - Optional - Layer/widget on which the name of the track of the round is placed as text, read from the round object definition
+    - country_name - Optional - Layer/widget on which the country where the track of the round is located is placed as text, read from the track object definition
+    - track_image - Optional - Layer/widget on which an image representing the track of the round (e.g. country flag, track map) will be placed, searched for in the directory configured via "images config track-image-directory"
+    - round_format - Mandatory - Layer/widget on which the format of the round is placed as text
+    - round_date - Mandatory - Layer/widget on which the date of the round is placed as text, read from the round object, formatted via the configuration introduced via "images config date-format"
+    - round_time - Mandatory - Layer/widget on which the time of the round is placed as text, read from the round object, formatted via the configurations introduced via "images config time-format" and "images config time-zone"
+    - deadline_date - Optional - Layer/widget on which the date beyond which the check-in can no longer be altered is placed as text, formatted as the date of the round is
+    - deadline_time - Optional - Layer/widget on which the time beyond which the check-in can no longer be altered is placed as text, formatted as the time of the round is
+    - The following further fields, by which the sessions the round is run over are named. The whole of this catalogue is optional, a template declaring none of it naming no session:
+        - For each session of ordinal <x>:
+            - session_<x>_group - Mandatory - Layer/widget acting as a container for every other field of the session, which shall be removed in its entirety when the round holds no session of that ordinal
+            - session_<x>_name - Mandatory - Layer/widget on which the name of the session is placed as text
+- <x> is the ordinal of the row counted from the top of the sheet, beginning at 1, or, on the check-in graphic, the ordinal of the session counted in the order in which the sessions of the round are run, beginning at 1.
+- <z> is a value between 1 and the total number of rounds scheduled for the division.
+- The rows a template declares shall be numbered continuously from 1, and so shall the rounds of the sheet and the sessions of the check-in graphic. A gap in any of the three numberings is a fatal error.
+- The sheet carries no standing position, no RSVP status of any driver, no pardon and no justification of one, no date of any round and no result of any session.
+- The check-in graphic carries no name of a driver, no name of a team, no RSVP status, no attendance point and no Discord mention. Neither does it carry the number of days, hours or notices the module is configured with, the moment beyond which the check-in is locked excepted.
+
+### Resolution of the data to be placed
+- The sheet re-presents the values the textual sheet shows and never derives them by rules of its own. A change to how the textual sheet renders any of them is a change to the graphic by the same stroke. The points each round conferred are the sole value the graphic carries that the textual sheet does not, and they are read from the record the module persisted for that round.
+- The composition of the sheet is that of the textual sheet: every driver of the division holding a finalized attendance record for the round the sheet stands after, which is every non-reserve driver of the division, every reserve distributed into a seat for that round, and every driver moved to the reserve team or removed from their driving roles upon this posting. A driver sacked at an earlier round holds no seat and is absent from the sheet, as they are from the textual one.
+- The rows are placed in descending order of the total attendance points accrued, drivers level on totals being placed in alphabetical order of the name resolved for them, which is the order the textual sheet uses. Two drivers level on totals stand level; the sheet is a record and not a classification, and carries no position.
+- The total placed on a row is the total accrued by the driver in the division after the round the sheet stands after, and never a total across divisions.
+- A round cell carries the attendance points that round conferred upon the driver of the row. It shall be emptied where the round conferred none, where the attendance of the round has yet to be finalized, where the round is yet to be run, where the round is recorded as cancelled, and where the driver holds no record for that round. A pardon waives the points it excuses, so a round every penalty of which was pardoned carries an empty cell and the sheet carries no trace of the pardon.
+- The rounds displayed are every round the division holds, and not only those already run, as they are on the standings grid.
+- The sanction field carries "Reached point limit" for a driver moved to the reserve team or removed from their driving roles upon this posting, which is the annotation the textual sheet appends to them, the emphasis that message applies excluded. It shall be emptied for every other driver.
+- The limits are the values configured via "attendance config autoreserve" and "attendance config autosack". Where one of the two functionalities is disabled, its group shall be removed in its entirety; where the template declares no such group, the field carrying that limit shall be emptied.
+- The name of a driver shall be resolved as it is for the lineup graphic, and their flag image searched for as it is for the lineup graphic. If the nationality is absent or no matching file is found, the field shall be removed and a non-fatal error reported.
+- The team of a row is the team of the division seating the driver at the moment of generation, which for a reserve driver is the reserve team. It is not the team whose car the driver drove in any single round. The team image shall be searched for as it is for the lineup graphic; if no matching file is found, the field shall be removed and a non-fatal error reported.
+- The image of a round shall be searched for as it is for the calendar graphic. If no matching file is found, the field shall be removed and a non-fatal error reported, the number of the round standing for it.
+- A round of the mystery format records no track. Its race name field shall be emptied and its image field removed, and no error shall be reported.
+- The check-in graphic re-presents the values the embed of the check-in call shows and never derives them by rules of its own.
+- The format of the round is "Normal", "Sprint", "Endurance" or "Mystery", which is the text the embed carries.
+- The name of the track is that recorded for the round, which is the value the embed carries as its location, and is "Mystery" for a round of the mystery format. The grand prix name and the country are read from the track object of the round. A round of the mystery format shall have its race name and country name fields emptied and its track image field removed, and no error shall be reported: it is the one case in which a mandatory field of this graphic carries no value without that being a fatal error.
+- The name of a session is "Sprint Qualifying", "Sprint Race", "Feature Qualifying" or "Feature Race" for a round of the sprint format, and "Qualifying" or "Race" for a round of any other, as it is for the weather graphic. It carries no qualifier of the length of the session, so the short qualifying and long race of a round of the mystery format are named as those of any other round are.
+- The date and the time of the round are read from the round object, which always records them, and are rendered via the configurations introduced via "images config date-format", "images config time-format" and "images config time-zone", the abbreviation of the zone being appended to the time. The embed renders the same moment as a Discord timestamp, which every reader sees in their own time zone; a graphic cannot, and carries the single configured zone for every reader alike.
+- The moment beyond which the check-in can no longer be altered is the scheduled time of the round less the number of hours configured via "attendance config rsvp-deadline", a configuration of 0 placing it at the scheduled time of the round itself. It is rendered as the date and the time of the round are. It is the deadline the module enforces upon full-time drivers; the later deadline a reserve driver is held to is carried by neither the graphic nor the embed.
+- Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash. A field carrying an image is removed rather than emptied.
+
+### Handling of mismatches between division and template
+- Divergences between the drivers of a sheet and the rows a template declares are treated as follows:
+    - rows declared in excess of the drivers of the sheet shall have their "row_<x>_group" field removed in its entirety, taking every other field of the row with it, and no error reported;
+    - drivers in excess of the rows the template declares are a fatal error, naming the drivers that would have been dropped.
+- The rounds a sheet template declares are treated as follows:
+    - rounds declared in excess of the rounds of the division shall have their "round_<z>_group" field removed in its entirety, and no error reported. Where the template declares no "round_<z>_group" for that ordinal, every field bearing it shall be removed one by one instead;
+    - rounds of the division in excess of those the template declares shall be omitted from the graphic and a non-fatal error reported naming them.
+- The sessions a check-in template declares are treated as follows:
+    - sessions declared in excess of the sessions of the round shall have their "session_<x>_group" field removed in its entirety, taking every other field of the session with it, and no error reported;
+    - sessions of the round in excess of those the template declares are a fatal error, naming the sessions that would have been dropped.
+- Each of the following is likewise a fatal error, naming what was found to be at fault:
+    - a mandatory field of the graphic that the template does not hold;
+    - a sheet template declaring no row at all;
+    - a gap in the numbering of the rows, in the numbering of the rounds, or in the numbering of the sessions;
+    - a field of the catalogue of the other graphic of the module;
+    - a mandatory field whose value cannot be determined at generation, save those named for a round of the mystery format;
+    - a sheet drawn for a division holding no driver at all.
+- A flag image, a team image or a track image for which no matching file is found causes the field to be removed and a non-fatal error to be reported, and not the fatal error a team image causes on a standings graphic. As the request for nationality may be switched off entirely via "signup nationality toggle", a sheet with no flags at all is a legitimate outcome and no error whatsoever.
+- The fields that do not depend on the division are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on it cannot be verified against a division when the template is configured or at season review; at those moments it shall be verified only that a sheet template declares at least one row, numbered continuously from 1 and holding every mandatory field of a row, that the rounds it declares, if any, are numbered continuously from 1 and each hold the field carrying its number, and that the sessions a check-in template declares, if any, are numbered continuously from 1 and hold every mandatory field of a session. At season review the rounds of a sheet template shall additionally be verified against the greatest number of rounds any division of the season holds, and the sessions of a check-in template against the largest number of sessions any round of the season holds, a divergence being a warning only. At generation they are verified against the division and the round being drawn.
+
+### Generation and posting
+- Once the attendance sheet is to be posted and the "attendance" toggle of "images config toggle" is enabled, the image shall be generated following the rules above via modification of the SVG file, which shall then be converted to PNG and posted to the attendance channel configured for the division via "division attendance-channel" as an attachment of a message carrying the heading of the textual sheet as message text.
+- The sheet shall be generated anew, and the post replaced, on every occasion on which the textual sheet is currently posted: upon the post-race penalties of a round being approved and posted, and upon the attendance of a round being recalculated after an amendment approved via "round results amend".
+- The previously posted sheet shall be deleted and the new one posted in its place, with its ID persisted, as the textual flow already does, so that at most one sheet exists in the channel at any moment. The previous message shall only be deleted once the message replacing it has been produced successfully, be it the image or, in the case of a fallback, the textual sheet.
+- The sheet graphic replaces the textual sheet in the attendance channel configured for the division and there alone.
+- Where no attendance channel is configured for the division, or the channel is inaccessible, nothing is posted and no image shall be generated, as the textual flow posts nothing.
+- A round recorded as cancelled distributes no attendance points and produces no sheet, the "attendance" toggle notwithstanding.
+- The generation and the posting of the sheet shall never prevent the enforcement of the autosack and the autoreserve sanctions. The announcements of those sanctions are governed by the verdicts section above, not by this one, and the failure of one shall not prevent the other.
+- Once a check-in call is to be posted and the "rsvp" toggle of "images config toggle" is enabled, the image shall be generated following the rules above via modification of the SVG file, which shall then be converted to PNG and posted as an attachment of the message carrying the mention of the division role, the embed of the call and its three buttons.
+- The image shall be generated on every occasion on which a check-in call is currently posted: upon the horizon configured via "attendance config rsvp-notice" being reached, upon the call being advanced by the test mode, and upon it being posted at startup after that horizon passed while the bot was offline.
+- One graphic is generated per round and per division, once, at the moment the call is posted. It shall not be generated anew upon a driver answering the call, upon the distribution of the reserves, nor upon any other change the embed carries: the embed alone is edited, in place, and the attachment survives every edit of it untouched. The message of a check-in call is never deleted and reposted while the call stands.
+- The last notice posted to the drivers who have yet to answer, the announcement of the distribution of the reserves, and the notice posted when no reserve is available shall remain message text and carry no graphic, the "rsvp" toggle notwithstanding.
+- The deletion of the check-in messages of the preceding round at the posting of the call of the next is unchanged, and applies to the message carrying a graphic as it applies to one carrying none.
+- The check-in graphic is added to the call in the RSVP channel configured for the division via "division rsvp-channel" and there alone.
+- Non-fatal errors gathered during generation shall be reported in the logging channel of the server, naming the season, the division and the round they pertain to, and never in the attendance channel nor the RSVP channel of a division, which are read by the drivers of the league and not by its staff. Where the generation was triggered by a command, they shall additionally be reported alongside its output.
+- Should a fatal error be met at any step of the generation or posting of either graphic, the fallback behavior defined in the configuration section shall apply. The sheet of that division shall be posted in the traditional textual manner instead, and the check-in call posted without an attachment, carrying the role mention, the embed and the buttons as the textual flow composes them. The error shall be reported in the logging channel and, where a command triggered the generation, to the user who invoked it. The failure of one division shall not prevent the others from being generated and posted as images.
+    - The generation or the posting of a check-in graphic shall never prevent the check-in call itself from being posted, nor the attendance rows of the round from being opened.
+    - Where the posting of a generated image fails for a reason of the Discord service rather than of the generation, it is the textual sheet, or the check-in call carrying no attachment, that shall be enqueued for retry.
+    - The "images test attendance" and "images test rsvp" commands are the one exception, having no textual counterpart to fall back to. A fatal error met by one of them shall be reported to the league manager who invoked it and no image posted.
+
+### Test data
+- The "images test attendance" command shall generate two sheets, both drawn for a division named "Test Division", of tier 1 and of season number 1, holding a calendar of five rounds and standing after the third of them, so that the emptying of the cells of a round yet to be run may be evaluated alongside those already finalized. One shall be drawn with both the autoreserve and the autosack limits configured, and the other with both disabled, so that the removal of the fields carrying them may be evaluated.
+    - Round 2 of the calendar fabricated shall be of the mystery format, so that the emptying of its race name and the removal of its image may be evaluated.
+    - One round of the calendar fabricated shall be one whose track is of the server's track list and for which no image file is found in the configured track image directory, so that the removal of the image and the non-fatal error it reports may be evaluated.
+- The drivers fabricated shall be one fewer than the number of rows the template declares, so that the rendering of an unused row may be evaluated, and shall be drawn from the teams of the team configuration of the server. Should the template declare a single row, one driver shall be fabricated and the unused row left unevaluated.
+- The drivers fabricated shall include, insofar as the number of rows declared allows:
+    - a driver holding no attendance points at all, every round cell of whom is empty;
+    - a driver holding points conferred by more than one round;
+    - a driver holding the greatest total, standing at the autoreserve limit and carrying the annotation of a driver sanctioned upon this posting;
+    - a driver a round of whom conferred points that a pardon waived in their entirety, so that the emptying of the cell of a pardoned round may be evaluated;
+    - two drivers level on totals, so that the alphabetical ordering of drivers level may be evaluated;
+    - a driver of the reserve team distributed into a seat for one of the rounds run;
+    - a driver who took no part in one of the rounds run and holds no record for it.
+- The nationalities given to the fictitious drivers shall be among those the signup wizard accepts, at least one of them being that recorded for a driver who stated none.
+- Should the server hold no team beyond the reserve team, or the server's track list be empty, the command shall be rejected with a clear error, as there is no sheet to be drawn.
+- The "images test rsvp" command shall generate one image for each of the cases below, each drawn for a division named "Test Division", of tier 1 and of season number 1, at round 1 of a track of the server's track list, and each reported to the league manager who invoked the command and never posted to the RSVP channel of a division:
+    - a round of the sprint format, so that the naming of four sessions may be evaluated;
+    - a round of the normal format, so that the naming of two sessions may be evaluated;
+    - a round of the mystery format, so that the rendering of a round carrying no track may be evaluated;
+    - a round whose track is one of the server's track list for which no image file is found in the configured track image directory, so that the removal of the image and the non-fatal error it reports may be evaluated;
+    - a round drawn against a deadline configured to 0, so that the deadline standing at the scheduled time of the round may be evaluated.
+- The rounds fabricated shall be at dates and times spanning more than one month and more than one half of the day, so that the rendering of the configured date and time formats may be evaluated.
+- Should the server's track list be empty, the command shall be rejected with a clear error, as there is no round for a call to pertain to.
 
 ## Weather image generation
 - A weather graphic represents the forecast of one single phase of one single round of one division. One graphic shall be generated per phase and per division, and shall replace the textual forecast of that phase. The mention of the division role shall remain message text, the graphic itself carrying none; the heading of the textual forecast is carried over neither to the message nor to the graphic, the description of the phase standing in its place.
@@ -641,7 +786,8 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 ### The wrapping of free text
 - The description and the justification are the fields a template is expected to declare as wrapping fields. Any text field of the graphic may be declared one.
 - A field is a wrapping field where the template declares a "shape-inside" property upon it naming a rectangle of the template. That rectangle is the extent of the field: its width is the width the text is wrapped against and its height the height the text shall occupy. It carries neither fill nor stroke and is never itself drawn.
-- The text shall be broken at word boundaries into lines no wider than the rectangle, each line being placed as a line of the field carrying the horizontal coordinate and the anchoring the field declares, and each line after the first being offset from the one above it by the line height the field declares. A single word wider than the rectangle shall be broken within itself.
+- The text shall be broken at word boundaries into lines no wider than the rectangle, each line being placed as a line of the field carrying the horizontal coordinate and the anchoring the field declares, and each line after the first being offset from the one above it by the line height the field declares.
+- The line height a field declares is the "line-height" property upon it, whether declared on the field itself or inherited by it. A wrapping field upon which no such property resolves is a fatal error. A single word wider than the rectangle shall be broken within itself.
 - The number of lines the rectangle admits is its height divided by that line height. Where the text wrapped at the font size the template declares occupies more lines than that, the font size of the field shall be reduced and the text wrapped again until it fits or until the floor of half the font size the template declares is reached. Text still exceeding the rectangle at that floor shall be truncated at a word boundary, an ellipsis placed at its end, and a non-fatal error reported naming the field and the verdict.
 - Each wrapping field is reduced on its own. The graphic is not resized, and no other field follows the size of the field reduced.
 - The "shape-inside" property shall be removed from the field once its lines are laid out.
@@ -656,6 +802,7 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - The stage of a verdict is fixed text: "Post-Race Penalty" for a verdict issued in the penalty phase, "Appeal" for one issued in the appeal phase, and "Attendance Sanction" for one enforced by the attendance module.
 - The sanction is the descriptive rendering the textual announcement carries, a time penalty, a disqualification, a sacking and a move to the reserve team alike, and never the compact rendering a results graphic places in a sanction column.
 - The description and the justification are placed verbatim. Where the steward entered neither, the textual announcement carries a fixed text in the place of the one absent, which the graphic carries in turn, the emphasis that message applies excluded.
+- A Discord mention appearing within any text the graphic places shall be replaced by the name of the driver it addresses, resolved as the name of a driver is resolved elsewhere. The justification the attendance module composes for a sacking and for a move to the reserve team is written around such a mention and shall carry the name alone. The graphic mentions nobody; it is the message the graphic is attached to that mentions the driver the verdict pertains to.
 - The team is the team the driver drove for in the session the verdict pertains to, which for a reserve driver standing in for another is the team whose car they drove and never the reserve team. The name to be placed, and the name to be normalized to search for the team image, shall be resolved as they are for the results graphic: the team of the division holding the Discord role the result records, falling back to the name of the role itself should the division hold no such team.
 - A verdict of an attendance sanction names no team. Its team name field shall be emptied and its team image field removed, and no error shall be reported.
 - The number of the round is read from the round object and the grand prix name from the track object of the round. A round of the mystery format records no track and shall have its race name field emptied, no error being reported.
