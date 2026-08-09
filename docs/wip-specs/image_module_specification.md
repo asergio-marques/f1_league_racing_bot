@@ -81,6 +81,9 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - <NEW COMMAND> A new "images config weather-icon-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a weather condition will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the weather icon files will be searched in a "resources/weather" folder located at the project root.
+- <NEW COMMAND> A new "images config tyre-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a tyre compound will be searched.
+    - The directory will always be assumed to be a path relative to the project root.
+    - By default, the tyre icon files will be searched in a "resources/tyres" folder located at the project root.
 
 ### Verification of template files configured
 - Right after one of the "images config X-template" commands is used, the following verifications shall be made:
@@ -96,7 +99,8 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
     - season_number - Optional - Layer/widget on which the season number of the server is placed
     - division_name - Mandatory - Layer/widget on which the name given to the division at "division add" is placed
     - division_tier - Optional - Layer/widget on which the tier given to the division at "division add" is placed
-    - round_<x>_image - Optional - Layer/widget on which an image representing the track where the round takes place at will be placed (e.g. country flag, track map), which will be derived from the track ID.
+    - round_<x>_group - Optional - Layer/widget acting as a container for every other field of the round, which shall be removed in its entirety when the division holds no round of that ordinal. Where the template declares no such group, every field bearing that ordinal shall be removed one by one instead
+    - round_<x>_image - Optional - Layer/widget on which an image representing the track where the round takes place at will be placed (e.g. country flag, track map), which will be derived from the track ID and searched for in the directory configured via "images config track-image-directory".
     - round_<x>_number - Mandatory - Layer/widget on which the human-readable number of the round will be introduced as text, read from the round object definition.
     - round_<x>_country_name - Mandatory - Layer/widget on which the country where the track for the round is located, read from the track object definition.
     - round_<x>_race_name - Mandatory - Layer/widget on which the grand prix name of the round will be introduced as text, read from the track object definition.
@@ -104,7 +108,62 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
     - round_<x>_time - Optional - Layer/widget on which the time of the round will be introduced as text, read from the round object, formatted via the configuration introduced via "images config time-format" and "images config time-zone".
     - round_<x>_vertical_crop_point - Mandatory - Layer/widget on whose Y coordinate the image will be cropped if round number X is the final one
 - <x> is a value between 1 and the total number of rounds scheduled for a given division.
-- Once the calendar is to be posted, the image shall be generated following the rules above via modification of the SVG file, which shall then be converted to PNG.
+- The rounds a template declares shall be numbered continuously from 1. A gap in the numbering is a fatal error.
+- The graphic carries no name of a driver, no name of a team, no result of any session, no lifecycle label and no Discord mention.
+
+### The vertical crop
+- The image shall be cut at the Y coordinate of the "round_<x>_vertical_crop_point" field of the final round of the division, <x> being the number of that round, so that the height of the image is decided by the number of rounds the division holds and not by the height the template declares. It is the only graphic of the module of which this is true.
+- The cut shall be applied to the SVG before its conversion to PNG, by the height and the view box declared on the root of the document being rewritten to that coordinate. The width is unaffected.
+- The crop point of the last round a template declares shall stand at the height that template declares, so that a division holding as many rounds as the template declares is drawn whole.
+- A round beyond the final round of the division whose every field falls below the cut shall be left as the template holds it, the cut being what removes it. A round beyond the final round of the division any field of which stands above the cut, which is any round a template places alongside the final one rather than below it, shall have its "round_<x>_group" field removed in its entirety, or every field bearing its ordinal removed one by one where the template declares no such group.
+- The crop and the group therefore divide the work between them: the crop removes what a template draws below the final round of the division, and the group what it draws beside it.
+- Anything a template draws below the crop point of a round is absent from every image cut at that point. A template shall therefore draw nothing below its rounds, and no element of it shall span the crop point of any round.
+- A template placing more than one round abreast shall place them in the order in which they are run, read across and then down, so that the rounds a division does not hold are those the cut and the group between them remove. A template running its rounds down one column and then down the next cannot be cropped, the cut removing the foot of every column alike.
+
+### Resolution of the data to be placed
+- The number of a round is the human-readable number read from the round object.
+- The grand prix name and the country are read from the track object of the round.
+- The track image shall be searched for in the configured track image directory under a filename equal to the name of the track, normalized in the manner defined for the lineup graphic. If no matching file is found, the field shall be removed and a non-fatal error reported, the number of the round standing for it.
+- The date is read from the round object and rendered via the configuration introduced via "images config date-format". The time is read from the same and rendered via the configurations introduced via "images config time-format" and "images config time-zone", the abbreviation of the zone being appended to it.
+- A round for which no time is recorded shall have the text of its time field emptied.
+- A round of the mystery format records no track. Its country name and race name fields shall be emptied and its image field removed, and no error shall be reported: it is the one case in which those two mandatory fields carry no value without that being a fatal error.
+- A template shall draw nothing between two fields that may be emptied independently of one another, a separator drawn between them being static chrome that survives the emptying of both.
+- The rounds are placed in the order in which they are run, the ordinal of a field being the number of the round it stands for.
+- Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash.
+
+### Handling of mismatches between division and template
+- Divergences between the rounds of a division and the rounds a template declares are treated as follows:
+    - rounds declared in excess of the rounds of the division are removed by the cut, or by their group where they stand above it, and no error shall be reported;
+    - rounds of the division in excess of those the template declares shall be omitted from the graphic and a non-fatal error reported naming them.
+- Each of the following is likewise a fatal error, naming what was found to be at fault:
+    - a mandatory field of the graphic that the template does not hold;
+    - a template declaring no round at all;
+    - a gap in the numbering of the rounds;
+    - a mandatory field whose value cannot be determined at generation, save the two named for a round of the mystery format;
+    - a division holding no round at all.
+- The fields that do not depend on the division are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on it cannot be verified against a division when the template is configured; at that moment it shall be verified only that the template declares at least one round, numbered continuously from 1 and each holding every mandatory field of a round, its crop point included. At season review they shall additionally be verified against the greatest number of rounds any division of the season holds, a divergence being a warning only. At generation they are verified against the division being drawn.
+
+### Generation and posting
+- Once the calendar is to be posted and the "calendar" toggle of "images config toggle" is enabled, the image shall be generated following the rules above via modification of the SVG file, which shall then be converted to PNG and posted to the calendar channel configured for the division via "division calendar-channel" as an attachment of a message carrying the heading of the textual calendar as message text.
+- One graphic shall be generated per division. The same template file is reused for every division of the season, its fields being addressed by the ordinal of the round.
+- The image shall be generated anew, and the post replaced, on every occasion on which the textual calendar is currently posted: upon season approval, and upon the calendar of a division being reposted by command.
+- An attachment cannot be introduced into a message already posted. Wherever the textual flow edits a calendar message in place, the image flow shall instead delete it and post a new one, persisting the ID of the new message in the place of the old. The previous message shall only be deleted once the message replacing it has been produced successfully, be it the image or, in the case of a fallback, the textual calendar.
+    - The ID of the calendar message is not at present persisted, the textual calendar being posted once and never replaced. It shall be persisted against the division, as the ID of the lineup message already is.
+- The calendar graphic replaces the textual calendar in the calendar channel configured for the division and there alone.
+- Non-fatal errors gathered during generation shall be reported in the logging channel of the server, naming the season and the division they pertain to, and never in the calendar channel of a division. Where the generation was triggered by a command, they shall additionally be reported alongside its output.
+- Should a fatal error be met at any step of the generation or posting of the calendar of a division, the fallback behavior defined in the configuration section shall apply and the calendar of that division be posted in the traditional textual manner instead. The error shall be reported in the logging channel and, where a command triggered the generation, to the user who invoked it. The failure of one division shall not prevent the others from being generated and posted as images.
+    - Where the posting of a generated image fails for a reason of the Discord service rather than of the generation, it is the textual calendar that shall be enqueued for retry.
+    - The "images test calendar" command is the one exception, having no textual counterpart to fall back to. A fatal error met by it shall be reported to the league manager who invoked it and no image posted.
+- The textual calendar renders the date and time of a round as a Discord timestamp, which every reader sees in their own time zone. A graphic cannot, and carries the single zone configured via "images config time-zone" for every reader alike.
+
+### Test data
+- The "images test calendar" command shall generate one image, drawn for a division named "Test Division", of tier 1 and of season number 1, holding one round fewer than the number of rounds the template declares, so that the cut of the image at the crop point of a round that is not the last the template declares may be evaluated. Should the template declare a single round, one round shall be fabricated and the crop left evaluated at the height the template declares.
+- The rounds fabricated shall include, insofar as the number of rounds declared allows:
+    - a round of the normal format, one of the sprint format, one of the endurance format and one of the mystery format, so that the rendering of a round carrying no track may be evaluated alongside the others;
+    - a round for which no time is recorded;
+    - a round whose track is one of the server's track list for which no image file is found in the configured track image directory, so that the removal of the image and the non-fatal error it reports may be evaluated;
+    - rounds at dates spanning more than one month, so that the rendering of the configured date format may be evaluated.
+- Should the division fabricated hold no round at all, or the server's track list be empty, the command shall be rejected with a clear error, as there is no calendar to be drawn.
 
 ## Lineup image generation
 - A lineup graphic represents the teams of one single division and the drivers occupying their seats. One graphic shall be generated per division; the same template file is reused for every division of the season. Its fields are addressed by the name of the team, and not by an ordinal number as the calendar's are, so that each team's block may be hand-designed with that team's own livery.
@@ -212,7 +271,7 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
         - row_<x>_appeal_penalty - Mandatory - Layer/widget on which the sanction applied to the entry in the appeal phase is placed as text
         - row_<x>_points - Mandatory - Layer/widget on which the points the session conferred to the driver are placed as text
 - The qualifying template may additionally have, for each row of ordinal <x>:
-    - row_<x>_tyre - Optional - Layer/widget on which the tyre compound recorded for the entry is placed as text
+    - row_<x>_tyre - Optional - Layer/widget on which an image representing the tyre compound recorded for the entry will be placed, searched for in the directory configured via "images config tyre-directory"
     - row_<x>_best_lap - Mandatory - Layer/widget on which the best lap time of the entry is placed as text
     - row_<x>_gap - Mandatory - Layer/widget on which the gap of the entry to the best lap of the first-placed driver is placed as text
 - The race template may additionally have, for each row of ordinal <x>:
@@ -237,7 +296,7 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
     - a race entry that finished laps behind carries the number of those laps in the place of an interval, prefixed with a plus sign, the word being singular for one lap and plural beyond it;
     - an entry that did not finish, did not start or was disqualified carries that outcome as the text of its best lap field or of its time field, whatever time may have been recorded for it and whatever number of laps it may have finished behind;
     - the points are those the session conferred, the fastest-lap bonus included. An entry that did not start or was disqualified is conferred none. An entry that did not finish is conferred none for its position but keeps the fastest-lap bonus where it holds it and finished within the position limit of the points configuration, and may therefore show points against an outcome of "DNF".
-- Where the textual table shows a dash for a value that does not apply, the text of the corresponding field shall be emptied rather than filled with a dash. The two sanction fields are the exception.
+- Where the textual table shows a dash for a value that does not apply, the text of the corresponding field shall be emptied rather than filled with a dash. The two sanction fields are the exception. A field carrying an image is removed rather than emptied, an image field having nothing to empty.
 - The sanction fields distinguish three states:
     - where the phase the field stands for has not yet been closed, the text of the field shall be emptied;
     - where the phase has been closed and applied nothing to the entry, the field shall carry a dash;
@@ -250,6 +309,7 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - The fastest-lap bonus is marked by the colour of the text of the "row_<x>_fastest_lap" field of the entry holding it, which shall be set to the colour configured via "images config fastest-lap-colour". The field of every other entry keeps the colour the template gave it. No row is recoloured where the session conferred no fastest-lap bonus, which is the case where the points configuration confers no fastest-lap points for that session, where the holder finished outside the position limit that configuration sets, or where the holder did not start or was disqualified.
 - The name of a driver shall be resolved as it is for the lineup graphic.
 - The flag image of a driver shall be searched for as it is for the lineup graphic. If the nationality is absent or no matching file is found, the field shall be removed and a non-fatal error reported.
+- The tyre image of a qualifying entry shall be searched for in the configured tyre directory under a filename equal to the tyre compound recorded for the entry, normalized in the manner defined for the lineup graphic, so that "Soft" yields soft. Where no tyre is recorded for the entry the field shall be removed and no error reported, a tyre being a value the submission of a session need not carry. Where a tyre is recorded and no matching file is found, the field shall be removed and a non-fatal error reported.
 - The results of a session record the Discord role of the team an entry drove for, and not its name. The name to be placed, and the name to be normalized to search for the team image, shall be that of the team of the division holding that role, falling back to the name of the role itself should the division hold no such team. Normalization is that defined for the lineup graphic.
 - The team of an entry is the team its driver drove for in that session, which for a reserve driver standing in for another is the team whose car they drove and never the reserve team. A results graphic has no reserve block.
 - The session name is "Sprint Qualifying", "Sprint Race", "Feature Qualifying" or "Feature Race" for a round of the sprint format, and "Qualifying" or "Race" for a round of any other.
@@ -266,6 +326,7 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
     - a mandatory field whose value cannot be determined at generation;
     - a team of an entry for which no image file is found in the configured team image directory.
 - A flag image for which no matching file is found causes the field to be removed and a non-fatal error to be reported, as it does for the lineup graphic. As the request for nationality may be switched off entirely via "signup nationality toggle", a graphic with no flags at all is a legitimate outcome and no error whatsoever.
+- A tyre image for which no matching file is found causes the field to be removed and a non-fatal error to be reported, in the same manner. As a tyre need not be recorded against an entry at all, a qualifying graphic carrying no tyre image whatsoever is likewise a legitimate outcome and no error.
 - The fields that do not depend on the entries of a session are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on them cannot be verified against a classification when the template is configured or at season review; at those moments it shall be verified only that the template declares at least one row, numbered continuously from 1, and holding every mandatory field of a row. At generation they are verified against the session being drawn.
 
 ### Generation and posting
@@ -332,8 +393,9 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
         - row_<x>_position_change_marker - Optional - Layer/widget on which an image marking the direction of the position change of the driver will be placed, searched for in the directory configured via "images config marker-directory"
     - The following further fields, by which the results obtained by the driver in each round of the division are displayed alongside the classification they produced. The whole of this catalogue is optional, a template declaring none of it drawing a classification alone:
         - For each round of ordinal <z>:
-            - round_<z>_group - Optional - Layer/widget acting as a container for every other field bearing that ordinal, the fields of the rows included, which shall be removed in its entirety when the division holds no round of that ordinal or that round is yet to be run
-            - round_<z>_number - Optional - Layer/widget on which the human-readable number of the round is placed as text
+            - round_<z>_group - Optional - Layer/widget acting as a container for every other field bearing that ordinal, the fields of the rows included, which shall be removed in its entirety when the division holds no round of that ordinal. A round the division holds but has yet to run keeps its group and is drawn with its result cells emptied
+            - round_<z>_number - Mandatory - Layer/widget on which the human-readable number of the round is placed as text. A round a template draws shall always be identified by its number, the fields below standing in addition to it and never in its place
+            - round_<z>_image - Optional - Layer/widget on which an image representing the track where the round takes place at will be placed (e.g. country flag, track map), which will be derived from the track ID and searched for in the directory configured via "images config track-image-directory"
             - round_<z>_race_name - Optional - Layer/widget on which the grand prix name of the round is placed as text, read from the track object definition
         - For each row of ordinal <x> and each round of ordinal <z>:
             - row_<x>_round_<z>_sprint_qualifying_result - Optional - Layer/widget on which the result obtained by the driver in the sprint qualifying session of that round is placed as text
@@ -360,8 +422,9 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
         - row_<x>_position_change_marker - Optional - Layer/widget on which an image marking the direction of the position change of the team will be placed, searched for in the directory configured via "images config marker-directory"
     - The following further fields, by which the results obtained in each round of the division by each driver who drove the team's cars are displayed alongside the classification they produced. The whole of this catalogue is optional, a template declaring none of it drawing a classification alone:
         - For each round of ordinal <z>:
-            - round_<z>_group - Optional - Layer/widget acting as a container for every other field bearing that ordinal, the fields of the rows included, which shall be removed in its entirety when the division holds no round of that ordinal or that round is yet to be run
-            - round_<z>_number - Optional - Layer/widget on which the human-readable number of the round is placed as text
+            - round_<z>_group - Optional - Layer/widget acting as a container for every other field bearing that ordinal, the fields of the rows included, which shall be removed in its entirety when the division holds no round of that ordinal. A round the division holds but has yet to run keeps its group and is drawn with its result cells emptied
+            - round_<z>_number - Mandatory - Layer/widget on which the human-readable number of the round is placed as text. A round a template draws shall always be identified by its number, the fields below standing in addition to it and never in its place
+            - round_<z>_image - Optional - Layer/widget on which an image representing the track where the round takes place at will be placed (e.g. country flag, track map), which will be derived from the track ID and searched for in the directory configured via "images config track-image-directory"
             - round_<z>_race_name - Optional - Layer/widget on which the grand prix name of the round is placed as text, read from the track object definition
         - For each row of ordinal <x>, each round of ordinal <z> and each car of ordinal <w>:
             - row_<x>_round_<z>_driver_<w>_group - Optional - Layer/widget acting as a container for every other field bearing that ordinal, which shall be removed in its entirety when no driver drove that car of the team in that round
@@ -384,6 +447,7 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - The composition of the constructor classification is that of the textual team standings: every non-reserve team of the division is drawn, at zero points as at any other.
 - The name of a driver shall be resolved as it is for the lineup graphic.
 - The flag image of a driver shall be searched for as it is for the lineup graphic. If the nationality is absent or no matching file is found, the field shall be removed and a non-fatal error reported.
+- The image of a round shall be searched for as it is for the calendar graphic. If no matching file is found, the field shall be removed and a non-fatal error reported, the number of the round standing for it in either case.
 - The team of a row of the drivers graphic is the team of the division seating the driver at the moment of generation, which for a reserve driver is the reserve team. It is not the team whose car the driver drove in any single round.
 - The name to be placed for a constructor, and the name to be normalized to search for its team image, shall be that of the team of the division holding the Discord role its standings record, falling back to the name of the role itself should the division hold no such team. Normalization is that defined for the lineup graphic.
 - The gap to the leader is the points of the first-placed entry less those of the entry, rendered prefixed with a minus sign, and is empty for the first-placed entry.
@@ -392,8 +456,8 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - The position change cannot be determined for the graphic of the first round of a division, nor for an entry the standings of the preceding round do not hold. In either case the "row_<x>_position_change_group" field shall be removed in its entirety; where the template declares no such group, the number shall be emptied and the marker removed. The previous position field is emptied in the same two cases.
 - A result cell of either graphic carries the finishing position recorded in that session of that round for the driver the cell stands for, or "DNF", "DNS" or "DSQ" where that is the outcome recorded for them. A driver dropped to the bottom of a session by a disqualification carries "DSQ" and not the position that drop gave them.
 - A result cell is emptied where the round holds no session of that type, where the round is yet to be run, where the round is recorded as cancelled, or where the driver the cell stands for took no part in that session.
-- The rounds displayed are those from the first through the one for which the graphic is drawn. A round of a later ordinal has its "round_<z>_group" field removed in its entirety. A round recorded as cancelled keeps its group, every result cell bearing its ordinal being emptied.
-- The cells of a round of the constructors graphic stand for the cars of the team one by one, and are resolved against that round alone:
+- The rounds displayed are every round the division holds, and not only those already run. A round yet to be run keeps its group and is headed as any other, every result cell bearing its ordinal being emptied, so that the graphic shows the season entire and what remains of it. A round recorded as cancelled is treated the same way.
+- The cells of a round of the constructors graphic stand for the cars of the team one by one, and are resolved against that round alone. They are resolved for a round that has been run; the cars of a round yet to be run or recorded as cancelled keep their groups and carry emptied cells:
     - the drivers who drove the cars of a team in a round are those whose result in a session of that round records the Discord role of that team;
     - a driver seated in the team is placed on the car of the ordinal of the seat they occupy in it, and a seated driver who drove no session of the round leaves that car free;
     - a driver not seated in the team is placed on the lowest-numbered car left free in that round;
@@ -420,7 +484,7 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
     - a mandatory field whose value cannot be determined at generation;
     - a team of an entry for which no image file is found in the configured team image directory.
 - A flag image for which no matching file is found causes the field to be removed and a non-fatal error to be reported, as it does for the lineup graphic. As the request for nationality may be switched off entirely via "signup nationality toggle", a graphic with no flags at all is a legitimate outcome and no error whatsoever.
-- The fields that do not depend on the entries of a classification are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on them cannot be verified against a classification when the template is configured or at season review; at those moments it shall be verified only that the template declares at least one row, numbered continuously from 1 and holding every mandatory field of a row, that the rounds it declares, if any, are numbered continuously from 1, and that the cars each round declares, if any, are numbered continuously from 1. At generation they are verified against the classification being drawn.
+- The fields that do not depend on the entries of a classification are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on them cannot be verified against a classification when the template is configured or at season review; at those moments it shall be verified only that the template declares at least one row, numbered continuously from 1 and holding every mandatory field of a row, that the rounds it declares, if any, are numbered continuously from 1 and each hold the field carrying its number, and that the cars each round declares, if any, are numbered continuously from 1. At generation they are verified against the classification being drawn.
 
 ### Generation and posting
 - Once the standings of a round are to be posted and the "standings" toggle of "images config toggle" is enabled, both graphics shall be generated following the rules above via modification of the SVG files, which shall then be converted to PNG and posted to the standings channel of the division as two messages: the driver standings first and the constructor standings after. Each message carries the heading and the lifecycle label as message text and its graphic as an attachment.
@@ -437,7 +501,7 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
     - The "images test standings" command is the one exception. A fatal error met by it shall be reported to the league manager who invoked it and no image posted.
 
 ### Test data
-- The "images test standings" command shall generate two images, one from the drivers template and one from the constructors template. Both shall be drawn for a division named "Test Division", of tier 1 and of season number 1, holding a calendar of five rounds and standing after the third of them, so that the removal of the groups of the rounds yet to be run may be evaluated, and both shall be labelled "Final Results".
+- The "images test standings" command shall generate two images, one from the drivers template and one from the constructors template. Both shall be drawn for a division named "Test Division", of tier 1 and of season number 1, holding a calendar of five rounds and standing after the third of them, so that the drawing of a round yet to be run may be evaluated alongside those already run, and both shall be labelled "Final Results".
     - Rounds 1 and 3 shall be of the normal format and round 2 of the sprint format, so that the rendering of a round bearing four sessions and of one bearing two may be evaluated.
 - The entries fabricated for each shall be one fewer than the number of rows the template declares, so that the rendering of an unused row may be evaluated, and shall be drawn from the teams of the team configuration of the server. Should the template declare a single row, one entry shall be fabricated and the unused row left unevaluated.
 - The entries of the drivers image shall include, insofar as the number of rows declared allows:
