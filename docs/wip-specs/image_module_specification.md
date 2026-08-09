@@ -616,3 +616,86 @@ For this purpose, the Discord bot shall require two new libraries: one with whic
 - Should the template declare fewer sessions than the round fabricated holds, or fewer slots than a session fabricated holds, the fatal error defined above shall be met and reported.
 
 ## Verdicts image generation
+- A verdict graphic represents one single decision taken upon the drivers of one division: a penalty applied in the penalty phase, a correction applied in the appeal phase, or an attendance sanction enforced automatically. One graphic shall be generated per verdict and shall replace the textual announcement of that verdict. The mention of the driver the verdict pertains to shall remain message text.
+- Nothing is computed for the graphic, nothing is decided for it, and no command produces a verdict that exists only as an image.
+- The graphic adds to the textual announcement the flag of the driver and the badge of the team. It carries no Discord mention; the name of the driver stands in its place, the mention remaining message text so that the driver is notified of their own verdict as they are by the textual announcement.
+- One template serves the three kinds of verdict, the three being distinguished by the text placed on the stage field and on the session name field alone.
+- The graphic holds no field addressed by an ordinal, one verdict being drawn per graphic. It is the only graphic of the module of which this is true.
+- For generation of a verdict graphic, the template may have the following fields, among which the mandatory fields will be verified at template file setting and before generation:
+    - season_number - Optional - Layer/widget on which the season number of the server is placed
+    - division_name - Mandatory - Layer/widget on which the name given to the division at "division add" is placed
+    - division_tier - Optional - Layer/widget on which the tier given to the division at "division add" is placed
+    - round_number - Mandatory - Layer/widget on which the human-readable number of the round the verdict pertains to is placed as text, read from the round object definition
+    - race_name - Optional - Layer/widget on which the grand prix name of that round is placed as text, read from the track object definition
+    - session_name - Mandatory - Layer/widget on which the name of the session the verdict pertains to is placed as text
+    - verdict_stage - Mandatory - Layer/widget on which the stage at which the verdict was issued is placed as text
+    - driver_name - Mandatory - Layer/widget on which the name of the driver the verdict pertains to is placed as text
+    - driver_flag - Optional - Layer/widget on which an image representing the nationality of that driver will be placed, searched for in the directory configured via "images config flag-directory"
+    - team_name - Optional - Layer/widget on which the name of the team that driver drove for in that session is placed as text
+    - team_image - Optional - Layer/widget on which an image representing that team (e.g. logo, badge, car) will be placed, searched for in the directory configured via "images config team-image-directory"
+    - penalty - Mandatory - Layer/widget on which the sanction the verdict applies is placed as text, in the descriptive language the textual announcement carries
+    - description - Mandatory - Layer/widget on which the description entered by the steward is placed as text
+    - justification - Mandatory - Layer/widget on which the justification entered by the steward is placed as text
+- The graphic carries no image of the track, no country name, no date of the round, no result of any session, no points, no lifecycle label, and no name of the steward who issued the verdict.
+
+### The wrapping of free text
+- The description and the justification of a verdict are free text written by a steward, of a length no record of the season decides. They are the only values of the module of which this is true, and the two fields carrying them are the fields a template is expected to declare as wrapping fields. Any text field of the graphic may be declared one.
+- A field is a wrapping field where the template declares a "shape-inside" property upon it naming a rectangle of the template. That rectangle is the extent of the field: its width is the width the text is wrapped against and its height the height the text shall occupy. The rectangle stands for that extent alone, carrying neither fill nor stroke, and is never itself drawn.
+- The text shall be broken at word boundaries into lines no wider than the rectangle, each line being placed as a line of the field carrying the horizontal coordinate and the anchoring the field declares, and each line after the first being offset from the one above it by the line height the field declares. A single word wider than the rectangle shall be broken within itself.
+- The number of lines the rectangle admits is its height divided by that line height. Where the text wrapped at the font size the template declares occupies more lines than that, the font size of the field shall be reduced and the text wrapped again, and so on until it fits or until the floor is reached, that floor being half the font size the template declares. Text still exceeding the rectangle at the floor shall be truncated at a word boundary, an ellipsis placed at its end, and a non-fatal error reported naming the field and the verdict.
+- Each wrapping field is reduced on its own. The graphic is not resized, and no other field of it follows the size of the field reduced.
+- The "shape-inside" property shall be removed from the field once its lines are laid out, so that the wrapping rendered is the one the generation computed and not one the converter performed again over it.
+- A field declaring an "inline-size" property and no "shape-inside" shall be wrapped against the width that property declares, and shall be neither reduced nor truncated, the template declaring no height for it to overrun. A field declaring neither property shall be filled as a single line, as every other text field of the module is.
+- The width of a text is measured against the font family, weight, style and size the field declares. A third library shall be required of the module for this purpose, the metrics of a font being readable from neither of the two named at the head of this document. Where the font a field declares is not installed on the machine, the measurement shall be made against the font the converter would substitute for it and a non-fatal error reported naming the field and the font.
+- The free text of a verdict is bounded at present by the limits of the form that collects it, which are foreseen to grow considerably. The graphic relies upon no such limit: it is for the league to declare a rectangle the longest verdicts its stewards write will fit, and the reduction and the truncation are what keep a verdict exceeding it from overrunning the template.
+
+### Resolution of the data to be placed
+- The graphic re-presents the values the textual announcement shows and never derives them by rules of its own. A change to how the textual announcement renders any of them is a change to the graphic by the same stroke.
+- The name of a driver shall be resolved as it is for the lineup graphic, and their flag image searched for as it is for the lineup graphic. If the nationality is absent or no matching file is found, the field shall be removed and a non-fatal error reported.
+- The name of a session is "Sprint Qualifying", "Sprint Race", "Feature Qualifying" or "Feature Race" for a round of the sprint format, and "Qualifying" or "Race" for a round of any other, as it is for the results graphic. A verdict of an attendance sanction pertains to no session and carries "Attendance Sanction" in its place.
+- The stage of a verdict is fixed text: "Post-Race Penalty" for a verdict issued in the penalty phase, "Appeal" for one issued in the appeal phase, and "Attendance Sanction" for one enforced by the attendance module.
+- The sanction is the descriptive rendering the textual announcement carries, and never the compact rendering a results graphic places in a sanction column: a time penalty, a disqualification, a sacking or a move to the reserve team, each rendered as the textual announcement renders it.
+- The description and the justification are placed verbatim. Where the steward entered neither, the textual announcement carries a fixed text in the place of the one absent, which the graphic carries in turn, the emphasis that message applies excluded.
+- The team is the team the driver drove for in the session the verdict pertains to, which for a reserve driver standing in for another is the team whose car they drove and never the reserve team. The name to be placed, and the name to be normalized to search for the team image, shall be resolved as they are for the results graphic: the team of the division holding the Discord role the result records, falling back to the name of the role itself should the division hold no such team.
+- A verdict of an attendance sanction pertains to no session and names no team, the sanction having removed the driver from their seat before the verdict is announced. Its team name field shall be emptied and its team image field removed, and no error shall be reported.
+- A team image for which no matching file is found causes the field to be removed and a non-fatal error to be reported. It is not the fatal error it is on a results graphic, the team being an optional field of this graphic.
+- The number of the round is read from the round object and the grand prix name from the track object of the round. A round of the mystery format records no track and shall have its race name field emptied, no error being reported.
+- Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash. A field carrying an image is removed rather than emptied.
+
+### Handling of mismatches between verdict and template
+- Every field of this graphic is independent of the data it is filled with, one verdict being drawn per graphic and no field being addressed by an ordinal. The catalogue is therefore verified in its entirety at every moment the template is verified, when it is configured, at season review and before every generation alike, and there is no class of field of it that can only be verified against a division, a round or a classification.
+- Each of the following is a fatal error, naming what was found to be at fault:
+    - a mandatory field of the graphic that the template does not hold;
+    - a mandatory field whose value cannot be determined at generation;
+    - a wrapping field whose "shape-inside" property names a rectangle the template does not hold.
+- A flag image or a team image for which no matching file is found causes the field to be removed and a non-fatal error to be reported, as a flag image does for the lineup graphic. As the request for nationality may be switched off entirely via "signup nationality toggle", a graphic carrying neither is a legitimate outcome.
+- The truncation of a wrapping field, and the substitution of a font a field declares, are non-fatal and reported as such.
+
+### Generation and posting
+- Once a verdict is to be announced and the "verdicts" toggle of "images config toggle" is enabled, the image shall be generated following the rules above via modification of the SVG file, which shall then be converted to PNG and posted as an attachment of a message carrying the mention of the driver the verdict pertains to and nothing besides.
+- One graphic and one message are produced per verdict. A review applying several penalties posts one graphic for each of them, as the textual flow posts one message for each of them.
+- The image shall be generated on every occasion on which a textual announcement is currently posted: upon the penalty review being approved with one or more penalties applied, upon the appeals review being approved with one or more corrections applied, and upon an autosack or an autoreserve sanction being enforced. A review approved with nothing staged announces nothing and generates nothing.
+- A verdict is posted once and is never edited, replaced nor deleted. No message ID is persisted for it, and the graphic introduces none of the deletion and replacement the calendar, lineup, results, standings and weather graphics carry.
+- The verdict graphic replaces the textual announcement in the verdicts channel configured for the division via "division verdicts-channel" and there alone. An attendance pardon is recorded in the logging channel of the server and is no verdict: it carries no graphic, the "verdicts" toggle notwithstanding.
+- Where no verdicts channel is configured for the division, or the channel is inaccessible, the verdict is skipped as the textual flow skips it, and no image shall be generated for it.
+- The generation and the posting of a verdict shall never prevent the finalization of a review nor the enforcement of a sanction, as the textual announcement never does. The failure of one verdict shall prevent neither the other verdicts of the same review nor the verdicts of the other divisions.
+- Non-fatal errors gathered during generation shall be reported in the logging channel of the server, naming the season, the division, the round, the session and the driver they pertain to, and never in the verdicts channel of a division. Where the generation was triggered by a command, they shall additionally be reported alongside its output.
+- Should a fatal error be met at any step of the generation or posting of a verdict, the fallback behavior defined in the configuration section shall apply and that verdict be announced in the traditional textual manner instead. The error shall be reported in the logging channel and, where a command triggered the generation, to the user who invoked it.
+    - Where the posting of a generated image fails for a reason of the Discord service rather than of the generation, it is the textual announcement that shall be enqueued for retry.
+    - The "images test verdicts" command is the one exception, having no textual counterpart to fall back to. A fatal error met by it shall be reported to the league manager who invoked it and no image posted.
+
+### Test data
+- The "images test verdicts" command shall generate one image for each of the cases below, each drawn for a division named "Test Division", of tier 1 and of season number 1, at round 1 of a track of the server's track list, and each reported to the league manager who invoked the command and never posted to the verdicts channel of a division:
+    - a verdict of the penalty phase carrying a time penalty added to the time of a driver, drawn for a session of a round of the sprint format so that the rendering of the name of a sprint session may be evaluated;
+    - a verdict of the penalty phase carrying a time penalty removed from the time of a driver;
+    - a verdict of the penalty phase carrying a disqualification;
+    - a verdict of the appeal phase, so that the rendering of the stage of an appeal may be evaluated;
+    - a verdict of an autosack and a verdict of an autoreserve, so that the rendering of a verdict naming no session and no team may be evaluated.
+- The descriptions and justifications fabricated shall include, insofar as the number of cases allows:
+    - one short enough to occupy a single line of the field;
+    - one filling the field to the greatest number of lines it admits;
+    - one exceeding that number by a little, so that the reduction of the font size may be evaluated;
+    - one exceeding it by an order of magnitude, so that the reduction to the floor, the truncation and the non-fatal error it reports may be evaluated;
+    - one for which the steward entered neither a description nor a justification.
+- The nationalities given to the fictitious drivers shall be among those the signup wizard accepts, at least one of them being that recorded for a driver who stated none.
+- Should the server's track list be empty, the command shall be rejected with a clear error, as there is no round for a verdict to pertain to.
