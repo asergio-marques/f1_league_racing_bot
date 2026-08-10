@@ -533,10 +533,10 @@ either an image or a clear account of why it could not be produced.
 - **The default time zone is UTC**, the bot already scheduling and storing in UTC.
 - **`/images test` requires the module to be enabled** but does not require any aspect to be toggled
   on — it is a diagnostic run before a league commits to an aspect.
-- **The packaged defaults under `resources/` are what a fresh installation points at.** That
-  directory is currently excluded from version control, so a fresh clone will report every template
-  and asset directory invalid until the league supplies them. This is a packaging concern to settle
-  during planning, not a change to the defaults specified here.
+- **Provisioning the template and asset files is out of scope.** The defaults under `resources/`
+  name where the bot looks; how the files get there is the operator's concern. A path that resolves
+  to nothing is reported invalid with the full path searched, which is what an operator needs in
+  order to fix it. The module bundles, packages and installs nothing.
 - **The eight toggles and the eleven test kinds are deliberately different lists.** The weather
   toggle covers four test kinds; the test list separates them so a league can inspect one phase at a
   time.

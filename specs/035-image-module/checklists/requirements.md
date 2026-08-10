@@ -76,10 +76,11 @@ not the bot's implementation, and Constitution Principle XIV establishes them as
 
 ### Open items for planning
 
-Neither blocks `/speckit-plan`; both are recorded in the spec.
+Does not block `/speckit-plan`; recorded in the spec.
 
-- `resources/` is excluded from version control (`.gitignore` line 219), so every default path in
-  this spec resolves to nothing in a fresh clone. A packaging decision is needed.
 - `docs/wip-specs/image_module_specification.md` was not readable during specification (deny-listed
   in `.claude/settings.json`). The command surface here was derived from the author's brief; it
   should be reconciled against that document before implementation.
+
+Resolved during planning: how the template and asset files reach a host is out of scope — the
+module resolves configured paths and reports what it finds. See research R9.
