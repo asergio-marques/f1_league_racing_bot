@@ -1,6 +1,82 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-10 — v2.11.0 → v2.12.0: MINOR — validity contract and stale-proof config exception]
+  Version change    : 2.11.0 → 2.12.0
+  Bump rationale    : MINOR — Two materially expanded guidance additions, both arising from
+                      clarifications answered by the author during the 035-image-module
+                      specification session. No principle removed or incompatibly redefined.
+  Feature branch    : 035-image-module
+
+  Session context   : Three scope questions were put to the author while specifying the
+                      image module. Two were answered with a decision; the third was
+                      answered with an instruction to leave the matter open and govern it,
+                      which is what this amendment does.
+                        Q1 (increment size)     → config surface + `images test` only;
+                                                  the output toggles are stored but inert
+                                                  this increment. No governance impact.
+                        Q2 (template validity)  → deliberately left open. Validity is to be
+                                                  defined incrementally in later sessions and
+                                                  wired into the same reporting surface. The
+                                                  author asked that this be a keynote of the
+                                                  constitution or the specification; it is
+                                                  governed here and instantiated there.
+                        Q3 (config on disable)  → retained. Requires an exception to
+                                                  Principle X.6, added here.
+
+  Modified principles :
+    - X. Modular Feature Architecture, rule 6 (Module configuration isolation) — added the
+        "configuration that cannot go stale" exception. A module whose configuration consists
+        solely of values that remain true while it is disabled retains that configuration
+        across a disable; only the module-enabled flag is cleared. Qualification is defined
+        narrowly: a value qualifies only if it names nothing the bot owns or schedules — a
+        filesystem path, a display preference, a colour, a format. Any value naming a Discord
+        channel, role, message or scheduled job does not qualify. A module claiming the
+        exception must enumerate its qualifying values in its feature specification. The
+        Image generation module claims it for the whole of its configuration.
+    - XIV. Image Generation Discipline — added rule 9, "Template validity is a layered,
+        extensible contract". Validity is evaluated at configuration time, separately from
+        rendering, as ordered named layers, cheapest first. Layer 1 (Resolution: file
+        resolves, parses as SVG, declares a root canvas) is mandatory from the outset for
+        every template. Deeper layers — field-catalogue conformance, field addressability,
+        declared text bounds, trial render — are ratified per image type as that type's
+        catalogue is specified, and must not be enforced against a type whose catalogue does
+        not yet exist. Four rules bind the growth: stable surface (adding a layer changes
+        neither the command surface, the three reported states, nor the report structure —
+        only the set of reasons); specific attribution (name the individual template, never
+        the group); declared depth (a report states which layers were applied); and no silent
+        pass (a type checked only shallowly is not presented as fully valid).
+
+  Added sections      : None — both changes are expansions of existing principles.
+  Removed sections    : None
+
+  Templates confirmed aligned:
+      ✅ .specify/templates/plan-template.md       — dynamic Constitution Check; no changes.
+      ✅ .specify/templates/spec-template.md       — generic structure; no stale references.
+      ✅ .specify/templates/tasks-template.md      — generic; aligns with I–XIV.
+      ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+      ✅ .specify/templates/checklist-template.md  — no impact.
+      ✅ .specify/templates/constitution-template.md — source template; no changes required.
+
+  Governance          : Unchanged. Principle count is still I–XIV; the PR Constitution Check
+                        line already reads "I–XIV" as of v2.11.0.
+
+  Deferred TODOs (new at this version):
+      - Each image type's field catalogue, and with it the deeper validity layers rule 9
+        anticipates, must be ratified as that type is specified. Until then every template
+        is checked to Layer 1 only and must be reported as such.
+      - The per-aspect wiring of image output into the eight source-module posting paths is
+        deferred to a later increment per Q1; the toggles ratified here are inert until then.
+
+  Deferred TODOs (carried from v2.11.0):
+      - README module documentation for the image module, deferred until there are commands
+        to document. The README "Module Commands" section names only three modules and is
+        already stale for the Attendance module ratified at v2.10.0; close both together.
+      - Principle XIV was derived from the author's brief and from the committed proof of
+        concept at resources/poc/ and resources/templates/. The working specification at
+        docs/wip-specs/image_module_specification.md was not readable in these sessions
+        (deny-listed in .claude/settings.json) and must be reconciled against.
+
 [2026-08-10 — v2.10.1 → v2.11.0: MINOR — image generation module governance added]
   Version change    : 2.10.1 → 2.11.0
   Bump rationale    : MINOR — A new Core Principle (XIV) was added and three existing
@@ -1394,6 +1470,23 @@ The following rules MUST hold for every optional module:
    re-enabling starts fresh unless a `--preserve-config` flag is explicitly supported and
    documented.
 
+   **Exception — configuration that cannot go stale**: A module whose configuration consists
+   solely of values that remain true while the module is disabled MUST retain that
+   configuration across a disable, and disabling MUST clear only the module-enabled flag.
+   A value qualifies only if it names nothing the bot owns or schedules — a filesystem path,
+   a display preference, a colour, a format. Any value naming a Discord channel, role,
+   message or scheduled job does NOT qualify and remains subject to the clearing rule above.
+   A module claiming this exception MUST enumerate the qualifying values in its feature
+   specification. The **Image generation module** claims it for the whole of its
+   configuration: template and asset directories, template filenames, time zone, clock and
+   date formats, the fastest-lap colour, and the per-aspect output toggles.
+
+   **Rationale for the exception**: The clearing rule exists so that a re-enabled module
+   cannot act on stale bindings to server objects that may have been deleted or reassigned
+   while it was off. A filesystem path or a colour has no such binding — it is as true after
+   a disable as before it, and discarding thirty such values punishes an administrator for
+   toggling a module off to diagnose a problem.
+
 **Rationale**: The bot's growth toward full league management requires a clean separation
 between always-on infrastructure (divisions, drivers, teams) and capability modules that
 server administrators opt into. Mandatory modules establish the data model that all other
@@ -1902,6 +1995,34 @@ output at all.
 Generated PNGs MUST be posted as attachments on the message the source module would have
 posted anyway, to that module's already-registered channel (Principle VII). The image module
 MUST NOT register channel categories of its own.
+
+**9. Template validity is a layered, extensible contract.**
+
+A template's validity is evaluated at configuration time, on demand, and separately from any
+render. The checks that constitute validity MUST be organised as ordered, independently named
+layers, cheapest first. The set of layers is deliberately open: it grows as each image type is
+formally specified, and a layer MUST be ratified before it is enforced.
+
+- **Layer 1 — Resolution** is mandatory from the outset and applies to every template: the file
+  resolves within the configured directory, parses as well-formed SVG, and declares a root
+  `width` and `height` (Rule 1).
+- **Deeper layers** — field-catalogue conformance (Rule 2), addressability of every required
+  field (Rule 3), declared text bounds (Rule 5), trial render — are ratified per image type as
+  that type's field catalogue is specified, and MUST NOT be enforced against an image type
+  whose catalogue does not yet exist.
+
+The following MUST hold as layers are added:
+
+1. **Stable surface**: adding a layer MUST NOT change the configuration command surface, the
+   three reported states (enabled / disabled / enabled-but-invalid), or the structure of a
+   validity report. Only the set of reasons a template can be reported invalid may grow.
+2. **Specific attribution**: every layer MUST name the individual template at fault and give a
+   reason distinguishable from every other layer's failure. A report naming a group of
+   templates rather than the one at fault does not satisfy this rule.
+3. **Declared depth**: a validity report MUST state which layers were applied. A template that
+   has passed only Layer 1 MUST NOT be presented as though it had passed a deeper check.
+4. **No silent pass**: an image type for which a deeper layer is not yet ratified MUST be
+   reported as checked to the depth currently available, not as fully valid.
 
 **Rationale**: Separating layout (the template) from data (the fill) is what allows a league
 to restyle its graphics without a code change and what keeps the rendering code independent
@@ -2458,4 +2579,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.11.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-10
+**Version**: 2.12.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-10
