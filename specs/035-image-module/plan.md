@@ -48,7 +48,7 @@ acknowledgement rule (Bot Behavior Standards) or defer.
 Generated PNG must stay under Discord's 25 MB attachment limit — at 1200 px wide this is not a
 practical risk.
 **Scale/Scope**: 15 templates, 7 asset directories, 8 aspect toggles, 11 test kinds, 26 new
-commands, 1 modified command, ~31 configuration values per server.
+commands, 1 modified command, 35 configuration values per server (27 scalar columns + 8 toggles).
 
 ## Constitution Check
 

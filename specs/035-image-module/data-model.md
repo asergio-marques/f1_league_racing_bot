@@ -44,9 +44,10 @@ One row per server, created on first `/module enable images`.
 | `date_format` | TEXT NOT NULL | `'DDD_DD_MON_YYYY'` | FR-023 | Carries weekday; see below |
 | `fastest_lap_colour` | TEXT NOT NULL | `'#A020F0'` | FR-024 | `#RRGGBB` |
 
-**31 configurable values**: 1 template directory + 15 template filenames + 7 asset directories +
-4 preferences, plus the 8 toggles below, minus `module_enabled` which is state rather than
-configuration.
+**27 settable columns on this table**: 1 template directory + 15 template filenames + 7 asset
+directories + 4 preferences. `module_enabled` is state rather than configuration and is not
+settable through the configuration commands. With the 8 toggles below, the module carries **35
+configuration values** in total.
 
 ### Date format values (FR-023)
 

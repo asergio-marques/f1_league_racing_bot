@@ -349,21 +349,27 @@ either an image or a clear account of why it could not be produced.
 
   | Command | Template | Default filename |
   |---------|----------|------------------|
-  | `calendar-template` | Division calendar | `calendar_template.svg` |
-  | `lineup-template` | Division lineup | `lineup_template.svg` |
-  | `results-qualifying-template` | Qualifying session results | `results_qualifying_template.svg` |
-  | `results-race-template` | Race session results | `results_race_template.svg` |
-  | `standings-drivers-template` | Driver standings | `standings_drivers_template.svg` |
-  | `standings-constructors-template` | Constructor standings | `standings_constructors_template.svg` |
-  | `attendance-template` | Attendance sheet | `attendance_template.svg` |
-  | `rsvp-template` | Round check-in call | `rsvp_template.svg` |
-  | `weather-p1-template` | Weather phase 1 | `weather_p1_template.svg` |
-  | `weather-p2-template` | Weather phase 2, non-sprint | `weather_p2_template.svg` |
-  | `weather-p3-template` | Weather phase 3, non-sprint | `weather_p3_template.svg` |
-  | `weather-p2-sprint-template` | Weather phase 2, sprint | `weather_p2_sprint_template.svg` |
-  | `weather-p3-sprint-template` | Weather phase 3, sprint | `weather_p3_sprint_template.svg` |
-  | `weather-mystery-template` | Mystery round notice | `weather_mystery_template.svg` |
-  | `verdicts-template` | Verdicts | `verdicts_template.svg` |
+  | `/images template calendar` | Division calendar | `calendar_template.svg` |
+  | `/images template lineup` | Division lineup | `lineup_template.svg` |
+  | `/images template results-qualifying` | Qualifying session results | `results_qualifying_template.svg` |
+  | `/images template results-race` | Race session results | `results_race_template.svg` |
+  | `/images template standings-drivers` | Driver standings | `standings_drivers_template.svg` |
+  | `/images template standings-constructors` | Constructor standings | `standings_constructors_template.svg` |
+  | `/images template attendance` | Attendance sheet | `attendance_template.svg` |
+  | `/images template rsvp` | Round check-in call | `rsvp_template.svg` |
+  | `/images template weather-p1` | Weather phase 1 | `weather_p1_template.svg` |
+  | `/images template weather-p2` | Weather phase 2, non-sprint | `weather_p2_template.svg` |
+  | `/images template weather-p3` | Weather phase 3, non-sprint | `weather_p3_template.svg` |
+  | `/images template weather-p2-sprint` | Weather phase 2, sprint | `weather_p2_sprint_template.svg` |
+  | `/images template weather-p3-sprint` | Weather phase 3, sprint | `weather_p3_sprint_template.svg` |
+  | `/images template weather-mystery` | Mystery round notice | `weather_mystery_template.svg` |
+  | `/images template verdicts` | Verdicts | `verdicts_template.svg` |
+
+- **FR-012a**: These fifteen commands live under `/images template` rather than `/images config`
+  because Discord permits at most 25 subcommands per group and forbids a third nesting level;
+  `/images config` would otherwise carry 29. The requirement is that each of the fifteen is
+  settable independently, which this satisfies; the grouping is a platform constraint, not a
+  design choice.
 
 - **FR-013**: A qualifying session and a race session MUST be drawn from separate templates. A
   sprint session and a feature session of the same kind MUST share a template, distinguished by the
@@ -596,7 +602,7 @@ Three questions were put to the author on 2026-08-10 and answered:
   toggles it wants.
 - **SC-007**: On a machine without the SVG-to-PNG converter, the reason is stated at season review,
   at configuration view and at test render, and no image generation is attempted.
-- **SC-008**: Disabling and re-enabling the module leaves all thirty-one configuration values
+- **SC-008**: Disabling and re-enabling the module leaves all thirty-five configuration values
   byte-identical, so an administrator can toggle the module off to diagnose a problem at no cost.
 - **SC-009**: A validity report never overstates what it checked: for every template it names the
   depth reached, and a later session can add a deeper layer without altering any command, any of

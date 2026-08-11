@@ -55,23 +55,32 @@ all fifteen templates against the new directory.
 Identical shape: one required `filename` string, tier A, stored verbatim, validity re-reported for
 that template alone.
 
+> **Deviation from the brief, forced by a platform limit.** These were specified as
+> `/images config <name>-template`. Discord permits at most **25 subcommands per group** and forbids
+> a third nesting level, and `/images config` would otherwise carry **29**: 1 template directory +
+> 15 filenames + 7 asset directories + 4 preferences + toggle + view. They therefore live in a
+> sibling group, `/images template <name>`, which also lets the redundant `-template` suffix go.
+> `/images config` is left with 14. A startup check in `image_cog.py` fails loudly if either group
+> ever exceeds 25, because Discord only rejects it at command-sync time — far from the edit that
+> caused it.
+
 | Command | Column | Default |
 |---------|--------|---------|
-| `/images config calendar-template` | `calendar_template` | `calendar_template.svg` |
-| `/images config lineup-template` | `lineup_template` | `lineup_template.svg` |
-| `/images config results-qualifying-template` | `results_qualifying_template` | `results_qualifying_template.svg` |
-| `/images config results-race-template` | `results_race_template` | `results_race_template.svg` |
-| `/images config standings-drivers-template` | `standings_drivers_template` | `standings_drivers_template.svg` |
-| `/images config standings-constructors-template` | `standings_constructors_template` | `standings_constructors_template.svg` |
-| `/images config attendance-template` | `attendance_template` | `attendance_template.svg` |
-| `/images config rsvp-template` | `rsvp_template` | `rsvp_template.svg` |
-| `/images config weather-p1-template` | `weather_p1_template` | `weather_p1_template.svg` |
-| `/images config weather-p2-template` | `weather_p2_template` | `weather_p2_template.svg` |
-| `/images config weather-p3-template` | `weather_p3_template` | `weather_p3_template.svg` |
-| `/images config weather-p2-sprint-template` | `weather_p2_sprint_template` | `weather_p2_sprint_template.svg` |
-| `/images config weather-p3-sprint-template` | `weather_p3_sprint_template` | `weather_p3_sprint_template.svg` |
-| `/images config weather-mystery-template` | `weather_mystery_template` | `weather_mystery_template.svg` |
-| `/images config verdicts-template` | `verdicts_template` | `verdicts_template.svg` |
+| `/images template calendar` | `calendar_template` | `calendar_template.svg` |
+| `/images template lineup` | `lineup_template` | `lineup_template.svg` |
+| `/images template results-qualifying` | `results_qualifying_template` | `results_qualifying_template.svg` |
+| `/images template results-race` | `results_race_template` | `results_race_template.svg` |
+| `/images template standings-drivers` | `standings_drivers_template` | `standings_drivers_template.svg` |
+| `/images template standings-constructors` | `standings_constructors_template` | `standings_constructors_template.svg` |
+| `/images template attendance` | `attendance_template` | `attendance_template.svg` |
+| `/images template rsvp` | `rsvp_template` | `rsvp_template.svg` |
+| `/images template weather-p1` | `weather_p1_template` | `weather_p1_template.svg` |
+| `/images template weather-p2` | `weather_p2_template` | `weather_p2_template.svg` |
+| `/images template weather-p3` | `weather_p3_template` | `weather_p3_template.svg` |
+| `/images template weather-p2-sprint` | `weather_p2_sprint_template` | `weather_p2_sprint_template.svg` |
+| `/images template weather-p3-sprint` | `weather_p3_sprint_template` | `weather_p3_sprint_template.svg` |
+| `/images template weather-mystery` | `weather_mystery_template` | `weather_mystery_template.svg` |
+| `/images template verdicts` | `verdicts_template` | `verdicts_template.svg` |
 
 A filename containing a path separator is rejected — this command names a file inside the
 configured directory, not a path.

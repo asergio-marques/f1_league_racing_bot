@@ -30,40 +30,41 @@ For this purpose, the Discord bot shall require three new dependencies: one with
 - <NEW COMMAND> A new "images config template-directory" will be made available to server administrators which will take in a string standing for the directory in which the image template files will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the template files will be searched in a "resources/templates" folder located at the project root.
-- <NEW COMMAND> A new "images config calendar-template" command will be made available to server administrators which will take in a string standing for the filename of the template calendar image.
+- <NEW COMMAND> A new "images template calendar" command will be made available to server administrators which will take in a string standing for the filename of the template calendar image.
     - By default, the filename shall be "calendar_template.svg".
-- <NEW COMMAND> A new "images config lineup-template" command will be made available to server administrators which will take in a string standing for the filename of the template lineup image.
+- <NEW COMMAND> A new "images template lineup" command will be made available to server administrators which will take in a string standing for the filename of the template lineup image.
     - By default, the filename shall be "lineup_template.svg".
-- <NEW COMMAND> A new "images config results-qualifying-template" command will be made available to server administrators which will take in a string standing for the filename of the template image for qualifying session results.
+- <NEW COMMAND> A new "images template results-qualifying" command will be made available to server administrators which will take in a string standing for the filename of the template image for qualifying session results.
     - By default, the filename shall be "results_qualifying_template.svg".
-- <NEW COMMAND> A new "images config results-race-template" command will be made available to server administrators which will take in a string standing for the filename of the template image for race session results.
+- <NEW COMMAND> A new "images template results-race" command will be made available to server administrators which will take in a string standing for the filename of the template image for race session results.
     - By default, the filename shall be "results_race_template.svg".
 - The results of a qualifying session and those of a race session share no columns beyond the driver, the team, the sanctions and the points, and are therefore drawn from two templates and not one. A sprint session and a feature session of the same kind share a template, the two being distinguished by the text placed on the session name field alone.
-- <NEW COMMAND> A new "images config standings-drivers-template" command will be made available to server administrators which will take in a string standing for the filename of the template image for the driver standings.
+- <NEW COMMAND> A new "images template standings-drivers" command will be made available to server administrators which will take in a string standing for the filename of the template image for the driver standings.
     - By default, the filename shall be "standings_drivers_template.svg".
-- <NEW COMMAND> A new "images config standings-constructors-template" command will be made available to server administrators which will take in a string standing for the filename of the template image for the constructor standings.
+- <NEW COMMAND> A new "images template standings-constructors" command will be made available to server administrators which will take in a string standing for the filename of the template image for the constructor standings.
     - By default, the filename shall be "standings_constructors_template.svg".
 - The driver standings and the constructor standings share no columns beyond the team, the position and the points, and are therefore drawn from two templates and not one.
-- <NEW COMMAND> A new "images config attendance-template" command will be made available to server administrators which will take in a string standing for the filename of the template attendance image.
+- <NEW COMMAND> A new "images template attendance" command will be made available to server administrators which will take in a string standing for the filename of the template attendance image.
     - By default, the filename shall be "attendance_template.svg".
-- <NEW COMMAND> A new "images config rsvp-template" command will be made available to server administrators which will take in a string standing for the filename of the template image for the check-in call posted for a round.
+- <NEW COMMAND> A new "images template rsvp" command will be made available to server administrators which will take in a string standing for the filename of the template image for the check-in call posted for a round.
     - By default, the filename shall be "rsvp_template.svg".
 - The attendance sheet and the check-in call share no field beyond the heading fields and those naming the round, and are therefore drawn from two templates and not one.
-- <NEW COMMAND> A new "images config weather-p1-template" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 1 image.
+- <NEW COMMAND> A new "images template weather-p1" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 1 image.
     - By default, the filename shall be "weather_p1_template.svg".
-- <NEW COMMAND> A new "images config weather-p2-template" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 2 image.
+- <NEW COMMAND> A new "images template weather-p2" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 2 image.
     - By default, the filename shall be "weather_p2_template.svg".
-- <NEW COMMAND> A new "images config weather-p3-template" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 3 image.
+- <NEW COMMAND> A new "images template weather-p3" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 3 image.
     - By default, the filename shall be "weather_p3_template.svg".
-- <NEW COMMAND> A new "images config weather-p2-sprint-template" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 2 image of a round of the sprint format.
+- <NEW COMMAND> A new "images template weather-p2-sprint" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 2 image of a round of the sprint format.
     - By default, the filename shall be "weather_p2_sprint_template.svg".
-- <NEW COMMAND> A new "images config weather-p3-sprint-template" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 3 image of a round of the sprint format.
+- <NEW COMMAND> A new "images template weather-p3-sprint" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 3 image of a round of the sprint format.
     - By default, the filename shall be "weather_p3_sprint_template.svg".
-- <NEW COMMAND> A new "images config weather-mystery-template" command will be made available to server administrators which will take in a string standing for the filename of the template image for the notice posted for a mystery round.
+- <NEW COMMAND> A new "images template weather-mystery" command will be made available to server administrators which will take in a string standing for the filename of the template image for the notice posted for a mystery round.
     - By default, the filename shall be "weather_mystery_template.svg".
 - The three phases of a weather forecast share no field beyond the heading fields and those naming the track, and the notice of a mystery round shares none beyond the heading fields, and are therefore drawn from separate templates and not one. Phases 2 and 3 are drawn from two templates each, a round of the sprint format holding four sessions and a round of every other format two, and a canvas serving one of the two well serving the other poorly. Six weather templates are therefore configured in all.
-- <NEW COMMAND> A new "images config verdicts-template" command will be made available to server administrators which will take in a string standing for the filename of the template verdicts image.
+- <NEW COMMAND> A new "images template verdicts" command will be made available to server administrators which will take in a string standing for the filename of the template verdicts image.
     - By default, the filename shall be "verdicts_template.svg".
+- The fifteen commands naming a template file stand under "images template" and not under "images config", and drop the "-template" suffix their names would otherwise carry. Discord admits at most twenty-five subcommands to a group and no third level of nesting, and "images config" carries fourteen commands beside these: one naming the template directory, seven naming an asset directory, four carrying a presentation preference, the toggle and the view. The two groups shall be kept within that limit as the module grows, and a command added to either shall be counted against it.
 - <MODIFY COMMAND> The "season review" command shall be augumented to display the enabling status of the images module, as well as all of the configurations above and if they are valid.
     - For the configurations modified via the "images config toggle" command, there shall be a distinction between "enabled" (checkmark), "disabled" (cross), and "enabled but invalid" (warning sign). In the case of the weather template, invalid must show which exact phase is invalid, whether it is the template of a round of the sprint format or that of a round of every other, and whether it is the template of the mystery notice; in the case of the results template, which of the qualifying and race templates is invalid; in the case of the standings template, which of the drivers and constructors templates is invalid.
 - <NEW COMMAND> A new "images config view" command will be made available to league managers which will print out all configurations above, plus the validity status of each one, in a manner similar to the addendum to "season review".
@@ -71,6 +72,8 @@ For this purpose, the Discord bot shall require three new dependencies: one with
     - This test command shall make use of test data specified for each type of generation.
     - Any non-fatal errors shall be posted alongside the test output.
 - <NEW COMMAND> A new "images config time-zone" command will be made available to league managers which will allow league managers to select the timezone with which to display times on images.
+    - The zone shall be named in the IANA form, "Europe/Lisbon" and the like, and taken as free text completed as it is typed rather than chosen from a fixed list. Discord admits at most twenty-five choices to a parameter and the IANA database holds several hundred zones, so no fixed list can offer them all.
+    - By default, the zone shall be "UTC", which is the zone the bot schedules and records in.
 - <NEW COMMAND> A new "images config time-format" command will be made available to league managers which will allow league managers to select whether they prefer displaying time in 12-hour or 24-hour formats.
 - <NEW COMMAND> A new "images config date-format" command will be made available to league managers which will allow league managers to select the preferred date format amongst those most popular.
     - At least one of the formats offered shall carry the day of the week, which for a season run on the same day of every second week is the part of a date a driver reads for.
@@ -101,7 +104,7 @@ For this purpose, the Discord bot shall require three new dependencies: one with
     - By default, the tyre icon files will be searched in a "resources/tyres" folder located at the project root.
 
 ### Verification of template files configured
-- Right after one of the "images config X-template" commands is used, the following verifications shall be made:
+- Right after one of the "images template X" commands is used, the following verifications shall be made:
     - The input string shall be verified for the ".svg" substring at the end.
     - On being used, it shall be verified that at the destination of the configured directory joined with this filename indeed exists a valid (non-corrupt SVG file).
     - Additionally, upon usage of this command, it shall be verified that the SVG file has the mandatory fields as per the image type's generation specification.
@@ -138,7 +141,7 @@ These hold for every image type of the module and are stated here rather than re
 ### Errors and the rejection of input
 - An error met by the module is fatal or non-fatal, as declared for each image type below. A fatal error prevents the graphic from being produced; a non-fatal one does not.
 - A fatal error traceable to something a user configured or commanded shall reject that input, at every moment the module is in a position to detect it:
-    - an "images config X-template" command naming a template that meets one shall be rejected, and the configuration left as it stood;
+    - an "images template X" command naming a template that meets one shall be rejected, and the configuration left as it stood;
     - a season review that meets one shall fail validation of the season, naming what was found to be at fault;
     - a command that would carry a division past what its configured templates can draw shall be rejected, and the change it carried not applied;
     - a command that triggers a generation which meets one shall be rejected, and nothing posted in consequence of it.
@@ -779,7 +782,7 @@ These hold for every image type of the module and are stated here rather than re
 - Nothing is computed for the graphic, nothing is drawn for it, and no command produces a forecast that exists only as an image.
 - The graphic adds to the textual forecast an icon for the type of weather of each session and an icon for each concrete weather drawn, in the place of the emoji the textual forecast carries.
 - Six templates serve the four postings of the module: one for phase 1, two for each of phases 2 and 3, and one for the notice posted for a round of the mystery format. Their fields are addressed by the ordinal of the session and by the ordinal of the slot, as the results graphic's are, and not by the name of a session.
-- Phases 2 and 3 draw a session apiece, and a round of the sprint format holds four sessions where a round of every other format holds two. Each of those two phases is therefore drawn from two templates: the one configured via "images config weather-p2-sprint-template" or "images config weather-p3-sprint-template" for a round of the sprint format, and the one configured via "images config weather-p2-template" or "images config weather-p3-template" for a round of every other. The template is chosen by the format of the round at generation, and by nothing else.
+- Phases 2 and 3 draw a session apiece, and a round of the sprint format holds four sessions where a round of every other format holds two. Each of those two phases is therefore drawn from two templates: the one configured via "images template weather-p2-sprint" or "images template weather-p3-sprint" for a round of the sprint format, and the one configured via "images template weather-p2" or "images template weather-p3" for a round of every other. The template is chosen by the format of the round at generation, and by nothing else.
 - The two files of a phase are sized for the formats that can reach them, and the counts they are verified against differ accordingly. A round of the sprint format holds four sessions, of which the longest allows two weather slots; a round of every other format holds two sessions, of which an endurance race allows four. A sprint template is therefore verified against four sessions of two slots and a plain one against two sessions of four.
 - For generation of a weather graphic of any of the three phases, the template may have the following fields, among which the mandatory fields will be verified at template file setting and before generation:
     - season_number - Optional - Field on which the season number of the server is placed

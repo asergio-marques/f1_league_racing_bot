@@ -1,6 +1,34 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-11 — v2.12.0 → v2.12.1: PATCH — entity re-grained to match what was built]
+  Version change    : 2.12.0 → 2.12.1
+  Bump rationale    : PATCH — One entity renamed and re-grained to match the delivered
+                      implementation. No principle added, removed or redefined; no
+                      governance rule changed. The correction was anticipated in the
+                      035-image-module plan's Complexity Tracking and is applied now that
+                      the feature is built.
+  Feature branch    : 035-image-module
+
+  Modified sections :
+    - Data & State Management → New Entities (v2.11.0): **ImageTypeState** renamed to
+      **ImageAspectToggle** and re-grained from the image *type* (15 rows) to the output
+      *aspect* (8 rows), with `enabled` defaulting to false rather than true.
+
+  Why                : The command surface a league actually uses is the eight aspects of
+                       `/images config toggle`. No command addresses an individual
+                       template's toggle, so a 15-row table would have required fanning
+                       one value out to as many as six rows (weather) and folding them
+                       back for reporting, with no user-visible benefit. The default was
+                       false, not true, because Principle X.1 requires a freshly
+                       configured server to have every optional capability off.
+                       `source_module` ceased to be a stored column: it never varies per
+                       server, so it is a code constant per aspect.
+
+  Governance         : Unchanged. Principle count is still I–XIV.
+
+  Templates confirmed aligned: no change — this touches an entity definition only.
+
 [2026-08-10 — v2.11.0 → v2.12.0: MINOR — validity contract and stale-proof config exception]
   Version change    : 2.11.0 → 2.12.0
   Bump rationale    : MINOR — Two materially expanded guidance additions, both arising from
@@ -2400,17 +2428,20 @@ for team-level aggregates):
 - `asset_root` (TEXT, nullable) — filesystem root for league-supplied assets; null means the
   packaged defaults under `resources/` are used for every asset class.
 
-**ImageTypeState** (per server, per image type — one row per image type the module defines):
+**ImageAspectToggle** (per server, per output aspect — eight rows per server):
 - `server_id` (TEXT)
-- `image_type` (TEXT) — stable identifier of the image type (e.g. `weather_p1`,
-  `standings_drivers`, `lineup`).
-- `source_module` (TEXT) — the optional module whose output this image type replaces
-  (`weather`, `results`, `signup`, `attendance`), or null for image types drawn from the
-  foundational concepts alone.
-- `enabled` (BOOLEAN, default true) — whether this image type is produced when the module is
-  enabled and its source module is enabled. Allows a league to keep text output for
-  individual image types.
-- Uniquely keyed on (server_id, image_type).
+- `aspect` (TEXT) — one of `calendar`, `lineup`, `results`, `standings`, `attendance`,
+  `rsvp`, `weather`, `verdicts`.
+- `enabled` (BOOLEAN, default false) — whether this aspect is drawn as an image when the
+  module is enabled and its source module is enabled. Allows a league to keep text output
+  for individual aspects.
+- Uniquely keyed on (server_id, aspect).
+
+The aspect is the unit a league toggles; the templates backing it are an implementation
+detail of what the aspect draws. The mapping from aspect to template is a code constant,
+not a table: eight aspects cover fifteen templates (weather alone accounts for six), and
+no command addresses an individual template's toggle. `source_module` is likewise a
+constant per aspect rather than a stored column, since it never varies per server.
 
 **RenderNotice** (append-only, per render — the audit record required by Principle XIV.4):
 - `notice_id` (INTEGER PK, server-scoped auto-increment)
@@ -2579,4 +2610,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.12.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-10
+**Version**: 2.12.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-11

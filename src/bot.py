@@ -72,6 +72,23 @@ async def main() -> None:
     )
     bot.attendance_service = AttendanceService(DB_PATH)  # type: ignore[attr-defined]
 
+    from services.image_config_service import ImageConfigService
+    from services.image_validity_service import ImageValidityService
+
+    bot.image_config_service = ImageConfigService(DB_PATH)  # type: ignore[attr-defined]
+    bot.image_validity_service = ImageValidityService(  # type: ignore[attr-defined]
+        bot.image_config_service,  # type: ignore[attr-defined]
+        bot.module_service,  # type: ignore[attr-defined]
+    )
+
+    from services.image_render_service import ImageRenderService
+
+    bot.image_render_service = ImageRenderService(  # type: ignore[attr-defined]
+        DB_PATH,
+        bot.image_config_service,  # type: ignore[attr-defined]
+        bot.image_validity_service,  # type: ignore[attr-defined]
+    )
+
     @bot.event
     async def on_ready() -> None:
         log.info("Logged in as %s (id=%s)", bot.user, bot.user.id)
@@ -245,6 +262,7 @@ async def main() -> None:
     from cogs.results_cog import ResultsCog
     from cogs.weather_cog import WeatherCog
     from cogs.attendance_cog import AttendanceCog
+    from cogs.image_cog import ImageCog
     from cogs.clean_cog import CleanCog
 
     await bot.add_cog(InitCog(bot))
@@ -262,6 +280,7 @@ async def main() -> None:
     await bot.add_cog(ResultsCog(bot))
     await bot.add_cog(WeatherCog(bot))
     await bot.add_cog(AttendanceCog(bot))
+    await bot.add_cog(ImageCog(bot))
     await bot.add_cog(CleanCog(bot))
 
     # Register ALL persistent views so button interactions survive bot restarts.

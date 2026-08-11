@@ -176,6 +176,53 @@ class SeasonCog(commands.Cog):
             f"  season: Season #{cfg.season_number} (F1 {cfg.game_edition})",
         )
 
+    async def _build_image_review_section(self, server_id: int) -> list[str]:
+        """The image module's addendum to `/season review` (FR-033).
+
+        Built from the same `AspectStatus` list `/images config view` renders, so a
+        divergence between the two surfaces is impossible by construction. Template
+        detail is summarised rather than repeated in full — a season review is already
+        long, and `/images config view` is where the fifteen lines belong.
+        """
+        from models.image_constants import ASPECT_LABELS
+        from models.image_module import STATE_DISABLED, STATE_ENABLED
+        from services.image_render_service import (
+            CONVERTER_NAME,
+            converter_available,
+        )
+        from services.image_validity_service import ImageValidityService
+
+        lines: list[str] = ["**Image output**"]
+
+        if not converter_available():
+            lines.append(
+                f"  ⛔ {CONVERTER_NAME} is not installed on this host — "
+                f"no image will be generated until it is."
+            )
+
+        try:
+            statuses = await self.bot.image_validity_service.aspect_statuses(server_id)  # type: ignore[attr-defined]
+            reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
+        except Exception as exc:  # a review must never fail because of this section
+            log.error("season review: image section failed: %s", exc)
+            return ["**Image output**", "  ⚠️ Could not be read.", ""]
+
+        icons = {STATE_ENABLED: "✅", STATE_DISABLED: "❌"}
+        for status in statuses:
+            icon = icons.get(status.state, "⚠️")
+            lines.append(f"  {icon} {ASPECT_LABELS[status.aspect]}")
+            for reason in status.blocking_reasons:
+                lines.append(f"      ↳ {reason}")
+
+        invalid = [r for r in reports.values() if not r.valid]
+        lines.append(
+            f"  Templates: {len(reports) - len(invalid)}/{len(reports)} resolve"
+            + (" — see `/images config view`" if invalid else "")
+        )
+        lines.append(f"  _{ImageValidityService.depth_summary(reports)}_")
+        lines.append("")
+        return lines
+
     @season.command(
         name="review",
         description="Review pending season configuration before approving.",
@@ -224,14 +271,23 @@ class SeasonCog(commands.Cog):
                     signup_line = f"  Signup: {on}"
             else:
                 signup_line = f"  Signup: {off}"
+            images_on = await self.bot.module_service.is_images_enabled(interaction.guild_id)  # type: ignore[attr-defined]
             header_lines += [
                 "**Modules**",
                 f"  Weather: {on if weather_on else off}",
                 signup_line,
                 f"  Results: {on if results_on else off}",
                 f"  Attendance: {on if attendance_on else off}",
+                f"  Images: {on if images_on else off}",
                 "",
             ]
+
+            # ── Image module (FR-033, FR-034) ─────────────────────────
+            # When disabled, report that and omit the detail. When enabled, render the
+            # aspect section from the same AspectStatus list `/images config view`
+            # uses, so the two surfaces cannot drift.
+            if images_on:
+                header_lines += await self._build_image_review_section(interaction.guild_id)
 
             # ── Weather config ────────────────────────────────────────
             if weather_on:

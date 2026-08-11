@@ -23,6 +23,7 @@ _MODULE_CHOICES = [
     app_commands.Choice(name="signup", value="signup"),
     app_commands.Choice(name="results", value="results"),
     app_commands.Choice(name="attendance", value="attendance"),
+    app_commands.Choice(name="images", value="images"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -171,6 +172,8 @@ class ModuleCog(commands.Cog):
             await self._enable_results(interaction, server_id)
         elif module_name.value == "attendance":
             await self._enable_attendance(interaction, server_id)
+        elif module_name.value == "images":
+            await self._enable_images(interaction, server_id)
         else:
             await self._enable_signup(interaction, server_id)
 
@@ -197,6 +200,8 @@ class ModuleCog(commands.Cog):
             await self._disable_results(interaction, server_id)
         elif module_name.value == "attendance":
             await self._disable_attendance(interaction)
+        elif module_name.value == "images":
+            await self._disable_images(interaction, server_id)
         else:
             await self._disable_signup(interaction, server_id)
 
@@ -514,6 +519,101 @@ class ModuleCog(commands.Cog):
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable attendance | Success",
         )
         await interaction.followup.send("✅ Attendance module enabled.", ephemeral=True)
+
+    # ── Images enable (T015) ───────────────────────────────────────────
+
+    async def _enable_images(
+        self, interaction: discord.Interaction, server_id: int
+    ) -> None:
+        from services.image_render_service import (
+            converter_absent_message,
+            converter_available,
+        )
+
+        if await self.bot.module_service.is_images_enabled(server_id):
+            await interaction.response.send_message(
+                "⚠️ Image module is already enabled.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            # create_with_defaults is idempotent: an existing configuration is left
+            # exactly as it was, which is what makes re-enabling lossless (FR-004a).
+            await self.bot.image_config_service.create_with_defaults(server_id)
+            await self.bot.module_service.set_images_enabled(server_id, True)
+            async with get_connection(self.bot.db_path) as db:
+                await db.execute(
+                    "INSERT INTO audit_entries "
+                    "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                    "VALUES (?, ?, ?, NULL, 'IMAGE_MODULE_ENABLED', '', '', ?)",
+                    (server_id, interaction.user.id, str(interaction.user), now),
+                )
+                await db.commit()
+        except Exception as exc:
+            await self.bot.module_service.set_images_enabled(server_id, False)
+            await interaction.followup.send(
+                f"❌ Image module enable failed: {exc}. Module remains disabled.",
+                ephemeral=True,
+            )
+            return
+
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable images | Success",
+        )
+
+        message = "✅ Image module enabled. All output aspects start disabled — use `/images config toggle`."
+        # The module enables even without the rasteriser, so an administrator can finish
+        # configuring while waiting for it to be installed (FR-007, FR-008).
+        if not converter_available(use_cache=False):
+            message += "\n\n" + converter_absent_message()
+
+        await interaction.followup.send(message, ephemeral=True)
+
+    # ── Images disable (T016) ──────────────────────────────────────────
+
+    async def _disable_images(
+        self, interaction: discord.Interaction, server_id: int
+    ) -> None:
+        """Clear the enabled flag and nothing else.
+
+        No configuration row is deleted, no toggle reset and no notice history purged.
+        This is the Principle X.6 exception for configuration that cannot go stale: no
+        image config value names a Discord channel, role, message or scheduled job, so
+        none can become a stale binding while the module is off (FR-004a). No
+        ``--preserve-config`` flag is offered because nothing is cleared (FR-004b).
+        """
+        if not await self.bot.module_service.is_images_enabled(server_id):
+            await interaction.response.send_message(
+                "⚠️ Image module is already disabled.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        now = datetime.now(timezone.utc).isoformat()
+        await self.bot.module_service.set_images_enabled(server_id, False)
+        async with get_connection(self.bot.db_path) as db:
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, NULL, 'IMAGE_MODULE_DISABLED', '', '', ?)",
+                (server_id, interaction.user.id, str(interaction.user), now),
+            )
+            await db.commit()
+
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable images | Success",
+        )
+        await interaction.followup.send(
+            "✅ Image module disabled. Every aspect reverts to text output.\n"
+            "Your configuration is kept — re-enabling restores it exactly.",
+            ephemeral=True,
+        )
 
     # ── Attendance disable ─────────────────────────────────────────────
 
