@@ -2,7 +2,9 @@
   "permissions": {
     "deny": [
       "Read(/docs/wip-specs/**)",
-      "Edit(/docs/wip-specs/**)"
+      "Edit(/docs/wip-specs/**)",
+      "Read(/resources/**)",
+      "Edit(/resources/**)"
     ]
   }
 }

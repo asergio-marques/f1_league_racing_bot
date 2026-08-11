@@ -355,24 +355,28 @@ Manually sets the `former_driver` flag on a driver profile. Only available when 
 
 ### Module Commands
 
-Modules extend the bot beyond weather generation. Three modules are available: **weather**, **signup**, and **results**.
+Modules extend the bot beyond weather generation. Five modules are available: **weather**, **signup**, **results**, **attendance**, and **images**. All are disabled by default.
 
 #### `/module enable` — Enable a bot module
-*Access: Trusted admin*
+*Access: Server administrator*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `module_name` | Choice | ✅ | Module to enable: `weather`, `signup`, or `results` |
+| `module_name` | Choice | ✅ | Module to enable: `weather`, `signup`, `results`, `attendance`, or `images` |
 | `channel` | Channel | — | *(signup only)* Channel designated for signup interactions |
 | `base_role` | Role | — | *(signup only)* Role granted to members eligible to sign up |
 | `signed_up_role` | Role | — | *(signup only)* Role granted on successful signup completion |
 
+The **attendance** module requires the results module to be enabled first, and cannot be enabled while a season is active.
+
 #### `/module disable` — Disable a bot module
-*Access: Trusted admin*
+*Access: Server administrator*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `module_name` | Choice | ✅ | Module to disable: `weather`, `signup`, or `results` |
+| `module_name` | Choice | ✅ | Module to disable: `weather`, `signup`, `results`, `attendance`, or `images` |
+
+Disabling a module cancels its scheduled jobs and clears its channel and role configuration; historical data is always retained. The **images** module is the exception: it stores only filesystem paths and display preferences, none of which can go stale while it is off, so disabling it clears nothing but the enabled flag and re-enabling restores the configuration exactly.
 
 ---
 
@@ -1004,6 +1008,115 @@ No parameters. Displays the full attendance configuration for this server as an 
 - **Timing** — RSVP notice days, last-reminder hours, and RSVP deadline hours
 - **Penalties** — No-RSVP penalty, absent penalty (NO_RSVP/TENTATIVE/DECLINED + absent), and no-show penalty (ACCEPTED + absent)
 - **Auto-actions** — Auto-reserve threshold and auto-sack threshold (both shown as `disabled` when set to `0`)
+
+---
+
+### Image Module
+
+The image module posts bot output as generated PNGs instead of text, by filling pre-prepared SVG templates. Enable it with `/module enable images`.
+
+**Prerequisite:** the machine running the bot must carry **Inkscape**, which converts the filled SVG to PNG. No Python dependency installs it — it is a separate program. Its absence is fatal to the whole module and is reported at `/season review`, at `/images config view` and at `/images test`. If Inkscape is installed somewhere unusual, set the `INKSCAPE` environment variable to the executable's full path.
+
+`lxml` and `fontTools` are ordinary Python dependencies and are already in `requirements.txt`.
+
+#### `/images config toggle` — Choose image or text, per kind of output
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `aspect` | Choice | ✅ | `calendar`, `lineup`, `results`, `standings`, `attendance`, `rsvp`, `weather`, or `verdicts` |
+
+Flips that aspect between a generated image and the text the bot has always posted. All eight start disabled.
+
+> **Currently records intent only.** Setting a toggle changes what `/images config view` and `/season review` report, and nothing else — wiring each source module to post images is a later increment. Use `/images test` to see what an aspect will produce.
+
+#### `/images template <kind>` — Name the SVG file backing each image
+*Access: Server administrator*
+
+Fifteen subcommands, each taking a `filename` inside the configured template directory:
+
+| Subcommand | Default filename |
+|------------|------------------|
+| `calendar` | `calendar_template.svg` |
+| `lineup` | `lineup_template.svg` |
+| `results-qualifying` | `results_qualifying_template.svg` |
+| `results-race` | `results_race_template.svg` |
+| `standings-drivers` | `standings_drivers_template.svg` |
+| `standings-constructors` | `standings_constructors_template.svg` |
+| `attendance` | `attendance_template.svg` |
+| `rsvp` | `rsvp_template.svg` |
+| `weather-p1` | `weather_p1_template.svg` |
+| `weather-p2` | `weather_p2_template.svg` |
+| `weather-p3` | `weather_p3_template.svg` |
+| `weather-p2-sprint` | `weather_p2_sprint_template.svg` |
+| `weather-p3-sprint` | `weather_p3_sprint_template.svg` |
+| `weather-mystery` | `weather_mystery_template.svg` |
+| `verdicts` | `verdicts_template.svg` |
+
+Qualifying and race results are drawn from separate templates, as are the driver and constructor standings, and the attendance sheet and check-in call — each pair shares too few columns to share a file. A sprint and a feature session of the same kind *do* share a template, distinguished by the session-name field alone. Weather phases 2 and 3 have separate sprint variants because a sprint round holds four sessions where every other format holds two.
+
+These sit under `/images template` rather than `/images config` because Discord allows at most 25 subcommands per group.
+
+#### `/images config <directory>` — Where files are searched for
+*Access: Server administrator*
+
+Every directory is a path relative to the project root, and one that resolves outside it is rejected.
+
+| Subcommand | Default | Holds |
+|------------|---------|-------|
+| `template-directory` | `resources/templates` | The fifteen SVG templates |
+| `track-image-directory` | `resources/tracks` | Circuit images |
+| `team-image-directory` | `resources/teams` | Team logos, badges, cars |
+| `flag-directory` | `resources/flags` | Driver nationality flags |
+| `driver-image-directory` | `resources/drivers` | Driver portraits |
+| `marker-directory` | `resources/markers` | Standings position-change markers |
+| `weather-icon-directory` | `resources/weather` | Weather condition icons |
+| `tyre-directory` | `resources/tyres` | Tyre compound icons |
+
+Placing the files is the operator's job; the bot resolves the paths and reports what it finds.
+
+#### `/images config` — Presentation
+*Access: Trusted admin*
+
+| Subcommand | Parameter | Default | Description |
+|------------|-----------|---------|-------------|
+| `time-zone` | `zone` | `UTC` | IANA zone name, autocompleted. Times use the offset in force **on the date shown**, so a season spanning a daylight-saving change stays correct. |
+| `time-format` | `clock` | 24-hour | 12-hour or 24-hour |
+| `date-format` | `style` | `Sun 14 Jun 2026` | Five formats; the default carries the weekday |
+| `fastest-lap-colour` | `colour` | `#A020F0` | `#` plus exactly six hex digits |
+
+`fastest-lap-colour` reports the contrast of the chosen colour against the plate the race results template draws behind that field, and warns below 4.5:1 — the threshold at which text of that size stays legible. The colour is stored either way; it is the league's to choose. Where the template is invalid or declares no `fastest_lap_background` element, the bot says the contrast could not be measured rather than guessing.
+
+#### `/images config view` — Show the configuration and whether it holds together
+*Access: Trusted admin*
+
+No parameters. Lists every setting with a validity status, and each aspect as ✅ enabled, ❌ disabled, or ⚠️ enabled but invalid. An invalid report names the individual template at fault — which weather phase and variant, or which half of a results or standings pair — never just the group.
+
+The report also states **how deeply templates were checked**. Today that is layer 1: the file resolves, parses as SVG, and declares a canvas. Deeper checks (does the template carry every field the image needs?) arrive as each image type is specified, and the report will say so rather than implying more was verified than was.
+
+The same summary is appended to `/season review`.
+
+#### `/images test` — Render one kind from sample data
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `kind` | Choice | ✅ | `calendar`, `lineup`, `results`, `standings`, `attendance`, `rsvp`, `weather-p1`, `weather-p2`, `weather-p3`, `weather-mystery`, `verdicts` |
+
+Renders from built-in sample data and replies with the PNG, visible only to you. It reads no live season data, so it works on a server with no season configured. `results`, `standings`, `weather-p2` and `weather-p3` each return both of their variants.
+
+Anything the render survived is listed alongside the image — a substituted font, a wrapped field cut at its size floor, a name cut to the width its column allows. Anything it could not survive returns no image and states why.
+
+#### Templates: what the bot expects
+
+A template is a plain SVG whose declared `width` and `height` are the canvas. The bot addresses elements by `id` and does exactly six things: fill text, swap an image's `href`, recolour a field, remove a group, crop the canvas vertically at a marker, and wrap text inside a rectangle named by `shape-inside`.
+
+Two conventions matter when authoring one:
+
+- A field that receives a Discord display name should declare an `inline-size`; it is the only bound on a name of a length no league controls. Overflow is cut at a word boundary and ellipsised.
+- A field that receives prose should declare `shape-inside` pointing at a rectangle. The text is set down half a pixel at a time until it fits, and at half the declared size is cut with an ellipsis.
+
+Assets are plain SVG, authored at exactly the aspect ratio of the slot they fill — the generator does not pad, so an asset of the wrong shape will be stretched.
 
 ---
 

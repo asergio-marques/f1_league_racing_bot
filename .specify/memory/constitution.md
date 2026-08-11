@@ -1,6 +1,180 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-11 — v2.12.0 → v2.12.1: PATCH — entity re-grained to match what was built]
+  Version change    : 2.12.0 → 2.12.1
+  Bump rationale    : PATCH — One entity renamed and re-grained to match the delivered
+                      implementation. No principle added, removed or redefined; no
+                      governance rule changed. The correction was anticipated in the
+                      035-image-module plan's Complexity Tracking and is applied now that
+                      the feature is built.
+  Feature branch    : 035-image-module
+
+  Modified sections :
+    - Data & State Management → New Entities (v2.11.0): **ImageTypeState** renamed to
+      **ImageAspectToggle** and re-grained from the image *type* (15 rows) to the output
+      *aspect* (8 rows), with `enabled` defaulting to false rather than true.
+
+  Why                : The command surface a league actually uses is the eight aspects of
+                       `/images config toggle`. No command addresses an individual
+                       template's toggle, so a 15-row table would have required fanning
+                       one value out to as many as six rows (weather) and folding them
+                       back for reporting, with no user-visible benefit. The default was
+                       false, not true, because Principle X.1 requires a freshly
+                       configured server to have every optional capability off.
+                       `source_module` ceased to be a stored column: it never varies per
+                       server, so it is a code constant per aspect.
+
+  Governance         : Unchanged. Principle count is still I–XIV.
+
+  Templates confirmed aligned: no change — this touches an entity definition only.
+
+[2026-08-10 — v2.11.0 → v2.12.0: MINOR — validity contract and stale-proof config exception]
+  Version change    : 2.11.0 → 2.12.0
+  Bump rationale    : MINOR — Two materially expanded guidance additions, both arising from
+                      clarifications answered by the author during the 035-image-module
+                      specification session. No principle removed or incompatibly redefined.
+  Feature branch    : 035-image-module
+
+  Session context   : Three scope questions were put to the author while specifying the
+                      image module. Two were answered with a decision; the third was
+                      answered with an instruction to leave the matter open and govern it,
+                      which is what this amendment does.
+                        Q1 (increment size)     → config surface + `images test` only;
+                                                  the output toggles are stored but inert
+                                                  this increment. No governance impact.
+                        Q2 (template validity)  → deliberately left open. Validity is to be
+                                                  defined incrementally in later sessions and
+                                                  wired into the same reporting surface. The
+                                                  author asked that this be a keynote of the
+                                                  constitution or the specification; it is
+                                                  governed here and instantiated there.
+                        Q3 (config on disable)  → retained. Requires an exception to
+                                                  Principle X.6, added here.
+
+  Modified principles :
+    - X. Modular Feature Architecture, rule 6 (Module configuration isolation) — added the
+        "configuration that cannot go stale" exception. A module whose configuration consists
+        solely of values that remain true while it is disabled retains that configuration
+        across a disable; only the module-enabled flag is cleared. Qualification is defined
+        narrowly: a value qualifies only if it names nothing the bot owns or schedules — a
+        filesystem path, a display preference, a colour, a format. Any value naming a Discord
+        channel, role, message or scheduled job does not qualify. A module claiming the
+        exception must enumerate its qualifying values in its feature specification. The
+        Image generation module claims it for the whole of its configuration.
+    - XIV. Image Generation Discipline — added rule 9, "Template validity is a layered,
+        extensible contract". Validity is evaluated at configuration time, separately from
+        rendering, as ordered named layers, cheapest first. Layer 1 (Resolution: file
+        resolves, parses as SVG, declares a root canvas) is mandatory from the outset for
+        every template. Deeper layers — field-catalogue conformance, field addressability,
+        declared text bounds, trial render — are ratified per image type as that type's
+        catalogue is specified, and must not be enforced against a type whose catalogue does
+        not yet exist. Four rules bind the growth: stable surface (adding a layer changes
+        neither the command surface, the three reported states, nor the report structure —
+        only the set of reasons); specific attribution (name the individual template, never
+        the group); declared depth (a report states which layers were applied); and no silent
+        pass (a type checked only shallowly is not presented as fully valid).
+
+  Added sections      : None — both changes are expansions of existing principles.
+  Removed sections    : None
+
+  Templates confirmed aligned:
+      ✅ .specify/templates/plan-template.md       — dynamic Constitution Check; no changes.
+      ✅ .specify/templates/spec-template.md       — generic structure; no stale references.
+      ✅ .specify/templates/tasks-template.md      — generic; aligns with I–XIV.
+      ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+      ✅ .specify/templates/checklist-template.md  — no impact.
+      ✅ .specify/templates/constitution-template.md — source template; no changes required.
+
+  Governance          : Unchanged. Principle count is still I–XIV; the PR Constitution Check
+                        line already reads "I–XIV" as of v2.11.0.
+
+  Deferred TODOs (new at this version):
+      - Each image type's field catalogue, and with it the deeper validity layers rule 9
+        anticipates, must be ratified as that type is specified. Until then every template
+        is checked to Layer 1 only and must be reported as such.
+      - The per-aspect wiring of image output into the eight source-module posting paths is
+        deferred to a later increment per Q1; the toggles ratified here are inert until then.
+
+  Deferred TODOs (carried from v2.11.0):
+      - README module documentation for the image module, deferred until there are commands
+        to document. The README "Module Commands" section names only three modules and is
+        already stale for the Attendance module ratified at v2.10.0; close both together.
+      - Principle XIV was derived from the author's brief and from the committed proof of
+        concept at resources/poc/ and resources/templates/. The working specification at
+        docs/wip-specs/image_module_specification.md was not readable in these sessions
+        (deny-listed in .claude/settings.json) and must be reconciled against.
+
+[2026-08-10 — v2.10.1 → v2.11.0: MINOR — image generation module governance added]
+  Version change    : 2.10.1 → 2.11.0
+  Bump rationale    : MINOR — A new Core Principle (XIV) was added and three existing
+                      principles were materially expanded to admit a new optional module.
+                      No principle was removed or redefined incompatibly, so this is not
+                      a MAJOR bump.
+  Version stamp fix : The footer version line read 2.10.0 while the v2.10.1 report entry
+                      above claimed 2.10.1. The v2.10.1 content change (Governance
+                      "I–XII" → "I–XIII") had in fact been applied; only the stamp was
+                      missed. The footer now reads 2.11.0, and the 2.10.1 → 2.11.0 chain
+                      is recorded here so the history is continuous.
+  Feature branch    : 035-image-module (created 2026-08-10 from main)
+  Session intent    : Set up the initial configuration of a new image generation module.
+                      The module accepts inputs from the four existing modules (results &
+                      standings, weather, signups, attendance) and from the shared season /
+                      division / round / team / driver concepts, and provides an alternative
+                      output path: standardised SVG templates filled with data and
+                      rasterised to PNG attachments.
+
+  Modified principles :
+    - VI. Incremental Scope Expansion — added in-scope domain 12 (image-based output
+        generation). Replaced the "current output format is text-only" paragraph, which the
+        addition of the module makes false, with the two-format additive statement.
+    - VII. Output Channel Discipline — added the "Image attachments" clause: a generated
+        image rides on the source module's message in the source module's registered
+        channel; the image module registers no channel category of its own.
+    - X. Modular Feature Architecture — added the Image generation module to the optional
+        module list, classified as a *consumer* module (no channels, no messages of its
+        own), with its enable/disable semantics against source modules stated.
+
+  Added sections      :
+    - Principle XIV: Image Generation Discipline (NON-NEGOTIABLE) — eight non-negotiable
+        rules: templates are data not code; fields addressed by @id with a closed set of six
+        fill operations; every addressable field must resolve; problems abort while notices
+        are logged and survive; text bounds declared by the template (inline-size /
+        shape-inside); assets aspect-authored and never padded by the generator; image
+        output strictly additive with text fallback; images are attachments, not a channel.
+    - Data & State Management → New Entities (v2.11.0): ImageConfig, ImageTypeState,
+        RenderNotice. Render problems deliberately reuse the Principle V audit log rather
+        than adding a fourth entity.
+
+  Removed sections    : None
+
+  Templates confirmed aligned:
+      ✅ .specify/templates/plan-template.md       — dynamic Constitution Check; no changes.
+      ✅ .specify/templates/spec-template.md       — generic structure; no stale references.
+      ✅ .specify/templates/tasks-template.md      — generic; aligns with I–XIV.
+      ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale names.
+      ✅ .specify/templates/checklist-template.md  — no impact.
+      ✅ .specify/templates/constitution-template.md — source template; no changes required.
+
+  Deferred TODOs (new at this version):
+      - README module documentation for the image module is deferred until the module has
+        commands to document. The README "Module Commands" section currently names three
+        modules (weather, signup, results) and is already stale with respect to the
+        Attendance module ratified at v2.10.0; both gaps should be closed in the same pass.
+      - Principle XIV was derived from the user's session brief and from the committed
+        proof of concept at resources/poc/ and resources/templates/. The working
+        specification at docs/wip-specs/image_module_specification.md was not readable in
+        this session (deny-listed in .claude/settings.json), so the field catalogue,
+        the `images test <type>` command surface, and the per-image-type inventory MUST be
+        reconciled against that document before /speckit-specify is run.
+
+  Deferred TODOs (carried from v2.10.0):
+      - Exact command naming for appeal submission and review commands to be confirmed
+        against the 026-penalty-posting-appeals implementation.
+      - Whether the existing penalty wizard loose-text fields on DriverSessionResult
+        (post_race_time_penalties, post_stewarding_total_time) have been fully superseded
+        by PenaltyRecord rows — migration confirmation required.
+
 [2026-04-03 — v2.10.0 → v2.10.1: PATCH — governance section reference corrected; attendance tracking branch initialised]
   Version change    : 2.10.0 → 2.10.1
   Bump rationale    : PATCH — Two non-semantic corrections:
@@ -1099,6 +1273,11 @@ domains are formally in-scope as of this version:
     the RSVP deadline, attendance tracking once round results are submitted, attendance
     point accumulation per driver, attendance pardon workflow inside the penalty wizard,
     and automatic sanction enforcement (autoreserve and autosack thresholds).
+12. **Image-based output generation**: SVG template filling and PNG rasterisation for the
+    output of information already produced by the results & standings, weather, signup, and
+    attendance domains, plus the season, division, round, team, and driver concepts they
+    share; the asset catalogue backing those templates; and per-server enablement of the
+    image output path (Principle XIV).
 
 The following domains are **planned future scope** — each will be formally ratified as an
 independent feature increment before any implementation begins:
@@ -1111,9 +1290,10 @@ Every proposed new command or data concern MUST be evaluated against the current
 boundary before implementation begins. Features not falling within a ratified domain MUST
 be rejected or deferred via the governance process below.
 
-The current output format is text-only. Image-based output is a known planned evolution
-(required by the signup time-proof feature) and MUST be designed as an additive change
-that does not break existing text output paths.
+Output is available in two formats: text, which is always available, and images, which are
+produced by the image generation module (Principle XIV). Image output is strictly additive —
+every image corresponds to information the bot can already express as text, and no image
+path may replace or degrade a text path.
 
 **Rationale**: A controlled, documented expansion path allows the bot to grow toward full
 league management without sacrificing reliability or auditability. Each increment is gated
@@ -1135,6 +1315,11 @@ channel categories (e.g., a general signup channel, per-driver signup channels).
 category MUST be explicitly documented in the module's feature specification, configured
 via a dedicated module-setup command, and governed by the same discipline as primary
 channels — no unregistered posting, no cross-channel noise.
+
+**Image attachments**: A generated image (Principle XIV) is an attachment on the message its
+source module posts, not a message of its own. It MUST be posted to the channel that module
+already registered for that information. The image generation module registers no channel
+category and MUST NOT post independently of a source module.
 
 The bot MUST NOT post to any other channel, including the interaction channel where commands
 are issued. Unsolicited messages in unregistered channels are not permitted.
@@ -1276,6 +1461,13 @@ structured subcommand):
   (Principle XIII). MUST NOT be enabled while the Results & Standings module is disabled;
   if the Results & Standings module is disabled while Attendance is active, the Attendance
   module is disabled automatically.
+- **Image generation module**: renders SVG templates to PNG attachments for the output of
+  the other modules and of the shared season, division, round, team and driver concepts;
+  owns the template set and asset catalogue (Principle XIV). It is a *consumer* module: it
+  registers no channels and originates no messages of its own. Enabling it switches the
+  output path of every source module that has an image type defined; disabling it returns
+  those modules to text output. It MAY be enabled independently of any source module, but
+  image types belonging to a disabled source module MUST NOT be produced.
 - Additional modules as ratified under Principle VI.
 
 The following rules MUST hold for every optional module:
@@ -1305,6 +1497,23 @@ The following rules MUST hold for every optional module:
    from core server configuration (Principle I). Disabling a module clears module config;
    re-enabling starts fresh unless a `--preserve-config` flag is explicitly supported and
    documented.
+
+   **Exception — configuration that cannot go stale**: A module whose configuration consists
+   solely of values that remain true while the module is disabled MUST retain that
+   configuration across a disable, and disabling MUST clear only the module-enabled flag.
+   A value qualifies only if it names nothing the bot owns or schedules — a filesystem path,
+   a display preference, a colour, a format. Any value naming a Discord channel, role,
+   message or scheduled job does NOT qualify and remains subject to the clearing rule above.
+   A module claiming this exception MUST enumerate the qualifying values in its feature
+   specification. The **Image generation module** claims it for the whole of its
+   configuration: template and asset directories, template filenames, time zone, clock and
+   date formats, the fastest-lap colour, and the per-aspect output toggles.
+
+   **Rationale for the exception**: The clearing rule exists so that a re-enabled module
+   cannot act on stale bindings to server objects that may have been deleted or reassigned
+   while it was off. A filesystem path or a colour has no such binding — it is as true after
+   a disable as before it, and discarding thirty such values punishes an administrator for
+   toggling a module off to diagnose a problem.
 
 **Rationale**: The bot's growth toward full league management requires a clean separation
 between always-on infrastructure (divisions, drivers, teams) and capability modules that
@@ -1736,6 +1945,121 @@ admins a transparent mechanism to enforce attendance requirements without ad-hoc
 intervention. Deferring attendance point distribution to post-penalty finalization prevents
 incorrect automatic sanctions from provisional result errors.
 
+### XIV. Image Generation Discipline (NON-NEGOTIABLE)
+
+Image output is produced by filling a static SVG template with data and rasterising the
+filled SVG to PNG. The following rules are non-negotiable:
+
+**1. Templates are data, not code.**
+
+Every image type MUST be backed by an SVG template file stored under `resources/templates/`.
+Templates MUST NOT be generated, assembled, or emitted by application code. A template's
+declared `width` and `height` are authoritative: the renderer MUST read the canvas from the
+template root and MUST NOT assume a fixed canvas for any image type. Changing an image's
+layout, colour, or dimensions MUST be achievable by editing the template alone.
+
+**2. Fields are addressed by `@id`.**
+
+The only contract between a template and the code that fills it is the set of element `@id`
+values. The module MUST support exactly these fill operations, and no others:
+
+| Operation | Target | Effect |
+|-----------|--------|--------|
+| Text fill | `<text>` / `<tspan>` by `@id` | Replaces the element's text content |
+| Image fill | element by `@id` | Rewrites `xlink:href` to an asset path |
+| Recolour | element by `@id` | Merges a `fill:` declaration into the element's inline `style` |
+| Group removal | group by `@id` | Removes the group and its subtree |
+| Vertical crop | crop-point node by `@id` | Rewrites root `height` and `viewBox` to the node's `y` |
+| Text wrap | `<text>` carrying `shape-inside` by `@id` | Breaks the string into `<tspan>` lines against the referenced rectangle |
+
+Recolour MUST be merged into the existing inline `style` rather than written as a
+presentation attribute or as a `style` replacement, so that template-declared styling on the
+same element survives. Recolour MUST NOT count as addressing a field: a recoloured field
+MUST still be filled.
+
+**3. Every addressable field MUST be resolved.**
+
+A render MUST fail if any field addressed by the image type's field catalogue is left
+unfilled, or if the data supplies a field the template does not declare. A field removed
+from the canvas by a group removal or a vertical crop is not an unresolved field.
+
+**4. Problems and notices are distinct outcomes.**
+
+- A **problem** is a disagreement between template and data (unresolved field, unknown
+  field, missing template, missing asset, rasteriser failure). A problem MUST abort the
+  render; no partial or placeholder image may be posted.
+- A **notice** is a non-fatal degradation the render survives (a substituted font, a wrapped
+  field reduced to its size floor and cut, a single-line field cut to its declared
+  `inline-size`). Notices MUST NOT abort the render and MUST be reported to the calculation
+  log channel (Principle V).
+
+**5. Text bounds are declared by the template.**
+
+Single-line fields that may receive unbounded input — any field carrying a Discord display
+name — MUST declare an `inline-size`; overflow is cut at a word boundary, ended with an
+ellipsis, and raises a notice. Wrapped fields MUST declare `shape-inside`; the text is set
+down by half-pixel steps until it fits, and at the floor of half the template-declared size
+is cut at a word boundary with an ellipsis and raises a notice. Line height MUST scale with
+the reduced size, and the admissible line count MUST be recomputed at the reduced leading.
+Overflow MUST NOT be silently clipped by the rasteriser.
+
+**6. Assets are aspect-authored, never padded by the generator.**
+
+Assets under `resources/` MUST be plain SVG with no `clipPath`, gradient, or filter, and MUST
+be authored at exactly the aspect ratio of the slot they fill. The generator MUST NOT pad or
+letterbox an asset. A league supplying its own assets is bound by the same requirement, and
+the module MUST document it wherever asset upload is offered.
+
+**7. Image output is additive.**
+
+Image generation MUST NOT replace or alter any existing text output path. Every image the
+module produces MUST correspond to information the bot can already express as text, and the
+text path MUST remain functional when the module is disabled or a render fails. A failed
+render MUST fall back to the text output for that information rather than producing no
+output at all.
+
+**8. Images are attachments, not a new channel category.**
+
+Generated PNGs MUST be posted as attachments on the message the source module would have
+posted anyway, to that module's already-registered channel (Principle VII). The image module
+MUST NOT register channel categories of its own.
+
+**9. Template validity is a layered, extensible contract.**
+
+A template's validity is evaluated at configuration time, on demand, and separately from any
+render. The checks that constitute validity MUST be organised as ordered, independently named
+layers, cheapest first. The set of layers is deliberately open: it grows as each image type is
+formally specified, and a layer MUST be ratified before it is enforced.
+
+- **Layer 1 — Resolution** is mandatory from the outset and applies to every template: the file
+  resolves within the configured directory, parses as well-formed SVG, and declares a root
+  `width` and `height` (Rule 1).
+- **Deeper layers** — field-catalogue conformance (Rule 2), addressability of every required
+  field (Rule 3), declared text bounds (Rule 5), trial render — are ratified per image type as
+  that type's field catalogue is specified, and MUST NOT be enforced against an image type
+  whose catalogue does not yet exist.
+
+The following MUST hold as layers are added:
+
+1. **Stable surface**: adding a layer MUST NOT change the configuration command surface, the
+   three reported states (enabled / disabled / enabled-but-invalid), or the structure of a
+   validity report. Only the set of reasons a template can be reported invalid may grow.
+2. **Specific attribution**: every layer MUST name the individual template at fault and give a
+   reason distinguishable from every other layer's failure. A report naming a group of
+   templates rather than the one at fault does not satisfy this rule.
+3. **Declared depth**: a validity report MUST state which layers were applied. A template that
+   has passed only Layer 1 MUST NOT be presented as though it had passed a deeper check.
+4. **No silent pass**: an image type for which a deeper layer is not yet ratified MUST be
+   reported as checked to the depth currently available, not as fully valid.
+
+**Rationale**: Separating layout (the template) from data (the fill) is what allows a league
+to restyle its graphics without a code change and what keeps the rendering code independent
+of the number of image types. Failing loudly on a template/data disagreement while surviving
+a font substitution is the distinction that makes the module safe to run unattended: the
+first is a defect that would post a wrong graphic, the second is a cosmetic degradation a
+league can act on at leisure. Requiring the text path to remain authoritative ensures that
+adding graphics never reduces what the bot can tell a league.
+
 ## Bot Behavior Standards
 
 All Discord slash commands MUST follow the `/domain action` subcommand-group convention — a
@@ -2096,6 +2420,43 @@ for team-level aggregates):
   appeal outcomes for this division are posted to this channel; if null, the bot falls
   back to `results_channel_id`.
 
+### New Entities (v2.11.0)
+
+**ImageConfig** (per server, owned by the Image generation module):
+- `server_id` (TEXT, PK)
+- `module_enabled` (BOOLEAN, default false)
+- `asset_root` (TEXT, nullable) — filesystem root for league-supplied assets; null means the
+  packaged defaults under `resources/` are used for every asset class.
+
+**ImageAspectToggle** (per server, per output aspect — eight rows per server):
+- `server_id` (TEXT)
+- `aspect` (TEXT) — one of `calendar`, `lineup`, `results`, `standings`, `attendance`,
+  `rsvp`, `weather`, `verdicts`.
+- `enabled` (BOOLEAN, default false) — whether this aspect is drawn as an image when the
+  module is enabled and its source module is enabled. Allows a league to keep text output
+  for individual aspects.
+- Uniquely keyed on (server_id, aspect).
+
+The aspect is the unit a league toggles; the templates backing it are an implementation
+detail of what the aspect draws. The mapping from aspect to template is a code constant,
+not a table: eight aspects cover fifteen templates (weather alone accounts for six), and
+no command addresses an individual template's toggle. `source_module` is likewise a
+constant per aspect rather than a stored column, since it never varies per server.
+
+**RenderNotice** (append-only, per render — the audit record required by Principle XIV.4):
+- `notice_id` (INTEGER PK, server-scoped auto-increment)
+- `server_id` (TEXT)
+- `image_type` (TEXT)
+- `rendered_at` (TEXT — UTC ISO 8601)
+- `notice_kind` (ENUM: FONT_SUBSTITUTED / WRAP_TRUNCATED / INLINE_SIZE_TRUNCATED)
+- `field_id` (TEXT, nullable) — the template `@id` the notice concerns; null for
+  render-wide notices.
+- `detail` (TEXT) — human-readable description posted to the calculation log channel.
+
+Render *problems* (Principle XIV.4) are not persisted as their own entity: a problem aborts
+the render, falls back to text output, and is recorded in the existing audit log
+(Principle V) alongside the source module's own output entry.
+
 ### New Entities (v2.10.0)
 
 **AttendanceConfig** (per server, owned by the Attendance module):
@@ -2244,9 +2605,9 @@ Amendments require:
 - **MINOR**: Addition of a new principle, section, or materially expanded guidance.
 - **PATCH**: Clarifications, wording improvements, or non-semantic refinements.
 
-All pull requests MUST include a Constitution Check confirming compliance with Principles I–XIII
+All pull requests MUST include a Constitution Check confirming compliance with Principles I–XIV
 before merge. Any deliberate violation of a principle MUST be documented in the plan's
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.10.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-04-03
+**Version**: 2.12.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-11
