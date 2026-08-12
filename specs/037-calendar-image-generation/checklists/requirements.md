@@ -46,6 +46,12 @@ the field ids are the **contract between a league manager and the bot** — a ma
 hand in an SVG editor, so they are user-facing vocabulary rather than internal structure — and the
 SVG attributes are the medium the feature operates on, not a technology choice made here.
 
+**Test mode**, raised by the author after the first draft and found to be genuinely uncovered. Three
+requirements were added (FR-028 to FR-030), FR-017 was qualified, and two acceptance scenarios now
+verify it rather than leaving it incidental. The substantive decision: the calendar's replacement
+deletion behaves the same in test mode as in live running, and does **not** join the forecast flow's
+test-mode deletion guard. Recorded in the wip-spec's § "Generation and posting".
+
 **On duplication.** Per `CLAUDE.md`, `specs/` is derived and must never restate a wip-spec rule.
 This spec cites the wip-spec sections as normative and states obligations and verification rather
 than copying the rules. Any conflict is to be resolved in the wip-spec's favour, and this document

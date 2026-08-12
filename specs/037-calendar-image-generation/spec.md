@@ -116,6 +116,9 @@ one division and confirm it alone falls back to text.
    **When** the failure occurs, **Then** the textual calendar is enqueued for retry.
 7. **Given** a calendar is posted in either form, **When** the post succeeds, **Then** the id of the
    message is persisted against the division.
+8. **Given** test mode is active and a season of past-dated rounds is approved, **When** the calendar
+   is drawn, **Then** it is generated and posted exactly as for a live season, drawing the past dates
+   its rounds record.
 
 ---
 
@@ -147,6 +150,9 @@ persisted.
 5. **Given** the images module is disabled or the toggle is off, **When** the command is run, **Then**
    the textual calendar is reposted — the command refreshes whichever form the configuration calls
    for and is gated on neither module.
+6. **Given** test mode is active, **When** `/division calendar sync` is run twice, **Then** the
+   calendar channel holds exactly one calendar message after each run — the previous one is deleted
+   as it would be in live mode, and no duplicate accumulates.
 
 ---
 
@@ -232,7 +238,9 @@ persisted.
   the graphic and the textual calendar, so that the two flows agree on which message is the calendar.
 - **FR-017**: The system MUST replace a calendar message by deleting it and posting anew rather than
   editing it, and MUST NOT delete the previous message until its replacement has been produced
-  successfully.
+  successfully. This deletion MUST NOT be suppressed while test mode is active: it is half of a
+  replacement rather than a cleanup, and the forecast flow's test-mode deletion guard does not
+  extend to it.
 - **FR-018**: The system MUST provide `/division calendar sync`, taking a division name, which
   redraws and replaces that division's calendar and persists the new message id; it MUST be rejected
   where the division has no calendar channel configured.
@@ -266,6 +274,17 @@ persisted.
 - **FR-027**: The system MUST ship a default `mystery.svg` in `resources/tracks/`, generic rather
   than league-specific, authored to the same aspect as the directory's ordinary assets and bound by
   the asset rules of constitution Rule 6.
+
+**Test mode**
+
+- **FR-028**: The calendar MUST be fully functional while test mode is active, behaving identically
+  to live mode in generation, posting and replacement. No branch on the test-mode flag may be
+  introduced into any of the three.
+- **FR-029**: The system MUST NOT consult test mode's fake driver roster when drawing a calendar. The
+  graphic names no driver and no team (FR-023), so the roster has no bearing on it.
+- **FR-030**: The calendar MUST draw the dates and times its rounds record, without regard to whether
+  they fall in the past or the future. A test-mode season is past-dated so that phases fire on
+  advance, and its calendar is drawn exactly as a live season's is.
 
 ### Key Entities
 
@@ -318,6 +337,14 @@ persisted.
   035 increment.
 - **Season review's existing image-module section is extended, not replaced.** The calendar becomes
   the first image type reported at a depth beyond Layer 1.
+- **Test mode needs no new trigger for the calendar.** Unlike the weather and RSVP graphics, which
+  the wip-spec ties to `/test-mode advance` walking the phase chain, the calendar's only triggers are
+  season approval and `/division calendar sync` — both directly reachable while test mode is active,
+  and season approval is already built for it. No `/test-mode` command is added or altered.
+- **The forecast flow's test-mode deletion guard is left as it stands.** `delete_forecast_message`
+  continues to suppress deletions under test mode and `flush_pending_deletions` to action them on
+  disable. FR-017 states that the calendar does not join that scheme; nothing about the forecast
+  behaviour changes.
 
 ## Clarifications Resolved
 
