@@ -108,7 +108,7 @@ For this purpose, the Discord bot shall require three new dependencies: one with
     - The input string shall be verified for the ".svg" substring at the end.
     - On being used, it shall be verified that at the destination of the configured directory joined with this filename indeed exists a valid (non-corrupt SVG file).
     - Additionally, upon usage of this command, it shall be verified that the SVG file has the mandatory fields as per the image type's generation specification.
-    - Furthermore, this verification shall be performed on all template files when the image module is enabled and season review is triggered.
+    - Furthermore, this verification shall be performed on all template files when the image module is enabled and season review is triggered. Both the review and the approval of a season shall read one and the same evaluation, so that the two cannot disagree upon whether a template is usable.
 - The verification of the mandatory fields shall additionally be performed immediately before every generation, this time against the concrete data the image is to be filled with, as the data may have changed since the template file was configured. Should it fail at that moment, the image shall not be generated and the failure shall be reported as described for each image type.
     - The mandatory and optional fields of each image type are those declared in that image type's generation specification below. A mandatory field whose value cannot be determined at generation, or that is absent from the template file, is a fatal error; an optional field is not.
 
@@ -130,6 +130,7 @@ These hold for every image type of the module and are stated here rather than re
 - A field is addressed by the identifier of a node of the SVG file. The identifier is normative.
 - Where a template declares no node of that identifier but declares a layer whose label is the name of the field, the labelled layer shall be taken for that field. A league manager editing a template in an SVG editor reaches for the label, and the identifier the editor generated is not the one they set.
 - Where a node of that identifier and a layer of that label both exist and are not the same node, the node of that identifier is the field.
+- A layer is a group, and an operation that requires an element of a particular kind shall descend to it: the placing of text to the single text element the layer holds, the placing of an image to the single image element it holds. Where the layer holds no such element, or more than one, the field is not resolved and the error is that of a mandatory or optional field as its catalogue declares it. The removal of a field, and of the group wrapping it, acts upon the layer itself.
 
 ### Removable groups
 - Any field named in a catalogue below, mandatory or optional, may be wrapped in a group bearing the name of that field followed by "_group".
@@ -142,7 +143,7 @@ These hold for every image type of the module and are stated here rather than re
 - An error met by the module is fatal or non-fatal, as declared for each image type below. A fatal error prevents the graphic from being produced; a non-fatal one does not.
 - A fatal error traceable to something a user configured or commanded shall reject that input, at every moment the module is in a position to detect it:
     - an "images template X" command naming a template that meets one shall be rejected, and the configuration left as it stood;
-    - a season review that meets one shall fail validation of the season, naming what was found to be at fault;
+    - a season review that meets one shall name every template found to be at fault, each with its own reason, and the approval of that season shall be refused while any of them stands. The review refuses nothing itself, committing nothing that could be refused; the approval is where the season is stopped, beside the prerequisites of the other modules;
     - a command that would carry a division past what its configured templates can draw shall be rejected, and the change it carried not applied;
     - a command that triggers a generation which meets one shall be rejected, and nothing posted in consequence of it.
 - The fallback to the traditional textual manner defined in the configuration section applies to a posting no user commanded: one reached at a horizon, at a schedule or at startup. A user who commanded a posting is told what is at fault and invited to correct it, which a silent fall back to text would deny them.
@@ -161,11 +162,24 @@ These hold for every image type of the module and are stated here rather than re
 - A text field may declare an "inline-size" property, which states the room the template gives it.
 - A text placed on such a field that exceeds that room shall be truncated at a word boundary, an ellipsis placed at its end, and a non-fatal error reported naming the field. A single word wider than that room shall be broken within itself.
 - A field declaring an "inline-size" and a "shape-inside" both is a wrapping field, and is wrapped and reduced as defined for the verdicts graphic rather than truncated.
+- A field declaring a "shape-inside" alone is likewise a wrapping field. The property states no other instruction than to flow the text within the shape.
 - A field declaring neither is drawn as a single line of unbounded width. A value longer than the room the template drew around it will overrun what stands beside it, and it is for the template to declare the room where that matters.
 
 ### Images placed on a graphic
 - An image file shall be authored at exactly the aspect of the slot it is placed into, padded with transparent margins where the subject of the image does not fill that aspect.
 - An image whose aspect differs from that of its slot is letterboxed, and the converter fills the resulting band by carrying the outermost pixels of the image outward rather than leaving it transparent, so that a border or a background colour at the edge of the image is drawn across the band. The module does not pad an image at generation.
+- An image file shall be referenced by the graphic as a URI. A filesystem path is not one, and a path so referenced is resolved to nothing by the converter and drawn as a broken-image mark.
+
+### The fallback image
+- Mandatory and optional classify the fields of a template, and nothing else. An asset is not a field: it is the file placed upon one. The rules of this section govern the resolution of an asset and are not qualified by the classification of the field receiving it.
+- Every asset directory shall cover each datum of its class that a league can present it with, or hold a file named "fallback.svg" that covers those it does not.
+- The resolution of an asset has three outcomes and no others:
+    - the file named by the normalized datum is found, and is placed upon the field;
+    - it is not found and the directory holds a fallback, whereupon the fallback is placed upon the field and a non-fatal error reported, naming the field and the datum that had no file of its own;
+    - it is not found and the directory holds no fallback, whereupon the error is fatal and the generation is abandoned.
+- These outcomes supersede any statement elsewhere in this document that a field is removed, or an error withheld, for want of a matching asset file. A statement of that kind continues to govern the case of an absent datum, where no asset is sought at all.
+- A fallback image is bound by the rules above as any other image is: plain SVG, authored at the aspect of the slot it fills, never padded at generation. Where one class serves slots of differing aspects, its fallback shall be authored to the aspect its ordinary assets carry.
+- A datum whose normalized form is "fallback" resolves to the fallback file. No further provision is made against this.
 
 ### Validity of a template file
 - A file that cannot be parsed shall be reported as an invalid SVG file, naming the file and what was found to be at fault, and never as the raw error of the parser. A run of two hyphens within a comment is the readiest way to produce one.
