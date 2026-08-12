@@ -19,6 +19,7 @@ from lxml import etree
 
 from models.image_constants import (
     NOTICE_ASSET_FALLBACK_USED,
+    NOTICE_CROP_POINT_OFF_CANVAS,
     NOTICE_FONT_SUBSTITUTED,
     NOTICE_INLINE_SIZE_TRUNCATED,
     NOTICE_OPTIONAL_FIELD_EMPTIED,
@@ -64,9 +65,22 @@ class FillSpec:
     remove: list[str] = field(default_factory=list)
     crop: str | None = None
 
+    #: True where ``crop`` names the crop point of the **last member the template
+    #: declares**, not merely the last the data fills. Only then is the crop point
+    #: expected to stand at the declared canvas height, so only then can it be off it
+    #: (FR-026). A division drawn shorter than its template crops higher by design.
+    crop_is_final: bool = False
+
     #: Fields whose value could not be determined. Each is emptied, or its `_group`
     #: removed where the template declares one (FR-013, FR-023).
     empty: list[str] = field(default_factory=list)
+
+    #: Fields the render deliberately takes off the canvas — by a group removal or by
+    #: falling below the vertical crop. Constitution XIV.3: "A field taken off the canvas
+    #: by a group removal or a vertical crop is **not** unresolved." Without this the
+    #: pre-render check would demand values for members the graphic never draws, and a
+    #: division smaller than its template could never render.
+    off_canvas: set[str] = field(default_factory=set)
 
     #: Rows of data this render has for the image type's repeating collection. Compared
     #: against the catalogue's declared capacity before anything is drawn (FR-028).
@@ -92,11 +106,33 @@ class FillSpec:
     expected_fields: set[str] | None = None
 
 
+def _mandatory_ids(spec: FillSpec) -> frozenset[str]:
+    """This image type's mandatory field ids, read **before** anything is removed.
+
+    Read once, at the top of ``fill``, and never again. A derived capacity is counted by
+    scanning the template's member ordinals, and a group removal takes a whole member out
+    of the tree — so asking again afterwards can see ``round_3`` missing between 2 and 4
+    and read that as a gap. The catalogue is a fact about the *template as authored*, not
+    about the tree part-way through being filled.
+    """
+    catalogue = spec.catalogue
+    if catalogue is None:
+        return frozenset()
+    try:
+        return frozenset(catalogue.all_mandatory_ids(spec.root))
+    except Exception:  # noqa: BLE001 — an uncountable template is reported elsewhere
+        return frozenset()
+
+
 def fill(spec: FillSpec) -> FillResult:
     """Apply the six operations and report what did not resolve."""
     root = spec.root
     notices: list[RenderNotice] = []
     unresolved: list[str] = []
+
+    # Before any removal: see the note on _mandatory_ids.
+    mandatory_ids = _mandatory_ids(spec)
+    has_catalogue = spec.catalogue is not None
 
     rules = stylesheet(root)
 
@@ -141,6 +177,30 @@ def fill(spec: FillSpec) -> FillResult:
             if crop_y is None:
                 unresolved.append(f"crop point `{spec.crop}` declares no y")
             else:
+                # FR-026: a template is expected to put its **last** declared member's
+                # crop point at the declared canvas height, so a division holding as many
+                # members as the template declares is drawn whole. Where it does not, cut
+                # there anyway and say so — the template still draws correctly for every
+                # smaller division, so refusing it would be disproportionate.
+                declared_height = length(root.get("height"))
+                if (
+                    spec.crop_is_final
+                    and declared_height is not None
+                    and abs(crop_y - declared_height) > 0.5
+                ):
+                    notices.append(
+                        RenderNotice(
+                            image_type=spec.image_type,
+                            notice_kind=NOTICE_CROP_POINT_OFF_CANVAS,
+                            field_id=spec.crop,
+                            detail=(
+                                f"the last declared member's crop point sits at y={crop_y:g} "
+                                f"but the template declares a height of {declared_height:g}. "
+                                f"A full-size division is drawn to the crop point, not to "
+                                f"the canvas."
+                            ),
+                        )
+                    )
                 _crop_to(root, crop_y)
 
     canvas = canvas_of(root)
@@ -259,10 +319,28 @@ def fill(spec: FillSpec) -> FillResult:
             # text it holds, or the fill would gut the layer and draw nothing.
             target = _descend(element, "text")
             if target is None:
-                unresolved.append(
-                    f"field `{field_id}` resolves to a layer holding no single "
-                    f"<text> element to fill"
-                )
+                # The wip-spec: "Where the layer holds no such element, or more than one,
+                # the field is not resolved and the error is that of a mandatory or
+                # optional field as its catalogue declares it." An *optional* field is
+                # therefore a notice, not a failure — a league that drew a decorative
+                # layer where an optional value could go has not broken its template.
+                if has_catalogue and field_id not in mandatory_ids:
+                    notices.append(
+                        RenderNotice(
+                            image_type=spec.image_type,
+                            notice_kind=NOTICE_OPTIONAL_FIELD_EMPTIED,
+                            field_id=field_id,
+                            detail=(
+                                f"`{field_id}` resolves to a layer holding no single "
+                                f"<text> element, so nothing was placed on it"
+                            ),
+                        )
+                    )
+                else:
+                    unresolved.append(
+                        f"field `{field_id}` resolves to a layer holding no single "
+                        f"<text> element to fill"
+                    )
                 continue
             element = target
         if element is None:

@@ -271,7 +271,7 @@ def _verify_against_data(root, spec, image_type: str) -> Problem | None:
     All three pass vacuously while the image type's catalogue is empty, which is every
     type in this increment. Populating one catalogue switches all three on for that type.
     """
-    from models.image_catalogues import catalogue_for
+    from models.image_catalogues import CapacityError, catalogue_for
     from models.image_module import (
         PROBLEM_CAPACITY_EXCEEDED,
         PROBLEM_MISSING_MANDATORY_FIELD,
@@ -282,8 +282,19 @@ def _verify_against_data(root, spec, image_type: str) -> Problem | None:
     if catalogue.is_empty:
         return None
 
+    # 0. Count the template's members. Where the capacity is derived (the calendar), an
+    #    uncountable collection — none declared, or a gap — is itself the problem, and
+    #    must be reported before anything is compared against it.
+    try:
+        capacity = catalogue.capacity(root)
+    except CapacityError as exc:
+        return Problem(
+            kind=PROBLEM_MISSING_MANDATORY_FIELD,
+            detail=str(exc),
+            template_key=image_type,
+        )
+
     # 1. Capacity. A graphic that drops a driver without saying so is worse than none.
-    capacity = catalogue.capacity()
     row_count = getattr(spec, "row_count", None)
     if capacity is not None and row_count is not None and row_count > capacity:
         return Problem(
@@ -296,7 +307,7 @@ def _verify_against_data(root, spec, image_type: str) -> Problem | None:
             template_key=image_type,
         )
 
-    mandatory = catalogue.all_mandatory_ids()
+    mandatory = catalogue.all_mandatory_ids(root)
     if not mandatory:
         return None
 
@@ -317,8 +328,17 @@ def _verify_against_data(root, spec, image_type: str) -> Problem | None:
 
     # 3. Supplied by the data. A mandatory field the caller put in `empty` is a value it
     #    could not determine, which is exactly what FR-011 makes fatal.
+    #
+    #    Valueless fields are excluded: a calendar's crop point must be *present* but is
+    #    geometry the crop reads, never text the render writes, so "its value could not
+    #    be determined" cannot apply to it. Check 2 above still requires it to exist.
     supplied = set(spec.text) | set(spec.images) | set(spec.image_data)
-    undetermined = sorted((mandatory - supplied) | (mandatory & set(spec.empty)))
+    checkable = mandatory - catalogue.valueless_ids(root)
+    # XIV.3: a field taken off the canvas by a group removal or a vertical crop is not
+    # unresolved. A division holding fewer members than its template declares draws none
+    # of the surplus, and must not be asked for their values.
+    checkable -= set(getattr(spec, "off_canvas", set())) | set(spec.remove)
+    undetermined = sorted((checkable - supplied) | (checkable & set(spec.empty)))
     if undetermined:
         return Problem(
             kind=PROBLEM_UNRESOLVED_VALUE,

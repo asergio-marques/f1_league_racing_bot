@@ -155,6 +155,28 @@ from services.image_validity_service import (  # noqa: E402
 
 _VALID_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675"/>'
 
+#: A bare canvas passes Layer 1 but no longer passes Layer 2 for the calendar, whose
+#: catalogue was populated in 037. A "sound" calendar template must now carry the
+#: whole-graphic mandatory field and one complete round, its crop point standing at the
+#: declared height. The other fourteen types still have empty catalogues and skip Layer 2.
+_VALID_CALENDAR_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_1_number">1</text>'
+    b'<text id="round_1_country_name">C</text>'
+    b'<text id="round_1_race_name">R</text>'
+    b'<text id="round_1_date">1 Jan</text>'
+    b'<rect id="round_1_vertical_crop_point" x="0" y="675" width="1" height="1"/>'
+    b"</svg>"
+)
+
+
+def _sound_bytes(filename: str) -> bytes:
+    """The soundest template for *filename* at the depth its type is checked to."""
+    if filename == TEMPLATE_COLUMNS["calendar_template"]:
+        return _VALID_CALENDAR_SVG
+    return _VALID_SVG
+
 
 def _make_config(template_directory="templates", **overrides) -> _ImageConfig:
     values = dict(
@@ -183,7 +205,7 @@ def template_dir(tmp_path):
     directory = tmp_path / "templates"
     directory.mkdir()
     for filename in TEMPLATE_COLUMNS.values():
-        (directory / filename).write_bytes(_VALID_SVG)
+        (directory / filename).write_bytes(_sound_bytes(filename))
     return tmp_path
 
 

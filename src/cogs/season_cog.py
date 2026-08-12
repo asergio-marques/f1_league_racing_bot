@@ -198,6 +198,111 @@ class SeasonCog(commands.Cog):
             log.error("season: image template check failed: %s", exc)
             return []
 
+    async def _calendar_round_overflow(
+        self, server_id: int, would_hold: int
+    ) -> str | None:
+        """The rejection message where *would_hold* rounds outgrow the calendar template.
+
+        None where the guard does not apply — the module off, the aspect off, no valid
+        template, or room to spare. Never raises for its own reasons: a fault in this
+        check must not block a round, only a genuine over-capacity may.
+
+        Separate from ``placement_service._guard_image_capacity``, which counts seated
+        **drivers**. A calendar's collection is **rounds**, so the two guard different
+        commands and must not be merged (research.md § R3).
+        """
+        from models.image_catalogues import catalogue_for
+
+        try:
+            if not await self.bot.module_service.is_images_enabled(server_id):  # type: ignore[attr-defined]
+                return None
+            if not await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
+                server_id, "calendar"
+            ):
+                return None
+
+            reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
+            report = reports.get("calendar_template")
+            if report is None or not report.valid:
+                return None
+
+            from utils.svg_document import load_svg
+
+            capacity = catalogue_for("calendar_template").capacity(
+                load_svg(report.resolved_path)
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.error("round add: calendar capacity guard could not run: %s", exc)
+            return None
+
+        if not capacity or would_hold <= capacity:
+            return None
+
+        return (
+            f"❌ That would give the division {would_hold} rounds, but the configured "
+            f"calendar template draws {capacity}. The round was **not** added.\n"
+            f"Enlarge the template, or turn the `calendar` image aspect off with "
+            f"`/images config toggle`."
+        )
+
+    async def _calendar_capacity_warning(
+        self, server_id: int, season_id: int
+    ) -> list[str]:
+        """Compare the calendar template against the season's most demanding division.
+
+        A **warning**, never a refusal (Constitution XIV.9). Season review can only compare
+        against the greatest round count any division holds; which division is actually
+        drawn is decided later, and the same divergence is fatal at that moment. Reporting
+        it here as a failure would refuse a season that may well draw perfectly.
+        """
+        from models.image_catalogues import CapacityError, catalogue_for
+
+        try:
+            config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
+            if config is None or not await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
+                server_id, "calendar"
+            ):
+                return []
+
+            reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
+            report = reports.get("calendar_template")
+            if report is None or not report.valid:
+                return []  # already named by the template problems list
+
+            from utils.svg_document import load_svg
+
+            capacity = catalogue_for("calendar_template").capacity(
+                load_svg(report.resolved_path)
+            )
+            if not capacity:
+                return []
+
+            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                cursor = await db.execute(
+                    "SELECT d.name AS name, COUNT(r.id) AS rounds "
+                    "FROM divisions d LEFT JOIN rounds r ON r.division_id = d.id "
+                    "WHERE d.season_id = ? GROUP BY d.id ORDER BY rounds DESC LIMIT 1",
+                    (season_id,),
+                )
+                row = await cursor.fetchone()
+            if row is None:
+                return []
+            held = row["rounds"] or 0
+            if held <= capacity:
+                return []
+
+            return [
+                f"  ⚠️ Calendar template draws {capacity} round(s); "
+                f"`{row['name']}` holds {held}. That division's calendar cannot be drawn "
+                f"as an image and will be posted as text. Enlarge the template to draw it.",
+                "",
+            ]
+        except CapacityError:
+            return []  # an uncountable template is Layer 2's to report, not this
+        except Exception as exc:  # noqa: BLE001 — a review must never fail on this
+            log.error("season review: calendar capacity check failed: %s", exc)
+            return []
+
     async def _build_image_review_section(self, server_id: int) -> list[str]:
         """The image module's addendum to `/season review` (FR-033).
 
@@ -322,6 +427,9 @@ class SeasonCog(commands.Cog):
             # uses, so the two surfaces cannot drift.
             if images_on:
                 header_lines += await self._build_image_review_section(interaction.guild_id)
+                header_lines += await self._calendar_capacity_warning(
+                    interaction.guild_id, cfg.season_id
+                )
 
             # ── Weather config ────────────────────────────────────────
             if weather_on:
@@ -1761,6 +1869,91 @@ class SeasonCog(commands.Cog):
             f"  channel: #{channel.name}",
         )
 
+    @division.command(
+        name="calendar-sync",
+        description="Redraw a division's calendar and replace the posted message.",
+    )
+    @app_commands.describe(name="Division name")
+    @channel_guard
+    @admin_only
+    async def division_calendar_sync(
+        self, interaction: discord.Interaction, name: str
+    ) -> None:
+        """Delete a division's calendar message and post it anew.
+
+        Gated on **no** module: it refreshes whichever form the server's configuration
+        calls for — the graphic where the images module and the `calendar` aspect are both
+        on, the traditional textual calendar otherwise.
+
+        A **commanded** posting, so a fatal render rejects the command and posts nothing
+        rather than quietly substituting text (Constitution XIV.7): the person at the
+        keyboard is the one able to fix the template.
+        """
+        from services import calendar_post_service as _calendar
+
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+        await interaction.response.defer(ephemeral=True)
+
+        season = await self.bot.season_service.get_season_for_server(server_id)  # type: ignore[attr-defined]
+        if season is None:
+            await interaction.followup.send("❌ No season found.", ephemeral=True)
+            return
+
+        divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
+        if div is None:
+            await interaction.followup.send(
+                f"❌ Division **{name}** not found in the current season.", ephemeral=True
+            )
+            return
+
+        if not div.calendar_channel_id:
+            await interaction.followup.send(
+                f"❌ **{name}** has no calendar channel configured. "
+                f"Set one with `/division calendar-channel` first.",
+                ephemeral=True,
+            )
+            return
+
+        rounds = await self.bot.season_service.get_division_rounds(div.id)  # type: ignore[attr-defined]
+        tracks = await _calendar.tracks_by_name(self.bot.db_path)  # type: ignore[attr-defined]
+
+        posting = await _calendar.post_division_calendar(
+            self.bot,
+            interaction.guild,
+            server_id,
+            div,
+            rounds,
+            tracks,
+            season_number=getattr(season, "number", None),
+            commanded=True,
+        )
+
+        if posting.problem is not None:
+            await interaction.followup.send(
+                f"❌ The calendar for **{name}** was not posted — {posting.problem}\n"
+                f"Nothing was deleted; the previous calendar still stands.",
+                ephemeral=True,
+            )
+            return
+
+        drawn = "image" if posting.posted_as_image else "text"
+        lines = [f"✅ Calendar for **{name}** reposted as {drawn}."]
+        if posting.notices:
+            lines.append("")
+            lines.append("**Notices**")
+            lines.extend(f"  • {detail}" for detail in posting.notices)
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+            f"| /division calendar-sync | Success\n"
+            f"  division: {name}\n"
+            f"  posted as: {drawn}\n"
+            + "".join(f"  notice: {d}\n" for d in posting.notices),
+        )
+
     # ------------------------------------------------------------------
     # /round group
     # ------------------------------------------------------------------
@@ -1850,6 +2043,16 @@ class SeasonCog(commands.Cog):
                 f"\u274c Division `{division_name}` not found in pending setup.",
                 ephemeral=True,
             )
+            return
+
+        # XIV.12: overflow is rejected at the earliest moment it can be detected, which
+        # for rounds is the command that would cause it — not a render days later. The
+        # change is refused with nothing applied.
+        _overflow = await self._calendar_round_overflow(
+            interaction.guild_id, len(div.rounds) + 1
+        )
+        if _overflow is not None:
+            await interaction.response.send_message(_overflow, ephemeral=True)
             return
 
         new_round: dict[str, Any] = {
@@ -3155,28 +3358,62 @@ class SeasonCog(commands.Cog):
                         )
 
         # ── T017: Post calendar per division (FR-011) ─────────────────────────
+        # Conveyed as a graphic where the images module is enabled and the `calendar`
+        # aspect is toggled on; in the traditional textual manner otherwise, and as a
+        # fallback where a graphic was wanted but could not be produced. Approval is a
+        # command, but the calendar posting within it is not the thing commanded, so a
+        # failed render degrades to text rather than refusing the season (XIV.7).
         if _guild is not None:
+            from services import calendar_post_service as _calendar
+
+            _tracks_by_name = await _calendar.tracks_by_name(self.bot.db_path)
+            _calendar_notices: list[str] = []
+            _calendar_problems: list[str] = []
+
             for _div in divisions:
-                if _div.calendar_channel_id:
-                    _cal_channel = _guild.get_channel(_div.calendar_channel_id)
-                    if _cal_channel is not None and isinstance(_cal_channel, discord.TextChannel):
-                        try:
-                            _rounds_for_cal = sorted(
-                                div_rounds.get(_div.id, []),
-                                key=lambda r: r.scheduled_at,
-                            )
-                            _cal_lines = [f"\U0001f4c5 **{_div.name} \u2014 Race Calendar**"]
-                            for _rnd in _rounds_for_cal:
-                                _unix = int(_rnd.scheduled_at.timestamp())
-                                _track = _rnd.track_name or "Mystery"
-                                _cal_lines.append(
-                                    f"Round {_rnd.round_number}: {_track} \u2014 <t:{_unix}:F>"
-                                )
-                            await _cal_channel.send("\n".join(_cal_lines))
-                        except discord.HTTPException:
-                            log.exception(
-                                "_do_approve: calendar post failed for division %s", _div.id
-                            )
+                if not _div.calendar_channel_id:
+                    continue
+                try:
+                    _posting = await _calendar.post_division_calendar(
+                        self.bot,
+                        _guild,
+                        cfg.server_id,
+                        _div,
+                        div_rounds.get(_div.id, []),
+                        _tracks_by_name,
+                    )
+                except Exception:  # noqa: BLE001
+                    # One division must never stop the others being posted.
+                    log.exception(
+                        "_do_approve: calendar post failed for division %s", _div.id
+                    )
+                    continue
+
+                _calendar_notices.extend(
+                    f"{_div.name}: {detail}" for detail in _posting.notices
+                )
+                if _posting.problem:
+                    _calendar_problems.append(f"{_div.name}: {_posting.problem}")
+
+            # Reported to the server's logging channel and to the manager who approved
+            # the season — and never in a division's calendar channel, which the drivers
+            # read (Constitution XIV.4).
+            for _line in _calendar_problems:
+                log.error("_do_approve: calendar fell back to text - %s", _line)
+            if _calendar_problems or _calendar_notices:
+                _report = ["/season approve | Calendar image generation"]
+                if _calendar_problems:
+                    _report.append("  Fell back to the textual calendar:")
+                    _report += [f"    - {line}" for line in _calendar_problems]
+                if _calendar_notices:
+                    _report.append("  Notices:")
+                    _report += [f"    - {line}" for line in _calendar_notices]
+                _report_text = "\n".join(_report)
+                try:
+                    await self.bot.output_router.post_log(cfg.server_id, _report_text)
+                except Exception:  # noqa: BLE001 — never fail an approval on the report
+                    log.exception("_do_approve: could not post the calendar report")
+                self._calendar_report = _report_text
 
         stale_keys = [uid for uid, c in self._pending.items() if c.server_id == cfg.server_id]
         for uid in stale_keys:
@@ -3186,6 +3423,13 @@ class SeasonCog(commands.Cog):
             f"\u2705 **Season approved and activated!**\n"
             f"Season #{cfg.season_number} (ID: {cfg.season_id})"
         )
+        # The manager who approved is told what the calendar generation met, so a
+        # template that fell back to text is not discovered only by reading the channel.
+        _cal_report = getattr(self, "_calendar_report", None)
+        if _cal_report:
+            msg += f"\n\n\u26a0\ufe0f **Calendar images**\n{_cal_report.splitlines()[0]}"
+            msg += "\n" + "\n".join(_cal_report.splitlines()[1:])
+            self._calendar_report = None
         if interaction.response.is_done():
             await interaction.followup.send(msg, ephemeral=True)
         else:

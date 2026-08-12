@@ -17,3 +17,7 @@ class Division:
     lineup_channel_id: int | None = None
     calendar_channel_id: int | None = None
     lineup_message_id: int | None = None
+    #: The message carrying this division's calendar. Written by every calendar posting,
+    #: graphic or textual, and deleted by the image flow when it replaces it — an
+    #: attachment cannot be added to a message already posted (Constitution XIV.8).
+    calendar_message_id: int | None = None

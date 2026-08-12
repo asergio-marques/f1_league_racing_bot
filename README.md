@@ -320,6 +320,19 @@ Cancels all scheduled rounds in the division (jobs + status flags) and posts a n
 | `name` | String | ✅ | Division name |
 | `channel` | Channel | ✅ | Channel where standings tables are posted |
 
+#### `/division calendar-sync` — Repost a division's calendar
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+
+The calendar is posted once, when the season is approved, and stands as the calendar the season was approved with. A round added, amended or cancelled afterwards does **not** change it — this command is what carries those changes onto it.
+
+It reposts in whichever form your configuration calls for: the image where the images module and the `calendar` aspect are both on, the traditional text otherwise. It works either way, and is not gated on the images module.
+
+> **Why it reposts rather than edits.** An attachment cannot be added to a message that already exists, so the bot posts the new calendar first and deletes the old one only once the new one is up. If generation fails, nothing is deleted and nothing is posted — you are told what is wrong and the previous calendar still stands.
+
 ---
 
 ### Test Mode Commands
@@ -1028,7 +1041,11 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 Flips that aspect between a generated image and the text the bot has always posted. All eight start disabled.
 
-> **Currently records intent only.** Setting a toggle changes what `/images config view` and `/season review` report, and nothing else — wiring each source module to post images is a later increment. Use `/images test` to see what an aspect will produce.
+> **`calendar` is live; the other seven record intent only.**
+>
+> With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
+>
+> The remaining seven toggles change what `/images config view` and `/season review` report, and nothing else. Wiring each of those source modules is a later increment. Use `/images test` to see what an aspect will produce.
 
 #### `/images template <kind>` — Name the SVG file backing each image
 *Access: Server administrator*
@@ -1091,6 +1108,8 @@ Placing your own files is the operator's job; the bot resolves the paths and rep
 
 `fastest-lap-colour` reports the contrast of the chosen colour against the plate the race results template draws behind that field, and warns below 4.5:1 — the threshold at which text of that size stays legible. The colour is stored either way; it is the league's to choose. Where the template is invalid or declares no `fastest_lap_background` element, the bot says the contrast could not be measured rather than guessing.
 
+> **One zone for everyone.** A text post writes a session time as a Discord timestamp, so every driver reads it in their own local zone. A picture cannot do that: whatever zone you set here is drawn on the graphic for every reader alike, with its abbreviation after the time. Set it to the zone your league actually runs in — it is the one thing an image tells a driver less precisely than the text it replaces.
+
 #### `/images config view` — Show the configuration and whether it holds together
 *Access: Trusted admin*
 
@@ -1117,17 +1136,25 @@ A template is a plain SVG whose declared `width` and `height` are the canvas. Th
 
 **Text bounds.** A field that receives a Discord display name should declare an `inline-size`; it is the only bound on a name of a length no league controls. Overflow is cut at a word boundary and ellipsised. A field that receives prose should declare `shape-inside` pointing at a rectangle. The text is set down half a pixel at a time until it fits, and at half the declared size is cut with an ellipsis.
 
-**Naming.** Ids are lowercase `snake_case` and say what the field is, not where it sits — `driver_name`, not `text_47`. Anything belonging to row *x* of a table is `row_<x>_<field>`: `row_1_position`, `row_10_points`. Rows are numbered from 1, with no gaps and no padding.
+**Naming.** Ids are lowercase `snake_case` and say what the field is, not where it sits — `driver_name`, not `text_47`. Anything the template repeats is named for the thing it repeats plus its number: `row_<x>_<field>` for the rows of a table, `round_<x>_<field>` for the rounds of a calendar, `session_<x>_<field>` for the sessions of a forecast — `row_1_position`, `round_10_date`. Repeats may nest, each level adding its own name and number in the order they contain one another (`row_3_round_7_driver_1_name`). Numbering starts at 1, with no gaps and no padding.
 
 **If your editor won't let you set the id.** Label the layer with the field's name instead. The bot looks for a node with the id first and falls back to a layer whose label matches, so `driver_name` works either way. If both exist, the id wins.
 
 **Removable blocks.** Wrap a field in a group named for it plus `_group` — `sanctions_group`, `row_7_group` — and the whole group leaves whenever the value is absent, taking its label, plate or separator with it. Without the group, only the field itself is emptied, and the chrome introducing it is left pointing at nothing. Removing a group never resizes the canvas, so put removable blocks where a gap is survivable.
 
-**Tables.** A table template provides a fixed number of row slots, and that count is what the bot builds against. A season with fewer entries than slots leaves the spare rows removed. A season with **more** entries than the template has slots is an error: the bot refuses the command that would grow the division past what your template can draw, and tells you the count, the capacity and which template was too small. Size a table for the largest grid the league will run.
+**Capacity.** Whatever your template repeats — table rows, calendar rounds, forecast sessions, a team's cars — it provides a fixed number of slots, and that count is what the bot builds against. Fewer entries than slots leaves the spare ones removed. **More** entries than slots is an error: the bot refuses the command that would grow the division past what your template can draw, and tells you the count, the capacity and which template was too small. This holds for everything a template repeats, whether it is the subject of the graphic or a strip standing beside it — nothing is ever dropped quietly to make the data fit. Size each repeat for the largest season the league will run.
 
 **Assets.** Assets are plain SVG, authored at exactly the aspect ratio of the slot they fill — the generator does not pad, so an asset of the wrong shape will be letterboxed with its edge pixels smeared across the band. Filenames are the thing they depict, normalised: lowercased, accents dropped, every run of punctuation or spaces collapsed to a single underscore, `.svg` on the end. `Red Bull Racing` is looked up as `red_bull_racing.svg` in the configured team directory. **Every asset directory needs a `fallback.svg`** unless you are certain it holds a file for every value the bot could ask it for. When a specific file is missing — a nationality you have no flag drawn for, say — the fallback is used and the bot logs which value needed it. When there is no fallback either, **the graphic is not produced**: the bot will not quietly draw a card with a hole in it. One generic file per directory is what keeps an incomplete asset set from stopping your images.
 
-> **What is checked today.** The file resolving, parsing and declaring a canvas — enforced now, at the moment you name it and again before a season is approved. Field names, row counts and asset presence are checked by machinery that is in place but has nothing to check against yet: no image type has had its fields specified. Following the conventions above now is what makes those checks pass rather than fail when they switch on.
+**Reserved filenames.** `fallback.svg` is one, as above. `mystery.svg` in your track image directory is the other: a Mystery round conceals its track, so the bot draws that file wherever a track picture belongs and writes "Mystery GP" where the grand prix name belongs. A Mystery round is drawn like any other round and marked as such — it never leaves a hole in a graphic and never stops one being produced. **Both ship with the bot**, so a fresh clone draws every graphic from the first render.
+
+**Image references must be URIs.** Where your template already points at a picture, that `href` has to be a real URI — `file:///C:/…/logo.svg` or an embedded `data:` URI — not a bare path like `C:\assets\logo.svg`. Most SVG editors write one correctly; hand-edited files often do not. A bare path is the single most likely reason a template that looks perfect in a browser rasterises with a broken-image icon where the picture should be, which is why the advice below is to check the PNG.
+
+> **What is checked today.** For **every** template: the file resolving, parsing and declaring a canvas — enforced at the moment you name it and again before a season is approved.
+>
+> For the **calendar**, which is the first image type whose fields are specified, the check goes further: the mandatory fields must be present, and its rounds must be numbered from 1 with no gaps. A calendar template missing a field is refused when you name it, named in `/season review`, and blocks approval until you fix it.
+>
+> The other fourteen types are still checked to the file level alone — their fields have not been specified yet. Following the conventions above now is what makes those checks pass rather than fail when they switch on.
 
 **Fonts and casing.** Either embed the font your template names or author against a font the machine running the bot carries. A font it cannot resolve is substituted by the converter and your text is drawn in a face of another width, which changes where lines break — so two machines can draw the same template differently. Note also that `text-transform` is ignored: a label you want in capitals must be typed in capitals.
 

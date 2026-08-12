@@ -32,7 +32,20 @@ from services.image_validity_service import (  # noqa: E402
     evaluate_template,
 )
 
-VALID_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675"></svg>'
+#: Valid at every depth currently checked. It carries the calendar's mandatory fields and
+#: one complete round because the calendar's catalogue was populated in 037 and Layer 2
+#: now applies to it; the other fourteen types have empty catalogues, skip Layer 2, and
+#: are indifferent to the extra ids.
+VALID_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_1_number">1</text>'
+    b'<text id="round_1_country_name">C</text>'
+    b'<text id="round_1_race_name">R</text>'
+    b'<text id="round_1_date">1 Jan</text>'
+    b'<rect id="round_1_vertical_crop_point" x="0" y="675" width="1" height="1"/>'
+    b"</svg>"
+)
 VIEWBOX_ONLY_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"></svg>'
 NO_CANVAS_SVG = b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'
 NOT_SVG = b"this is not markup at all"
@@ -86,8 +99,13 @@ def test_all_fifteen_templates_valid_when_present(tmp_path, templates):
     for template_key in TEMPLATE_COLUMNS:
         report = _evaluate(config, tmp_path, template_key)
         assert report.valid, f"{template_key}: {report.reason}"
-        assert report.depth_checked == LAYER_RESOLUTION
         assert report.failed_layer is None
+        # The calendar has a catalogue (037) so Layer 2 applies to it; the other
+        # fourteen have none and are checked to Layer 1 alone.
+        expected = (
+            LAYER_CATALOGUE if template_key == "calendar_template" else LAYER_RESOLUTION
+        )
+        assert report.depth_checked == expected, template_key
 
 
 def test_missing_file_reason(tmp_path, templates):
@@ -339,11 +357,17 @@ def test_every_template_label_is_unique():
 # ── Invariant 3: declared depth (T030, FR-028b, SC-009) ───────────────────
 
 
-def test_declared_depth_is_one_for_every_template(tmp_path, templates):
+def test_declared_depth_follows_each_type_s_catalogue(tmp_path, templates):
+    """Depth is what was *applied*, per type — not one number for the whole set."""
     from services.image_validity_service import evaluate_all_templates
 
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
-    assert all(r.depth_checked == LAYER_RESOLUTION for r in reports.values())
+    assert reports["calendar_template"].depth_checked == LAYER_CATALOGUE
+    assert all(
+        report.depth_checked == LAYER_RESOLUTION
+        for key, report in reports.items()
+        if key != "calendar_template"
+    )
 
 
 def test_depth_summary_states_the_depth_reached(tmp_path, templates):
@@ -364,20 +388,25 @@ def test_depth_summary_names_what_was_not_checked(tmp_path, templates):
     summary = ImageValidityService.depth_summary(reports).lower()
 
     assert "not yet checked" in summary
-    assert "catalogue conformance" in summary
+    # Layer 2 now applies to the calendar, so what remains unchecked is 3 and 4.
+    assert "bounds declaration" in summary
     assert "trial render" in summary
 
 
 def test_a_valid_report_is_never_described_as_fully_valid(tmp_path, templates):
-    """A template passing Layer 1 carries depth, so a renderer cannot overstate it."""
-    from services.image_validity_service import evaluate_all_templates
+    """A passing template carries its depth, so a renderer cannot overstate it.
+
+    The calendar is now checked to Layer 2 — deeper than any other type — and still must
+    not read as fully valid: Layers 3 and 4 are unratified, so its depth stays below them.
+    """
+    from services.image_validity_service import LAYER_BOUNDS, evaluate_all_templates
 
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
     report = reports["calendar_template"]
 
     assert report.valid is True
-    assert report.depth_checked == LAYER_RESOLUTION
-    assert report.depth_checked < LAYER_CATALOGUE
+    assert report.depth_checked == LAYER_CATALOGUE
+    assert report.depth_checked < LAYER_BOUNDS
 
 
 # ── Invariant 1: stable surface (T031) ────────────────────────────────────
@@ -613,35 +642,47 @@ def catalogue_override():
     CATALOGUES.update(saved)
 
 
-def test_every_catalogue_ships_empty():
-    """036 declares the shape; populating one is a later image-type session's job."""
+def test_only_the_calendar_catalogue_is_populated():
+    """037 specifies the calendar; the other fourteen await their own sessions."""
     assert len(CATALOGUES) == len(TEMPLATE_COLUMNS)
-    assert all(c.is_empty for c in CATALOGUES.values())
+    assert not CATALOGUES["calendar_template"].is_empty
+    assert all(
+        catalogue.is_empty
+        for key, catalogue in CATALOGUES.items()
+        if key != "calendar_template"
+    )
+    # The calendar's capacity is derived from its template, so it contributes nothing
+    # here: this feeds the seated-driver guard, and a calendar's collection is rounds.
     assert declared_capacities() == {}
 
 
-def test_layer_two_is_registered_but_skips_an_empty_catalogue():
+def test_layer_two_applies_to_a_populated_catalogue_and_skips_an_empty_one():
     layer = CatalogueLayer()
     assert layer.number == LAYER_CATALOGUE
     assert any(isinstance(entry, CatalogueLayer) for entry in LAYERS)
-    assert not layer.applies_to("calendar_template")
+    assert layer.applies_to("calendar_template")
+    assert not layer.applies_to("lineup_template")
 
 
 def test_empty_catalogue_leaves_depth_at_layer_one(tmp_path, templates):
     """XIV.9.4 — checked to the depth available, never reported as fully valid."""
-    report = _evaluate(_config("templates"), tmp_path, "calendar_template")
+    report = _evaluate(_config("templates"), tmp_path, "lineup_template")
     assert report.valid
     assert report.depth_checked == LAYER_RESOLUTION
 
 
-def test_depth_summary_does_not_claim_layer_two_while_catalogues_are_empty(
+def test_depth_summary_claims_layer_two_only_where_a_catalogue_exists(
     tmp_path, templates
 ):
+    """XIV.9.3 — the summary states the applied depth, and that it is not uniform."""
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
     summary = ImageValidityService.depth_summary(reports)
 
     assert "Checked to layer 1" in summary
-    assert "Catalogue conformance" in summary
+    assert "layer 2 where a field catalogue exists" in summary
+    # Layer 2 is no longer *pending* — it has been applied to the calendar — so it must
+    # not be listed among the layers still to come.
+    assert "Catalogue conformance" not in summary.split("Not yet checked:")[-1]
     assert "Not yet checked" in summary
 
 

@@ -203,6 +203,11 @@ NOTICE_INLINE_SIZE_TRUNCATED = "INLINE_SIZE_TRUNCATED"
 NOTICE_ASSET_FALLBACK_USED = "ASSET_FALLBACK_USED"
 NOTICE_OPTIONAL_FIELD_EMPTIED = "OPTIONAL_FIELD_EMPTIED"
 
+#: The last member a template declares should put its crop point at the declared canvas
+#: height, so a division holding as many members as the template declares is drawn whole.
+#: Where it does not, the cut is made there anyway and this is raised (037, FR-026).
+NOTICE_CROP_POINT_OFF_CANVAS = "CROP_POINT_OFF_CANVAS"
+
 
 # ── Asset classes ─────────────────────────────────────────────────────────
 

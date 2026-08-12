@@ -20,7 +20,8 @@ with `/images config <directory>`.
 **Shipped:**
 
 - the fifteen default templates in `templates/`, one per image type;
-- one `fallback.svg` in each asset directory.
+- one `fallback.svg` in each asset directory;
+- `tracks/mystery.svg`, drawn for a round whose track is concealed until it is run.
 
 **Not shipped:** the assets for any particular track, team, driver, nationality, tyre or
 weather condition. Those are a league's own, and the module exists to let each league bring
@@ -64,6 +65,15 @@ any league's palette. Two things to keep if you do:
 - **Use no text.** Text in an asset is subject to font substitution, so a fallback carrying
   any would render differently from one machine to the next. The shipped ones are pure
   vector for that reason.
+
+## `tracks/mystery.svg`
+
+A Mystery round records no track, so there is no name to look one up by. The bot draws this
+file instead, and writes "Mystery GP" where the grand prix name belongs — a Mystery round
+appears on a calendar like any other round, marked as such, and never leaves a hole.
+
+It is a reserved name in the same way `fallback.svg` is: replace the artwork freely, but keep
+the filename, the aspect, and the no-text rule above.
 
 ## Authoring your own assets
 

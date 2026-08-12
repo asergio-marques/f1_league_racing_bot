@@ -768,7 +768,8 @@ class SeasonService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier, "
-                "lineup_channel_id, calendar_channel_id, lineup_message_id "
+                "lineup_channel_id, calendar_channel_id, lineup_message_id, "
+                "calendar_message_id "
                 "FROM divisions WHERE season_id = ? ORDER BY tier",
                 (season_id,),
             )
@@ -864,6 +865,7 @@ class SeasonService:
                 SELECT d.id, d.season_id, d.name, d.mention_role_id, d.forecast_channel_id,
                        d.status, d.tier,
                        d.lineup_channel_id, d.calendar_channel_id, d.lineup_message_id,
+                       d.calendar_message_id,
                        drc.results_channel_id, drc.standings_channel_id,
                        drc.penalty_channel_id
                 FROM divisions d
@@ -1278,6 +1280,11 @@ def _row_to_division(row: object) -> Division:
         lineup_channel_id=row["lineup_channel_id"] if "lineup_channel_id" in keys else None,
         calendar_channel_id=row["calendar_channel_id"] if "calendar_channel_id" in keys else None,
         lineup_message_id=row["lineup_message_id"] if "lineup_message_id" in keys else None,
+        # Guarded like every other optional column, so a database that has not yet run
+        # migration 040 still loads its divisions rather than raising.
+        calendar_message_id=(
+            row["calendar_message_id"] if "calendar_message_id" in keys else None
+        ),
     )
 
 
