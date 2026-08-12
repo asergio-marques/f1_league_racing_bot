@@ -9,7 +9,7 @@ exercises the problem/notice distinction rather than assuming it.
 """
 from __future__ import annotations
 
-from utils.svg_document import index_by_id
+from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
 
 #: A Discord display name of the sort no league controls the length of. Any template
@@ -51,7 +51,10 @@ def build_spec(template_key: str, root) -> FillSpec:
     rather than assuming a field catalogue that has not been ratified yet. That keeps
     `/images test` useful against a league's own templates from day one.
     """
-    declared = set(index_by_id(root))
+    # Ids *and* layer labels: a field may be addressed by either (Constitution XIV.2).
+    # Indexing ids alone would make a template authored entirely with layer labels look
+    # as though it declared nothing, and `/images test` would report every field unknown.
+    declared = FieldIndex(root).declared()
     text: dict[str, str] = {}
     images: dict[str, str] = {}
 

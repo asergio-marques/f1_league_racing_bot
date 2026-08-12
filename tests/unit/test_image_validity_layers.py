@@ -105,10 +105,9 @@ def test_unparseable_file_reason_differs_from_missing(tmp_path, templates):
     report = _evaluate(_config("templates"), tmp_path, "calendar_template")
 
     assert not report.valid
-    # Distinguishability is carried by the leading clause. lxml's own parser detail can
-    # contain almost any wording — for junk input it says "'<' not found" — so the
-    # prefix is what a reader and a test can rely on.
-    assert report.reason.lower().startswith("not well-formed svg")
+    # Distinguishability is carried by the leading clause. FR-046 forbids surfacing
+    # the parser's own text, so the fault is named in the module's words after it.
+    assert report.reason.lower().startswith("not a valid svg file")
     assert not report.reason.lower().startswith("file not found")
 
 
@@ -117,7 +116,7 @@ def test_truncated_markup_is_a_parse_failure(tmp_path, templates):
     report = _evaluate(_config("templates"), tmp_path, "lineup_template")
 
     assert not report.valid
-    assert "not well-formed svg" in report.reason.lower()
+    assert "not a valid svg file" in report.reason.lower()
 
 
 def test_wrong_root_element_is_a_parse_failure(tmp_path, templates):
@@ -125,7 +124,7 @@ def test_wrong_root_element_is_a_parse_failure(tmp_path, templates):
     report = _evaluate(_config("templates"), tmp_path, "lineup_template")
 
     assert not report.valid
-    assert "not well-formed svg" in report.reason.lower()
+    assert "not a valid svg file" in report.reason.lower()
 
 
 def test_no_canvas_reason_differs_from_both_others(tmp_path, templates):
@@ -568,3 +567,212 @@ def test_all_eight_aspects_are_always_reported(tmp_path, templates):
 
     assert [s.aspect for s in statuses] == list(ASPECTS)
     assert len(statuses) == 8
+
+
+# ── T014 / T042: Layer 2 (Catalogue conformance), added by 036 ────────────
+#
+# The binding constraint is Constitution XIV.9's "no silent pass": a layer registered but
+# skipped has checked nothing, and neither the report nor the summary may imply otherwise.
+
+from dataclasses import replace as _replace  # noqa: E402
+
+from models.image_catalogues import (  # noqa: E402
+    CATALOGUES,
+    FieldCatalogue,
+    RowSpec,
+    catalogue_for,
+    declared_capacities,
+)
+from services.image_validity_service import (  # noqa: E402
+    LAYERS,
+    CatalogueLayer,
+    ImageValidityService,
+    evaluate_all_templates,
+)
+
+FIELDED_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" '
+    b'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" '
+    b'width="1200" height="675">'
+    b'<text id="season_name">x</text>'
+    b'<g inkscape:groupmode="layer" inkscape:label="division_name" id="g1"/>'
+    b"</svg>"
+)
+
+
+@pytest.fixture()
+def catalogue_override():
+    """Install a catalogue for one image type and restore afterwards."""
+    saved = dict(CATALOGUES)
+
+    def install(template_key: str, catalogue: FieldCatalogue) -> None:
+        CATALOGUES[template_key] = catalogue
+
+    yield install
+    CATALOGUES.clear()
+    CATALOGUES.update(saved)
+
+
+def test_every_catalogue_ships_empty():
+    """036 declares the shape; populating one is a later image-type session's job."""
+    assert len(CATALOGUES) == len(TEMPLATE_COLUMNS)
+    assert all(c.is_empty for c in CATALOGUES.values())
+    assert declared_capacities() == {}
+
+
+def test_layer_two_is_registered_but_skips_an_empty_catalogue():
+    layer = CatalogueLayer()
+    assert layer.number == LAYER_CATALOGUE
+    assert any(isinstance(entry, CatalogueLayer) for entry in LAYERS)
+    assert not layer.applies_to("calendar_template")
+
+
+def test_empty_catalogue_leaves_depth_at_layer_one(tmp_path, templates):
+    """XIV.9.4 — checked to the depth available, never reported as fully valid."""
+    report = _evaluate(_config("templates"), tmp_path, "calendar_template")
+    assert report.valid
+    assert report.depth_checked == LAYER_RESOLUTION
+
+
+def test_depth_summary_does_not_claim_layer_two_while_catalogues_are_empty(
+    tmp_path, templates
+):
+    reports = evaluate_all_templates(_config("templates"), root=tmp_path)
+    summary = ImageValidityService.depth_summary(reports)
+
+    assert "Checked to layer 1" in summary
+    assert "Catalogue conformance" in summary
+    assert "Not yet checked" in summary
+
+
+def test_populated_catalogue_passes_when_every_mandatory_field_resolves(
+    tmp_path, templates, catalogue_override
+):
+    (templates / "calendar_template.svg").write_bytes(FIELDED_SVG)
+    catalogue_override(
+        "calendar_template",
+        FieldCatalogue(mandatory=frozenset({"season_name", "division_name"})),
+    )
+
+    report = _evaluate(_config("templates"), tmp_path, "calendar_template")
+    assert report.valid, report.reason
+    assert report.depth_checked == LAYER_CATALOGUE
+
+
+def test_layer_two_accepts_a_field_declared_only_as_a_layer_label(
+    tmp_path, templates, catalogue_override
+):
+    """A manager who set a layer label rather than an id has still declared the field."""
+    (templates / "calendar_template.svg").write_bytes(FIELDED_SVG)
+    catalogue_override(
+        "calendar_template", FieldCatalogue(mandatory=frozenset({"division_name"}))
+    )
+
+    assert _evaluate(_config("templates"), tmp_path, "calendar_template").valid
+
+
+def test_populated_catalogue_fails_and_names_the_missing_field(
+    tmp_path, templates, catalogue_override
+):
+    (templates / "calendar_template.svg").write_bytes(FIELDED_SVG)
+    catalogue_override(
+        "calendar_template",
+        FieldCatalogue(mandatory=frozenset({"season_name", "round_count"})),
+    )
+
+    report = _evaluate(_config("templates"), tmp_path, "calendar_template")
+    assert not report.valid
+    assert report.failed_layer == LAYER_CATALOGUE
+    assert report.depth_checked == LAYER_CATALOGUE
+    assert "round_count" in report.reason
+    assert "season_name" not in report.reason  # only what is absent
+
+
+def test_layer_two_names_every_missing_field_not_a_count(
+    tmp_path, templates, catalogue_override
+):
+    (templates / "calendar_template.svg").write_bytes(FIELDED_SVG)
+    catalogue_override(
+        "calendar_template",
+        FieldCatalogue(mandatory=frozenset({"alpha", "beta", "gamma"})),
+    )
+
+    reason = _evaluate(_config("templates"), tmp_path, "calendar_template").reason
+    for name in ("alpha", "beta", "gamma"):
+        assert name in reason
+
+
+def test_mixed_depths_are_reported_honestly(tmp_path, templates, catalogue_override):
+    """One type with a catalogue, fourteen without: the summary must not flatten them."""
+    (templates / "calendar_template.svg").write_bytes(FIELDED_SVG)
+    catalogue_override(
+        "calendar_template", FieldCatalogue(mandatory=frozenset({"season_name"}))
+    )
+
+    reports = evaluate_all_templates(_config("templates"), root=tmp_path)
+    summary = ImageValidityService.depth_summary(reports)
+
+    assert reports["calendar_template"].depth_checked == LAYER_CATALOGUE
+    assert reports["lineup_template"].depth_checked == LAYER_RESOLUTION
+    assert "layer 1" in summary and "layer 2" in summary
+
+
+def test_layer_two_never_runs_when_layer_one_failed(tmp_path, templates, catalogue_override):
+    (templates / "calendar_template.svg").write_bytes(NOT_SVG)
+    catalogue_override(
+        "calendar_template", FieldCatalogue(mandatory=frozenset({"season_name"}))
+    )
+
+    report = _evaluate(_config("templates"), tmp_path, "calendar_template")
+    assert report.failed_layer == LAYER_RESOLUTION
+    assert report.depth_checked == LAYER_RESOLUTION
+
+
+# ── RowSpec: the id convention and the capacity guard ─────────────────────
+
+
+def test_rowspec_builds_unpadded_ids_from_one():
+    rows = RowSpec(capacity=12, fields=frozenset({"position", "points"}))
+    assert rows.row_id(1) == "row_1"
+    assert rows.row_id(10) == "row_10"
+    assert rows.field_id(3, "points") == "row_3_points"
+    assert rows.group_id(7) == "row_7_group"
+
+
+def test_rowspec_enumerates_only_within_its_capacity():
+    rows = RowSpec(capacity=2, fields=frozenset({"position"}))
+    assert rows.all_field_ids() == {"row_1_position", "row_2_position"}
+
+
+def test_capacity_guard_is_inert_while_catalogues_are_empty():
+    """XIV.12's mechanism exists; no catalogue declares a capacity, so nothing refuses."""
+    assert declared_capacities() == {}
+    assert catalogue_for("standings_drivers_template").capacity() is None
+
+
+def test_capacity_activates_by_data_not_by_code(catalogue_override):
+    catalogue_override(
+        "standings_drivers_template",
+        FieldCatalogue(rows=RowSpec(capacity=12, fields=frozenset({"position"}))),
+    )
+
+    assert declared_capacities() == {"standings_drivers_template": 12}
+    assert catalogue_for("standings_drivers_template").capacity() == 12
+
+
+def test_mandatory_row_fields_join_the_mandatory_set(catalogue_override):
+    catalogue = FieldCatalogue(
+        mandatory=frozenset({"season_name"}),
+        rows=RowSpec(
+            capacity=2,
+            fields=frozenset({"position", "team"}),
+            mandatory_fields=frozenset({"position"}),
+        ),
+    )
+    assert catalogue.all_mandatory_ids() == {
+        "season_name",
+        "row_1_position",
+        "row_2_position",
+    }
+    assert "row_1_team" in catalogue.all_known_ids()
+    assert "row_1_team" not in catalogue.all_mandatory_ids()

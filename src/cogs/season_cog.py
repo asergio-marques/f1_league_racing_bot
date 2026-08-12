@@ -176,6 +176,28 @@ class SeasonCog(commands.Cog):
             f"  season: Season #{cfg.season_number} (F1 {cfg.game_edition})",
         )
 
+    async def _image_template_problems(self, server_id: int) -> list[str]:
+        """Every unusable template, named individually (FR-007, FR-008).
+
+        The single evaluation `/season review` reports and `/season approve` blocks on,
+        so the two surfaces cannot disagree about whether a template is usable (FR-008a).
+        Silent when the module is disabled (FR-009).
+        """
+        from services.image_validity_service import check_all_templates, describe
+
+        if not await self.bot.module_service.is_images_enabled(server_id):
+            return []
+
+        config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
+        if config is None:
+            return []
+
+        try:
+            return [describe(problem) for problem in check_all_templates(config)]
+        except Exception as exc:  # noqa: BLE001 - never fail a season on this reader
+            log.error("season: image template check failed: %s", exc)
+            return []
+
     async def _build_image_review_section(self, server_id: int) -> list[str]:
         """The image module's addendum to `/season review` (FR-033).
 
@@ -217,8 +239,20 @@ class SeasonCog(commands.Cog):
         invalid = [r for r in reports.values() if not r.valid]
         lines.append(
             f"  Templates: {len(reports) - len(invalid)}/{len(reports)} resolve"
-            + (" — see `/images config view`" if invalid else "")
         )
+
+        # FR-008: name each one. A count tells a manager nothing about what to fix, and
+        # this is the report they read before approving — the approval refuses on the
+        # same findings, so seeing them here is what lets them act first.
+        if invalid:
+            from models.image_constants import TEMPLATE_LABELS as _LABELS
+
+            lines.append("  ⛔ These block approval:")
+            for report in reports.values():
+                if not report.valid:
+                    label = _LABELS.get(report.template_key, report.template_key)
+                    lines.append(f"      • **{label}**: {report.reason}")
+
         lines.append(f"  _{ImageValidityService.depth_summary(reports)}_")
         lines.append("")
         return lines
@@ -2966,6 +3000,21 @@ class SeasonCog(commands.Cog):
                 )
                 await interaction.followup.send(msg, ephemeral=True)
                 return
+
+        # ── Gate 4: image template prerequisites (036, FR-007/FR-008) ─────────
+        #
+        # `/season review` reports these; this is where the season is stopped. Every
+        # failing template is named individually with its own reason — a count, or a
+        # line naming a group, does not satisfy FR-008.
+        image_problems = await self._image_template_problems(cfg.server_id)
+        if image_problems:
+            bullet_list = "\n• ".join(image_problems)
+            msg = (
+                f"❌ Season cannot be approved — the image module is enabled "
+                f"but these templates are not usable:\n• {bullet_list}"
+            )
+            await interaction.followup.send(msg, ephemeral=True)
+            return
 
         # ── Gate 3: signup module config prerequisites ────────────────────────
         if await self.bot.module_service.is_signup_enabled(cfg.server_id):

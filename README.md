@@ -1057,6 +1057,8 @@ Qualifying and race results are drawn from separate templates, as are the driver
 
 These sit under `/images template` rather than `/images config` because Discord allows at most 25 subcommands per group.
 
+**The file is checked before it is stored.** The command refuses, and your existing filename stays in force, if the name does not end in `.svg`, if no such file is in the configured directory, if it will not parse as SVG, or if it is missing a field the image needs. You are told which of those it was — a malformed file is described in plain terms ("a comment contains a double hyphen at line 12"), never as a parser error. Nothing is written unless every check passes, so a refused command cannot leave the bot pointed at a file it can't use.
+
 #### `/images config <directory>` — Where files are searched for
 *Access: Server administrator*
 
@@ -1092,9 +1094,9 @@ Placing the files is the operator's job; the bot resolves the paths and reports 
 
 No parameters. Lists every setting with a validity status, and each aspect as ✅ enabled, ❌ disabled, or ⚠️ enabled but invalid. An invalid report names the individual template at fault — which weather phase and variant, or which half of a results or standings pair — never just the group.
 
-The report also states **how deeply templates were checked**. Today that is layer 1: the file resolves, parses as SVG, and declares a canvas. Deeper checks (does the template carry every field the image needs?) arrive as each image type is specified, and the report will say so rather than implying more was verified than was.
+The report also states **how deeply templates were checked**. Layer 1 — the file resolves, parses as SVG, and declares a canvas — applies to all fifteen. Layer 2 checks that a template carries every field its image needs, and applies only to image types whose fields have been specified; none have yet, so it is reported as *not applied* rather than as passed. The report never claims a template was verified more deeply than it was.
 
-The same summary is appended to `/season review`.
+The same summary is appended to `/season review`, which additionally names each template that would block approval. **`/season approve` refuses** while any of them is unusable — the review is where you see the problem, the approval is where the season stops.
 
 #### `/images test` — Render one kind from sample data
 *Access: Trusted admin*
@@ -1123,7 +1125,7 @@ A template is a plain SVG whose declared `width` and `height` are the canvas. Th
 
 **Assets.** Assets are plain SVG, authored at exactly the aspect ratio of the slot they fill — the generator does not pad, so an asset of the wrong shape will be letterboxed with its edge pixels smeared across the band. Filenames are the thing they depict, normalised: lowercased, accents dropped, every run of punctuation or spaces collapsed to a single underscore, `.svg` on the end. `Red Bull Racing` is looked up as `red_bull_racing.svg` in the configured team directory. Drop a `fallback.svg` into any asset directory and it stands in whenever a specific file is missing — a nationality you have no flag for, say — and the bot logs which datum used it.
 
-> **Not yet enforced.** `/images config view` checks templates only to layer 1 — the file resolves, parses, and declares a canvas. Nothing yet verifies that a template carries the right ids, that its row count matches, or that an asset exists. Those checks arrive with each image type. Following the conventions above now is what makes them pass later.
+> **What is checked today.** The file resolving, parsing and declaring a canvas — enforced now, at the moment you name it and again before a season is approved. Field names, row counts and asset presence are checked by machinery that is in place but has nothing to check against yet: no image type has had its fields specified. Following the conventions above now is what makes those checks pass rather than fail when they switch on.
 
 **Fonts and casing.** Either embed the font your template names or author against a font the machine running the bot carries. A font it cannot resolve is substituted by the converter and your text is drawn in a face of another width, which changes where lines break — so two machines can draw the same template differently. Note also that `text-transform` is ignored: a label you want in capitals must be typed in capitals.
 

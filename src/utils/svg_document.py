@@ -8,14 +8,21 @@ type.
 """
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
 from lxml import etree
 
+log = logging.getLogger(__name__)
+
 SVG_NS = "http://www.w3.org/2000/svg"
 XLINK_NS = "http://www.w3.org/1999/xlink"
-NSMAP = {"svg": SVG_NS, "xlink": XLINK_NS}
+#: Templates are authored in Inkscape, whose layer label is the fallback address for a
+#: field (Constitution XIV.2): a league manager sets the label and never sees the
+#: identifier the editor generated.
+INKSCAPE_NS = "http://www.inkscape.org/namespaces/inkscape"
+NSMAP = {"svg": SVG_NS, "xlink": XLINK_NS, "inkscape": INKSCAPE_NS}
 
 #: A CSS length: leading number, optional unit. Templates declare px or bare numbers;
 #: physical units are converted at the CSS 96dpi reference.
@@ -44,6 +51,48 @@ class SvgNoCanvasError(SvgError):
     """The file parses but its root declares no usable width/height."""
 
 
+#: Substrings of lxml's message → the fault named in the module's own words.
+#:
+#: FR-046 forbids showing a user the parser's own text. These are the classes a
+#: hand-authored file actually hits; anything else falls through to the generic line.
+_FAULT_SIGNATURES: tuple[tuple[str, str], ...] = (
+    (
+        "double hyphen within comment",
+        "a comment contains a double hyphen (`--`), which XML does not allow inside one",
+    ),
+    ("comment not terminated", "a comment is left unclosed"),
+    ("opening and ending tag mismatch", "an opening tag and its closing tag do not match"),
+    ("premature end of data", "a tag is left unclosed"),
+    ("expected '>'", "a tag is malformed and never closed"),
+    ("undeclared entity", "an undefined entity is referenced (write `&amp;` for a literal `&`)"),
+    ("entityref", "a stray `&` is used where `&amp;` was meant"),
+    ("encoding", "the encoding declaration is not one the parser accepts"),
+    ("attributes construct error", "an attribute is malformed"),
+    ("space required after the public identifier", "the doctype declaration is malformed"),
+    ("extra content at the end of the document", "content follows the root element"),
+)
+
+
+def _name_parse_fault(exc: etree.XMLSyntaxError) -> str:
+    """Describe *exc* in the module's own words, never the parser's (FR-046).
+
+    The raw text goes to the application log so an operator can still reach it; a league
+    manager gets a sentence they can act on.
+    """
+    raw = str(exc)
+    log.debug("SVG parse failure (raw parser text): %s", raw)
+
+    lowered = raw.lower()
+    line = getattr(exc, "lineno", 0) or 0
+    where = f" at line {line}" if line else ""
+
+    for signature, description in _FAULT_SIGNATURES:
+        if signature in lowered:
+            return f"{description}{where}"
+
+    return f"the file is not well-formed XML{where}"
+
+
 def load_svg(path: Path) -> etree._Element:
     """Parse *path* and return its root element.
 
@@ -55,14 +104,15 @@ def load_svg(path: Path) -> etree._Element:
     try:
         tree = etree.parse(str(path), parser)
     except etree.XMLSyntaxError as exc:
-        raise SvgParseError(str(exc).split("\n")[0]) from exc
+        raise SvgParseError(_name_parse_fault(exc)) from exc
     except OSError as exc:  # unreadable, a directory, a permission problem
-        raise SvgParseError(str(exc)) from exc
+        log.debug("SVG could not be read: %s", exc)
+        raise SvgParseError("the file could not be read") from exc
 
     root = tree.getroot()
     if etree.QName(root).localname != "svg":
         raise SvgParseError(
-            f"root element is <{etree.QName(root).localname}>, not <svg>"
+            f"the root element is <{etree.QName(root).localname}>, not <svg>"
         )
     return root
 
@@ -73,7 +123,7 @@ def parse_svg_bytes(data: bytes) -> etree._Element:
     try:
         return etree.fromstring(data, parser)
     except etree.XMLSyntaxError as exc:
-        raise SvgParseError(str(exc).split("\n")[0]) from exc
+        raise SvgParseError(_name_parse_fault(exc)) from exc
 
 
 def length(value: str | None) -> float | None:
@@ -119,16 +169,64 @@ def canvas_of(root: etree._Element) -> tuple[int, int]:
     return int(round(width)), int(round(height))
 
 
-def index_by_id(root: etree._Element) -> dict[str, etree._Element]:
-    """Map every ``@id`` in the document to its element.
+#: Suffix marking a removable group (Constitution XIV.2): the chrome around a field
+#: leaves the graphic together with the value it introduces.
+GROUP_SUFFIX = "_group"
 
-    The only contract between a template and the code that fills it (Constitution XIV.2).
+
+class FieldIndex:
+    """Resolve a field *name* to an element (Constitution XIV.2).
+
+    Two addresses, in order of authority:
+
+    1. a node whose ``@id`` is the name — normative;
+    2. a **layer** whose ``inkscape:label`` is the name — the fallback.
+
+    Only layers are indexed by label. Inkscape writes ``inkscape:label`` on ordinary
+    objects too, without the manager choosing them, and sweeping those in would let a
+    field name collide with a shape nobody meant to address.
+
+    Rebuild after any structural change to the tree; a removal invalidates the index
+    exactly as it did the dict this class replaces.
     """
-    return {
-        element.get("id"): element
-        for element in root.iter()
-        if element.get("id")
-    }
+
+    __slots__ = ("by_id", "by_label")
+
+    def __init__(self, root: etree._Element) -> None:
+        self.by_id: dict[str, etree._Element] = {}
+        self.by_label: dict[str, etree._Element] = {}
+
+        label_attr = f"{{{INKSCAPE_NS}}}label"
+        groupmode_attr = f"{{{INKSCAPE_NS}}}groupmode"
+
+        for element in root.iter():
+            element_id = element.get("id")
+            if element_id:
+                self.by_id.setdefault(element_id, element)
+
+            if element.get(groupmode_attr) != "layer":
+                continue
+            label = element.get(label_attr)
+            if label:
+                self.by_label.setdefault(label, element)
+
+    def resolve(self, name: str) -> etree._Element | None:
+        """The element addressed by *name*, or None. The identifier wins (FR-020)."""
+        found = self.by_id.get(name)
+        if found is not None:
+            return found
+        return self.by_label.get(name)
+
+    def group_for(self, name: str) -> etree._Element | None:
+        """The removable group wrapping *name*, if the template declares one."""
+        return self.resolve(f"{name}{GROUP_SUFFIX}")
+
+    def declared(self) -> set[str]:
+        """Every name this template can be addressed by — ids and layer labels alike."""
+        return set(self.by_id) | set(self.by_label)
+
+    def __contains__(self, name: object) -> bool:
+        return isinstance(name, str) and self.resolve(name) is not None
 
 
 # ── Style resolution ──────────────────────────────────────────────────────

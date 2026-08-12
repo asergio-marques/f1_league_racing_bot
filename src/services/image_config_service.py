@@ -7,6 +7,7 @@ Discord channel, role, message or scheduled job.
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 
 from db.database import get_connection
@@ -94,6 +95,27 @@ class ImageConfigService:
             row = await cursor.fetchone()
 
         return _row_to_config(row)
+
+    async def candidate_config(
+        self, server_id: int, column: str, value: str
+    ) -> ImageConfig | None:
+        """The stored configuration with *column* overridden — **not** persisted.
+
+        This is what makes validate-then-store possible (FR-005). The validity engine
+        already takes an ``ImageConfig``, so evaluating a copy reuses it exactly and no
+        second code path can drift from what ``/images config view`` reports.
+
+        Writing first and rolling back on failure was rejected: a concurrent read could
+        observe the bad value, and a crash between write and rollback would leave it
+        stored — the outcome FR-005 exists to prevent.
+        """
+        if column not in SETTABLE_COLUMNS:
+            raise UnknownConfigField(f"`{column}` is not a settable image config field.")
+
+        current = await self.get_config(server_id)
+        if current is None:
+            return None
+        return dataclasses.replace(current, **{column: value})
 
     async def set_field(self, server_id: int, column: str, value: str) -> None:
         """Write a single configuration column, guarded by the allow-list."""

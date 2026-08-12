@@ -19,8 +19,57 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from dataclasses import dataclass, field as dataclass_field
+
 from db.database import get_connection
-from models.image_module import RenderNotice, RenderOutcome
+from models.image_module import (
+    PROBLEM_NOT_SVG,
+    PROBLEM_RASTERISER,
+    PROBLEM_UNKNOWN_IMAGE_TYPE,
+    PROBLEM_UNRESOLVED_VALUE,
+    PostingOrigin,
+    Problem,
+    RenderNotice,
+    RenderOutcome,
+)
+
+#: What a caller should do with the result of ``render_for_posting``.
+POST_IMAGE = "POST_IMAGE"
+POST_TEXT_FALLBACK = "POST_TEXT_FALLBACK"
+REJECT_COMMAND = "REJECT_COMMAND"
+
+
+@dataclass
+class PostingDecision:
+    """The render's outcome, resolved against who asked for the posting (XIV.7).
+
+    A caller reads ``action`` and does exactly one thing. It never has to re-derive the
+    commanded/uncommanded rule for itself, which is what keeps the two behaviours from
+    drifting apart across the call sites the image types will add.
+    """
+
+    action: str
+    png_paths: list[Path] = dataclass_field(default_factory=list)
+    problem: Problem | None = None
+    notices: list[RenderNotice] = dataclass_field(default_factory=list)
+
+    @property
+    def posts_image(self) -> bool:
+        return self.action == POST_IMAGE
+
+    @property
+    def falls_back_to_text(self) -> bool:
+        return self.action == POST_TEXT_FALLBACK
+
+    @property
+    def rejects(self) -> bool:
+        return self.action == REJECT_COMMAND
+
+    def caller_message(self, label: str | None = None) -> str:
+        """What to tell the person who ran the command (FR-030)."""
+        if self.problem is None:
+            return ""
+        return f"❌ {self.problem.message(label)}"
 
 log = logging.getLogger(__name__)
 
@@ -193,6 +242,98 @@ def rasterise(svg: bytes, destination: Path, canvas: tuple[int, int]) -> Path:
     return destination
 
 
+def _kind_for_layer(failed_layer: int | None) -> str:
+    """The problem kind matching the validity layer that rejected a template.
+
+    Keeps a render's problem distinguishable in the same terms the configuration command
+    and the season gate use, rather than flattening every invalid template to one kind.
+    """
+    from models.image_module import (
+        PROBLEM_MISSING_MANDATORY_FIELD,
+        PROBLEM_NOT_FOUND,
+    )
+    from services.image_validity_service import LAYER_CATALOGUE
+
+    if failed_layer == LAYER_CATALOGUE:
+        return PROBLEM_MISSING_MANDATORY_FIELD
+    return PROBLEM_NOT_FOUND
+
+
+def _verify_against_data(root, spec, image_type: str) -> Problem | None:
+    """Check the template against the values it is about to receive (FR-010 … FR-014).
+
+    Three questions, in the order that makes the cheapest failure the first:
+
+    1. Does the data have more rows than the template has slots? (FR-028)
+    2. Is a mandatory field absent from the template? (FR-012)
+    3. Is a mandatory field's value undeterminable? (FR-011)
+
+    All three pass vacuously while the image type's catalogue is empty, which is every
+    type in this increment. Populating one catalogue switches all three on for that type.
+    """
+    from models.image_catalogues import catalogue_for
+    from models.image_module import (
+        PROBLEM_CAPACITY_EXCEEDED,
+        PROBLEM_MISSING_MANDATORY_FIELD,
+    )
+    from utils.svg_document import FieldIndex
+
+    catalogue = catalogue_for(image_type)
+    if catalogue.is_empty:
+        return None
+
+    # 1. Capacity. A graphic that drops a driver without saying so is worse than none.
+    capacity = catalogue.capacity()
+    row_count = getattr(spec, "row_count", None)
+    if capacity is not None and row_count is not None and row_count > capacity:
+        return Problem(
+            kind=PROBLEM_CAPACITY_EXCEEDED,
+            detail=(
+                f"there are {row_count} rows of data but the template provides "
+                f"{capacity} slots. Enlarge the template, or the extra rows would be "
+                f"silently dropped."
+            ),
+            template_key=image_type,
+        )
+
+    mandatory = catalogue.all_mandatory_ids()
+    if not mandatory:
+        return None
+
+    # 2. Present in the template.
+    index = FieldIndex(root)
+    absent = sorted(name for name in mandatory if index.resolve(name) is None)
+    if absent:
+        return Problem(
+            kind=PROBLEM_MISSING_MANDATORY_FIELD,
+            detail=(
+                f"the template declares no "
+                + ", ".join(f"`{name}`" for name in absent[:8])
+                + (f" and {len(absent) - 8} more" if len(absent) > 8 else "")
+            ),
+            template_key=image_type,
+            field_id=absent[0],
+        )
+
+    # 3. Supplied by the data. A mandatory field the caller put in `empty` is a value it
+    #    could not determine, which is exactly what FR-011 makes fatal.
+    supplied = set(spec.text) | set(spec.images) | set(spec.image_data)
+    undetermined = sorted((mandatory - supplied) | (mandatory & set(spec.empty)))
+    if undetermined:
+        return Problem(
+            kind=PROBLEM_UNRESOLVED_VALUE,
+            detail=(
+                "no value could be determined for "
+                + ", ".join(f"`{name}`" for name in undetermined[:8])
+                + (f" and {len(undetermined) - 8} more" if len(undetermined) > 8 else "")
+            ),
+            template_key=image_type,
+            field_id=undetermined[0],
+        )
+
+    return None
+
+
 class ImageRenderService:
     """Fill a template and rasterise it, reporting problems and notices separately."""
 
@@ -220,26 +361,78 @@ class ImageRenderService:
         from utils.svg_fill import fill
 
         if not converter_available():
-            return RenderOutcome(problem=f"{CONVERTER_NAME} is not installed on this host.")
+            return RenderOutcome(
+                problem=Problem(
+                    kind=PROBLEM_RASTERISER,
+                    detail=f"{CONVERTER_NAME} is not installed on this host.",
+                    template_key=image_type,
+                )
+            )
 
         reports = await self._validity_service.template_reports(server_id)
         report = reports.get(image_type)
         if report is None:
-            return RenderOutcome(problem=f"`{image_type}` is not a known template.")
+            # No league can cause this: a caller asked for a type the module has no
+            # column for. Recorded here, and reported to a user only in general terms.
+            log.error("render: unknown image type %r requested", image_type)
+            return RenderOutcome(
+                problem=Problem(
+                    kind=PROBLEM_UNKNOWN_IMAGE_TYPE,
+                    detail=f"`{image_type}` is not a known image type.",
+                    template_key=image_type,
+                )
+            )
         if not report.valid:
-            return RenderOutcome(problem=f"{image_type}: {report.reason}")
+            return RenderOutcome(
+                problem=Problem(
+                    kind=_kind_for_layer(report.failed_layer),
+                    detail=report.reason or "the template is not valid.",
+                    template_key=image_type,
+                )
+            )
 
         try:
             root = load_svg(report.resolved_path)
         except SvgError as exc:
-            return RenderOutcome(problem=f"{image_type}: {exc}")
+            return RenderOutcome(
+                problem=Problem(
+                    kind=PROBLEM_NOT_SVG,
+                    detail=f"not a valid SVG file — {exc}",
+                    template_key=image_type,
+                )
+            )
 
         try:
             spec = spec_builder(root)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("render: spec build failed for %s", image_type)
+            return RenderOutcome(
+                problem=Problem(
+                    kind=PROBLEM_UNRESOLVED_VALUE,
+                    detail=f"the data for this image could not be assembled — {exc}",
+                    template_key=image_type,
+                )
+            )
+
+        # ── Verification against the concrete data (FR-010) ───────────────
+        # Layer 2 checked the template when it was configured. The data has moved since:
+        # a division grew, a value stopped being determinable. This is the only moment
+        # both are in hand.
+        problem = _verify_against_data(root, spec, image_type)
+        if problem is not None:
+            return RenderOutcome(problem=problem)
+
+        try:
             result = fill(spec)
         except Exception as exc:  # noqa: BLE001 - a template surprise must not crash the bot
             log.exception("render: fill failed for %s", image_type)
-            return RenderOutcome(problem=f"{image_type}: could not be filled — {exc}")
+            return RenderOutcome(
+                problem=Problem(
+                    kind=PROBLEM_UNRESOLVED_VALUE,
+                    detail=f"the template could not be filled — {exc}",
+                    template_key=image_type,
+                )
+            )
 
         # Constitution XIV.3: an unresolved field aborts the render. Notices raised
         # before the problem are still reported, so an operator sees the whole picture.
@@ -247,7 +440,11 @@ class ImageRenderService:
             if persist_notices:
                 await self._persist(server_id, result.notices)
             return RenderOutcome(
-                problem=f"{image_type}: " + "; ".join(result.unresolved),
+                problem=Problem(
+                    kind=PROBLEM_UNRESOLVED_VALUE,
+                    detail="; ".join(result.unresolved),
+                    template_key=image_type,
+                ),
                 notices=result.notices,
             )
 
@@ -263,7 +460,14 @@ class ImageRenderService:
         except RasterisationError as exc:
             if persist_notices:
                 await self._persist(server_id, result.notices)
-            return RenderOutcome(problem=f"{image_type}: {exc}", notices=result.notices)
+            return RenderOutcome(
+                problem=Problem(
+                    kind=PROBLEM_RASTERISER,
+                    detail=str(exc),
+                    template_key=image_type,
+                ),
+                notices=result.notices,
+            )
 
         if persist_notices:
             await self._persist(server_id, result.notices)
@@ -295,10 +499,8 @@ class ImageRenderService:
             await db.commit()
 
     @staticmethod
-    async def report_notices(bot, server_id: int, notices: list[RenderNotice]) -> None:
-        """Surface notices to the calculation log channel (Principle V)."""
-        if not notices:
-            return
+    def format_notices(notices: list[RenderNotice]) -> str:
+        """The notice block, shared by the log channel and a command's own reply."""
         lines = ["Image render notices:"]
         lines += [
             f"  • [{notice.notice_kind}] {notice.image_type}"
@@ -306,7 +508,91 @@ class ImageRenderService:
             + f" — {notice.detail}"
             for notice in notices
         ]
+        return "\n".join(lines)
+
+    @staticmethod
+    async def report_notices(bot, server_id: int, notices: list[RenderNotice]) -> None:
+        """Surface notices to the calculation log channel (Principle V, FR-031).
+
+        The log always. A command's own output additionally, which is the caller's job —
+        it holds the interaction. Never a channel drivers read (FR-032).
+        """
+        if not notices:
+            return
         try:
-            await bot.output_router.post_log(server_id, "\n".join(lines))
+            await bot.output_router.post_log(
+                server_id, ImageRenderService.format_notices(notices)
+            )
         except Exception as exc:  # noqa: BLE001
             log.error("report_notices: log write failed: %s", exc)
+
+    # ── Posting: the commanded / uncommanded split (Constitution XIV.7) ────
+
+    async def render_for_posting(
+        self,
+        server_id: int,
+        image_type: str,
+        spec_builder,
+        *,
+        posting_origin: PostingOrigin,
+        bot=None,
+        output_dir: Path | None = None,
+    ) -> PostingDecision:
+        """Render, and decide what the caller should do with a failure.
+
+        ``posting_origin`` is **required** and is never inferred. The tempting inference —
+        "is there an Interaction in scope?" — is wrong for a command that schedules later
+        work, and wrong for the retry queue re-posting something a command originated.
+        Making every call site state which it is means a new one cannot fall into the
+        wrong behaviour by omission.
+
+        The two behaviours are deliberately opposite on the same fault:
+
+        * **COMMANDED** — reject. Post nothing anywhere; hand the fault back so the caller
+          can tell the person who asked. They are the one person able to fix the template,
+          and silently posting text would deny them the chance and hide the defect until
+          it next fires unattended.
+        * **SCHEDULED** — fall back to the traditional text output. There is nobody to
+          tell, and the league still needs its information.
+        """
+        if not isinstance(posting_origin, PostingOrigin):
+            raise TypeError(
+                "posting_origin must be a PostingOrigin; it is never inferred "
+                "(Constitution XIV.7)."
+            )
+
+        outcome = await self.render(
+            server_id, image_type, spec_builder, output_dir=output_dir
+        )
+
+        if bot is not None and outcome.notices:
+            await self.report_notices(bot, server_id, outcome.notices)
+
+        if outcome.ok:
+            return PostingDecision(
+                action=POST_IMAGE,
+                png_paths=outcome.png_paths,
+                notices=outcome.notices,
+            )
+
+        problem = outcome.problem
+        if problem is not None and problem.is_internal:
+            log.error(
+                "render_for_posting: internal problem for %s on server %s — %s",
+                image_type,
+                server_id,
+                problem.detail,
+            )
+
+        if posting_origin is PostingOrigin.COMMANDED:
+            return PostingDecision(
+                action=REJECT_COMMAND,
+                problem=problem,
+                notices=outcome.notices,
+            )
+
+        return PostingDecision(
+            action=POST_TEXT_FALLBACK,
+            problem=problem,
+            notices=outcome.notices,
+        )

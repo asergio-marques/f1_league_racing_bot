@@ -18,19 +18,22 @@ from pathlib import Path
 from lxml import etree
 
 from models.image_constants import (
+    NOTICE_ASSET_FALLBACK_USED,
     NOTICE_FONT_SUBSTITUTED,
     NOTICE_INLINE_SIZE_TRUNCATED,
+    NOTICE_OPTIONAL_FIELD_EMPTIED,
     NOTICE_WRAP_TRUNCATED,
 )
 from models.image_module import FillResult, RenderNotice
+from utils.asset_resolver import resolve_asset
 from utils.font_metrics import ResolvedFont, measure, resolve_family
 from utils.svg_document import (
     SVG_NS,
     XLINK_NS,
+    FieldIndex,
     canvas_of,
     computed_style,
     declarations,
-    index_by_id,
     length,
     stylesheet,
 )
@@ -61,10 +64,42 @@ class FillSpec:
     remove: list[str] = field(default_factory=list)
     crop: str | None = None
 
+    #: Fields whose value could not be determined. Each is emptied, or its `_group`
+    #: removed where the template declares one (FR-013, FR-023).
+    empty: list[str] = field(default_factory=list)
+
+    #: Rows of data this render has for the image type's repeating collection. Compared
+    #: against the catalogue's declared capacity before anything is drawn (FR-028).
+    row_count: int | None = None
+
+    #: field name -> (asset class, the datum it depicts). Resolved through the slug rule
+    #: and the class's directory rather than by a path the caller built (FR-042).
+    image_data: dict[str, tuple[str, str]] = field(default_factory=dict)
+
+    #: asset class -> the configured directory it resolves in.
+    asset_directories: dict[str, Path] = field(default_factory=dict)
+
+    #: The image type's field catalogue, when known. Supplying it lets `fill` report a
+    #: template field the data left unfilled, and tells it whether an unresolved asset is
+    #: fatal or merely a notice (FR-044).
+    catalogue: object | None = None
+
     #: The image type's field catalogue, when known. Supplying it lets `fill` report a
     #: template field the data left unfilled; without it only unknown fields are caught.
-    #: Layer 2 of the validity contract will make this shared rather than per-caller.
     expected_fields: set[str] | None = None
+
+    def is_optional(self, field_id: str) -> bool:
+        """Whether the catalogue classifies *field_id* optional.
+
+        With no catalogue, a field is treated as optional: this increment ships fifteen
+        empty catalogues, and refusing to draw anything until they are populated would
+        make the module useless in the meantime. Once a catalogue exists it is the
+        authority, and a mandatory field's miss becomes fatal (FR-011, FR-013).
+        """
+        catalogue = self.catalogue
+        if catalogue is None:
+            return True
+        return field_id not in catalogue.all_mandatory_ids()
 
 
 def fill(spec: FillSpec) -> FillResult:
@@ -78,28 +113,35 @@ def fill(spec: FillSpec) -> FillResult:
     # ── 1. Group removal ──────────────────────────────────────────────────
     # First, so that ids inside a removed subtree are gone before anything else looks
     # for them: a field removed with its group is not a field left unfilled.
-    index = index_by_id(root)
+    index = FieldIndex(root)
     removed_ids: set[str] = set()
     for group_id in spec.remove:
-        element = index.get(group_id)
+        element = index.resolve(group_id)
         if element is None:
             unresolved.append(f"unknown group `{group_id}` (template declares no such id)")
             continue
-        for descendant in element.iter():
-            if descendant.get("id"):
-                removed_ids.add(descendant.get("id"))
-        parent = element.getparent()
-        if parent is not None:
-            parent.remove(element)
+        _detach(element, removed_ids)
 
-    index = index_by_id(root)
+    index = FieldIndex(root)
+
+    # ── 1b. Fields whose value could not be determined ────────────────────
+    # Where the template wraps the field in `<field>_group`, the whole group leaves, so
+    # the label, plate or separator introducing the value goes with it. Where it does
+    # not, the field alone is emptied and the chrome around it is stranded — which is
+    # the contrast the group convention exists to let an author avoid (FR-023, FR-024).
+    for field_id in spec.empty:
+        notice = _vacate(index, field_id, spec.image_type, removed_ids)
+        if notice is not None:
+            notices.append(notice)
+    if spec.empty:
+        index = FieldIndex(root)
 
     # ── 2. Vertical crop ──────────────────────────────────────────────────
     # Made in the SVG rather than asked of the rasteriser's export area, so it does not
     # depend on which way up a rasteriser counts.
     crop_y: float | None = None
     if spec.crop is not None:
-        node = index.get(spec.crop)
+        node = index.resolve(spec.crop)
         if node is None:
             unresolved.append(
                 f"unknown crop point `{spec.crop}` (template declares no such id)"
@@ -121,7 +163,7 @@ def fill(spec: FillSpec) -> FillResult:
     # A recolour does NOT consume the field: a coloured field still has to be filled,
     # which is what keeps the unresolved check honest.
     for field_id, colour in spec.recolour.items():
-        element = index.get(field_id)
+        element = index.resolve(field_id)
         if element is None:
             if field_id not in removed_ids:
                 unresolved.append(
@@ -134,20 +176,117 @@ def fill(spec: FillSpec) -> FillResult:
 
     # ── 4. Image fill ─────────────────────────────────────────────────────
     for field_id, href in spec.images.items():
-        element = index.get(field_id)
+        element = index.resolve(field_id)
         if element is None:
             if field_id not in removed_ids:
                 unresolved.append(
                     f"unknown image field `{field_id}` (template declares no such id)"
                 )
             continue
-        element.set(f"{{{XLINK_NS}}}href", str(href))
-        element.set("href", str(href))
+        target = _descend(element, "image")
+        if target is None:
+            unresolved.append(
+                f"image field `{field_id}` resolves to a layer holding no single "
+                f"<image> element"
+            )
+            continue
+        _set_href(target, href)
         consumed.add(field_id)
+
+    # ── 4b. Image fill by asset class and datum ───────────────────────────
+    # The datum is resolved through the slug rule inside the class's configured
+    # directory (FR-042). What a miss costs depends on two things and only two: whether
+    # the class carries a fallback, and whether the catalogue calls the field mandatory.
+    vacated: list[str] = []
+    for field_id, (asset_class, datum) in spec.image_data.items():
+        element = index.resolve(field_id)
+        if element is None:
+            if field_id not in removed_ids:
+                unresolved.append(
+                    f"unknown image field `{field_id}` (template declares no such id)"
+                )
+            continue
+
+        target = _descend(element, "image")
+        if target is None:
+            unresolved.append(
+                f"image field `{field_id}` resolves to a layer holding no single "
+                f"<image> element"
+            )
+            continue
+
+        directory = spec.asset_directories.get(asset_class)
+        if directory is None:
+            unresolved.append(
+                f"image field `{field_id}` names asset class `{asset_class}`, "
+                f"which is not configured"
+            )
+            continue
+
+        resolution = resolve_asset(Path(directory), datum)
+
+        if resolution.found:
+            _set_href(target, str(resolution.path))
+            consumed.add(field_id)
+            continue
+
+        if resolution.used_fallback:
+            _set_href(target, str(resolution.path))
+            consumed.add(field_id)
+            notices.append(
+                RenderNotice(
+                    image_type=spec.image_type,
+                    notice_kind=NOTICE_ASSET_FALLBACK_USED,
+                    detail=(
+                        f"no `{asset_class}` image is supplied for “{datum}”; the "
+                        f"directory's fallback was drawn instead."
+                    ),
+                    field_id=field_id,
+                )
+            )
+            continue
+
+        # Nothing to draw and nothing to stand in for it.
+        if not spec.is_optional(field_id):
+            unresolved.append(
+                f"field `{field_id}` needs a `{asset_class}` image for “{datum}”, "
+                f"and neither `{resolution.slug or datum}.svg` nor a fallback is there"
+            )
+            continue
+
+        vacated.append(field_id)
+        notices.append(
+            RenderNotice(
+                image_type=spec.image_type,
+                notice_kind=NOTICE_OPTIONAL_FIELD_EMPTIED,
+                detail=(
+                    f"no `{asset_class}` image for “{datum}” and no fallback; the field "
+                    f"was left out."
+                ),
+                field_id=field_id,
+            )
+        )
+
+    for field_id in vacated:
+        _vacate(index, field_id, spec.image_type, removed_ids, notify=False)
+        consumed.add(field_id)
+    if vacated:
+        index = FieldIndex(root)
 
     # ── 5 & 6. Text fill, with wrap and inline-size bounds ────────────────
     for field_id, value in spec.text.items():
-        element = index.get(field_id)
+        element = index.resolve(field_id)
+        if element is not None:
+            # A field addressed by layer label resolves to the layer; descend to the
+            # text it holds, or the fill would gut the layer and draw nothing.
+            target = _descend(element, "text")
+            if target is None:
+                unresolved.append(
+                    f"field `{field_id}` resolves to a layer holding no single "
+                    f"<text> element to fill"
+                )
+                continue
+            element = target
         if element is None:
             if field_id not in removed_ids:
                 unresolved.append(
@@ -162,7 +301,7 @@ def fill(spec: FillSpec) -> FillResult:
 
         shape_id = _shape_inside_id(style)
         if shape_id is not None:
-            rect = index.get(shape_id)
+            rect = index.resolve(shape_id)
             if rect is None:
                 unresolved.append(
                     f"field `{field_id}` names shape-inside `{shape_id}`, "
@@ -185,9 +324,9 @@ def fill(spec: FillSpec) -> FillResult:
     # A field the crop took off the canvas is not a field left unfilled, so only ids
     # above the cut are reported.
     if spec.expected_fields is not None:
-        index = index_by_id(root)
+        index = FieldIndex(root)
         for field_id in sorted(spec.expected_fields - consumed - removed_ids):
-            element = index.get(field_id)
+            element = index.resolve(field_id)
             if element is None:
                 continue
             if crop_y is not None and _is_below(element, crop_y):
@@ -203,6 +342,118 @@ def fill(spec: FillSpec) -> FillResult:
 
 
 # ── Operation helpers ─────────────────────────────────────────────────────
+
+
+def _descend(element: etree._Element, localname: str) -> etree._Element | None:
+    """Resolve a field that is a *layer* down to the element an operation can act on.
+
+    The layer-label fallback (Constitution XIV.2) addresses a field by the label a
+    manager set on a layer, and a layer is a ``<g>``. A text fill cannot act on a group:
+    setting text on it would put a bare text node inside the group, which draws nothing,
+    and clearing its children would delete the very ``<text>`` the manager labelled.
+
+    So an operation that needs a particular kind of element descends to it. Exactly one
+    candidate must be present — a layer holding two ``<text>`` nodes does not say which
+    is the field, and guessing would fill the wrong one.
+    """
+    if etree.QName(element).localname == localname:
+        return element
+
+    candidates = [
+        node
+        for node in element.iter(f"{{{SVG_NS}}}{localname}")
+        if node is not element
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+#: Schemes an href may already carry, which must be passed through untouched.
+_URI_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*:", re.IGNORECASE)
+
+
+def _as_href(value: str) -> str:
+    """Render a value usable as an SVG ``href``.
+
+    An absolute filesystem path is **not** a URI, and on Windows it is not even close:
+    ``C:\\assets\\british.svg`` has a one-letter "scheme" and backslash separators. The
+    rasteriser cannot resolve it and silently draws a broken-image icon in its place —
+    a defect invisible in the SVG and obvious only in the PNG (Constitution XIV.14).
+
+    An absolute path is therefore converted to a ``file://`` URI. Anything already
+    carrying a scheme, and any relative reference, is left alone: a template may legally
+    point at a file beside itself.
+    """
+    text = str(value)
+    if _URI_SCHEME_RE.match(text) and not re.match(r"^[a-zA-Z]:[\\/]", text):
+        return text  # data:, file:, http: … already a URI
+
+    candidate = Path(text)
+    if candidate.is_absolute():
+        return candidate.as_uri()
+    return text
+
+
+def _set_href(element: etree._Element, href: str) -> None:
+    """Point an image element at a file. Both spellings, for either SVG version."""
+    value = _as_href(href)
+    element.set(f"{{{XLINK_NS}}}href", value)
+    element.set("href", value)
+
+
+def _detach(element: etree._Element, removed_ids: set[str]) -> None:
+    """Remove *element* and record every id that leaves with it.
+
+    Ids inside a removed subtree must be known, because a field the removal took off the
+    canvas is not a field left unfilled (Constitution XIV.3).
+    """
+    for descendant in element.iter():
+        descendant_id = descendant.get("id")
+        if descendant_id:
+            removed_ids.add(descendant_id)
+    parent = element.getparent()
+    if parent is not None:
+        parent.remove(element)
+
+
+def _vacate(
+    index,
+    field_id: str,
+    image_type: str,
+    removed_ids: set[str],
+    *,
+    notify: bool = True,
+) -> RenderNotice | None:
+    """Take a field off the graphic: its `_group` if declared, else the field itself.
+
+    The group carries the static chrome that introduces the value — a label, a plate, a
+    separator — so removing the group is what stops a heading being left pointing at
+    nothing (FR-023). Without one, only the field can be emptied, and it is the
+    template author's business to have wrapped it (FR-024).
+
+    The canvas is never resized either way (FR-026).
+    """
+    group = index.group_for(field_id)
+    if group is not None:
+        _detach(group, removed_ids)
+    else:
+        element = index.resolve(field_id)
+        if element is None:
+            return None
+        _clear_children(element)
+        element.text = None
+        removed_ids.add(field_id)
+
+    if not notify:
+        return None
+    return RenderNotice(
+        image_type=image_type,
+        notice_kind=NOTICE_OPTIONAL_FIELD_EMPTIED,
+        detail=(
+            "its value could not be determined, so "
+            + ("the block around it was removed." if group is not None else "it was emptied.")
+        ),
+        field_id=field_id,
+    )
 
 
 def _restyle(element: etree._Element, updates: dict[str, str | None]) -> None:
