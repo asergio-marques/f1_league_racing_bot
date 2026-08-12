@@ -23,6 +23,11 @@ Two classes of outcome, three destinations, one switch.
 | `ASSET_UNRESOLVED` | Mandatory image field, no file, no fallback (FR-044) |
 | `CAPACITY_EXCEEDED` | Rows of data exceed declared capacity (FR-028) |
 | `RASTERISER` | Converter absent, failed, timed out, or output too large |
+| `UNKNOWN_IMAGE_TYPE` | A render was asked for a type the module does not know — a caller defect, not a league's |
+
+`UNKNOWN_IMAGE_TYPE` is the one kind no user can provoke. It is still a `Problem` so that every
+failure path returns uniformly and no traceback can escape into a Discord surface; the offending
+caller is identified in the application log rather than in the user-facing message.
 
 Every problem names the **individual** template at fault, and the field where it has one. Naming
 a group of templates does not satisfy FR-008.

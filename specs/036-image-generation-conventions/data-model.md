@@ -89,7 +89,14 @@ into three different surfaces (a command rejection, a season review line, a log 
 
 Kinds: `EXTENSION` (FR-001), `NOT_FOUND` (FR-002), `NOT_SVG` (FR-003, carrying a named parse
 fault per research R3), `MISSING_MANDATORY_FIELD` (FR-004, FR-012), `UNRESOLVED_VALUE` (FR-011),
-`UNKNOWN_FIELD`, `ASSET_UNRESOLVED` (FR-044), `CAPACITY_EXCEEDED` (FR-028), `RASTERISER`.
+`UNKNOWN_FIELD`, `ASSET_UNRESOLVED` (FR-044), `CAPACITY_EXCEEDED` (FR-028), `RASTERISER`,
+`UNKNOWN_IMAGE_TYPE`.
+
+`UNKNOWN_IMAGE_TYPE` is the odd one: a render was asked for a type the module does not know,
+which no league can cause — it is a caller defect. It is a `Problem` rather than an exception so
+that **every** failure path returns uniformly and nothing escapes as a traceback into a Discord
+surface. Its `detail` names the type asked for; the caller that produced it is identified in the
+application log, since there is nothing a user could do about it.
 
 ### `PostingOrigin`
 

@@ -53,29 +53,40 @@ that reading the configuration back shows the previous value untouched.
 
 ---
 
-### User Story 2 - Season review answers for every template at once (Priority: P2)
+### User Story 2 - Season review reports on every template; approval blocks on any that fail (Priority: P2)
 
-With the image module enabled, a season review verifies every configured template on the same
-terms as the configuration command. Any template that would be fatal to a generation fails
-validation of the season, and the review names each file and what is wrong with it.
+With the image module enabled, every configured template is verified on the same terms as the
+configuration command. A season **review** shows the findings, naming each file and what is wrong
+with it. A season **approval** refuses to proceed while any of them would be fatal to a
+generation.
 
 **Why this priority**: A season can be reviewed after templates were edited outside the bot, or
 after the template directory moved. It is the one moment before a season runs at which every
 template is looked at together.
 
+**Why the split**: `/season review` displays a pending configuration and offers Approve and
+Amend; it commits nothing, so there is nothing there to refuse. Every existing prerequisite gate
+— results channels, points configuration, signup roles — lives in `/season approve`, and template
+verification belongs beside them. The review is where a manager *sees* the problem; the approval
+is where the season is *stopped*.
+
 **Independent Test**: Enable the module, break two of the fifteen templates in different ways,
-run a season review, and confirm validation fails and that both files are named individually
-with distinct reasons.
+run a season review to confirm both are named individually with distinct reasons, then run a
+season approval and confirm it is refused.
 
 **Acceptance Scenarios**:
 
-1. **Given** the module enabled and every template sound, **When** a season review runs,
-   **Then** template verification contributes no failure.
+1. **Given** the module enabled and every template sound, **When** a season is reviewed and
+   approved, **Then** template verification contributes no finding and no failure.
 2. **Given** the module enabled and one template missing a mandatory field, **When** a season
-   review runs, **Then** the season fails validation and the report names that template and
-   that field.
-3. **Given** the module disabled, **When** a season review runs, **Then** templates are not
-   verified and no template finding appears.
+   review runs, **Then** the review names that template and that field.
+3. **Given** the same state, **When** a season approval runs, **Then** approval is refused and
+   the refusal names that template and that field.
+4. **Given** the module enabled and two templates broken differently, **When** a season approval
+   runs, **Then** both are named individually with distinct reasons — not as a count, and not as
+   a group.
+5. **Given** the module disabled, **When** a season is reviewed or approved, **Then** templates
+   are not verified and no template finding appears.
 
 ---
 
@@ -211,15 +222,20 @@ second posts the text output.
   exactly as it stood. No partial write may occur.
 - **FR-006**: A rejection MUST name the file and state what was found to be at fault.
 
-### Functional Requirements — Verification at season review
+### Functional Requirements — Verification at season review and approval
 
-- **FR-007**: When the image module is enabled, a season review MUST apply FR-002 through FR-004
-  to every configured template.
-- **FR-008**: A template failing that verification MUST fail validation of the season, and the
-  review MUST name the individual template at fault and its reason. A report naming a group of
-  templates rather than the one at fault does not satisfy this requirement.
-- **FR-009**: When the image module is disabled, a season review MUST NOT verify templates and
-  MUST report no template finding.
+- **FR-007**: When the image module is enabled, both `/season review` and `/season approve` MUST
+  apply FR-002 through FR-004 to every configured template, from the same evaluation so the two
+  surfaces cannot disagree.
+- **FR-008**: A template failing that verification MUST block approval of the season. Both the
+  review's report and the approval's refusal MUST name the individual template at fault and its
+  own reason. Naming a count, or a group of templates rather than the one at fault, does not
+  satisfy this requirement.
+- **FR-008a**: `/season review` MUST NOT itself refuse anything. It commits nothing, so it
+  reports; `/season approve` is where the season is stopped, beside the existing results, points
+  and signup prerequisites.
+- **FR-009**: When the image module is disabled, neither command MUST verify templates, and
+  neither MUST report a template finding.
 
 ### Functional Requirements — Verification at generation
 
@@ -398,10 +414,11 @@ second posts the text output.
   Where a `_group` is declared, the distinction stops mattering — the group goes.
 - **A-004**: Verification at season review reports through the season review's existing
   validation surface rather than introducing a new one.
-- **A-005**: The image type generation specifications that FR-004, FR-010 and FR-027 depend on do
-  not yet exist. Until an image type has one, its mandatory-field set is empty and those checks
-  pass vacuously for it. This matches the existing layered-validity contract, under which a
-  check not yet ratified is reported as not applied rather than as passed.
+- **A-005**: The image type generation specifications that FR-004, FR-010, FR-027 and FR-028
+  depend on do not yet exist. Until an image type has one, its mandatory-field set is empty, its
+  error classifications are undeclared, and it declares no row capacity — so those checks pass
+  vacuously for it. This matches the existing layered-validity contract, under which a check not
+  yet ratified is reported as not applied rather than as passed.
 - **A-006**: "A command that would carry a division past what its configured templates can draw"
   (FR-028) refers to a division growing beyond the row capacity a template provides — for
   example, adding a driver to a full grid. The capacity itself is declared per image type.
@@ -414,6 +431,10 @@ second posts the text output.
 - **A-008**: A missing asset is non-fatal wherever a fallback exists, including for a mandatory
   field. A mandatory *field* is about the template carrying the slot, not about every datum
   having a bespoke image — which is the case the flag example in the brief describes.
+- **A-009**: FR-016, FR-017, FR-033, FR-034, FR-037, FR-039 and FR-040 restate behaviour already
+  delivered in 035 and covered by its tests. This feature changes none of them; they appear here
+  because a document of the module's conventions has to be complete, not because they are new
+  work. The regression run against the pre-change baseline is what stands behind them.
 
 ## Constitution Impact
 
@@ -446,7 +467,11 @@ The specification is consistent with, and in places sharpens, XIV.1 (canvas), XI
 ## Out of Scope
 
 - Any individual image type's field catalogue, layout or data mapping.
-- The calendar graphic's vertical crop, which is specified with that image type.
+- The calendar graphic's vertical crop, which is specified with that image type. The crop
+  mechanism already in the engine stays there, untouched and unreachable: FR-015's "and no
+  others" governs what a generation utility may invoke upon a field, not what the engine retains
+  for a type not yet specified. No catalogue declares a crop point, so no utility can reach it
+  until the calendar type claims it.
 - The verdicts graphic's wrapping and size-reduction behaviour, referenced by FR-038 and
   specified with that image type.
 - Wiring the eight output toggles to their source modules, which remains a later increment.

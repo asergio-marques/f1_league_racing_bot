@@ -5,7 +5,8 @@ The same checks, applied at three moments, against different amounts of informat
 | Moment | Trigger | Checks | On failure |
 |---|---|---|---|
 | **Configuration** | `/images template <kind>` | FR-001 … FR-004 | Reject the command; stored value unchanged |
-| **Season review** | `/season approve`, module enabled | FR-002 … FR-004 over all fifteen | Fail season validation; name every template at fault |
+| **Season review** | `/season review`, module enabled | FR-002 … FR-004 over all fifteen | Report every template at fault; refuse nothing |
+| **Season approval** | `/season approve`, module enabled | the same evaluation | Block approval; name every template at fault |
 | **Generation** | immediately before any render | FR-004 again, **plus** the data (FR-010, FR-011) | No image; outcome depends on posting origin |
 
 ## Configuration
@@ -27,10 +28,15 @@ is logged to the calculation log like any other configuration event.
 
 The check does not run when the module is disabled — the command already guards on that.
 
-## Season review
+## Season review and approval
 
-Applies checks 2–4 to all fifteen templates. Check 1 cannot fail here: a stored filename was
-validated when it was stored.
+Applies checks 2–4 to all fifteen templates, from **one** evaluation serving both commands so the
+two surfaces cannot disagree. Check 1 cannot fail here: a stored filename was validated when it
+was stored.
+
+`/season review` **reports**; `/season approve` **blocks**. The review displays a pending
+configuration and commits nothing, so it has nothing to refuse; the approval is where the season
+is stopped, beside the existing results, points and signup prerequisites (FR-008a).
 
 - Each template gets its **own** report with its **own** reason. A report naming a group of
   templates rather than the one at fault does not satisfy FR-008.
@@ -39,10 +45,10 @@ validated when it was stored.
   so the caller's rendering is unchanged. *(Existing 035 behaviour, retained.)*
 - The review parses each file once and shares the tree with Layer 2 (research R5).
 - Any failure blocks approval, alongside the existing R&S, points and signup gates.
-- With the module **disabled**, nothing is verified and no finding appears (FR-009).
+- With the module **disabled**, neither command verifies anything and no finding appears (FR-009).
 
-The existing informational image section in `/season review` is retained; this adds a *blocking*
-gate in `/season approve`, where the other prerequisites already live.
+The existing informational image section in `/season review` is retained and extended to name
+each failing template; the *blocking* gate is added to `/season approve`.
 
 ## Generation
 
