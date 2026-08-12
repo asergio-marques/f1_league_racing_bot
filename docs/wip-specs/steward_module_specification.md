@@ -21,9 +21,9 @@
   - Appeal submission - Active for a configured period of time after the report deliberation ends. Lasts for a configured period of time; in it, drivers involved in submitted reports can appeal their outcome, if they have the required number of appeal tokens.
   - Appeal deliberation - Active from the moment the appeal submission ends, and automatically disabled after a configured period of time. Aims to allow stewards to vote on the final verdict, providing justification. After this period is over, the verdicts of all appeals are posted to the configured channel. After this, the round is taken as final, and its results cannot be changed.
 - Ticket - A user-submitted incidence which may be either a report, an appeal or a Code of Conduct investigation. The former two may be public (seen by any driver of the division to which they pertain) or private (seen only by drivers involved and the stewarding team). The latter is always private to the utmost (only the steward team and the driver involved can see this).
-- Report - May also be referred to as stewards' report or ticket. This is an incidence submitted by either a driver or by a member representing the steward team as an anonymous collective, which may refer to one or more other drivers, pertaining to an incident that occurred during the most recent round.
-- Appeal - A special kind of ticket submitted by a driver involved in an already-closed report (or by a member representing the steward team as an anonymous collective) which aims for this ticket to be judged once more, so that the ultimate verdict is passed. The submission of an appeal by a driver may require 1 or more appeal tokens to be spent.
-- Appeal token - A special kind of currency that may be required for drivers to be able to submit an appeal. Upon a successful appeal, depending on configuration, drivers may be returned their spent tokens.
+- Report - May also be referred to as stewards' report. This is an incidence submitted by either a driver or by a member representing the steward team as an anonymous collective, which may refer to one or more other drivers, pertaining to an incident that occurred during the most recent round.
+- Appeal - A special kind of ticket submitted by a driver or by a member representing the steward team as an anonymous collective which aims for this ticket to be judged once more, so that the ultimate verdict is passed. The submission of an appeal by a driver may require 1 or more appeal tokens to be spent.
+- Appeal token - A special kind of currency that may be required for drivers to be able to submit an appeal. Appeal tokens are accumulated on a driver's license, and expire upon the current season's end. Upon a successful appeal, depending on configuration, drivers may be returned their spent tokens.
 - Code of Conduct investigation - May also be referred to as a CoC investigation. A special kind of ticket and the only one which is not linked to a round, instead being linked to a driver; as such, it cannot lead to any changes in results (time penalties, warning or penalty points). It may only be initiated by the head steward. It cannot be appealed, and any decisions made are final. This functionality is optional and is disabled by default.
 - Verdict - The outcome of a report, appeal or CoC investigation as voted upon by a steward. Once a set period of time elapses, the majority verdict among votes casted will serve as the final verdict for that ticket. A verdict may be composed of a penalty, or be ruled NFA (No further action).
 - Time penalty - A possible direct outcome of a verdict for a report or appeal. Time is added or removed to a participant's total race time; note that it is not possible to remove time from a participant's total race time such that the sum of the in-race and post-race time penalties minus the time removed is lower than zero seconds (this functionality is already implemented in the results & standings module)
@@ -37,10 +37,48 @@
 
 ## Configuring the stewarding module
 ### Stewarding team setup
-- <NEW COMMAND> A "steward config team-role" command will be made available to league managers, which shall have as input a user role that will be bestowed to all users designated as stewards.
-  - Upon usage, this command shall be validated to check that the steward role is not the same as the one configured by "steward config head-role".
-- <NEW COMMAND> A "steward config head-role" command will be made available to league managers, which shall have as input a user role that will be bestowed to the user designated as head steward.
-  - Upon usage, this command shall be validated to check that the head steward role is not assigned to more than 1 user, and that the role is not the same as the one configured by "steward config team-role".
-- <NEW COMMAND> A "steward config report-period" command will be made available
+- <NEW COMMAND> A "steward team-role" command will be made available to league managers, which shall have as input a user role that will be bestowed to all users designated as stewards.
+  - Upon usage, this command shall be validated to check that the steward role is not the same as the one configured by "steward head-role".
+- <NEW COMMAND> A "steward head-role" command will be made available to league managers, which shall have as input a user role that will be bestowed to the user designated as head steward.
+  - Upon usage, this command shall be validated to check that the head steward role is not assigned to more than 1 user, and that the role is not the same as the one configured by "steward team-role".
+
+### Stewarding cycle setup
+- <NEW COMMAND> A "steward report-submission-period" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the maximum number of hours during which drivers for that division or users belonging to the steward team (validated by checking whether they have the steward team role) are able to open a report. After this time elapses, the report submission phase is over.
+  - By default, this value will be set to 48.
+  - Input value must be equal or greater than 1.
+- <NEW COMMAND> A "steward defense-submission-period" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the number of hours during which any involved/mentioned driver is able to provide evidence or arguments regarding the incident in question. After this time elapses, the defense submission phase is over.
+  - By default, this value will be set to 24.
+  - Input value must be equal or greater than 1.
+- <NEW COMMAND> A "steward report-deliberation-period" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the number of hours during which members of the steward team can discuss and vote on the verdict pertaining to a given report. After this time elapses, the report deliberation phase is over.
+  - By default, this value will be set to 24.
+  - Input value must be equal or greater than 1.
+- <NEW COMMAND> A "steward appeal-submission-period" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the number of hours during which drivers for that division or users belonging to the steward team (validated by checking whether they have the steward team role) are able to open an appeal. After this time elapses, the appeal submission phase is over.
+  - By default, this value will be set to 24.
+  - Input value must be equal or greater than 0. If the value is 0, then appeals are disabled, and both the appeal submission and the appeal deliberation stages will not be scheduled.
+- <NEW COMMAND> A "steward appeal-deliberation-period" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the number of hours during which members of the steward team can discuss and vote on the verdict pertaining to a given report. After this time elapses, the appeal deliberation phase is over.
+  - By default, this value will be set to 24.
+  - Input value must be equal or greater than 1.
+- The sum of the values of the configurations above may not exceed 168 (7 times 24 hours). This validation must be done everytime one of the commands above is run; if failed, then the new value is not accepted.
+- Any changes done to these values above will NOT be applied for a given division until the next round is scheduled to take place.
+- <NEW COMMAND> A "steward appeal toggle"... <---TBD--->
+- <NEW COMMAND> A "steward appeal starting-tokens" will be made available to league managers, which shall have as input an integer standing for a number of tokens. This value will be the number of appeal tokens assigned to all drivers when they are assigned to a team.
+  - By default, this value will be set to 0. This means that, effectively drivers have unlimited appeal abilities.
+  - This value also serves as the maximum allowed number of appeal tokens for a given driver.
+  - A driver's number of appeal tokens is reset to this value once their assignment to a team is approved (reserve team include), IF they are not assigned to a team in any division already.
+- <NEW COMMAND> A "steward appeal token-spend" will be made available to league managers, which shall have as input an integer standing for a number of tokens. This value will be the number of appeal tokens required for a driver to have so they may initiate an appeal regarding a previous report.
+  - By default, this value will be set to 0. This means that, effectively drivers have unlimited appeal abilities.
+  - This value cannot be greater than that configured by "steward appeal starting-tokens".
+  - This value shall be ignored if the appeal is initiated by a member of the steward team AND said member is not assigned to a team of the division to which the appeal pertains. < --- MOVE THIS RULE --- >
 
 ### Channels
+- <NEW COMMAND> A "division ticket-channel" command will be made available to league managers, which shall have as input a division name and a channel in which drivers for that division can interact to initiate tickets (reports and appeals both).
+- <NEW COMMAND> A "steward command-channel" command will be made available to league managers, which shall have as input a channel in which stewards will be able to input certain special bot commands. These commands must be explicitly marked as steward team actionable in these specifications, otherwise their use will be rejected, and no other commands but those will be accepted in this channel.
+- <NEW COMMAND> A "steward log-channel" command will be made available to league managers, which shall have as input a channel in which ALL commands utilized in the channel configured by "steward command-channel" will be logged for audit purposes, much in the same way they are already done by the log channel input in "bot init".
+
+### Conduct
+- <NEW COMMAND> A "steward conduct-inv toggle" command will be made available to league managers, which shall have no inputs.
+  - This functionality is toggled off by default.
+- <NEW COMMAND> A "steward conduct-inv start" command will be made available to the head steward to be utilized in the channel configured by "steward command-channel" exclusively, which will have as input the user ID of a server member (not necessarily a driver, only requires the "base_role" as configured by "module enable signup"), so that a CoC investigation is opened against said used.
+
+
+### Penalties
