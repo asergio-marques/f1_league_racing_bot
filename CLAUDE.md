@@ -40,9 +40,15 @@ and the checks to run. Read it rather than guessing.
 - Inkscape is the SVG rasteriser. It is installed but its PATH entry is unreliable; the
   code probes the conventional install locations, and the `INKSCAPE` environment variable
   overrides.
-- `resources/` is gitignored. Its default *paths* are configuration and legitimate to
-  reference; its *contents* are not a design input, except where the user points at the
-  proof of concept for a rule it already implements.
+- `resources/` is **tracked** and holds what ships: the fifteen default templates and one
+  `fallback.svg` per asset directory. No league-specific artwork ships. See
+  [resources/README.md](resources/README.md).
+- `poc/` is **gitignored scratch** — the proof of concept, plus the sample assets and the
+  earlier template copies. Not a design input, and never something to port code from. The
+  one exception is a *rule* it already encodes: `normalize()` in `poc/build_poc.py` calls
+  itself "the spec's normalization" and is the authority on the asset slug. Quote the rule,
+  never the implementation. Its scripts still resolve `resources/...` paths from before the
+  move and will not run until those are repointed.
 
 ## Testing
 
