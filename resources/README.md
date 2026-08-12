@@ -17,15 +17,23 @@ with `/images config <directory>`.
 
 ## What ships here, and what does not
 
-**Shipped:** one `fallback.svg` per asset directory, and nothing else.
+**Shipped:**
 
-**Not shipped:** the templates, and the assets for any particular track, team, driver,
-nationality, tyre or weather condition. Those are a league's own design language, and the
-module exists to let each league bring its own rather than inherit one.
+- the fifteen default templates in `templates/`, one per image type;
+- one `fallback.svg` in each asset directory.
 
-`templates/` is therefore empty on a fresh clone, and the image module will refuse to accept
-a template filename until you put a file there. That refusal is the intended behaviour, not
-a fault.
+**Not shipped:** the assets for any particular track, team, driver, nationality, tyre or
+weather condition. Those are a league's own, and the module exists to let each league bring
+its own design language rather than inherit one.
+
+So a fresh clone draws every graphic, and draws each of them entirely out of fallbacks. That
+is the intended starting point: the module works from the first render, and a league
+replaces the placeholders class by class as it makes its own artwork, seeing its own files
+appear as it goes.
+
+The templates are a starting point in the same sense. Restyle them, replace them, or point
+the bot at your own with `/images template <kind>` — the contract they satisfy is the only
+thing that matters, not the design.
 
 ## How a file is looked up
 

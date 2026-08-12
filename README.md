@@ -1075,7 +1075,9 @@ Every directory is a path relative to the project root, and one that resolves ou
 | `weather-icon-directory` | `resources/weather` | Weather condition icons |
 | `tyre-directory` | `resources/tyres` | Tyre compound icons |
 
-Placing the files is the operator's job; the bot resolves the paths and reports what it finds.
+**What is already there.** A clone ships the fifteen default templates and one `fallback.svg` in each of the seven asset directories — so the module draws every graphic from the first render, entirely out of placeholders. No circuit, team, driver, flag, tyre or weather artwork ships: that is your league's to make, and you replace the placeholders a class at a time, seeing your own files appear as you go. See [resources/README.md](resources/README.md) for the naming rule and the aspect each class expects.
+
+Placing your own files is the operator's job; the bot resolves the paths and reports what it finds.
 
 #### `/images config` — Presentation
 *Access: Trusted admin*
