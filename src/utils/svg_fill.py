@@ -101,6 +101,21 @@ class FillSpec:
     #: fill below.
     catalogue: object | None = None
 
+    #: Fields the data determines to be **empty**, as against ``empty`` above, which means
+    #: a value that could not be determined. A lineup seat that is configured but
+    #: unoccupied is the case: the template's layout is fixed, so the seat is drawn with
+    #: its name cleared rather than omitted, and there is nothing wrong. These raise no
+    #: notice and are not read as unresolved, even where the field is mandatory — XIV.3
+    #: makes a mandatory field fatal when its value *cannot be determined*, and this one
+    #: was determined.
+    empty_quietly: list[str] = field(default_factory=list)
+
+    #: The data a **data-fixed** collection's capacity is read from (Constitution XIV.12,
+    #: v4.3.0) — for the lineup, a ``LineupBinding`` naming the division's teams and their
+    #: seat counts. None means no division is in view, which is the correct state at the
+    #: moment a template is named and is *not* the same as an empty binding.
+    binding: object | None = None
+
     #: The image type's field catalogue, when known. Supplying it lets `fill` report a
     #: template field the data left unfilled; without it only unknown fields are caught.
     expected_fields: set[str] | None = None
@@ -119,6 +134,8 @@ def _mandatory_ids(spec: FillSpec) -> frozenset[str]:
     if catalogue is None:
         return frozenset()
     try:
+        return frozenset(catalogue.all_mandatory_ids(spec.root, spec.binding))
+    except TypeError:  # a catalogue predating the binding argument
         return frozenset(catalogue.all_mandatory_ids(spec.root))
     except Exception:  # noqa: BLE001 — an uncountable template is reported elsewhere
         return frozenset()
@@ -159,7 +176,13 @@ def fill(spec: FillSpec) -> FillResult:
         notice = _vacate(index, field_id, spec.image_type, removed_ids)
         if notice is not None:
             notices.append(notice)
-    if spec.empty:
+
+    # Fields the data determined to be empty — a lineup seat nobody occupies. Vacated the
+    # same way and reported not at all: nothing degraded, so there is nothing to notice.
+    for field_id in spec.empty_quietly:
+        _vacate(index, field_id, spec.image_type, removed_ids, notify=False)
+
+    if spec.empty or spec.empty_quietly:
         index = FieldIndex(root)
 
     # ── 2. Vertical crop ──────────────────────────────────────────────────

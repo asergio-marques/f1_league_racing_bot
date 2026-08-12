@@ -176,6 +176,166 @@ class SeasonCog(commands.Cog):
             f"  season: Season #{cfg.season_number} (F1 {cfg.game_edition})",
         )
 
+    async def _team_name_problems(self, server_id: int, season_id: int | None) -> list[str]:
+        """Every team whose name cannot become a lineup field identifier (FR-013).
+
+        Checks the server's team configuration and every division of the season under
+        setup, naming **every** offending team rather than stopping at the first — a
+        manager fixing them one review at a time is a manager the check is failing.
+
+        **Not gated on the image module** (FR-012). The normalised team name is what a
+        lineup template addresses a team's block by, and Principle IX governs it as a
+        structural invariant of teams rather than as an image-module concern.
+
+        Only a season in SETUP reaches here, so an already-approved season is never
+        re-validated and no team is renamed or removed by this rule's introduction.
+        """
+        from db.database import get_connection
+        from services.team_service import validate_team_name
+        from utils.asset_resolver import normalise
+
+        problems: list[str] = []
+        try:
+            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                scopes: list[tuple[str, str, tuple]] = [
+                    (
+                        "the server's team list",
+                        "SELECT name FROM default_teams "
+                        "WHERE server_id = ? AND is_reserve = 0 ORDER BY name",
+                        (server_id,),
+                    )
+                ]
+                if season_id is not None:
+                    rows = await (
+                        await db.execute(
+                            "SELECT id, name FROM divisions WHERE season_id = ? ORDER BY tier",
+                            (season_id,),
+                        )
+                    ).fetchall()
+                    scopes.extend(
+                        (
+                            f"division **{row['name']}**",
+                            "SELECT name FROM team_instances "
+                            "WHERE division_id = ? AND is_reserve = 0 ORDER BY name",
+                            (row["id"],),
+                        )
+                        for row in rows
+                    )
+
+                for label, query, args in scopes:
+                    names = [
+                        r["name"]
+                        for r in await (await db.execute(query, args)).fetchall()
+                    ]
+                    seen: dict[str, str] = {}
+                    for name in names:
+                        fault = validate_team_name(name, seen)
+                        if fault is not None:
+                            problems.append(f"{label}: {fault}")
+                        key = normalise(name or "")
+                        if key:
+                            seen.setdefault(key, name)
+        except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
+            log.error("season: team name check failed: %s", exc)
+            return []
+        return problems
+
+    async def _post_review_lineup_image(self, interaction, division) -> None:
+        """Attach the lineup graphic to `/season review`, beside the textual lineup.
+
+        Silent where the aspect is off. A fatal render is reported to the caller and
+        nothing is posted — a commanded posting never falls back (Constitution XIV.7) —
+        but it does not stop the rest of the review being shown.
+        """
+        try:
+            import discord as _discord
+
+            from services.image_lineup_post import lineup_enabled, render_for_command
+
+            if not await lineup_enabled(self.bot, interaction.guild_id):
+                return
+            outcome = await render_for_command(
+                self.bot, interaction.guild, division.id
+            )
+            if outcome.png_path is not None:
+                await interaction.followup.send(
+                    file=_discord.File(
+                        str(outcome.png_path), filename=f"lineup_{division.id}.png"
+                    ),
+                    ephemeral=False,
+                )
+            elif outcome.message:
+                await interaction.followup.send(outcome.message, ephemeral=True)
+        except Exception as exc:  # noqa: BLE001 — never break a review on this
+            log.error("season review: lineup image failed: %s", exc)
+
+    async def _lineup_problems(self, server_id: int, season_id: int) -> list[str]:
+        """Every divergence between the lineup template and the season (FR-017, FR-018).
+
+        Two checks, both **gated** on the images module being enabled and the `lineup`
+        aspect being on. Unlike the team-name rule (which binds unconditionally), these
+        restrict how a league may compose its season, and a league drawing no lineup
+        graphic has no reason to accept them.
+
+        1. The template against **every** division. Season review holds the data that will
+           actually be drawn, so a divergence here is a failure of validation and not a
+           warning (Constitution XIV.9, v4.3.0). It is the last moment at which a league
+           can correct it before the graphic is posted anywhere.
+        2. The divisions against **each other**. One template file serves every division
+           of a season and addresses teams by name, so divisions fielding different teams
+           or different seat counts are ones no single file can be authored for.
+
+        Never raises for its own reasons: a fault in this reader must not block a season.
+        """
+        from types import SimpleNamespace
+
+        try:
+            if not await self.bot.module_service.is_images_enabled(server_id):
+                return []
+            toggles = await self.bot.image_config_service.get_toggles(server_id)  # type: ignore[attr-defined]
+            if not toggles.get("lineup"):
+                return []
+
+            reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
+            report = reports.get("lineup_template")
+            if report is None or not report.valid:
+                # An unusable template is already reported by _image_template_problems;
+                # naming it twice would tell a manager nothing new.
+                return []
+
+            from services.image_lineup_service import binding_from_teams, divergences
+            from utils.svg_document import load_svg
+
+            root = load_svg(report.resolved_path)
+            divisions = await self.bot.season_service.get_divisions(season_id)  # type: ignore[attr-defined]
+
+            problems: list[str] = []
+            shapes: dict[str, tuple[str, dict[str, int]]] = {}
+
+            for division in sorted(divisions, key=lambda d: d.tier):
+                entries = await self.bot.team_service.get_division_teams(division.id)  # type: ignore[attr-defined]
+                teams = [SimpleNamespace(**entry) for entry in entries]
+                binding = binding_from_teams(teams)
+                for fault in divergences(root, binding):
+                    problems.append(f"division **{division.name}**: {fault}")
+
+                signature = ",".join(
+                    f"{key}:{binding.seats_for(key)}" for key in sorted(binding.team_keys)
+                )
+                shapes.setdefault(signature, (division.name, dict(binding.seats)))
+
+            if len(shapes) > 1:
+                named = ", ".join(f"**{name}**" for name, _ in shapes.values())
+                problems.append(
+                    f"the divisions of this season do not field the same teams and seat "
+                    f"counts ({named}). One lineup template serves every division and "
+                    f"addresses teams by name, so no single file can be authored for them."
+                )
+            return problems
+        except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
+            log.error("season: lineup template check failed: %s", exc)
+            return []
+
     async def _image_template_problems(self, server_id: int) -> list[str]:
         """Every unusable template, named individually (FR-007, FR-008).
 
@@ -430,6 +590,29 @@ class SeasonCog(commands.Cog):
                 header_lines += await self._calendar_capacity_warning(
                     interaction.guild_id, cfg.season_id
                 )
+                lineup_problems = await self._lineup_problems(
+                    interaction.guild_id, cfg.season_id
+                )
+                if lineup_problems:
+                    header_lines.append(
+                        "❌ **Lineup template** — these block approval:"
+                    )
+                    header_lines += [f"  • {problem}" for problem in lineup_problems]
+                    header_lines.append("")
+
+            # ── Team names (038, FR-013) ──────────────────────────────
+            # Outside the `images_on` branch deliberately: a team name must address a
+            # lineup field whether or not the league draws one today (FR-012).
+            name_problems = await self._team_name_problems(
+                interaction.guild_id, cfg.season_id
+            )
+            if name_problems:
+                header_lines.append(
+                    "❌ **Team names** — these cannot become lineup template fields, "
+                    "and block approval:"
+                )
+                header_lines += [f"  • {problem}" for problem in name_problems]
+                header_lines.append("")
 
             # ── Weather config ────────────────────────────────────────
             if weather_on:
@@ -628,6 +811,14 @@ class SeasonCog(commands.Cog):
                 else:
                     lineup_lines.append("  *(no drivers assigned)*")
                 await interaction.followup.send("\n".join(lineup_lines), ephemeral=False)
+
+                # ── Message 3a: the lineup graphic (038, FR-027) ──────
+                #
+                # Posted **in addition to** the textual lineup above, never in place of
+                # it, so a manager can judge the graphic before approving the season.
+                # It is command output and not the lineup of record: no message id is
+                # persisted and the lineup channel is untouched (FR-028).
+                await self._post_review_lineup_image(interaction, div)
 
             # ── Server-level UNASSIGNED warning ──────────────────────
             async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
@@ -3204,6 +3395,21 @@ class SeasonCog(commands.Cog):
                 await interaction.followup.send(msg, ephemeral=True)
                 return
 
+        # ── Gate 3a: team names can address a lineup template (038, FR-013) ───
+        #
+        # Not gated on the image module: a team name is a structural invariant of teams
+        # (Principle IX), constrained at the one moment it is set so that a league
+        # enabling the module later is not left with names it cannot correct.
+        name_problems = await self._team_name_problems(cfg.server_id, cfg.season_id)
+        if name_problems:
+            bullet_list = "\n• ".join(name_problems)
+            msg = (
+                f"❌ Season cannot be approved — these team names cannot become "
+                f"lineup template fields:\n• {bullet_list}"
+            )
+            await interaction.followup.send(msg, ephemeral=True)
+            return
+
         # ── Gate 4: image template prerequisites (036, FR-007/FR-008) ─────────
         #
         # `/season review` reports these; this is where the season is stopped. Every
@@ -3215,6 +3421,21 @@ class SeasonCog(commands.Cog):
             msg = (
                 f"❌ Season cannot be approved — the image module is enabled "
                 f"but these templates are not usable:\n• {bullet_list}"
+            )
+            await interaction.followup.send(msg, ephemeral=True)
+            return
+
+        # ── Gate 4a: the lineup template against this season (038, FR-017/18) ─
+        #
+        # Season review holds the data that will actually be drawn, so a divergence here
+        # refuses rather than warns (Constitution XIV.9). A warning would let a league
+        # approve a season every lineup of which then falls back to text.
+        lineup_problems = await self._lineup_problems(cfg.server_id, cfg.season_id)
+        if lineup_problems:
+            bullet_list = "\n• ".join(lineup_problems)
+            msg = (
+                f"❌ Season cannot be approved — the `lineup` image aspect is on but "
+                f"the template cannot draw this season:\n• {bullet_list}"
             )
             await interaction.followup.send(msg, ephemeral=True)
             return

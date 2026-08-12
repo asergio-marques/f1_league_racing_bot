@@ -158,7 +158,8 @@ _VALID_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675"
 #: A bare canvas passes Layer 1 but no longer passes Layer 2 for the calendar, whose
 #: catalogue was populated in 037. A "sound" calendar template must now carry the
 #: whole-graphic mandatory field and one complete round, its crop point standing at the
-#: declared height. The other fourteen types still have empty catalogues and skip Layer 2.
+#: declared height. The lineup (038) needs its own sound bytes below. The remaining
+#: thirteen types still have empty catalogues and skip Layer 2.
 _VALID_CALENDAR_SVG = (
     b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
     b'<text id="division_name">D</text>'
@@ -171,10 +172,23 @@ _VALID_CALENDAR_SVG = (
 )
 
 
+#: A sound lineup template carries the whole-graphic mandatory field and the reserve
+#: block. Its *team* fields are keyed by a league's own teams, so a template checked with
+#: no division in view is not asked for them (research R4).
+_VALID_LINEUP_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<g id="reserve_group"><text id="reserve_driver_1_name">N</text></g>'
+    b"</svg>"
+)
+
+
 def _sound_bytes(filename: str) -> bytes:
     """The soundest template for *filename* at the depth its type is checked to."""
     if filename == TEMPLATE_COLUMNS["calendar_template"]:
         return _VALID_CALENDAR_SVG
+    if filename == TEMPLATE_COLUMNS["lineup_template"]:
+        return _VALID_LINEUP_SVG
     return _VALID_SVG
 
 

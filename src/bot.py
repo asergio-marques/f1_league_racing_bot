@@ -55,7 +55,9 @@ async def main() -> None:
     bot.team_service = TeamService(DB_PATH)          # type: ignore[attr-defined]
 
     from services.placement_service import PlacementService
-    bot.placement_service = PlacementService(DB_PATH)  # type: ignore[attr-defined]
+    # The bot is handed over so the lineup refresh can reach the image module (038). The
+    # textual lineup does not use it.
+    bot.placement_service = PlacementService(DB_PATH, bot)  # type: ignore[attr-defined]
 
     from services.module_service import ModuleService
     from services.signup_module_service import SignupModuleService
