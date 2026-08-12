@@ -200,3 +200,27 @@ FASTEST_LAP_BACKGROUND_ID = "fastest_lap_background"
 NOTICE_FONT_SUBSTITUTED = "FONT_SUBSTITUTED"
 NOTICE_WRAP_TRUNCATED = "WRAP_TRUNCATED"
 NOTICE_INLINE_SIZE_TRUNCATED = "INLINE_SIZE_TRUNCATED"
+NOTICE_ASSET_FALLBACK_USED = "ASSET_FALLBACK_USED"
+NOTICE_OPTIONAL_FIELD_EMPTIED = "OPTIONAL_FIELD_EMPTIED"
+
+
+# ── Asset classes ─────────────────────────────────────────────────────────
+
+#: Asset class -> the ImageConfig column naming its directory.
+#:
+#: A catalogue names the *class* an image field draws from; the class names the column.
+#: The indirection exists so a catalogue never mentions a configuration column, and a
+#: column can be renamed without touching fifteen catalogues.
+ASSET_CLASS_DIRECTORIES: dict[str, str] = {
+    "track": "track_image_directory",
+    "team": "team_image_directory",
+    "flag": "flag_directory",
+    "driver": "driver_image_directory",
+    "marker": "marker_directory",
+    "weather": "weather_icon_directory",
+    "tyre": "tyre_directory",
+}
+
+#: The reserved filename standing in for a datum with no file of its own
+#: (Constitution XIV.13). One per asset directory; optional.
+FALLBACK_ASSET_NAME = "fallback.svg"

@@ -1,6 +1,223 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-12 — v3.0.0 → v4.0.0: MAJOR — assets are resolved apart from field classification]
+  Version change    : 3.0.0 → 4.0.0
+  Bump rationale    : MAJOR. Rule XIV.13 loses a branch and inverts a severity: a missing asset
+                      in a class with no fallback was survivable for an optional field and is
+                      now fatal for every field. A template authored against v3.0.0 — an
+                      optional flag slot, no fallback in the flags directory, no file for one
+                      nationality — rendered before this version and does not render after it.
+                      That is a backward-incompatible redefinition, which the versioning policy
+                      reserves MAJOR for.
+
+                      MINOR was considered and rejected: this removes a branch rather than
+                      expanding guidance. The practical blast radius is nil — the only code
+                      written against v3.0.0's XIV.13 was written earlier in this same session
+                      and is already updated — but semantic versioning describes the contract,
+                      not the disruption.
+  Feature branch    : 036-image-generation-conventions
+
+  Session context   : Closing out 036 surfaced a three-way divergence. The implementation always
+                      raised a notice on a fallback; v3.0.0 said the same; the wip-spec's
+                      twenty-two per-type statements each set their own severity for a missing
+                      asset, some non-fatal and some silent. Asked to settle it, the author
+                      ruled that assets are resolved uniformly and apart from the
+                      mandatory/optional distinction, which classifies template *fields* alone:
+
+                        asset found                   → drawn
+                        absent, class has a fallback  → fallback drawn, notice
+                        absent, class has none        → fatal, generation abandoned
+
+  Redefined rules (Principle XIV):
+    - **13. Asset resolution** — retitled from "…with a per-directory fallback image" to
+      "…and every class carries a fallback". Opens by separating asset from field in as many
+      words, since conflating them is the error this amendment corrects. The fallback becomes
+      an obligation (MUST cover every datum **or** hold `fallback.svg`) rather than a
+      permission (MAY hold one). The classification-dependent branch is struck and replaced by
+      a three-outcome table that holds whatever the receiving field's classification. A new
+      clause distinguishes an **absent datum** — where no asset is sought at all, and Rule 3
+      governs — from an absent **file**.
+
+  Modified sections :
+    - Principle XIV, Rule 3 — closing paragraph rewritten. Mandatory and optional are now stated
+      to classify fields of the template "and nothing else", saying nothing about the assets
+      placed upon them.
+    - Principle XIV, Rule 4 — the problem list drops "and the field is mandatory" from the
+      unresolved-asset entry. The notice list is unchanged: a fallback still raises one, and an
+      optional *value* that cannot be determined still empties its field.
+    - Principle XIV, Rationale — the paragraph arguing that aborting for one missing portrait
+      would make the module useless is withdrawn; it argued the case this amendment overturns.
+      Replaced with the field/asset split and why a single uniform asset rule is worth more to a
+      template author than a proportionate one.
+
+  Consistency       : `docs/wip-specs/image_module_specification.md` § "The fallback image" was
+                      written to this rule in the same session and agrees. `src/utils/svg_fill.py`
+                      no longer consults the catalogue during asset resolution, and its tests
+                      assert the uniform outcome for mandatory, optional and absent catalogues
+                      alike.
+
+  Deferred          : TODO(PER_TYPE_ASSET_SENTENCES) — roughly twenty-two statements in the
+                      wip-spec's per-image-type sections bundle "the datum is absent" together
+                      with "no matching file is found" and assign one severity to both. Those
+                      two cases now diverge. The Conventions section governs them correctly, so
+                      nothing is ambiguous in force, but each sentence reads as though it still
+                      decides the file case. They want splitting in the author's own voice.
+
+  Templates confirmed aligned: no change required. Principle count is unchanged at I–XIV.
+
+[2026-08-12 — v2.13.0 → v3.0.0: MAJOR — reconciliation with the author's specification]
+  Version change    : 2.13.0 → 3.0.0
+  Bump rationale    : MAJOR. Four rules of Principle XIV are redefined in ways that contradict
+                      their previous text rather than extending it: XIV.2's addressing contract,
+                      XIV.7's fallback behaviour, XIV.11's id convention and XIV.13's asset
+                      resolution. A template authored to v2.13.0's XIV.11, or an asset named to
+                      its XIV.13, is wrong under this version. The versioning policy reserves
+                      MAJOR for backward-incompatible redefinition, and that is what this is,
+                      notwithstanding that the practical blast radius is nil — nothing was built
+                      against the two superseded rules, which were one session old.
+  Feature branch    : 036-image-generation-conventions
+
+  Session context   : v2.13.0 added Rules 10–14 from answers the author gave without sight of
+                      `docs/wip-specs/image_module_specification.md`, which is deny-listed. The
+                      deferred item TODO(WIP_SPEC_RECONCILIATION) warned that the risk was
+                      contradiction rather than omission. The author then supplied the module's
+                      cross-cutting conventions directly, specified as
+                      `specs/036-image-generation-conventions/spec.md`, and two of the five
+                      guesses proved wrong. This amendment discharges that TODO in full.
+
+  Redefined rules (Principle XIV):
+    - **2. Fields are addressed by `@id`** → "…with a layer label as fallback". The identifier
+      stays normative, but where no node bears it and a layer carries the field's name as its
+      label, that layer is the field; where both exist, the identifier wins. Templates are
+      authored in graphical editors where the manager sets labels and never sees the generated
+      identifier. The operation table is restated: **Truncate** and **Empty or remove** are now
+      named operations, and **Vertical crop** is demoted from a general operation to a
+      calendar-specific one. **Removable groups** (`<field>_group`) are defined here: the group
+      goes wherever the field would be emptied or removed, the field itself untouched, and its
+      removal never resizes the canvas.
+    - **3. Every addressable field MUST be resolved** → "Every **mandatory** field…". Catalogues
+      now classify each field mandatory or optional. An absent or undeterminable optional field
+      is no longer a render failure; it is emptied, or its `_group` removed.
+    - **7. Image output is additive** — the blanket "a failed render MUST fall back to the text
+      output" is replaced by a split on who asked. An **uncommanded** posting (horizon, schedule,
+      startup) falls back to text. A **commanded** posting does not: it is rejected, nothing is
+      posted, and the caller is told what is at fault. Silently substituting text would deny the
+      one person able to fix the template the chance to do so.
+    - **11. Template ids follow a fixed convention** — the row form becomes `row_<x>_<field>`,
+      indexed from 1, **unpadded**, with no per-collection prefix. v2.13.0's
+      `standings_row_03_points` is withdrawn.
+    - **13. Asset resolution** — two corrections. The slug separator is an **underscore**, not a
+      hyphen (`red_bull_racing.svg`), and the fallback is a reserved `fallback.svg` per asset
+      **directory**, not a placeholder declared per field by a template.
+
+  Modified sections :
+    - Principle XIV, Rule 4 — problem and notice lists restated against the mandatory/optional
+      and fallback model. Two paragraphs added: where each outcome is reported (never a
+      driver-read channel), and rejection of faulty input at the earliest moment it is
+      detectable. The v2.13.0 note fixing the word "placeholder" is removed with the mechanism.
+    - Principle XIV, Rule 10 — catalogues also carry the mandatory/optional classification and,
+      for image fills, the asset class.
+    - Principle XIV, Rule 12 — unused rows go by `row_<x>_group`; vertical crop is referenced as
+      an image-type-specific mechanism. Overflow is rejected at the command that would cause it.
+    - Principle XIV, Rationale — extended to cover the mandatory/optional split.
+    - Data & State Management → New Entities (v2.11.0): **RenderNotice.notice_kind** —
+      `ASSET_PLACEHOLDER_USED` (added in v2.13.0, never implemented) is replaced by
+      `ASSET_FALLBACK_USED`, and `OPTIONAL_FIELD_EMPTIED` is added.
+
+  Why the underscore matters: the normalisation now stated is the one
+  `resources/poc/build_poc.py` already implements, whose docstring calls it "the spec's
+  normalization". Every asset shipped under `resources/` is named that way. v2.13.0's hyphen was
+  an invention of that session and would have required renaming the entire asset tree.
+
+  Impact on delivered code (035): the layer-label fallback, the mandatory/optional split, the
+  commanded/uncommanded fallback split and the `_group` convention are all **new behaviour not
+  yet built**. Two delivered behaviours now contradict this version and must change:
+  `utils/svg_document.py` surfaces the raw parser error where a named fault is now required, and
+  `cogs/image_cog.py` writes the template filename before validating it where rejection with the
+  configuration untouched is now required. Both are in scope for 036.
+
+  Deferred          : none. TODO(WIP_SPEC_RECONCILIATION) from v2.13.0 is closed. The wip-spec
+                      remains deny-listed, but its cross-cutting content has now been supplied
+                      by the author directly and reconciled here.
+
+  Templates confirmed aligned: no change required. Principle count is unchanged at I–XIV, which
+  is what plan-template.md's Constitution Check reads.
+
+[2026-08-12 — v2.12.1 → v2.13.0: MINOR — the rules the per-type generators will each need]
+  Version change    : 2.12.1 → 2.13.0
+  Bump rationale    : MINOR — five rules added to Principle XIV as materially expanded
+                      guidance, plus one notice kind. No principle removed; no principle
+                      redefined incompatibly. Principle count is still I–XIV.
+  Feature branch    : 036-image-generation-conventions
+
+  Session context   : The 035-image-module increment built the engine, the config surface
+                      and `/images test`. This session audited Principle XIV against what
+                      was built, before the first per-image-type generation utility is
+                      written. Rules 1–9 were found present and honoured by the code. Four
+                      decisions every future utility depends on were found ungoverned, and
+                      were put to the author:
+
+                        Q1 (field catalogue home)  → a code constant per image type, in one
+                                                     shared declaration module. Not a
+                                                     sidecar file, not per-call-site.
+                        Q2 (collection overflow)   → under-fill crops or removes; over-fill
+                                                     is a problem and falls back to text.
+                                                     Not truncation, not continuation images.
+                        Q3 (id convention)         → binding: snake_case, with a zero-padded
+                                                     `_NN` index on repeating collections.
+                        Q4 (asset resolution)      → documented slug, plus an optional
+                                                     template-declared placeholder that turns
+                                                     a miss into a notice rather than a
+                                                     problem.
+
+  Added rules (Principle XIV):
+    - **10. Field catalogue as a code constant** — one entry per image type in a single
+      shared module; the same object read by the fill pipeline (Rule 3) and validity Layer 2
+      (Rule 9); no utility merges without one.
+    - **11. Template id convention** — lowercase semantic snake_case; `<collection>_<NN>` and
+      `<collection>_<NN>_<field>` for repeating members, contiguous from `01`;
+      `crop_<collection>_<NN>` for the matching crop point. Catalogues express a collection
+      as prefix + capacity, never as an enumerated id list.
+    - **12. Declared capacity, fatal overflow** — the template states how many member slots a
+      varying list has. Fewer data → remove or crop. More data → a problem naming count,
+      capacity and template. No silent truncation, no continuation images.
+    - **13. Slug asset resolution with optional placeholder** — deterministic lowercase,
+      accent-folded, hyphen-collapsed slug + `.svg` inside the configured directory. A
+      template may declare a per-field placeholder; a miss with a placeholder is a notice,
+      a miss without one is a problem. Placeholders are bound by Rule 6.
+    - **14. Verification is by PNG** — any check that a render is correct MUST be made against
+      the rasterised PNG. A browser view of the filled SVG is not evidence; the two disagree
+      on flowed text, font substitution and the crop.
+
+  Modified sections :
+    - Principle XIV, Rule 4 — the problem list now names "an asset that does not resolve and
+      for which the template declares no placeholder" and "a collection larger than the
+      template's declared capacity"; the notice list gains the placeholder substitution. A
+      note fixes the word *placeholder* to one meaning (a missing **asset**'s substitute),
+      since Rule 4 also forbids posting a stand-in for a whole render.
+    - Principle XIV, Rationale — extended to cover Rules 10–14.
+    - Data & State Management → New Entities (v2.11.0): **RenderNotice.notice_kind** gains
+      `ASSET_PLACEHOLDER_USED`.
+
+  Compatibility     : Backward compatible with what is built. `FillSpec.expected_fields` is
+                      already optional and already the catalogue's shape; Rule 10 makes its
+                      source authoritative rather than changing its type. Validity layers 2–4
+                      remain reserved and unenforced — Rule 10 supplies the artefact Layer 2
+                      has been waiting on, but does not ratify the layer.
+
+  Deferred          : TODO(WIP_SPEC_RECONCILIATION) — `docs/wip-specs/image_module_specification.md`
+                      is deny-listed in `.claude/settings.json` and was unreadable this session,
+                      as it was during 035 specification and planning (see that plan's Open
+                      Decisions). Rules 10–13 were derived from Principle XIV and the author's
+                      answers, not from that document. If it already fixes an id convention, a
+                      slug rule or a capacity policy, reconcile before the first utility is
+                      written; the risk is contradiction, not merely omission.
+
+  Templates confirmed aligned: no change required. plan-template.md's Constitution Check reads
+  the principle list at runtime and the count is unchanged; spec-template.md and
+  tasks-template.md carry no per-principle text.
+
 [2026-08-11 — v2.12.0 → v2.12.1: PATCH — entity re-grained to match what was built]
   Version change    : 2.12.0 → 2.12.1
   Bump rationale    : PATCH — One entity renamed and re-grained to match the delivered
@@ -1958,40 +2175,82 @@ declared `width` and `height` are authoritative: the renderer MUST read the canv
 template root and MUST NOT assume a fixed canvas for any image type. Changing an image's
 layout, colour, or dimensions MUST be achievable by editing the template alone.
 
-**2. Fields are addressed by `@id`.**
+**2. Fields are addressed by `@id`, with a layer label as fallback.**
 
-The only contract between a template and the code that fills it is the set of element `@id`
-values. The module MUST support exactly these fill operations, and no others:
+A field is addressed by the `@id` of a node, and the identifier is normative. Where a template
+declares no node bearing a field's identifier but declares a layer whose label is the name of
+that field, the labelled layer MUST be taken for that field. Where both exist and are not the
+same node, the node bearing the identifier MUST win.
+
+The label fallback exists because templates are hand-authored in graphical SVG editors, where a
+league manager sets a layer's label and never sees the identifier the editor generated. A
+contract reachable only by hand-editing XML is a contract that will not be honoured.
+
+The module MUST support exactly these fill operations, and no others:
 
 | Operation | Target | Effect |
 |-----------|--------|--------|
-| Text fill | `<text>` / `<tspan>` by `@id` | Replaces the element's text content |
-| Image fill | element by `@id` | Rewrites `xlink:href` to an asset path |
-| Recolour | element by `@id` | Merges a `fill:` declaration into the element's inline `style` |
-| Group removal | group by `@id` | Removes the group and its subtree |
-| Vertical crop | crop-point node by `@id` | Rewrites root `height` and `viewBox` to the node's `y` |
-| Text wrap | `<text>` carrying `shape-inside` by `@id` | Breaks the string into `<tspan>` lines against the referenced rectangle |
+| Text fill | `<text>` / `<tspan>` | Replaces the element's text content |
+| Image fill | element | Rewrites `xlink:href` to an asset path |
+| Recolour | element | Merges a `fill:` declaration into the element's inline `style` |
+| Truncate | `<text>` carrying `inline-size` | Cuts at a word boundary and ends with an ellipsis |
+| Text wrap | `<text>` carrying `shape-inside` | Breaks the string into `<tspan>` lines against the referenced rectangle |
+| Empty or remove | element, or its `_group` wrapper | Clears the text, or deletes the node and its subtree |
+
+Vertical crop — rewriting the root `height` and `viewBox` to a crop-point node's `y` — is
+specific to the calendar image type and is specified there, not as a general operation.
 
 Recolour MUST be merged into the existing inline `style` rather than written as a
 presentation attribute or as a `style` replacement, so that template-declared styling on the
 same element survives. Recolour MUST NOT count as addressing a field: a recoloured field
 MUST still be filled.
 
-**3. Every addressable field MUST be resolved.**
+**Removable groups.** Any field, mandatory or optional, MAY be wrapped in a group named for that
+field followed by `_group`. Where such a group is declared, it MUST be removed in its entirety
+wherever the rules would have the field emptied or removed, and the field itself MUST be left
+untouched; where none is declared, the field alone is emptied or removed. The group exists so
+that the static chrome standing around a field — a label, a separator, a card, a plate — leaves
+the graphic together with the value it introduces. Removing a group MUST NOT resize the canvas:
+a block that may be removed belongs where its removal is survivable.
 
-A render MUST fail if any field addressed by the image type's field catalogue is left
-unfilled, or if the data supplies a field the template does not declare. A field removed
-from the canvas by a group removal or a vertical crop is not an unresolved field.
+**3. Every mandatory field MUST be resolved.**
+
+An image type's field catalogue (Rule 10) classifies each field **mandatory** or **optional**.
+
+- A render MUST fail if a mandatory field is absent from the template, or if its value cannot
+  be determined from the data.
+- An optional field absent from the template is not a failure. An optional field whose value
+  cannot be determined is not a failure either: the field is emptied, or its `_group` removed.
+- A render MUST fail if the data supplies a field the template does not declare.
+- A field taken off the canvas by a group removal or a vertical crop is not unresolved.
+
+Mandatory and optional classify **fields of the template**, and nothing else: whether the
+template must declare the field, and whether its value must be determinable. They say nothing
+about the *assets* placed upon fields. An asset that resolves to no file is governed by Rule 13
+alone, whatever the classification of the field receiving it.
 
 **4. Problems and notices are distinct outcomes.**
 
-- A **problem** is a disagreement between template and data (unresolved field, unknown
-  field, missing template, missing asset, rasteriser failure). A problem MUST abort the
-  render; no partial or placeholder image may be posted.
+- A **problem** is a disagreement between template and data (an unresolved mandatory field, an
+  unknown field, a missing template, an asset that resolves to no file in a class carrying no
+  fallback, a collection larger than the template's declared capacity, rasteriser failure). A
+  problem MUST abort the render; no partial image may be posted.
 - A **notice** is a non-fatal degradation the render survives (a substituted font, a wrapped
   field reduced to its size floor and cut, a single-line field cut to its declared
-  `inline-size`). Notices MUST NOT abort the render and MUST be reported to the calculation
-  log channel (Principle V).
+  `inline-size`, a fallback image standing in for an asset that resolved to no file, an optional
+  field emptied because its value could not be determined). Notices MUST NOT abort the render.
+
+**Where each is reported.** A notice MUST be reported to the calculation log channel
+(Principle V), and additionally alongside the output of the command where a command triggered
+the generation. No problem and no notice may ever be reported in a channel the drivers of the
+league read.
+
+**Rejection at the earliest moment.** A problem traceable to something a user configured or
+commanded MUST reject that input wherever the module is in a position to detect it: a command
+naming a template that carries one is rejected and the configuration left as it stood; a season
+review that meets one fails validation of the season, naming what is at fault; a command that
+would carry a division past what its templates can draw is rejected and its change not applied;
+a command that triggers a failing generation is rejected and nothing posted in consequence.
 
 **5. Text bounds are declared by the template.**
 
@@ -2014,9 +2273,19 @@ the module MUST document it wherever asset upload is offered.
 
 Image generation MUST NOT replace or alter any existing text output path. Every image the
 module produces MUST correspond to information the bot can already express as text, and the
-text path MUST remain functional when the module is disabled or a render fails. A failed
-render MUST fall back to the text output for that information rather than producing no
-output at all.
+text path MUST remain functional when the module is disabled or a render fails.
+
+What a failed render does next depends on who asked for the posting:
+
+- A posting **no user commanded** — one reached at a horizon, at a schedule, or at startup —
+  MUST fall back to the text output rather than producing no output at all.
+- A posting a user **commanded** MUST NOT fall back. The command is rejected, nothing is posted,
+  and the caller is told what is at fault and invited to correct it.
+
+A user standing at the keyboard is the one person able to fix the template; silently posting
+text in place of the graphic they asked for would deny them the chance and hide the defect until
+it next fires unattended. The reverse holds for a scheduled posting, where there is nobody to
+tell and the league still needs its information.
 
 **8. Images are attachments, not a new channel category.**
 
@@ -2052,6 +2321,106 @@ The following MUST hold as layers are added:
 4. **No silent pass**: an image type for which a deeper layer is not yet ratified MUST be
    reported as checked to the depth currently available, not as fully valid.
 
+**10. Every image type MUST declare a field catalogue, as a code constant.**
+
+An image type's field catalogue is the authoritative list of the `@id` values its render
+addresses, split by the operation each id receives and classified **mandatory** or **optional**
+(Rule 3). Where a field is an image fill, the catalogue MUST also name its asset class
+(Rule 13). It MUST be declared as a code constant in a single shared declaration module, one
+entry per image type. It MUST NOT be assembled inline by the utility that renders the type,
+supplied per call site, or stored as a sidecar file beside the template.
+
+- A generation utility MUST NOT be merged for an image type whose catalogue is not declared.
+- The catalogue is the *same object* consulted by the fill pipeline (Rule 3) and by validity
+  Layer 2 (Rule 9). Two lists that could disagree are not a catalogue.
+- Adding an image type MUST be one catalogue entry plus one utility. It MUST NOT require a
+  change to the fill pipeline, the validity registry, or the report renderer.
+
+**11. Template ids follow a fixed convention.**
+
+Because ids are the contract (Rule 2) and templates are hand-authored, the convention is binding
+on both the author and the code:
+
+- Ids are lowercase `snake_case`, semantic rather than positional (`driver_name`, never
+  `text_47`).
+- A field belonging to row *x* of a repeating collection MUST be named `row_<x>_<field>`, and
+  the row itself `row_<x>`. The index is written plainly, **without padding**: `row_1_position`,
+  `row_10_position`. Numbering starts at 1 and MUST be contiguous.
+- A removable group is the field's name followed by `_group` (Rule 2), which for a whole row is
+  `row_<x>_group`.
+
+A catalogue (Rule 10) MUST express a repeating collection as a prefix and a capacity, not as an
+enumerated list of its members' ids.
+
+**12. Collection capacity is declared by the template; overflow is a problem.**
+
+Any image type drawing a list whose length varies by league MUST state that list's capacity —
+the number of member slots the template provides — in its catalogue, and that number MUST
+match the members the template declares.
+
+- **Fewer data than slots**: the unused members MUST be removed — by their `row_<x>_group`
+  where one is declared (Rule 2), or, for an image type that defines a vertical crop, by cutting
+  the canvas at the corresponding crop point. Members taken off the canvas this way are not
+  unresolved fields (Rule 3).
+- **More data than slots**: a **problem** (Rule 4), rejected at the earliest moment it can be
+  detected — including the command that would grow the division past the capacity, which is
+  refused with its change unapplied. The problem MUST report the data count, the declared
+  capacity, and the template at fault.
+- Overflow MUST NOT be silently truncated, and MUST NOT be spilled into continuation images.
+
+A graphic that omits a driver without saying so is worse than no graphic, which is why the
+overflow case is fatal rather than a notice.
+
+**13. Asset resolution is by normalised slug, and every class carries a fallback.**
+
+**An asset is not a field.** A field is a place in the template; an asset is a file placed upon
+one. Mandatory and optional classify **fields** (Rule 3) and nothing else. The rules of this
+Rule govern the resolution of an asset and are **NOT** qualified by the classification of the
+field receiving it. Conflating the two is the mistake this paragraph exists to prevent.
+
+An asset fill (Rule 2) resolves a datum to a file inside the directory configured for that
+asset class. Resolution MUST be deterministic and documented:
+
+- The filename is the datum **normalised**, with the `.svg` extension. Normalisation is: trim,
+  lowercase, decompose and strip diacritics, replace every run of characters that is neither a
+  letter nor a digit with a single **underscore**, and drop leading and trailing underscores.
+  `Red Bull Racing` resolves to `red_bull_racing.svg`; `São Paulo` to `sao_paulo.svg`.
+- Each image type's catalogue MUST name the asset class for each of its image fields. A
+  utility MUST NOT construct a path from anything but the configured directory and the slug.
+- Every asset directory MUST cover each datum of its class a league can present it with, or
+  hold a generic **fallback image** under the reserved name `fallback.svg` that covers those it
+  does not.
+
+Resolution has exactly **three** outcomes, and no others:
+
+| Outcome | Result |
+|---|---|
+| The normalised file is found | Placed upon the field |
+| Not found, the directory holds `fallback.svg` | Fallback placed upon the field; **notice** raised naming the field and the datum that had no file of its own |
+| Not found, no fallback | **Problem**. The render is abandoned |
+
+- These outcomes hold whatever the receiving field's classification. A missing asset is never
+  survived by emptying the field.
+- A fallback image is bound by Rule 6 exactly as any other asset: plain SVG, authored at the
+  slot's aspect ratio, never padded by the generator.
+- An **absent datum** is a different matter entirely: where there is no value to look an asset
+  up by, no asset is sought, and the field is handled by its classification under Rule 3.
+
+**Rationale**: the fallback is per asset *class*, not per template field, because the gap it
+answers belongs to the directory — a nationality with no flag drawn for it — and not to any one
+graphic. Making the miss fatal when even that is absent is what stops the module drawing a card
+with a hole in it: one generic file per directory is a trivial thing to supply, and a league
+that has supplied neither it nor the asset has an incomplete set rather than a graphic the bot
+should quietly degrade.
+
+**14. A generated image is verified as a PNG.**
+
+Any check that a template or a utility produces the intended graphic — during development,
+in a test, or in a validity trial render (Rule 9) — MUST be performed against the rasterised
+PNG. Inspecting the filled SVG in a browser does not satisfy this rule and MUST NOT be
+offered as evidence that a render is correct. The two disagree in exactly the cases that
+matter: flowed text, substituted fonts, and the crop.
+
 **Rationale**: Separating layout (the template) from data (the fill) is what allows a league
 to restyle its graphics without a code change and what keeps the rendering code independent
 of the number of image types. Failing loudly on a template/data disagreement while surviving
@@ -2059,6 +2428,28 @@ a font substitution is the distinction that makes the module safe to run unatten
 first is a defect that would post a wrong graphic, the second is a cosmetic degradation a
 league can act on at leisure. Requiring the text path to remain authoritative ensures that
 adding graphics never reduces what the bot can tell a league.
+
+Rules 10–14 exist because the module is about to grow one generation utility per image type,
+written across many sessions. A catalogue that is a shared constant, an id convention the
+code can construct rather than be told, a capacity the template states, and a single slug
+rule are what let fifteen utilities be fifteen small entries rather than fifteen private
+conventions — and are what make validity Layer 2 ratifiable at all, since a check can only be
+written against a declaration that exists. Verifying through the rasteriser rather than the
+browser is in this list for the same reason: it is a rule that costs nothing to hold from the
+first utility and is expensive to retrofit once graphics have been signed off on the wrong
+evidence.
+
+The mandatory/optional split running through Rules 3, 10 and 13 is what keeps the failure
+behaviour proportionate — but it applies to **fields**, and only to fields. Mandatory says the
+graphic is meaningless without this value; optional says the graphic is merely plainer without
+it. Drawing a standings table with a blank where the points should be would be worse than
+drawing nothing, while a sanctions block that never appears costs a reader nothing.
+
+Assets are governed separately (Rule 13), and uniformly. A league whose asset set does not cover
+every value it will present drops one `fallback.svg` into that directory and is done; a league
+that has supplied neither the asset nor a fallback has an incomplete set, and the module says so
+rather than drawing a card with a hole in it. One rule for every asset class, with no branch on
+the field receiving it, is the whole of what makes that predictable to a template author.
 
 ## Bot Behavior Standards
 
@@ -2448,7 +2839,8 @@ constant per aspect rather than a stored column, since it never varies per serve
 - `server_id` (TEXT)
 - `image_type` (TEXT)
 - `rendered_at` (TEXT — UTC ISO 8601)
-- `notice_kind` (ENUM: FONT_SUBSTITUTED / WRAP_TRUNCATED / INLINE_SIZE_TRUNCATED)
+- `notice_kind` (ENUM: FONT_SUBSTITUTED / WRAP_TRUNCATED / INLINE_SIZE_TRUNCATED /
+  ASSET_FALLBACK_USED / OPTIONAL_FIELD_EMPTIED)
 - `field_id` (TEXT, nullable) — the template `@id` the notice concerns; null for
   render-wide notices.
 - `detail` (TEXT) — human-readable description posted to the calculation log channel.
@@ -2610,4 +3002,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.12.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-11
+**Version**: 4.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-12

@@ -132,3 +132,170 @@ async def test_toggling_one_aspect_leaves_the_others_alone(service):
     toggles = await service.get_toggles(1)
     assert toggles["standings"] is True
     assert all(not v for k, v in toggles.items() if k != "standings")
+
+
+# ── 036 / T016: the ordered check sequence, and validate-then-store ───────
+
+import dataclasses as _dc  # noqa: E402
+
+from models.image_catalogues import CATALOGUES as _CATALOGUES  # noqa: E402
+from models.image_catalogues import FieldCatalogue as _FieldCatalogue  # noqa: E402
+from models.image_module import (  # noqa: E402
+    PROBLEM_EXTENSION,
+    PROBLEM_MISSING_MANDATORY_FIELD,
+    PROBLEM_NOT_FOUND,
+    PROBLEM_NOT_SVG,
+    ImageConfig as _ImageConfig,
+)
+from services.image_validity_service import (  # noqa: E402
+    check_all_templates,
+    check_filename,
+    check_template,
+)
+
+_VALID_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675"/>'
+
+
+def _make_config(template_directory="templates", **overrides) -> _ImageConfig:
+    values = dict(
+        server_id=1,
+        module_enabled=True,
+        template_directory=template_directory,
+        track_image_directory="resources/tracks",
+        team_image_directory="resources/teams",
+        flag_directory="resources/flags",
+        driver_image_directory="resources/drivers",
+        marker_directory="resources/markers",
+        weather_icon_directory="resources/weather",
+        tyre_directory="resources/tyres",
+        time_zone="UTC",
+        time_format="24H",
+        date_format="DDD_DD_MON_YYYY",
+        fastest_lap_colour="#A020F0",
+        **dict(TEMPLATE_COLUMNS),
+    )
+    values.update(overrides)
+    return _ImageConfig(**values)
+
+
+@pytest.fixture()
+def template_dir(tmp_path):
+    directory = tmp_path / "templates"
+    directory.mkdir()
+    for filename in TEMPLATE_COLUMNS.values():
+        (directory / filename).write_bytes(_VALID_SVG)
+    return tmp_path
+
+
+@pytest.fixture()
+def catalogue_slot():
+    saved = dict(_CATALOGUES)
+    yield lambda key, cat: _CATALOGUES.__setitem__(key, cat)
+    _CATALOGUES.clear()
+    _CATALOGUES.update(saved)
+
+
+# FR-001 — the extension check, case-insensitive, before any filesystem access.
+
+
+@pytest.mark.parametrize("name", ["calendar.svg", "calendar.SVG", "calendar.Svg"])
+def test_extension_accepted_case_insensitively(name):
+    assert check_filename(name) is None
+
+
+@pytest.mark.parametrize("name", ["calendar.txt", "calendar", "calendar.svg.bak", ""])
+def test_extension_rejected(name):
+    problem = check_filename(name)
+    assert problem is not None
+    assert problem.kind == PROBLEM_EXTENSION
+
+
+def test_extension_is_checked_before_the_filesystem(tmp_path):
+    """A bad name is refused without the directory even having to exist."""
+    config = _make_config(template_directory="nowhere", calendar_template="x.txt")
+    problem = check_template(config, "calendar_template", root=tmp_path)
+    assert problem.kind == PROBLEM_EXTENSION
+
+
+# FR-002 … FR-004 — the rest of the sequence, each class distinguishable.
+
+
+def test_sound_template_yields_no_problem(template_dir):
+    assert check_template(_make_config(), "calendar_template", root=template_dir) is None
+
+
+def test_absent_file_names_the_path_searched(template_dir):
+    (template_dir / "templates" / "calendar_template.svg").unlink()
+    problem = check_template(_make_config(), "calendar_template", root=template_dir)
+
+    assert problem.kind == PROBLEM_NOT_FOUND
+    assert "calendar_template.svg" in problem.detail
+    assert problem.template_key == "calendar_template"
+
+
+def test_malformed_file_is_a_parse_problem_not_a_missing_one(template_dir):
+    (template_dir / "templates" / "calendar_template.svg").write_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg"><!-- a -- b --></svg>'
+    )
+    problem = check_template(_make_config(), "calendar_template", root=template_dir)
+
+    assert problem.kind == PROBLEM_NOT_SVG
+    assert "double hyphen" in problem.detail
+    assert "XMLSyntaxError" not in problem.detail  # FR-046
+
+
+def test_a_directory_named_as_a_template_is_not_a_file(template_dir):
+    target = template_dir / "templates" / "calendar_template.svg"
+    target.unlink()
+    target.mkdir()
+    assert check_template(_make_config(), "calendar_template", root=template_dir) is not None
+
+
+def test_missing_mandatory_field_is_its_own_class(template_dir, catalogue_slot):
+    catalogue_slot("calendar_template", _FieldCatalogue(mandatory=frozenset({"season_name"})))
+    problem = check_template(_make_config(), "calendar_template", root=template_dir)
+
+    assert problem.kind == PROBLEM_MISSING_MANDATORY_FIELD
+    assert "season_name" in problem.detail
+
+
+def test_all_four_failure_classes_are_mutually_distinguishable(template_dir, catalogue_slot):
+    """SC-003 — four defects, four different kinds."""
+    kinds = {check_filename("calendar.txt").kind}
+
+    (template_dir / "templates" / "lineup_template.svg").unlink()
+    kinds.add(check_template(_make_config(), "lineup_template", root=template_dir).kind)
+
+    (template_dir / "templates" / "rsvp_template.svg").write_bytes(b"not markup")
+    kinds.add(check_template(_make_config(), "rsvp_template", root=template_dir).kind)
+
+    catalogue_slot("verdicts_template", _FieldCatalogue(mandatory=frozenset({"nope"})))
+    kinds.add(check_template(_make_config(), "verdicts_template", root=template_dir).kind)
+
+    assert len(kinds) == 4
+
+
+# FR-007 / FR-008 — every template, named individually.
+
+
+def test_check_all_templates_is_silent_when_all_are_sound(template_dir):
+    assert check_all_templates(_make_config(), root=template_dir) == []
+
+
+def test_check_all_templates_names_each_failure_separately(template_dir):
+    (template_dir / "templates" / "calendar_template.svg").unlink()
+    (template_dir / "templates" / "lineup_template.svg").write_bytes(b"not markup")
+
+    problems = check_all_templates(_make_config(), root=template_dir)
+
+    assert {p.template_key for p in problems} == {"calendar_template", "lineup_template"}
+    assert len({p.kind for p in problems}) == 2  # distinct reasons, not one blanket
+
+
+def test_candidate_override_does_not_mutate_the_stored_config():
+    """The heart of FR-005: the copy is what gets checked."""
+    config = _make_config()
+    proposed = _dc.replace(config, calendar_template="other.svg")
+
+    assert proposed.calendar_template == "other.svg"
+    assert config.calendar_template == "calendar_template.svg"

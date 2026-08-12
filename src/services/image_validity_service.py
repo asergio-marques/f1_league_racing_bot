@@ -17,11 +17,13 @@ Four invariants bind the growth:
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from models.image_catalogues import catalogue_for
 from models.image_constants import (
     ASPECT_SOURCE_MODULE,
     ASPECT_TEMPLATES,
@@ -31,16 +33,27 @@ from models.image_constants import (
     TEMPLATE_LABELS,
 )
 from models.image_module import (
+    PROBLEM_EXTENSION,
+    PROBLEM_MISSING_MANDATORY_FIELD,
+    PROBLEM_NOT_FOUND,
+    PROBLEM_NOT_SVG,
     STATE_DISABLED,
     STATE_ENABLED,
     STATE_ENABLED_INVALID,
     AspectStatus,
     DirectoryReport,
     ImageConfig,
+    Problem,
     ValidityReport,
 )
 from utils.paths import PathContainmentError, resolve_within_project_root
-from utils.svg_document import SvgNoCanvasError, SvgParseError, canvas_of, load_svg
+from utils.svg_document import (
+    FieldIndex,
+    SvgNoCanvasError,
+    SvgParseError,
+    canvas_of,
+    load_svg,
+)
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +80,14 @@ class TemplateContext:
     template_key: str
     root: Path | None = None          # project root override, for tests
 
+    #: Parsed trees shared between layers **within one evaluation** (research R5).
+    #:
+    #: Layer 1 parses to check well-formedness and the canvas; Layer 2 needs the same
+    #: tree to look for mandatory fields. Without sharing, a season review reads fifteen
+    #: files twice. It is deliberately not memoised across evaluations: a manager edits a
+    #: template and re-runs the check expecting to see the change.
+    parsed: dict[Path, object] = field(default_factory=dict)
+
     @property
     def filename(self) -> str:
         return getattr(self.config, self.template_key)
@@ -76,6 +97,18 @@ class TemplateContext:
             self.config.template_directory, root=self.root
         )
         return directory / self.filename
+
+    def tree(self, path: Path):
+        """The parsed root for *path*, parsing at most once per evaluation.
+
+        Raises :class:`SvgParseError` exactly as ``load_svg`` does; a failure is not
+        cached, because nothing downstream runs after Layer 1 rejects the file.
+        """
+        cached = self.parsed.get(path)
+        if cached is None:
+            cached = load_svg(path)
+            self.parsed[path] = cached
+        return cached
 
 
 @dataclass
@@ -117,9 +150,9 @@ class ResolutionLayer:
             return LayerResult(False, f"not a file: {path}")
 
         try:
-            root = load_svg(path)
+            root = ctx.tree(path)
         except SvgParseError as exc:
-            return LayerResult(False, f"not well-formed SVG: {exc}")
+            return LayerResult(False, f"not a valid SVG file — {exc}")
 
         try:
             canvas_of(root)
@@ -129,8 +162,54 @@ class ResolutionLayer:
         return LayerResult(True)
 
 
+class CatalogueLayer:
+    """Layer 2 — the template carries every field its image type declares mandatory.
+
+    ``applies_to`` returns **False** for an image type whose catalogue is empty, so the
+    layer is *skipped* rather than passed. That distinction is what satisfies Constitution
+    XIV.9's "no silent pass": ``evaluate_template`` records depth only for layers that
+    actually ran, so a type with no generation specification still reports depth 1 and
+    ``depth_summary`` keeps saying the catalogue check was not applied.
+
+    Passing trivially instead would report depth 2 for a template nothing was checked
+    against — precisely the claim XIV.9.4 forbids.
+    """
+
+    number = LAYER_CATALOGUE
+    name = LAYER_NAMES[LAYER_CATALOGUE]
+
+    def applies_to(self, template_key: str) -> bool:
+        return not catalogue_for(template_key).is_empty
+
+    def check(self, ctx: TemplateContext) -> LayerResult:
+        catalogue = catalogue_for(ctx.template_key)
+        path = ctx.resolve()
+
+        try:
+            root = ctx.tree(path)
+        except SvgParseError as exc:  # Layer 1 already rejected this; belt and braces
+            return LayerResult(False, f"not a valid SVG file — {exc}")
+
+        index = FieldIndex(root)
+        missing = sorted(
+            name for name in catalogue.all_mandatory_ids() if index.resolve(name) is None
+        )
+        if not missing:
+            return LayerResult(True)
+
+        # Name every one. A count tells a manager nothing about what to draw.
+        shown = ", ".join(f"`{name}`" for name in missing[:8])
+        if len(missing) > 8:
+            shown += f", and {len(missing) - 8} more"
+        return LayerResult(
+            False,
+            f"missing {len(missing)} mandatory "
+            f"{'field' if len(missing) == 1 else 'fields'}: {shown}",
+        )
+
+
 #: The ordered registry. A later session adds a layer by appending one entry here.
-LAYERS: list[ValidityLayer] = [ResolutionLayer()]
+LAYERS: list[ValidityLayer] = [ResolutionLayer(), CatalogueLayer()]
 
 
 def evaluate_template(ctx: TemplateContext, layers: list[ValidityLayer] | None = None) -> ValidityReport:
@@ -175,6 +254,110 @@ def evaluate_template(ctx: TemplateContext, layers: list[ValidityLayer] | None =
         valid=True,
         depth_checked=depth,
     )
+
+
+# ── The ordered check sequence (FR-001 … FR-004) ──────────────────────────
+#
+# One function, serving the configuration command and the season gate alike. Two
+# verification paths that could disagree about whether a template is usable is precisely
+# what contracts/verification.md forbids.
+
+#: Checked before any filesystem access — a name is cheap to reject (FR-001).
+SVG_EXTENSION = ".svg"
+
+
+def check_filename(filename: str) -> Problem | None:
+    """FR-001 — the name must end `.svg`, case-insensitively.
+
+    Case-insensitive because a manager types what their file manager shows them, and the
+    host filesystem is what ultimately resolves the name. Whether the file is *really*
+    SVG is settled by the parse, not by its name.
+    """
+    candidate = (filename or "").strip()
+    if not candidate:
+        return Problem(kind=PROBLEM_EXTENSION, detail="a filename is required.")
+    if not candidate.lower().endswith(SVG_EXTENSION):
+        return Problem(
+            kind=PROBLEM_EXTENSION,
+            detail=f"`{candidate}` does not end in `.svg`. Templates are SVG files.",
+        )
+    return None
+
+
+def check_template(
+    config: ImageConfig,
+    template_key: str,
+    *,
+    root: Path | None = None,
+    check_extension: bool = True,
+) -> Problem | None:
+    """Run FR-001 … FR-004 in order, cheapest first. None means usable.
+
+    Order matters: no filesystem access until the name is plausible, no parse until the
+    file is there, no field search until it parses.
+
+    *check_extension* is False at season approval, where a stored filename was already
+    validated when it was stored (FR-001 cannot fail there).
+    """
+    label = TEMPLATE_LABELS.get(template_key, template_key)
+    filename = getattr(config, template_key, "")
+
+    if check_extension:
+        problem = check_filename(filename)
+        if problem is not None:
+            return dataclasses.replace(problem, template_key=template_key)
+
+    ctx = TemplateContext(config=config, template_key=template_key, root=root)
+    report = evaluate_template(ctx)
+    if report.valid:
+        return None
+
+    return Problem(
+        kind=_problem_kind_for(report),
+        detail=report.reason or f"{label} is not usable.",
+        template_key=template_key,
+    )
+
+
+def _problem_kind_for(report: ValidityReport) -> str:
+    """Map a failing layer onto a problem kind, keeping the classes distinguishable."""
+    if report.failed_layer == LAYER_CATALOGUE:
+        return PROBLEM_MISSING_MANDATORY_FIELD
+    reason = (report.reason or "").lower()
+    if reason.startswith("not a valid svg file") or "root element" in reason:
+        return PROBLEM_NOT_SVG
+    if "declares no canvas" in reason:
+        return PROBLEM_NOT_SVG
+    return PROBLEM_NOT_FOUND
+
+
+def check_all_templates(
+    config: ImageConfig, *, root: Path | None = None
+) -> list[Problem]:
+    """FR-007 — every template, each with its own problem. Never a group, never a count.
+
+    Serves both `/season review`, which reports these, and `/season approve`, which
+    blocks on them, from one evaluation so the two surfaces cannot disagree (FR-008a).
+    """
+    reports = evaluate_all_templates(config, root=root)
+    problems: list[Problem] = []
+    for template_key, report in reports.items():
+        if report.valid:
+            continue
+        problems.append(
+            Problem(
+                kind=_problem_kind_for(report),
+                detail=report.reason or "not usable.",
+                template_key=template_key,
+            )
+        )
+    return problems
+
+
+def describe(problem: Problem) -> str:
+    """One line naming the individual template and its own reason (FR-008)."""
+    label = TEMPLATE_LABELS.get(problem.template_key or "", problem.template_key or "")
+    return f"**{label}**: {problem.detail}" if label else problem.detail
 
 
 def evaluate_all_templates(
@@ -345,14 +528,39 @@ class ImageValidityService:
 
     @staticmethod
     def depth_summary(reports: dict[str, ValidityReport]) -> str:
-        """State the depth templates were checked to (invariant 3, FR-028b)."""
-        implemented = max((layer.number for layer in LAYERS), default=0)
-        names = ", ".join(
-            LAYER_NAMES[layer.number] for layer in sorted(LAYERS, key=lambda i: i.number)
-        )
-        reserved = [n for n in sorted(LAYER_NAMES) if n > implemented]
-        text = f"Checked to layer {implemented} ({names})."
-        if reserved:
-            pending = ", ".join(f"{n} {LAYER_NAMES[n]}" for n in reserved)
-            text += f" Not yet checked: {pending}."
+        """State the depth templates were actually checked to (XIV.9, invariants 3 & 4).
+
+        Read from the reports, not from the layer registry. A layer that is registered but
+        skipped — Layer 2 against an image type whose catalogue is empty — has checked
+        nothing, and saying otherwise would present a template as verified more deeply
+        than it was. The registry is the *available* depth; the reports are the *applied*
+        one, and only the latter may be claimed.
+        """
+        if not reports:
+            return "No templates were checked."
+
+        applied = max((report.depth_checked for report in reports.values()), default=0)
+        shallowest = min((report.depth_checked for report in reports.values()), default=0)
+
+        def names_through(depth: int) -> str:
+            return ", ".join(
+                LAYER_NAMES[number] for number in sorted(LAYER_NAMES) if number <= depth
+            )
+
+        if applied == shallowest:
+            text = f"Checked to layer {applied} ({names_through(applied)})."
+        else:
+            # Mixed: some types have catalogues and were checked deeper than others.
+            text = (
+                f"Checked to layer {shallowest} ({names_through(shallowest)}) for every "
+                f"template, and to layer {applied} where a field catalogue exists."
+            )
+
+        pending = [
+            f"{number} {LAYER_NAMES[number]}"
+            for number in sorted(LAYER_NAMES)
+            if number > applied
+        ]
+        if pending:
+            text += f" Not yet checked: {', '.join(pending)}."
         return text

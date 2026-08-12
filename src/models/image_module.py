@@ -16,6 +16,7 @@ constrains directly:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 
 
@@ -73,12 +74,72 @@ class RenderNotice:
     """A non-fatal degradation a render survived (Constitution XIV.4)."""
 
     image_type: str
-    notice_kind: str          # FONT_SUBSTITUTED | WRAP_TRUNCATED | INLINE_SIZE_TRUNCATED
+    #: FONT_SUBSTITUTED | WRAP_TRUNCATED | INLINE_SIZE_TRUNCATED
+    #: | ASSET_FALLBACK_USED | OPTIONAL_FIELD_EMPTIED
+    notice_kind: str
     detail: str
     field_id: str | None = None
     rendered_at: str | None = None   # set on persistence
     id: int | None = None
     server_id: int | None = None
+
+
+# ── Problems (Constitution XIV.4) ─────────────────────────────────────────
+
+#: A problem aborts whatever it is met by. Each kind is distinguishable from every other,
+#: because FR-006, FR-008 and FR-028 all require naming what is at fault specifically.
+PROBLEM_EXTENSION = "EXTENSION"
+PROBLEM_NOT_FOUND = "NOT_FOUND"
+PROBLEM_NOT_SVG = "NOT_SVG"
+PROBLEM_MISSING_MANDATORY_FIELD = "MISSING_MANDATORY_FIELD"
+PROBLEM_UNRESOLVED_VALUE = "UNRESOLVED_VALUE"
+PROBLEM_UNKNOWN_FIELD = "UNKNOWN_FIELD"
+PROBLEM_ASSET_UNRESOLVED = "ASSET_UNRESOLVED"
+PROBLEM_CAPACITY_EXCEEDED = "CAPACITY_EXCEEDED"
+PROBLEM_RASTERISER = "RASTERISER"
+#: The one kind no league can provoke: a render asked for a type the module does not
+#: know. It is a Problem rather than an exception so every failure path returns
+#: uniformly and no traceback escapes into a Discord surface.
+PROBLEM_UNKNOWN_IMAGE_TYPE = "UNKNOWN_IMAGE_TYPE"
+
+#: Kinds a user can neither cause nor fix. Their detail is for the log, not the caller.
+INTERNAL_PROBLEM_KINDS = frozenset({PROBLEM_UNKNOWN_IMAGE_TYPE})
+
+
+@dataclass
+class Problem:
+    """A fatal outcome, structured so it can be rendered into three surfaces.
+
+    The same problem becomes a command rejection, a season-approval refusal and a log
+    entry, and each must name the individual template at fault — never a group, never a
+    count (FR-008).
+    """
+
+    kind: str
+    detail: str
+    template_key: str | None = None
+    field_id: str | None = None
+
+    @property
+    def is_internal(self) -> bool:
+        """True when a user could neither have caused this nor act on it."""
+        return self.kind in INTERNAL_PROBLEM_KINDS
+
+    def message(self, label: str | None = None) -> str:
+        """The sentence shown to a user.
+
+        An internal problem says only that the graphic could not be produced: echoing a
+        detail nobody can act on invites a league to go looking for a fault of their own.
+        """
+        if self.is_internal:
+            return (
+                "this image could not be produced — the fault has been recorded for "
+                "the bot's operator."
+            )
+        prefix = f"{label}: " if label else ""
+        if self.field_id:
+            return f"{prefix}`{self.field_id}` — {self.detail}"
+        return f"{prefix}{self.detail}"
 
 
 # ── Derived types (not persisted) ─────────────────────────────────────────
@@ -137,9 +198,25 @@ class RenderOutcome:
     """Outcome of a render. ``png_paths`` is empty iff ``problem`` is set."""
 
     png_paths: list[Path] = field(default_factory=list)
-    problem: str | None = None
+    problem: Problem | None = None
     notices: list[RenderNotice] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
         return self.problem is None
+
+
+class PostingOrigin(Enum):
+    """Who asked for a posting — the switch of Constitution XIV.7.
+
+    Never inferred. The obvious inference, "is there an Interaction in scope?", is wrong
+    for a command that schedules later work and for the retry queue re-posting something
+    a command originated. Every call site states which it is, and there is no default, so
+    a new one cannot fall into the wrong behaviour by omission.
+    """
+
+    #: A user ran a command that posts. On a problem: reject, post nothing, tell them.
+    COMMANDED = "COMMANDED"
+
+    #: A horizon, the scheduler, startup, the retry queue. On a problem: text fallback.
+    SCHEDULED = "SCHEDULED"

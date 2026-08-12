@@ -383,6 +383,62 @@ class PlacementService:
         return results
 
     # ------------------------------------------------------------------
+    # Image template capacity (036 / Constitution XIV.12)
+    # ------------------------------------------------------------------
+
+    async def _guard_image_capacity(
+        self, server_id: int, division_id: int, season_id: int
+    ) -> None:
+        """Refuse a placement that would outgrow a configured image template.
+
+        Reads the declared capacities from the catalogue module. While no image type is
+        specified every catalogue is empty, ``declared_capacities()`` is empty, and this
+        returns immediately — the guard activates **by data**, the moment the first image
+        type declares a capacity, with no further code change.
+
+        Never raises for its own reasons: a fault in this check must not block a
+        placement, only a genuine over-capacity may.
+        """
+        from models.image_catalogues import declared_capacities
+        from services.module_service import ModuleService
+
+        capacities = declared_capacities()
+        if not capacities:
+            return
+
+        try:
+            if not await ModuleService(self._db_path).is_images_enabled(server_id):
+                return
+
+            smallest = min(capacities.values())
+
+            async with get_connection(self._db_path) as db:
+                cursor = await db.execute(
+                    "SELECT COUNT(*) AS seated FROM driver_season_assignments "
+                    "WHERE season_id = ? AND division_id = ?",
+                    (season_id, division_id),
+                )
+                row = await cursor.fetchone()
+            seated = (row["seated"] if row else 0) or 0
+        except Exception as exc:  # noqa: BLE001
+            log.error("image capacity guard could not run: %s", exc)
+            return
+
+        if seated + 1 <= smallest:
+            return
+
+        template_key = min(capacities, key=lambda key: capacities[key])
+        from models.image_constants import TEMPLATE_LABELS
+
+        label = TEMPLATE_LABELS.get(template_key, template_key)
+        raise ValueError(
+            f"This would seat {seated + 1} drivers in the division, but the "
+            f"**{label}** image template provides only {smallest} rows. "
+            f"Enlarge that template, or disable the images module, before adding "
+            f"another driver."
+        )
+
+    # ------------------------------------------------------------------
     # Assign driver (T010)
     # ------------------------------------------------------------------
 
@@ -404,6 +460,13 @@ class PlacementService:
         Returns a summary dict with keys: was_unassigned, team_name, division_name.
         Raises ValueError for all blocking conditions.
         """
+        # A command that would carry a division past what its configured templates can
+        # draw is refused here, with the change not applied (Constitution XIV.12,
+        # FR-028). This is the single choke point through which a driver enters a
+        # division, so guarding it covers the signup wizard, manual placement and bulk
+        # import alike. Inert while every catalogue is empty.
+        await self._guard_image_capacity(server_id, division_id, season_id)
+
         async with get_connection(self._db_path) as db:
             # 1. Fetch profile and validate state
             cursor = await db.execute(

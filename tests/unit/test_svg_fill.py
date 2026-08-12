@@ -20,7 +20,7 @@ from models.image_constants import (  # noqa: E402
 from utils.font_metrics import resolve_family  # noqa: E402
 from utils.svg_document import (  # noqa: E402
     computed_style,
-    index_by_id,
+    FieldIndex,
     parse_svg_bytes,
     stylesheet,
 )
@@ -36,7 +36,7 @@ def _doc(body: str, width: int = 1200, height: int = 675):
 
 
 def _style_of(root, element_id):
-    element = index_by_id(root)[element_id]
+    element = FieldIndex(root).resolve(element_id)
     return computed_style(element, stylesheet(root))
 
 
@@ -66,7 +66,7 @@ def test_invariant_2_recolour_is_written_inline_so_it_beats_the_stylesheet():
     root = _doc('<style>#fl { fill: #111111; }</style><text id="fl">x</text>')
     fill(FillSpec(root=root, text={"fl": "1:23.456"}, recolour={"fl": "#A020F0"}))
 
-    element = index_by_id(root)["fl"]
+    element = FieldIndex(root).resolve("fl")
     assert "fill:#A020F0" in element.get("style").replace(" ", "")
     assert _style_of(root, "fl")["fill"] == "#A020F0"
 
@@ -186,7 +186,7 @@ def test_group_removal_takes_its_fields_with_it():
     )
 
     assert result.unresolved == []
-    assert "round_12" not in index_by_id(root)
+    assert "round_12" not in FieldIndex(root)
 
 
 def test_removing_an_unknown_group_is_a_problem():
@@ -220,7 +220,7 @@ def test_invariant_7_short_text_is_not_reduced_or_truncated():
     assert result.notices == [] or all(
         n.notice_kind != NOTICE_WRAP_TRUNCATED for n in result.notices
     )
-    assert "font-size:20px" in index_by_id(root)["justification"].get("style")
+    assert "font-size:20px" in FieldIndex(root).resolve("justification").get("style")
 
 
 def test_invariant_7_long_text_descends_in_half_pixel_steps():
@@ -228,7 +228,7 @@ def test_invariant_7_long_text_descends_in_half_pixel_steps():
     body = "The stewards reviewed the incident at turn four in detail. " * 4
     fill(FillSpec(root=root, text={"justification": body}))
 
-    style = index_by_id(root)["justification"].get("style")
+    style = FieldIndex(root).resolve("justification").get("style")
     size = float(style.split("font-size:")[1].split("px")[0])
 
     assert size < 20.0, "text that does not fit must be set down"
@@ -244,7 +244,7 @@ def test_invariant_7_at_the_floor_text_is_cut_at_a_word_boundary_with_an_ellipsi
     kinds = [n.notice_kind for n in result.notices]
     assert NOTICE_WRAP_TRUNCATED in kinds
 
-    tspans = list(index_by_id(root)["justification"])
+    tspans = list(FieldIndex(root).resolve("justification"))
     assert tspans, "wrapped text must become tspans"
     assert tspans[-1].text.endswith(ELLIPSIS)
     # Cut at a word boundary: no partial word before the ellipsis.
@@ -280,7 +280,7 @@ def test_invariant_8_tspans_carry_absolute_y_at_the_reduced_leading():
     body = "The stewards reviewed the incident at turn four in detail. " * 3
     fill(FillSpec(root=root, text={"justification": body}))
 
-    element = index_by_id(root)["justification"]
+    element = FieldIndex(root).resolve("justification")
     tspans = list(element)
     assert len(tspans) >= 2
 
@@ -304,7 +304,7 @@ def test_shape_inside_is_removed_not_set_to_none_after_lay_out():
     root = _doc(WRAP_DOC)
     fill(FillSpec(root=root, text={"justification": "A short verdict."}))
 
-    element = index_by_id(root)["justification"]
+    element = FieldIndex(root).resolve("justification")
     assert "shape-inside" not in (element.get("style") or "")
     assert "shape-inside" not in computed_style(element, stylesheet(root))
 
@@ -317,7 +317,7 @@ def test_shape_inside_from_an_id_rule_is_stripped_too():
     )
     fill(FillSpec(root=root, text={"j": "A short verdict."}))
 
-    element = index_by_id(root)["j"]
+    element = FieldIndex(root).resolve("j")
     assert "shape-inside" not in computed_style(element, stylesheet(root))
     # The rule's other declarations survive.
     assert "font-size" in stylesheet(root).get("#j", {})
@@ -348,7 +348,7 @@ def test_invariant_9_over_long_single_line_field_is_cut_and_noticed():
     )
 
     assert [n.notice_kind for n in result.notices] == [NOTICE_INLINE_SIZE_TRUNCATED]
-    text = index_by_id(root)["driver_1"].text
+    text = FieldIndex(root).resolve("driver_1").text
     assert text.endswith(ELLIPSIS)
     assert len(text) < len("Bartholomew Fotheringay-Pemberton the Third")
 
@@ -360,7 +360,7 @@ def test_invariant_9_short_name_within_the_bound_is_untouched():
     result = fill(FillSpec(root=root, text={"driver_1": "Verstappen"}))
 
     assert result.notices == []
-    assert index_by_id(root)["driver_1"].text == "Verstappen"
+    assert FieldIndex(root).resolve("driver_1").text == "Verstappen"
 
 
 def test_invariant_9_cut_falls_on_a_word_boundary():
@@ -369,7 +369,7 @@ def test_invariant_9_cut_falls_on_a_word_boundary():
     )
     fill(FillSpec(root=root, text={"d": "Alpha Bravo Charlie Delta Echo Foxtrot"}))
 
-    text = index_by_id(root)["d"].text.rstrip(ELLIPSIS)
+    text = FieldIndex(root).resolve("d").text.rstrip(ELLIPSIS)
     for word in text.split():
         assert word in "Alpha Bravo Charlie Delta Echo Foxtrot".split()
 
@@ -379,7 +379,7 @@ def test_single_word_wider_than_the_box_still_yields_something():
         '<text id="d" style="font-family:Arial;font-size:18px;inline-size:40px">x</text>'
     )
     fill(FillSpec(root=root, text={"d": "Fotheringay-Pemberton"}))
-    assert index_by_id(root)["d"].text.endswith(ELLIPSIS)
+    assert FieldIndex(root).resolve("d").text.endswith(ELLIPSIS)
 
 
 def test_field_without_a_bound_is_never_truncated():
@@ -388,7 +388,7 @@ def test_field_without_a_bound_is_never_truncated():
     result = fill(FillSpec(root=root, text={"d": name}))
 
     assert result.notices == []
-    assert index_by_id(root)["d"].text == name
+    assert FieldIndex(root).resolve("d").text == name
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -400,7 +400,7 @@ def test_image_fill_rewrites_href():
     root = _doc('<image id="track" xlink:href="placeholder.svg"/>')
     result = fill(FillSpec(root=root, images={"track": "resources/tracks/monza.svg"}))
 
-    element = index_by_id(root)["track"]
+    element = FieldIndex(root).resolve("track")
     assert element.get("{http://www.w3.org/1999/xlink}href") == "resources/tracks/monza.svg"
     assert result.unresolved == []
 
@@ -433,7 +433,7 @@ def test_result_svg_is_serialisable_and_wellformed():
     root = _doc('<text id="a">x</text>')
     result = fill(FillSpec(root=root, text={"a": "value"}))
     reparsed = parse_svg_bytes(result.svg)
-    assert index_by_id(reparsed)["a"].text == "value"
+    assert FieldIndex(reparsed).resolve("a").text == "value"
 
 
 def test_expected_fields_omitted_means_only_unknown_fields_are_caught():

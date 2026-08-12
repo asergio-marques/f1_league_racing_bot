@@ -139,39 +139,66 @@ class ImageCog(commands.Cog):
     async def _set_template_filename(
         self, interaction: discord.Interaction, column: str, filename: str
     ) -> None:
-        """Shared body for the fifteen template filename commands."""
+        """Shared body for the fifteen template filename commands.
+
+        Validate, **then** store (FR-005). A configuration that cannot be used is refused
+        at the moment it is named — the one moment the manager is present, holding the
+        file, and able to fix it. Nothing is written until every check passes, so a
+        rejection leaves the stored value exactly as it stood.
+        """
+        from services.image_validity_service import check_template
+
         if not await self._guard_module_enabled(interaction):
             return
 
+        label = TEMPLATE_LABELS[column]
         candidate = filename.strip()
-        if not candidate:
-            await self._reply(interaction, "❌ Filename cannot be empty.")
-            return
+
         if "/" in candidate or "\\" in candidate:
-            await self._reply(
+            await self._reject(
                 interaction,
-                "❌ This sets a filename inside the configured template directory, "
-                "not a path. Use `/images config template-directory` to move the folder.",
+                label,
+                "this sets a filename inside the configured template directory, not a "
+                "path. Use `/images config template-directory` to move the folder.",
             )
+            return
+
+        proposed = await self._config_service.candidate_config(
+            interaction.guild_id, column, candidate
+        )
+        if proposed is None:
+            await self._reject(
+                interaction, label, "this server has no image configuration to amend."
+            )
+            return
+
+        problem = check_template(proposed, column)
+        if problem is not None:
+            await self._reject(interaction, label, problem.message())
             return
 
         await self._config_service.set_field(interaction.guild_id, column, candidate)
 
-        reports = await self._validity_service.template_reports(interaction.guild_id)
-        report = reports.get(column)
-        label = TEMPLATE_LABELS[column]
-
-        if report is not None and report.valid:
-            verdict = "✅ Valid."
-        elif report is not None:
-            verdict = f"⚠️ {report.reason}"
-        else:
-            verdict = "⚠️ Could not be checked."
-
         await self._reply(
-            interaction, f"✅ **{label}** template set to `{candidate}`.\n{verdict}"
+            interaction, f"✅ **{label}** template set to `{candidate}`.\n✅ Valid."
         )
         await self._log(interaction, f"{label} template = {candidate}")
+
+    async def _reject(
+        self, interaction: discord.Interaction, label: str, reason: str
+    ) -> None:
+        """Refuse a template command, naming the fault and leaving the config alone.
+
+        Logged like any accepted change: a refused configuration is as much a part of the
+        audit trail as a stored one (Principle V), and a manager who cannot get a template
+        accepted leaves a record of what they tried.
+        """
+        await self._reply(
+            interaction,
+            f"❌ **{label}** template was **not** changed — {reason}\n"
+            f"The previously configured filename is still in force.",
+        )
+        await self._log(interaction, f"{label} template REJECTED — {reason}")
 
     async def _log(self, interaction: discord.Interaction, detail: str) -> None:
         """Record a configuration mutation to the calculation log (Principle V)."""
@@ -545,9 +572,9 @@ class ImageCog(commands.Cog):
         from models.image_constants import FASTEST_LAP_BACKGROUND_ID
         from utils.colour import coerce_css_colour, contrast_ratio
         from utils.svg_document import (
+            FieldIndex,
             SvgError,
             computed_style,
-            index_by_id,
             load_svg,
             stylesheet,
         )
@@ -565,7 +592,7 @@ class ImageCog(commands.Cog):
         except SvgError as exc:
             return None, None, f"the race results template could not be parsed — {exc}"
 
-        element = index_by_id(root).get(FASTEST_LAP_BACKGROUND_ID)
+        element = FieldIndex(root).resolve(FASTEST_LAP_BACKGROUND_ID)
         if element is None:
             return (
                 None,

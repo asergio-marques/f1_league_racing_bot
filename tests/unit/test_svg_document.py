@@ -20,7 +20,7 @@ from utils.svg_document import (  # noqa: E402
     canvas_of,
     computed_style,
     declarations,
-    index_by_id,
+    FieldIndex,
     length,
     load_svg,
     parse_svg_bytes,
@@ -102,12 +102,12 @@ def test_non_svg_root_is_rejected(tmp_path):
         load_svg(path)
 
 
-def test_index_by_id_maps_every_addressable_element():
+def test_field_index_maps_every_addressable_element():
     root = parse_svg_bytes(
         b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
         b'<g id="row_1"><text id="driver_1">x</text></g><rect/></svg>'
     )
-    index = index_by_id(root)
+    index = FieldIndex(root).by_id
     assert set(index) == {"row_1", "driver_1"}
 
 
@@ -131,38 +131,38 @@ def test_declarations_parsing():
 
 def test_presentation_attribute_is_resolved():
     root = _doc('<rect id="plate" fill="#111111"/>')
-    element = index_by_id(root)["plate"]
+    element = FieldIndex(root).resolve("plate")
     assert computed_style(element, stylesheet(root))["fill"] == "#111111"
 
 
 def test_inline_style_is_resolved():
     root = _doc('<rect id="plate" style="fill:#222222"/>')
-    element = index_by_id(root)["plate"]
+    element = FieldIndex(root).resolve("plate")
     assert computed_style(element, stylesheet(root))["fill"] == "#222222"
 
 
 def test_stylesheet_rule_by_class_is_resolved():
     root = _doc('<style>.plate { fill: #333333; }</style><rect id="plate" class="plate"/>')
-    element = index_by_id(root)["plate"]
+    element = FieldIndex(root).resolve("plate")
     assert computed_style(element, stylesheet(root))["fill"] == "#333333"
 
 
 def test_stylesheet_rule_by_id_is_resolved():
     root = _doc('<style>#plate { fill: #444444; }</style><rect id="plate"/>')
-    element = index_by_id(root)["plate"]
+    element = FieldIndex(root).resolve("plate")
     assert computed_style(element, stylesheet(root))["fill"] == "#444444"
 
 
 def test_stylesheet_rule_by_element_name_is_resolved():
     root = _doc("<style>rect { fill: #555555; }</style><rect id=\"plate\"/>")
-    element = index_by_id(root)["plate"]
+    element = FieldIndex(root).resolve("plate")
     assert computed_style(element, stylesheet(root))["fill"] == "#555555"
 
 
 def test_stylesheet_beats_presentation_attribute():
     """This is *why* Constitution XIV.2 requires a recolour be written inline."""
     root = _doc('<style>#plate { fill: #333333; }</style><rect id="plate" fill="#111111"/>')
-    element = index_by_id(root)["plate"]
+    element = FieldIndex(root).resolve("plate")
     assert computed_style(element, stylesheet(root))["fill"] == "#333333"
 
 
@@ -171,7 +171,7 @@ def test_inline_style_beats_the_stylesheet():
         '<style>#plate { fill: #333333; }</style>'
         '<rect id="plate" fill="#111111" style="fill:#222222"/>'
     )
-    element = index_by_id(root)["plate"]
+    element = FieldIndex(root).resolve("plate")
     assert computed_style(element, stylesheet(root))["fill"] == "#222222"
 
 
@@ -180,13 +180,13 @@ def test_id_rule_beats_class_rule():
         '<style>.plate { fill: #333333; } #plate { fill: #444444; }</style>'
         '<rect id="plate" class="plate"/>'
     )
-    element = index_by_id(root)["plate"]
+    element = FieldIndex(root).resolve("plate")
     assert computed_style(element, stylesheet(root))["fill"] == "#444444"
 
 
 def test_selector_lists_are_indexed_per_selector():
     root = _doc('<style>.a, .b { fill: #666666; }</style><rect id="plate" class="b"/>')
-    element = index_by_id(root)["plate"]
+    element = FieldIndex(root).resolve("plate")
     assert computed_style(element, stylesheet(root))["fill"] == "#666666"
 
 
@@ -194,7 +194,7 @@ def test_unrelated_declarations_survive_alongside_fill():
     root = _doc(
         '<rect id="plate" style="fill:#222222;font-variant-numeric:tabular-nums"/>'
     )
-    element = index_by_id(root)["plate"]
+    element = FieldIndex(root).resolve("plate")
     resolved = computed_style(element, stylesheet(root))
     assert resolved["fill"] == "#222222"
     assert resolved["font-variant-numeric"] == "tabular-nums"

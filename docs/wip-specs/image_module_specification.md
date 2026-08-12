@@ -108,7 +108,7 @@ For this purpose, the Discord bot shall require three new dependencies: one with
     - The input string shall be verified for the ".svg" substring at the end.
     - On being used, it shall be verified that at the destination of the configured directory joined with this filename indeed exists a valid (non-corrupt SVG file).
     - Additionally, upon usage of this command, it shall be verified that the SVG file has the mandatory fields as per the image type's generation specification.
-    - Furthermore, this verification shall be performed on all template files when the image module is enabled and season review is triggered.
+    - Furthermore, this verification shall be performed on all template files when the image module is enabled and season review is triggered. Both the review and the approval of a season shall read one and the same evaluation, so that the two cannot disagree upon whether a template is usable.
 - The verification of the mandatory fields shall additionally be performed immediately before every generation, this time against the concrete data the image is to be filled with, as the data may have changed since the template file was configured. Should it fail at that moment, the image shall not be generated and the failure shall be reported as described for each image type.
     - The mandatory and optional fields of each image type are those declared in that image type's generation specification below. A mandatory field whose value cannot be determined at generation, or that is absent from the template file, is a fatal error; an optional field is not.
 
@@ -130,6 +130,7 @@ These hold for every image type of the module and are stated here rather than re
 - A field is addressed by the identifier of a node of the SVG file. The identifier is normative.
 - Where a template declares no node of that identifier but declares a layer whose label is the name of the field, the labelled layer shall be taken for that field. A league manager editing a template in an SVG editor reaches for the label, and the identifier the editor generated is not the one they set.
 - Where a node of that identifier and a layer of that label both exist and are not the same node, the node of that identifier is the field.
+- A layer is a group, and an operation that requires an element of a particular kind shall descend to it: the placing of text to the single text element the layer holds, the placing of an image to the single image element it holds. Where the layer holds no such element, or more than one, the field is not resolved and the error is that of a mandatory or optional field as its catalogue declares it. The removal of a field, and of the group wrapping it, acts upon the layer itself.
 
 ### Removable groups
 - Any field named in a catalogue below, mandatory or optional, may be wrapped in a group bearing the name of that field followed by "_group".
@@ -142,7 +143,7 @@ These hold for every image type of the module and are stated here rather than re
 - An error met by the module is fatal or non-fatal, as declared for each image type below. A fatal error prevents the graphic from being produced; a non-fatal one does not.
 - A fatal error traceable to something a user configured or commanded shall reject that input, at every moment the module is in a position to detect it:
     - an "images template X" command naming a template that meets one shall be rejected, and the configuration left as it stood;
-    - a season review that meets one shall fail validation of the season, naming what was found to be at fault;
+    - a season review that meets one shall name every template found to be at fault, each with its own reason, and the approval of that season shall be refused while any of them stands. The review refuses nothing itself, committing nothing that could be refused; the approval is where the season is stopped, beside the prerequisites of the other modules;
     - a command that would carry a division past what its configured templates can draw shall be rejected, and the change it carried not applied;
     - a command that triggers a generation which meets one shall be rejected, and nothing posted in consequence of it.
 - The fallback to the traditional textual manner defined in the configuration section applies to a posting no user commanded: one reached at a horizon, at a schedule or at startup. A user who commanded a posting is told what is at fault and invited to correct it, which a silent fall back to text would deny them.
@@ -161,11 +162,24 @@ These hold for every image type of the module and are stated here rather than re
 - A text field may declare an "inline-size" property, which states the room the template gives it.
 - A text placed on such a field that exceeds that room shall be truncated at a word boundary, an ellipsis placed at its end, and a non-fatal error reported naming the field. A single word wider than that room shall be broken within itself.
 - A field declaring an "inline-size" and a "shape-inside" both is a wrapping field, and is wrapped and reduced as defined for the verdicts graphic rather than truncated.
+- A field declaring a "shape-inside" alone is likewise a wrapping field. The property states no other instruction than to flow the text within the shape.
 - A field declaring neither is drawn as a single line of unbounded width. A value longer than the room the template drew around it will overrun what stands beside it, and it is for the template to declare the room where that matters.
 
 ### Images placed on a graphic
 - An image file shall be authored at exactly the aspect of the slot it is placed into, padded with transparent margins where the subject of the image does not fill that aspect.
 - An image whose aspect differs from that of its slot is letterboxed, and the converter fills the resulting band by carrying the outermost pixels of the image outward rather than leaving it transparent, so that a border or a background colour at the edge of the image is drawn across the band. The module does not pad an image at generation.
+- An image file shall be referenced by the graphic as a URI. A filesystem path is not one, and a path so referenced is resolved to nothing by the converter and drawn as a broken-image mark.
+
+### The fallback image
+- Mandatory and optional classify the fields of a template, and nothing else. An asset is not a field: it is the file placed upon one. The rules of this section govern the resolution of an asset and are not qualified by the classification of the field receiving it.
+- Every asset directory shall cover each datum of its class that a league can present it with, or hold a file named "fallback.svg" that covers those it does not.
+- The resolution of an asset has three outcomes and no others:
+    - the file named by the normalized datum is found, and is placed upon the field;
+    - it is not found and the directory holds a fallback, whereupon the fallback is placed upon the field and a non-fatal error reported, naming the field and the datum that had no file of its own;
+    - it is not found and the directory holds no fallback, whereupon the error is fatal and the generation is abandoned.
+- These outcomes supersede any statement elsewhere in this document that a field is removed, or an error withheld, for want of a matching asset file. A statement of that kind continues to govern the case of an absent datum, where no asset is sought at all.
+- A fallback image is bound by the rules above as any other image is: plain SVG, authored at the aspect of the slot it fills, never padded at generation. Where one class serves slots of differing aspects, its fallback shall be authored to the aspect its ordinary assets carry.
+- A datum whose normalized form is "fallback" resolves to the fallback file. No further provision is made against this.
 
 ### Validity of a template file
 - A file that cannot be parsed shall be reported as an invalid SVG file, naming the file and what was found to be at fault, and never as the raw error of the parser. A run of two hyphens within a comment is the readiest way to produce one.
@@ -202,7 +216,7 @@ These hold for every image type of the module and are stated here rather than re
 ### Resolution of the data to be placed
 - The number of a round is the human-readable number read from the round object.
 - The grand prix name and the country are read from the track object of the round.
-- The track image shall be searched for in the configured track image directory under a filename equal to the name of the track, normalized in the manner defined for the lineup graphic. If no matching file is found, the field shall be removed and a non-fatal error reported, the number of the round standing for it.
+- The track image shall be searched for in the configured track image directory under a filename equal to the name of the track, normalized in the manner defined for the lineup graphic, and resolved as the conventions above require, the number of the round standing for the field in any error reported.
 - The date is read from the round object and rendered via the configuration introduced via "images config date-format". The time is read from the same and rendered via the configurations introduced via "images config time-format" and "images config time-zone", the abbreviation of the zone being appended to it.
 - A round for which no time is recorded shall have the text of its time field emptied.
 - The format of a round is "Sprint", "Endurance" or "Mystery", and is emptied for a round of the normal format, so that a template author decides by the chrome they draw around the field whether an ordinary round is labelled or left unmarked.
@@ -244,7 +258,7 @@ These hold for every image type of the module and are stated here rather than re
 - The rounds fabricated shall include, insofar as the number of rounds declared allows:
     - a round of the normal format, one of the sprint format, one of the endurance format and one of the mystery format, so that the rendering of a round carrying no track may be evaluated alongside the others;
     - a round for which no time is recorded;
-    - a round whose track is one of the server's track list for which no image file is found in the configured track image directory, so that the removal of the image and the non-fatal error it reports may be evaluated;
+    - a round whose track is one of the server's track list for which no image file is found in the configured track image directory, so that the drawing of the fallback and the non-fatal error it reports may be evaluated;
     - rounds at dates spanning more than one month, so that the rendering of the configured date format may be evaluated.
 - Should the division fabricated hold no round at all, or the server's track list be empty, the command shall be rejected with a clear error, as there is no calendar to be drawn.
 
@@ -296,10 +310,10 @@ These hold for every image type of the module and are stated here rather than re
     - The test display name of the driver, if the driver is a test driver;
     - The driver's Discord user ID.
 - The flag image of a driver shall be searched for in the configured flag directory under a filename equal to the nationality recorded in their signup information, normalized in the same manner as a team name. Nationalities are recorded as adjectives in canonical form, so that "British" yields "british"; a driver who stated none has "Other" recorded, yielding "other".
-    - If the nationality is absent or no matching file is found, the "_flag" field shall be removed and a non-fatal error reported. As the request for nationality may be switched off entirely via "signup nationality toggle", a lineup with no flags at all is a legitimate outcome and no error whatsoever.
+    - Where the nationality is absent, the "_flag" field shall be removed and a non-fatal error reported. As the request for nationality may be switched off entirely via "signup nationality toggle", a lineup with no flags at all is a legitimate outcome and no error whatsoever. Where a nationality is recorded, its image is resolved as the conventions above require.
 - The driver image of a driver shall be searched for in the configured driver image directory under a filename equal to the Discord user ID of that driver. It is keyed on the ID and not on a name, a display name being normalized into a filename that changes on the day the driver changes their nick, and a portrait supplied by the league should not go missing for that.
-    - If no matching file is found, the "_image" field shall be removed and no error reported. A league supplies one file per driver or none at all, and a lineup with no driver images whatsoever is the ordinary case.
-- The team image shall be searched for in the configured team image directory under a filename equal to the normalized team name, the reserve team included. If no matching file is found, the field shall be removed and a non-fatal error reported.
+    - The image is resolved as the conventions above require. A league supplies one file per driver or none at all; the latter being the ordinary case, a league that supplies none shall place a fallback in the driver image directory, from which every portrait is then drawn.
+- The team image shall be searched for in the configured team image directory under a filename equal to the normalized team name, the reserve team included, and resolved as the conventions above require.
 - Drivers are placed within a team in ascending order of the number of the seat they occupy, the reserve team included. A reserve seat vacated by an unassignment is reused by the next driver assigned, so the order of the reserve drivers is that of their seat numbers and not that in which they joined the reserve team.
 - A seat that is configured but unoccupied shall have the text of its "_name" field emptied and its "_flag" and "_image" fields removed, rather than being omitted as the textual lineup omits it, the layout of the template being fixed.
 
@@ -408,8 +422,8 @@ These hold for every image type of the module and are stated here rather than re
 - The fastest-lap bonus is marked by the colour of the text of the "row_<x>_fastest_lap" field of the entry holding it, which shall be set to the colour configured via "images config fastest-lap-colour", written as an inline style in the manner the conventions above define. The field of every other entry keeps the colour the template gave it. It is the one field of the module a generation colours as well as fills, and it is filled as any other field is.
     - The colour is the only mark the module makes of the bonus. A template wanting a second cue that survives a colour of poor contrast - a plate behind the field, a weight, a legend - draws it as static chrome of its own. No row is recoloured where the session conferred no fastest-lap bonus, which is the case where the points configuration confers no fastest-lap points for that session, where the holder finished outside the position limit that configuration sets, or where the holder did not start or was disqualified.
 - The name of a driver shall be resolved as it is for the lineup graphic.
-- The flag image of a driver shall be searched for as it is for the lineup graphic. If the nationality is absent or no matching file is found, the field shall be removed and a non-fatal error reported.
-- The tyre image of a qualifying entry shall be searched for in the configured tyre directory under a filename equal to the tyre compound recorded for the entry, normalized in the manner defined for the lineup graphic, so that "Soft" yields soft. Where no tyre is recorded for the entry the field shall be removed and no error reported, a tyre being a value the submission of a session need not carry. Where a tyre is recorded and no matching file is found, the field shall be removed and a non-fatal error reported.
+- The flag image of a driver shall be searched for as it is for the lineup graphic. Where the nationality is absent the field shall be removed and a non-fatal error reported; where one is recorded, its image is resolved as the conventions above require.
+- The tyre image of a qualifying entry shall be searched for in the configured tyre directory under a filename equal to the tyre compound recorded for the entry, normalized in the manner defined for the lineup graphic, so that "Soft" yields soft. Where no tyre is recorded for the entry the field shall be removed and no error reported, a tyre being a value the submission of a session need not carry. Where a tyre is recorded, its image is resolved as the conventions above require.
 - The results of a session record the Discord role of the team an entry drove for, and not its name. The name to be placed, and the name to be normalized to search for the team image, shall be that of the team of the division holding that role, falling back to the name of the role itself should the division hold no such team. Normalization is that defined for the lineup graphic.
 - The team of an entry is the team its driver drove for in that session, which for a reserve driver standing in for another is the team whose car they drove and never the reserve team. A results graphic has no reserve block.
 - The session name is "Sprint Qualifying", "Sprint Race", "Feature Qualifying" or "Feature Race" for a round of the sprint format, and "Qualifying" or "Race" for a round of any other.
@@ -423,10 +437,9 @@ These hold for every image type of the module and are stated here rather than re
     - a mandatory field of the graphic that the template does not hold;
     - a template declaring no row at all;
     - a field of the row catalogue of the other kind of session;
-    - a mandatory field whose value cannot be determined at generation;
-    - a team of an entry for which no image file is found in the configured team image directory.
-- A flag image for which no matching file is found causes the field to be removed and a non-fatal error to be reported, as it does for the lineup graphic. As the request for nationality may be switched off entirely via "signup nationality toggle", a graphic with no flags at all is a legitimate outcome and no error whatsoever.
-- A tyre image for which no matching file is found causes the field to be removed and a non-fatal error to be reported, in the same manner. As a tyre need not be recorded against an entry at all, a qualifying graphic carrying no tyre image whatsoever is likewise a legitimate outcome and no error.
+    - a mandatory field whose value cannot be determined at generation.
+- A flag image is resolved as the conventions above require. As the request for nationality may be switched off entirely via "signup nationality toggle", a graphic with no flags at all is a legitimate outcome and no error whatsoever.
+- A tyre image is resolved in the same manner. As a tyre need not be recorded against an entry at all, a qualifying graphic carrying no tyre image whatsoever is likewise a legitimate outcome and no error.
 - The fields that do not depend on the entries of a session are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on them cannot be verified against a classification when the template is configured or at season review; at those moments it shall be verified only that the template declares at least one row, numbered continuously from 1, and holding every mandatory field of a row. At generation they are verified against the session being drawn.
 
 ### Generation and posting
@@ -548,13 +561,13 @@ These hold for every image type of the module and are stated here rather than re
 - The composition of the driver classification is that of the textual driver standings: every non-reserve driver of the division is drawn, at zero points as at any other, and a reserve driver is drawn only where "results reserves toggle" is on and the driver holds points or has taken part in a race.
 - The composition of the constructor classification is that of the textual team standings: every non-reserve team of the division is drawn, at zero points as at any other.
 - The name of a driver shall be resolved as it is for the lineup graphic.
-- The flag image of a driver shall be searched for as it is for the lineup graphic. If the nationality is absent or no matching file is found, the field shall be removed and a non-fatal error reported.
-- The image of a round shall be searched for as it is for the calendar graphic. If no matching file is found, the field shall be removed and a non-fatal error reported, the number of the round standing for it in either case.
+- The flag image of a driver shall be searched for as it is for the lineup graphic. Where the nationality is absent the field shall be removed and a non-fatal error reported; where one is recorded, its image is resolved as the conventions above require.
+- The image of a round shall be searched for as it is for the calendar graphic, the number of the round standing for the field in any error reported.
 - The team of a row of the drivers graphic is the team of the division seating the driver at the moment of generation, which for a reserve driver is the reserve team. It is not the team whose car the driver drove in any single round.
 - The name to be placed for a constructor, and the name to be normalized to search for its team image, shall be that of the team of the division holding the Discord role its standings record, falling back to the name of the role itself should the division hold no such team. Normalization is that defined for the lineup graphic.
 - The gap to the leader is the points of the first-placed entry less those of the entry, rendered prefixed with a minus sign, and is empty for the first-placed entry.
 - The previous position and the position change are read against the standings of the round preceding the one drawn, the change being the number of positions separating the two, placed without a sign and "0" where the entry has neither gained nor lost.
-- The marker image of the position change shall be searched for in the configured marker directory under a filename equal to the direction of that change: "gained" where the entry stands higher than it did after the preceding round, "lost" where it stands lower, and "unchanged" where it stands where it stood. If no matching file is found, the field shall be removed and a non-fatal error reported.
+- The marker image of the position change shall be searched for in the configured marker directory under a filename equal to the direction of that change: "gained" where the entry stands higher than it did after the preceding round, "lost" where it stands lower, and "unchanged" where it stands where it stood, and resolved as the conventions above require.
 - The position change cannot be determined for the graphic of the first round of a division, nor for an entry the standings of the preceding round do not hold. In either case the "row_<x>_position_change_group" field shall be removed in its entirety; where the template declares no such group, the number shall be emptied and the marker removed. The previous position field is emptied in the same two cases.
 - A result cell of either graphic carries the finishing position recorded in that session of that round for the driver the cell stands for, or "DNF", "DNS" or "DSQ" where that is the outcome recorded for them. A driver dropped to the bottom of a session by a disqualification carries "DSQ" and not the position that drop gave them.
     - The module places one cell per session, and a template drawing the cells of two sessions together in the room of one - a race result with its qualifying result raised beside it, or any other such pairing - is making an arrangement of its own and shall size it for the widest pair it may be asked to carry, which is an outcome beside an outcome.
@@ -584,9 +597,8 @@ These hold for every image type of the module and are stated here rather than re
     - a template declaring no row at all;
     - a gap in the numbering of the rows, in the numbering of the rounds, or in the numbering of the cars of a round;
     - a field of the row catalogue of the other championship;
-    - a mandatory field whose value cannot be determined at generation;
-    - a team of an entry for which no image file is found in the configured team image directory.
-- A flag image for which no matching file is found causes the field to be removed and a non-fatal error to be reported, as it does for the lineup graphic. As the request for nationality may be switched off entirely via "signup nationality toggle", a graphic with no flags at all is a legitimate outcome and no error whatsoever.
+    - a mandatory field whose value cannot be determined at generation.
+- A flag image is resolved as the conventions above require. As the request for nationality may be switched off entirely via "signup nationality toggle", a graphic with no flags at all is a legitimate outcome and no error whatsoever.
 - The fields that do not depend on the entries of a classification are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on them cannot be verified against a classification when the template is configured or at season review; at those moments it shall be verified only that the template declares at least one row, numbered continuously from 1 and holding every mandatory field of a row, that the rounds it declares, if any, are numbered continuously from 1 and each hold the field carrying its number, and that the cars each round declares, if any, are numbered continuously from 1. At generation they are verified against the classification being drawn.
 - The number of rows a template declares is a ceiling upon the classification it can draw, and the reserve team is configured with an unlimited number of seats, so a driver classification may grow past it as reserves are assigned. It is verified against that ceiling at the moments the module is in a position to do so, and the input that would carry it past is rejected there rather than at generation:
     - at season review, against the number of drivers each division of the season would place in its classification, a divergence being a failure of validation naming the division;
@@ -700,9 +712,9 @@ These hold for every image type of the module and are stated here rather than re
 - The sanction field carries "Reached point limit" for a driver moved to the reserve team or removed from their driving roles upon this posting, which is the annotation the textual sheet appends to them, the emphasis that message applies excluded. It shall be emptied for every other driver.
     - The annotation is the same for the two sanctions and the sheet is not where they are told apart. The verdict announced for the driver names which was enforced.
 - The limits are the values configured via "attendance config autoreserve" and "attendance config autosack". Where one of the two functionalities is disabled, its group shall be removed in its entirety; where the template declares no such group, the field carrying that limit shall be emptied.
-- The name of a driver shall be resolved as it is for the lineup graphic, and their flag image searched for as it is for the lineup graphic. If the nationality is absent or no matching file is found, the field shall be removed and a non-fatal error reported.
-- The team of a row is the team of the division seating the driver at the moment of generation, which for a reserve driver is the reserve team. It is not the team whose car the driver drove in any single round. The team image shall be searched for as it is for the lineup graphic; if no matching file is found, the field shall be removed and a non-fatal error reported.
-- The image of a round shall be searched for as it is for the calendar graphic. If no matching file is found, the field shall be removed and a non-fatal error reported, the number of the round standing for it.
+- The name of a driver shall be resolved as it is for the lineup graphic, and their flag image searched for as it is for the lineup graphic. Where the nationality is absent the field shall be removed and a non-fatal error reported; where one is recorded, its image is resolved as the conventions above require.
+- The team of a row is the team of the division seating the driver at the moment of generation, which for a reserve driver is the reserve team. It is not the team whose car the driver drove in any single round. The team image shall be searched for as it is for the lineup graphic.
+- The image of a round shall be searched for as it is for the calendar graphic, the number of the round standing for the field in any error reported.
 - A round of the mystery format records no track. The image field of such a round shall be removed and no error shall be reported; where the sheet stands after such a round, its race name field shall be emptied on the same terms.
 - The check-in graphic re-presents the values the embed of the check-in call shows and never derives them by rules of its own.
 - The format of the round is "Normal", "Sprint", "Endurance" or "Mystery", which is the text the embed carries.
@@ -730,7 +742,7 @@ These hold for every image type of the module and are stated here rather than re
     - a field of the catalogue of the other graphic of the module;
     - a mandatory field whose value cannot be determined at generation, save those named for a round of the mystery format;
     - a sheet drawn for a division holding no driver at all.
-- A flag image, a team image or a track image for which no matching file is found causes the field to be removed and a non-fatal error to be reported, and not the fatal error a team image causes on a standings graphic. As the request for nationality may be switched off entirely via "signup nationality toggle", a sheet with no flags at all is a legitimate outcome and no error whatsoever.
+- A flag image, a team image and a track image are each resolved as the conventions above require. As the request for nationality may be switched off entirely via "signup nationality toggle", a sheet with no flags at all is a legitimate outcome and no error whatsoever.
 - The fields that do not depend on the division are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on it cannot be verified against a division when the template is configured or at season review; at those moments it shall be verified only that a sheet template declares at least one row, numbered continuously from 1 and holding every mandatory field of a row, that the rounds it declares, if any, are numbered continuously from 1 and each hold the field carrying its number, and that the sessions a check-in template declares, if any, are numbered continuously from 1 and hold every mandatory field of a session. At season review the rounds of a sheet template shall additionally be verified against the greatest number of rounds any division of the season holds, and the sessions of a check-in template against the largest number of sessions any round of the season holds, a divergence being a warning only. At generation they are verified against the division and the round being drawn.
 
 ### Generation and posting
@@ -756,7 +768,7 @@ These hold for every image type of the module and are stated here rather than re
 ### Test data
 - The "images test attendance" command shall generate two sheets, both drawn for a division named "Test Division", of tier 1 and of season number 1, holding a calendar of five rounds and standing after the third of them, so that the emptying of the cells of a round yet to be run may be evaluated alongside those already finalized. One shall be drawn with both the autoreserve and the autosack limits configured, and the other with both disabled, so that the removal of the fields carrying them may be evaluated.
     - Round 2 of the calendar fabricated shall be of the mystery format, so that the removal of the image of a round carrying no track may be evaluated.
-    - One round of the calendar fabricated shall be one whose track is of the server's track list and for which no image file is found in the configured track image directory, so that the removal of the image and the non-fatal error it reports may be evaluated.
+    - One round of the calendar fabricated shall be one whose track is of the server's track list and for which no image file is found in the configured track image directory, so that the drawing of the fallback and the non-fatal error it reports may be evaluated.
 - The drivers fabricated shall be one fewer than the number of rows the template declares, so that the rendering of an unused row may be evaluated, and shall be drawn from the teams of the team configuration of the server. Should the template declare a single row, one driver shall be fabricated and the unused row left unevaluated.
 - The drivers fabricated shall include, insofar as the number of rows declared allows:
     - a driver holding no attendance points at all, every round cell of whom is empty;
@@ -772,7 +784,7 @@ These hold for every image type of the module and are stated here rather than re
     - a round of the sprint format, so that the naming of four sessions may be evaluated;
     - a round of the normal format, so that the naming of two sessions may be evaluated;
     - a round of the mystery format, so that the rendering of a round carrying no track may be evaluated;
-    - a round whose track is one of the server's track list for which no image file is found in the configured track image directory, so that the removal of the image and the non-fatal error it reports may be evaluated;
+    - a round whose track is one of the server's track list for which no image file is found in the configured track image directory, so that the drawing of the fallback and the non-fatal error it reports may be evaluated;
     - a round drawn against a deadline configured to 0, so that the deadline standing at the scheduled time of the round may be evaluated.
 - The rounds fabricated shall be at dates and times spanning more than one month and more than one half of the day, so that the rendering of the configured date and time formats may be evaluated.
 - Should the server's track list be empty, the command shall be rejected with a clear error, as there is no round for a call to pertain to.
@@ -819,11 +831,11 @@ These hold for every image type of the module and are stated here rather than re
 - The description of the phase is fixed text: "Initial chance of rain" for phase 1, "Initial session forecast" for phase 2 and "Final session forecast" for phase 3.
 - The likelihood of rain is that calculated in phase 1, rendered as the textual phase 1 message renders it, the percent sign included. The phase 2 and phase 3 graphics carry that same value.
 - The name of the track is that recorded for the round, and is the name the textual forecast carries. The grand prix name and the country are read from the track object.
-- The track image shall be searched for in the configured track image directory under a filename equal to the name of the track, normalized in the same manner as a team name. If no matching file is found, the field shall be removed and a non-fatal error reported.
+- The track image shall be searched for in the configured track image directory under a filename equal to the name of the track, normalized in the same manner as a team name, and resolved as the conventions above require.
 - The name of a session is "Sprint Qualifying", "Sprint Race", "Feature Qualifying" or "Feature Race" for a round of the sprint format, and "Qualifying" or "Race" for a round of any other. It carries no qualifier of the length of the session.
 - The type of weather of a session is "Sunny", "Mixed" or "Rain". The phase 3 graphic carries the type phase 2 drew for that session.
 - The concrete weather of a slot is one of "Clear", "Light Cloud", "Overcast", "Wet" and "Very Wet".
-- The icon of a type of weather and the icon of a concrete weather shall both be searched for in the configured weather icon directory under a filename equal to that text, normalized in the same manner as a team name, so that "Sunny" yields "sunny" and "Very Wet" yields "very_wet". If no matching file is found, the field shall be removed and a non-fatal error reported.
+- The icon of a type of weather and the icon of a concrete weather shall both be searched for in the configured weather icon directory under a filename equal to that text, normalized in the same manner as a team name, so that "Sunny" yields "sunny" and "Very Wet" yields "very_wet", and both resolved as the conventions above require.
 - The summary of a session is the whole sequence of its slots rendered as the textual phase 3 message renders it, the emphasis that message applies excluded. A session all of whose slots carry the same weather is summarised by that weather alone, and a session of a single slot by the weather of that slot.
 - The sessions are placed in the order in which they are run, and the slots of a session in the order in which they were drawn.
 - Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash.
@@ -841,7 +853,7 @@ These hold for every image type of the module and are stated here rather than re
     - a field of the catalogue of another phase, the fields of a slot on a phase 2 template included;
     - a mandatory field whose value cannot be determined at generation;
     - a gap in the numbering of the sessions, or in the numbering of the slots of a session.
-- An icon image for which no matching file is found causes the field to be removed and a non-fatal error to be reported, as a flag image does for the lineup graphic. A graphic carrying no icon at all is a legitimate outcome.
+- An icon image is resolved as the conventions above require.
 - The fields that do not depend on the round are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on it are verified against the formats the template serves, which are known at every moment:
     - a phase 2 or phase 3 template of a round of the sprint format shall declare four sessions, numbered continuously from 1 and holding every mandatory field of a session, and a phase 3 one shall declare at least two slots for each of them;
     - a phase 2 or phase 3 template of a round of every other format shall declare two sessions on the same terms, and a phase 3 one at least four slots for each of them;
@@ -916,7 +928,7 @@ These hold for every image type of the module and are stated here rather than re
 
 ### Resolution of the data to be placed
 - The graphic re-presents the values the textual announcement shows and never derives them by rules of its own. A change to how the textual announcement renders any of them is a change to the graphic by the same stroke.
-- The name of a driver shall be resolved as it is for the lineup graphic, and their flag image searched for as it is for the lineup graphic. If the nationality is absent or no matching file is found, the field shall be removed and a non-fatal error reported.
+- The name of a driver shall be resolved as it is for the lineup graphic, and their flag image searched for as it is for the lineup graphic. Where the nationality is absent the field shall be removed and a non-fatal error reported; where one is recorded, its image is resolved as the conventions above require.
 - The name of a session is "Sprint Qualifying", "Sprint Race", "Feature Qualifying" or "Feature Race" for a round of the sprint format, and "Qualifying" or "Race" for a round of any other, as it is for the results graphic. A verdict of an attendance sanction pertains to no session and carries "Attendance Sanction" in its place.
 - The stage of a verdict is fixed text: "Post-Race Penalty" for a verdict issued in the penalty phase, "Appeal" for one issued in the appeal phase, and "Attendance Sanction" for one enforced by the attendance module.
 - The sanction is the descriptive rendering the textual announcement carries, a time penalty, a disqualification, a sacking and a move to the reserve team alike, and never the compact rendering a results graphic places in a sanction column.
@@ -933,7 +945,7 @@ These hold for every image type of the module and are stated here rather than re
     - a mandatory field of the graphic that the template does not hold;
     - a mandatory field whose value cannot be determined at generation;
     - a wrapping field whose "shape-inside" property names a rectangle the template does not hold.
-- A flag image or a team image for which no matching file is found causes the field to be removed and a non-fatal error to be reported, and not the fatal error a team image causes on a results graphic. A graphic carrying neither is a legitimate outcome and no error whatsoever.
+- A flag image and a team image are each resolved as the conventions above require.
 - The truncation of a wrapping field, and the substitution of a font a field declares, are non-fatal and reported as such.
 
 ### Generation and posting

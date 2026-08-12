@@ -402,7 +402,7 @@ async def test_absent_converter_is_reported_and_no_render_attempted(
     )
 
     assert outcome.problem is not None
-    assert "inkscape" in outcome.problem.lower()
+    assert "inkscape" in outcome.problem.detail.lower()
     assert outcome.png_paths == []
     assert attempted == [], "a render was attempted with no converter present"
 
@@ -855,3 +855,455 @@ async def test_every_template_is_independently_relocatable(
         )
 
         await config_service.set_field(SERVER_ID, column, TEMPLATE_COLUMNS[column])
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 036 / T015 — validate-then-store (FR-005, SC-002)
+#
+# The observation that matters: after ANY rejection, reading the configuration back
+# returns the value that stood before the command. Before 036 the write happened first.
+# ══════════════════════════════════════════════════════════════════════════
+
+from models.image_catalogues import CATALOGUES as _CATALOGUES  # noqa: E402
+from models.image_catalogues import FieldCatalogue as _FieldCatalogue  # noqa: E402
+from models.image_module import (  # noqa: E402
+    PROBLEM_EXTENSION,
+    PROBLEM_MISSING_MANDATORY_FIELD,
+    PROBLEM_NOT_FOUND,
+    PROBLEM_NOT_SVG,
+)
+from services.image_validity_service import check_template  # noqa: E402
+
+_GOOD_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675"/>'
+
+
+@pytest.fixture()
+def catalogue_slot():
+    saved = dict(_CATALOGUES)
+    yield lambda key, cat: _CATALOGUES.__setitem__(key, cat)
+    _CATALOGUES.clear()
+    _CATALOGUES.update(saved)
+
+
+async def _store_if_valid(config_service, column, filename, root):
+    """The exact sequence `_set_template_filename` runs: candidate → check → maybe write.
+
+    Driven at the service layer rather than through Discord, so the assertion is about
+    what reaches the database, not about how a reply is worded.
+    """
+    proposed = await config_service.candidate_config(SERVER_ID, column, filename)
+    problem = check_template(proposed, column, root=root)
+    if problem is None:
+        await config_service.set_field(SERVER_ID, column, filename)
+    return problem
+
+
+@pytest.fixture()
+async def configured(module_service, config_service, tmp_path):
+    """Module enabled, template directory populated, one known-good filename stored."""
+    await _enable(module_service, config_service)
+
+    directory = tmp_path / "templates"
+    directory.mkdir(exist_ok=True)
+    for filename in TEMPLATE_COLUMNS.values():
+        (directory / filename).write_bytes(_GOOD_SVG)
+    (directory / "known_good.svg").write_bytes(_GOOD_SVG)
+
+    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+    await config_service.set_field(SERVER_ID, "calendar_template", "known_good.svg")
+    return tmp_path
+
+
+@pytest.mark.asyncio
+async def test_wrong_extension_is_refused_and_nothing_written(config_service, configured):
+    problem = await _store_if_valid(
+        config_service, "calendar_template", "calendar.txt", configured
+    )
+
+    assert problem is not None and problem.kind == PROBLEM_EXTENSION
+    stored = await config_service.get_config(SERVER_ID)
+    assert stored.calendar_template == "known_good.svg"
+
+
+@pytest.mark.asyncio
+async def test_absent_file_is_refused_and_nothing_written(config_service, configured):
+    problem = await _store_if_valid(
+        config_service, "calendar_template", "nope.svg", configured
+    )
+
+    assert problem is not None and problem.kind == PROBLEM_NOT_FOUND
+    assert "nope.svg" in problem.detail  # names the full path searched (FR-006)
+    stored = await config_service.get_config(SERVER_ID)
+    assert stored.calendar_template == "known_good.svg"
+
+
+@pytest.mark.asyncio
+async def test_malformed_file_is_refused_and_nothing_written(config_service, configured):
+    (configured / "templates" / "broken.svg").write_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg"><!-- a -- b --></svg>'
+    )
+    problem = await _store_if_valid(
+        config_service, "calendar_template", "broken.svg", configured
+    )
+
+    assert problem is not None and problem.kind == PROBLEM_NOT_SVG
+    assert "double hyphen" in problem.detail
+    assert "XMLSyntaxError" not in problem.detail
+    stored = await config_service.get_config(SERVER_ID)
+    assert stored.calendar_template == "known_good.svg"
+
+
+@pytest.mark.asyncio
+async def test_missing_mandatory_field_is_refused_and_nothing_written(
+    config_service, configured, catalogue_slot
+):
+    catalogue_slot(
+        "calendar_template", _FieldCatalogue(mandatory=frozenset({"season_name"}))
+    )
+    (configured / "templates" / "fieldless.svg").write_bytes(_GOOD_SVG)
+
+    problem = await _store_if_valid(
+        config_service, "calendar_template", "fieldless.svg", configured
+    )
+
+    assert problem is not None and problem.kind == PROBLEM_MISSING_MANDATORY_FIELD
+    assert "season_name" in problem.detail
+    stored = await config_service.get_config(SERVER_ID)
+    assert stored.calendar_template == "known_good.svg"
+
+
+@pytest.mark.asyncio
+async def test_a_sound_template_is_accepted_and_written(config_service, configured):
+    (configured / "templates" / "replacement.svg").write_bytes(_GOOD_SVG)
+
+    problem = await _store_if_valid(
+        config_service, "calendar_template", "replacement.svg", configured
+    )
+
+    assert problem is None
+    stored = await config_service.get_config(SERVER_ID)
+    assert stored.calendar_template == "replacement.svg"
+
+
+@pytest.mark.asyncio
+async def test_a_run_of_rejections_never_erodes_the_stored_value(
+    config_service, configured
+):
+    """SC-002 stated as a sequence: four refusals in a row change nothing."""
+    for filename in ("x.txt", "gone.svg", "also_gone.svg", "still.png"):
+        await _store_if_valid(config_service, "calendar_template", filename, configured)
+
+    stored = await config_service.get_config(SERVER_ID)
+    assert stored.calendar_template == "known_good.svg"
+
+
+@pytest.mark.asyncio
+async def test_rejection_of_one_template_leaves_the_others_alone(
+    config_service, configured
+):
+    await _store_if_valid(config_service, "lineup_template", "missing.svg", configured)
+
+    stored = await config_service.get_config(SERVER_ID)
+    assert stored.calendar_template == "known_good.svg"
+    assert stored.lineup_template == TEMPLATE_COLUMNS["lineup_template"]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 036 / T022 — season review reports, season approval blocks (FR-007 … FR-009)
+# ══════════════════════════════════════════════════════════════════════════
+
+from services.image_validity_service import check_all_templates as _check_all  # noqa: E402
+from services.image_validity_service import describe as _describe  # noqa: E402
+
+
+async def _problem_lines(config_service, root, *, module_enabled=True):
+    """What both `/season review` and `/season approve` compute (FR-008a).
+
+    One evaluation, two surfaces. Driven at the service layer so the assertion is about
+    the findings, not about how a Discord embed renders them.
+    """
+    if not module_enabled:
+        return []
+    config = await config_service.get_config(SERVER_ID)
+    return [_describe(problem) for problem in _check_all(config, root=root)]
+
+
+@pytest.mark.asyncio
+async def test_sound_templates_contribute_no_finding(config_service, configured):
+    assert await _problem_lines(config_service, configured) == []
+
+
+@pytest.mark.asyncio
+async def test_two_broken_templates_are_named_individually(config_service, configured):
+    """FR-008 — both, separately, with distinct reasons. Not a count, not a group."""
+    (configured / "templates" / "lineup_template.svg").unlink()
+    (configured / "templates" / "rsvp_template.svg").write_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg"><!-- a -- b --></svg>'
+    )
+
+    lines = await _problem_lines(config_service, configured)
+
+    assert len(lines) == 2
+    joined = " | ".join(lines)
+    assert "Lineup" in joined
+    assert "Check-in call" in joined          # the rsvp template's label
+    assert "file not found" in joined
+    assert "double hyphen" in joined
+    # Distinct reasons, not one blanket line repeated.
+    assert lines[0] != lines[1]
+
+
+@pytest.mark.asyncio
+async def test_a_failing_template_names_itself_not_its_aspect(config_service, configured):
+    """Weather has six templates behind one aspect; the report must name the one."""
+    (configured / "templates" / "weather_p2_sprint_template.svg").unlink()
+
+    lines = await _problem_lines(config_service, configured)
+
+    assert len(lines) == 1
+    assert "sprint" in lines[0].lower()
+    assert "phase 2" in lines[0].lower()
+
+
+@pytest.mark.asyncio
+async def test_disabled_module_contributes_no_finding(config_service, configured):
+    """FR-009 — with the module off, neither command verifies anything."""
+    (configured / "templates" / "lineup_template.svg").unlink()
+
+    assert await _problem_lines(config_service, configured, module_enabled=False) == []
+
+
+@pytest.mark.asyncio
+async def test_review_and_approval_read_the_same_evaluation(config_service, configured):
+    """FR-008a — the two surfaces cannot disagree, because there is one computation."""
+    (configured / "templates" / "lineup_template.svg").unlink()
+
+    review = await _problem_lines(config_service, configured)
+    approval = await _problem_lines(config_service, configured)
+
+    assert review == approval and review != []
+
+
+@pytest.mark.asyncio
+async def test_missing_template_directory_reports_once_not_fifteen_times(
+    config_service, configured
+):
+    """Existing 035 behaviour, retained: one shared reason, still one report each."""
+    await config_service.set_field(SERVER_ID, "template_directory", "no_such_dir")
+
+    lines = await _problem_lines(config_service, configured)
+
+    assert len(lines) == len(TEMPLATE_COLUMNS)
+    assert all("template directory not found" in line for line in lines)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 036 / T027 — the same fault, opposite behaviour (FR-029, FR-030, FR-032)
+#
+# If both origins fall back to text, FR-030 is not implemented. That is the whole test.
+# ══════════════════════════════════════════════════════════════════════════
+
+from models.image_module import PostingOrigin  # noqa: E402
+from services.image_render_service import (  # noqa: E402
+    POST_IMAGE,
+    POST_TEXT_FALLBACK,
+    REJECT_COMMAND,
+    ImageRenderService,
+)
+
+
+@pytest.fixture()
+def failing_render_service(db_path, config_service, module_service, monkeypatch):
+    """A render service whose renders always meet the same fatal fault."""
+    service = _render_service(db_path, config_service, module_service)
+
+    async def always_fails(server_id, image_type, spec_builder, **kwargs):
+        from models.image_module import PROBLEM_NOT_FOUND, Problem, RenderOutcome
+
+        return RenderOutcome(
+            problem=Problem(
+                kind=PROBLEM_NOT_FOUND,
+                detail="file not found: calendar_template.svg",
+                template_key=image_type,
+            )
+        )
+
+    monkeypatch.setattr(service, "render", always_fails)
+    return service
+
+
+@pytest.mark.asyncio
+async def test_commanded_posting_rejects_and_posts_nothing(failing_render_service):
+    decision = await failing_render_service.render_for_posting(
+        SERVER_ID, "calendar_template", lambda root: None,
+        posting_origin=PostingOrigin.COMMANDED,
+    )
+
+    assert decision.action == REJECT_COMMAND
+    assert decision.rejects
+    assert decision.png_paths == []
+    assert "file not found" in decision.caller_message()
+
+
+@pytest.mark.asyncio
+async def test_scheduled_posting_falls_back_to_text(failing_render_service):
+    decision = await failing_render_service.render_for_posting(
+        SERVER_ID, "calendar_template", lambda root: None,
+        posting_origin=PostingOrigin.SCHEDULED,
+    )
+
+    assert decision.action == POST_TEXT_FALLBACK
+    assert decision.falls_back_to_text
+    assert decision.png_paths == []
+
+
+@pytest.mark.asyncio
+async def test_the_two_origins_differ_on_the_identical_fault(failing_render_service):
+    """SC-007 stated directly."""
+    commanded = await failing_render_service.render_for_posting(
+        SERVER_ID, "calendar_template", lambda root: None,
+        posting_origin=PostingOrigin.COMMANDED,
+    )
+    scheduled = await failing_render_service.render_for_posting(
+        SERVER_ID, "calendar_template", lambda root: None,
+        posting_origin=PostingOrigin.SCHEDULED,
+    )
+
+    assert commanded.action != scheduled.action
+    assert commanded.problem.detail == scheduled.problem.detail
+
+
+@pytest.mark.asyncio
+async def test_posting_origin_is_required_and_never_inferred(failing_render_service):
+    """A new call site must state which it is; there is no default to fall into."""
+    with pytest.raises(TypeError):
+        await failing_render_service.render_for_posting(
+            SERVER_ID, "calendar_template", lambda root: None,
+        )
+
+    with pytest.raises(TypeError):
+        await failing_render_service.render_for_posting(
+            SERVER_ID, "calendar_template", lambda root: None,
+            posting_origin="COMMANDED",  # a string is not the enum
+        )
+
+
+@pytest.mark.asyncio
+async def test_an_internal_problem_tells_the_user_nothing_to_act_on(
+    db_path, config_service, module_service
+):
+    """UNKNOWN_IMAGE_TYPE is a caller defect; echoing it would send a league hunting."""
+    service = _render_service(db_path, config_service, module_service)
+
+    decision = await service.render_for_posting(
+        SERVER_ID, "no_such_template", lambda root: None,
+        posting_origin=PostingOrigin.COMMANDED,
+    )
+
+    assert decision.rejects
+    assert decision.problem.is_internal
+    message = decision.caller_message()
+    assert "no_such_template" not in message
+    assert "operator" in message
+
+
+@pytest.mark.asyncio
+async def test_a_clean_render_posts_the_image(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    from services.image_sample_data import build_spec
+
+    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    await _enable(module_service, config_service)
+    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+
+    service = _render_service(db_path, config_service, module_service)
+    decision = await service.render_for_posting(
+        SERVER_ID,
+        "calendar_template",
+        lambda root: build_spec("calendar_template", root),
+        posting_origin=PostingOrigin.SCHEDULED,
+    )
+
+    assert decision.action == POST_IMAGE
+    assert decision.posts_image
+    assert decision.png_paths
+
+
+def test_notice_formatting_names_field_and_kind():
+    from models.image_module import RenderNotice
+
+    text = ImageRenderService.format_notices(
+        [
+            RenderNotice(
+                image_type="calendar_template",
+                notice_kind="ASSET_FALLBACK_USED",
+                detail="no flag for `portugal`",
+                field_id="row_1_flag",
+            )
+        ]
+    )
+    assert "ASSET_FALLBACK_USED" in text
+    assert "row_1_flag" in text
+    assert "portugal" in text
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 036 / T033 — no error text may reach a channel drivers read (FR-032, SC-006)
+#
+# Enumerated statically rather than by exercising every path: the requirement is about
+# what the code *can* do, and a runtime test only covers the paths it happens to hit.
+# ══════════════════════════════════════════════════════════════════════════
+
+import ast as _ast  # noqa: E402
+import pathlib as _pathlib  # noqa: E402
+
+_SRC = _pathlib.Path(__file__).resolve().parents[2] / "src"
+
+#: Sends that reach only the person who ran the command.
+_INTERACTION_SENDS = {"send_message", "send"}
+
+
+def _non_ephemeral_sends(path):
+    """Every interaction send in *path* that does not pass ephemeral=True."""
+    tree = _ast.parse(path.read_text(encoding="utf-8"))
+    offenders = []
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.Call) or not isinstance(node.func, _ast.Attribute):
+            continue
+        if node.func.attr not in _INTERACTION_SENDS:
+            continue
+        target = _ast.unparse(node.func.value)
+        if "interaction" not in target and "followup" not in target:
+            continue
+        ephemeral = any(
+            kw.arg == "ephemeral" and getattr(kw.value, "value", None) is True
+            for kw in node.keywords
+        )
+        if not ephemeral:
+            offenders.append(f"{path.name}:{node.lineno} {_ast.unparse(node.func)}")
+    return offenders
+
+
+def test_every_image_cog_reply_is_ephemeral():
+    """The image module speaks to the caller, never to the room."""
+    assert _non_ephemeral_sends(_SRC / "cogs" / "image_cog.py") == []
+
+
+def test_the_render_service_writes_only_to_the_log_channel():
+    """Its sole Discord sink is post_log; it holds no channel of its own (XIV.8)."""
+    source = (_SRC / "services" / "image_render_service.py").read_text(encoding="utf-8")
+
+    assert "post_log" in source
+    for forbidden in ("post_forecast", "get_channel", "fetch_channel", "send_message"):
+        assert forbidden not in source, f"render service reaches for {forbidden}"
+
+
+def test_the_season_approval_refusal_is_ephemeral():
+    """The template gate refuses in front of the admin, not the league."""
+    source = (_SRC / "cogs" / "season_cog.py").read_text(encoding="utf-8")
+    marker = "the image module is enabled"
+    assert marker in source
+
+    tail = source[source.index(marker):source.index(marker) + 600]
+    assert "ephemeral=True" in tail
