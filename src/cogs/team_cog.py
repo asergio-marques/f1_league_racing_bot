@@ -314,6 +314,46 @@ class TeamCog(commands.Cog):
             await interaction.followup.send("No divisions found.", ephemeral=True)
             return
 
+        # ── The graphic replaces the textual output where configured (FR-026) ──
+        #
+        # One image per division, honouring `public`. These are command output and **not**
+        # the lineup of record: nothing is written to `lineup_message_id` and the lineup
+        # channel is untouched (FR-028). A fatal error rejects rather than falling back —
+        # the caller is the one person able to fix the template (Constitution XIV.7).
+        from services.image_lineup_post import lineup_enabled, render_for_command
+
+        if await lineup_enabled(self.bot, interaction.guild_id):
+            files: list[discord.File] = []
+            notices: list = []
+            for div in all_divisions:
+                outcome = await render_for_command(self.bot, interaction.guild, div.id)
+                if outcome.action == "REJECTED":
+                    await interaction.followup.send(
+                        f"{outcome.message}\n_Lineup for **{div.name}** was not drawn._",
+                        ephemeral=True,
+                    )
+                    return
+                if outcome.png_path is not None:
+                    files.append(
+                        discord.File(
+                            str(outcome.png_path), filename=f"lineup_{div.id}.png"
+                        )
+                    )
+                notices.extend(outcome.notices)
+
+            if files:
+                text = "\n".join(f"**{div.name}**" for div in all_divisions)
+                if notices:
+                    from services.image_render_service import ImageRenderService
+
+                    await ImageRenderService.report_notices(
+                        self.bot, interaction.guild_id, notices
+                    )
+                await interaction.followup.send(
+                    text, files=files, ephemeral=not public
+                )
+                return
+
         lines: list[str] = []
         for div in all_divisions:
             lines.append(f"**{div.name}**")

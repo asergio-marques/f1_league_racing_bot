@@ -450,6 +450,17 @@ Adds the team to the server's default team list. If a Discord role is provided i
 | `name` | String | ✅ | Name of the new team (max 50 chars) |
 | `role` | Role | — | Discord role to grant drivers placed into this team |
 
+**Naming.** A team name has to survive being turned into a lineup-template field name, so it is checked when you set it. The bot lowercases the name, strips accents, and replaces every run of anything that is not a letter or a digit with a single underscore — `Red Bull` becomes `red_bull`, `Force India (B)` becomes `force_india_b`. The name is rejected if that result:
+
+- is empty (a name of nothing but punctuation);
+- does not start with a letter (`2 Fast` is refused — a field name cannot begin with a digit);
+- matches another team in the same scope (`Red Bull` and `Red  Bull!` collide);
+- is `reserve`, which belongs to the Reserve team of every division.
+
+> These checks apply whether or not the image module is enabled. A name is only cheap to fix at the moment you set it, and a league that turns the module on later would otherwise be stuck with names it cannot correct without losing that team's history.
+
+> Only the **new** name is checked by `/team rename`, and `/team remove` checks nothing. A team named before these rules existed stays renameable and removable.
+
 #### `/team remove` — Remove a team from the server list
 *Access: Trusted admin*
 
@@ -1041,11 +1052,15 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 Flips that aspect between a generated image and the text the bot has always posted. All eight start disabled.
 
-> **`calendar` is live; the other seven record intent only.**
+> **`calendar` and `lineup` are live; the other six record intent only.**
 >
 > With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
 >
-> The remaining seven toggles change what `/images config view` and `/season review` report, and nothing else. Wiring each of those source modules is a later increment. Use `/images test` to see what an aspect will produce.
+> With `lineup` on, a division's lineup channel carries a drawn graphic instead of the text embed, redrawn on every occasion the text was redrawn before: season approval, a driver being assigned, unassigned or sacked, and the attendance module's auto-reserve and auto-sack. `/team lineup` answers with the graphic too, and `/season review` posts it *alongside* its text so you can judge it before approving. The reserve distribution the attendance module does at each RSVP deadline does **not** redraw it — the graphic shows who is in which team for the season, not who is on the grid for one round.
+>
+> The image is built before the old message is deleted, so a lineup that cannot be drawn leaves the one already posted where it is; that division falls back to text and the log channel says why. With the toggle off, the lineup behaves in every respect as it did before this feature.
+>
+> The remaining six toggles change what `/images config view` and `/season review` report, and nothing else. Wiring each of those source modules is a later increment. Use `/images test` to see what an aspect will produce.
 
 #### `/images template <kind>` — Name the SVG file backing each image
 *Access: Server administrator*
@@ -1075,6 +1090,10 @@ Qualifying and race results are drawn from separate templates, as are the driver
 These sit under `/images template` rather than `/images config` because Discord allows at most 25 subcommands per group.
 
 **The file is checked before it is stored.** The command refuses, and your existing filename stays in force, if the name does not end in `.svg`, if no such file is in the configured directory, if it will not parse as SVG, or if it is missing a field the image needs. You are told which of those it was — a malformed file is described in plain terms ("a comment contains a double hyphen at line 12"), never as a parser error. Nothing is written unless every check passes, so a refused command cannot leave the bot pointed at a file it can't use.
+
+> **The lineup template is the one you must draw yourself.** Every other template addresses its rows by number, so a file that works for one league works for the next. A lineup names its fields after *your* teams — `team_red_bull_name`, `team_red_bull_driver_1_name` — so that each team's block can be designed in that team's own livery. The shipped `lineup_template.svg` demonstrates the convention with invented teams; naming it unchanged will be refused at `/season review`, which tells you which of your teams it does not draw. Write one against your own team list instead, and use `/images test lineup` to check it.
+
+> Because one lineup file serves every division, **the divisions of a season must field the same teams and the same seat counts** while the `lineup` aspect is on. `/season review` says so if they differ. Turn the aspect off and the requirement lifts.
 
 #### `/images config <directory>` — Where files are searched for
 *Access: Server administrator*
@@ -1128,6 +1147,8 @@ The same summary is appended to `/season review`, which additionally names each 
 
 Renders from built-in sample data and replies with the PNG, visible only to you. It reads no live season data, so it works on a server with no season configured. `results`, `standings`, `weather-p2` and `weather-p3` each return both of their variants.
 
+> **`lineup` is the exception.** Its fields are named after your teams, so a preview built from invented ones would prove nothing. It draws a fabricated "Test Division" holding exactly the teams in your server's list: every team but one filled, one left wholly empty so you can see unoccupied seats, and one reserve slot short of full so you can see an empty reserve slot too. Nobody has a portrait, so every driver image comes from the fallback and says so. If your server has no team beyond Reserve, the command is refused — there is no lineup to draw.
+
 Anything the render survived is listed alongside the image — a substituted font, a wrapped field cut at its size floor, a name cut to the width its column allows. Anything it could not survive returns no image and states why.
 
 #### Templates: what the bot expects
@@ -1136,13 +1157,26 @@ A template is a plain SVG whose declared `width` and `height` are the canvas. Th
 
 **Text bounds.** A field that receives a Discord display name should declare an `inline-size`; it is the only bound on a name of a length no league controls. Overflow is cut at a word boundary and ellipsised. A field that receives prose should declare `shape-inside` pointing at a rectangle. The text is set down half a pixel at a time until it fits, and at half the declared size is cut with an ellipsis.
 
-**Naming.** Ids are lowercase `snake_case` and say what the field is, not where it sits — `driver_name`, not `text_47`. Anything the template repeats is named for the thing it repeats plus its number: `row_<x>_<field>` for the rows of a table, `round_<x>_<field>` for the rounds of a calendar, `session_<x>_<field>` for the sessions of a forecast — `row_1_position`, `round_10_date`. Repeats may nest, each level adding its own name and number in the order they contain one another (`row_3_round_7_driver_1_name`). Numbering starts at 1, with no gaps and no padding.
+**Naming.** Ids are lowercase `snake_case` and say what the field is, not where it sits — `driver_name`, not `text_47`. Anything the template repeats is named for the thing it repeats plus **either a number or a name**:
+
+- **By number**, which is the usual form: `row_<x>_<field>` for the rows of a table, `round_<x>_<field>` for the rounds of a calendar, `session_<x>_<field>` for the sessions of a forecast — `row_1_position`, `round_10_date`. Numbering starts at 1, with no gaps and no padding.
+- **By name**, which only the lineup uses: `team_red_bull_name`, `team_force_india_b_driver_1_flag`. The name is your team's, lowercased with accents stripped and every run of non-letters turned into one underscore — the same rule that turns a team name into an asset filename, so `Red Bull` gives you both `team_red_bull_name` and `red_bull.svg`. Teams are named rather than numbered so that each team's block can be drawn in that team's own livery, which a number could never point at.
+
+A block may also stand alone with no number at all, as the lineup's reserve block does: `reserve_name`, `reserve_driver_1_name`.
+
+Repeats may nest, each level adding its own name and number in the order they contain one another (`row_3_round_7_driver_1_name`, `team_red_bull_driver_2_flag`).
 
 **If your editor won't let you set the id.** Label the layer with the field's name instead. The bot looks for a node with the id first and falls back to a layer whose label matches, so `driver_name` works either way. If both exist, the id wins.
 
 **Removable blocks.** Wrap a field in a group named for it plus `_group` — `sanctions_group`, `row_7_group` — and the whole group leaves whenever the value is absent, taking its label, plate or separator with it. Without the group, only the field itself is emptied, and the chrome introducing it is left pointing at nothing. Removing a group never resizes the canvas, so put removable blocks where a gap is survivable.
 
-**Capacity.** Whatever your template repeats — table rows, calendar rounds, forecast sessions, a team's cars — it provides a fixed number of slots, and that count is what the bot builds against. Fewer entries than slots leaves the spare ones removed. **More** entries than slots is an error: the bot refuses the command that would grow the division past what your template can draw, and tells you the count, the capacity and which template was too small. This holds for everything a template repeats, whether it is the subject of the graphic or a strip standing beside it — nothing is ever dropped quietly to make the data fit. Size each repeat for the largest season the league will run.
+**Capacity.** How many of a thing your template provides is settled one of two ways, and which one applies depends on the thing.
+
+*Your template decides* for table rows, calendar rounds, forecast sessions, a team's cars, and a division's reserve seats — anything whose count no setting of yours bounds. You provide a fixed number of slots and the bot builds against it. Fewer entries than slots leaves the spare ones removed. **More** entries than slots is an error: the bot refuses the command that would grow the division past what your template can draw, and tells you the count, the capacity and which template was too small. Size each of these for the largest season the league will run.
+
+*Your configuration decides* for a lineup's teams and their seats. Here the template must match exactly what you have configured — every team, and every seat of every team. A team you configured that the template does not draw, and a team the template draws that you have not configured, are the same error seen from opposite sides, and both are refused. A team that has recruited nobody is **not** an error: it is drawn with every seat blank.
+
+Either way, nothing is ever dropped quietly to make the data fit.
 
 **Assets.** Assets are plain SVG, authored at exactly the aspect ratio of the slot they fill — the generator does not pad, so an asset of the wrong shape will be letterboxed with its edge pixels smeared across the band. Filenames are the thing they depict, normalised: lowercased, accents dropped, every run of punctuation or spaces collapsed to a single underscore, `.svg` on the end. `Red Bull Racing` is looked up as `red_bull_racing.svg` in the configured team directory. **Every asset directory needs a `fallback.svg`** unless you are certain it holds a file for every value the bot could ask it for. When a specific file is missing — a nationality you have no flag drawn for, say — the fallback is used and the bot logs which value needed it. When there is no fallback either, **the graphic is not produced**: the bot will not quietly draw a card with a hole in it. One generic file per directory is what keeps an incomplete asset set from stopping your images.
 

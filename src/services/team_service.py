@@ -5,10 +5,68 @@ import logging
 
 from db.database import get_connection
 from models.team import DefaultTeam, TeamInstance
+from utils.asset_resolver import normalise
 
 log = logging.getLogger(__name__)
 
 _RESERVE_NAME = "Reserve"
+
+#: The normalised form the Reserve team owns. No configurable team may claim it, because a
+#: lineup template addresses the reserve block as `reserve_*` and a team normalising to the
+#: same word would collide with it (Constitution IX, XIV.11).
+_RESERVE_KEY = "reserve"
+
+
+def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -> str | None:
+    """Why *name* cannot become a template field identifier, or None where it can.
+
+    A lineup template addresses a team's block by the **normalised** team name
+    (Constitution XIV.11, v4.3.0), and that normalised form has to serve as the `@id` of a
+    node in an XML document. Constraining the datum is the business of the module that owns
+    it (Principle IX); discovering the collision at render time is not.
+
+    Four rules, and they bind **whether or not the image module is enabled**: a name is
+    cheapest to constrain at the one moment it is set, and a league enabling the module
+    later would otherwise hold names it could not correct without losing that team's
+    history.
+
+    *existing_keys* maps an already-taken normalised key to the name that holds it, within
+    the scope being checked — the server for the server's team list, the division for the
+    teams of a season. Omit it to check only the properties of the name itself.
+
+    Returns a message ready to show a user, or None.
+    """
+    trimmed = (name or "").strip()
+    if not trimmed:
+        return "A team name cannot be empty."
+
+    key = normalise(trimmed)
+    if not key:
+        return (
+            f'"{trimmed}" holds no letter or digit, so it cannot name a template field. '
+            f"Choose a name with at least one."
+        )
+
+    if not key[0].isalpha():
+        return (
+            f'"{trimmed}" does not begin with a letter. A team name becomes an XML '
+            f"identifier in a lineup template, which may not begin with a digit."
+        )
+
+    if key == _RESERVE_KEY:
+        return (
+            f'"{trimmed}" reduces to "{_RESERVE_KEY}", which is reserved for the Reserve '
+            f"team of every division. Choose another name."
+        )
+
+    clash = (existing_keys or {}).get(key)
+    if clash is not None:
+        return (
+            f'"{trimmed}" and "{clash}" both reduce to "{key}", so one lineup template '
+            f"field would have to address both. Choose a more distinct name."
+        )
+
+    return None
 
 
 class TeamService:
@@ -16,12 +74,77 @@ class TeamService:
         self._db_path = db_path
 
     # ------------------------------------------------------------------
+    # Normalised-key lookups, for team-name validation (Principle IX)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _server_keys(db, server_id: int, *, exclude: str | None = None) -> dict[str, str]:
+        """Normalised key → team name, across the server's team list.
+
+        *exclude* drops one name from the comparison, so a rename does not collide with
+        the team being renamed.
+        """
+        rows = await (
+            await db.execute(
+                "SELECT name FROM default_teams WHERE server_id = ? AND is_reserve = 0",
+                (server_id,),
+            )
+        ).fetchall()
+        return {
+            normalise(r["name"]): r["name"]
+            for r in rows
+            if r["name"] != exclude and normalise(r["name"])
+        }
+
+    @staticmethod
+    async def _division_keys(db, division_id: int, *, exclude: str | None = None) -> dict[str, str]:
+        """Normalised key → team name, within one division of a season."""
+        rows = await (
+            await db.execute(
+                "SELECT name FROM team_instances WHERE division_id = ? AND is_reserve = 0",
+                (division_id,),
+            )
+        ).fetchall()
+        return {
+            normalise(r["name"]): r["name"]
+            for r in rows
+            if r["name"] != exclude and normalise(r["name"])
+        }
+
+    # ------------------------------------------------------------------
     # Default teams (US4)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    async def _ensure_reserve(db, server_id: int) -> bool:
+        """Create the server's Reserve team where none is present. True where it was.
+
+        Principle IX requires the Reserve team to exist in the server's team configuration
+        as it does in every division, and FR-014 requires it to be created whenever that
+        configuration is read or written and none is present. The older seeding fired only
+        when the server had **no team at all**, so a configuration that lost its Reserve
+        row — or predates the rule — never regained one.
+        """
+        found = await (
+            await db.execute(
+                "SELECT 1 FROM default_teams WHERE server_id = ? AND is_reserve = 1 LIMIT 1",
+                (server_id,),
+            )
+        ).fetchone()
+        if found:
+            return False
+        await db.execute(
+            "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
+            "VALUES (?, ?, -1, 1)",
+            (server_id, _RESERVE_NAME),
+        )
+        return True
+
     async def get_default_teams(self, server_id: int) -> list[DefaultTeam]:
-        """Return all default teams for this server."""
+        """Return all default teams for this server, the Reserve team included."""
         async with get_connection(self._db_path) as db:
+            if await self._ensure_reserve(db, server_id):
+                await db.commit()
             cursor = await db.execute(
                 "SELECT id, server_id, name, max_seats, is_reserve "
                 "FROM default_teams WHERE server_id = ? ORDER BY is_reserve ASC, name ASC",
@@ -39,12 +162,22 @@ class TeamService:
                 f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
             )
         async with get_connection(self._db_path) as db:
+            await self._ensure_reserve(db, server_id)
             existing = await db.execute(
                 "SELECT 1 FROM default_teams WHERE server_id = ? AND name = ?",
                 (server_id, name),
             )
             if await existing.fetchone():
                 raise ValueError(f'A default team named "{name}" already exists.')
+
+            # The normalised name must serve as a lineup template's field identifier
+            # (Principle IX). Scope: the server's own team list.
+            problem = validate_team_name(
+                name, await self._server_keys(db, server_id, exclude=name)
+            )
+            if problem is not None:
+                raise ValueError(problem)
+
             cursor = await db.execute(
                 "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
                 "VALUES (?, ?, ?, 0)",
@@ -84,6 +217,16 @@ class TeamService:
             ).fetchone()
             if conflict:
                 raise ValueError(f'A default team named "{new_name}" already exists.')
+
+            # Only the **new** name is validated. The current name identifies a team that
+            # already exists, and validating it would leave a team named before this rule
+            # impossible to rename or to remove (FR-011).
+            problem = validate_team_name(
+                new_name, await self._server_keys(db, server_id, exclude=current_name)
+            )
+            if problem is not None:
+                raise ValueError(problem)
+
             await db.execute(
                 "UPDATE default_teams SET name = ? WHERE id = ?",
                 (new_name, row["id"]),
@@ -208,6 +351,12 @@ class TeamService:
                     raise ValueError(
                         f'A team named "{name}" already exists in one or more divisions.'
                     )
+                # Scope for uniqueness is the **division** for a season's teams.
+                problem = validate_team_name(
+                    name, await self._division_keys(db, div_id, exclude=name)
+                )
+                if problem is not None:
+                    raise ValueError(problem)
             for div_id in division_ids:
                 cursor = await db.execute(
                     "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
@@ -234,6 +383,15 @@ class TeamService:
             )
         division_ids = await self._get_setup_season_divisions(server_id, season_id)
         async with get_connection(self._db_path) as db:
+            # Only the new name is validated (FR-011), once per division since uniqueness
+            # is division-scoped. Every division is checked before any is written, so a
+            # rejection leaves the season exactly as it stood.
+            for div_id in division_ids:
+                problem = validate_team_name(
+                    new_name, await self._division_keys(db, div_id, exclude=current_name)
+                )
+                if problem is not None:
+                    raise ValueError(problem)
             for div_id in division_ids:
                 await db.execute(
                     "UPDATE team_instances SET name = ? "

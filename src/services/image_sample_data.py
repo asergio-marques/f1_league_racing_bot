@@ -113,7 +113,111 @@ def build_calendar_drawing(root):
     )
 
 
-def build_spec(template_key: str, root) -> FillSpec:
+#: Nationalities the fabricated drivers carry. Every one is accepted by the signup wizard,
+#: and the last is the value recorded for a driver who stated none — so the "Other" flag is
+#: exercised as the ordinary datum it is rather than as an absence.
+SAMPLE_LINEUP_NATIONALITIES = [
+    "British",
+    "Dutch",
+    "Brazilian",
+    "Japanese",
+    "Other",
+]
+
+#: Fabricated driver ids. Well below the Discord snowflake epoch, so no portrait file can
+#: resolve for them and the driver directory's `fallback.svg` is exercised with its notice
+#: (wip-spec § "Lineup image generation" → Test data).
+_SAMPLE_ID_BASE = 100_000
+
+
+def build_lineup_drawing(root, teams):
+    """The fabricated division `/images test lineup` draws (FR-029).
+
+    *teams* is the **server's own team configuration** — records carrying ``name``,
+    ``max_seats`` and ``is_reserve``. Reading the league's real teams rather than inventing
+    some is what makes this command a genuine rehearsal: a lineup template is keyed to a
+    league's own teams, so a preview drawn against invented ones would prove nothing.
+
+    Every team but one is filled to its seat count and one is left wholly unoccupied, so
+    unoccupied seats can be judged. Reserve drivers are fabricated to one fewer than the
+    template's reserve slots, so an unfilled reserve slot can be judged too.
+    """
+    from types import SimpleNamespace
+
+    from models.image_catalogues import CapacityError, catalogue_for
+    from services.image_lineup_service import LineupDataError, resolve_drawing
+
+    configurable = [t for t in teams if not getattr(t, "is_reserve", False)]
+    if not configurable:
+        raise LineupDataError(
+            "the server holds no team beyond the reserve team, so there is no lineup to "
+            "be drawn. Add a team with `/team add` first."
+        )
+
+    try:
+        reserve_slots = catalogue_for("lineup_template").capacity(root) or 0
+    except CapacityError as exc:
+        raise LineupDataError(str(exc)) from exc
+
+    counter = 0
+
+    def _driver():
+        nonlocal counter
+        counter += 1
+        return SimpleNamespace(
+            discord_user_id=str(_SAMPLE_ID_BASE + counter),
+            server_display_name=f"Test Driver {counter}",
+            discord_username=f"testdriver{counter}",
+            test_display_name=None,
+            nationality=SAMPLE_LINEUP_NATIONALITIES[
+                (counter - 1) % len(SAMPLE_LINEUP_NATIONALITIES)
+            ],
+        )
+
+    def _seat(number: int, occupied: bool):
+        base = SimpleNamespace(seat_number=number, discord_user_id=None)
+        if not occupied:
+            return base
+        driver = _driver()
+        return SimpleNamespace(seat_number=number, **vars(driver))
+
+    fabricated = []
+    # The last team is the one left empty, so a league reading the image finds the gap
+    # where it expects it rather than at the top of the graphic.
+    empty_index = len(configurable) - 1
+    for index, record in enumerate(configurable):
+        seats = int(getattr(record, "max_seats", 0) or 0)
+        fabricated.append(
+            SimpleNamespace(
+                name=getattr(record, "name", ""),
+                is_reserve=False,
+                seats=[
+                    _seat(number, occupied=index != empty_index)
+                    for number in range(1, seats + 1)
+                ],
+            )
+        )
+
+    reserve_count = max(reserve_slots - 1, 0)
+    fabricated.append(
+        SimpleNamespace(
+            name="Reserve",
+            is_reserve=True,
+            seats=[_seat(number, occupied=True) for number in range(1, reserve_count + 1)],
+        )
+    )
+
+    return resolve_drawing(
+        division_name="Test Division",
+        division_tier=1,
+        season_number=1,
+        teams=fabricated,
+        display_names={},
+        nationality_collected=True,
+    )
+
+
+def build_spec(template_key: str, root, *, teams=None) -> FillSpec:
     """Build a FillSpec for *template_key* against the template's actual ids.
 
     The template is the authority on what exists (Constitution XIV.2), so the sample
@@ -138,6 +242,33 @@ def build_spec(template_key: str, root) -> FillSpec:
 
         return build_fill_spec(
             build_calendar_drawing(root), root, track_directory=track_directory
+        )
+
+    if template_key == "lineup_template":
+        from services.image_lineup_service import LineupDataError, build_fill_spec
+        from utils.paths import resolve_within_project_root
+
+        if teams is None:
+            raise LineupDataError(
+                "a lineup preview needs the server's team configuration; none was "
+                "supplied to the sample builder"
+            )
+
+        # The packaged asset directories, for the same reason the calendar resolves its
+        # track directory here: a preview must still resolve its assets.
+        directories: dict[str, object] = {}
+        for asset_class, relative in (
+            ("team", "resources/teams"),
+            ("flag", "resources/flags"),
+            ("driver", "resources/drivers"),
+        ):
+            try:
+                directories[asset_class] = resolve_within_project_root(relative)
+            except Exception:  # noqa: BLE001
+                pass
+
+        return build_fill_spec(
+            build_lineup_drawing(root, teams), root, asset_directories=directories
         )
 
     # Ids *and* layer labels: a field may be addressed by either (Constitution XIV.2).

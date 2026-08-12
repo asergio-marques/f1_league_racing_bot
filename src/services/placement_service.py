@@ -54,8 +54,14 @@ def _compute_total_lap_ms(lap_times: dict[str, str]) -> int | None:
 
 
 class PlacementService:
-    def __init__(self, db_path: str) -> None:
+    def __init__(self, db_path: str, bot=None) -> None:
         self._db_path = db_path
+        #: The bot, where one is available. Needed only by the lineup **image** path, which
+        #: reads the module toggles and the render service through it. None in every unit
+        #: test that exercises placement alone, and the textual lineup is unaffected by its
+        #: absence — which is the point: without a bot this service behaves exactly as it
+        #: did before 038.
+        self._bot = bot
 
     # ------------------------------------------------------------------
     # Internal role helpers
@@ -386,6 +392,55 @@ class PlacementService:
     # Image template capacity (036 / Constitution XIV.12)
     # ------------------------------------------------------------------
 
+    async def _guard_reserve_capacity(self, server_id: int, division_id: int) -> None:
+        """Refuse a reserve placement that would outgrow the lineup template (FR/R8).
+
+        The reserve block is the one lineup collection whose slots the template fixes, so
+        it is the one to which overflow applies. XIV.12 requires overflow to be rejected
+        at the earliest moment it can be detected, with the change unapplied — which is
+        this command, not the render.
+
+        Never raises for its own reasons: a fault in this check must not block a
+        placement, only a genuine over-capacity may.
+        """
+        bot = self._bot
+        if bot is None:
+            return
+        try:
+            from models.image_catalogues import reserve_capacity_problem
+            from services.image_lineup_post import lineup_enabled
+            from utils.svg_document import load_svg
+
+            if not await lineup_enabled(bot, server_id):
+                return
+
+            reports = await bot.image_validity_service.template_reports(server_id)
+            report = reports.get("lineup_template")
+            if report is None or not report.valid:
+                return
+
+            async with get_connection(self._db_path) as db:
+                row = await (
+                    await db.execute(
+                        "SELECT COUNT(*) AS seated FROM driver_season_assignments dsa "
+                        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+                        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+                        "WHERE dsa.division_id = ? AND ti.is_reserve = 1",
+                        (division_id,),
+                    )
+                ).fetchone()
+            seated = (row["seated"] if row else 0) or 0
+            problem = reserve_capacity_problem(load_svg(report.resolved_path), seated + 1)
+        except Exception as exc:  # noqa: BLE001
+            log.error("reserve capacity guard could not run: %s", exc)
+            return
+
+        if problem is not None:
+            raise ValueError(
+                f"{problem}. The driver was **not** assigned. Enlarge the template, or "
+                f"turn the `lineup` image aspect off with `/images config toggle`."
+            )
+
     async def _guard_image_capacity(
         self, server_id: int, division_id: int, season_id: int
     ) -> None:
@@ -401,6 +456,10 @@ class PlacementService:
         """
         from models.image_catalogues import declared_capacities
         from services.module_service import ModuleService
+
+        # The reserve block is guarded separately: it counts reserve drivers, not every
+        # seated driver, and its capacity comes from the template rather than from here.
+        await self._guard_reserve_capacity(server_id, division_id)
 
         capacities = declared_capacities()
         if not capacities:
@@ -1028,13 +1087,32 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def _refresh_lineup_post(
-        self, guild: discord.Guild, division_id: int
+        self, guild: discord.Guild, division_id: int, *, bot=None
     ) -> None:
-        """Delete the old lineup message (if any) and post a fresh lineup embed.
+        """Post the division's lineup: as a graphic where configured, else as the embed.
 
-        Reads lineup_channel_id and lineup_message_id from the divisions table.
-        Returns silently if no lineup_channel_id is configured.
+        **The image path is a guard clause in front of an untouched body.** Where the
+        images module is enabled, the `lineup` aspect is on and a valid template is
+        configured, ``image_lineup_post.try_post`` produces the PNG *before* deleting the
+        message it replaces (FR-025) and this method returns.
+
+        Where it is not — the module off, the aspect off, no template — everything below
+        runs exactly as it did before 038, **delete-then-build order included**
+        (FR-025a, SC-007). That order was specified in specs/028-season-signup-flow/ and
+        is deliberately not reopened by this feature: the lineup image is an alternative
+        output beside the text, not a reform of it.
         """
+        owner = bot if bot is not None else getattr(self, "_bot", None)
+        if owner is not None:
+            try:
+                from services.image_lineup_post import try_post
+
+                outcome = await try_post(owner, guild, division_id)
+                if outcome.applicable:
+                    return
+            except Exception as exc:  # noqa: BLE001 — never block a placement on this
+                log.error("_refresh_lineup_post: image path failed: %s", exc)
+
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
                 "SELECT s.server_id, d.name AS div_name, d.lineup_channel_id, d.lineup_message_id "

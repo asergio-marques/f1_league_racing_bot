@@ -163,6 +163,7 @@ These hold for every image type of the module and are stated here rather than re
     - a command that triggers a generation which meets one shall be rejected, and nothing posted in consequence of it.
 - The fallback to the traditional textual manner defined in the configuration section applies to a posting no user commanded: one reached at a horizon, at a schedule or at startup. A user who commanded a posting is told what is at fault and invited to correct it, which a silent fall back to text would deny them.
 - A non-fatal error is reported in the logging channel of the server, and additionally alongside the output of the command where a command triggered the generation. It is never reported in a channel read by the drivers of the league.
+- A field the data determine to be empty is not a field whose value could not be determined, and is no error at all. A seat of a team that no driver occupies is of this kind: the layout of a template is fixed, so the seat is drawn with its name emptied rather than omitted, and nothing shall be reported for it. A mandatory field is not thereby offended, a mandatory field being fatal when its value cannot be determined and this one having been determined.
 - A field emptied or removed because the league switched the collection of that datum off at its source is no error at all, and nothing shall be reported for it. Nothing has degraded: the graphic draws what the league configured it to draw. The suppression requires a configuration switch that turns the datum off at its source, as "signup nationality toggle" does for the nationality of a driver, and shall be stated for the field it applies to. It does not extend to a datum the league collects and merely happens not to hold for one member, which is an ordinary emptied field and reports as one.
 - The moments at which a template is verified differ in the data available to them, and the severity of a divergence follows from that:
     - where the moment holds the data that will be drawn, a divergence is of the severity that moment carries above: rejection of the command, refusal of the approval of the season, or failure of the generation;
@@ -364,7 +365,8 @@ These hold for every image type of the module and are stated here rather than re
     - a "team_<x>_" field for a team not present in the division being generated;
     - a "team_<x>_driver_<y>_" field whose <y> exceeds the number of seats configured for that team;
     - a seat of a team of the division for which the template has no "team_<x>_driver_<y>_name" field;
-    - two teams of the division normalizing to the same <x>.
+    - two teams of the division normalizing to the same <x>;
+    - a team of the division whose name normalizes to an empty identifier, or to "reserve". Such a name is refused at the command that would set it, so this can only be met on a season that predates those criteria.
 - The number of reserve drivers of a division, in contrast, varies as drivers are assigned and unassigned over a season and cannot be known when the template is authored. Divergences in the reserve block are treated as follows:
     - reserve drivers in excess of the slots the template declares are a fatal error, naming them;
     - slots declared in excess of the reserve drivers of the division shall be treated as unoccupied seats are treated;

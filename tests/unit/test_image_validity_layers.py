@@ -32,10 +32,11 @@ from services.image_validity_service import (  # noqa: E402
     evaluate_template,
 )
 
-#: Valid at every depth currently checked. It carries the calendar's mandatory fields and
-#: one complete round because the calendar's catalogue was populated in 037 and Layer 2
-#: now applies to it; the other fourteen types have empty catalogues, skip Layer 2, and
-#: are indifferent to the extra ids.
+#: One file written to all fifteen template slots, so it must satisfy **every** populated
+#: catalogue at once. The round fields are the calendar's (037); the reserve block is the
+#: lineup's (038). The lineup's team fields are deliberately absent: they are keyed by the
+#: league's own teams and are unknowable with no division in view, which is exactly why
+#: Layer 2 enumerates the lineup binding-free (research R4).
 VALID_SVG = (
     b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
     b'<text id="division_name">D</text>'
@@ -44,8 +45,13 @@ VALID_SVG = (
     b'<text id="round_1_race_name">R</text>'
     b'<text id="round_1_date">1 Jan</text>'
     b'<rect id="round_1_vertical_crop_point" x="0" y="675" width="1" height="1"/>'
+    b'<g id="reserve_group"><text id="reserve_driver_1_name">N</text></g>'
     b"</svg>"
 )
+
+#: The image types whose catalogue is populated, and to which Layer 2 therefore applies.
+#: Every other type is checked to Layer 1 alone and must be *reported* as such (XIV.9.4).
+POPULATED = {"calendar_template", "lineup_template"}
 VIEWBOX_ONLY_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"></svg>'
 NO_CANVAS_SVG = b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'
 NOT_SVG = b"this is not markup at all"
@@ -100,10 +106,10 @@ def test_all_fifteen_templates_valid_when_present(tmp_path, templates):
         report = _evaluate(config, tmp_path, template_key)
         assert report.valid, f"{template_key}: {report.reason}"
         assert report.failed_layer is None
-        # The calendar has a catalogue (037) so Layer 2 applies to it; the other
-        # fourteen have none and are checked to Layer 1 alone.
+        # The calendar (037) and the lineup (038) have catalogues, so Layer 2 applies to
+        # them; the other thirteen have none and are checked to Layer 1 alone.
         expected = (
-            LAYER_CATALOGUE if template_key == "calendar_template" else LAYER_RESOLUTION
+            LAYER_CATALOGUE if template_key in POPULATED else LAYER_RESOLUTION
         )
         assert report.depth_checked == expected, template_key
 
@@ -362,11 +368,11 @@ def test_declared_depth_follows_each_type_s_catalogue(tmp_path, templates):
     from services.image_validity_service import evaluate_all_templates
 
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
-    assert reports["calendar_template"].depth_checked == LAYER_CATALOGUE
+    assert all(reports[key].depth_checked == LAYER_CATALOGUE for key in POPULATED)
     assert all(
         report.depth_checked == LAYER_RESOLUTION
         for key, report in reports.items()
-        if key != "calendar_template"
+        if key not in POPULATED
     )
 
 
@@ -642,17 +648,20 @@ def catalogue_override():
     CATALOGUES.update(saved)
 
 
-def test_only_the_calendar_catalogue_is_populated():
-    """037 specifies the calendar; the other fourteen await their own sessions."""
+def test_only_the_specified_catalogues_are_populated():
+    """037 specifies the calendar and 038 the lineup; thirteen await their own sessions."""
     assert len(CATALOGUES) == len(TEMPLATE_COLUMNS)
-    assert not CATALOGUES["calendar_template"].is_empty
+    assert all(not CATALOGUES[key].is_empty for key in POPULATED)
     assert all(
         catalogue.is_empty
         for key, catalogue in CATALOGUES.items()
-        if key != "calendar_template"
+        if key not in POPULATED
     )
-    # The calendar's capacity is derived from its template, so it contributes nothing
-    # here: this feeds the seated-driver guard, and a calendar's collection is rounds.
+    # Neither populated type contributes here. The calendar's capacity is derived from
+    # its template and its collection is rounds; the lineup's teams and seats are fixed
+    # by the data and diverge rather than overflow, and its one template-fixed
+    # collection is the reserve seats. This map feeds the seated-driver guard, which
+    # neither of those is.
     assert declared_capacities() == {}
 
 
@@ -661,12 +670,14 @@ def test_layer_two_applies_to_a_populated_catalogue_and_skips_an_empty_one():
     assert layer.number == LAYER_CATALOGUE
     assert any(isinstance(entry, CatalogueLayer) for entry in LAYERS)
     assert layer.applies_to("calendar_template")
-    assert not layer.applies_to("lineup_template")
+    assert layer.applies_to("lineup_template")
+    # results-race has no catalogue yet, so Layer 2 *skips* rather than passes.
+    assert not layer.applies_to("results_race_template")
 
 
 def test_empty_catalogue_leaves_depth_at_layer_one(tmp_path, templates):
     """XIV.9.4 — checked to the depth available, never reported as fully valid."""
-    report = _evaluate(_config("templates"), tmp_path, "lineup_template")
+    report = _evaluate(_config("templates"), tmp_path, "results_race_template")
     assert report.valid
     assert report.depth_checked == LAYER_RESOLUTION
 
@@ -744,7 +755,7 @@ def test_layer_two_names_every_missing_field_not_a_count(
 
 
 def test_mixed_depths_are_reported_honestly(tmp_path, templates, catalogue_override):
-    """One type with a catalogue, fourteen without: the summary must not flatten them."""
+    """Types with a catalogue and types without: the summary must not flatten them."""
     (templates / "calendar_template.svg").write_bytes(FIELDED_SVG)
     catalogue_override(
         "calendar_template", FieldCatalogue(mandatory=frozenset({"season_name"}))
@@ -754,7 +765,7 @@ def test_mixed_depths_are_reported_honestly(tmp_path, templates, catalogue_overr
     summary = ImageValidityService.depth_summary(reports)
 
     assert reports["calendar_template"].depth_checked == LAYER_CATALOGUE
-    assert reports["lineup_template"].depth_checked == LAYER_RESOLUTION
+    assert reports["results_race_template"].depth_checked == LAYER_RESOLUTION
     assert "layer 1" in summary and "layer 2" in summary
 
 

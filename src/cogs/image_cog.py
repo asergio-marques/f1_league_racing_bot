@@ -177,12 +177,77 @@ class ImageCog(commands.Cog):
             await self._reject(interaction, label, problem.message())
             return
 
+        # A stand-in comparison, made *after* validity has passed. Constitution XIV.9
+        # (v4.3.0): where a moment can compare the template only against a stand-in for
+        # the data that will actually be drawn, a divergence is a **warning** and never a
+        # refusal. The filename is stored and the command succeeds.
+        warnings = await self._stand_in_warnings(interaction.guild_id, column, proposed)
+
         await self._config_service.set_field(interaction.guild_id, column, candidate)
 
-        await self._reply(
-            interaction, f"✅ **{label}** template set to `{candidate}`.\n✅ Valid."
-        )
+        lines = [f"✅ **{label}** template set to `{candidate}`.", "✅ Valid."]
+        if warnings:
+            lines.append("")
+            lines.append(
+                "⚠️ **Checked against the teams configured today**, there being no "
+                "division to check against yet. These are **not** refusals — the season "
+                "you are about to build may well be right — but they will fail "
+                "`/season review` if they still stand:"
+            )
+            lines += [f"  • {warning}" for warning in warnings[:8]]
+            if len(warnings) > 8:
+                lines.append(f"  • …and {len(warnings) - 8} more")
+
+        await self._reply(interaction, "\n".join(lines))
         await self._log(interaction, f"{label} template = {candidate}")
+
+    async def _stand_in_warnings(
+        self, server_id: int, column: str, proposed
+    ) -> list[str]:
+        """Divergences found against a stand-in for the division (research R5).
+
+        The lineup alone has team-keyed fields, so it is the only type with anything to
+        compare here. The stand-in is the season under setup's teams, or the server's team
+        configuration where there is no season; where neither exists, no comparison is
+        made and nothing is reported.
+
+        Never raises for its own reasons: a fault in this reader must not refuse a
+        template that validity has already passed.
+        """
+        if column != "lineup_template":
+            return []
+
+        try:
+            from types import SimpleNamespace
+
+            from services.image_lineup_service import binding_from_teams, divergences
+            from utils.svg_document import load_svg
+
+            teams = None
+            season = await self.bot.season_service.get_setup_season(server_id)  # type: ignore[attr-defined]
+            if season is not None:
+                divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+                for division in divisions:
+                    found = await self.bot.team_service.get_division_teams(division.id)  # type: ignore[attr-defined]
+                    if found:
+                        # `get_division_teams` answers with dicts; the binding reads
+                        # attributes, as it does for the DefaultTeam records below.
+                        teams = [SimpleNamespace(**entry) for entry in found]
+                        break
+            if teams is None:
+                teams = await self.bot.team_service.get_default_teams(server_id)  # type: ignore[attr-defined]
+            if not teams:
+                return []
+
+            from services.image_validity_service import TemplateContext
+
+            path = TemplateContext(
+                config=proposed, template_key=column, root=None
+            ).resolve()
+            return divergences(load_svg(path), binding_from_teams(teams))
+        except Exception as exc:  # noqa: BLE001
+            log.debug("lineup stand-in comparison could not run: %s", exc)
+            return []
 
     async def _reject(
         self, interaction: discord.Interaction, label: str, reason: str
@@ -862,21 +927,50 @@ class ImageCog(commands.Cog):
             return
 
         templates = TEST_KIND_TEMPLATES[kind.value]
+
+        # The lineup is the one kind whose sample is drawn against the league's own team
+        # configuration: its fields are keyed by team name, so a preview against invented
+        # teams would prove nothing (FR-029). Rejected outright where there is no team to
+        # draw — there is no lineup, and a generic render failure would not say so.
+        teams = None
+        if "lineup_template" in templates:
+            teams = await self.bot.team_service.get_default_teams(  # type: ignore[attr-defined]
+                interaction.guild_id
+            )
+            if not [t for t in teams if not getattr(t, "is_reserve", False)]:
+                await interaction.followup.send(
+                    "⛔ This server holds no team beyond the Reserve team, so there is no "
+                    "lineup to draw. Add one with `/team add` first.",
+                    ephemeral=True,
+                )
+                return
+
         outcomes = []
         for template_key in templates:
-            outcomes.append((template_key, await self._render_sample(interaction.guild_id, template_key)))
+            outcomes.append(
+                (
+                    template_key,
+                    await self._render_sample(
+                        interaction.guild_id, template_key, teams=teams
+                    ),
+                )
+            )
 
         await self._send_test_results(interaction, kind, outcomes)
 
-    async def _render_sample(self, server_id: int, template_key: str):
-        """Render one template from sample data. Reads no live season data (FR-036)."""
+    async def _render_sample(self, server_id: int, template_key: str, *, teams=None):
+        """Render one template from sample data. Reads no live season data (FR-036).
+
+        *teams* is the server's team configuration, needed by the lineup alone and None
+        for every other kind.
+        """
         from services.image_sample_data import build_spec
 
         service = self.bot.image_render_service  # type: ignore[attr-defined]
         return await service.render(
             server_id,
             template_key,
-            lambda root: build_spec(template_key, root),
+            lambda root: build_spec(template_key, root, teams=teams),
         )
 
     async def _send_test_results(

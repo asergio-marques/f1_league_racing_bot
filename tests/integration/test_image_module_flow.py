@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -192,8 +193,19 @@ VALID_SVG = (
     b'<text id="round_1_race_name">R</text>'
     b'<text id="round_1_date">1 Jan</text>'
     b'<rect id="round_1_vertical_crop_point" x="0" y="675" width="1" height="1"/>'
+    b'<g id="reserve_group"><text id="reserve_driver_1_name">N</text></g>'
     b"</svg>"
 )
+
+
+#: A server team configuration for the lineup's sample (FR-029). RICH_TEMPLATE declares
+#: the matching `team_test_team_` fields: a lineup template is authored against a league's
+#: own teams, so the template and the team list must agree or the render is fatal by
+#: design (Constitution XIV.12, data-fixed capacity).
+SAMPLE_TEAMS = [
+    SimpleNamespace(name="Test Team", max_seats=2, is_reserve=False),
+    SimpleNamespace(name="Reserve", max_seats=0, is_reserve=True),
+]
 
 
 @pytest.fixture()
@@ -300,6 +312,16 @@ RICH_TEMPLATE = (
     '<text id="round_2_race_name">r</text>'
     '<text id="round_2_date">d</text>'
     '<rect id="round_2_vertical_crop_point" x="0" y="400" width="1" height="1"/>'
+    # The lineup has a ratified catalogue too (038). Its reserve block is a singleton and
+    # therefore team-independent, which is the part a template carries whatever a league's
+    # teams are; its keyed team fields are supplied per division and are not asserted here.
+    '<text id="team_test_team_name">t</text>'
+    '<text id="team_test_team_driver_1_name">n</text>'
+    '<text id="team_test_team_driver_2_name">n</text>'
+    '<g id="reserve_group">'
+    '<text id="reserve_driver_1_name">n</text>'
+    '<text id="reserve_driver_2_name">n</text>'
+    "</g>"
     "</svg>"
 ).encode()
 
@@ -341,7 +363,10 @@ async def test_render_without_season(
             outcome = await service.render(
                 SERVER_ID,
                 template_key,
-                lambda root, k=template_key: build_spec(k, root),
+                # The lineup's sample is keyed to the league's own teams, so unlike every
+                # other kind it needs the server's team configuration (FR-029). The cog
+                # fetches it; here it is supplied directly.
+                lambda root, k=template_key: build_spec(k, root, teams=SAMPLE_TEAMS),
                 output_dir=tmp_path / kind,
             )
             assert outcome.problem is None, f"{kind}/{template_key}: {outcome.problem}"
@@ -1345,3 +1370,37 @@ def test_the_season_approval_refusal_is_ephemeral():
 
     tail = source[source.index(marker):source.index(marker) + 600]
     assert "ephemeral=True" in tail
+
+
+# ── 038: test mode changes nothing in the lineup path (T060, FR-035/36) ───
+
+
+def test_no_lineup_module_branches_on_test_mode():
+    """FR-035 — generation, posting and replacement behave identically in test mode.
+
+    Asserted structurally rather than by driving a test-mode season: the requirement is
+    that no branch on the flag *exists*, which is stronger than any single scenario.
+    """
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[2] / "src"
+    for relative in (
+        "services/image_lineup_service.py",
+        "services/image_lineup_post.py",
+    ):
+        text = (src / relative).read_text(encoding="utf-8")
+        assert "test_mode" not in text, relative
+
+
+def test_the_lineup_draws_a_test_driver_through_the_name_chain():
+    """FR-036 — a test driver is drawn by its test display name, not skipped."""
+    import sys as _sys
+
+    _sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+    from services.image_lineup_service import resolve_driver_name
+
+    # No Discord account and no signup record: the chain reaches the fourth link.
+    assert (
+        resolve_driver_name(discord_user_id="900001", test_display_name="Test Driver 1")
+        == "Test Driver 1"
+    )
