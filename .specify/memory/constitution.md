@@ -1,6 +1,71 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-12 — v3.0.0 → v4.0.0: MAJOR — assets are resolved apart from field classification]
+  Version change    : 3.0.0 → 4.0.0
+  Bump rationale    : MAJOR. Rule XIV.13 loses a branch and inverts a severity: a missing asset
+                      in a class with no fallback was survivable for an optional field and is
+                      now fatal for every field. A template authored against v3.0.0 — an
+                      optional flag slot, no fallback in the flags directory, no file for one
+                      nationality — rendered before this version and does not render after it.
+                      That is a backward-incompatible redefinition, which the versioning policy
+                      reserves MAJOR for.
+
+                      MINOR was considered and rejected: this removes a branch rather than
+                      expanding guidance. The practical blast radius is nil — the only code
+                      written against v3.0.0's XIV.13 was written earlier in this same session
+                      and is already updated — but semantic versioning describes the contract,
+                      not the disruption.
+  Feature branch    : 036-image-generation-conventions
+
+  Session context   : Closing out 036 surfaced a three-way divergence. The implementation always
+                      raised a notice on a fallback; v3.0.0 said the same; the wip-spec's
+                      twenty-two per-type statements each set their own severity for a missing
+                      asset, some non-fatal and some silent. Asked to settle it, the author
+                      ruled that assets are resolved uniformly and apart from the
+                      mandatory/optional distinction, which classifies template *fields* alone:
+
+                        asset found                   → drawn
+                        absent, class has a fallback  → fallback drawn, notice
+                        absent, class has none        → fatal, generation abandoned
+
+  Redefined rules (Principle XIV):
+    - **13. Asset resolution** — retitled from "…with a per-directory fallback image" to
+      "…and every class carries a fallback". Opens by separating asset from field in as many
+      words, since conflating them is the error this amendment corrects. The fallback becomes
+      an obligation (MUST cover every datum **or** hold `fallback.svg`) rather than a
+      permission (MAY hold one). The classification-dependent branch is struck and replaced by
+      a three-outcome table that holds whatever the receiving field's classification. A new
+      clause distinguishes an **absent datum** — where no asset is sought at all, and Rule 3
+      governs — from an absent **file**.
+
+  Modified sections :
+    - Principle XIV, Rule 3 — closing paragraph rewritten. Mandatory and optional are now stated
+      to classify fields of the template "and nothing else", saying nothing about the assets
+      placed upon them.
+    - Principle XIV, Rule 4 — the problem list drops "and the field is mandatory" from the
+      unresolved-asset entry. The notice list is unchanged: a fallback still raises one, and an
+      optional *value* that cannot be determined still empties its field.
+    - Principle XIV, Rationale — the paragraph arguing that aborting for one missing portrait
+      would make the module useless is withdrawn; it argued the case this amendment overturns.
+      Replaced with the field/asset split and why a single uniform asset rule is worth more to a
+      template author than a proportionate one.
+
+  Consistency       : `docs/wip-specs/image_module_specification.md` § "The fallback image" was
+                      written to this rule in the same session and agrees. `src/utils/svg_fill.py`
+                      no longer consults the catalogue during asset resolution, and its tests
+                      assert the uniform outcome for mandatory, optional and absent catalogues
+                      alike.
+
+  Deferred          : TODO(PER_TYPE_ASSET_SENTENCES) — roughly twenty-two statements in the
+                      wip-spec's per-image-type sections bundle "the datum is absent" together
+                      with "no matching file is found" and assign one severity to both. Those
+                      two cases now diverge. The Conventions section governs them correctly, so
+                      nothing is ambiguous in force, but each sentence reads as though it still
+                      decides the file case. They want splitting in the author's own voice.
+
+  Templates confirmed aligned: no change required. Principle count is unchanged at I–XIV.
+
 [2026-08-12 — v2.13.0 → v3.0.0: MAJOR — reconciliation with the author's specification]
   Version change    : 2.13.0 → 3.0.0
   Bump rationale    : MAJOR. Four rules of Principle XIV are redefined in ways that contradict
@@ -2159,16 +2224,17 @@ An image type's field catalogue (Rule 10) classifies each field **mandatory** or
 - A render MUST fail if the data supplies a field the template does not declare.
 - A field taken off the canvas by a group removal or a vertical crop is not unresolved.
 
-Mandatory is a statement about the template carrying the slot and the data yielding a value. It
-is not a statement that every datum owns a bespoke asset — that case is Rule 13's.
+Mandatory and optional classify **fields of the template**, and nothing else: whether the
+template must declare the field, and whether its value must be determinable. They say nothing
+about the *assets* placed upon fields. An asset that resolves to no file is governed by Rule 13
+alone, whatever the classification of the field receiving it.
 
 **4. Problems and notices are distinct outcomes.**
 
 - A **problem** is a disagreement between template and data (an unresolved mandatory field, an
-  unknown field, a missing template, an asset that resolves to no file where the asset class
-  carries no fallback and the field is mandatory, a collection larger than the template's
-  declared capacity, rasteriser failure). A problem MUST abort the render; no partial image may
-  be posted.
+  unknown field, a missing template, an asset that resolves to no file in a class carrying no
+  fallback, a collection larger than the template's declared capacity, rasteriser failure). A
+  problem MUST abort the render; no partial image may be posted.
 - A **notice** is a non-fatal degradation the render survives (a substituted font, a wrapped
   field reduced to its size floor and cut, a single-line field cut to its declared
   `inline-size`, a fallback image standing in for an asset that resolved to no file, an optional
@@ -2305,7 +2371,12 @@ match the members the template declares.
 A graphic that omits a driver without saying so is worse than no graphic, which is why the
 overflow case is fatal rather than a notice.
 
-**13. Asset resolution is by normalised slug, with a per-directory fallback image.**
+**13. Asset resolution is by normalised slug, and every class carries a fallback.**
+
+**An asset is not a field.** A field is a place in the template; an asset is a file placed upon
+one. Mandatory and optional classify **fields** (Rule 3) and nothing else. The rules of this
+Rule govern the resolution of an asset and are **NOT** qualified by the classification of the
+field receiving it. Conflating the two is the mistake this paragraph exists to prevent.
 
 An asset fill (Rule 2) resolves a datum to a file inside the directory configured for that
 asset class. Resolution MUST be deterministic and documented:
@@ -2316,19 +2387,31 @@ asset class. Resolution MUST be deterministic and documented:
   `Red Bull Racing` resolves to `red_bull_racing.svg`; `São Paulo` to `sao_paulo.svg`.
 - Each image type's catalogue MUST name the asset class for each of its image fields. A
   utility MUST NOT construct a path from anything but the configured directory and the slug.
-- Each asset directory MAY hold a generic **fallback image** under the reserved name
-  `fallback.svg`. Where the slug resolves to no file and a fallback is present, the fallback
-  MUST be used — for a mandatory field and an optional field alike — and a notice raised naming
-  the field and the datum that had no file of its own.
-- Where the slug resolves to no file and no fallback is present, the outcome follows the field's
-  classification (Rule 3): a problem for a mandatory field; for an optional field, the field is
-  emptied or its `_group` removed, with a notice.
+- Every asset directory MUST cover each datum of its class a league can present it with, or
+  hold a generic **fallback image** under the reserved name `fallback.svg` that covers those it
+  does not.
+
+Resolution has exactly **three** outcomes, and no others:
+
+| Outcome | Result |
+|---|---|
+| The normalised file is found | Placed upon the field |
+| Not found, the directory holds `fallback.svg` | Fallback placed upon the field; **notice** raised naming the field and the datum that had no file of its own |
+| Not found, no fallback | **Problem**. The render is abandoned |
+
+- These outcomes hold whatever the receiving field's classification. A missing asset is never
+  survived by emptying the field.
 - A fallback image is bound by Rule 6 exactly as any other asset: plain SVG, authored at the
   slot's aspect ratio, never padded by the generator.
+- An **absent datum** is a different matter entirely: where there is no value to look an asset
+  up by, no asset is sought, and the field is handled by its classification under Rule 3.
 
-The fallback is per asset *class*, not per template field, because the case it answers is a
-league whose asset set is incomplete — a nationality with no flag drawn for it — and that gap
-belongs to the directory, not to any one graphic.
+**Rationale**: the fallback is per asset *class*, not per template field, because the gap it
+answers belongs to the directory — a nationality with no flag drawn for it — and not to any one
+graphic. Making the miss fatal when even that is absent is what stops the module drawing a card
+with a hole in it: one generic file per directory is a trivial thing to supply, and a league
+that has supplied neither it nor the asset has an incomplete set rather than a graphic the bot
+should quietly degrade.
 
 **14. A generated image is verified as a PNG.**
 
@@ -2357,12 +2440,16 @@ first utility and is expensive to retrofit once graphics have been signed off on
 evidence.
 
 The mandatory/optional split running through Rules 3, 10 and 13 is what keeps the failure
-behaviour proportionate. Aborting a render because one driver of twenty has no portrait drawn
-for them would make the module useless to a league that has not finished its asset set, while
-drawing a standings table with a blank where the points should be would be worse than drawing
-nothing. Mandatory says the graphic is meaningless without this; optional says the graphic is
-merely plainer. The per-directory fallback then rescues the commonest case of all — an asset set
-that is complete in shape but not in coverage.
+behaviour proportionate — but it applies to **fields**, and only to fields. Mandatory says the
+graphic is meaningless without this value; optional says the graphic is merely plainer without
+it. Drawing a standings table with a blank where the points should be would be worse than
+drawing nothing, while a sanctions block that never appears costs a reader nothing.
+
+Assets are governed separately (Rule 13), and uniformly. A league whose asset set does not cover
+every value it will present drops one `fallback.svg` into that directory and is done; a league
+that has supplied neither the asset nor a fallback has an incomplete set, and the module says so
+rather than drawing a card with a hole in it. One rule for every asset class, with no branch on
+the field receiving it, is the whole of what makes that predictable to a template author.
 
 ## Bot Behavior Standards
 
@@ -2915,4 +3002,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 3.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-12
+**Version**: 4.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-12
