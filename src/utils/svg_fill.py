@@ -79,27 +79,17 @@ class FillSpec:
     #: asset class -> the configured directory it resolves in.
     asset_directories: dict[str, Path] = field(default_factory=dict)
 
-    #: The image type's field catalogue, when known. Supplying it lets `fill` report a
-    #: template field the data left unfilled, and tells it whether an unresolved asset is
-    #: fatal or merely a notice (FR-044).
+    #: The image type's field catalogue, when known.
+    #:
+    #: Mandatory and optional classify the **fields of the template**: whether the
+    #: template must declare the field, and whether its value must be determinable.
+    #: Asset resolution is a separate matter and does not consult it — see the asset
+    #: fill below.
     catalogue: object | None = None
 
     #: The image type's field catalogue, when known. Supplying it lets `fill` report a
     #: template field the data left unfilled; without it only unknown fields are caught.
     expected_fields: set[str] | None = None
-
-    def is_optional(self, field_id: str) -> bool:
-        """Whether the catalogue classifies *field_id* optional.
-
-        With no catalogue, a field is treated as optional: this increment ships fifteen
-        empty catalogues, and refusing to draw anything until they are populated would
-        make the module useless in the meantime. Once a catalogue exists it is the
-        authority, and a mandatory field's miss becomes fatal (FR-011, FR-013).
-        """
-        catalogue = self.catalogue
-        if catalogue is None:
-            return True
-        return field_id not in catalogue.all_mandatory_ids()
 
 
 def fill(spec: FillSpec) -> FillResult:
@@ -195,9 +185,12 @@ def fill(spec: FillSpec) -> FillResult:
 
     # ── 4b. Image fill by asset class and datum ───────────────────────────
     # The datum is resolved through the slug rule inside the class's configured
-    # directory (FR-042). What a miss costs depends on two things and only two: whether
-    # the class carries a fallback, and whether the catalogue calls the field mandatory.
-    vacated: list[str] = []
+    # directory (FR-042). Three outcomes, and the field's mandatory/optional
+    # classification bears on none of them:
+    #
+    #   file found            → drawn
+    #   file absent, fallback → fallback drawn, notice raised
+    #   file absent, no fallback → fatal; the generation is abandoned
     for field_id, (asset_class, datum) in spec.image_data.items():
         element = index.resolve(field_id)
         if element is None:
@@ -246,32 +239,17 @@ def fill(spec: FillSpec) -> FillResult:
             )
             continue
 
-        # Nothing to draw and nothing to stand in for it.
-        if not spec.is_optional(field_id):
-            unresolved.append(
-                f"field `{field_id}` needs a `{asset_class}` image for “{datum}”, "
-                f"and neither `{resolution.slug or datum}.svg` nor a fallback is there"
-            )
-            continue
-
-        vacated.append(field_id)
-        notices.append(
-            RenderNotice(
-                image_type=spec.image_type,
-                notice_kind=NOTICE_OPTIONAL_FIELD_EMPTIED,
-                detail=(
-                    f"no `{asset_class}` image for “{datum}” and no fallback; the field "
-                    f"was left out."
-                ),
-                field_id=field_id,
-            )
+        # The asset is missing and its class carries no fallback: fatal, and the
+        # generation is abandoned.
+        #
+        # An asset class covers every datum a league can present it with, or it carries
+        # a `fallback.svg` that does. Neither is a gap in the league's asset set, and
+        # not something to draw around.
+        unresolved.append(
+            f"field `{field_id}` needs a `{asset_class}` image for “{datum}”, and "
+            f"neither `{resolution.slug or datum}.svg` nor a `fallback.svg` is in that "
+            f"directory"
         )
-
-    for field_id in vacated:
-        _vacate(index, field_id, spec.image_type, removed_ids, notify=False)
-        consumed.add(field_id)
-    if vacated:
-        index = FieldIndex(root)
 
     # ── 5 & 6. Text fill, with wrap and inline-size bounds ────────────────
     for field_id, value in spec.text.items():

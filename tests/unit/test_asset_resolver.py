@@ -236,41 +236,54 @@ def test_a_mandatory_asset_with_no_file_and_no_fallback_is_fatal(flags):
     assert "Portuguese" in result.unresolved[0]
 
 
-def test_an_optional_asset_with_no_file_and_no_fallback_is_left_out(flags):
-    """FR-044 — the graphic is merely plainer."""
-    result = render_with_assets(
-        '<image id="row_1_flag"/>',
-        image_data={"row_1_flag": ("flag", "Portuguese")},
-        asset_directories={"flag": flags},
-        catalogue=FieldCatalogue(optional=frozenset({"row_1_flag"})),
-    )
-
-    assert result.unresolved == []
-    assert {n.notice_kind for n in result.notices} == {"OPTIONAL_FIELD_EMPTIED"}
-
-
-def test_an_optional_asset_miss_removes_its_group_when_declared(flags):
-    result = render_with_assets(
-        '<g id="row_1_flag_group"><rect id="row_1_flag_plate"/>'
-        '<image id="row_1_flag"/></g>',
-        image_data={"row_1_flag": ("flag", "Portuguese")},
-        asset_directories={"flag": flags},
-        catalogue=FieldCatalogue(optional=frozenset({"row_1_flag"})),
-    )
-    from utils.svg_document import FieldIndex
-
-    index = FieldIndex(parse_svg_bytes(result.svg))
-    assert index.resolve("row_1_flag_plate") is None   # the plate went with it
+def test_a_missing_asset_with_no_fallback_is_fatal_whatever_the_field(flags):
+    """Asset resolution does not consult mandatory/optional. Uniform, both ways."""
+    for catalogue in (
+        FieldCatalogue(mandatory=frozenset({"row_1_flag"})),
+        FieldCatalogue(optional=frozenset({"row_1_flag"})),
+        None,
+    ):
+        result = render_with_assets(
+            '<image id="row_1_flag"/>',
+            image_data={"row_1_flag": ("flag", "Portuguese")},
+            asset_directories={"flag": flags},
+            **({"catalogue": catalogue} if catalogue is not None else {}),
+        )
+        assert result.unresolved, f"should be fatal for {catalogue}"
+        assert "fallback.svg" in result.unresolved[0]
 
 
-def test_with_no_catalogue_a_miss_is_treated_as_optional(flags):
-    """Fifteen empty catalogues ship in this increment; the module must stay usable."""
+def test_the_fatal_miss_names_the_class_the_datum_and_both_files_looked_for(flags):
     result = render_with_assets(
         '<image id="row_1_flag"/>',
         image_data={"row_1_flag": ("flag", "Portuguese")},
         asset_directories={"flag": flags},
     )
-    assert result.unresolved == []
+    detail = result.unresolved[0]
+
+    assert "row_1_flag" in detail
+    assert "flag" in detail
+    assert "Portuguese" in detail
+    assert "portuguese.svg" in detail
+    assert "fallback.svg" in detail
+
+
+def test_a_fallback_rescues_a_field_of_either_classification(flags):
+    """The one thing that decides the outcome is whether the class carries a fallback."""
+    (flags / FALLBACK_ASSET_NAME).write_bytes(SVG)
+
+    for catalogue in (
+        FieldCatalogue(mandatory=frozenset({"row_1_flag"})),
+        FieldCatalogue(optional=frozenset({"row_1_flag"})),
+    ):
+        result = render_with_assets(
+            '<image id="row_1_flag"/>',
+            image_data={"row_1_flag": ("flag", "Portuguese")},
+            asset_directories={"flag": flags},
+            catalogue=catalogue,
+        )
+        assert result.unresolved == []
+        assert {n.notice_kind for n in result.notices} == {"ASSET_FALLBACK_USED"}
 
 
 def test_an_unconfigured_asset_class_is_reported(flags):
