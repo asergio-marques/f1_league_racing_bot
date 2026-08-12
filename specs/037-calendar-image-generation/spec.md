@@ -166,10 +166,17 @@ persisted.
 - **A template whose last declared round's crop point does not stand at the declared height.** See
   the clarification below.
 - **A round of the mystery format.** Drawn and marked as such; never a reason to refuse a graphic.
-- **A round for which no time is recorded.** Its time field is emptied, not filled with a dash.
+- **A round for which no time is recorded.** Its time field would be emptied, not filled with a dash —
+  but no round records no time, a round holding its date and time as one moment with no flag for a
+  time not yet known. That is a deliberate design decision, so the case cannot arise, needs no
+  calendar-specific handling, and is not fabricated in the test data.
 - **A track with no image file and no `fallback.svg` in the directory.** Fatal — the graphic is not
   produced and the division falls back to text.
 - **A division holding no round at all.** Fatal, and named as such.
+- **A round whose track name matches no track record.** Rounds hold a track *name*, not an id, so a
+  track renamed or removed mid-season leaves the mandatory country and grand prix name
+  undeterminable. Fatal, and that division falls back to the textual calendar — which has no such
+  failure mode, printing the name the round itself records.
 - **The rasteriser is absent from the machine.** Rejected before any render is attempted, as
   `/images test` already does today.
 - **Two divisions of one season, one drawable and one not.** The failure of one must not prevent the
@@ -252,9 +259,9 @@ persisted.
 **Test data**
 
 - **FR-021**: `/images test calendar` MUST build the fabricated division described in the wip-spec's
-  § "Test data" — one round fewer than the template declares, spanning the formats, a round with no
-  time, a round whose track has no image, and dates across more than one month — replacing the
-  generic sample data that command draws on today.
+  § "Test data" — one round fewer than the template declares, spanning the formats, a round whose
+  track has no image, and dates across more than one month — replacing the generic sample data that
+  command draws on today.
 - **FR-022**: `/images test calendar` MUST be rejected with a clear error where the fabricated
   division would hold no round or the server's track list is empty, and MUST NOT fall back to text on
   a fatal error.
@@ -330,8 +337,11 @@ persisted.
   other kinds as they are.
 - **`/division calendar sync` is modelled on `results standings sync` and `results rounds sync`**,
   which already exist, and follows their permission model and command shape.
-- **The round record is the authority for whether a round has a time**; a round with no time recorded
-  empties its time field rather than the field being absent from the template.
+- **A round always records a time.** `scheduled_at` is a single moment carrying both date and time,
+  and there is deliberately no flag for a time not yet known. The wip-spec's emptying provision
+  therefore stands against a round shape the bot does not hold; should that shape ever exist, the
+  engine's generic handling of an optional field whose value cannot be determined already empties it,
+  so no calendar-specific branch is owed either way.
 - **No new configuration is introduced.** Every value this feature reads — template filename, track
   image directory, date format, time format, time zone, the `calendar` toggle — was configured in the
   035 increment.
