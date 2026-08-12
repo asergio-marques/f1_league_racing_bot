@@ -1111,12 +1111,17 @@ Anything the render survived is listed alongside the image — a substituted fon
 
 A template is a plain SVG whose declared `width` and `height` are the canvas. The bot addresses elements by `id` and does exactly six things: fill text, swap an image's `href`, recolour a field, remove a group, crop the canvas vertically at a marker, and wrap text inside a rectangle named by `shape-inside`.
 
-Two conventions matter when authoring one:
+**Text bounds.** A field that receives a Discord display name should declare an `inline-size`; it is the only bound on a name of a length no league controls. Overflow is cut at a word boundary and ellipsised. A field that receives prose should declare `shape-inside` pointing at a rectangle. The text is set down half a pixel at a time until it fits, and at half the declared size is cut with an ellipsis.
 
-- A field that receives a Discord display name should declare an `inline-size`; it is the only bound on a name of a length no league controls. Overflow is cut at a word boundary and ellipsised.
-- A field that receives prose should declare `shape-inside` pointing at a rectangle. The text is set down half a pixel at a time until it fits, and at half the declared size is cut with an ellipsis.
+**Naming.** Ids are lowercase `snake_case` and say what the field is, not where it sits — `driver_name`, not `text_47`. Anything belonging to row *N* of a table carries a zero-padded index: the row group is `standings_row_03`, a field inside it is `standings_row_03_points`. Rows are numbered from `01` with no gaps. If a table can be cut short, put a crop marker at the top edge of each row and name it `crop_standings_row_03`.
 
-Assets are plain SVG, authored at exactly the aspect ratio of the slot they fill — the generator does not pad, so an asset of the wrong shape will be stretched.
+**Tables.** A table template provides a fixed number of row slots, and that count is what the bot builds against. A season with fewer entries than slots leaves the spare rows removed or the canvas cropped. A season with **more** entries than the template has slots is an error: the bot posts its text output instead and tells you the count, the capacity and which template was too small. Size a table for the largest grid the league will run.
+
+**Assets.** Assets are plain SVG, authored at exactly the aspect ratio of the slot they fill — the generator does not pad, so an asset of the wrong shape will be stretched. Filenames are a slug of the thing they depict: lowercased, accents dropped, runs of punctuation and spaces collapsed to one hyphen, `.svg` on the end. `Red Bull Racing` is looked up as `red-bull-racing.svg` in the configured team directory. A slot may name a fallback asset for the case where nothing matches; slots that do so fall back and log a notice, slots that do not make it an error and the bot posts text.
+
+> **Not yet enforced.** `/images config view` checks templates only to layer 1 — the file resolves, parses, and declares a canvas. Nothing yet verifies that a template carries the right ids, that its row count matches, or that an asset exists. Those checks arrive with each image type. Following the conventions above now is what makes them pass later.
+
+**Checking your work.** Look at the exported PNG, not the SVG in a browser. They disagree on precisely the things worth checking — flowed text, substituted fonts, and the crop. `/images test` returns the PNG.
 
 ---
 

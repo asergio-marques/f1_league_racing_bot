@@ -1,6 +1,80 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-12 — v2.12.1 → v2.13.0: MINOR — the rules the per-type generators will each need]
+  Version change    : 2.12.1 → 2.13.0
+  Bump rationale    : MINOR — five rules added to Principle XIV as materially expanded
+                      guidance, plus one notice kind. No principle removed; no principle
+                      redefined incompatibly. Principle count is still I–XIV.
+  Feature branch    : 036-image-generation-conventions
+
+  Session context   : The 035-image-module increment built the engine, the config surface
+                      and `/images test`. This session audited Principle XIV against what
+                      was built, before the first per-image-type generation utility is
+                      written. Rules 1–9 were found present and honoured by the code. Four
+                      decisions every future utility depends on were found ungoverned, and
+                      were put to the author:
+
+                        Q1 (field catalogue home)  → a code constant per image type, in one
+                                                     shared declaration module. Not a
+                                                     sidecar file, not per-call-site.
+                        Q2 (collection overflow)   → under-fill crops or removes; over-fill
+                                                     is a problem and falls back to text.
+                                                     Not truncation, not continuation images.
+                        Q3 (id convention)         → binding: snake_case, with a zero-padded
+                                                     `_NN` index on repeating collections.
+                        Q4 (asset resolution)      → documented slug, plus an optional
+                                                     template-declared placeholder that turns
+                                                     a miss into a notice rather than a
+                                                     problem.
+
+  Added rules (Principle XIV):
+    - **10. Field catalogue as a code constant** — one entry per image type in a single
+      shared module; the same object read by the fill pipeline (Rule 3) and validity Layer 2
+      (Rule 9); no utility merges without one.
+    - **11. Template id convention** — lowercase semantic snake_case; `<collection>_<NN>` and
+      `<collection>_<NN>_<field>` for repeating members, contiguous from `01`;
+      `crop_<collection>_<NN>` for the matching crop point. Catalogues express a collection
+      as prefix + capacity, never as an enumerated id list.
+    - **12. Declared capacity, fatal overflow** — the template states how many member slots a
+      varying list has. Fewer data → remove or crop. More data → a problem naming count,
+      capacity and template. No silent truncation, no continuation images.
+    - **13. Slug asset resolution with optional placeholder** — deterministic lowercase,
+      accent-folded, hyphen-collapsed slug + `.svg` inside the configured directory. A
+      template may declare a per-field placeholder; a miss with a placeholder is a notice,
+      a miss without one is a problem. Placeholders are bound by Rule 6.
+    - **14. Verification is by PNG** — any check that a render is correct MUST be made against
+      the rasterised PNG. A browser view of the filled SVG is not evidence; the two disagree
+      on flowed text, font substitution and the crop.
+
+  Modified sections :
+    - Principle XIV, Rule 4 — the problem list now names "an asset that does not resolve and
+      for which the template declares no placeholder" and "a collection larger than the
+      template's declared capacity"; the notice list gains the placeholder substitution. A
+      note fixes the word *placeholder* to one meaning (a missing **asset**'s substitute),
+      since Rule 4 also forbids posting a stand-in for a whole render.
+    - Principle XIV, Rationale — extended to cover Rules 10–14.
+    - Data & State Management → New Entities (v2.11.0): **RenderNotice.notice_kind** gains
+      `ASSET_PLACEHOLDER_USED`.
+
+  Compatibility     : Backward compatible with what is built. `FillSpec.expected_fields` is
+                      already optional and already the catalogue's shape; Rule 10 makes its
+                      source authoritative rather than changing its type. Validity layers 2–4
+                      remain reserved and unenforced — Rule 10 supplies the artefact Layer 2
+                      has been waiting on, but does not ratify the layer.
+
+  Deferred          : TODO(WIP_SPEC_RECONCILIATION) — `docs/wip-specs/image_module_specification.md`
+                      is deny-listed in `.claude/settings.json` and was unreadable this session,
+                      as it was during 035 specification and planning (see that plan's Open
+                      Decisions). Rules 10–13 were derived from Principle XIV and the author's
+                      answers, not from that document. If it already fixes an id convention, a
+                      slug rule or a capacity policy, reconcile before the first utility is
+                      written; the risk is contradiction, not merely omission.
+
+  Templates confirmed aligned: no change required. plan-template.md's Constitution Check reads
+  the principle list at runtime and the count is unchanged; spec-template.md and
+  tasks-template.md carry no per-principle text.
+
 [2026-08-11 — v2.12.0 → v2.12.1: PATCH — entity re-grained to match what was built]
   Version change    : 2.12.0 → 2.12.1
   Bump rationale    : PATCH — One entity renamed and re-grained to match the delivered
@@ -1986,12 +2060,19 @@ from the canvas by a group removal or a vertical crop is not an unresolved field
 **4. Problems and notices are distinct outcomes.**
 
 - A **problem** is a disagreement between template and data (unresolved field, unknown
-  field, missing template, missing asset, rasteriser failure). A problem MUST abort the
-  render; no partial or placeholder image may be posted.
+  field, missing template, an asset that does not resolve and for which the template
+  declares no placeholder, a collection larger than the template's declared capacity,
+  rasteriser failure). A problem MUST abort the render; neither a partial image nor a
+  stand-in for the render as a whole may be posted.
 - A **notice** is a non-fatal degradation the render survives (a substituted font, a wrapped
   field reduced to its size floor and cut, a single-line field cut to its declared
-  `inline-size`). Notices MUST NOT abort the render and MUST be reported to the calculation
-  log channel (Principle V).
+  `inline-size`, a declared placeholder standing in for an asset that did not resolve).
+  Notices MUST NOT abort the render and MUST be reported to the calculation log channel
+  (Principle V).
+
+The word *placeholder* is used in exactly one sense throughout this principle: a
+template-declared substitute for a single missing **asset** (Rule 13). There is no such
+thing as a placeholder image for a whole render.
 
 **5. Text bounds are declared by the template.**
 
@@ -2052,6 +2133,79 @@ The following MUST hold as layers are added:
 4. **No silent pass**: an image type for which a deeper layer is not yet ratified MUST be
    reported as checked to the depth currently available, not as fully valid.
 
+**10. Every image type MUST declare a field catalogue, as a code constant.**
+
+An image type's field catalogue is the authoritative list of the `@id` values its render
+addresses, split by the operation each id receives. It MUST be declared as a code constant in
+a single shared declaration module, one entry per image type. It MUST NOT be assembled inline
+by the utility that renders the type, supplied per call site, or stored as a sidecar file
+beside the template.
+
+- A generation utility MUST NOT be merged for an image type whose catalogue is not declared.
+- The catalogue is the *same object* consulted by the fill pipeline (Rule 3) and by validity
+  Layer 2 (Rule 9). Two lists that could disagree are not a catalogue.
+- Adding an image type MUST be one catalogue entry plus one utility. It MUST NOT require a
+  change to the fill pipeline, the validity registry, or the report renderer.
+
+**11. Template ids follow a fixed convention.**
+
+Because ids are the only contract (Rule 2) and templates are hand-authored, the convention is
+binding on both the author and the code:
+
+- Ids are lowercase `snake_case`, semantic rather than positional (`driver_name`, never
+  `text_47`).
+- An element belonging to member *N* of a repeating collection MUST carry a zero-padded
+  two-digit index in its id: `<collection>_<NN>` for the member's group, and
+  `<collection>_<NN>_<field>` for a field within it — for example `standings_row_03_points`.
+  Numbering starts at `01` and MUST be contiguous.
+- A crop point (Rule 2) addressing a collection MUST be named `crop_<collection>_<NN>` and
+  MUST sit at the top edge of member *NN*.
+
+A catalogue (Rule 10) MUST express a repeating collection as a prefix and a capacity, not as
+an enumerated list of its members' ids.
+
+**12. Collection capacity is declared by the template; overflow is a problem.**
+
+Any image type drawing a list whose length varies by league MUST state that list's capacity —
+the number of member slots the template provides — in its catalogue, and that number MUST
+match the members the template declares.
+
+- **Fewer data than slots**: the unused members MUST be removed by group removal, or the
+  canvas cut at the corresponding crop point (Rule 2). Members taken off the canvas this way
+  are not unresolved fields (Rule 3).
+- **More data than slots**: a **problem** (Rule 4). The render aborts and the information is
+  posted as text (Rule 7). The problem MUST report the data count, the declared capacity, and
+  the template at fault.
+- Overflow MUST NOT be silently truncated, and MUST NOT be spilled into continuation images.
+
+A graphic that omits a driver without saying so is worse than no graphic, which is why the
+overflow case is fatal rather than a notice.
+
+**13. Asset resolution is by declared slug, with an optional declared placeholder.**
+
+An asset fill (Rule 2) resolves a datum to a file inside the directory configured for that
+asset class. Resolution MUST be deterministic and documented:
+
+- The filename is a slug derived from the datum — lowercased, accents folded to ASCII,
+  runs of non-alphanumeric characters collapsed to a single hyphen, leading and trailing
+  hyphens dropped — with the `.svg` extension. `Red Bull Racing` resolves to
+  `red-bull-racing.svg`.
+- Each image type's catalogue MUST name the asset class for each of its image fields. A
+  utility MUST NOT construct a path from anything but the configured directory and the slug.
+- A template MAY declare a **placeholder** asset for an individual image field. When the slug
+  does not resolve and a placeholder is declared, the placeholder is used and a notice is
+  raised (Rule 4). When no placeholder is declared, the miss is a problem.
+- A placeholder is bound by Rule 6 exactly as any other asset: authored at the slot's aspect
+  ratio, plain SVG, never padded by the generator.
+
+**14. A generated image is verified as a PNG.**
+
+Any check that a template or a utility produces the intended graphic — during development,
+in a test, or in a validity trial render (Rule 9) — MUST be performed against the rasterised
+PNG. Inspecting the filled SVG in a browser does not satisfy this rule and MUST NOT be
+offered as evidence that a render is correct. The two disagree in exactly the cases that
+matter: flowed text, substituted fonts, and the crop.
+
 **Rationale**: Separating layout (the template) from data (the fill) is what allows a league
 to restyle its graphics without a code change and what keeps the rendering code independent
 of the number of image types. Failing loudly on a template/data disagreement while surviving
@@ -2059,6 +2213,16 @@ a font substitution is the distinction that makes the module safe to run unatten
 first is a defect that would post a wrong graphic, the second is a cosmetic degradation a
 league can act on at leisure. Requiring the text path to remain authoritative ensures that
 adding graphics never reduces what the bot can tell a league.
+
+Rules 10–14 exist because the module is about to grow one generation utility per image type,
+written across many sessions. A catalogue that is a shared constant, an id convention the
+code can construct rather than be told, a capacity the template states, and a single slug
+rule are what let fifteen utilities be fifteen small entries rather than fifteen private
+conventions — and are what make validity Layer 2 ratifiable at all, since a check can only be
+written against a declaration that exists. Verifying through the rasteriser rather than the
+browser is in this list for the same reason: it is a rule that costs nothing to hold from the
+first utility and is expensive to retrofit once graphics have been signed off on the wrong
+evidence.
 
 ## Bot Behavior Standards
 
@@ -2448,7 +2612,8 @@ constant per aspect rather than a stored column, since it never varies per serve
 - `server_id` (TEXT)
 - `image_type` (TEXT)
 - `rendered_at` (TEXT — UTC ISO 8601)
-- `notice_kind` (ENUM: FONT_SUBSTITUTED / WRAP_TRUNCATED / INLINE_SIZE_TRUNCATED)
+- `notice_kind` (ENUM: FONT_SUBSTITUTED / WRAP_TRUNCATED / INLINE_SIZE_TRUNCATED /
+  ASSET_PLACEHOLDER_USED)
 - `field_id` (TEXT, nullable) — the template `@id` the notice concerns; null for
   render-wide notices.
 - `detail` (TEXT) — human-readable description posted to the calculation log channel.
@@ -2610,4 +2775,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 2.12.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-11
+**Version**: 2.13.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-12
