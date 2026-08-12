@@ -411,5 +411,9 @@ No new entity is introduced and none is amended. This feature reads what already
   is a second presentation of one output, not a second output.
 - Any change to the standings posted alongside a round's results, which the standings section of the
   wip-spec governs.
-- Any change to the textual results path beyond making the values it already renders reachable for
-  the graphic.
+- Any change to the textual results path beyond two things: making the values it already renders
+  reachable for the graphic, and **correcting the precision with which it renders a time penalty**.
+  The wip-spec states that rule for a penalty "wherever one is placed", and the textual table
+  currently truncates a fractional penalty to a whole second — so a shared renderer cannot be
+  correct for the graphic while leaving the text path as it stands. Recorded in
+  [plan.md](./plan.md) § Complexity Tracking and in [research.md](./research.md) § R5.
