@@ -136,14 +136,20 @@ These hold for every image type of the module and are stated here rather than re
 - Any field named in a catalogue below, mandatory or optional, may be wrapped in a group bearing the name of that field followed by "_group".
 - Where a template declares such a group, the group shall be removed in its entirety wherever the rules below would have the field emptied or removed, and the field itself shall be left untouched. Where it declares none, the field is emptied or removed as those rules state.
 - The groups named explicitly in the catalogues below are those a template is expected to declare. They are not the only ones it may declare.
+- A group is ordinarily optional, being chrome around a field. A catalogue below may instead declare a group mandatory, where the block it wraps is one the template shall provide and the data may nonetheless have nothing to put in it, as the reserve block of a lineup is. A mandatory group absent from the template is a fatal error; its removal when the data are empty is the ordinary behaviour of a group and is no error at all.
 - A group exists so that the static chrome standing around a field - a label, a separator, a card, a plate - leaves the graphic together with the value it introduces. A template drawing such chrome around a field that may be emptied shall declare the group.
 - The canvas is not resized by the removal of a group. A block that may be removed belongs where its removal is survivable.
 
 ### The capacity of a collection
-- A collection is a set of fields a template repeats, its members bearing an ordinal: the rounds of a calendar, the rows of a classification, the sessions of a forecast, the cars of a team. The number of members a template declares is the capacity of that collection.
-- The members of a collection are numbered continuously from 1. A gap in the numbering is a fatal error.
-- Members declared in excess of the data shall be removed, by the removable group of the member where the template declares one and field by field where it does not, and no error shall be reported. The calendar graphic removes them by its vertical crop instead, as defined in that section.
-- Data in excess of the members declared is a fatal error, naming the count of the data, the capacity of the template, the file at fault and the members that would have been dropped.
+- A collection is a set of fields a template repeats: the rounds of a calendar, the rows of a classification, the sessions of a forecast, the cars of a team, the teams of a lineup.
+- A member of a collection is distinguished either by an ordinal or by a key, and never by both within one collection. The ordinal is the ordinary form. The key is the normalized form of a datum of the league, as the teams of a lineup are keyed by the normalized name of the team, and is used only where a member is hand-designed as itself and an ordinal could not say which member it is. A collection may also hold a single member bearing no distinguisher at all, as the reserve team of a lineup does; the name of such a member is reserved, and no keyed member of a sibling collection may normalize to it.
+- The members of a collection bearing an ordinal are numbered continuously from 1. A gap in the numbering is a fatal error. Keyed members bear no order, and the order in which they are drawn is decided by the layout of the template alone.
+- The capacity of a collection is fixed either by the template or by the data, and each graphic states which for each of its collections.
+    - Fixed by the template, the number of members the template declares is the capacity and the data are measured against it. The rounds of a calendar, the rows of a classification and the seats of a reserve team are of this kind.
+    - Fixed by the data, a configured value decides the capacity and the template shall declare exactly those members. The teams of a division and the seats configured for a team are of this kind.
+- Where the capacity is fixed by the template, members declared in excess of the data shall be removed, by the removable group of the member where the template declares one and field by field where it does not, and no error shall be reported. The calendar graphic removes them by its vertical crop instead, as defined in that section.
+- Where the capacity is fixed by the template, data in excess of the members declared is a fatal error, naming the count of the data, the capacity of the template, the file at fault and the members that would have been dropped.
+- Where the capacity is fixed by the data, a divergence in either direction is a fatal error naming the member or the slot at fault, both sides being declared and both knowable. A member the data hold but leave empty, such as a team that has recruited nobody, is not a divergence and is drawn empty.
 - This holds for every collection of every graphic alike, whether the collection is the subject of the graphic or stands beside it.
 - A command that would carry a division past the capacity of a configured template shall be rejected, and the change it carried not applied.
 - Overflow shall not be truncated in silence, and shall not be spilled into a second graphic.
@@ -157,6 +163,10 @@ These hold for every image type of the module and are stated here rather than re
     - a command that triggers a generation which meets one shall be rejected, and nothing posted in consequence of it.
 - The fallback to the traditional textual manner defined in the configuration section applies to a posting no user commanded: one reached at a horizon, at a schedule or at startup. A user who commanded a posting is told what is at fault and invited to correct it, which a silent fall back to text would deny them.
 - A non-fatal error is reported in the logging channel of the server, and additionally alongside the output of the command where a command triggered the generation. It is never reported in a channel read by the drivers of the league.
+- A field emptied or removed because the league switched the collection of that datum off at its source is no error at all, and nothing shall be reported for it. Nothing has degraded: the graphic draws what the league configured it to draw. The suppression requires a configuration switch that turns the datum off at its source, as "signup nationality toggle" does for the nationality of a driver, and shall be stated for the field it applies to. It does not extend to a datum the league collects and merely happens not to hold for one member, which is an ordinary emptied field and reports as one.
+- The moments at which a template is verified differ in the data available to them, and the severity of a divergence follows from that:
+    - where the moment holds the data that will be drawn, a divergence is of the severity that moment carries above: rejection of the command, refusal of the approval of the season, or failure of the generation;
+    - where the moment can compare the template only against a stand-in for the data that will be drawn, a divergence is a warning and the command succeeds. Season review compares a calendar template against the most demanding division of the season, the division actually drawn being decided later; the command naming a lineup template has no division to compare against at all.
 
 ### The canvas
 - The width and the height a template declares are the width and the height at which it is drawn, and the conversion to PNG shall honour them. No canvas is assumed of any template.
@@ -317,11 +327,13 @@ These hold for every image type of the module and are stated here rather than re
 - Every division holds a reserve team, created together with the division and removable by no command, so a template omitting the reserve block would always omit a team the division fields. A league making no use of reserves is not thereby forced to display an empty block, as "reserve_group" is removed whenever the division fields no reserve drivers.
 - A driver may occupy at most one seat of one team of a given division, the reserve team included, and shall therefore never be placed twice in the same graphic. A driver assigned in more than one division shall be placed in the graphic of each of them.
 - The fields of this graphic are named after the teams of the league, and one template file serves every division of the season. The divisions of a season shall therefore field the same teams, and the same number of seats in each, for the lineup graphic to be drawn at all; a season whose divisions differ in either respect is one for which no single file can be authored.
+    - This requirement shall be enforced only where the image module is enabled and the "lineup" toggle of "images config toggle" is on. It is a restriction on how a league may compose its season, and a league drawing no lineup graphic has no reason to accept it.
 - The default filename "lineup_template.svg" names a file the league is expected to author against its own team list. It is the one template of the module of which this is true, every other addressing its rows by ordinal, and no file shipped with the bot can serve a league whose teams it does not know.
 - A team of the division that seats no driver is drawn as a team whose every seat is unoccupied, and is not removed. Whether a team that has entered a season and recruited nobody belongs on the graphic is the league's to decide, and it is decided by the template declaring or declining the removable group of that team's fields defined in the conventions above.
 
 ### Constraints on team names
 - The names of teams shall be constrained so that the normalization above always yields a valid and unambiguous identifier.
+- These constraints shall hold whether or not the image module is enabled and whether or not the "lineup" toggle is on. A name is constrained at the one moment it is set, and a league enabling the module later would otherwise hold names it could not correct without losing the history of the team.
 - <COMMAND CHANGE> The "team add" and "team rename" commands, each of which applies both to the team list of the server and to all divisions of the season under setup, shall reject with a clear error a name that:
     - is empty once trimmed of leading and trailing whitespace, or whose normalized form is empty;
     - does not begin with a letter;
@@ -360,7 +372,7 @@ These hold for every image type of the module and are stated here rather than re
 - The fields that do not depend on the teams are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on them can only be verified against the teams known at that moment:
     - at generation they are verified against the division being generated, and a divergence is fatal;
     - at season review they are verified against every division of the season, and a divergence is a failure of validation of the season, naming the division and the team or seat at fault. A season review is the moment a league is told its season is sound, and it is the last moment at which this divergence can be corrected before the graphic is posted anywhere; a warning there would let a league approve a season every lineup of which then falls back to text.
-    - at season review it shall additionally be verified that the divisions of the season field the same teams and the same number of seats in each, a divergence being a failure of validation naming the divisions that differ.
+    - at season review it shall additionally be verified that the divisions of the season field the same teams and the same number of seats in each, a divergence being a failure of validation naming the divisions that differ. This check, and this one alone of those listed here, is made only where the image module is enabled and the "lineup" toggle is on.
     - when the template is configured they are verified against the teams of the season under setup, or against the team configuration of the server should there be no season, and a divergence is a warning only, there being no division to check against.
 
 ### Generation and posting
@@ -382,7 +394,7 @@ These hold for every image type of the module and are stated here rather than re
     - Every team but one shall be filled to its full seat count with fictitious drivers, the one being left entirely unoccupied so that the rendering of unoccupied seats may be evaluated.
     - Reserve drivers shall be generated to one fewer than the number of reserve slots the template declares, so that the rendering of an unfilled reserve slot may be evaluated.
     - The nationalities given to the fictitious drivers shall be among those the signup wizard accepts, at least one of them being that recorded for a driver who stated none.
-    - The drivers fabricated hold no Discord user ID for which a file exists in the configured driver image directory, so that the silent removal of the driver image field may be evaluated.
+    - The drivers fabricated hold no Discord user ID for which a file exists in the configured driver image directory, so that the drawing of the fallback of that directory, and the non-fatal error it reports, may be evaluated. The field is not removed: an image that resolves to no file is resolved as the conventions above require, whatever the field receiving it.
 - Should the server hold no team beyond the reserve team, the command shall be rejected with a clear error, as there is no lineup to be drawn.
 
 ## Results image generation
