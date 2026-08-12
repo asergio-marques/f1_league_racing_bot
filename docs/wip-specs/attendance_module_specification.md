@@ -66,12 +66,16 @@
 
 ### Distribution of reserves
 - Once the RSVP deadline is reached, reserves that have confirmed their presence with "accepted" will be distributed by teams according to the following priority:
-    - Teams in which drivers have failed to RSVP;
-    - Teams in which drivers have declined the check-in;
-    - Teams in which drivers have marked themselves as tentative.
-- If there are two or more teams that fit each one of the criteria, the following tie-breakers will be used:
-    - Number of drivers that have confirmed with "accept" (first priority is given to those teams that have no drivers participating).
-    - Lowest positioned team in the Constructors' Championship of that division.
+    1. Teams with no full-time drivers seated at all;
+    2. Teams in which drivers have declined the check-in;
+    3. Teams in which drivers have failed to RSVP;
+    4. Teams with a physically vacant seat, having some full-time drivers seated;
+    5. Teams that have already received a reserve for this round. A team at priorities 1 to 4 shall drop to this priority once it receives its first reserve, so that no team receives a second reserve while another team still needs one;
+    6. Teams in which drivers have marked themselves as tentative.
+- Teams whose full-time drivers have all accepted and whose seats are all filled shall not be candidates.
+- If there are two or more teams that fit the same priority, the following tie-breakers will be used, in order:
+    - Lowest positioned team in the Constructors' Championship of that division. Teams with no standings snapshot yet, such as before the first round of a season, shall be placed after every ranked team.
+    - Alphabetical order of team name.
 - Reserves shall be picked according to the time they confirmed their attendance; first ones to accept the check-in shall be the first to be placed in a team.
     - Every time a reserve changes RSVP status to accepted, the time will be updated. So flip-flopping on attendance is bad.
 - After distribution of reserves, any reserves that have confirmed attendance but remain without a seat for the round will be considered as being "on standby".

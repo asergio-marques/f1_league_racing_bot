@@ -1,9 +1,11 @@
 """Unit tests for rsvp_service — T024.
 
 Covers:
-  1. Distribution priority ordering (tier 1 NO_RSVP > tier 2 DECLINED > tier 3 partial
-     allocation > tier 4 no FT drivers > tier 5 TENTATIVE)
-  2. Tie-breaking: fewest accepted; standings position; alphabetical team name
+  1. Distribution priority ordering (tier 1 no FT drivers > tier 2 DECLINED > tier 3
+     NO_RSVP > tier 4 partial allocation > tier 5 already served this round >
+     tier 6 TENTATIVE)
+  2. Tie-breaking: standings position (lowest-placed first, unranked last);
+     alphabetical team name
   3. accepted_at timestamp ordering for reserves (first-accepted = highest priority)
   4. Standby classification (reserves beyond available vacancies)
   5. No-op when no accepted reserves
@@ -218,14 +220,14 @@ class TestNoAcceptedReserves:
 
 
 # ---------------------------------------------------------------------------
-# 2. Priority ordering: tier 1 (NO_RSVP) fills before tier 2 (DECLINED)
+# 2. Priority ordering: tier 2 (DECLINED) fills before tier 3 (NO_RSVP)
 # ---------------------------------------------------------------------------
 
 
 class TestPriorityOrdering:
     @pytest.mark.asyncio
-    async def test_tier1_team_gets_reserve_first(self, tmp_path):
-        """Team with a NO_RSVP driver gets the reserve before a team with only DECLINED drivers."""
+    async def test_declined_team_gets_reserve_before_no_rsvp_team(self, tmp_path):
+        """Team with a DECLINED driver gets the reserve before a team with only NO_RSVP drivers."""
         db_path = await _make_db(tmp_path)
         await _seed_base(db_path)
 
@@ -237,8 +239,8 @@ class TestPriorityOrdering:
             # Reserve driver
             await _insert_driver(db, 3, "ReserveDriver")
 
-            await _insert_team(db, 101, 10, "TeamA_NoRsvp")   # should get tier 1 priority
-            await _insert_team(db, 102, 10, "TeamB_Declined")  # tier 2 priority
+            await _insert_team(db, 101, 10, "TeamA_NoRsvp")   # tier 3 priority
+            await _insert_team(db, 102, 10, "TeamB_Declined")  # should get tier 2 priority
             await _insert_team(db, 103, 10, "Reserve", is_reserve=1)
 
             await _add_driver_to_team(db, 101, 1)
@@ -257,8 +259,8 @@ class TestPriorityOrdering:
             db.row_factory = aiosqlite.Row
             reserve_row = await _get_dra(db, reserve_dra)
 
-        # Reserve should be assigned to TeamA_NoRsvp (tier 1) not TeamB_Declined (tier 2)
-        assert reserve_row["assigned_team_id"] == 101
+        # Reserve should be assigned to TeamB_Declined (tier 2) not TeamA_NoRsvp (tier 3)
+        assert reserve_row["assigned_team_id"] == 102
         assert reserve_row["is_standby"] == 0
 
 
@@ -367,8 +369,8 @@ class TestPriorityNoFtDrivers:
 
 class TestTiebreakerStandings:
     @pytest.mark.asyncio
-    async def test_lower_standing_position_wins(self, tmp_path):
-        """A team at a lower standings position (= better rank) should receive the reserve first."""
+    async def test_worst_standing_position_wins(self, tmp_path):
+        """The team lowest in the constructors' table should receive the reserve first."""
         db_path = await _make_db(tmp_path)
         await _seed_base(db_path)
 
@@ -384,8 +386,8 @@ class TestTiebreakerStandings:
             await _insert_driver(db, 2, "D2")
             await _insert_driver(db, 3, "ReserveR")
 
-            await _insert_team(db, 101, 10, "TeamBeta")   # standing_pos=2
-            await _insert_team(db, 102, 10, "TeamAlpha")  # standing_pos=1 — should win
+            await _insert_team(db, 101, 10, "TeamBeta")   # standing_pos=2 — should win
+            await _insert_team(db, 102, 10, "TeamAlpha")  # standing_pos=1
             await _insert_team(db, 103, 10, "Reserve", is_reserve=1)
 
             await _add_driver_to_team(db, 101, 1)
@@ -419,7 +421,56 @@ class TestTiebreakerStandings:
             db.row_factory = aiosqlite.Row
             reserve_row = await _get_dra(db, reserve_dra)
 
-        assert reserve_row["assigned_team_id"] == 102  # TeamAlpha (pos 1)
+        assert reserve_row["assigned_team_id"] == 101  # TeamBeta (pos 2)
+
+    @pytest.mark.asyncio
+    async def test_unranked_team_sorts_last(self, tmp_path):
+        """A team with no standings snapshot yet loses to any ranked team."""
+        db_path = await _make_db(tmp_path)
+        await _seed_base(db_path)
+
+        # Need a prior round to anchor the standings snapshot
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute(
+                "INSERT INTO rounds (id, division_id, round_number, scheduled_at) VALUES (41, 10, 2, ?)",
+                (datetime(2025, 5, 25, tzinfo=timezone.utc).isoformat(),),
+            )
+
+            await _insert_driver(db, 1, "D1")
+            await _insert_driver(db, 2, "D2")
+            await _insert_driver(db, 3, "ReserveR")
+
+            await _insert_team(db, 101, 10, "TeamRanked")    # standing_pos=1 — should win
+            await _insert_team(db, 102, 10, "TeamUnranked")  # no snapshot
+            await _insert_team(db, 103, 10, "Reserve", is_reserve=1)
+
+            await _add_driver_to_team(db, 101, 1)
+            await _add_driver_to_team(db, 102, 2)
+            await _add_driver_to_team(db, 103, 3)
+
+            # Both teams have a DECLINED driver (same tier 2)
+            await _insert_dra(db, 42, 10, 1, "DECLINED")
+            await _insert_dra(db, 42, 10, 2, "DECLINED")
+            reserve_dra = await _insert_dra(db, 42, 10, 3, "ACCEPTED", "2025-06-01T10:00:00+00:00")
+
+            # Only TeamRanked carries a snapshot; TeamUnranked has none
+            await db.execute(
+                "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (1, 'TeamRanked', 1001)"
+            )
+            await db.execute(
+                "INSERT INTO team_standings_snapshots (team_role_id, round_id, standing_position) VALUES (1001, 41, 1)"
+            )
+            await db.commit()
+
+        bot = _make_bot(db_path)
+        await run_reserve_distribution(42, 10, bot)
+
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            reserve_row = await _get_dra(db, reserve_dra)
+
+        assert reserve_row["assigned_team_id"] == 101  # TeamRanked, despite being top of the table
 
 
 # ---------------------------------------------------------------------------
@@ -488,8 +539,8 @@ class TestAcceptedAtOrdering:
             await _insert_driver(db, 3, "Reserve_Early")   # accepted first
             await _insert_driver(db, 4, "Reserve_Late")    # accepted later
 
-            await _insert_team(db, 101, 10, "TeamTop", max_seats=1)    # standing pos=1 (best vacancy)
-            await _insert_team(db, 102, 10, "TeamBottom", max_seats=1) # standing pos=2
+            await _insert_team(db, 101, 10, "TeamTop", max_seats=1)    # standing pos=1
+            await _insert_team(db, 102, 10, "TeamBottom", max_seats=1) # standing pos=2 (best vacancy)
             await _insert_team(db, 103, 10, "Reserve", is_reserve=1)
 
             await _add_driver_to_team(db, 101, 1)
@@ -525,8 +576,8 @@ class TestAcceptedAtOrdering:
             early_row = await _get_dra(db, early_dra)
             late_row  = await _get_dra(db, late_dra)
 
-        assert early_row["assigned_team_id"] == 101  # TeamTop — best available
-        assert late_row["assigned_team_id"]  == 102  # TeamBottom
+        assert early_row["assigned_team_id"] == 102  # TeamBottom — best available
+        assert late_row["assigned_team_id"]  == 101  # TeamTop
 
 
 # ---------------------------------------------------------------------------

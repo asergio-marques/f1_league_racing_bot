@@ -214,7 +214,11 @@ async def test_check_schedules_when_all_phases_complete() -> None:
         _, round_ids = await _seed_server(db_path, server_id=1)
         await _mark_all_phases_done(db_path, round_ids)
         bot = _FakeBot(db_path)
-        await check_and_schedule_season_end(1, bot)
+        # Pin "now" before the computed fire time; otherwise the overdue branch
+        # executes the season end immediately instead of scheduling it.
+        await check_and_schedule_season_end(
+            1, bot, now=datetime(2026, 5, 2, tzinfo=timezone.utc)
+        )
         assert len(bot.scheduler_service.season_end_scheduled) == 1
         server_id, fire_at, season_id = bot.scheduler_service.season_end_scheduled[0]
         assert server_id == 1

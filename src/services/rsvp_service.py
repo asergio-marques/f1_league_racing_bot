@@ -581,15 +581,9 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
         return False
 
     async with get_connection(bot.db_path) as db:
-        # Candidate teams: non-Reserve teams in division (FR-020)
-        # Priority tier:
-        #   1 = has at least one NO_RSVP full-time driver
-        #   2 = at least one DECLINED (and no NO_RSVP)
-        #   3 = partial allocation: some accepted FT drivers but seats still vacant
-        #   4 = no FT drivers seated at all (all seats vacant)
-        #   5 = at least one TENTATIVE (and no NO_RSVP / DECLINED / empty seats)
-        #   (teams where all FT drivers accepted AND all seats filled are not candidates)
-        # LEFT JOINs so teams with zero FT drivers still appear (tier 4)
+        # Candidate teams: non-Reserve teams in division (FR-020).
+        # Tiering and tie-breaks are applied below in _static_tier / _current_sort_key.
+        # LEFT JOINs so teams with zero FT drivers still appear.
         cur = await db.execute(
             """
             SELECT ti.id                AS team_id,
@@ -665,7 +659,8 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
     #       are demoted here so every needy team gets its first reserve before any team
     #       receives a second one.  TENTATIVE-only teams stay at tier 6.
     #   6 — ≥1 TENTATIVE full-time driver
-    # Tie-break within a tier: standings position → team name.
+    # Tie-break within a tier: constructors' standings position (lowest-placed team
+    # first, unranked teams last) → team name.
     assignments: list[tuple[int, int]] = []  # (dra_id, team_id)
     standby_ids: list[int] = []
     reserves_assigned: dict[int, int] = {t["team_id"]: 0 for t in candidate_teams}
@@ -677,7 +672,10 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
         # so TENTATIVE-only teams that already received a reserve don't leap ahead
         # of fresh TENTATIVE teams.
         tier = max(5, static) if reserves_assigned[tid] >= 1 else static
-        pos = t["standing_position"] if t["standing_position"] is not None else 9999
+        # "Lowest positioned" = furthest down the constructors' table, so a larger
+        # standing_position wins.  Teams with no snapshot yet sort last (positions
+        # are 1-based, so the 0 sentinel always follows a negated real position).
+        pos = -t["standing_position"] if t["standing_position"] is not None else 0
         name = t["team_name"].lower()
         return (tier, pos, name)
 

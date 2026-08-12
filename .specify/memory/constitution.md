@@ -1,6 +1,53 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-12 — v4.1.0 → v4.2.0: MINOR — the Attendance module catches up to what was built]
+  Version change    : 4.1.0 → 4.2.0
+  Bump rationale    : MINOR. Materially expanded guidance in three Attendance module sections
+                      and one entity. No Core Principle (I–XIV) is removed or redefined, so
+                      MAJOR does not apply under the versioning policy. Above PATCH because the
+                      reserve distribution priority doubles from three tiers to six and gains a
+                      second tie-break, and the point distribution table gains two rules that
+                      were nowhere stated.
+
+  Session context   : This session repaired the suite's 22 standing failures. One of them,
+                      `test_rsvp_service.py::test_tier1_team_gets_reserve_first`, was failing
+                      because commits 4f69db5 and 9699aa2 had deliberately reordered reserve
+                      allocation without the test, the wip-spec, or this document following.
+                      The author ruled the code correct. Auditing this document against the
+                      build then surfaced two further divergences that predate the session:
+                      migrations 037 and 038 renamed the penalty columns and pardon types in
+                      April and the constitution was never amended.
+
+  Author's rulings  : - Reserve priority  → code. DECLINED outranks NO_RSVP; teams with no
+                                            seated drivers lead; a served team steps aside.
+                      - Standings tie-break → constitution and wip-spec, which already agreed:
+                                            lowest-ranked team first. The code disagreed with
+                                            both and was corrected in `rsvp_service.py`.
+                      - Penalty naming    → migrations. The shipped schema is the fact.
+
+  Modified sections : - Reserve Distribution — 3 tiers → 6; "number of ACCEPTED drivers already
+                        assigned" tie-break withdrawn, being now expressed as tiers 1 and 5;
+                        alphabetical team name added as the final tie-break; unranked-team
+                        ordering stated.
+                      - Attendance Point Distribution — ACCEPTED+absent split from
+                        TENTATIVE/DECLINED+absent; allocated-reserve scoring stated; zero floor
+                        stated; column names corrected.
+                      - Attendance Pardon Workflow — pardon types NO_RSVP_ABSENT → ABSENT and
+                        RSVP_ABSENT → NO_SHOW, per migrations 037 and 038; validation rules
+                        restated to match.
+                      - AttendanceConfig entity — `no_rsvp_absent_penalty` → `absent_penalty`,
+                        `rsvp_absent_penalty` → `no_show_penalty`.
+                      - AttendancePardon entity — `pardon_type` ENUM corrected to the shipped
+                        NO_RSVP / ABSENT / NO_SHOW.
+
+                      Historical Sync Impact Report entries below retain the old names, being
+                      a record of what was true at those versions, and are left untouched.
+
+  Added sections    : None.
+  Removed sections  : None.
+  Deferred TODOs    : None.
+
 [2026-08-12 — v4.0.0 → v4.1.0: MINOR — the first per-type increment; the calendar audit]
   Version change    : 4.0.0 → 4.1.0
   Bump rationale    : MINOR. One rule added (15), one generalised (11), two expanded (6, 9), one
@@ -2167,14 +2214,23 @@ all downstream operations.
 Once the RSVP deadline is reached, reserves who have confirmed `ACCEPTED` are distributed
 to teams in the following priority order:
 
-1. Teams where at least one driver failed to RSVP (no response).
+1. Teams with no full-time drivers seated at all.
 2. Teams where at least one driver declined.
-3. Teams where at least one driver is tentative.
+3. Teams where at least one driver failed to RSVP (no response).
+4. Teams with a physically vacant seat while some full-time drivers are seated.
+5. Teams that have already received a reserve this round. A team at tiers 1–4 MUST drop to
+   this tier on receiving its first reserve, so that no team receives a second reserve while
+   another team still needs one.
+6. Teams where at least one driver is tentative.
+
+Teams whose full-time drivers have all accepted and whose seats are all filled are NOT
+candidates for distribution.
 
 Within each priority tier, tie-breaking is applied in order:
-1. Number of `ACCEPTED` drivers already assigned to the team (lowest first — prefer teams
-   with zero confirmed drivers).
-2. Constructors' Championship position in that division (lowest-ranked team first).
+1. Constructors' Championship position in that division (lowest-ranked team first). Teams
+   with no standings snapshot yet — before the first round of a season, for instance — sort
+   after every ranked team.
+2. Alphabetical order of team name.
 
 Reserves are picked in the order they confirmed `ACCEPTED` (earliest timestamp wins).
 Every time a reserve changes their status back to `ACCEPTED`, their timestamp resets.
@@ -2206,19 +2262,18 @@ exclusively during the penalty review stage (NOT during the appeals stage). When
 a modal form MUST request:
 
 1. The Discord User ID of the driver being pardoned.
-2. The type of attendance event being waived: NO_RSVP, NO_RSVP_ABSENT, or RSVP_ABSENT.
+2. The type of attendance event being waived: NO_RSVP, ABSENT, or NO_SHOW.
 3. A free-text justification (logged to the calculation log channel; never displayed
    elsewhere for privacy reasons).
 
 Pardon validation rules:
 - A NO_RSVP pardon requires the driver's RSVP status to be NO_RSVP.
-- A NO_RSVP_ABSENT pardon requires the driver's RSVP status to be NO_RSVP and the driver
-  to have not attended.
-- A RSVP_ABSENT pardon requires the driver to have been RSVP `ACCEPTED`, `TENTATIVE`, or
-  `DECLINED` but not attended.
-- Multiple pardons for the same driver are permitted (e.g., both NO_RSVP and NO_RSVP_ABSENT
-  can be waived to eliminate both penalties for a driver who did not RSVP and did not
-  attend).
+- An ABSENT pardon requires the driver's RSVP status to be `NO_RSVP`, `TENTATIVE`, or
+  `DECLINED`, and the driver to have not attended.
+- A NO_SHOW pardon requires the driver to have been RSVP `ACCEPTED` and not attended.
+- Each pardon waives only its matching penalty component.
+- Multiple pardons for the same driver are permitted (e.g., both NO_RSVP and ABSENT can be
+  waived to eliminate both penalties for a driver who did not RSVP and did not attend).
 
 Staged attendance pardons MUST be displayed alongside staged penalties in the penalty
 review summary.
@@ -2235,12 +2290,18 @@ Points are awarded per driver per round as follows:
 | RSVP status | Attended | Points gained |
 |-------------|----------|---------------|
 | NO_RSVP | Attended | `no_rsvp_penalty` |
-| NO_RSVP | Did not attend | `no_rsvp_penalty` + `no_rsvp_absent_penalty` |
+| NO_RSVP | Did not attend | `no_rsvp_penalty` + `absent_penalty` |
 | Any (ACCEPTED/TENTATIVE/DECLINED) | Attended | 0 |
-| Any (ACCEPTED/TENTATIVE/DECLINED) | Did not attend | `rsvp_absent_penalty` |
+| ACCEPTED | Did not attend | `no_show_penalty` |
+| TENTATIVE or DECLINED | Did not attend | `absent_penalty` |
+
+A reserve driver allocated into a full-time seat for the round (`assigned_team_id` set) who
+RSVP'd `ACCEPTED` is scored on `no_show_penalty` alone. Reserves who were not allocated are
+excluded from attendance scoring entirely.
 
 Pardons waive the corresponding point award(s). A driver who receives a pardon for a given
-event type does NOT accumulate points for that event.
+event type does NOT accumulate points for that event. Net points per driver per round are
+floored at zero; pardons never produce a negative total.
 
 #### Attendance Sheet Posting
 
@@ -3058,10 +3119,11 @@ the render, falls back to text output, and is recorded in the existing audit log
 - `rsvp_deadline_hours` (INTEGER, default 2) — hours before round when RSVP choices lock;
   0 means choices lock at round start time.
 - `no_rsvp_penalty` (INTEGER, default 1) — attendance points per no-RSVP event.
-- `no_rsvp_absent_penalty` (INTEGER, default 1) — attendance points per no-RSVP-absent event
-  (added on top of no_rsvp_penalty when driver also did not RSVP).
-- `rsvp_absent_penalty` (INTEGER, default 1) — attendance points per RSVP-absent event
-  (driver RSVP'd but did not attend).
+- `absent_penalty` (INTEGER, default 1) — attendance points when a `NO_RSVP`, `TENTATIVE`, or
+  `DECLINED` driver did not attend. Added on top of `no_rsvp_penalty` for a driver who
+  neither RSVP'd nor attended.
+- `no_show_penalty` (INTEGER, default 1) — attendance points when a driver RSVP'd `ACCEPTED`
+  and did not attend.
 - `autoreserve_threshold` (INTEGER, nullable — null means disabled) — total attendance
   points at which a full-time driver is automatically moved to Reserve.
 - `autosack_threshold` (INTEGER, nullable — null means disabled) — total attendance points
@@ -3097,7 +3159,7 @@ round while the Attendance module is enabled):
 **AttendancePardon** (per driver, per round, per attendance event type):
 - `pardon_id` (INTEGER PK, server-scoped auto-increment)
 - `attendance_id` (INTEGER, FK → DriverRoundAttendance)
-- `pardon_type` (ENUM: NO_RSVP / NO_RSVP_ABSENT / RSVP_ABSENT)
+- `pardon_type` (ENUM: NO_RSVP / ABSENT / NO_SHOW)
 - `justification` (TEXT, nullable — logged to calculation log channel only; never
   displayed in public-facing output)
 - `applied_by` (TEXT — Discord User ID of the tier-2 admin who applied the pardon)
@@ -3200,4 +3262,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 4.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-12
+**Version**: 4.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-12
