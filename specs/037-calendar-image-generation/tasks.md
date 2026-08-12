@@ -270,7 +270,12 @@ gone, one new message stands, and the new id is persisted.
       rather than documenting a file that had not been created.
 - [X] T038 Run `pytest tests/ -q` and compare against the T001 baseline. Any new failure is this
       work's; the pre-existing ones are not.
-- [X] T039 Walk [quickstart.md](./quickstart.md) Scenario 1 and Scenario 4's ordering check by hand.
+- [~] T039 **PARTIAL — rendering verified, Discord not.** The PNG half is done: the shipped
+      template was rendered at all twelve division sizes, PNG height verified against the crop
+      point, and two bugs found and fixed that way. The Discord half is **not** done — no
+      scenario has been walked against a running bot. Deferred by the author on 2026-08-12 to a
+      single end-to-end pass once the whole feature's first draft is complete.
+      Walk [quickstart.md](./quickstart.md) Scenario 1 and Scenario 4's ordering check by hand.
       These two are what the suite cannot prove: the first is a visual judgement on a PNG, the second
       depends on Discord's actual delete-then-post sequencing.
 - [X] T040 Invoke the `close-out` skill. This feature changed rules in
@@ -372,3 +377,25 @@ and nothing a league currently sees has changed.
 - Commit after each task or logical group.
 - The riskiest task is **T029**: it edits a posting path a league already depends on. SC-006 requires
   byte-identical textual output when the module is off, which is the check that keeps it honest.
+
+
+---
+
+## Unverified paths — the target list for end-to-end testing
+
+Code-complete and importing cleanly, but **never executed** by any test or against a bot. These
+are where integration defects will be, because they are the seams between the cog and the
+services — the class of fault an import check cannot catch. One was already found and fixed this
+way during implementation (`get_rounds_for_division` did not exist; the method is
+`get_division_rounds`).
+
+| Path | File | What to exercise |
+|---|---|---|
+| `division_calendar_sync` | `src/cogs/season_cog.py` | The whole new command: unknown division, no calendar channel, successful repost, and a failed render leaving the old message standing |
+| `_calendar_round_overflow` | `src/cogs/season_cog.py` | `/round add` refused when it would outgrow the template, with the change unapplied |
+| `_calendar_capacity_warning` | `src/cogs/season_cog.py` | `/season review` showing the warning, and approval **not** refused on its account |
+| calendar block in `_do_approve` | `src/cogs/season_cog.py` | Per-division isolation: one division failing while the others post as images |
+| `tracks_by_name` | `src/services/calendar_post_service.py` | The registry join every calendar path depends on |
+
+The service layer beneath these is covered — `calendar_post_service`'s seven functions, the
+catalogue, the resolution, the crop and the validity layers all have tests.
