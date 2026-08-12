@@ -5,7 +5,10 @@ renamed or removed.
 
 ---
 
-## NEW — `/division calendar sync`
+## NEW — `/division calendar-sync`
+
+> Delivered as `calendar-sync`, a hyphenated subcommand, matching `calendar-channel` in the
+> same group rather than introducing a third nesting level. The wip-spec carries the same.
 
 Redraws a division's calendar and replaces the posted message.
 

@@ -183,7 +183,17 @@ async def test_gate_reads_flag_not_row_presence(module_service, config_service):
 
 # ── T028 — templates relocate independently (SC-002) ──────────────────────
 
-VALID_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675"></svg>'
+#: Valid at every depth currently checked — see the note in test_image_validity_layers.
+VALID_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_1_number">1</text>'
+    b'<text id="round_1_country_name">C</text>'
+    b'<text id="round_1_race_name">R</text>'
+    b'<text id="round_1_date">1 Jan</text>'
+    b'<rect id="round_1_vertical_crop_point" x="0" y="675" width="1" height="1"/>'
+    b"</svg>"
+)
 
 
 @pytest.fixture()
@@ -276,6 +286,20 @@ RICH_TEMPLATE = (
     '<rect id="box" x="10" y="200" width="300" height="80"/>'
     '<text id="justification" style="font-family:Arial;font-size:18px;'
     'line-height:1.3;shape-inside:url(#box)">j</text>'
+    # The calendar has a ratified catalogue (037), so a template it renders from must
+    # carry its mandatory fields. Two rounds, so the sample's "one fewer than declared"
+    # rule fabricates one and the crop lands on round 1's point rather than the canvas.
+    '<text id="division_name">d</text>'
+    '<text id="round_1_number">1</text>'
+    '<text id="round_1_country_name">c</text>'
+    '<text id="round_1_race_name">r</text>'
+    '<text id="round_1_date">d</text>'
+    '<rect id="round_1_vertical_crop_point" x="0" y="200" width="1" height="1"/>'
+    '<text id="round_2_number">2</text>'
+    '<text id="round_2_country_name">c</text>'
+    '<text id="round_2_race_name">r</text>'
+    '<text id="round_2_date">d</text>'
+    '<rect id="round_2_vertical_crop_point" x="0" y="400" width="1" height="1"/>'
     "</svg>"
 ).encode()
 
@@ -727,13 +751,18 @@ async def test_asset_directory_escaping_root_is_reported(
 # ── T036 — the gate for the whole increment (FR-017a, SC-004) ─────────────
 
 
-async def test_toggles_are_inert(module_service, config_service, template_dir):
-    """With every aspect toggled on, no source module's output path changes.
+async def test_only_wired_aspects_read_their_toggle(
+    module_service, config_service, template_dir
+):
+    """A toggle may be read only by the image module, or by an aspect actually wired up.
 
-    This increment delivers the configuration surface and the diagnostic only. The
-    toggles are stored and reported; nothing reads them to decide what to post. The
-    assertion is structural: no module outside the image module imports or queries the
-    toggle state, so no posting path can branch on it.
+    035 delivered the configuration surface with every toggle inert, and this assertion
+    guarded that. 037 wires the **calendar**: `calendar_post_service` reads the toggle to
+    decide whether the calendar is conveyed as a graphic or in the traditional textual
+    manner, which is the whole point of the aspect.
+
+    The assertion therefore narrows rather than disappears — it still catches a source
+    module branching on a toggle whose aspect nobody has built.
     """
     import pathlib
 
@@ -743,27 +772,36 @@ async def test_toggles_are_inert(module_service, config_service, template_dir):
     assert all((await config_service.get_toggles(SERVER_ID)).values())
 
     src = pathlib.Path(__file__).resolve().parents[2] / "src"
-    image_module_files = {
-        "image_cog.py",
-        "image_config_service.py",
-        "image_validity_service.py",
-        "image_render_service.py",
-        "image_constants.py",
-        "image_module.py",
-    }
+
+    #: The posting paths of the aspects **nobody has wired yet**. Each must stay ignorant
+    #: of the toggle state until its own increment builds it — otherwise output could
+    #: branch on a toggle whose behaviour was never specified.
+    #:
+    #: `season_cog.py` and `calendar_post_service.py` are deliberately absent: 037 wired
+    #: the calendar, and reading the toggle to choose between the graphic and the textual
+    #: calendar is precisely what that wiring is.
+    unwired_posting_paths = [
+        "results_post_service.py",
+        "rsvp_service.py",
+        "attendance_service.py",
+        "phase1_service.py",
+        "phase2_service.py",
+        "phase3_service.py",
+        "placement_service.py",
+        "penalty_service.py",
+    ]
 
     offenders = []
-    for path in src.rglob("*.py"):
-        if path.name in image_module_files:
-            continue
-        text = path.read_text(encoding="utf-8")
-        for marker in ("image_aspect_toggles", "get_toggles", "is_aspect_enabled"):
-            if marker in text:
-                offenders.append(f"{path.name}: {marker}")
+    for name in unwired_posting_paths:
+        for path in src.rglob(name):
+            text = path.read_text(encoding="utf-8")
+            for marker in ("image_aspect_toggles", "get_toggles", "is_aspect_enabled"):
+                if marker in text:
+                    offenders.append(f"{path.name}: {marker}")
 
     assert not offenders, (
-        "a source module reads image toggle state, so output could branch on it: "
-        + ", ".join(offenders)
+        "a posting path for an unwired aspect reads image toggle state, so its output "
+        "could branch on a toggle nothing has specified: " + ", ".join(offenders)
     )
 
 
@@ -874,7 +912,7 @@ from models.image_module import (  # noqa: E402
 )
 from services.image_validity_service import check_template  # noqa: E402
 
-_GOOD_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675"/>'
+_GOOD_SVG = VALID_SVG
 
 
 @pytest.fixture()

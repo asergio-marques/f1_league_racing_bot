@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <!-- Drawn for a round of the mystery format, whose track is concealed until it is run.
+       Resolved by the ordinary slug rule from the datum "Mystery" (Constitution XIV.13).
+       Same 1:1 aspect as this directory's other assets; plain SVG with no clipPath,
+       gradient or filter, and never padded by the generator (XIV.6). -->
+  <rect width="120" height="120" fill="#eeeef1"/>
+  <path d="M44 46 C44 32 76 32 76 48 C76 60 60 60 60 72"
+        fill="none" stroke="#8a8a95" stroke-width="9" stroke-linecap="round"
+        stroke-linejoin="round"/>
+  <circle cx="60" cy="90" r="6" fill="#8a8a95"/>
+</svg>

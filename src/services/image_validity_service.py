@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from models.image_catalogues import catalogue_for
+from models.image_catalogues import CapacityError, catalogue_for
 from models.image_constants import (
     ASPECT_SOURCE_MODULE,
     ASPECT_TEMPLATES,
@@ -190,10 +190,17 @@ class CatalogueLayer:
         except SvgParseError as exc:  # Layer 1 already rejected this; belt and braces
             return LayerResult(False, f"not a valid SVG file — {exc}")
 
+        # Where the capacity is derived from the template — the calendar, whose rounds a
+        # league draws to suit its own season — the collection must be countable before
+        # its mandatory ids can be enumerated at all. An uncountable one (no member, or a
+        # gap in the numbering) is itself the failure, and is reported in its own terms.
+        try:
+            mandatory = catalogue.all_mandatory_ids(root)
+        except CapacityError as exc:
+            return LayerResult(False, str(exc))
+
         index = FieldIndex(root)
-        missing = sorted(
-            name for name in catalogue.all_mandatory_ids() if index.resolve(name) is None
-        )
+        missing = sorted(name for name in mandatory if index.resolve(name) is None)
         if not missing:
             return LayerResult(True)
 

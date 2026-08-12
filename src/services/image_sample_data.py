@@ -43,6 +43,76 @@ SAMPLE_ROUNDS = [
 ]
 
 
+#: Tracks the calendar sample draws on. The last has no image file of its own in any
+#: shipped asset set, so the fallback is exercised and its notice can be read.
+SAMPLE_CALENDAR_TRACKS = [
+    ("Silverstone Circuit", "British Grand Prix", "United Kingdom"),
+    ("Circuit Zandvoort", "Dutch Grand Prix", "Netherlands"),
+    ("Circuit de Spa-Francorchamps", "Belgian Grand Prix", "Belgium"),
+    ("Suzuka International Racing Course", "Japanese Grand Prix", "Japan"),
+    ("Autódromo José Carlos Pace", "São Paulo Grand Prix", "Brazil"),
+]
+
+#: One of each, so a template author can read every shape on one image.
+SAMPLE_CALENDAR_FORMATS = ["NORMAL", "SPRINT", "ENDURANCE", "MYSTERY"]
+
+
+def build_calendar_drawing(root):
+    """The fabricated division `/images test calendar` draws (FR-021).
+
+    Holds **one round fewer** than the template declares, so the cut lands at a crop point
+    that is *not* the last the template declares and can actually be judged. Where the
+    template declares a single round, one is fabricated and the crop is evaluated at the
+    declared height instead.
+
+    Covers, as far as the round count allows: one round of each format including mystery;
+    one whose track has no image file, exercising the fallback and its notice; and dates
+    spanning more than one month. A round with **no time** is deliberately absent — a
+    round records date and time as one moment by design, so the shape cannot be
+    fabricated (see specs/037-calendar-image-generation/research.md § R5).
+    """
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+
+    from models.image_catalogues import CapacityError, catalogue_for
+    from services.image_calendar_service import CalendarDataError, resolve_drawing
+
+    try:
+        capacity = catalogue_for("calendar_template").capacity(root) or 0
+    except CapacityError as exc:
+        raise CalendarDataError(str(exc)) from exc
+
+    count = max(1, capacity - 1) if capacity > 1 else 1
+
+    start = datetime(2026, 6, 4, 20, 0, tzinfo=timezone.utc)
+    rounds = []
+    tracks = {}
+    for index in range(1, count + 1):
+        fmt = SAMPLE_CALENDAR_FORMATS[(index - 1) % len(SAMPLE_CALENDAR_FORMATS)]
+        name, gp_name, country = SAMPLE_CALENDAR_TRACKS[
+            (index - 1) % len(SAMPLE_CALENDAR_TRACKS)
+        ]
+        rounds.append(
+            SimpleNamespace(
+                round_number=index,
+                format=fmt,
+                track_name=None if fmt == "MYSTERY" else name,
+                # Seven days apart, so any calendar of three rounds or more spans a month
+                # boundary and the configured date format can be judged on real variety.
+                scheduled_at=start + timedelta(days=7 * (index - 1)),
+            )
+        )
+        tracks[name] = SimpleNamespace(name=name, gp_name=gp_name, country=country)
+
+    return resolve_drawing(
+        division_name="Test Division",
+        division_tier=1,
+        season_number=1,
+        rounds=rounds,
+        tracks=tracks,
+    )
+
+
 def build_spec(template_key: str, root) -> FillSpec:
     """Build a FillSpec for *template_key* against the template's actual ids.
 
@@ -50,7 +120,26 @@ def build_spec(template_key: str, root) -> FillSpec:
     fills whatever addressable ids it declares that this module knows how to populate,
     rather than assuming a field catalogue that has not been ratified yet. That keeps
     `/images test` useful against a league's own templates from day one.
+
+    The calendar is the exception: it has a ratified catalogue (037), so it is drawn
+    through the same resolution the real thing uses rather than from loose sample ids.
     """
+    if template_key == "calendar_template":
+        from services.image_calendar_service import build_fill_spec
+        from utils.paths import resolve_within_project_root
+
+        # The packaged track directory. `/images test` reads no live data (FR-036), and
+        # a preview must still resolve its assets — without a directory every round image
+        # would report its asset class unconfigured and the preview would refuse to draw.
+        try:
+            track_directory = resolve_within_project_root("resources/tracks")
+        except Exception:  # noqa: BLE001
+            track_directory = None
+
+        return build_fill_spec(
+            build_calendar_drawing(root), root, track_directory=track_directory
+        )
+
     # Ids *and* layer labels: a field may be addressed by either (Constitution XIV.2).
     # Indexing ids alone would make a template authored entirely with layer labels look
     # as though it declared nothing, and `/images test` would report every field unknown.

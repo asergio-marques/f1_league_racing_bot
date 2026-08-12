@@ -320,6 +320,19 @@ Cancels all scheduled rounds in the division (jobs + status flags) and posts a n
 | `name` | String | ✅ | Division name |
 | `channel` | Channel | ✅ | Channel where standings tables are posted |
 
+#### `/division calendar-sync` — Repost a division's calendar
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+
+The calendar is posted once, when the season is approved, and stands as the calendar the season was approved with. A round added, amended or cancelled afterwards does **not** change it — this command is what carries those changes onto it.
+
+It reposts in whichever form your configuration calls for: the image where the images module and the `calendar` aspect are both on, the traditional text otherwise. It works either way, and is not gated on the images module.
+
+> **Why it reposts rather than edits.** An attachment cannot be added to a message that already exists, so the bot posts the new calendar first and deletes the old one only once the new one is up. If generation fails, nothing is deleted and nothing is posted — you are told what is wrong and the previous calendar still stands.
+
 ---
 
 ### Test Mode Commands
@@ -1028,7 +1041,11 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 Flips that aspect between a generated image and the text the bot has always posted. All eight start disabled.
 
-> **Currently records intent only.** Setting a toggle changes what `/images config view` and `/season review` report, and nothing else — wiring each source module to post images is a later increment. Use `/images test` to see what an aspect will produce.
+> **`calendar` is live; the other seven record intent only.**
+>
+> With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
+>
+> The remaining seven toggles change what `/images config view` and `/season review` report, and nothing else. Wiring each of those source modules is a later increment. Use `/images test` to see what an aspect will produce.
 
 #### `/images template <kind>` — Name the SVG file backing each image
 *Access: Server administrator*
@@ -1129,11 +1146,15 @@ A template is a plain SVG whose declared `width` and `height` are the canvas. Th
 
 **Assets.** Assets are plain SVG, authored at exactly the aspect ratio of the slot they fill — the generator does not pad, so an asset of the wrong shape will be letterboxed with its edge pixels smeared across the band. Filenames are the thing they depict, normalised: lowercased, accents dropped, every run of punctuation or spaces collapsed to a single underscore, `.svg` on the end. `Red Bull Racing` is looked up as `red_bull_racing.svg` in the configured team directory. **Every asset directory needs a `fallback.svg`** unless you are certain it holds a file for every value the bot could ask it for. When a specific file is missing — a nationality you have no flag drawn for, say — the fallback is used and the bot logs which value needed it. When there is no fallback either, **the graphic is not produced**: the bot will not quietly draw a card with a hole in it. One generic file per directory is what keeps an incomplete asset set from stopping your images.
 
-**Reserved filenames.** `fallback.svg` is one, as above. `mystery.svg` in your track image directory is the other: a Mystery round conceals its track, so the bot draws that file wherever a track picture belongs and writes "Mystery GP" where the grand prix name belongs. A Mystery round is drawn like any other round and marked as such — it never leaves a hole in a graphic and never stops one being produced.
+**Reserved filenames.** `fallback.svg` is one, as above. `mystery.svg` in your track image directory is the other: a Mystery round conceals its track, so the bot draws that file wherever a track picture belongs and writes "Mystery GP" where the grand prix name belongs. A Mystery round is drawn like any other round and marked as such — it never leaves a hole in a graphic and never stops one being produced. **Both ship with the bot**, so a fresh clone draws every graphic from the first render.
 
 **Image references must be URIs.** Where your template already points at a picture, that `href` has to be a real URI — `file:///C:/…/logo.svg` or an embedded `data:` URI — not a bare path like `C:\assets\logo.svg`. Most SVG editors write one correctly; hand-edited files often do not. A bare path is the single most likely reason a template that looks perfect in a browser rasterises with a broken-image icon where the picture should be, which is why the advice below is to check the PNG.
 
-> **What is checked today.** The file resolving, parsing and declaring a canvas — enforced now, at the moment you name it and again before a season is approved. Field names, row counts and asset presence are checked by machinery that is in place but has nothing to check against yet: no image type has had its fields specified. Following the conventions above now is what makes those checks pass rather than fail when they switch on.
+> **What is checked today.** For **every** template: the file resolving, parsing and declaring a canvas — enforced at the moment you name it and again before a season is approved.
+>
+> For the **calendar**, which is the first image type whose fields are specified, the check goes further: the mandatory fields must be present, and its rounds must be numbered from 1 with no gaps. A calendar template missing a field is refused when you name it, named in `/season review`, and blocks approval until you fix it.
+>
+> The other fourteen types are still checked to the file level alone — their fields have not been specified yet. Following the conventions above now is what makes those checks pass rather than fail when they switch on.
 
 **Fonts and casing.** Either embed the font your template names or author against a font the machine running the bot carries. A font it cannot resolve is substituted by the converter and your text is drawn in a face of another width, which changes where lines break — so two machines can draw the same template differently. Note also that `text-transform` is ignored: a label you want in capitals must be typed in capitals.
 
