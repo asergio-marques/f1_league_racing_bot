@@ -47,6 +47,7 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
             id INTEGER PRIMARY KEY,
             division_id INTEGER NOT NULL,
             round_number INTEGER NOT NULL DEFAULT 1,
+            status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'CANCELLED')),
             result_status TEXT NOT NULL DEFAULT 'PROVISIONAL'
         )
         """
