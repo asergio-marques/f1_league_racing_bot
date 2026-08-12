@@ -1,6 +1,125 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-12 — v4.0.0 → v4.1.0: MINOR — the first per-type increment; the calendar audit]
+  Version change    : 4.0.0 → 4.1.0
+  Bump rationale    : MINOR. One rule added (15), one generalised (11), two expanded (6, 9), one
+                      entity amended. Nothing is removed and nothing is redefined incompatibly:
+                      a catalogue or template authored to v4.0.0 remains conformant under this
+                      version, `row` being one collection name among several rather than a form
+                      withdrawn.
+
+                      MAJOR was drafted and rejected. The draft relaxed Rule 12 so that a
+                      catalogue could declare **reported omission** for a collection — excess
+                      members dropped with a notice rather than a refusal — which would have
+                      forbidden behaviour v4.0.0 mandates. The author ruled against it: overflow
+                      means one thing, more data than the template has slots for, and is fatal
+                      wherever it occurs. Rule 12 therefore stands as v4.0.0 wrote it and the
+                      bump falls to MINOR.
+  Feature branch    : 037-calendar-image-generation (created 2026-08-12 from main)
+
+  Session context   : 035 built the engine and the configuration surface; 036 settled the
+                      module's cross-cutting conventions. This session begins the first
+                      **per-image-type** generation utility — the **calendar** — and no other
+                      type is in scope. Principle XIV was audited against
+                      `docs/wip-specs/image_module_specification.md` § "Calendar image
+                      generation", readable again after two sessions deny-listed, and seven
+                      divergences were put to the author. This discharges the per-type half of
+                      TODO(WIP_SPEC_RECONCILIATION), which v3.0.0 closed only against the
+                      cross-cutting conventions the author had supplied directly. Rules 11 and 12
+                      were written at v2.13.0 without sight of that document and expressly flagged
+                      as at risk of contradicting it; the audit found one of the two did.
+
+  Author's rulings  : Each divergence was decided individually rather than by a blanket rule that
+                      the wip-spec or the constitution wins:
+                        - Collection ids     → wip-spec. `round_<x>` is the general form the
+                                               constitution had stated too narrowly.
+                        - Overflow           → constitution, and extended. Fatal for every
+                                               collection of every image type, not the calendar
+                                               alone. Four wip-spec statements are corrected.
+                        - Mystery round      → neither. See Rule 3 below.
+                        - Message refresh    → wip-spec. User-visible mechanics belong there.
+                        - Validity moments   → all three are right, and are tabulated here.
+                        - Asset href, zone   → constitution. Both bind every image type.
+
+  Generalised rule (Principle XIV):
+    - **11. Template ids** — the repeating-collection form generalises from `row_<x>_<field>` to
+      `<collection>_<x>_<field>`, the collection named by the thing it repeats and fixed by the
+      image type's catalogue. `row` becomes one collection name among several rather than the
+      only one; a calendar's members are rounds, a forecast's are sessions. Nesting is admitted
+      explicitly, the wip-spec reaching three levels (`row_<x>_round_<z>_driver_<w>`). A gap in
+      the numbering is named a fault of the template. Backward compatible: every v4.0.0 id is
+      still a conformant id.
+
+  Modified rules (Principle XIV):
+    - **3. Every mandatory field MUST be resolved** — gains "a value the data does not hold
+      literally is still a value". Where a record is of a kind carrying nothing — a round whose
+      track is concealed until it is run — the image type **defines the value standing for that
+      kind** and fills the field with it. A mystery round therefore places "Mystery GP" on
+      `round_<x>_race_name` and "Mystery" on `round_<x>_country_name`, and resolves `mystery.svg`
+      by the ordinary slug rule of Rule 13. No field is emptied and no exemption arises. An
+      earlier draft added a conditional-exemption mechanism for this case; the author's ruling
+      removed the need for it entirely, which is the better outcome — the kind *is* the datum.
+    - **6. Assets** — an asset MUST be referenced by an href that is a **URI**; a bare filesystem
+      path resolves to nothing and rasterises as a broken-image mark, invisible in a browser
+      preview. Author-side transparent padding is stated explicitly, the generator's prohibition
+      on padding being unchanged.
+    - **9. Template validity** — the three moments at which validity is evaluated are tabulated:
+      the command naming the template, season review, and immediately before a render. All three
+      MUST read one and the same evaluation. A check is made at the earliest moment its data
+      exists and repeated before the render, the data having possibly changed since. A check
+      whose data is not yet available MUST NOT be approximated earlier: season review can compare
+      a template only against the most demanding division of the season, so a divergence found
+      there is a **warning**. Review reports; approval refuses.
+    - **12. Collection capacity** — unchanged in substance, and strengthened in reach. The
+      `<collection>_<x>_group` form follows Rule 11. A closing paragraph states that overflow is
+      fatal for every collection of every image type, principal or incidental, so that the four
+      wip-spec statements admitting a non-fatal omission are settled against.
+
+  Added rule (Principle XIV):
+    - **15. A graphic carries one time zone, named by configuration.** A text output renders an
+      instant as a Discord timestamp every reader sees in their own zone; a picture cannot. Every
+      date and time on a graphic is drawn in the single configured zone, identically for every
+      reader, with the zone abbreviation appended wherever a time is drawn — never derived from a
+      locale, the host machine or the viewer. Stated once so that no image type invents a
+      per-reader scheme a picture cannot honour. It is a real reduction against the text path and
+      the rule says so.
+
+  Modified sections :
+    - Principle XIV, Rationale — "Rules 10–14" becomes "Rules 10–15" and names the zone rule. The
+      mandatory/optional paragraph gains a statement that there is no third classification and no
+      exemption from either. Rule 14's list of cases where browser and rasteriser disagree gains
+      unresolvable asset references, pairing with Rule 6.
+    - Data & State Management → **New Entities (v4.1.0)**: **Division** amended with
+      `calendar_message_id`, and `/division calendar sync` recorded. The textual calendar has been
+      posted once and never replaced, so no id was held; an attachment cannot be introduced into a
+      message already posted, so the image flow must know which message to replace. The mechanics
+      of the replacement are user-visible and are left to the wip-spec per the author's ruling.
+
+  Rejected from this amendment (recorded so the reasoning is not re-derived):
+    - A per-collection **overflow treatment** admitting non-fatal omission. Overruled: fatal
+      everywhere.
+    - A **conditional exemption** mechanism on Rule 3. Made unnecessary by the mystery-round
+      ruling.
+    - A **replacement, not edit** clause on Rule 8. Overruled to the wip-spec as user-visible.
+
+  Consistency       : Four statements of `docs/wip-specs/image_module_specification.md` are
+                      contradicted by the overflow ruling and one by the mystery-round ruling.
+                      They are corrected in that document in the same change window as this
+                      amendment, per the close-out discipline in CLAUDE.md.
+
+  Deferred          : TODO(PER_TYPE_ASSET_SENTENCES) — carried from v4.0.0 and now partly
+                      discharged by the author's own edit at af76d87, which realigned the calendar
+                      and lineup asset statements to Rule 13. The results, standings, attendance,
+                      weather and verdicts sections still bundle "the datum is absent" with "no
+                      matching file is found". Nothing is ambiguous in force, the Conventions
+                      section governing them correctly; the sentences want splitting as each of
+                      those types is built.
+
+  Templates confirmed aligned: no change required. Principle count is unchanged at I–XIV — this
+  amendment adds a *rule* to Principle XIV, not a principle — so plan-template.md's Constitution
+  Check and the Governance section's "I–XIV" both stand.
+
 [2026-08-12 — v3.0.0 → v4.0.0: MAJOR — assets are resolved apart from field classification]
   Version change    : 3.0.0 → 4.0.0
   Bump rationale    : MAJOR. Rule XIV.13 loses a branch and inverts a severity: a missing asset
@@ -2229,6 +2348,14 @@ template must declare the field, and whether its value must be determinable. The
 about the *assets* placed upon fields. An asset that resolves to no file is governed by Rule 13
 alone, whatever the classification of the field receiving it.
 
+**A value the data does not hold literally is still a value.** Where a round, a session or an
+entry is of a kind for which the underlying record carries nothing — a round whose track is
+deliberately concealed until it is run — the image type MUST define the value that stands for
+that kind, and that value is what fills the field. It is filled, not exempted: the text is the
+literal the type defines, and an asset is resolved from it by the ordinary slug rule of Rule 13.
+No field is emptied and no exemption arises, because there is nothing missing — the kind *is*
+the datum.
+
 **4. Problems and notices are distinct outcomes.**
 
 - A **problem** is a disagreement between template and data (an unresolved mandatory field, an
@@ -2265,9 +2392,15 @@ Overflow MUST NOT be silently clipped by the rasteriser.
 **6. Assets are aspect-authored, never padded by the generator.**
 
 Assets under `resources/` MUST be plain SVG with no `clipPath`, gradient, or filter, and MUST
-be authored at exactly the aspect ratio of the slot they fill. The generator MUST NOT pad or
+be authored at exactly the aspect ratio of the slot they fill, padded with transparent margins
+by their author where the subject does not fill that aspect. The generator MUST NOT pad or
 letterbox an asset. A league supplying its own assets is bound by the same requirement, and
 the module MUST document it wherever asset upload is offered.
+
+An asset MUST be referenced by an href that is a **URI**. A bare filesystem path is not one: the
+rasteriser resolves it to nothing and draws a broken-image mark, which no render-time check
+catches. This is the single most likely way for a correct-looking SVG to rasterise wrongly, and
+is why Rule 14 exists.
 
 **7. Image output is additive.**
 
@@ -2295,10 +2428,29 @@ MUST NOT register channel categories of its own.
 
 **9. Template validity is a layered, extensible contract.**
 
-A template's validity is evaluated at configuration time, on demand, and separately from any
-render. The checks that constitute validity MUST be organised as ordered, independently named
-layers, cheapest first. The set of layers is deliberately open: it grows as each image type is
-formally specified, and a layer MUST be ratified before it is enforced.
+A template's validity is evaluated separately from any render. The checks that constitute
+validity MUST be organised as ordered, independently named layers, cheapest first. The set of
+layers is deliberately open: it grows as each image type is formally specified, and a layer MUST
+be ratified before it is enforced.
+
+**Three moments, one evaluation.** Validity is evaluated at exactly three moments, which differ
+only in the data available to them and MUST read one and the same evaluation:
+
+| Moment | Data available | Effect of a fault |
+|---|---|---|
+| The command naming the template | The template alone | The command is rejected, the configuration left as it stood |
+| Season review | The template and the season's divisions | Named in the review; the season's **approval** is refused while it stands |
+| Immediately before a render | The template and the concrete data | The render fails per Rule 4 |
+
+A check MUST be made at the earliest moment its data exists, and MUST be repeated before the
+render, because the data may have changed since the template was configured. A check whose data
+is not yet available MUST NOT be approximated at an earlier moment: where season review can
+compare a template only against the *most demanding* division of the season, a divergence found
+there is a **warning** and not a refusal, the division actually drawn being decided later.
+
+Season review reports; approval refuses. The review commits nothing that could be refused, so
+naming every faulty template with its own reason is the whole of its job, and the approval is
+where the season is stopped alongside the prerequisites of every other module.
 
 - **Layer 1 — Resolution** is mandatory from the outset and applies to every template: the file
   resolves within the configured directory, parses as well-formed SVG, and declares a root
@@ -2343,13 +2495,19 @@ on both the author and the code:
 
 - Ids are lowercase `snake_case`, semantic rather than positional (`driver_name`, never
   `text_47`).
-- A field belonging to row *x* of a repeating collection MUST be named `row_<x>_<field>`, and
-  the row itself `row_<x>`. The index is written plainly, **without padding**: `row_1_position`,
-  `row_10_position`. Numbering starts at 1 and MUST be contiguous.
-- A removable group is the field's name followed by `_group` (Rule 2), which for a whole row is
-  `row_<x>_group`.
+- A field belonging to member *x* of a repeating collection MUST be named
+  `<collection>_<x>_<field>`, and the member itself `<collection>_<x>`. The collection is named
+  by the thing it repeats and is fixed by the image type's catalogue — `round_<x>_date` on a
+  calendar, `session_<x>_slot_<y>` on a forecast. `row` is the collection name for a table whose
+  members are the rows of a classification, and carries no privilege beyond that.
+- The index is written plainly, **without padding**: `row_1_position`, `row_10_position`.
+  Numbering starts at 1 and MUST be contiguous; a gap is a fault of the template.
+- Collections MAY nest, each level contributing its own name and index in the order of
+  containment (`row_<x>_round_<z>_driver_<w>`).
+- A removable group is the field's name followed by `_group` (Rule 2), which for a whole member
+  is `<collection>_<x>_group`.
 
-A catalogue (Rule 10) MUST express a repeating collection as a prefix and a capacity, not as an
+A catalogue (Rule 10) MUST express a repeating collection as a name and a capacity, not as an
 enumerated list of its members' ids.
 
 **12. Collection capacity is declared by the template; overflow is a problem.**
@@ -2358,18 +2516,21 @@ Any image type drawing a list whose length varies by league MUST state that list
 the number of member slots the template provides — in its catalogue, and that number MUST
 match the members the template declares.
 
-- **Fewer data than slots**: the unused members MUST be removed — by their `row_<x>_group`
-  where one is declared (Rule 2), or, for an image type that defines a vertical crop, by cutting
-  the canvas at the corresponding crop point. Members taken off the canvas this way are not
-  unresolved fields (Rule 3).
+- **Fewer data than slots**: the unused members MUST be removed — by their
+  `<collection>_<x>_group` where one is declared (Rule 2), or, for an image type that defines a
+  vertical crop, by cutting the canvas at the corresponding crop point. Members taken off the
+  canvas this way are not unresolved fields (Rule 3).
 - **More data than slots**: a **problem** (Rule 4), rejected at the earliest moment it can be
   detected — including the command that would grow the division past the capacity, which is
   refused with its change unapplied. The problem MUST report the data count, the declared
   capacity, and the template at fault.
 - Overflow MUST NOT be silently truncated, and MUST NOT be spilled into continuation images.
 
-A graphic that omits a driver without saying so is worse than no graphic, which is why the
-overflow case is fatal rather than a notice.
+This holds for **every** collection of every image type, principal or incidental. A graphic that
+omits a driver, a round or an entry without saying so is worse than no graphic, and a graphic
+that says so while quietly drawing short still leaves a league reading a picture that is not
+their season. Overflow means one thing throughout — more data than the template has slots for —
+and it is fatal wherever it occurs.
 
 **13. Asset resolution is by normalised slug, and every class carries a fallback.**
 
@@ -2419,7 +2580,21 @@ Any check that a template or a utility produces the intended graphic — during 
 in a test, or in a validity trial render (Rule 9) — MUST be performed against the rasterised
 PNG. Inspecting the filled SVG in a browser does not satisfy this rule and MUST NOT be
 offered as evidence that a render is correct. The two disagree in exactly the cases that
-matter: flowed text, substituted fonts, and the crop.
+matter: flowed text, substituted fonts, unresolvable asset references, and the crop.
+
+**15. A graphic carries one time zone, named by configuration.**
+
+A text output renders an instant as a Discord timestamp, which every reader sees in their own
+zone. A graphic is a picture and cannot: it MUST render every date and time in the single zone
+the league configures, identically for every reader, and MUST append that zone's abbreviation
+wherever it draws a time. Date and time formatting on a graphic MUST come from the module's
+configured formats and zone, and MUST NOT be derived from a locale, from the host machine, or
+from the viewer.
+
+This is a genuine reduction against the text path, and is the one respect in which the graphic
+tells a reader less than the message it rides on. It is stated here so that every image type
+carrying a time answers it the same way, and so that no type invents a per-reader scheme that a
+picture cannot honour.
 
 **Rationale**: Separating layout (the template) from data (the fill) is what allows a league
 to restyle its graphics without a code change and what keeps the rendering code independent
@@ -2429,11 +2604,11 @@ first is a defect that would post a wrong graphic, the second is a cosmetic degr
 league can act on at leisure. Requiring the text path to remain authoritative ensures that
 adding graphics never reduces what the bot can tell a league.
 
-Rules 10–14 exist because the module is about to grow one generation utility per image type,
+Rules 10–15 exist because the module is about to grow one generation utility per image type,
 written across many sessions. A catalogue that is a shared constant, an id convention the
-code can construct rather than be told, a capacity the template states, and a single slug
-rule are what let fifteen utilities be fifteen small entries rather than fifteen private
-conventions — and are what make validity Layer 2 ratifiable at all, since a check can only be
+code can construct rather than be told, a capacity the template states, one time zone rule,
+and a single slug rule are what let fifteen utilities be fifteen small entries rather than
+fifteen private conventions — and are what make validity Layer 2 ratifiable at all, since a check can only be
 written against a declaration that exists. Verifying through the rasteriser rather than the
 browser is in this list for the same reason: it is a rule that costs nothing to hold from the
 first utility and is expensive to retrofit once graphics have been signed off on the wrong
@@ -2444,6 +2619,12 @@ behaviour proportionate — but it applies to **fields**, and only to fields. Ma
 graphic is meaningless without this value; optional says the graphic is merely plainer without
 it. Drawing a standings table with a blank where the points should be would be worse than
 drawing nothing, while a sanctions block that never appears costs a reader nothing.
+
+There is no third classification, and no exemption from either. Where a kind of record holds no
+literal value — a round whose track is concealed until it is run — the image type defines the
+value that stands for that kind and fills the field with it (Rule 3). Treating that as a missing
+mandatory value would have made a deliberate feature of a league's season look like a defect in
+its template, and would have put a hole in a graphic the league expects to be drawn whole.
 
 Assets are governed separately (Rule 13), and uniformly. A league whose asset set does not cover
 every value it will present drops one `fallback.svg` into that directory and is done; a league
@@ -2811,6 +2992,23 @@ for team-level aggregates):
   appeal outcomes for this division are posted to this channel; if null, the bot falls
   back to `results_channel_id`.
 
+### New Entities (v4.1.0)
+
+**Division** amended — `calendar_message_id` (TEXT, nullable) added, holding the id of the
+message carrying the division's calendar in its `calendar_channel_id` channel. The textual
+calendar has been posted once and never replaced, so no id was held. An attachment cannot be
+introduced into a message already posted, so the image flow replaces that message rather than
+editing it and must know which message to replace. It sits beside the `lineup_message_id` added
+at v2.8.0 and is written on every posting of the calendar, textual or graphic, so that the two
+flows agree on which message is the calendar.
+
+`/division calendar sync` deletes that message and posts the calendar anew, persisting the id of
+the replacement. It stands beside `/division calendar-channel` and is gated on neither the image
+module nor any other: it refreshes whichever form of the calendar the server's configuration
+calls for, and is refused only where the division has no calendar channel configured. The
+mechanics of the replacement are user-visible and are specified in
+`docs/wip-specs/image_module_specification.md`, not here.
+
 ### New Entities (v2.11.0)
 
 **ImageConfig** (per server, owned by the Image generation module):
@@ -3002,4 +3200,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 4.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-12
+**Version**: 4.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-12

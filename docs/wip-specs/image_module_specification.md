@@ -139,6 +139,15 @@ These hold for every image type of the module and are stated here rather than re
 - A group exists so that the static chrome standing around a field - a label, a separator, a card, a plate - leaves the graphic together with the value it introduces. A template drawing such chrome around a field that may be emptied shall declare the group.
 - The canvas is not resized by the removal of a group. A block that may be removed belongs where its removal is survivable.
 
+### The capacity of a collection
+- A collection is a set of fields a template repeats, its members bearing an ordinal: the rounds of a calendar, the rows of a classification, the sessions of a forecast, the cars of a team. The number of members a template declares is the capacity of that collection.
+- The members of a collection are numbered continuously from 1. A gap in the numbering is a fatal error.
+- Members declared in excess of the data shall be removed, by the removable group of the member where the template declares one and field by field where it does not, and no error shall be reported. The calendar graphic removes them by its vertical crop instead, as defined in that section.
+- Data in excess of the members declared is a fatal error, naming the count of the data, the capacity of the template, the file at fault and the members that would have been dropped.
+- This holds for every collection of every graphic alike, whether the collection is the subject of the graphic or stands beside it.
+- A command that would carry a division past the capacity of a configured template shall be rejected, and the change it carried not applied.
+- Overflow shall not be truncated in silence, and shall not be spilled into a second graphic.
+
 ### Errors and the rejection of input
 - An error met by the module is fatal or non-fatal, as declared for each image type below. A fatal error prevents the graphic from being produced; a non-fatal one does not.
 - A fatal error traceable to something a user configured or commanded shall reject that input, at every moment the module is in a position to detect it:
@@ -181,6 +190,19 @@ These hold for every image type of the module and are stated here rather than re
 - A fallback image is bound by the rules above as any other image is: plain SVG, authored at the aspect of the slot it fills, never padded at generation. Where one class serves slots of differing aspects, its fallback shall be authored to the aspect its ordinary assets carry.
 - A datum whose normalized form is "fallback" resolves to the fallback file. No further provision is made against this.
 
+### The zone in which a time is drawn
+- A date and a time placed upon a graphic are rendered via the configurations introduced via "images config date-format", "images config time-format" and "images config time-zone", the abbreviation of the zone being appended to the time.
+- A textual posting renders a moment as a Discord timestamp, which every reader sees in their own zone. A graphic cannot, and carries the single configured zone for every reader alike. It is the one respect in which a graphic tells a reader less than the message carrying it.
+
+### A round of the mystery format
+- A round of the mystery format conceals its track until it is run and records none. It is drawn all the same and marked as such, and is never a reason for a graphic to be refused.
+- Upon such a round every graphic shall place, on whichever of these fields it declares:
+    - "Mystery GP" upon the field naming the grand prix of the round;
+    - "Mystery" upon the field naming the country of the round;
+    - "Mystery" upon the field naming the track of the round, which is the value the round object records as its location.
+- An image standing for the track of such a round is resolved as the conventions above require from the datum "Mystery", drawing the "mystery.svg" file of the directory configured for that image, so that a league decides by the file it places there how a concealed track is depicted.
+- The mandatory fields of a mystery round therefore carry values as those of any other round do, and no exemption arises for it.
+
 ### Validity of a template file
 - A file that cannot be parsed shall be reported as an invalid SVG file, naming the file and what was found to be at fault, and never as the raw error of the parser. A run of two hyphens within a comment is the readiest way to produce one.
 - The "text-transform" property is not honoured by the converter. A text is drawn in the casing it carries, and a fixed label a template wants in capitals is typed in capitals.
@@ -220,7 +242,7 @@ These hold for every image type of the module and are stated here rather than re
 - The date is read from the round object and rendered via the configuration introduced via "images config date-format". The time is read from the same and rendered via the configurations introduced via "images config time-format" and "images config time-zone", the abbreviation of the zone being appended to it.
 - A round for which no time is recorded shall have the text of its time field emptied.
 - The format of a round is "Sprint", "Endurance" or "Mystery", and is emptied for a round of the normal format, so that a template author decides by the chrome they draw around the field whether an ordinary round is labelled or left unmarked.
-- A round of the mystery format records no track. Its country name, race name and track name fields shall be emptied and its image field removed, and no error shall be reported: it is the one case in which those two mandatory fields carry no value without that being a fatal error.
+- A round of the mystery format is drawn as the conventions above require, its country name, race name and track name fields carrying the values named there and its image resolved from the datum "Mystery" in the configured track image directory. No field of such a round is emptied for want of a track and no error is reported.
 - A template shall draw nothing between two fields that may be emptied independently of one another, a separator drawn between them being static chrome that survives the emptying of both. Where it draws such chrome all the same, it shall declare the removable group of that field defined in the conventions above.
 - The rounds are placed in the order in which they are run, the ordinal of a field being the number of the round it stands for.
 - Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash.
@@ -228,12 +250,12 @@ These hold for every image type of the module and are stated here rather than re
 ### Handling of mismatches between division and template
 - Divergences between the rounds of a division and the rounds a template declares are treated as follows:
     - rounds declared in excess of the rounds of the division are removed by the cut, or by their group where they stand above it, and no error shall be reported;
-    - rounds of the division in excess of those the template declares shall be omitted from the graphic and a non-fatal error reported naming them.
+    - rounds of the division in excess of those the template declares are a fatal error, naming them.
 - Each of the following is likewise a fatal error, naming what was found to be at fault:
     - a mandatory field of the graphic that the template does not hold;
     - a template declaring no round at all;
     - a gap in the numbering of the rounds;
-    - a mandatory field whose value cannot be determined at generation, save the two named for a round of the mystery format;
+    - a mandatory field whose value cannot be determined at generation;
     - a division holding no round at all.
 - The fields that do not depend on the division are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on it cannot be verified against a division when the template is configured; at that moment it shall be verified only that the template declares at least one round, numbered continuously from 1 and each holding every mandatory field of a round, its crop point included. At season review they shall additionally be verified against the greatest number of rounds any division of the season holds, a divergence being a warning only. At generation they are verified against the division being drawn.
 
@@ -251,7 +273,7 @@ These hold for every image type of the module and are stated here rather than re
 - Should a fatal error be met at any step of the generation or posting of the calendar of a division, the fallback behavior defined in the configuration section shall apply and the calendar of that division be posted in the traditional textual manner instead. The fallback applies to a posting no command triggered; where a command did, that command shall be rejected as the conventions above require and nothing posted in consequence of it. The error shall be reported in the logging channel and, where a command triggered the generation, to the user who invoked it. The failure of one division shall not prevent the others from being generated and posted as images.
     - Where the posting of a generated image fails for a reason of the Discord service rather than of the generation, it is the textual calendar that shall be enqueued for retry.
     - The "images test calendar" command is the one exception, having no textual counterpart to fall back to. A fatal error met by it shall be reported to the league manager who invoked it and no image posted.
-- The textual calendar renders the date and time of a round as a Discord timestamp, which every reader sees in their own time zone. A graphic cannot, and carries the single zone configured via "images config time-zone" for every reader alike.
+- The date and the time of a round are drawn in the single configured zone, as the conventions above require, where the textual calendar renders them as a Discord timestamp.
 
 ### Test data
 - The "images test calendar" command shall generate one image, drawn for a division named "Test Division", of tier 1 and of season number 1, holding one round fewer than the number of rounds the template declares, so that the cut of the image at the crop point of a round that is not the last the template declares may be evaluated. Should the template declare a single round, one round shall be fabricated and the crop left evaluated at the height the template declares.
@@ -324,8 +346,8 @@ These hold for every image type of the module and are stated here rather than re
     - a "team_<x>_driver_<y>_" field whose <y> exceeds the number of seats configured for that team;
     - a seat of a team of the division for which the template has no "team_<x>_driver_<y>_name" field;
     - two teams of the division normalizing to the same <x>.
-- The number of reserve drivers of a division, in contrast, varies as drivers are assigned and unassigned over a season and cannot be known when the template is authored. Divergences in the reserve block are therefore not fatal:
-    - reserve drivers in excess of the slots the template declares shall be omitted from the image and a non-fatal error reported listing them;
+- The number of reserve drivers of a division, in contrast, varies as drivers are assigned and unassigned over a season and cannot be known when the template is authored. Divergences in the reserve block are treated as follows:
+    - reserve drivers in excess of the slots the template declares are a fatal error, naming them;
     - slots declared in excess of the reserve drivers of the division shall be treated as unoccupied seats are treated;
     - a division with no reserve drivers at all shall have its "reserve_group" field removed in its entirety, taking every other "reserve_" field with it.
 - The fields that do not depend on the teams are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on them can only be verified against the teams known at that moment:
@@ -588,10 +610,10 @@ These hold for every image type of the module and are stated here rather than re
     - entries in excess of the rows the template declares are a fatal error, naming the drivers or the teams that would have been dropped.
 - The rounds a template declares are treated as follows:
     - rounds declared in excess of the rounds of the division shall have their "round_<z>_group" field removed in its entirety, together with the "row_<x>_round_<z>_group" field of every row and, on the constructors graphic, the "row_<x>_round_<z>_driver_<w>_group" field of every car of every row, and no error reported. Where the template declares no group for an ordinal, every field bearing it shall be removed one by one instead;
-    - rounds of the division in excess of those the template declares shall be omitted from the graphic and a non-fatal error reported naming them. A results grid is for a calendar of roughly a dozen rounds, or for a recent window of a longer one, and a season outgrowing it is drawn without the grid or split across graphics rather than refused.
+    - rounds of the division in excess of those the template declares are a fatal error, naming them. A results grid is for a calendar of roughly a dozen rounds, and a season outgrowing the template drawn for it is carried by a template redrawn to hold it.
 - The cars a round of the constructors graphic declares are treated as follows:
     - cars declared in excess of the seats configured for the team of the row shall have their "row_<x>_round_<z>_driver_<w>_group" field removed in its entirety, and no error reported. Where the template declares no such group, every field bearing that ordinal shall be removed one by one instead;
-    - drivers who drove the cars of a team in a round in excess of the cars the template declares for it shall be omitted from that round and a non-fatal error reported naming them and the round.
+    - drivers who drove the cars of a team in a round in excess of the cars the template declares for it are a fatal error, naming them and the round.
 - Each of the following is likewise a fatal error, naming what was found to be at fault:
     - a mandatory field of the graphic that the template does not hold;
     - a template declaring no row at all;
@@ -715,13 +737,13 @@ These hold for every image type of the module and are stated here rather than re
 - The name of a driver shall be resolved as it is for the lineup graphic, and their flag image searched for as it is for the lineup graphic. Where the nationality is absent the field shall be removed and a non-fatal error reported; where one is recorded, its image is resolved as the conventions above require.
 - The team of a row is the team of the division seating the driver at the moment of generation, which for a reserve driver is the reserve team. It is not the team whose car the driver drove in any single round. The team image shall be searched for as it is for the lineup graphic.
 - The image of a round shall be searched for as it is for the calendar graphic, the number of the round standing for the field in any error reported.
-- A round of the mystery format records no track. The image field of such a round shall be removed and no error shall be reported; where the sheet stands after such a round, its race name field shall be emptied on the same terms.
+- A round of the mystery format is drawn as the conventions above require, its race name field reading "Mystery GP" and its image resolved from the datum "Mystery". The sheet standing after such a round names it as it names any other.
 - The check-in graphic re-presents the values the embed of the check-in call shows and never derives them by rules of its own.
 - The format of the round is "Normal", "Sprint", "Endurance" or "Mystery", which is the text the embed carries.
-- The name of the track is that recorded for the round, which is the value the embed carries as its location, and is "Mystery" for a round of the mystery format. The grand prix name and the country are read from the track object of the round. A round of the mystery format shall have its race name and country name fields emptied and its track image field removed, and no error shall be reported: it is the one case in which a mandatory field of this graphic carries no value without that being a fatal error.
+- The name of the track is that recorded for the round, which is the value the embed carries as its location. The grand prix name and the country are read from the track object of the round. A round of the mystery format is drawn as the conventions above require, its track name, race name and country name fields carrying the values named there and its track image resolved from the datum "Mystery". No mandatory field of this graphic is emptied for want of a track.
     - A template giving the country a card of its own or the track image a plate shall declare the removable group of those fields defined in the conventions above, so that a round carrying no track leaves neither standing empty under a label naming what is not there.
 - The name of a session is "Sprint Qualifying", "Sprint Race", "Feature Qualifying" or "Feature Race" for a round of the sprint format, and "Qualifying" or "Race" for a round of any other, as it is for the weather graphic. It carries no qualifier of the length of the session, so the short qualifying and long race of a round of the mystery format are named as those of any other round are.
-- The date and the time of the round are read from the round object, which always records them, and are rendered via the configurations introduced via "images config date-format", "images config time-format" and "images config time-zone", the abbreviation of the zone being appended to the time. The embed renders the same moment as a Discord timestamp, which every reader sees in their own time zone; a graphic cannot, and carries the single configured zone for every reader alike.
+- The date and the time of the round are read from the round object, which always records them, and are rendered as the conventions above require, where the embed renders the same moment as a Discord timestamp.
 - The moment beyond which the check-in can no longer be altered is the scheduled time of the round less the number of hours configured via "attendance config rsvp-deadline", a configuration of 0 placing it at the scheduled time of the round itself. It is rendered as the date and the time of the round are. It is the deadline the module enforces upon full-time drivers; the later deadline a reserve driver is held to is carried by neither the graphic nor the embed.
 - Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash. A field carrying an image is removed rather than emptied.
 
@@ -731,7 +753,7 @@ These hold for every image type of the module and are stated here rather than re
     - drivers in excess of the rows the template declares are a fatal error, naming the drivers that would have been dropped.
 - The rounds a sheet template declares are treated as follows:
     - rounds declared in excess of the rounds of the division shall have their "round_<z>_group" field removed in its entirety, together with the cell of that ordinal on every row, and no error reported. Where the template declares no "round_<z>_group" for that ordinal, every field bearing it shall be removed one by one instead;
-    - rounds of the division in excess of those the template declares shall be omitted from the graphic and a non-fatal error reported naming them.
+    - rounds of the division in excess of those the template declares are a fatal error, naming them.
 - The sessions a check-in template declares are treated as follows:
     - sessions declared in excess of the sessions of the round shall have their "session_<x>_group" field removed in its entirety, taking every other field of the session with it, and no error reported;
     - sessions of the round in excess of those the template declares are a fatal error, naming the sessions that would have been dropped.
@@ -740,7 +762,7 @@ These hold for every image type of the module and are stated here rather than re
     - a sheet template declaring no row at all;
     - a gap in the numbering of the rows, in the numbering of the rounds, or in the numbering of the sessions;
     - a field of the catalogue of the other graphic of the module;
-    - a mandatory field whose value cannot be determined at generation, save those named for a round of the mystery format;
+    - a mandatory field whose value cannot be determined at generation;
     - a sheet drawn for a division holding no driver at all.
 - A flag image, a team image and a track image are each resolved as the conventions above require. As the request for nationality may be switched off entirely via "signup nationality toggle", a sheet with no flags at all is a legitimate outcome and no error whatsoever.
 - The fields that do not depend on the division are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on it cannot be verified against a division when the template is configured or at season review; at those moments it shall be verified only that a sheet template declares at least one row, numbered continuously from 1 and holding every mandatory field of a row, that the rounds it declares, if any, are numbered continuously from 1 and each hold the field carrying its number, and that the sessions a check-in template declares, if any, are numbered continuously from 1 and hold every mandatory field of a session. At season review the rounds of a sheet template shall additionally be verified against the greatest number of rounds any division of the season holds, and the sessions of a check-in template against the largest number of sessions any round of the season holds, a divergence being a warning only. At generation they are verified against the division and the round being drawn.
@@ -767,7 +789,7 @@ These hold for every image type of the module and are stated here rather than re
 
 ### Test data
 - The "images test attendance" command shall generate two sheets, both drawn for a division named "Test Division", of tier 1 and of season number 1, holding a calendar of five rounds and standing after the third of them, so that the emptying of the cells of a round yet to be run may be evaluated alongside those already finalized. One shall be drawn with both the autoreserve and the autosack limits configured, and the other with both disabled, so that the removal of the fields carrying them may be evaluated.
-    - Round 2 of the calendar fabricated shall be of the mystery format, so that the removal of the image of a round carrying no track may be evaluated.
+    - Round 2 of the calendar fabricated shall be of the mystery format, so that the drawing of a round carrying no track may be evaluated.
     - One round of the calendar fabricated shall be one whose track is of the server's track list and for which no image file is found in the configured track image directory, so that the drawing of the fallback and the non-fatal error it reports may be evaluated.
 - The drivers fabricated shall be one fewer than the number of rows the template declares, so that the rendering of an unused row may be evaluated, and shall be drawn from the teams of the team configuration of the server. Should the template declare a single row, one driver shall be fabricated and the unused row left unevaluated.
 - The drivers fabricated shall include, insofar as the number of rows declared allows:
@@ -936,7 +958,7 @@ These hold for every image type of the module and are stated here rather than re
 - A Discord mention appearing within any text the graphic places shall be replaced by the name of the driver it addresses, resolved as the name of a driver is resolved elsewhere. The justification the attendance module composes for a sacking and for a move to the reserve team is written around such a mention and shall carry the name alone. The graphic mentions nobody; it is the message the graphic is attached to that mentions the driver the verdict pertains to.
 - The team is the team the driver drove for in the session the verdict pertains to, which for a reserve driver standing in for another is the team whose car they drove and never the reserve team. The name to be placed, and the name to be normalized to search for the team image, shall be resolved as they are for the results graphic: the team of the division holding the Discord role the result records, falling back to the name of the role itself should the division hold no such team.
 - A verdict of an attendance sanction names no team. Its team name field shall be emptied and its team image field removed, and no error shall be reported. A template drawing a label above them shall declare the removable group of those fields defined in the conventions above, so that the label does not stand over nothing.
-- The number of the round is read from the round object and the grand prix name from the track object of the round. A round of the mystery format records no track and shall have its race name field emptied, no error being reported.
+- The number of the round is read from the round object and the grand prix name from the track object of the round. A round of the mystery format is drawn as the conventions above require, its race name field reading "Mystery GP".
 - Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash. A field carrying an image is removed rather than emptied.
 
 ### Handling of mismatches between verdict and template
