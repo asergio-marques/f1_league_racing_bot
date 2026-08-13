@@ -94,6 +94,8 @@ def test_the_other_nine_catalogues_are_still_empty():
         "results_race_template",
         "standings_drivers_template",
         "standings_constructors_template",
+        "attendance_template",
+        "rsvp_template",
     }
 
 

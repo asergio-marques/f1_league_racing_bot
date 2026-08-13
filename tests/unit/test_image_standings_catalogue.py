@@ -322,11 +322,22 @@ def test_a_gap_in_the_cars_of_a_round_is_fatal():
 
 
 def test_a_driver_field_belongs_to_the_drivers_row_alone():
-    assert sibling_row_fields(CONSTRUCTORS) == {"driver_name", "driver_flag"}
+    assert {"driver_name", "driver_flag"} <= sibling_row_fields(CONSTRUCTORS)
 
 
-def test_the_drivers_row_is_a_superset_so_it_inherits_no_sibling_field():
-    assert sibling_row_fields(DRIVERS) == set()
+def test_the_drivers_row_inherits_no_field_from_its_championship_sibling():
+    """Nothing of the constructors row is foreign to the drivers row, which is its superset.
+
+    The drivers row is not sibling-free outright: constitution v4.6.0 widened the relation to
+    the several graphics of one **source module**, and results, standings and verdicts are all
+    the results module's. What the drivers row inherits from its own championship sibling is
+    still nothing, which is what this test pins.
+    """
+    constructors_fields = set(STANDINGS_CONSTRUCTORS_CATALOGUE.rows.fields)
+    assert constructors_fields & sibling_row_fields(DRIVERS) == set()
+
+    # The results row fields are foreign to it, and are caught.
+    assert {"tyre", "best_lap", "time"} <= sibling_row_fields(DRIVERS)
 
 
 def test_a_driver_field_on_the_constructors_template_is_reported():

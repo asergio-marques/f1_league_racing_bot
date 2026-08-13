@@ -267,6 +267,33 @@ STANDINGS_DRIVERS_SVG = _standings_svg(b"driver_name")
 STANDINGS_CONSTRUCTORS_SVG = _standings_svg()
 
 
+#: A sound attendance sheet (041): the two whole-graphic mandatories and one complete row. It
+#: declares no round at all, the grid being an optional unit (XIV.3), and no position, the row
+#: ordinal of a sheet being a place in the layout and not a datum (XIV.11, v4.6.0).
+ATTENDANCE_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b'<g id="row_1_group">'
+    b'<text id="row_1_driver_name">N</text>'
+    b'<text id="row_1_points">0</text>'
+    b"</g></svg>"
+)
+
+#: A sound check-in call (041). No session at all, and none of the values a button press can
+#: change — which is what makes the type static (XIV.17).
+RSVP_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b'<text id="race_name">R</text>'
+    b'<text id="round_format">Normal</text>'
+    b'<text id="round_date">1 Jan 2026</text>'
+    b'<text id="round_time">20:00 UTC</text>'
+    b"</svg>"
+)
+
+
 def sound_bytes(template_key: str) -> bytes:
     """The soundest bytes for *template_key* at the depth its type is checked to."""
     if template_key == "results_qualifying_template":
@@ -277,6 +304,10 @@ def sound_bytes(template_key: str) -> bytes:
         return STANDINGS_DRIVERS_SVG
     if template_key == "standings_constructors_template":
         return STANDINGS_CONSTRUCTORS_SVG
+    if template_key == "attendance_template":
+        return ATTENDANCE_SVG
+    if template_key == "rsvp_template":
+        return RSVP_SVG
     return VALID_SVG
 
 
@@ -422,12 +453,12 @@ async def test_render_without_season(
     await config_service.set_field(SERVER_ID, "template_directory", "templates")
 
     for key, filename in TEMPLATE_COLUMNS.items():
-        # The results (039) and standings (040) templates carry a populated catalogue, so the
-        # rich sample bytes would fail Layer 2 for them; every other type is still checked to
-        # Layer 1 and draws from the generic sample filler.
+        # The results (039), standings (040) and attendance (041) templates carry a populated
+        # catalogue, so the rich sample bytes would fail Layer 2 for them; every other type is
+        # still checked to Layer 1 and draws from the generic sample filler.
         body = (
             sound_bytes(key)
-            if key.startswith(("results_", "standings_"))
+            if key.startswith(("results_", "standings_", "attendance_", "rsvp_"))
             else RICH_TEMPLATE
         )
         (template_dir / "templates" / filename).write_bytes(body)

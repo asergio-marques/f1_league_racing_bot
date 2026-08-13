@@ -36,6 +36,17 @@ _STATE_ICONS = {
 _INVALID_ICON = "⚠️"
 
 
+#: Template key -> the sample variants ``/images test`` draws for it, in order. Two types draw
+#: more than one image: the attendance sheet, which must show its point-limit blocks both
+#: configured and removed, and the check-in call, whose five rounds exercise four sessions, two
+#: sessions, a concealed track, a track with no image file, and a deadline standing at the
+#: round's own start (wip-spec section "Test data"). Every other type draws one.
+_SAMPLE_VARIANTS: dict[str, tuple] = {
+    "attendance_template": ("limits", "no_limits"),
+    "rsvp_template": ("sprint", "normal", "mystery", "no_image", "no_deadline"),
+}
+
+
 class ImageCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -940,13 +951,19 @@ class ImageCog(commands.Cog):
             "results_race_template",
             "standings_drivers_template",
             "standings_constructors_template",
+            "attendance_template",
         } & set(templates)
         if needs_teams:
             teams = await self.bot.team_service.get_default_teams(  # type: ignore[attr-defined]
                 interaction.guild_id
             )
             if not [t for t in teams if not getattr(t, "is_reserve", False)]:
-                drawn = "lineup" if "lineup_template" in needs_teams else "classification"
+                if "lineup_template" in needs_teams:
+                    drawn = "lineup"
+                elif "attendance_template" in needs_teams:
+                    drawn = "attendance sheet"
+                else:
+                    drawn = "classification"
                 await interaction.followup.send(
                     f"⛔ This server holds no team beyond the Reserve team, so there is no "
                     f"{drawn} to draw. Add one with `/team add` first.",
@@ -954,24 +971,58 @@ class ImageCog(commands.Cog):
                 )
                 return
 
+        # The attendance sheet and the check-in call are both drawn against a round, and a
+        # round is drawn against a track. With no track list there is no sheet to draw and no
+        # round for a call to pertain to, and a generic render failure would not say so
+        # (FR-068, FR-071).
+        needs_tracks = {"attendance_template", "rsvp_template"} & set(templates)
+        if needs_tracks:
+            from db.database import get_connection
+            from services.track_service import get_all_tracks
+
+            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                tracks = await get_all_tracks(db)
+            if not tracks:
+                subject = (
+                    "attendance sheet"
+                    if "attendance_template" in needs_tracks
+                    else "check-in call"
+                )
+                await interaction.followup.send(
+                    f"⛔ This server's track list is empty, so there is no round for a "
+                    f"{subject} to be drawn against. Add tracks first.",
+                    ephemeral=True,
+                )
+                return
+
         outcomes = []
         for template_key in templates:
-            outcomes.append(
-                (
-                    template_key,
-                    await self._render_sample(
-                        interaction.guild_id, template_key, teams=teams
-                    ),
+            for variant in _SAMPLE_VARIANTS.get(template_key, (None,)):
+                outcomes.append(
+                    (
+                        template_key,
+                        await self._render_sample(
+                            interaction.guild_id,
+                            template_key,
+                            teams=teams,
+                            variant=variant,
+                        ),
+                    )
                 )
-            )
 
         await self._send_test_results(interaction, kind, outcomes)
 
-    async def _render_sample(self, server_id: int, template_key: str, *, teams=None):
+    async def _render_sample(
+        self, server_id: int, template_key: str, *, teams=None, variant=None
+    ):
         """Render one template from sample data. Reads no live season data (FR-036).
 
-        *teams* is the server's team configuration, needed by the lineup alone and None
-        for every other kind.
+        *teams* is the server's team configuration, needed by the lineup, the results, the
+        standings and the attendance sheet, and None for every other kind.
+
+        *variant* selects which of a type's sample cases to draw, for the two types the
+        wip-spec asks for more than one image of: the attendance sheet with both point limits
+        configured and with both switched off, and the check-in call over its five rounds.
         """
         from services.image_sample_data import build_spec
 
@@ -979,7 +1030,7 @@ class ImageCog(commands.Cog):
         return await service.render(
             server_id,
             template_key,
-            lambda root: build_spec(template_key, root, teams=teams),
+            lambda root: build_spec(template_key, root, teams=teams, variant=variant),
         )
 
     async def _send_test_results(

@@ -42,6 +42,36 @@ def validate_timing_invariant(
     return None
 
 
+def derive_checkin_deadline(
+    scheduled_at: datetime,
+    deadline_hours: int,
+) -> datetime:
+    """The moment beyond which a round's check-in can no longer be altered.
+
+    The round's scheduled time less the hours configured via ``attendance config
+    rsvp-deadline``; a configuration of ``0`` places it at the round's own start.
+
+    **Why this lives here and not in the image utility.** The check-in graphic draws this
+    value and the embed does not, which makes it a *derived presentation* under Constitution
+    XIV.7 — arithmetic over figures the bot already holds, deciding nothing. The clause admits
+    it on the condition that the derivation is written in the service owning the figures, so
+    the textual path can adopt the column later without a second implementation. A graphic
+    that subtracted its own hours would be that second implementation.
+
+    It is a measurement and not a decision: the module already *enforces* this deadline when
+    it schedules the deadline job, and the graphic reads the result of that rule rather than
+    applying one.
+
+    This is the deadline held against **full-time** drivers. The later deadline a reserve is
+    held to is carried by neither the graphic nor the embed, and is not this function's.
+    """
+    from datetime import timedelta
+
+    if scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+    return scheduled_at - timedelta(hours=deadline_hours)
+
+
 class AttendanceService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -793,10 +823,20 @@ async def post_attendance_sheet(
     division_id: int,
     sanctioned_profile_ids: set[int] | None = None,
 ) -> None:
-    """Delete prior sheet and post a new one to the division's attendance channel (FR-016–FR-021).
+    """Post a new sheet to the division's attendance channel, replacing the prior one.
 
     Pass ``sanctioned_profile_ids`` to annotate those drivers with "(reached point limit)"
     on this posting.
+
+    **The replacement ordering (Constitution XIV.8).** The replacement is produced and posted
+    **before** the message it replaces is deleted, so that at no instant is the channel
+    without a sheet. A failed post therefore leaves the division holding the sheet it had,
+    rather than none at all.
+
+    This ordering belongs to *this* function and the image path inherits it, rather than
+    carrying a rule of its own: two orderings in one flow would drift, and the half left
+    deleting first would be the fallback — the path reached precisely because something has
+    already gone wrong. There is exactly one send site and exactly one delete site below.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -809,6 +849,19 @@ async def post_attendance_sheet(
         log.warning("post_attendance_sheet: no attendance_channel_id configured for division %s", division_id)
         return
 
+    # A round recorded as cancelled distributes no attendance points and produces no sheet,
+    # whatever the `attendance` toggle says (FR-047). The recording flow already skips a
+    # cancelled round upstream; the guard stands here too so the rule holds wherever this is
+    # called from, and so that no graphic is ever generated for a posting that will not happen
+    # (XIV.8 — no posting, no graphic).
+    async with get_connection(db_path) as db:
+        round_row = await (
+            await db.execute("SELECT status FROM rounds WHERE id = ?", (round_id,))
+        ).fetchone()
+    if round_row is not None and round_row["status"] == "CANCELLED":
+        log.info("post_attendance_sheet: skipping cancelled round %s", round_id)
+        return
+
     channel_id = int(row["attendance_channel_id"])
     prior_msg_id = row["attendance_message_id"]
 
@@ -816,16 +869,6 @@ async def post_attendance_sheet(
     if channel is None:
         log.warning("post_attendance_sheet: channel %s not found for division %s", channel_id, division_id)
         return
-
-    # Delete prior sheet message (FR-020).
-    if prior_msg_id:
-        try:
-            prior_msg = await channel.fetch_message(int(prior_msg_id))
-            await prior_msg.delete()
-        except discord.NotFound:
-            pass  # already gone — skip silently (FR-020)
-        except discord.HTTPException as exc:
-            log.warning("post_attendance_sheet: failed to delete prior message: %s", exc)
 
     # Build sheet content.
     async with get_connection(db_path) as db:
@@ -885,7 +928,8 @@ async def post_attendance_sheet(
 
     sorted_drivers = sorted(driver_rows, key=_sort_key)
 
-    lines: list[str] = ["**Attendance Standings**", ""]
+    heading = "**Attendance Standings**"
+    lines: list[str] = [heading, ""]
     for r in sorted_drivers:
         pts = r["total_points_after"] or 0
         mention = f"<@{r['discord_user_id']}>"
@@ -910,19 +954,315 @@ async def post_attendance_sheet(
 
     content = "\n".join(lines)
 
-    # Post new sheet and persist message ID (FR-021).
+    # ── The graphic, where the league draws one ───────────────────────────
+    # Rendered *before* anything is sent or destroyed, and entirely optional: a failure here
+    # leaves ``attachment`` None and the textual sheet below is posted exactly as it always
+    # was. The graphic never gates this posting, and this posting never gates a sanction
+    # (XIV.7 — image output adds no precondition).
+    attachment = await _sheet_attachment(
+        bot,
+        guild,
+        db_path,
+        round_id=round_id,
+        division_id=division_id,
+        sorted_drivers=sorted_drivers,
+        cfg_row=cfg_row,
+        sanctioned_profile_ids=sanctioned_profile_ids,
+    )
+
+    # ── Produce ───────────────────────────────────────────────────────────
+    # The one send site, for the graphic and the text alike. Nothing has been destroyed at this
+    # point, so a failure here leaves the previously posted sheet standing (XIV.8).
     try:
-        new_msg = await channel.send(content)
+        if attachment is not None:
+            # **The graphic replaces the table, not merely decorates it** (FR-043, XIV.16).
+            # The message keeps the heading and gives the sheet itself to the picture. Posting
+            # the full textual body beside the attachment would tell a league everything twice
+            # and ping every driver from a message whose point is the image — and the graphic
+            # carries names precisely so that it carries no mention.
+            new_msg = await channel.send(heading, file=attachment)
+        else:
+            new_msg = await channel.send(content)
     except discord.HTTPException as exc:
         log.warning("post_attendance_sheet: failed to post sheet for division %s: %s", division_id, exc)
+        # A failure of the **service** rather than of the generation: it is the textual sheet
+        # that is enqueued, never the rendered image (XIV.8, FR-060). The queue is durable and
+        # outlives the state that filled it, so a picture retried an hour from now would be a
+        # picture of a division that has moved on; the text is composed when it is finally
+        # sent. Nothing has been deleted at this point, so the previous sheet still stands.
+        try:
+            from services import retry_service
+
+            await retry_service.enqueue(
+                db_path,
+                server_id=guild.id,
+                channel_id=channel_id,
+                content=content,
+                failure_reason=f"attendance sheet for division {division_id}: {exc}",
+            )
+        except Exception:  # noqa: BLE001 — the queue must never mask the original failure
+            log.exception("post_attendance_sheet: could not enqueue the textual sheet")
         return
 
+    # Persist the replacement's id before removing what it replaces, so that a failed
+    # deletion leaves the config pointing at the message that actually exists.
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE attendance_division_config SET attendance_message_id = ? WHERE division_id = ?",
             (str(new_msg.id), division_id),
         )
         await db.commit()
+
+    # ── Then destroy ──────────────────────────────────────────────────────
+    # The one delete site, so that at most one sheet stands in the channel at any moment.
+    if prior_msg_id and str(prior_msg_id) != str(new_msg.id):
+        try:
+            prior_msg = await channel.fetch_message(int(prior_msg_id))
+            await prior_msg.delete()
+        except discord.NotFound:
+            pass  # already gone — skip silently
+        except discord.HTTPException as exc:
+            log.warning("post_attendance_sheet: failed to delete prior message: %s", exc)
+
+
+async def _sheet_attachment(
+    bot,
+    guild: discord.Guild,
+    db_path: str,
+    *,
+    round_id: int,
+    division_id: int,
+    sorted_drivers,
+    cfg_row,
+    sanctioned_profile_ids: set[int] | None,
+):
+    """The sheet graphic to attach, or None to post the textual sheet alone.
+
+    Every path out of here that is not a rendered PNG returns None, and the caller posts the
+    text it would have posted anyway. That is the whole of the fallback: the module being off,
+    the aspect being off, the template being invalid and the render having failed are not
+    distinguished, because the answer to all four is the same.
+
+    Nothing raised here escapes. A graphic must never prevent, delay or condition the posting
+    it rides on, still less the sanctions enforced beside it (XIV.7).
+    """
+    if bot is None or guild is None:
+        return None
+
+    try:
+        from services.image_attendance_post import (
+            attendance_enabled,
+            render_sheet,
+            report,
+            report_notices,
+        )
+        from services.image_attendance_service import DriverRecord, resolve_drawing
+
+        server_id = guild.id
+        if not await attendance_enabled(bot, server_id):
+            return None
+
+        from services.image_results_post import (
+            _driver_names,
+            _nationalities,
+            _nationality_collected,
+        )
+
+        records: list[DriverRecord] = []
+        user_ids = [int(row["discord_user_id"]) for row in sorted_drivers]
+        profile_ids = [int(row["driver_profile_id"]) for row in sorted_drivers]
+
+        # The grid: every round the division holds, run or not (FR-016), and what each
+        # conferred on each driver. The points are **read** from the record the module
+        # persisted — already net of pardons — and never recomputed here (XIV.7).
+        headings, cells = await _round_grid(db_path, division_id, profile_ids)
+        profile_of = {
+            int(row["discord_user_id"]): int(row["driver_profile_id"])
+            for row in sorted_drivers
+        }
+
+        # The name each driver is drawn under, and their flag — both through the conventions
+        # every graphic shares, called rather than restated (wip-spec § "The name of a person").
+        display_names = await _driver_names(bot, guild, user_ids)
+        nationalities = await _nationalities(bot, user_ids)
+        collected = await _nationality_collected(db_path, server_id)
+
+        # The team of a row is the team of the division seating the driver **at the moment of
+        # generation** — the reserve team for a reserve — and never the team whose car they
+        # drove in any one round (FR-020).
+        team_names = await _seat_team_names(db_path, division_id, user_ids)
+
+        for row in sorted_drivers:
+            key = int(row["discord_user_id"])
+            display_names.setdefault(key, str(key))
+            records.append(
+                DriverRecord(
+                    key=key,
+                    total=row["total_points_after"] or 0,
+                    round_points=cells.get(profile_of.get(key, -1), {}),
+                    sanctioned=bool(
+                        sanctioned_profile_ids
+                        and row["driver_profile_id"] in sanctioned_profile_ids
+                    ),
+                )
+            )
+
+        division_name = await _division_name(db_path, division_id)
+        round_number = await _round_number(db_path, round_id)
+
+        drawing = resolve_drawing(
+            division_name=division_name,
+            round_number=round_number,
+            records=records,
+            display_names=display_names,
+            team_names=team_names,
+            nationalities=nationalities,
+            rounds=headings,
+            autoreserve_threshold=(cfg_row["autoreserve_threshold"] if cfg_row else None),
+            autosack_threshold=(cfg_row["autosack_threshold"] if cfg_row else None),
+            # Where the league switched nationality collection off at its source, a sheet with
+            # no flags at all is exactly what was configured and raises nothing — rather than
+            # one notice per driver, on every render, reporting a setting back to whoever
+            # chose it (XIV.4's configured absence).
+            nationality_collected=collected,
+        )
+
+        render = await render_sheet(bot, server_id, drawing)
+        label = f"{division_name} — attendance after round {round_number}"
+        if render.notices:
+            await report_notices(bot, server_id, label, render.notices)
+        if render.problem:
+            await report(bot, server_id, label, render.problem)
+        if not render.draws:
+            return None
+
+        return discord.File(str(render.png), filename="attendance.png")
+    except Exception as exc:  # noqa: BLE001 — the sheet must post whatever happens here
+        log.error(
+            "post_attendance_sheet: the graphic could not be drawn for division %s: %s",
+            division_id, exc,
+        )
+        return None
+
+
+async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
+    """The sheet's round columns, and the points each round conferred on each driver.
+
+    Returns ``(headings, cells)`` where *headings* is one :class:`RoundHeading` per round the
+    division holds — **every** round, run or not (FR-016), unlike the standings grid which
+    draws only those already run — and *cells* maps a driver profile id to
+    ``{round ordinal: points}``.
+
+    The ordinal is the round's place in the calendar, counted from 1, because that is what the
+    template's ``round_<z>`` addresses. The *number* drawn on the heading is the round's own
+    human-readable number, which need not agree with its position if rounds were removed.
+
+    A round of the mystery format records no track and is drawn from the datum "Mystery", as
+    every graphic draws one (wip-spec § "A round of the mystery format").
+
+    A missing cell and a stored zero are the same picture and the same meaning: the round
+    counted nothing against that driver. Nothing here distinguishes the six ways that happens.
+    """
+    from services.image_attendance_service import RoundHeading
+
+    headings: list = []
+    cells: dict[int, dict[int, int | None]] = {}
+    try:
+        async with get_connection(db_path) as db:
+            rows = await (
+                await db.execute(
+                    "SELECT id, round_number, track_name, format FROM rounds "
+                    "WHERE division_id = ? ORDER BY round_number",
+                    (division_id,),
+                )
+            ).fetchall()
+
+            ordinal_of: dict[int, int] = {}
+            for ordinal, row in enumerate(rows, start=1):
+                ordinal_of[int(row["id"])] = ordinal
+                mystery = str(row["format"] or "").upper().endswith("MYSTERY")
+                headings.append(
+                    RoundHeading(
+                        ordinal=ordinal,
+                        number=str(row["round_number"]),
+                        track="Mystery" if mystery else (row["track_name"] or None),
+                    )
+                )
+
+            if ordinal_of and profile_ids:
+                round_marks = ",".join("?" * len(ordinal_of))
+                driver_marks = ",".join("?" * len(profile_ids))
+                points_rows = await (
+                    await db.execute(
+                        f"SELECT round_id, driver_profile_id, points_awarded "
+                        f"FROM driver_round_attendance "
+                        f"WHERE division_id = ? "
+                        f"  AND round_id IN ({round_marks}) "
+                        f"  AND driver_profile_id IN ({driver_marks})",
+                        [division_id, *ordinal_of.keys(), *profile_ids],
+                    )
+                ).fetchall()
+                for row in points_rows:
+                    ordinal = ordinal_of.get(int(row["round_id"]))
+                    if ordinal is None:
+                        continue
+                    cells.setdefault(int(row["driver_profile_id"]), {})[ordinal] = (
+                        row["points_awarded"]
+                    )
+    except Exception as exc:  # noqa: BLE001 — a grid that cannot be read is drawn empty
+        log.error("post_attendance_sheet: could not read the round grid: %s", exc)
+        return [], {}
+
+    return headings, cells
+
+
+async def _seat_team_names(
+    db_path: str, division_id: int, user_ids: list[int]
+) -> dict[int, str]:
+    """The team of the division seating each driver **now**, keyed by Discord user id.
+
+    A reserve driver's team is the reserve team, which is what the sheet draws for them —
+    not the team whose car they drove in some round (FR-020). The team's name is also what the
+    badge is looked up by, so one lookup serves both.
+    """
+    if not user_ids:
+        return {}
+    placeholders = ",".join("?" * len(user_ids))
+    try:
+        async with get_connection(db_path) as db:
+            rows = await (
+                await db.execute(
+                    f"SELECT dp.discord_user_id AS uid, ti.name AS name "
+                    f"FROM driver_profiles dp "
+                    f"JOIN driver_season_assignments dsa "
+                    f"  ON dsa.driver_profile_id = dp.id AND dsa.division_id = ? "
+                    f"JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+                    f"JOIN team_instances ti ON ti.id = ts.team_instance_id "
+                    f"WHERE dp.discord_user_id IN ({placeholders})",
+                    [division_id, *[str(uid) for uid in user_ids]],
+                )
+            ).fetchall()
+    except Exception:  # noqa: BLE001 — a nameless team is drawn empty, never fatal
+        return {}
+    return {int(row["uid"]): row["name"] for row in rows if row["name"]}
+
+
+async def _division_name(db_path: str, division_id: int) -> str:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT name FROM divisions WHERE id = ?", (division_id,)
+        )
+        row = await cursor.fetchone()
+    return (row["name"] if row and row["name"] else f"Division {division_id}")
+
+
+async def _round_number(db_path: str, round_id: int) -> str:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT round_number FROM rounds WHERE id = ?", (round_id,)
+        )
+        row = await cursor.fetchone()
+    return str(row["round_number"]) if row and row["round_number"] else str(round_id)
 
 
 async def enforce_attendance_sanctions(
