@@ -263,6 +263,11 @@
 - In all other cases, drivers are eligible for scoring.
 - The fastest-lap bonus is normally awarded to the driver whose Fastest Lap time is the lowest across all valid entries in the submitted block. In the rare case where two or more drivers share the exact same fastest-lap time, an optional **FL override header** may prepended to the submission block on its own line, in the format `FL: <@user_id>`, to explicitly designate the fastest-lap holder. The override bypasses time-based comparison entirely and does not change or replace any of the per-driver Fastest Lap fields. If the override names a driver not present in the submitted results, the submission is rejected. If no override is provided and a tie occurs, the driver whose row appears first in the submission (i.e. with the lower finishing position) receives the bonus implicitly. The FL override is race-only; it has no effect on qualifying submissions.
 
+#### One driver, one team, for the whole of a round
+- A driver shall be recorded under one team role across every session of a round. A submission recording a driver under a team role different from the one another active session of that round already records for them shall be rejected, naming the driver, the team already recorded and the session recording it.
+- The criteria above tie a driver seated in a team to the team they are seated in, but are applied to one session at a time and against the seats as they stand at that moment, and a driver of the reserve team is tied to no team at all, being free to stand in for any. Neither closes this case, and a reserve standing in for two different teams within one round would otherwise be recorded.
+- The constructor standings graphic places each driver who drove a team's cars in a round upon one of those cars, and cannot place one driver upon the cars of two teams. That is guaranteed here, at the moment the input is given and where it can be named and corrected, rather than discovered when a graphic is drawn.
+
 ### After submission of results
 - Once the results for all sessions in a round are submitted and validated, the results shall be output into the configured results channel for the division in a prettier table-like format. The results to be output are as follows:
     - Qualifying sessions: Position, Discord display name, Team, Tyre, Best Lap, Gap, Points Gained

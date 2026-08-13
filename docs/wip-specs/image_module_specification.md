@@ -634,6 +634,7 @@ These hold for every image type of the module and are stated here rather than re
 - The name to be placed for a constructor, and the name to be normalized to search for its team image, shall be resolved as the conventions above require of the name of a team, the Discord role being that which the standings record of the constructor carries.
 - The gap to the leader is the points of the first-placed entry less those of the entry, rendered prefixed with a minus sign, and is empty for the first-placed entry.
 - The previous position and the position change are read against the standings of the round preceding the one drawn, the change being the number of positions separating the two, placed without a sign and "0" where the entry has neither gained nor lost.
+- The round preceding the one drawn is the most recent round of the division that holds standings. A round recorded as cancelled, and a round yet to be run, hold none and are stepped over, so that one cancelled round does not empty the column for every entry of the graphic drawn after it.
 - The marker image of the position change shall be searched for in the configured marker directory under a filename equal to the direction of that change: "gained" where the entry stands higher than it did after the preceding round, "lost" where it stands lower, and "unchanged" where it stands where it stood, and resolved as the conventions above require.
 - The position change cannot be determined for the graphic of the first round of a division, nor for an entry the standings of the preceding round do not hold. In either case the "row_<x>_position_change_group" field shall be removed in its entirety; where the template declares no such group, the number shall be emptied and the marker removed. The previous position field is emptied in the same two cases.
 - A result cell of either graphic carries the finishing position recorded in that session of that round for the driver the cell stands for, or "DNF", "DNS" or "DSQ" where that is the outcome recorded for them. A driver dropped to the bottom of a session by a disqualification carries "DSQ" and not the position that drop gave them.
@@ -644,7 +645,7 @@ These hold for every image type of the module and are stated here rather than re
     - the drivers who drove the cars of a team in a round are those whose result in a session of that round records the Discord role of that team;
     - a driver seated in the team is placed on the car of the ordinal of the seat they occupy in it, and a seated driver who drove no session of the round leaves that car free;
     - a driver not seated in the team is placed on the lowest-numbered car left free in that round;
-    - a driver is never placed on two cars, nor on the cars of two teams;
+    - a driver is never placed on two cars, nor on the cars of two teams, the results module constraining a driver to one team role for the whole of a round;
     - the name placed on a car is that of the driver who drove it in that round, resolved as it is for the lineup graphic;
     - a car that no driver drove in a round has its "row_<x>_round_<z>_driver_<w>_group" field removed in its entirety; where the template declares no such group, the name and the result cells of that car are emptied.
 - Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash.
