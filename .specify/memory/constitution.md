@@ -1,6 +1,182 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-13 — v4.5.0 → v4.6.0: MINOR — how long a picture is good for; the attendance audit]
+  Version change    : 4.5.0 → 4.6.0
+  Bump rationale    : MINOR. One rule is added (17) and Rules 3, 7, 8, 11 and 12 are expanded.
+                      Nothing is removed and nothing conformant to v4.5.0 becomes non-conformant.
+                      Rule 17's ordinary form is what every existing type already does, stated;
+                      Rule 8's lifecycle is what the wip-spec already required of all six types,
+                      hoisted; Rule 12's floor is opt-in per type and the four types declaring none
+                      keep their behaviour entire. No template that rendered under v4.5.0 stops
+                      rendering under this one, which is the test v4.0.0 fixed for MAJOR.
+
+                      MAJOR was considered for Rule 3's widened sibling test, which makes a problem
+                      of something v4.5.0 left unstated, and rejected. The relation it adds holds
+                      only between the graphics of one source module, and the sole pair it newly
+                      catches is the two attendance types — both first specified in this amendment.
+                      No catalogue existing under v4.5.0 gains a sibling it did not have.
+  Feature branch    : 041-attendance-image-generation (created 2026-08-13 from main)
+
+  Session context   : 037 built the calendar, 038 the lineup, 039 the results, 040 the standings.
+                      This session begins the fifth per-image-type utility — the **attendance**
+                      module's two graphics, the sheet and the check-in call — and no other type is
+                      in scope. Principle XIV was audited against
+                      `docs/wip-specs/image_module_specification.md` § "Attendance image generation"
+                      as the four sessions before it audited their own. Nine divergences were found;
+                      three were put to the author, one of which they dismissed as not arising, and
+                      the rest settled by the precedent v4.1.0 set, that where the constitution
+                      stated a rule too narrowly the wip-spec wins.
+
+                      Attendance is the first module whose **two graphics stand in different
+                      relations to their text**. The sheet replaces the textual sheet as the tables
+                      before it did. The check-in graphic replaces nothing: the embed, its roster,
+                      its status indicators and its three buttons remain entire, and the picture is
+                      added beside them. It is also the first graphic that **outlives its own
+                      generation** — the call's message cannot be reposted, its buttons being armed
+                      against it, so the embed is edited in place on every press and the attachment
+                      rides through untouched. Most of this amendment follows from that one fact and
+                      from the discipline it demands in exchange.
+
+  Author's rulings  : - Static graphics     → **the image type declares itself static**. The licence
+                                            is a declaration made in the type's specification and
+                                            not a property the module derives from the catalogue,
+                                            the author being trusted to have kept mutable values off
+                                            the picture. A catalogue-checkable form was offered and
+                                            declined. Rule 17 therefore states the obligation, names
+                                            who holds it, and says plainly that the module cannot
+                                            catch a breach of it — a stale picture under a current
+                                            message reports nothing, and that is the price of the
+                                            only lifecycle a message with buttons admits.
+                      - Collection floor    → **declared per image type**. A division holding no
+                                            driver refuses rather than drawing an empty sheet, and
+                                            each type says for itself whether it has such a floor.
+                                            The calendar and the attendance sheet declare one; the
+                                            results, standings, weather and verdicts types declare
+                                            none and keep the silent-removal behaviour in full. A
+                                            universal floor over every principal collection was
+                                            offered and declined.
+                      - Collapsed causes    → **not a divergence; no rule added**. Put to the author
+                                            on the ground that the sheet empties a round cell for six
+                                            distinct causes it does not tell apart, and dismissed:
+                                            the sheet lists the points a round conferred and never
+                                            the reason, so no cause is collapsed and nothing is
+                                            hidden. Rule 3's determined-empty already governs the
+                                            cell and Rule 4 raises no notice for it. Recorded here
+                                            so the question is not re-opened by the next audit.
+
+  Settled by precedent (not put to the author, the wip-spec having stated the general form):
+                      - The posting lifecycle in full — that an attachment cannot enter a posted
+                        message, that an edit therefore becomes a delete-and-repost, that the
+                        replacement is produced before the original is destroyed, and that a
+                        transport failure enqueues the text form. The wip-spec states all four in
+                        each of six image-type sections; the constitution stated none of them.
+                      - The graphic adding no precondition, stated for attendance and for verdicts.
+                      - No posting, no graphic.
+                      - The sibling relation holding between the graphics of one source module.
+                      - The ordinal that is a slot and not a datum.
+
+  Modified rules (Principle XIV):
+    - **3. Every mandatory field MUST be resolved** — the **sibling** relation is widened. Two image
+      types are siblings where they draw one output aspect, **or** where they are the several graphics
+      of one **source module**, whatever they draw. The attendance sheet and the check-in graphic share
+      not one field and are siblings all the same: common content makes a swapped file plausible,
+      common provenance makes it possible, and only the latter is the test. Types of two different
+      modules remain unrelated.
+    - **7. Image output is additive** — two additions. **Additive means adding no precondition
+      either**: the generation and posting of a graphic MUST NOT prevent, delay or condition anything
+      the source module would have done without it — a sanction enforced, attendance rows opened, a
+      review finalised, the message itself posted. Rule 4 said a broken graphic costs at most one
+      graphic; this says it costs at most a picture and never a consequence. And **a graphic that
+      displaces nothing** is admitted as the purest case of the rule rather than an exception to it,
+      its fallback being the message posted without the attachment and its toggle altering the textual
+      flow in no respect.
+    - **8. Images are attachments** — expanded from three lines into the posting lifecycle every image
+      type inherits, all of it hoisted from statements the wip-spec repeats per type. **No posting, no
+      graphic**; **an attachment cannot be introduced into a message already posted**, so an in-place
+      edit becomes a delete-and-repost with the id persisted in place of the old; **the replacement is
+      produced before the original is destroyed**, on the fallback path as firmly as on the ordinary
+      one; and **a transport failure retries as text**, a retry queue being durable and outliving the
+      state that filled it.
+    - **11. Template ids follow a fixed convention** — the converse of the coinciding ordinal. Where an
+      ordinal does **not** coincide with a datum it is a place in a layout and the graphic MUST NOT
+      draw it. An attendance sheet is ordered by total and stands in no classification; two drivers
+      level stand level, and a numbered row would publish a ranking the module never computed. A type
+      MUST say which of the two its ordinal is, the answer being invisible in the template.
+    - **12. Collection capacity** — a **floor**, per the author's ruling, with its declaration
+      per-type, its rationale (zero is otherwise merely the extreme of "fewer data than slots", and
+      what gets posted is not a graphic of an empty division but a graphic of nothing), and its
+      checking moment (against concrete data, never approximated earlier under Rule 9).
+    - **Rationale** — extended for Rules 8 and 17 as two halves of one question the module could not
+      put off past its sixth image type, for why the licence is a declaration and where that puts the
+      burden, and for the floor and the precondition clause as the two answers to having nothing to
+      draw or nothing to add.
+
+  Added rules (Principle XIV):
+    - **17. A graphic is redrawn whenever what it draws changes, unless its type is declared static.**
+      The ordinary form is what every type before the check-in call did by accident rather than by
+      decision, the message having been reposted whenever anything changed. A type MAY instead be
+      declared static — generated once, its message edited in place beneath it, the attachment
+      surviving every edit — against the single obligation that **a static type MUST NOT draw a value
+      that changes while its message stands**. The check-in graphic is the first, drawing the round,
+      its sessions, its date and its lock moment, and drawing no driver, no team, no RSVP status and
+      no roster.
+
+  Added sections    : Data & State Management → **New Entities (v4.6.0)**: **None**, recorded with
+                      its reasoning so it is not re-derived. Both types already hold the column their
+                      lifecycle needs and the two lifecycles differ — the sheet replaces its message
+                      through `AttendanceDivisionConfig.attendance_message_id` as the results and
+                      lineup flows do, while the check-in graphic leaves `RsvpEmbedMessage.message_id`
+                      entirely alone, which is the point of declaring the type static.
+  Removed sections  : None.
+
+  Consistency       : `docs/wip-specs/image_module_specification.md` was brought into step in the
+                      same change window per the close-out discipline in CLAUDE.md. Nothing in it was
+                      **contradicted** — every rule added above was read out of it, and its
+                      § "Attendance image generation" is conformant to Principle XIV as amended. What
+                      it lacked was the **general form** of rules it states only per type, which is
+                      where the next audit would have had to re-derive them.
+
+                      Added to § "Conventions of every graphic", each holding for every graphic and so
+                      placed there once rather than repeated per type:
+                        - § "When a graphic is drawn again" (new) — the ordinary redraw rule, the
+                          static declaration the author ruled for, the obligation that a static
+                          graphic carry no value that changes while its message stands, and the
+                          statement that the declaration is made by the graphic and not derived from
+                          its catalogue.
+                        - § "The capacity of a collection" — the floor the author ruled for, its
+                          per-graphic declaration and the moment it is checked; and the ordinal that
+                          is a place in the layout alone, which shall not be drawn.
+                        - § "Errors and the rejection of input" — a graphic never prevents, delays or
+                          conditions the work of the module owning the posting.
+
+                      § "Attendance image generation" now names the check-in graphic a static graphic
+                      in the conventions' terms, the behaviour having been described there already
+                      but never declared.
+
+                      The posting lifecycle and the retry-as-text rule are hoisted into the
+                      constitution but **not** into the wip-spec's conventions: the wip-spec already
+                      states both in each of its six type sections, so no knowledge is missing and
+                      nothing is stale. Consolidating those twelve sentences is a tidying task
+                      available to a later session and is not a correction.
+
+                      `README.md` is **not** changed here, and was checked rather than assumed. The
+                      two attendance graphics are not built, and the README describes the bot as it
+                      is; its statement that the remaining five toggles change only what
+                      `/images config view` and `/season review` report was verified still true —
+                      `image_standings_service` is reachable from `/images test` alone and is not
+                      wired into the standings posting flow. The README is updated within the
+                      increment, when the behaviour it documents exists.
+
+  Deferred          : TODO(PER_TYPE_ASSET_SENTENCES) — carried from v4.0.0 and **discharged for the
+                      attendance type** in this audit. Its flag sentence separates the absent
+                      nationality (field removed, non-fatal error) from the absent file (deferred to
+                      the conventions), and its team-image and track-image sentences defer to the
+                      lineup and calendar types respectively. The **weather** and **verdicts**
+                      sections still bundle the two and carry the TODO forward. Nothing is ambiguous
+                      in force, the conventions section superseding any per-type statement that a
+                      field is removed for want of a file.
+
 [2026-08-13 — v4.4.0 → v4.5.0: MINOR — the graphic may arrange; the standings audit]
   Version change    : 4.4.0 → 4.5.0
   Bump rationale    : MINOR. Rules 2, 3, 7, 9, 10, 12, 13 and 16 of Principle XIV are expanded and
@@ -2928,13 +3104,26 @@ The catalogue MUST name the collection at which the optional portion begins (Rul
 declared is all-or-nothing only in the sense that its mandatory fields bind once any member of it is
 declared; the optional fields within it remain individually optional as they would anywhere else.
 
-**A sibling's field is a problem.** Where an output aspect is drawn by more than one image type —
-qualifying and race results, driver and constructor standings, the six forecasts — a template
-declaring a field belonging to a **sibling** type's catalogue is a problem, detected at the moment
-the template is named. It is the wrong file in that slot, and rendering it would draw one session's
-columns under another's headings. An id belonging to **no** catalogue is not a problem and is not
-the module's business: a hand-authored SVG carries identifiers on every node it holds, and only the
-ones a catalogue claims are fields.
+**A sibling's field is a problem.** A template declaring a field belonging to a **sibling** type's
+catalogue is a problem, detected at the moment the template is named. It is the wrong file in that
+slot, and rendering it would draw one session's columns under another's headings. An id belonging to
+**no** catalogue is not a problem and is not the module's business: a hand-authored SVG carries
+identifiers on every node it holds, and only the ones a catalogue claims are fields.
+
+Two image types are siblings where **either** holds:
+
+- they draw one **output aspect** — qualifying and race results, driver and constructor standings,
+  the six forecasts;
+- they are the several graphics of one **source module**, whatever they draw. The attendance sheet
+  and the check-in graphic have not one field in common — the sheet draws a record of a season and
+  the call draws a round about to be run — and are siblings all the same.
+
+The second is not the first weakened. The fault the rule catches is a file in the wrong slot, and
+the files a league is likeliest to swap are the ones it authors in one sitting and configures with
+two adjacent commands. Common content is what makes a swap *plausible*; common provenance is what
+makes it *possible*, and only the latter is the test. Types of two different modules remain
+unrelated: a calendar template declaring a lineup's field states nothing about a calendar, and the
+sentence above governs it.
 
 **A value the data does not hold literally is still a value.** Where a round, a session or an
 entry is of a kind for which the underlying record carries nothing — a round whose track is
@@ -3026,6 +3215,26 @@ text in place of the graphic they asked for would deny them the chance and hide 
 it next fires unattended. The reverse holds for a scheduled posting, where there is nobody to
 tell and the league still needs its information.
 
+**Additive means adding no precondition either.** The generation and the posting of a graphic MUST
+NOT prevent, delay or condition anything the source module would have done without it. The
+enforcement of an autoreserve or an autosack sanction, the opening of a round's attendance rows, the
+finalisation of a review, the posting of the message the graphic rides on — each MUST complete
+exactly as it would with the module disabled, and a render that fails MUST find that work already
+done. A graphic is downstream of every state change it depicts and is never upstream of one.
+
+The rule needs stating because the natural way to write a posting is to build the message and send
+it whole, which quietly makes a rasteriser the gate on a league's sanctions. Rule 4's unit of failure
+says a broken graphic costs at most one graphic; this says it costs at most a *picture*, and never a
+consequence.
+
+**A graphic that displaces nothing.** An image type MAY add a graphic to a posting from which it
+takes no part — the check-in call keeping its role mention, its embed, its roster, its status
+indicators and its three buttons entire, and the graphic restating the embed's heading rather than
+relieving it of anything. Such a type is the purest case of this rule and not an exception to it.
+Two consequences follow: its fallback is the message posted **without the attachment**, nothing else
+changing, there being no text to restore that was never given up; and its toggle alters the textual
+flow in no respect whatever, an image carrying no button.
+
 **A fallback is at the grain of the graphic that failed.** Where one event draws several graphics
 (Rule 4) and the text path's natural message is **coarser** than one graphic — one standings message
 carrying both championships where the graphic posts two — the text substitute MUST cover the failed
@@ -3076,6 +3285,34 @@ recompute it. The graphic compares two facts; it does not re-establish either.
 Generated PNGs MUST be posted as attachments on the message the source module would have
 posted anyway, to that module's already-registered channel (Principle VII). The image module
 MUST NOT register channel categories of its own.
+
+**No posting, no graphic.** The module never creates a posting occasion. Where the source module
+would post nothing — no channel configured for the division, the channel inaccessible, a round
+recorded as cancelled distributing nothing — nothing is generated and nothing is posted, whatever
+the image type's toggle says. The toggle decides how a posting is dressed, never whether it happens.
+
+**An attachment cannot be introduced into a message already posted.** This is a fact of the
+service, and the lifecycle every image type inherits follows from it. Where the text flow **edits**
+its message in place and the graphic must change with it, the image flow MUST instead delete that
+message and post a new one, persisting the id of the new message in the place of the old, so that at
+most one such message stands at any moment — a property of the text flow the image flow inherits and
+MUST NOT relax. Where the graphic need not change, Rule 17 governs and the message is edited in place
+beneath it.
+
+**The replacement is produced before the original is destroyed.** The previous message MUST NOT be
+deleted until the message replacing it has been produced successfully — the graphic, or the text a
+fallback substituted for it. The ordering is the whole of what stops a failed render from leaving a
+league with nothing where its standings, its lineup or its sheet had been, and it MUST hold on the
+fallback path as firmly as on the ordinary one, that being the path on which something has already
+gone wrong.
+
+**A transport failure retries as text.** Where the **posting** fails for a reason of the service
+rather than of the generation, what is enqueued for retry is the **text form** — the textual
+calendar, lineup, table, standings, sheet, forecast or announcement, or the message carrying no
+attachment where the graphic displaced nothing. A generated image MUST NOT be enqueued. A retry queue
+is durable and outlives the state that filled it; a picture drawn an hour ago and posted now is a
+picture of a season that has moved on, where the text is composed at the moment it is finally sent.
+The render is repeatable from the data at the next occasion that calls for it.
 
 **9. Template validity is a layered, extensible contract.**
 
@@ -3207,6 +3444,13 @@ on both the author and the code:
   **from the ordinal**, and no reconciliation between the two is attempted. The order, and any
   renumbering the source module performs upon it, are settled and persisted before the graphic is
   drawn; a utility comparing the two could only disagree with data that are already the fact.
+- Where it **does not** coincide with a datum, the ordinal is a place in a layout and nothing more,
+  and the graphic MUST NOT draw it. The rows of an attendance sheet are ordered by total accrued and
+  stand in no classification: two drivers level on totals stand level, and a template numbering its
+  rows would publish a ranking the module never computed and cannot defend. An image type MUST state
+  which of the two its ordinal is, the answer being invisible in the template — an ordered list of
+  rows looks the same either way, and only the catalogue can say whether the first of them is *first*
+  or merely at the top.
 - A collection MAY be a **singleton**: one member, named, bearing no discriminator at all
   (`reserve_name`, `reserve_driver_<y>_name`). A singleton's name is reserved — no keyed member of
   a sibling collection may normalise to it.
@@ -3277,6 +3521,22 @@ every row — the capacity decision on that ordinal applies to **every** family 
 removal takes them all. This is how a column's cells leave the graphic, containment being unable to
 carry them (Rule 2). Where the template declares no group for one of those families, every field of
 that family bearing the ordinal is removed one by one instead.
+
+**A collection MAY have a floor, and the floor is declared.** An image type MAY name a collection
+below whose emptiness the graphic has no subject — the rounds of a calendar, the drivers of an
+attendance sheet — and drawing that graphic against empty data is then a **problem** (Rule 4),
+rejected at the earliest moment it can be detected and naming the division that holds nothing.
+
+Without this, zero is merely the extreme of *fewer data than slots*: every member would be removed in
+silence and a heading posted over an empty canvas, which is not a graphic of an empty division but a
+graphic of nothing at all.
+
+The floor is declared **per image type** and MUST NOT be inferred. A classification of no entries and
+a round of no session are not fatal for any type that has not named them so, and the four types that
+name none keep the ordinary silent-removal behaviour in full. A floor is a statement about the
+**subject** of a graphic rather than about its template, so it is checked against the concrete data at
+generation and at any command that would empty the collection; the moments before that hold no data to
+check it against, and MUST NOT approximate it (Rule 9).
 
 Overflow MUST NOT be silently truncated, and MUST NOT be spilled into continuation images.
 
@@ -3404,6 +3664,35 @@ Rule 15 is this rule applied to time: the timestamp every reader saw in their ow
 one configured zone drawn for all. Stating the general form once is what stops each image type
 inventing its own answer to a question every picture asks.
 
+**17. A graphic is redrawn whenever what it draws changes, unless its type is declared static.**
+
+The ordinary form: a graphic is generated anew, and its posting replaced under Rule 8, on every
+occasion the text flow reposts or edits what it draws. A picture of a state is worth only its
+currency, and a graphic left standing over changed data says something false with the full authority
+of a rendered image.
+
+An image type MAY instead be declared **static**: generated once, at the moment its message is first
+posted, and never again while that message stands. The message beneath a static graphic is **edited
+in place** as the text flow always edited it, and the attachment survives every edit untouched —
+Rule 8's delete-and-repost does not arise, because nothing about the picture has changed.
+
+The declaration is the image type's own and MUST be stated in that type's specification alongside its
+catalogue. It carries one obligation, which is the whole of what makes it safe:
+
+> **A static type MUST NOT draw a value that changes while its message stands.**
+
+The check-in graphic is the first such type. It draws the division, the round, its sessions, its date
+and the moment its check-in locks, and draws deliberately no driver, no team, no RSVP status, no
+attendance point and no roster: everything the presses of its three buttons alter lives in the embed,
+which is edited, and stays off the picture, which is not. An image type that finds it needs such a
+value is simply not static, and takes Rule 8's delete-and-repost like every other.
+
+The obligation is held by the author of the type and not by a check the module runs — a field's
+mutability is a fact about the module that owns the datum, not a property visible in the catalogue.
+Adding a field to a static type's catalogue is therefore an amendment of its static declaration and
+MUST be reviewed as one. The cost of getting it wrong is a picture that goes quietly stale beneath a
+message that stays current, which no error will ever report.
+
 **Rationale**: Separating layout (the template) from data (the fill) is what allows a league
 to restyle its graphics without a code change and what keeps the rendering code independent
 of the number of image types. Failing loudly on a template/data disagreement while surviving
@@ -3412,10 +3701,11 @@ first is a defect that would post a wrong graphic, the second is a cosmetic degr
 league can act on at leisure. Requiring the text path to remain authoritative ensures that
 adding graphics never reduces what the bot can tell a league.
 
-Rules 10–16 exist because the module is about to grow one generation utility per image type,
+Rules 10–17 exist because the module is about to grow one generation utility per image type,
 written across many sessions. A catalogue that is a shared constant, an id convention the
 code can construct rather than be told, a capacity whose source the catalogue names, one time
-zone rule, one answer to what a picture cannot draw, and a single slug rule are what let fifteen
+zone rule, one answer to what a picture cannot draw, one answer to when a picture is redrawn, and a
+single slug rule are what let fifteen
 utilities be fifteen small entries rather than
 fifteen private conventions — and are what make validity Layer 2 ratifiable at all, since a check can only be
 written against a declaration that exists. Verifying through the rasteriser rather than the
@@ -3481,6 +3771,30 @@ declaration becomes a ceiling and the data drawn become the test. An asset class
 module wrote is not a set a league can be incomplete against, so the module ships it. Both are the
 same instinct as Rule 3's mystery round: where the module knows the answer, the module supplies it
 rather than reporting the gap.
+
+Rules 8 and 17 are the two halves of one question the module could not put off past its sixth image
+type: how long is a picture good for. Every graphic before the check-in call answered it the same way
+by accident rather than by decision — the message was reposted whenever anything changed, so the
+picture could not go stale. The check-in call cannot be reposted, its buttons being armed against the
+message that carries them and its roster changing with every press, and it forces the answer to be
+said out loud. A graphic is redrawn when what it draws changes; a graphic that is never redrawn must
+draw nothing that changes. Both rules are the same sentence read from its two ends, and stating them
+together is what stops a future type from taking the convenient half.
+
+That the licence is a **declaration** rather than a property the module derives is a deliberate
+choice of where to put the burden. A catalogue lists fields, and no inspection of it reveals which of
+them the next button press will alter; that knowledge lives in the module owning the datum and
+arrives with the person specifying the type. Making it a declaration puts the judgement where the
+knowledge is and makes it reviewable in the one document a reviewer reads. It also means the module
+cannot catch a mistake here, which is stated plainly rather than papered over: a stale picture under
+a current message is the one failure in this Principle that reports nothing, and it is the price of
+the only lifecycle a message with buttons on it admits.
+
+Rule 12's floor and Rule 7's precondition clause are both cases of the module being asked what it
+owes when there is nothing to draw or nothing to add. It owes a refusal in the first case and
+silence in the second, and the difference is who is waiting: a league asking for a sheet of a
+division with no drivers has made a mistake worth naming, while a league whose sanction is being
+enforced is owed that sanction whether or not a picture of it can be drawn.
 
 ## Bot Behavior Standards
 
@@ -3842,6 +4156,30 @@ for team-level aggregates):
   appeal outcomes for this division are posted to this channel; if null, the bot falls
   back to `results_channel_id`.
 
+### New Entities (v4.6.0)
+
+**None.** The two attendance image types introduce no entity and amend none, and the absence is
+recorded here so that it is not re-derived. Each already has the column its lifecycle needs, and the
+two lifecycles differ:
+
+- `AttendanceDivisionConfig.attendance_message_id` holds the message carrying a division's sheet. The
+  image flow deletes that message and persists the id of its replacement in the same column, an
+  attachment being impossible to introduce into a message already posted (Rule 8), exactly as the
+  results and lineup flows already do with theirs.
+- `RsvpEmbedMessage.message_id` holds the message carrying a check-in call, and the image flow leaves
+  it entirely alone. The call is never deleted and reposted while it stands; the embed is edited in
+  place and the attachment rides through untouched (Rule 17). The graphic reaches this entity not at
+  all, which is the point of declaring the type static.
+
+The `attendance` and `rsvp` aspects, their `attendance_template` and `rsvp_template` slots, and the
+flag, team-image and track-image directories are values of the configuration surface delivered at 035
+and 036 and are read as they stand. `ASPECT_SOURCE_MODULE` already maps both aspects to the attendance
+module, which is the relation Rule 3's widened sibling test reads. The attendance points, the pardons,
+the autoreserve and autosack thresholds and the sanctions a sheet draws are the ones Principle XIII
+already governs, and the graphic computes none of them; the check-in deadline is the one derived
+value, subtracted in the attendance service under Rule 7's derived-presentation clause and never in
+the image utility.
+
 ### New Entities (v4.5.0)
 
 **DriverStandingsSnapshot** amended — `constructor_standings_message_id` (TEXT, nullable) added
@@ -4092,4 +4430,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 4.5.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-13
+**Version**: 4.6.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-13
