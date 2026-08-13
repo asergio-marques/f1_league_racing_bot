@@ -928,19 +928,25 @@ class ImageCog(commands.Cog):
 
         templates = TEST_KIND_TEMPLATES[kind.value]
 
-        # The lineup is the one kind whose sample is drawn against the league's own team
-        # configuration: its fields are keyed by team name, so a preview against invented
-        # teams would prove nothing (FR-029). Rejected outright where there is no team to
-        # draw — there is no lineup, and a generic render failure would not say so.
+        # Two kinds draw against the league's **own** team configuration rather than against
+        # invented teams: the lineup, whose fields are keyed by team name, and the results,
+        # whose rows carry each team's name and badge. Both are rejected outright where there
+        # is no team to draw — a generic render failure would not say so (FR-029, FR-047).
         teams = None
-        if "lineup_template" in templates:
+        needs_teams = {
+            "lineup_template",
+            "results_qualifying_template",
+            "results_race_template",
+        } & set(templates)
+        if needs_teams:
             teams = await self.bot.team_service.get_default_teams(  # type: ignore[attr-defined]
                 interaction.guild_id
             )
             if not [t for t in teams if not getattr(t, "is_reserve", False)]:
+                drawn = "lineup" if "lineup_template" in needs_teams else "classification"
                 await interaction.followup.send(
-                    "⛔ This server holds no team beyond the Reserve team, so there is no "
-                    "lineup to draw. Add one with `/team add` first.",
+                    f"⛔ This server holds no team beyond the Reserve team, so there is no "
+                    f"{drawn} to draw. Add one with `/team add` first.",
                     ephemeral=True,
                 )
                 return

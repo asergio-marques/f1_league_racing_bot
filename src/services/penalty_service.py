@@ -456,7 +456,9 @@ async def apply_penalties(
         if row3:
             guild = bot.get_guild(int(row3["server_id"]))
         if guild:
-            await results_post_service.repost_round_results(db_path, round_id, division_id, guild)
+            await results_post_service.repost_round_results(
+                db_path, round_id, division_id, guild, bot=bot
+            )
 
     return inserted_records
 

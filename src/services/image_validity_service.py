@@ -23,7 +23,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from models.image_catalogues import CapacityError, catalogue_for
+from models.image_catalogues import (
+    CapacityError,
+    catalogue_for,
+    sibling_fields_declared,
+)
 from models.image_constants import (
     ASPECT_SOURCE_MODULE,
     ASPECT_TEMPLATES,
@@ -200,6 +204,26 @@ class CatalogueLayer:
             return LayerResult(False, str(exc))
 
         index = FieldIndex(root)
+
+        # A **sibling's** field is the wrong file in this slot (XIV.3, v4.4.0). Where an
+        # aspect is drawn by more than one image type — qualifying and race results — a
+        # template carrying the other's row field would draw one session's columns under
+        # another's headings. Checked before the missing-field report, because that is the
+        # more useful thing to be told: a race template named as the qualifying one is
+        # missing most of its fields *and* carrying foreign ones, and only the second says
+        # what actually happened.
+        foreign = sibling_fields_declared(ctx.template_key, index.declared())
+        if foreign:
+            shown = ", ".join(f"`{name}`" for name in foreign[:8])
+            if len(foreign) > 8:
+                shown += f", and {len(foreign) - 8} more"
+            return LayerResult(
+                False,
+                f"it declares {shown}, which "
+                f"{'belongs' if len(foreign) == 1 else 'belong'} to the other kind of "
+                f"results template. This looks like the wrong file for this slot.",
+            )
+
         missing = sorted(name for name in mandatory if index.resolve(name) is None)
         if not missing:
             return LayerResult(True)

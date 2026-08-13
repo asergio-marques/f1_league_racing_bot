@@ -1052,7 +1052,7 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 Flips that aspect between a generated image and the text the bot has always posted. All eight start disabled.
 
-> **`calendar` and `lineup` are live; the other six record intent only.**
+> **`calendar`, `lineup` and `results` are live; the other five record intent only.**
 >
 > With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
 >
@@ -1060,7 +1060,15 @@ Flips that aspect between a generated image and the text the bot has always post
 >
 > The image is built before the old message is deleted, so a lineup that cannot be drawn leaves the one already posted where it is; that division falls back to text and the log channel says why. With the toggle off, the lineup behaves in every respect as it did before this feature.
 >
-> The remaining six toggles change what `/images config view` and `/season review` report, and nothing else. Wiring each of those source modules is a later increment. Use `/images test` to see what an aspect will produce.
+> With `results` on, each session of a round is posted to the division's results channel as a drawn classification instead of the textual table. **The heading and the lifecycle label stay as message text** — only the table becomes the picture. The graphic adds what text cannot carry: each team's badge, each driver's flag, and the fastest lap marked in colour rather than by a footnote. It carries no mention; the driver's name and the team's name stand in their place.
+>
+> It is redrawn on every occasion the table was reposted before: the first provisional posting, the penalty phase closing, the appeal phase closing, a resync by command, an approved amendment, and a points-configuration change that recalculates the round. Because an attachment cannot be added to a message already sent, each redraw posts a new message and deletes the old one — and only ever in that order, so a session that cannot be drawn leaves the results already posted where they are.
+>
+> **The two sanction columns fill as the round progresses.** At *Provisional Results* both are empty on every row; at *Post-Race Penalty Results* the penalty column is resolved; at *Final Results* both are. A template declaring `postrace_penalty_group` or `appeal_penalty_group` has that column's heading removed while the phase is still open, so the graphic never shows a heading over an empty column. Declaring neither keeps the heading, which is a fine choice too.
+>
+> A failure is confined to the one graphic: if one session cannot be drawn, the round's other sessions, the other divisions, and the standings posted alongside are all unaffected. The session that failed falls back to its textual table and the log channel says why. A cancelled session keeps its textual notice whatever the toggle says, and the round's results *submission* channel stays textual throughout.
+>
+> The remaining five toggles change what `/images config view` and `/season review` report, and nothing else. Wiring each of those source modules is a later increment. Use `/images test` to see what an aspect will produce.
 
 #### `/images template <kind>` — Name the SVG file backing each image
 *Access: Server administrator*
@@ -1094,6 +1102,12 @@ These sit under `/images template` rather than `/images config` because Discord 
 > **The lineup template is the one you must draw yourself.** Every other template addresses its rows by number, so a file that works for one league works for the next. A lineup names its fields after *your* teams — `team_red_bull_name`, `team_red_bull_driver_1_name` — so that each team's block can be designed in that team's own livery. The shipped `lineup_template.svg` demonstrates the convention with invented teams; naming it unchanged will be refused at `/season review`, which tells you which of your teams it does not draw. Write one against your own team list instead, and use `/images test lineup` to check it.
 
 > Because one lineup file serves every division, **the divisions of a season must field the same teams and the same seat counts** while the `lineup` aspect is on. `/season review` says so if they differ. Turn the aspect off and the requirement lifts.
+
+> **The two results templates are not interchangeable.** They share every field but the columns of their rows: qualifying carries `row_<x>_best_lap`, `row_<x>_gap` and an optional `row_<x>_tyre`; race carries `row_<x>_time`, `row_<x>_fastest_lap` and `row_<x>_ingame_penalty`. Naming a race file in the qualifying slot is refused, and the bot says which field gave it away rather than listing everything the file is missing. Identifiers of your own — layer names, background shapes, anything the bot does not address — are ignored entirely, so you can build the file however suits you.
+>
+> Draw as many rows as your grid needs, numbered from 1 with no gaps; the bot counts them from the file. A session with fewer entries than you drew rows removes the unused `row_<x>_group` and its whole contents, so leave nothing outside that group that you would mind seeing on a short grid. A session with **more** entries than you drew rows is refused and names the drivers who would have been dropped — the bot will not quietly cut a classification short.
+>
+> A driver with no tyre recorded draws the tyre directory's `fallback.svg` and says nothing about it: a tyre is a value a submission need not carry, so its absence is a state worth depicting rather than a gap worth reporting.
 
 #### `/images config <directory>` — Where files are searched for
 *Access: Server administrator*
@@ -1134,7 +1148,7 @@ Placing your own files is the operator's job; the bot resolves the paths and rep
 
 No parameters. Lists every setting with a validity status, and each aspect as ✅ enabled, ❌ disabled, or ⚠️ enabled but invalid. An invalid report names the individual template at fault — which weather phase and variant, or which half of a results or standings pair — never just the group.
 
-The report also states **how deeply templates were checked**. Layer 1 — the file resolves, parses as SVG, and declares a canvas — applies to all fifteen. Layer 2 checks that a template carries every field its image needs, and applies only to image types whose fields have been specified; none have yet, so it is reported as *not applied* rather than as passed. The report never claims a template was verified more deeply than it was.
+The report also states **how deeply templates were checked**. Layer 1 — the file resolves, parses as SVG, and declares a canvas — applies to all fifteen. Layer 2 checks that a template carries every field its image needs, and applies only to image types whose fields have been specified: the calendar, the lineup, and the two results templates. For the other eleven it is reported as *not applied* rather than as passed. The report never claims a template was verified more deeply than it was.
 
 The same summary is appended to `/season review`, which additionally names each template that would block approval. **`/season approve` refuses** while any of them is unusable — the review is where you see the problem, the approval is where the season stops.
 
@@ -1148,6 +1162,8 @@ The same summary is appended to `/season review`, which additionally names each 
 Renders from built-in sample data and replies with the PNG, visible only to you. It reads no live season data, so it works on a server with no season configured. `results`, `standings`, `weather-p2` and `weather-p3` each return both of their variants.
 
 > **`lineup` is the exception.** Its fields are named after your teams, so a preview built from invented ones would prove nothing. It draws a fabricated "Test Division" holding exactly the teams in your server's list: every team but one filled, one left wholly empty so you can see unoccupied seats, and one reserve slot short of full so you can see an empty reserve slot too. Nobody has a portrait, so every driver image comes from the fallback and says so. If your server has no team beyond Reserve, the command is refused — there is no lineup to draw.
+
+> **`results` draws one entry fewer than your template has rows**, so you can judge how an unused row disappears, and it fills them from your server's teams. Both images are labelled *Final Results*, so both sanction columns are resolved. Between them the entries cover the cases worth looking at: an empty gap on pole and gaps under a second and over a minute; a driver with no tyre recorded and one who set no time; a total race time over an hour, an interval under a second and over a minute, a driver a lap down and another several; a retirement, a non-starter and a disqualification; in-game penalties of a whole second, of a fraction, and of none; a driver disqualified in the penalty phase and again on appeal; a driver conferred no points; and the fastest lap held by the driver who retired rather than the winner, so you can see the colour land somewhere other than the top row. If your server has no team beyond Reserve, the command is refused.
 
 Anything the render survived is listed alongside the image — a substituted font, a wrapped field cut at its size floor, a name cut to the width its column allows. Anything it could not survive returns no image and states why.
 

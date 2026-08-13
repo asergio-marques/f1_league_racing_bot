@@ -123,6 +123,7 @@ These hold for every image type of the module and are stated here rather than re
     - it breaks its text into lines, where the field is a wrapping field as defined for the verdicts graphic;
     - it truncates its text to the room the field declares, as defined below;
     - it removes it, or empties its text.
+- A field carrying an image is removed rather than emptied, an image field having nothing to empty. Emptying one would leave it pointing at whatever file the template shipped, drawn as a stale picture or as a broken-image mark.
 - A colour shall be written into the inline style of the element, merged with the declarations already standing there. A presentation attribute loses to the stylesheet a template declares, and a style assigned wholesale takes with it the declarations the template placed upon the field.
 - Setting the colour of a field is not filling it. A field that is recoloured shall be filled as any other.
 
@@ -131,6 +132,7 @@ These hold for every image type of the module and are stated here rather than re
 - Where a template declares no node of that identifier but declares a layer whose label is the name of the field, the labelled layer shall be taken for that field. A league manager editing a template in an SVG editor reaches for the label, and the identifier the editor generated is not the one they set.
 - Where a node of that identifier and a layer of that label both exist and are not the same node, the node of that identifier is the field.
 - A layer is a group, and an operation that requires an element of a particular kind shall descend to it: the placing of text to the single text element the layer holds, the placing of an image to the single image element it holds. Where the layer holds no such element, or more than one, the field is not resolved and the error is that of a mandatory or optional field as its catalogue declares it. The removal of a field, and of the group wrapping it, acts upon the layer itself.
+- A field that is already an element of the kind the operation requires needs no descent. A text is placed upon a "text" element and upon a "tspan" alike, a manager labelling the styled run within a line as readily as the line itself.
 
 ### Removable groups
 - Any field named in a catalogue below, mandatory or optional, may be wrapped in a group bearing the name of that field followed by "_group".
@@ -456,7 +458,7 @@ These hold for every image type of the module and are stated here rather than re
     - a race entry that finished laps behind carries the number of those laps in the place of an interval, prefixed with a plus sign, the word being singular for one lap and plural beyond it;
     - an entry that did not finish, did not start or was disqualified carries that outcome as the text of its best lap field or of its time field, whatever time may have been recorded for it and whatever number of laps it may have finished behind;
     - the points are those the session conferred, the fastest-lap bonus included. An entry that did not start or was disqualified is conferred none. An entry that did not finish is conferred none for its position but keeps the fastest-lap bonus where it holds it and finished within the position limit of the points configuration, and may therefore show points against an outcome of "DNF".
-- Where the textual table shows a dash for a value that does not apply, the text of the corresponding field shall be emptied rather than filled with a dash. The two sanction fields are the exception. A field carrying an image is removed rather than emptied, an image field having nothing to empty.
+- Where the textual table shows a dash for a value that does not apply, the text of the corresponding field shall be emptied rather than filled with a dash. The two sanction fields are the exception.
 - The sanction fields distinguish three states:
     - where the phase the field stands for has not yet been closed, the text of the field shall be emptied;
     - where the phase has been closed and applied nothing to the entry, the field shall carry a dash;

@@ -208,12 +208,53 @@ SAMPLE_TEAMS = [
 ]
 
 
+def _results_svg(*row_columns: bytes) -> bytes:
+    """A sound results template (039), built per kind.
+
+    The two results templates are **siblings**, and a field of the other's row catalogue is
+    a fault of the file (XIV.3, v4.4.0) — so one SVG carrying both kinds' columns would be
+    sound for neither.
+    """
+    columns = b"".join(b'<text id="row_1_%s">x</text>' % name for name in row_columns)
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        b'<text id="division_name">D</text>'
+        b'<text id="round_number">1</text>'
+        b'<text id="race_name">R</text>'
+        b'<text id="session_name">S</text>'
+        b'<text id="result_status">F</text>'
+        b'<g id="row_1_group">'
+        b'<text id="row_1_position">1</text>'
+        b'<text id="row_1_driver_name">N</text>'
+        b'<text id="row_1_team_name">T</text>'
+        b'<image id="row_1_team_image"/>'
+        b'<text id="row_1_postrace_penalty">-</text>'
+        b'<text id="row_1_appeal_penalty">-</text>'
+        b'<text id="row_1_points">0</text>'
+        + columns
+        + b"</g></svg>"
+    )
+
+
+RESULTS_QUALIFYING_SVG = _results_svg(b"best_lap", b"gap")
+RESULTS_RACE_SVG = _results_svg(b"time", b"fastest_lap", b"ingame_penalty")
+
+
+def sound_bytes(template_key: str) -> bytes:
+    """The soundest bytes for *template_key* at the depth its type is checked to."""
+    if template_key == "results_qualifying_template":
+        return RESULTS_QUALIFYING_SVG
+    if template_key == "results_race_template":
+        return RESULTS_RACE_SVG
+    return VALID_SVG
+
+
 @pytest.fixture()
 def template_dir(tmp_path):
     directory = tmp_path / "templates"
     directory.mkdir()
-    for filename in TEMPLATE_COLUMNS.values():
-        (directory / filename).write_bytes(VALID_SVG)
+    for key, filename in TEMPLATE_COLUMNS.items():
+        (directory / filename).write_bytes(sound_bytes(key))
     return tmp_path
 
 
@@ -349,8 +390,26 @@ async def test_render_without_season(
     await _enable(module_service, config_service)
     await config_service.set_field(SERVER_ID, "template_directory", "templates")
 
-    for filename in TEMPLATE_COLUMNS.values():
-        (template_dir / "templates" / filename).write_bytes(RICH_TEMPLATE)
+    for key, filename in TEMPLATE_COLUMNS.items():
+        # The two results templates carry a populated catalogue (039), so the rich sample
+        # bytes would fail Layer 2 for them; every other type is still checked to Layer 1.
+        body = (
+            sound_bytes(key)
+            if key.startswith("results_")
+            else RICH_TEMPLATE
+        )
+        (template_dir / "templates" / filename).write_bytes(body)
+
+    # PROJECT_ROOT is patched away from the repository, so the packaged asset directories
+    # are not where the samples look for them. A results template declares a team badge and
+    # a flag on every row, and an asset class with neither its file nor a fallback is fatal
+    # by design (XIV.13) — so the fallbacks a real deployment ships are recreated here.
+    for folder in ("teams", "flags", "tyres", "drivers", "tracks"):
+        assets = template_dir / "resources" / folder
+        assets.mkdir(parents=True, exist_ok=True)
+        (assets / "fallback.svg").write_bytes(
+            b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'
+        )
 
     service = _render_service(db_path, config_service, module_service)
 
@@ -618,10 +677,32 @@ def _image_cog(config_service, module_service):
 
 
 def _race_template(background_markup: str) -> bytes:
+    """A sound race results template carrying *background_markup* behind the field.
+
+    Sound at Layer 2 as well as Layer 1 since 039 populated the results catalogues: the
+    contrast measurement reads the template the league has **configured**, and a template
+    that could not be configured is not one to measure.
+    """
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1084">'
         f"{background_markup}"
-        "</svg>"
+        '<text id="division_name">D</text>'
+        '<text id="round_number">1</text>'
+        '<text id="race_name">R</text>'
+        '<text id="session_name">S</text>'
+        '<text id="result_status">F</text>'
+        '<g id="row_1_group">'
+        '<text id="row_1_position">1</text>'
+        '<text id="row_1_driver_name">N</text>'
+        '<text id="row_1_team_name">T</text>'
+        '<image id="row_1_team_image"/>'
+        '<text id="row_1_postrace_penalty">-</text>'
+        '<text id="row_1_appeal_penalty">-</text>'
+        '<text id="row_1_points">0</text>'
+        '<text id="row_1_time">t</text>'
+        '<text id="row_1_fastest_lap">f</text>'
+        '<text id="row_1_ingame_penalty">-</text>'
+        "</g></svg>"
     ).encode()
 
 
@@ -968,8 +1049,8 @@ async def configured(module_service, config_service, tmp_path):
 
     directory = tmp_path / "templates"
     directory.mkdir(exist_ok=True)
-    for filename in TEMPLATE_COLUMNS.values():
-        (directory / filename).write_bytes(_GOOD_SVG)
+    for key, filename in TEMPLATE_COLUMNS.items():
+        (directory / filename).write_bytes(sound_bytes(key))
     (directory / "known_good.svg").write_bytes(_GOOD_SVG)
 
     await config_service.set_field(SERVER_ID, "template_directory", "templates")

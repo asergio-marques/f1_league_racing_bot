@@ -546,7 +546,9 @@ async def approve_amendment(
                 round_rows = await cursor.fetchall()
             for r_row in round_rows:
                 try:
-                    await results_post_service.repost_round_results(db_path, r_row["id"], division_id, guild)
+                    await results_post_service.repost_round_results(
+                        db_path, r_row["id"], division_id, guild, bot=bot
+                    )
                 except Exception:
                     log.exception(
                         "approve_amendment: failed repost for round %s / division %s",

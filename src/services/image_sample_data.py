@@ -217,6 +217,196 @@ def build_lineup_drawing(root, teams):
     )
 
 
+#: The track `/images test results` draws. Silverstone stands on every server's track list,
+#: so this satisfies the wip-spec's "a track of the server's track list" without the command
+#: reading anything live (FR-036).
+SAMPLE_RESULTS_TRACK = "British Grand Prix"
+
+
+def build_results_drawing(root, template_key: str, teams):
+    """The fabricated session `/images test results` draws (wip-spec § "Test data").
+
+    One entry fewer than the rows the template declares, so the rendering of an unused row
+    can be judged; exactly one where the template declares a single row, and then no unused
+    row is evaluated. Teams are the server's own configuration, so a league reads its own
+    liveries rather than invented ones.
+
+    The enumerated cases are assigned to entries **in order**, and any that the declared row
+    count cannot reach are simply not drawn — which is what "insofar as the number of rows
+    declared allows" means.
+    """
+    from models.image_catalogues import CapacityError, catalogue_for
+    from models.points_config import SessionType
+    from models.session_result import (
+        OutcomeModifier,
+        QualifyingSessionResult,
+        RaceSessionResult,
+    )
+    from services.image_results_service import (
+        QUALIFYING_TEMPLATE_KEY,
+        ResultsDataError,
+        resolve_drawing,
+    )
+
+    configurable = [t for t in teams or [] if not getattr(t, "is_reserve", False)]
+    if not configurable:
+        raise ResultsDataError(
+            "the server holds no team beyond the reserve team, so there is no "
+            "classification to be drawn. Add a team with `/team add` first."
+        )
+
+    try:
+        capacity = catalogue_for(template_key).capacity(root) or 0
+    except CapacityError as exc:
+        raise ResultsDataError(str(exc)) from exc
+
+    # One fewer than the template declares, so an unused row is visible — except where it
+    # declares a single row, when one entry is drawn and no unused row is left to judge.
+    count = 1 if capacity <= 1 else capacity - 1
+    is_qualifying = template_key == QUALIFYING_TEMPLATE_KEY
+
+    driver_names: dict[int, str] = {}
+    team_names: dict[int, str] = {}
+    nationalities: dict[int, str | None] = {}
+    points_map: dict[int, int] = {}
+    dsq_phase_map: dict[int, str] = {}
+
+    def register(index: int) -> tuple[int, int]:
+        """Fabricate the driver and team of entry *index*, returning their two ids."""
+        user_id = _SAMPLE_ID_BASE + index
+        record = configurable[(index - 1) % len(configurable)]
+        role_id = 900_000 + ((index - 1) % len(configurable))
+        # The long name is given to the second entry, so a template author can read an
+        # `inline-size` bound being reached on a row that is not the first.
+        driver_names[user_id] = LONG_DRIVER_NAME if index == 2 else f"Test Driver {index}"
+        team_names[role_id] = getattr(record, "name", "") or f"Team {index}"
+        nationalities[user_id] = SAMPLE_LINEUP_NATIONALITIES[
+            (index - 1) % len(SAMPLE_LINEUP_NATIONALITIES)
+        ]
+        return user_id, role_id
+
+    rows: list = []
+
+    if is_qualifying:
+        # index -> (best lap, tyre, outcome, points, dsq phase)
+        cases = [
+            ("1:23.000", "Soft", OutcomeModifier.CLASSIFIED, 25, None),
+            ("1:23.400", "Medium", OutcomeModifier.CLASSIFIED, 18, None),  # gap < 1s
+            ("2:29.500", "Hard", OutcomeModifier.CLASSIFIED, 15, None),  # gap > 1 min
+            ("1:24.100", None, OutcomeModifier.CLASSIFIED, 12, None),  # no tyre recorded
+            (None, "Soft", OutcomeModifier.DNS, 0, None),  # set no time
+            ("1:24.900", "Soft", OutcomeModifier.DSQ, 0, "PENALTY"),
+            ("1:25.100", "Medium", OutcomeModifier.DSQ, 0, "APPEAL"),
+            ("1:25.400", "Hard", OutcomeModifier.CLASSIFIED, 6, None),  # neither phase
+            ("1:25.900", "Soft", OutcomeModifier.CLASSIFIED, 0, None),  # no points
+        ]
+        for index in range(1, count + 1):
+            best_lap, tyre, outcome, points, phase = cases[(index - 1) % len(cases)]
+            # A template declaring more rows than there are cases cycles through them
+            # again. Each cycle is pushed a second further back so the filler rows read as
+            # a classification rather than as a field of drivers tied with the leader.
+            cycle = (index - 1) // len(cases)
+            if cycle and best_lap:
+                from utils.results_formatter import parse_lap_time, render_lap_time
+
+                parsed = parse_lap_time(best_lap)
+                if parsed is not None:
+                    best_lap = render_lap_time(parsed + cycle * 1_000)
+            user_id, role_id = register(index)
+            points_map[user_id] = points
+            if phase is not None:
+                dsq_phase_map[index] = phase
+            rows.append(
+                QualifyingSessionResult(
+                    id=index,
+                    session_result_id=1,
+                    driver_user_id=user_id,
+                    team_role_id=role_id,
+                    finishing_position=index,
+                    outcome=outcome,
+                    tyre=tyre,
+                    best_lap=best_lap,
+                    points_awarded=points,
+                )
+            )
+        session_type = SessionType.FEATURE_QUALIFYING
+    else:
+        # A total race time of more than an hour for the leader, so the hours branch of the
+        # lap-time rendering is exercised.
+        leader_ms = 3_725_500
+        # index -> (base time, laps behind, outcome, ingame ms, postrace ms, points, phase)
+        cases = [
+            # An in-game penalty is added into an entry's total time, so the entry drawn to
+            # show a sub-second interval carries none: giving it one would make its interval
+            # the penalty rather than the gap the case is meant to exhibit.
+            (leader_ms, None, OutcomeModifier.CLASSIFIED, 0, 0, 25, None),
+            (leader_ms + 400, None, OutcomeModifier.CLASSIFIED, 0, 0, 18, None),
+            (leader_ms + 91_000, None, OutcomeModifier.CLASSIFIED, 5_000, 0, 15, None),
+            (None, 1, OutcomeModifier.CLASSIFIED, 750, 0, 12, None),  # a lap behind
+            (None, 3, OutcomeModifier.CLASSIFIED, 0, 5_500, 10, None),  # laps behind
+            (None, None, OutcomeModifier.DNF, 0, 0, 1, None),  # holds the bonus below
+            (None, None, OutcomeModifier.DNS, 0, 0, 0, None),
+            (None, None, OutcomeModifier.DSQ, 0, 10_000, 0, "PENALTY"),
+            (leader_ms + 120_000, None, OutcomeModifier.CLASSIFIED, 0, 5_000, 4, "APPEAL"),
+            (leader_ms + 150_000, None, OutcomeModifier.CLASSIFIED, 0, 0, 0, None),
+        ]
+        # The fastest-lap bonus is held by the entry that did not finish rather than by the
+        # first-placed one, which the wip-spec asks for expressly: the fabricated points
+        # configuration confers it with no limit upon the holder's position, so an entry
+        # renumbered to the bottom can still carry it.
+        dnf_index = 6
+        for index in range(1, count + 1):
+            base, laps, outcome, ingame, postrace, points, phase = cases[
+                (index - 1) % len(cases)
+            ]
+            # As above: each repeat of the case list is pushed a second further back.
+            cycle = (index - 1) // len(cases)
+            if cycle and base is not None:
+                base += cycle * 1_000
+            user_id, role_id = register(index)
+            points_map[user_id] = points
+            if phase is not None:
+                dsq_phase_map[index] = phase
+            rows.append(
+                RaceSessionResult(
+                    id=index,
+                    session_result_id=1,
+                    driver_user_id=user_id,
+                    team_role_id=role_id,
+                    finishing_position=index,
+                    outcome=outcome,
+                    base_time_ms=base,
+                    laps_behind=laps,
+                    ingame_time_penalties_ms=ingame,
+                    postrace_time_penalties_ms=postrace,
+                    appeal_time_penalties_ms=0,
+                    fastest_lap="1:21.345" if index == dnf_index else "1:23.456",
+                    fastest_lap_bonus=1 if index == dnf_index else 0,
+                    points_awarded=points,
+                )
+            )
+        session_type = SessionType.FEATURE_RACE
+
+    return resolve_drawing(
+        session_type=session_type,
+        is_sprint=False,
+        result_status="FINAL",
+        division_name="Test Division",
+        division_tier=1,
+        season_number=1,
+        round_number=1,
+        race_name=SAMPLE_RESULTS_TRACK,
+        driver_rows=rows,
+        points_map=points_map,
+        driver_names=driver_names,
+        team_names=team_names,
+        nationalities=nationalities,
+        dsq_phase_map=dsq_phase_map,
+        fastest_lap_colour="#A020F0",
+        nationality_collected=True,
+    )
+
+
 def build_spec(template_key: str, root, *, teams=None) -> FillSpec:
     """Build a FillSpec for *template_key* against the template's actual ids.
 
@@ -269,6 +459,33 @@ def build_spec(template_key: str, root, *, teams=None) -> FillSpec:
 
         return build_fill_spec(
             build_lineup_drawing(root, teams), root, asset_directories=directories
+        )
+
+    if template_key in ("results_qualifying_template", "results_race_template"):
+        from services.image_results_service import ResultsDataError, build_fill_spec
+        from utils.paths import resolve_within_project_root
+
+        if teams is None:
+            raise ResultsDataError(
+                "a results preview needs the server's team configuration; none was "
+                "supplied to the sample builder"
+            )
+
+        directories: dict[str, object] = {}
+        for asset_class, relative in (
+            ("team", "resources/teams"),
+            ("flag", "resources/flags"),
+            ("tyre", "resources/tyres"),
+        ):
+            try:
+                directories[asset_class] = resolve_within_project_root(relative)
+            except Exception:  # noqa: BLE001
+                pass
+
+        return build_fill_spec(
+            build_results_drawing(root, template_key, teams),
+            root,
+            asset_directories=directories,
         )
 
     # Ids *and* layer labels: a field may be addressed by either (Constitution XIV.2).
