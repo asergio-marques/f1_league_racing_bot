@@ -463,6 +463,97 @@ class SeasonCog(commands.Cog):
             log.error("season review: calendar capacity check failed: %s", exc)
             return []
 
+    async def _attendance_capacity_warning(
+        self, server_id: int, season_id: int
+    ) -> list[str]:
+        """Compare the two attendance templates against the season's most demanding data.
+
+        Two stand-in comparisons, both **warnings** and never refusals (Constitution XIV.9):
+        the sheet's rounds against the greatest number any division of the season holds, and
+        the check-in call's sessions against the largest number any round of it holds. Which
+        division and which round are actually drawn is decided later, and the same divergence
+        is fatal at that moment.
+
+        The sheet's **rows** are not compared here. They are guarded at the command that would
+        overflow them — a driver assignment — which is the earlier moment XIV.12 requires, and
+        where the change can still be left unapplied.
+        """
+        from models.image_catalogues import CapacityError, catalogue_for
+
+        lines: list[str] = []
+        try:
+            from utils.svg_document import load_svg
+
+            reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
+
+            # The sheet's round grid, against the season's longest calendar.
+            if await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
+                server_id, "attendance"
+            ):
+                report = reports.get("attendance_template")
+                if report is not None and report.valid and report.resolved_path:
+                    declared = catalogue_for("attendance_template").column_capacity(
+                        load_svg(report.resolved_path)
+                    )
+                    # Nought means the template draws no grid at all, which is a legitimate
+                    # choice (XIV.3) and never a divergence.
+                    if declared:
+                        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                            cursor = await db.execute(
+                                "SELECT d.name AS name, COUNT(r.id) AS rounds "
+                                "FROM divisions d LEFT JOIN rounds r ON r.division_id = d.id "
+                                "WHERE d.season_id = ? GROUP BY d.id "
+                                "ORDER BY rounds DESC LIMIT 1",
+                                (season_id,),
+                            )
+                            row = await cursor.fetchone()
+                        held = (row["rounds"] if row else 0) or 0
+                        if held > declared:
+                            lines.append(
+                                f"  ⚠️ Attendance sheet template draws {declared} round "
+                                f"column(s); `{row['name']}` holds {held}. That division's "
+                                f"sheet cannot be drawn as an image and will be posted as "
+                                f"text. Enlarge the template to draw it."
+                            )
+
+            # The call's session list, against the season's largest round.
+            if await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
+                server_id, "rsvp"
+            ):
+                report = reports.get("rsvp_template")
+                if report is not None and report.valid and report.resolved_path:
+                    declared = catalogue_for("rsvp_template").capacity(
+                        load_svg(report.resolved_path)
+                    )
+                    if declared:
+                        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                            cursor = await db.execute(
+                                "SELECT COUNT(*) AS sprints FROM rounds r "
+                                "JOIN divisions d ON d.id = r.division_id "
+                                "WHERE d.season_id = ? AND r.format = 'SPRINT'",
+                                (season_id,),
+                            )
+                            row = await cursor.fetchone()
+                        # A sprint round is run over four sessions; every other format over
+                        # two. The largest the season holds is what the template must carry.
+                        needed = 4 if (row and (row["sprints"] or 0) > 0) else 2
+                        if needed > declared:
+                            lines.append(
+                                f"  ⚠️ Check-in template names {declared} session(s); this "
+                                f"season holds a round run over {needed}. That call cannot "
+                                f"be drawn as an image and will be posted without one. "
+                                f"Enlarge the template to draw it."
+                            )
+
+            if lines:
+                lines.append("")
+            return lines
+        except CapacityError:
+            return []  # an uncountable template is Layer 2's to report, not this
+        except Exception as exc:  # noqa: BLE001 — a review must never fail on this
+            log.error("season review: attendance capacity check failed: %s", exc)
+            return []
+
     async def _build_image_review_section(self, server_id: int) -> list[str]:
         """The image module's addendum to `/season review` (FR-033).
 
@@ -588,6 +679,9 @@ class SeasonCog(commands.Cog):
             if images_on:
                 header_lines += await self._build_image_review_section(interaction.guild_id)
                 header_lines += await self._calendar_capacity_warning(
+                    interaction.guild_id, cfg.season_id
+                )
+                header_lines += await self._attendance_capacity_warning(
                     interaction.guild_id, cfg.season_id
                 )
                 lineup_problems = await self._lineup_problems(

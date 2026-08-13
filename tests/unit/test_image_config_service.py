@@ -239,6 +239,33 @@ _VALID_STANDINGS_DRIVERS_SVG = _standings_svg(b"driver_name")
 _VALID_STANDINGS_CONSTRUCTORS_SVG = _standings_svg()
 
 
+#: A sound attendance sheet (041): the two whole-graphic mandatories and one complete row. It
+#: declares no round at all, the grid being an optional unit (XIV.3), and no position, the row
+#: ordinal of a sheet being a place in the layout and not a datum (XIV.11, v4.6.0).
+_VALID_ATTENDANCE_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b'<g id="row_1_group">'
+    b'<text id="row_1_driver_name">N</text>'
+    b'<text id="row_1_points">0</text>'
+    b"</g></svg>"
+)
+
+#: A sound check-in call (041). No session at all, and none of the values a button press can
+#: change — which is what makes the type static (XIV.17).
+_VALID_RSVP_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b'<text id="race_name">R</text>'
+    b'<text id="round_format">Normal</text>'
+    b'<text id="round_date">1 Jan 2026</text>'
+    b'<text id="round_time">20:00 UTC</text>'
+    b"</svg>"
+)
+
+
 def _sound_bytes(filename: str) -> bytes:
     """The soundest template for *filename* at the depth its type is checked to."""
     if filename == TEMPLATE_COLUMNS["calendar_template"]:
@@ -253,6 +280,10 @@ def _sound_bytes(filename: str) -> bytes:
         return _VALID_STANDINGS_DRIVERS_SVG
     if filename == TEMPLATE_COLUMNS["standings_constructors_template"]:
         return _VALID_STANDINGS_CONSTRUCTORS_SVG
+    if filename == TEMPLATE_COLUMNS["attendance_template"]:
+        return _VALID_ATTENDANCE_SVG
+    if filename == TEMPLATE_COLUMNS["rsvp_template"]:
+        return _VALID_RSVP_SVG
     return _VALID_SVG
 
 

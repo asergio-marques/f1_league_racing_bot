@@ -963,6 +963,8 @@ All commands below require the attendance module to be enabled (`/module enable 
 |-----------|------|----------|-------------|
 | `days` | Integer | ✅ | Days before the race to send the first RSVP notice (≥ 1) |
 
+> **A check-in call that fails to post is now reported in the log channel**, naming the season, the division and the round. This matters more than it sounds: when a call cannot be posted, the round's attendance rows are never opened, so nobody is asked to check in and nothing is ever counted against anyone — the round ends up recorded as perfect attendance for the whole division. The report tells you to post it again. It appears whether or not the images module is enabled, because the fault is in the call and not in any picture.
+
 #### `/attendance config rsvp-last-notice` — Set the last RSVP reminder
 *Access: Trusted admin · No active season*
 
@@ -1068,7 +1070,15 @@ Flips that aspect between a generated image and the text the bot has always post
 >
 > A failure is confined to the one graphic: if one session cannot be drawn, the round's other sessions, the other divisions, and the standings posted alongside are all unaffected. The session that failed falls back to its textual table and the log channel says why. A cancelled session keeps its textual notice whatever the toggle says, and the round's results *submission* channel stays textual throughout.
 >
-> The remaining five toggles change what `/images config view` and `/season review` report, and nothing else. Wiring each of those source modules is a later increment. Use `/images test` to see what an aspect will produce.
+> With `attendance` on, a division's attendance sheet is posted to its attendance channel as a drawn table instead of the text list, redrawn and replaced on the same two occasions the text was: a round's post-race penalties being approved, and a round's attendance being recalculated after `/round results amend`. The graphic adds what text cannot carry — each driver's flag, their team's badge, and a column per round showing what that round cost them. **An empty cell means zero**: a round that counted nothing against a driver, whether it conferred none, was pardoned in full, or has not been run yet. The heading stays as message text; the sheet becomes the picture.
+>
+> The replacement is always posted *before* the old one is deleted, so a sheet that cannot be drawn leaves the one already posted where it is; that division falls back to text and the log channel says why. **A sheet that cannot be drawn never delays a sanction** — auto-reserve and auto-sack are enforced and announced exactly as they would be with the images module switched off.
+>
+> With `rsvp` on, a check-in call carries a graphic naming the round, its sessions, its date and the moment check-in closes. **Everything else about the call is unchanged** — the same role mention, the same embed, the same roster, the same three buttons. The picture is drawn once, when the call is posted, and is never redrawn: it deliberately carries no driver, no team and no RSVP status, so it stays true no matter how many people answer. If it cannot be drawn, the call is posted without it and nothing else changes.
+>
+> **Both attendance templates are checked before a season depends on them.** With `attendance` on, a driver assignment that would push a division past the rows your sheet template declares is **refused**, and the driver is not assigned — enlarge the template first. `/season review` warns you where your sheet template draws fewer round columns than your longest division holds, or your check-in template names fewer sessions than a sprint round runs; both are warnings and neither blocks approval, because which division and which round are actually drawn is decided later.
+>
+> The remaining three toggles change what `/images config view` and `/season review` report, and nothing else. Wiring each of those source modules is a later increment. Use `/images test` to see what an aspect will produce.
 
 #### `/images template <kind>` — Name the SVG file backing each image
 *Access: Server administrator*

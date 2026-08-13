@@ -107,6 +107,35 @@ def _standings_svg(*row_extra: bytes) -> bytes:
 STANDINGS_DRIVERS_SVG = _standings_svg(b"driver_name")
 STANDINGS_CONSTRUCTORS_SVG = _standings_svg()
 
+#: A sound attendance sheet (041): the two whole-graphic mandatories and one complete row.
+#:
+#: It declares **no round at all**, which is sound — the grid is an optional unit (XIV.3), and
+#: a template declaring none of it draws the totals alone. It declares no position either: the
+#: row ordinal of a sheet is a place in the layout and not a datum (XIV.11, v4.6.0).
+ATTENDANCE_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b'<g id="row_1_group">'
+    b'<text id="row_1_driver_name">N</text>'
+    b'<text id="row_1_points">0</text>'
+    b"</g></svg>"
+)
+
+#: A sound check-in call (041). It declares **no session at all**, which is sound for the same
+#: reason, and none of the values a button press can change — which is what makes the type
+#: static (XIV.17).
+RSVP_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b'<text id="race_name">R</text>'
+    b'<text id="round_format">Normal</text>'
+    b'<text id="round_date">1 Jan 2026</text>'
+    b'<text id="round_time">20:00 UTC</text>'
+    b"</svg>"
+)
+
 
 def sound_bytes(template_key: str) -> bytes:
     """The soundest bytes for *template_key* at the depth its type is checked to."""
@@ -118,6 +147,10 @@ def sound_bytes(template_key: str) -> bytes:
         return STANDINGS_DRIVERS_SVG
     if template_key == "standings_constructors_template":
         return STANDINGS_CONSTRUCTORS_SVG
+    if template_key == "attendance_template":
+        return ATTENDANCE_SVG
+    if template_key == "rsvp_template":
+        return RSVP_SVG
     return VALID_SVG
 
 
@@ -130,6 +163,8 @@ POPULATED = {
     "results_race_template",
     "standings_drivers_template",
     "standings_constructors_template",
+    "attendance_template",
+    "rsvp_template",
 }
 VIEWBOX_ONLY_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"></svg>'
 NO_CANVAS_SVG = b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'
@@ -254,8 +289,8 @@ def test_three_failure_reasons_are_mutually_distinguishable(tmp_path, templates)
 
 
 def test_viewbox_only_template_declares_a_canvas(tmp_path, templates):
-    (templates / "rsvp_template.svg").write_bytes(VIEWBOX_ONLY_SVG)
-    report = _evaluate(_config("templates"), tmp_path, "rsvp_template")
+    (templates / "weather_p1_template.svg").write_bytes(VIEWBOX_ONLY_SVG)
+    report = _evaluate(_config("templates"), tmp_path, "weather_p1_template")
     assert report.valid
 
 
@@ -752,13 +787,15 @@ def test_layer_two_applies_to_a_populated_catalogue_and_skips_an_empty_one():
     assert layer.applies_to("lineup_template")
     assert layer.applies_to("results_qualifying_template")
     assert layer.applies_to("results_race_template")
-    # Attendance has no catalogue yet, so Layer 2 *skips* rather than passes.
-    assert not layer.applies_to("attendance_template")
+    assert layer.applies_to("attendance_template")
+    assert layer.applies_to("rsvp_template")
+    # Weather has no catalogue yet, so Layer 2 *skips* rather than passes.
+    assert not layer.applies_to("weather_p1_template")
 
 
 def test_empty_catalogue_leaves_depth_at_layer_one(tmp_path, templates):
     """XIV.9.4 — checked to the depth available, never reported as fully valid."""
-    report = _evaluate(_config("templates"), tmp_path, "attendance_template")
+    report = _evaluate(_config("templates"), tmp_path, "weather_p1_template")
     assert report.valid
     assert report.depth_checked == LAYER_RESOLUTION
 
@@ -846,7 +883,7 @@ def test_mixed_depths_are_reported_honestly(tmp_path, templates, catalogue_overr
     summary = ImageValidityService.depth_summary(reports)
 
     assert reports["calendar_template"].depth_checked == LAYER_CATALOGUE
-    assert reports["attendance_template"].depth_checked == LAYER_RESOLUTION
+    assert reports["weather_p1_template"].depth_checked == LAYER_RESOLUTION
     assert "layer 1" in summary and "layer 2" in summary
 
 
@@ -982,7 +1019,11 @@ def test_a_siblings_row_field_is_refused_and_named(tmp_path, templates):
     report = _evaluate(_config("templates"), tmp_path, "results_race_template")
     assert not report.valid
     assert "row_1_gap" in report.reason
-    assert "other kind of results template" in report.reason
+    # The refusal names the file actually supplied, not a fixed phrase: the sibling
+    # relation now spans a source module (XIV.3, v4.6.0), so "the other kind of results
+    # template" would be wrong for an attendance slot.
+    assert "wrong file for this slot" in report.reason
+    assert "qualifying" in report.reason.lower()
 
 
 def test_the_qualifying_template_refuses_a_race_field(tmp_path, templates):

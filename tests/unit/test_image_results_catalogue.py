@@ -163,8 +163,23 @@ def test_mandatory_ids_cover_every_declared_row():
 
 
 def test_each_results_catalogue_names_its_siblings_row_fields():
-    assert sibling_row_fields(QUALIFYING) == {"time", "fastest_lap", "ingame_penalty"}
-    assert sibling_row_fields(RACE) == {"best_lap", "gap", "tyre"}
+    """The other session's row fields are siblings' — and so are the standings'.
+
+    Widened at constitution v4.6.0: two image types are siblings where they draw one aspect
+    **or** are the several graphics of one source module. Results, standings and verdicts are
+    all graphics of the results module, so a results template declaring a standings row field
+    is the wrong file in that slot exactly as one declaring the other session's field is.
+    """
+    assert {"time", "fastest_lap", "ingame_penalty"} <= sibling_row_fields(QUALIFYING)
+    assert {"best_lap", "gap", "tyre"} <= sibling_row_fields(RACE)
+
+    # The standings row fields neither results type carries.
+    assert {"gap_to_leader", "previous_position"} <= sibling_row_fields(QUALIFYING)
+
+    # A field the results row does carry is never its own sibling's.
+    for shared in ("position", "driver_name", "team_name", "points"):
+        assert shared not in sibling_row_fields(QUALIFYING)
+        assert shared not in sibling_row_fields(RACE)
 
 
 def test_a_type_with_no_sibling_names_none():

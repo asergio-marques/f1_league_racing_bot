@@ -217,11 +217,27 @@ class CatalogueLayer:
             shown = ", ".join(f"`{name}`" for name in foreign[:8])
             if len(foreign) > 8:
                 shown += f", and {len(foreign) - 8} more"
+
+            # Name the file the manager has actually supplied. The sibling relation now spans
+            # a whole source module (XIV.3, v4.6.0), so a fixed phrase would tell an
+            # attendance manager their sheet belongs to "the other kind of results template".
+            from models.image_catalogues import sibling_owners
+            from models.image_constants import TEMPLATE_LABELS
+
+            owners = sibling_owners(ctx.template_key, foreign)
+            if owners:
+                named = " or ".join(
+                    f"**{TEMPLATE_LABELS.get(key, key)}**" for key in owners
+                )
+                whose = f"to the {named} template"
+            else:
+                whose = "to another image type"
+
             return LayerResult(
                 False,
                 f"it declares {shown}, which "
-                f"{'belongs' if len(foreign) == 1 else 'belong'} to the other kind of "
-                f"results template. This looks like the wrong file for this slot.",
+                f"{'belongs' if len(foreign) == 1 else 'belong'} {whose}. "
+                f"This looks like the wrong file for this slot.",
             )
 
         missing = sorted(name for name in mandatory if index.resolve(name) is None)

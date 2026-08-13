@@ -57,8 +57,26 @@ here in both halves:
   and the row-prefix regex in `sibling_fields_declared` matches none of them.
 
 The union is what keeps the widening safe. Restricting the relation to the source module *alone* would
-break the results and standings pairs, whose two templates are one aspect (`ASPECT_TEMPLATES["results"]`
-holds both session templates) but whose source module is shared with types that are not their siblings.
+drop the guarantee the aspect relation states explicitly, and an aspect whose source module is `None`
+— the calendar and the lineup — would contribute no relation at all.
+
+**Corrected during implementation.** This section originally read as though the source-module relation
+adds only the attendance pair. It does not: `ASPECT_SOURCE_MODULE` maps **`results`, `standings` and
+`verdicts` all to `"results"`**, so the widening makes those three mutually siblings too. That is what
+the constitution says — they are the several graphics of one source module — and it is desirable: a
+verdicts template in the standings slot is exactly the fault the rule exists to catch.
+
+It was settled by measurement rather than argument. **Every shipped template still passes the widened
+check**, so no template that rendered under v4.5.0 stops rendering — which is the test the MINOR
+classification actually rests on. Two existing assertions pinned the old aspect-only relation and were
+updated. The v4.6.0 sync report's supporting sentence, *"the sole pair it newly catches is the two
+attendance types"*, is too strong and wants correcting via `/speckit-constitution`.
+
+One further discovery belongs here: the shipped **results** templates declare `season_number_group` and
+`division_tier_group`, which the results catalogue never declared — only the standings catalogue
+enumerates its groups. XIV.2 makes `<field>_group` a general form available to any field of any type,
+so `_canonical_ids` now *derives* the group form rather than requiring each catalogue to list it. That
+removes a real asymmetry between the two declarations instead of working around it.
 
 **Alternatives considered.** A hard-coded sibling pair inside the attendance catalogues: rejected under
 XIV.10 — a second, private relation beside the declared one is what the shared declaration exists to

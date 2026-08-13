@@ -34,6 +34,13 @@ related at all. Constitution v4.6.0 widened the relation to the graphics of one 
 catalogues overlap in their *top-level* fields, not their rows. Both are widened; see Complexity
 Tracking.
 
+> **Corrected during implementation.** This section first claimed the widening catches only the
+> attendance pair. `ASPECT_SOURCE_MODULE` maps `results`, `standings` **and** `verdicts` to
+> `"results"`, so it makes those three mutually siblings as well — which is what the constitution
+> says and what a verdicts template in the standings slot deserves. Every shipped template was
+> checked and still passes, which is the test the MINOR bump rests on. See
+> [research.md](./research.md) R2.
+
 **R3 — the check-in graphic's staticness is a property of the call graph, not of a flag.** XIV.17 puts
 the obligation on the author, and nothing in the module can detect a stale picture. What the design
 *can* do is make the mistake structurally hard: the generator is called from exactly one place, the

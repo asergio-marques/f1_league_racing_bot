@@ -219,6 +219,110 @@ def _driver_display_str(driver: dict) -> str:
     return f"<@{driver['discord_user_id']}>"
 
 
+async def _report_call_failure(
+    bot,  # type: ignore[no-untyped-def]
+    *,
+    division_id: int,
+    division_name: str,
+    season_number: int,
+    round_number: int,
+    reason: str,
+) -> None:
+    """Tell the league's staff that a check-in call did not post.
+
+    **Why this exists.** A failed call used to reach ``log.error`` alone, which no league can
+    see, and the consequence is not a missing message — it is a silently wrong record. The
+    flow returns before ``bulk_insert_attendance_rows``, so the round holds no attendance rows
+    at all; the penalty pass iterates those rows and finds none; and the attendance sheet then
+    draws every cell of that round empty, which means **zero points** — a round nobody was
+    asked to check in for is recorded as flawless attendance for everyone.
+
+    **This fires whether or not the images module is enabled**, and whether or not the ``rsvp``
+    toggle is on. The fault is in the call, not in the picture, and a league that never draws a
+    graphic must still learn its calls are failing.
+
+    The call is deliberately **not** enqueued for retry. The retry queue carries text alone —
+    ``retry_service.enqueue`` takes a ``content: str`` and re-posts it in chunks — so a call
+    replayed through it would arrive with no embed, no roster and no buttons: a message the
+    division cannot answer. Staff re-post it instead.
+    """
+    try:
+        server_id = (
+            bot.server_id_for_division(division_id)
+            if hasattr(bot, "server_id_for_division")
+            else 0
+        )
+        await bot.output_router.post_log(
+            server_id,
+            f"ATTENDANCE | check-in call | NOT POSTED\n"
+            f"  season: {season_number}\n"
+            f"  division: {division_name} (id={division_id})\n"
+            f"  round: {round_number}\n"
+            f"  reason: {reason}\n"
+            f"  note: no attendance rows were opened for this round. Post the call again "
+            f"once the cause is cleared, or the round will count nothing against anyone.",
+        )
+    except Exception:  # noqa: BLE001 — reporting must never mask the original failure
+        log.exception("run_rsvp_notice: failed to report a failed check-in call")
+
+
+async def _checkin_attachment(
+    bot,  # type: ignore[no-untyped-def]
+    *,
+    division_id: int,
+    division_name: str,
+    division_tier,
+    season_number,
+    round_number,
+    round_format,
+    scheduled_at,
+    track_name,
+    race_name,
+    country_name,
+):
+    """The check-in graphic to attach, or None to post the call without one.
+
+    Every failure returns None and the call posts exactly as the textual flow composes it —
+    role mention, embed, three buttons — because a graphic that displaces nothing has no text
+    to restore (XIV.7). The round's attendance rows are opened afterwards either way.
+    """
+    try:
+        from services.image_rsvp_post import try_attach
+
+        server_id = (
+            bot.server_id_for_division(division_id)
+            if hasattr(bot, "server_id_for_division")
+            else 0
+        )
+        deadline_hours = None
+        try:
+            config = await bot.attendance_service.get_config(server_id)
+            deadline_hours = getattr(config, "rsvp_deadline_hours", None)
+        except Exception:  # noqa: BLE001 — the deadline is optional on the graphic
+            pass
+
+        return await try_attach(
+            bot,
+            server_id,
+            division_name=division_name,
+            round_number=round_number,
+            round_format=round_format,
+            scheduled_at=scheduled_at,
+            track_name=track_name,
+            race_name=race_name,
+            country_name=country_name,
+            season_number=season_number,
+            division_tier=division_tier,
+            deadline_hours=deadline_hours,
+        )
+    except Exception as exc:  # noqa: BLE001 — the call must post whatever happens here
+        log.error(
+            "run_rsvp_notice: the check-in graphic could not be drawn for division %d: %s",
+            division_id, exc,
+        )
+        return None
+
+
 # ── run_rsvp_notice ───────────────────────────────────────────────────────────
 
 
@@ -243,10 +347,14 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
                    r.scheduled_at,
                    s.season_number,
                    d.name AS division_name,
-                   d.mention_role_id
+                   d.tier AS division_tier,
+                   d.mention_role_id,
+                   t.gp_name AS track_gp_name,
+                   t.country AS track_country
               FROM rounds r
               JOIN divisions d ON d.id = r.division_id
               JOIN seasons s ON s.id = d.season_id
+              LEFT JOIN tracks t ON t.name = r.track_name
              WHERE r.id = ?
             """,
             (round_id,),
@@ -296,6 +404,14 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
         log.error(
             "run_rsvp_notice: RSVP channel %s not found for division %d",
             channel_id_str, division_id,
+        )
+        await _report_call_failure(
+            bot,
+            division_id=division_id,
+            division_name=division_name,
+            season_number=season_number,
+            round_number=round_number,
+            reason=f"the configured RSVP channel ({channel_id_str}) could not be reached",
         )
         return
 
@@ -360,8 +476,38 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
 
     role_ping = f"<@&{mention_role_id}>\n" if mention_role_id else ""
 
+    # ── The graphic, where the league draws one ───────────────────────────
+    # THE ONE GENERATION CALL IN THIS MODULE (Constitution XIV.17). The check-in graphic is a
+    # **static** graphic: drawn once, here, and never again while this call stands. The embed
+    # beneath it is edited in place on every button press, every reserve distribution and at
+    # the deadline, and the attachment rides through each of those untouched.
+    #
+    # Nothing below the button callbacks, `run_reserve_distribution`, `run_rsvp_deadline` or
+    # `_rebuild_embed_for_round` may reach the image module. If a later session finds it needs
+    # to redraw this picture, the type is not static and belongs on the delete-and-repost
+    # lifecycle every other graphic uses — which is a change to its declaration, not a tweak.
+    attachment = await _checkin_attachment(
+        bot,
+        division_id=division_id,
+        division_name=division_name,
+        division_tier=row["division_tier"] if "division_tier" in row.keys() else None,
+        season_number=season_number,
+        round_number=round_number,
+        round_format=round_format,
+        scheduled_at=scheduled_at,
+        track_name=track_name,
+        race_name=row["track_gp_name"] if "track_gp_name" in row.keys() else None,
+        country_name=row["track_country"] if "track_country" in row.keys() else None,
+    )
+
     try:
         msg = await channel.send(
+            content=role_ping or None,
+            embed=embed,
+            view=view,
+            file=attachment,
+            allowed_mentions=discord.AllowedMentions(roles=bool(mention_role_id)),
+        ) if attachment is not None else await channel.send(
             content=role_ping or None,
             embed=embed,
             view=view,
@@ -371,6 +517,14 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
         log.error(
             "run_rsvp_notice: failed to post embed for division %d: %s",
             division_id, exc,
+        )
+        await _report_call_failure(
+            bot,
+            division_id=division_id,
+            division_name=division_name,
+            season_number=season_number,
+            round_number=round_number,
+            reason=f"the call could not be posted: {exc}",
         )
         return
 

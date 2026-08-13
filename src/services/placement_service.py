@@ -441,6 +441,56 @@ class PlacementService:
                 f"turn the `lineup` image aspect off with `/images config toggle`."
             )
 
+    async def _guard_sheet_capacity(self, server_id: int, division_id: int) -> None:
+        """Refuse a placement that would outgrow the attendance sheet template (FR-042).
+
+        The sheet draws every driver of the division, and its rows are counted from the file
+        rather than declared as a number — so this reads the configured template exactly as
+        the reserve guard does, and for the same reason: XIV.12 rejects overflow at the
+        earliest moment it can be detected, with the change unapplied. That moment is this
+        command. Discovering it at a posting means the league has already lost its sheet.
+
+        Never raises for its own reasons: a fault in this check must not block a placement,
+        only a genuine over-capacity may.
+        """
+        bot = self._bot
+        if bot is None:
+            return
+        try:
+            from models.image_catalogues import row_capacity_problem
+            from services.image_attendance_post import attendance_enabled
+            from utils.svg_document import load_svg
+
+            if not await attendance_enabled(bot, server_id):
+                return
+
+            reports = await bot.image_validity_service.template_reports(server_id)
+            report = reports.get("attendance_template")
+            if report is None or not report.valid or report.resolved_path is None:
+                return
+
+            async with get_connection(self._db_path) as db:
+                row = await (
+                    await db.execute(
+                        "SELECT COUNT(*) AS seated FROM driver_season_assignments "
+                        "WHERE division_id = ?",
+                        (division_id,),
+                    )
+                ).fetchone()
+            seated = (row["seated"] if row else 0) or 0
+            problem = row_capacity_problem(
+                "attendance_template", load_svg(report.resolved_path), seated + 1
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.error("attendance sheet capacity guard could not run: %s", exc)
+            return
+
+        if problem is not None:
+            raise ValueError(
+                f"{problem}. The driver was **not** assigned. Enlarge the template, or "
+                f"the sheet would silently drop a driver."
+            )
+
     async def _guard_image_capacity(
         self, server_id: int, division_id: int, season_id: int
     ) -> None:
@@ -460,6 +510,10 @@ class PlacementService:
         # The reserve block is guarded separately: it counts reserve drivers, not every
         # seated driver, and its capacity comes from the template rather than from here.
         await self._guard_reserve_capacity(server_id, division_id)
+
+        # The attendance sheet's rows are likewise counted from the template rather than
+        # declared as a number, so they are invisible to ``declared_capacities()`` below.
+        await self._guard_sheet_capacity(server_id, division_id)
 
         capacities = declared_capacities()
         if not capacities:

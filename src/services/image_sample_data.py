@@ -407,7 +407,216 @@ def build_results_drawing(root, template_key: str, teams):
     )
 
 
-def build_spec(template_key: str, root, *, teams=None) -> FillSpec:
+# -- Attendance (041) ------------------------------------------------------
+
+#: The five rounds the fabricated division holds, standing after the third -- so a round
+#: already finalised and a round yet to be run are both on the sheet. Round 2 is of the
+#: mystery format, and the last has no image file of its own in any shipped asset set, so the
+#: track fallback and its notice can both be read (wip-spec section "Test data").
+SAMPLE_SHEET_ROUNDS = [
+    ("Silverstone Circuit", False),
+    (None, True),
+    ("Circuit de Spa-Francorchamps", False),
+    ("Suzuka International Racing Course", False),
+    ("Autódromo José Carlos Pace", False),
+]
+
+#: The round the fabricated sheet stands after: the third of five.
+SAMPLE_SHEET_STANDS_AFTER = 3
+
+
+def build_attendance_drawing(root, teams, *, limits: bool = True):
+    """The fabricated sheet ``/images test attendance`` draws (wip-spec "Test data").
+
+    One driver fewer than the rows the template declares, so the rendering of an unused row can
+    be judged; exactly one where the template declares a single row. Teams are the server's own
+    configuration, so a league reads its own liveries rather than invented ones.
+
+    *limits* draws the sheet with both point limits configured or with both switched off, which
+    is the pair the command produces -- the second showing the two blocks **removed** rather
+    than merely emptied (XIV.4, a configured absence).
+
+    The enumerated driver cases are assigned **in order** and any the declared row count cannot
+    reach are simply not drawn, which is what "insofar as the number of rows declared allows"
+    means.
+    """
+    from models.image_catalogues import CapacityError, catalogue_for
+    from services.image_attendance_service import (
+        ATTENDANCE_TEMPLATE_KEY,
+        AttendanceDataError,
+        DriverRecord,
+        RoundHeading,
+        resolve_drawing,
+    )
+
+    configurable = [t for t in teams or [] if not getattr(t, "is_reserve", False)]
+    if not configurable:
+        raise AttendanceDataError(
+            "the server holds no team beyond the reserve team, so there is no attendance "
+            "sheet to be drawn. Add a team with `/team add` first."
+        )
+    reserve_team = next((t for t in teams or [] if getattr(t, "is_reserve", False)), None)
+    reserve_name = getattr(reserve_team, "name", None) or "Reserve"
+
+    catalogue = catalogue_for(ATTENDANCE_TEMPLATE_KEY)
+    try:
+        capacity = catalogue.capacity(root) or 0
+        round_capacity = catalogue.column_capacity(root) or 0
+    except CapacityError as exc:
+        raise AttendanceDataError(str(exc)) from exc
+
+    count = 1 if capacity <= 1 else capacity - 1
+    rounds_drawn = min(round_capacity, len(SAMPLE_SHEET_ROUNDS))
+
+    # A round of the mystery format is drawn from the datum "Mystery" like any other round
+    # (wip-spec "A round of the mystery format"), never left without an image.
+    headings = [
+        RoundHeading(
+            ordinal=index,
+            number=str(index),
+            track="Mystery" if mystery else name,
+        )
+        for index, (name, mystery) in enumerate(
+            SAMPLE_SHEET_ROUNDS[:rounds_drawn], start=1
+        )
+    ]
+
+    finalised = min(SAMPLE_SHEET_STANDS_AFTER, rounds_drawn)
+
+    def points_for(index):
+        """The per-round cells of driver *index*, over the rounds already finalised.
+
+        Case 1 holds nothing at all -- every cell empty. Case 4's round was pardoned in its
+        entirety, so the persisted figure is already nought and the cell is empty with no
+        trace of the pardon. Case 7 took no part in round 1 and holds no record for it.
+        """
+        cells = {}
+        for ordinal in range(1, finalised + 1):
+            if index == 1:
+                cells[ordinal] = 0
+            elif index == 4 and ordinal == 1:
+                cells[ordinal] = 0
+            elif index == 7 and ordinal == 1:
+                continue
+            else:
+                cells[ordinal] = (index + ordinal) % 3
+        return cells
+
+    display_names = {}
+    team_names = {}
+    nationalities = {}
+    records = []
+
+    # The reserve driver distributed into a seat for one of the rounds run.
+    reserve_index = 6 if count >= 6 else None
+
+    for index in range(1, count + 1):
+        key = _SAMPLE_ID_BASE + 700 + index
+        display_names[key] = "Test Driver %d" % index
+        team_names[key] = (
+            reserve_name
+            if index == reserve_index
+            else configurable[(index - 1) % len(configurable)].name
+        )
+        nationalities[key] = SAMPLE_LINEUP_NATIONALITIES[
+            (index - 1) % len(SAMPLE_LINEUP_NATIONALITIES)
+        ]
+
+        if index == 1:
+            total = 0
+        elif index == 3:
+            total = 10
+        elif index in (4, 5):
+            total = 4
+        else:
+            total = max(0, 9 - index)
+
+        records.append(
+            DriverRecord(
+                key=key,
+                total=total,
+                round_points=points_for(index),
+                sanctioned=(index == 3 and limits),
+            )
+        )
+
+    return resolve_drawing(
+        division_name="Test Division",
+        round_number=finalised or 1,
+        records=records,
+        display_names=display_names,
+        team_names=team_names,
+        nationalities=nationalities,
+        rounds=headings,
+        autoreserve_threshold=10 if limits else None,
+        autosack_threshold=20 if limits else None,
+        division_tier=1,
+        season_number=1,
+        race_name=(headings[finalised - 1].track if finalised and headings else None),
+        nationality_collected=True,
+    )
+
+
+# -- Check-in call (041) ---------------------------------------------------
+
+#: The five cases ``/images test rsvp`` draws, each a round the template must be able to
+#: carry (wip-spec "Test data"). The dates span more than one month and more than one half
+#: of the day, so the configured date and time formats are both exercised.
+SAMPLE_RSVP_CASES = (
+    ("sprint", "SPRINT", "Silverstone Circuit", "British Grand Prix", "United Kingdom", 6),
+    ("normal", "NORMAL", "Circuit Zandvoort", "Dutch Grand Prix", "Netherlands", 6),
+    ("mystery", "MYSTERY", None, None, None, 6),
+    ("no_image", "NORMAL", "Autódromo José Carlos Pace", "São Paulo Grand Prix", "Brazil", 6),
+    ("no_deadline", "NORMAL", "Circuit de Spa-Francorchamps", "Belgian Grand Prix", "Belgium", 0),
+)
+
+
+def build_rsvp_drawing(root, *, case: str = "sprint"):
+    """The fabricated check-in call ``/images test rsvp`` draws (wip-spec "Test data").
+
+    Five cases, one image each: a sprint round naming four sessions, a normal round naming
+    two, a mystery round carrying no track, a round whose track has no image file, and a round
+    whose deadline is configured to ``0`` and therefore stands at the round's own start.
+
+    The deadline is produced by ``attendance_service.derive_checkin_deadline`` -- the same
+    derivation the real thing calls -- so the preview exercises the arithmetic rather than
+    imitating it (Constitution XIV.7).
+    """
+    from datetime import datetime, timezone
+
+    from services.attendance_service import derive_checkin_deadline
+    from services.image_rsvp_service import resolve_drawing
+
+    chosen = next(
+        (entry for entry in SAMPLE_RSVP_CASES if entry[0] == case), SAMPLE_RSVP_CASES[0]
+    )
+    _, fmt, track, race, country, deadline_hours = chosen
+
+    starts = {
+        "sprint": datetime(2026, 5, 17, 14, 0, tzinfo=timezone.utc),
+        "normal": datetime(2026, 6, 21, 20, 30, tzinfo=timezone.utc),
+        "mystery": datetime(2026, 7, 5, 9, 15, tzinfo=timezone.utc),
+        "no_image": datetime(2026, 8, 9, 22, 45, tzinfo=timezone.utc),
+        "no_deadline": datetime(2026, 9, 13, 11, 0, tzinfo=timezone.utc),
+    }
+    scheduled_at = starts.get(case, starts["sprint"])
+
+    return resolve_drawing(
+        division_name="Test Division",
+        round_number=1,
+        round_format=fmt,
+        scheduled_at=scheduled_at,
+        deadline_at=derive_checkin_deadline(scheduled_at, deadline_hours),
+        track_name=track,
+        race_name=race,
+        country_name=country,
+        is_mystery=(fmt == "MYSTERY"),
+        division_tier=1,
+        season_number=1,
+    )
+
+
+def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec:
     """Build a FillSpec for *template_key* against the template's actual ids.
 
     The template is the authority on what exists (Constitution XIV.2), so the sample
@@ -517,6 +726,43 @@ def build_spec(template_key: str, root, *, teams=None) -> FillSpec:
 
         return build_fill_spec(
             build_standings_drawing(root, template_key, teams),
+            root,
+            asset_directories=directories,
+        )
+
+    if template_key == "attendance_template":
+        from services.image_attendance_service import build_fill_spec
+        from utils.paths import resolve_within_project_root
+
+        directories = {}
+        for asset_class, relative in (
+            ("team", "resources/teams"),
+            ("flag", "resources/flags"),
+            ("track", "resources/tracks"),
+        ):
+            try:
+                directories[asset_class] = resolve_within_project_root(relative)
+            except Exception:  # noqa: BLE001
+                pass
+
+        return build_fill_spec(
+            build_attendance_drawing(root, teams, limits=(variant != "no_limits")),
+            root,
+            asset_directories=directories,
+        )
+
+    if template_key == "rsvp_template":
+        from services.image_rsvp_service import build_fill_spec
+        from utils.paths import resolve_within_project_root
+
+        directories = {}
+        try:
+            directories["track"] = resolve_within_project_root("resources/tracks")
+        except Exception:  # noqa: BLE001
+            pass
+
+        return build_fill_spec(
+            build_rsvp_drawing(root, case=variant or "sprint"),
             root,
             asset_directories=directories,
         )

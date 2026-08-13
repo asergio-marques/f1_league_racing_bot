@@ -1121,11 +1121,17 @@ _STANDINGS_CELL_FIELDS = frozenset(
     }
 )
 
-#: The round headings, shared by both championships. An **optional unit** (XIV.3, v4.5.0):
-#: a template declaring no round draws a classification alone and owes no field here, while
-#: one declaring any round owes that round its number — the image standing in addition to
-#: the number and never in its place.
-def _standings_columns() -> RowSpec:
+#: The round headings, shared by both standings championships **and by the attendance
+#: sheet**. An **optional unit** (XIV.3, v4.5.0): a template declaring no round draws its
+#: classification or its totals alone and owes no field here, while one declaring any round
+#: owes that round its number — the image standing in addition to the number and never in
+#: its place.
+#:
+#: The three types that draw a round grid head it identically, and the wip-spec says so in as
+#: many words: the attendance sheet's round group "contains the fields of the round named
+#: below and no field of any row, **as it does on the standings graphics**". One function so
+#: that a change to the heading cannot reach one type and miss another.
+def _round_heading_columns() -> RowSpec:
     return RowSpec(
         prefix="round",
         capacity=None,
@@ -1149,7 +1155,7 @@ def _standings_columns() -> RowSpec:
 STANDINGS_DRIVERS_CATALOGUE = FieldCatalogue(
     mandatory=_STANDINGS_MANDATORY,
     optional=_STANDINGS_OPTIONAL,
-    columns=_standings_columns(),
+    columns=_round_heading_columns(),
     rows=RowSpec(
         prefix="row",
         capacity=None,
@@ -1177,7 +1183,7 @@ STANDINGS_DRIVERS_CATALOGUE = FieldCatalogue(
 STANDINGS_CONSTRUCTORS_CATALOGUE = FieldCatalogue(
     mandatory=_STANDINGS_MANDATORY,
     optional=_STANDINGS_OPTIONAL,
-    columns=_standings_columns(),
+    columns=_round_heading_columns(),
     rows=RowSpec(
         prefix="row",
         capacity=None,
@@ -1206,9 +1212,149 @@ STANDINGS_CONSTRUCTORS_CATALOGUE = FieldCatalogue(
 )
 
 
+#: The attendance sheet's heading fields. It stands **after** a round and names that round;
+#: it carries no lifecycle label, an attendance record having no phases to stand between.
+_ATTENDANCE_MANDATORY = frozenset({"division_name", "round_number"})
+
+#: The optional headings, each with the group that may wrap it, plus the two **block groups**
+#: (XIV.2) wrapping the point limits. A block group is named for the block and not for a field,
+#: so ``autoreserve_group`` is a catalogue entry in its own right where ``season_number_group``
+#: is the ordinary ``<field>_group`` form; both are declared here so the utility can reach them.
+#:
+#: A limit whose functionality is switched off is a **configured absence** (XIV.4): the group
+#: leaves whole, and no notice is raised for a setting the league chose itself.
+_ATTENDANCE_OPTIONAL = frozenset(
+    {
+        "season_number",
+        "season_number_group",
+        "division_tier",
+        "division_tier_group",
+        "race_name",
+        "race_name_group",
+        "autoreserve_group",
+        "autoreserve_limit",
+        "autosack_group",
+        "autosack_limit",
+    }
+)
+
+
+#: The attendance sheet — the fifth image type to be specified, and the second to draw a grid.
+#:
+#: Its shape is the drivers standings' with the movement columns removed: rows against the
+#: drivers, a round collection at top level carrying the headings, and a cell per round hanging
+#: off each **row** (XIV.2 — a cell belongs to its row and its column both, and a node of an SVG
+#: file has one parent). Removing a round therefore reaches two id families, not one.
+#:
+#: Its row ordinal is a **place in the layout and not a datum** (XIV.11, v4.6.0): the sheet is a
+#: record and not a classification, two drivers level on totals stand level, and no position is
+#: drawn. This is why the row carries no ``position`` field where the standings row does.
+#:
+#: The rows carry a **floor**: a division holding no driver has no sheet to draw (XIV.12,
+#: v4.6.0). The floor is raised by ``image_attendance_service.resolve_drawing`` against the
+#: concrete data, as the calendar's is — a statement about the data and not about the template.
+#:
+#: See specs/041-attendance-image-generation/contracts/attendance-catalogues.md.
+ATTENDANCE_CATALOGUE = FieldCatalogue(
+    mandatory=_ATTENDANCE_MANDATORY,
+    optional=_ATTENDANCE_OPTIONAL,
+    columns=_round_heading_columns(),
+    rows=RowSpec(
+        prefix="row",
+        capacity=None,
+        fields=frozenset(
+            {
+                "group",
+                "driver_name",
+                "driver_flag",
+                "team_name",
+                "team_image",
+                "points",
+                "sanction",
+            }
+        ),
+        mandatory_fields=frozenset({"group", "driver_name", "points"}),
+        valueless_fields=frozenset({"group"}),
+        assets={"driver_flag": "flag", "team_image": "team"},
+        nested=NestedSpec(
+            prefix="round",
+            capacity=None,
+            optional_unit=True,
+            fields=frozenset({"points"}),
+            mandatory_fields=frozenset(),
+        ),
+    ),
+)
+
+
+#: The check-in call's heading fields. The grand prix name is **mandatory** here where it is
+#: optional on the sheet: a call announces one round and is meaningless without naming it,
+#: while a sheet is a record of a season that happens to stand after one.
+_RSVP_MANDATORY = frozenset(
+    {
+        "division_name",
+        "round_number",
+        "race_name",
+        "round_format",
+        "round_date",
+        "round_time",
+    }
+)
+
+#: The optional headings. ``race_name_group`` is here though its field is mandatory — XIV.2
+#: lets a group wrap a field of either classification, and declaring it is what lets the
+#: utility reach it.
+_RSVP_OPTIONAL = frozenset(
+    {
+        "season_number",
+        "season_number_group",
+        "division_tier",
+        "division_tier_group",
+        "race_name_group",
+        "track_name",
+        "track_name_group",
+        "country_name",
+        "country_name_group",
+        "track_image",
+        "track_image_group",
+        "deadline_date",
+        "deadline_time",
+    }
+)
+
+
+#: The check-in call graphic — the first **static** graphic of the module (XIV.17, v4.6.0).
+#:
+#: It is generated once, at the moment the call is posted, and never again while that call
+#: stands: the message carries three buttons armed against it and cannot be reposted, so the
+#: embed is edited in place on every press and the attachment rides through untouched.
+#:
+#: **What is absent here is the substance of that declaration.** There is no driver name, no
+#: team, no RSVP status, no attendance point and no roster — everything a button press alters
+#: lives in the embed, which is edited, and stays off the picture, which is not. Adding any
+#: field whose value can change while the call stands is an amendment of the static
+#: declaration and **not** a catalogue edit; nothing in the module can detect the breach, and
+#: the result is a stale picture under a current message that reports nothing.
+#:
+#: See specs/041-attendance-image-generation/contracts/attendance-catalogues.md.
+RSVP_CATALOGUE = FieldCatalogue(
+    mandatory=_RSVP_MANDATORY,
+    optional=_RSVP_OPTIONAL,
+    assets={"track_image": "track"},
+    rows=RowSpec(
+        prefix="session",
+        capacity=None,
+        optional_unit=True,
+        fields=frozenset({"group", "name"}),
+        mandatory_fields=frozenset({"group", "name"}),
+        valueless_fields=frozenset({"group"}),
+    ),
+)
+
+
 #: Template column → its catalogue. Fifteen entries, one per image type; the calendar, the
-#: lineup, the two results types and the two standings types are populated and the remaining
-#: nine are still empty.
+#: lineup, the two results types, the two standings types and the two attendance types are
+#: populated and the remaining seven are still empty.
 CATALOGUES: dict[str, FieldCatalogue] = {
     column: FieldCatalogue() for column in TEMPLATE_COLUMNS
 }
@@ -1218,66 +1364,181 @@ CATALOGUES["results_qualifying_template"] = RESULTS_QUALIFYING_CATALOGUE
 CATALOGUES["results_race_template"] = RESULTS_RACE_CATALOGUE
 CATALOGUES["standings_drivers_template"] = STANDINGS_DRIVERS_CATALOGUE
 CATALOGUES["standings_constructors_template"] = STANDINGS_CONSTRUCTORS_CATALOGUE
+CATALOGUES["attendance_template"] = ATTENDANCE_CATALOGUE
+CATALOGUES["rsvp_template"] = RSVP_CATALOGUE
+
+
+def sibling_keys(template_key: str) -> list[str]:
+    """The template keys that are **siblings** of *template_key* (XIV.3, widened at v4.6.0).
+
+    Two image types are siblings where **either** holds:
+
+    * they draw one **aspect** — qualifying and race results, driver and constructor
+      standings, the six forecasts;
+    * they are the several graphics of one **source module**, whatever they draw. The
+      attendance sheet and the check-in call share not one field and are siblings all the
+      same.
+
+    Common content is what makes a swapped file *plausible*; common provenance is what makes
+    it *possible*, and only the latter is the test. The fault the rule catches is a file in
+    the wrong slot, and the files a league is likeliest to swap are the ones it authors in one
+    sitting and configures with two adjacent commands.
+
+    **The union matters.** Restricting the relation to the source module alone would lose
+    nothing today but says the wrong thing; taking the aspect alone is what v4.6.0 widened,
+    the attendance pair sharing a module and not an aspect.
+
+    An aspect whose source module is ``None`` — the calendar and the lineup, drawn from the
+    foundational concepts rather than from an optional module — contributes **no** module
+    relation. Without that guard the two would become siblings of each other, which the
+    constitution explicitly denies: a calendar template declaring a lineup's field states
+    nothing about a calendar.
+    """
+    from models.image_constants import ASPECT_SOURCE_MODULE, ASPECT_TEMPLATES
+
+    aspect_of = {key: aspect for aspect, keys in ASPECT_TEMPLATES.items() for key in keys}
+    own_aspect = aspect_of.get(template_key)
+    if own_aspect is None:
+        return []
+
+    siblings: set[str] = set(ASPECT_TEMPLATES[own_aspect])
+
+    own_module = ASPECT_SOURCE_MODULE.get(own_aspect)
+    if own_module is not None:
+        for aspect, keys in ASPECT_TEMPLATES.items():
+            if ASPECT_SOURCE_MODULE.get(aspect) == own_module:
+                siblings |= set(keys)
+
+    siblings.discard(template_key)
+    return sorted(siblings)
+
+
+def _canonical(name: str) -> str:
+    """An id with every all-digit segment replaced by ``#``.
+
+    ``row_1_round_2_points`` becomes ``row_#_round_#_points``, so one ordinal-bearing id
+    compares against a catalogue's declaration without the catalogue having to enumerate its
+    members (XIV.11 forbids the enumeration). ``round_format`` carries no digit segment and is
+    left alone, which is what keeps a top-level field from colliding with a collection whose
+    prefix it happens to share.
+    """
+    return "_".join("#" if part.isdigit() else part for part in name.split("_"))
+
+
+def _canonical_ids(catalogue: FieldCatalogue) -> set[str]:
+    """Every id *catalogue* addresses, in canonical form.
+
+    Covers the **whole** addressable surface and not the rows alone: top-level fields, the
+    row collection, the column collection, and anything nested inside either. Two sibling
+    catalogues may overlap in their top-level fields and share no collection at all — which is
+    exactly the attendance pair — so a comparison restricted to rows would miss the fault it
+    exists to catch.
+
+    Keyed and singleton collections are deliberately omitted. Only the lineup declares them,
+    and the lineup has no sibling under any relation: it is alone in its aspect and its source
+    module is ``None``.
+    """
+    ids: set[str] = set(catalogue.mandatory) | set(catalogue.optional)
+
+    def walk(spec, stem: str) -> None:
+        if spec is None:
+            return
+        member = f"{stem}{spec.prefix}_#"
+        ids.add(member)
+        for suffix in spec.fields:
+            ids.add(f"{member}_{suffix}")
+        walk(getattr(spec, "nested", None), f"{member}_")
+
+    walk(catalogue.rows, "")
+    walk(catalogue.columns, "")
+
+    # XIV.2 lets **any** field be wrapped in a group named for it, and the rule is general
+    # rather than per catalogue: a template declaring `season_number` may wrap it in
+    # `season_number_group` whatever type it is. Deriving the group form here rather than
+    # requiring each catalogue to enumerate it is what keeps a legitimate wrapper from
+    # reading as a sibling's field — the standings catalogues list their groups explicitly
+    # and the results ones do not, and the shipped results templates carry them.
+    ids |= {f"{name}_group" for name in set(ids)}
+    return ids
 
 
 def sibling_row_fields(template_key: str) -> set[str]:
-    """Row field ids belonging to a **sibling** image type and not to this one.
+    """Row field **suffixes** belonging to a sibling image type and not to this one.
 
-    Two templates of one *aspect* are siblings — qualifying and race results, driver and
-    constructor standings, the six forecasts. A template declaring a sibling's row field is
-    the wrong file in that slot, and rendering it would draw one session's columns under
-    another's headings; XIV.3 (v4.4.0) makes that a fatal fault of the template.
-
-    An id belonging to **no** catalogue is not returned and is not a fault: a hand-authored
-    SVG carries identifiers on every node it holds, and only the ones a catalogue claims are
-    fields.
-
-    The sibling relation is read from ``ASPECT_TEMPLATES`` rather than hard-coded, so the
-    standings and weather types inherit this the moment their catalogues are written.
+    Retained for reporting and for the per-row half of the check. The whole-surface
+    comparison is :func:`sibling_fields_declared`, which this no longer bounds.
     """
-    from models.image_constants import ASPECT_TEMPLATES
-
     own = CATALOGUES.get(template_key)
     if own is None or own.rows is None:
         return set()
 
-    siblings = [
-        key
-        for keys in ASPECT_TEMPLATES.values()
-        if template_key in keys
-        for key in keys
-        if key != template_key
-    ]
-
     foreign: set[str] = set()
-    for key in siblings:
+    for key in sibling_keys(template_key):
         catalogue = CATALOGUES.get(key)
         if catalogue is None or catalogue.rows is None:
+            continue
+        if catalogue.rows.prefix != own.rows.prefix:
             continue
         foreign |= set(catalogue.rows.fields) - set(own.rows.fields)
     return foreign
 
 
+def sibling_owners(template_key: str, ids: Iterable[str]) -> list[str]:
+    """The sibling template keys that claim any of *ids*, sorted.
+
+    Lets a refusal name the file a manager has actually supplied — "these belong to the
+    check-in call template" — rather than a fixed phrase. XIV.9.2 requires a reason
+    distinguishable from every other layer's, and "the other kind of results template" is not
+    one when the slot is an attendance sheet.
+    """
+    own = CATALOGUES.get(template_key)
+    if own is None or own.is_empty:
+        return []
+
+    wanted = {_canonical(name) for name in ids}
+    own_ids = _canonical_ids(own)
+
+    owners: list[str] = []
+    for key in sibling_keys(template_key):
+        catalogue = CATALOGUES.get(key)
+        if catalogue is None or catalogue.is_empty:
+            continue
+        if wanted & (_canonical_ids(catalogue) - own_ids):
+            owners.append(key)
+    return owners
+
+
 def sibling_fields_declared(template_key: str, declared: Iterable[str]) -> list[str]:
-    """Every id in *declared* that belongs to a sibling's row catalogue, sorted.
+    """Every id in *declared* that a **sibling** catalogue addresses and this one does not.
+
+    A template declaring one is the wrong file in that slot, and XIV.3 makes it a fatal fault
+    detected at the moment the template is named — rendering it would draw one session's
+    columns under another's headings, or a check-in call's fields on an attendance sheet.
+
+    An id belonging to **no** catalogue is not returned and is not a fault: a hand-authored SVG
+    carries identifiers on every node it holds, and only the ones a catalogue claims are
+    fields.
 
     Returns the offending ids so a report can name them; empty where the template declares
     none, which is the ordinary case.
     """
     own = CATALOGUES.get(template_key)
-    if own is None or own.rows is None:
+    if own is None or own.is_empty:
         return []
 
-    foreign = sibling_row_fields(template_key)
+    own_ids = _canonical_ids(own)
+
+    foreign: set[str] = set()
+    for key in sibling_keys(template_key):
+        catalogue = CATALOGUES.get(key)
+        if catalogue is None or catalogue.is_empty:
+            continue
+        foreign |= _canonical_ids(catalogue) - own_ids
+
     if not foreign:
         return []
 
-    pattern = re.compile(rf"^{re.escape(own.rows.prefix)}_\d+_(.*)$")
-    found: set[str] = set()
-    for name in declared:
-        match = pattern.match(name)
-        if match is not None and match.group(1) in foreign:
-            found.add(name)
+    found: set[str] = {name for name in declared if _canonical(name) in foreign}
     return sorted(found)
 
 
@@ -1304,6 +1565,38 @@ def reserve_capacity_problem(root, would_hold: int) -> str | None:
         f"that would give the division {would_hold} reserve drivers, but the configured "
         f"lineup template declares {capacity} reserve "
         f"{'slot' if capacity == 1 else 'slots'}"
+    )
+
+
+def row_capacity_problem(template_key: str, root, would_hold: int) -> str | None:
+    """Why *would_hold* members outgrow *template_key*'s row collection, or None.
+
+    For the image types whose rows a **template** bounds (XIV.12): the attendance sheet's
+    drivers, and any later type of the same shape. The count cannot be frozen into the
+    catalogue — a league draws as many rows as its grid needs — so it is read from the file
+    being checked, at the moment a command would change the data measured against it.
+
+    XIV.12 requires overflow to be rejected at the **earliest** moment it can be detected, with
+    the change unapplied. For a driver assignment that moment is the command, not the render:
+    discovering it at a posting means the league has already lost the sheet.
+    """
+    catalogue = CATALOGUES.get(template_key)
+    if catalogue is None or catalogue.rows is None or not catalogue.rows.is_derived:
+        return None
+
+    try:
+        capacity = catalogue.rows.declared_capacity(root)
+    except CapacityError as exc:
+        # A template that cannot be counted is a fault of its own, reported where templates
+        # are validated. It must not masquerade as an over-capacity here.
+        del exc
+        return None
+
+    if would_hold <= capacity:
+        return None
+    return (
+        f"the division would hold {would_hold} drivers but the configured "
+        f"`{template_key}` declares {capacity} row(s)"
     )
 
 
