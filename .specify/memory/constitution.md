@@ -1,6 +1,162 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-13 — v4.6.0 → v4.7.0: MINOR — one aspect, six templates; the notice that is a forecast's absence]
+  Version change    : 4.6.0 → 4.7.0
+  Bump rationale    : MINOR. **No rule is added.** Seven are expanded (3, 7, 8, 10, 11, 12, 16) and
+                      Principle IV's Mystery Rounds paragraph is corrected. Nothing is removed and
+                      nothing conformant to v4.6.0 becomes non-conformant: every expansion states a
+                      form the existing rule did not reach, and Principle IV's correction *permits* a
+                      posting it had forbidden rather than forbidding one it had allowed. No template
+                      that rendered under v4.6.0 stops rendering under this one, which is the test
+                      v4.0.0 fixed for MAJOR.
+
+                      MAJOR was considered for Principle IV, a NON-NEGOTIABLE principle whose Mystery
+                      Rounds paragraph is rewritten, and rejected. The paragraph was stale rather than
+                      wrong in intent: `mystery_notice_service.py` has posted that notice at the phase
+                      1 horizon since the weather module shipped, and `forecast_messages` has recorded
+                      it since migration 006. The correction records what the bot does and what the
+                      author confirms it should do. Widening a prohibition's exception breaks nothing
+                      built against the prohibition.
+
+                      That this amendment adds no numbered rule is itself worth recording. The sixth
+                      image type is the module's most divided aspect — six templates, three phases, two
+                      round formats and a kind of round holding no forecast at all — and every question
+                      it raised was answered by extending a rule Principle XIV already held. The fifth
+                      needed a rule of its own; the sixth did not.
+  Feature branch    : 042-weather-image-generation (created 2026-08-13 from main)
+
+  Session context   : 037 built the calendar, 038 the lineup, 039 the results, 040 the standings, 041
+                      the two attendance graphics. This session begins the sixth per-image-type
+                      utility — the **weather** module's forecasts, all three phases and every variant
+                      — and no other type is in scope. Principle XIV was audited against
+                      `docs/wip-specs/image_module_specification.md` § "Weather image generation" as
+                      the five sessions before it audited their own. Four divergences were put to the
+                      author; the rest were settled by the precedent v4.1.0 set, that where the
+                      constitution stated a rule too narrowly the wip-spec wins.
+
+                      Weather is the first aspect drawn by **six** templates rather than one or two,
+                      and the first whose template is chosen by a property of the **round** rather than
+                      of the thing drawn. It is also the first aspect holding a **chain of postings**
+                      across occasions — phase 2's message deleting phase 1's, phase 3's deleting
+                      phase 2's — and the first to include a posting that is a forecast's *absence*.
+                      Most of this amendment follows from those three facts.
+
+  Author's rulings  : - Weather icons       → **the module ships all eight**. Sunny, Mixed and Rain,
+                                            and Clear, Light Cloud, Overcast, Wet and Very Wet, are a
+                                            closed set the module itself defines and no league chose,
+                                            so Rule 13's closed-set clause applies unaltered and
+                                            `resources/weather/` gains eight files beside the
+                                            `fallback.svg` it already holds. This is the second class
+                                            the module ships complete, after the markers.
+                      - Sprint slot floor   → **three, not two**, the wip-spec's figure being an
+                                            arithmetic slip. The author's instruction was to follow
+                                            "whatever is the current functionality on the textual
+                                            output"; `MAX_SLOTS[LONG_FEATURE_RACE]` is 3, and the
+                                            Round Formats table of this document already said so. A
+                                            sprint phase 3 template therefore declares at least three
+                                            slots per session, as a plain one declares at least four.
+                      - The mystery notice  → **it is the phase 1 posting of such a round**. The
+                                            author corrected the question: the bot does not merely
+                                            post "a message" for a mystery round, it posts the phase 1
+                                            message, which states that the weather is not
+                                            pre-generated. Phases 2 and 3 are silent for such a round
+                                            on both pathways. Principle IV is corrected to say this,
+                                            which is also what makes the mystery graphic legal under
+                                            Rule 8's "no posting, no graphic".
+                      - `session_<x>_slot_type`
+                                            → **the name stands; no rename**. Put to the author on the
+                                            ground that `slot` names both a session-level value and a
+                                            numbered collection on one phase 3 template, and answered:
+                                            the two meanings are of two different phases, a session
+                                            holding one slot at phase 2 and one to four at phase 3.
+                                            Rule 11 gains the general statement instead — a field of a
+                                            member may begin with the name of a collection nested in
+                                            that member, and the catalogue, not a parser, tells them
+                                            apart.
+
+  Settled by precedent (not put to the author, the wip-spec having stated the general form):
+                      - The six forecasts being siblings — Rule 3 already named them.
+                      - Redrawing on every occasion the textual forecast is posted — Rule 17's
+                        ordinary form, the weather types being declared nothing else.
+                      - The replacement produced before the original is destroyed; a transport failure
+                        enqueuing the text form; a commanded posting refusing rather than falling back,
+                        which is why the four `images test weather-*` commands report to their invoker
+                        and post nothing.
+                      - An icon standing where the textual forecast draws an emoji. The label is the
+                        shared rendering of Rule 7 and the icon is an asset resolved from that same
+                        datum by Rule 13's slug; no third divergence from the text path arises.
+                      - Emptying rather than drawing a dash; notices to the log channel and never to a
+                        forecast channel.
+
+  Modified rules (Principle XIV):
+    - **3. Every mandatory field MUST be resolved** — **a kind of record MAY have an image type of its
+      own** rather than a defined literal in a shared one, where that kind's posting differs. A
+      calendar draws a mystery round as a row among rows and takes the literal; the weather module
+      posts a notice that no forecast is coming and takes a slot of its own.
+    - **7. Image output is additive** — **the correspondence is with the text path, not with the
+      message the graphic rides on**. A graphic MAY carry a value the module published in another
+      message of the same flow: the likelihood of rain computed at phase 1 stands on the phase 2 and
+      phase 3 graphics, where neither of those messages carries it.
+    - **8. Images are attachments** — two additions. **A lifecycle MAY span occasions**, the chain by
+      which each phase's posting deletes its predecessor's message passing to the image flow entire,
+      ordering and test-mode suppression included. And **the manner of a message is not part of the
+      chain**: a text message may be deleted by an occasion posted as a graphic and the reverse, a
+      fallback substituting one message without forking the flow.
+    - **10. Every image type MUST declare a field catalogue** — where an aspect holds several slots,
+      the catalogue MUST name the **datum that selects** among them, and the selection MUST be a
+      function of that datum alone. The format of the round chooses between the two slots of each of
+      phases 2 and 3, and nothing else may enter that choice.
+    - **11. Template ids follow a fixed convention** — a field of a member MAY bear a name **beginning
+      with the name of a collection nested in that member**. `session_<x>_slot_type` and
+      `session_<x>_slot_<y>_label` are told apart by the catalogue and never by parsing the id.
+    - **12. Collection capacity** — a **third way a capacity is fixed: by the template slot**, where an
+      aspect's slots each serve a known subset of the data and the shape that subset can demand is a
+      constant of the module. The declaration is a **floor**: under-declaring is a structural problem
+      refused at every one of Rule 9's three moments, over-declaring is removed silently at generation,
+      and the floor is the maximum over the subset the slot serves.
+    - **16. A graphic draws nothing a reader can act on** — **markup the message channel interprets is
+      not content**. The emphasis a phase 3 summary carries in the forecast message is dropped, the
+      graphic drawing the value the markup adorned and leaving distinction to the template's own
+      typography.
+    - **13. Asset resolution** — no rule changed; the weather vocabulary is named alongside the
+      position-change markers as the second instance of the closed-set clause.
+    - **Rationale** — extended for the amendment that added no rule, for why Rule 12's third capacity
+      belongs inside Rule 12, and for correcting Principle IV rather than exempting the graphic.
+
+  Added rules (Principle XIV): **none.**
+
+  Modified principles:
+    - **IV. Three-Phase Weather Pipeline (NON-NEGOTIABLE)** — the Mystery Rounds paragraph is
+      corrected. It said no phase runs and no weather message is posted. It now says no draw is
+      performed and no forecast computed; that a fixed notice carrying no forecast and no role mention
+      is posted at the **phase 1 horizon**, standing in the place of the phase 1 forecast and recorded
+      distinctly from one; and that nothing whatever is posted at the phase 2 and phase 3 horizons.
+
+  Added sections:
+    - **New Entities (v4.7.0)** — none, with the reasoning recorded, plus the eight shipped weather
+      icons.
+
+  Removed sections: none.
+
+  Deferred          : TODO(PER_TYPE_ASSET_SENTENCES) — carried from v4.0.0 and **discharged for the
+                      weather type** in this audit, verified rather than assumed. Its three asset
+                      sentences — the track image, the two weather icons, and the icon resolution
+                      under § "Handling of mismatches" — each defer to the conventions section in
+                      full and bundle nothing. **Verdicts alone** now carries the TODO forward, and
+                      it is the last type to do so.
+
+                      The three wip-spec corrections the rulings imply — the sprint slot floor, the
+                      eight shipped icons, and the mystery notice as the phase 1 posting — are applied
+                      to `docs/wip-specs/image_module_specification.md` in this same change, that
+                      document being the source of truth for rules and the place a decision made in
+                      conversation must land.
+
+                      `README.md` is **not** changed here, and was checked rather than assumed. No
+                      weather graphic is built, `image_catalogues.py` declares no weather catalogue,
+                      and the README describes the bot as it is. It is updated within the increment,
+                      when the behaviour it documents exists.
+
 [2026-08-13 — v4.5.0 → v4.6.0: MINOR — how long a picture is good for; the attendance audit]
   Version change    : 4.5.0 → 4.6.0
   Bump rationale    : MINOR. One rule is added (17) and Rules 3, 7, 8, 11 and 12 are expanded.
@@ -2190,8 +2346,18 @@ each triggered automatically at a fixed horizon before the scheduled round start
   within the session-type slot-count bounds). Log the full draw sequence. Post the final
   weather layout to the division channel.
 
-**Mystery Rounds** are the sole exception: Phases 1, 2, and 3 MUST NOT be executed and the
-bot MUST NOT post any weather message for that round.
+**Mystery Rounds** are the sole exception. No draw is performed, no `Rpc` is computed, no phase
+result is written, and nothing is logged to the calculation channel. In place of the three phases:
+
+- At the **Phase 1 horizon** (T − 5 days) the bot MUST post a fixed notice to the division's
+  forecast channel stating that the weather of the round is not pre-generated. It carries no
+  forecast value and no division role mention, the conditions being unknown to every participant
+  alike. It stands in the place of the Phase 1 forecast for such a round and MUST be recorded
+  distinctly from one, no forecast having been computed.
+- At the **Phase 2 and Phase 3 horizons** nothing whatever is posted.
+
+The notice is the round's only weather output, and it is a posting the module makes rather than one
+it withholds — which is what allows an image type to draw it (Principle XIV, Rule 8).
 
 **Amendment invalidation**: If a round is amended (track change, postponement, format change)
 after any phase has completed, ALL previously posted weather outputs for that round are
@@ -3133,6 +3299,19 @@ literal the type defines, and an asset is resolved from it by the ordinary slug 
 No field is emptied and no exemption arises, because there is nothing missing — the kind *is*
 the datum.
 
+**A kind of record MAY instead have an image type of its own.** Where the graphic's principal
+collection has no members at all for that kind — a round of the mystery format, which runs no session
+and for which no forecast is computed — the module MAY give the kind its **own template slot**,
+drawing what its own posting says, rather than a defined literal in a slot shared with every other
+kind.
+
+Which of the two an image type takes is decided by whether the **posting** differs. A calendar and an
+attendance sheet draw a mystery round as a row among rows, so they take the literal. The weather
+module posts a notice that no forecast is coming, which shares with a forecast only its heading fields,
+so it takes a slot of its own. The paragraph above governs the first and this one the second, and
+neither admits an exemption: a type of its own is an image type like any other and draws every field
+of its catalogue in full.
+
 **4. Problems and notices are distinct outcomes.**
 
 - A **problem** is a disagreement between template and data (an unresolved mandatory field, an
@@ -3256,6 +3435,20 @@ recorded laps — is derived by the code that derives it for the table.
 The exception is a value a rule of this Principle requires the graphic to draw *differently*. That
 list is closed at two: the zone of Rule 15, and the fixed renderings of Rule 16.
 
+**The correspondence is with the text path, not with the message the graphic rides on.** Every image
+MUST correspond to information the bot can already express as text, and that test is taken against the
+source module's textual output **entire** — never against the single message the graphic is attached
+to. A graphic MAY therefore carry a value the module published in **another message of the same
+flow**: the likelihood of rain computed and posted at phase 1 stands on the phase 2 and phase 3
+graphics, where neither of those messages carries it.
+
+Nothing is added to what a league is told. The value was published, it is the source module's, it is
+persisted by that module, and it is rendered by the code that rendered it the first time — the
+obligations above binding it exactly as they bind a value the two paths draw together. A graphic
+gathering onto one canvas what the text path said across three messages is **arranging**, which is the
+whole of what a second presentation does. What the rule still forbids is a value the text path never
+published anywhere, in any message, at any horizon.
+
 **A derived presentation is not a computation.** A value that is **arithmetic over figures the text
 path already publishes** — the difference between two points totals, the distance between two
 recorded positions, the direction of that distance — decides nothing, admits no datum the bot did not
@@ -3305,6 +3498,21 @@ fallback substituted for it. The ordering is the whole of what stops a failed re
 league with nothing where its standings, its lineup or its sheet had been, and it MUST hold on the
 fallback path as firmly as on the ordinary one, that being the path on which something has already
 gone wrong.
+
+**A lifecycle MAY span occasions, and the image flow inherits it whole.** Where the text flow deletes
+the message of a **previous occasion** as it posts the next — the phase 2 forecast deleting the phase 1
+message, the phase 3 forecast deleting the phase 2 — that chain is a property of the source module and
+passes to the image flow unaltered. The ordering above binds each link of it: the message being
+superseded is deleted only once the message superseding it has been produced. Any suppression of
+deletions the text flow observes, a test mode among them, is observed by the image flow identically.
+
+**The manner of a message is not part of the chain.** A message posted as text MAY be deleted by an
+occasion posted as a graphic, and a message carrying a graphic by an occasion that fell back to text.
+A fallback (Rule 7) substitutes one message; it does not fork the flow. Each occasion consults the
+state the source module records — which message stands, and for which occasion — and never the manner
+in which that message was drawn. Without this, one failed render would strand a league's chain of
+postings for the remainder of its round, and the failure of a single graphic would cost far more than
+Rule 4 allows it to.
 
 **A transport failure retries as text.** Where the **posting** fails for a reason of the service
 rather than of the generation, what is enqueued for retry is the **text form** — the textual
@@ -3420,6 +3628,16 @@ naming its own fields in full — so that a template can be checked against the 
 slot answers to (Rule 3), and a report can say which of the siblings is at fault (Rule 9, specific
 attribution). The aspect is what a league toggles; the catalogue belongs to the template.
 
+**The catalogue MUST name the datum that selects the slot.** Where an aspect holds several slots, the
+choice among them MUST be a function of **that datum alone**: the kind of the session for the two
+results slots, the championship for the two standings slots, the **format of the round** for the two
+slots of each of weather's phases 2 and 3. Nothing else may enter the choice — not a configuration
+beyond the one naming the templates, not a count of the data actually present, and not a fall back to
+the other slot when the one selected is unconfigured or invalid. A selection reading any of those
+would put a template a league authored for one case under the data of another, which is precisely the
+fault Rule 3's sibling test exists to catch, arrived at by the module's own hand instead of by a
+misplaced file.
+
 **11. Template ids follow a fixed convention.**
 
 Because ids are the contract (Rule 2) and templates are hand-authored, the convention is binding
@@ -3458,6 +3676,13 @@ on both the author and the code:
   containment (`row_<x>_round_<z>_driver_<w>`, `team_<x>_driver_<y>_flag`).
 - A removable group is the field's name followed by `_group` (Rule 2), which for a whole member
   is `<collection>_<x>_group`.
+- A field of a member MAY bear a name **beginning with the name of a collection nested in that same
+  member**. `session_<x>_slot_type` is a field of session *x*, carrying the type of weather drawn for
+  it; `session_<x>_slot_<y>_label` is a field of slot *y* of that session. The two are told apart by
+  the **catalogue** (Rule 10) and never by parsing the id. Reading a structure out of an identifier is
+  convenient and is not the contract: the catalogue declares which names are collections and which are
+  fields, a checker consults it, and a name a parser would find ambiguous is unambiguous to the one
+  list both the fill pipeline and validity Layer 2 read.
 
 A keyed collection exists so that a member may be **hand-designed as itself**: a lineup's team
 block carries that team's own livery, which an ordinal cannot address because it does not say
@@ -3473,7 +3698,7 @@ the module that owns it (Principle IX); discovering the collision at render time
 **12. Collection capacity is declared by the template; overflow is a problem.**
 
 Any image type drawing a list whose length varies by league MUST state in its catalogue **how that
-list's capacity is fixed**. A capacity is fixed in one of exactly two ways, and the catalogue names
+list's capacity is fixed**. A capacity is fixed in one of exactly three ways, and the catalogue names
 which for every collection it declares:
 
 - **By the template.** The member slots the template declares are the capacity, and the data are
@@ -3484,6 +3709,12 @@ which for every collection it declares:
   capacity fixed by the data MUST be read from the configuration at the moment of each check and
   MUST NOT be frozen into the catalogue as a number, a catalogue carrying the count of one
   league's teams being wrong for the next.
+- **By the template slot.** Where an aspect holds several slots (Rule 10) and each serves a **known
+  subset** of the data, the shape that subset can demand is a **constant of the module** — of the game
+  the league plays, not of the league — and the catalogue states per slot the least a template filling
+  it must declare. A weather phase 3 template of the sprint slot serves rounds of four sessions, the
+  longest of which allows three weather slots; one of the plain slot serves rounds of two sessions, the
+  longest of which allows four.
 
 Where the capacity is fixed **by the template**:
 
@@ -3502,6 +3733,27 @@ and a member the template declares and the data do not hold, are one fault seen 
 sides: both are declared and both are knowable, so neither may be quietly absorbed. A member the
 data hold but leave *empty* — a team that has recruited nobody, a seat nobody occupies — is not a
 divergence at all: it is drawn, its text emptied and its image fields removed per Rule 3.
+
+Where the capacity is fixed **by the template slot**, the declaration is a **floor**:
+
+- **Fewer members than the floor**: a **problem** (Rule 4), naming the slot, the count the template
+  declares and the count required of it. It is a **structural** check under Rule 9 — read off the
+  template and a constant of the module, needing no data at all — so it is complete at every one of the
+  three moments and refuses at each with the severity that moment carries. A league is told when it
+  names the template, or at season review, and not at the horizon of a phase it can no longer post.
+- **More members than the floor**: not a divergence. The surplus is removed at generation exactly as a
+  template-fixed capacity's unused members are — silently, by group, raising no notice — because the
+  floor is the greatest the slot can ever demand and every lesser case reaches it by removal. A template
+  author sizing a row for the floor should expect its last cells to be absent on most rounds.
+- The floor is the **maximum over the subset the slot serves**, taken per collection: the greatest
+  number of members any served case holds, and, for a nested collection, the greatest capacity any
+  member of any served case allows. A floor set to anything less would admit a template that cannot
+  draw a round the league has already scheduled.
+
+This is a third way a capacity is fixed and not a softening of the other two. The **data drawn** remain
+the fatal test at generation, as they are for a capacity fixed by the template: a round holding more
+sessions than its template declares, or a session drawn more weather slots than the template declares
+for it, is a problem however the floor was satisfied.
 
 **A capacity fixed by the data MAY vary by containing member.** Where a collection nests inside a
 member and the configured value fixing its capacity belongs to *that member* — the cars of a round of
@@ -3570,8 +3822,10 @@ asset class. Resolution MUST be deterministic and documented:
   hold a generic **fallback image** under the reserved name `fallback.svg` that covers those it
   does not.
 - Where the data of a class are **not values a league supplies** but a **closed set the module
-  itself defines** — the three directions of a change of standing position, `gained`, `lost` and
-  `unchanged` — the **module** MUST ship a file for every one of them under `resources/`, beside
+  itself defines** — the three directions of a change of standing position (`gained`, `lost`,
+  `unchanged`); the three types of weather a session may be drawn (`sunny`, `mixed`, `rain`) and the
+  five concrete weathers a slot may carry (`clear`, `light_cloud`, `overcast`, `wet`, `very_wet`) —
+  the **module** MUST ship a file for every one of them under `resources/`, beside
   that class's `fallback.svg`. The obligation of the bullet above is discharged by the module rather
   than by the league, because the league has nothing to supply: it did not choose the vocabulary and
   cannot be incomplete against it. A league MAY still point the class at a directory of its own and
@@ -3659,6 +3913,19 @@ person that is their display name; for a team it is the name the league gave the
 role, falling back to the name of the role itself. An image type MUST state the chain by which a name
 is reached where the first is unavailable, and MUST reach the same name wherever it draws that
 entity, so that one driver is not two names on one graphic.
+
+**Markup the message channel interprets is not content.** Bold, italic, underline, strike-through, a
+code span, a block quote — anything that is an instruction to the channel rather than a value — is
+dropped by the graphic. The graphic draws the value the markup adorned and leaves the distinguishing
+to the template's own typography, which is where an SVG says such things. The emphasis a phase 3
+summary carries in the forecast message is of this kind, and so is every bolded label and quoted line
+of every message an image rides on.
+
+This is not a divergence from Rule 7's one rendering. The markup was never part of the value: the
+shared formatting code produces the value, and applying channel markup to it is something the text
+path does afterwards, to the message rather than to the datum. An image type that finds itself
+stripping markup **inside** a value it was handed has been given the wrong thing, and the repair is in
+the code that handed it over.
 
 Rule 15 is this rule applied to time: the timestamp every reader saw in their own zone becomes the
 one configured zone drawn for all. Stating the general form once is what stops each image type
@@ -3795,6 +4062,31 @@ owes when there is nothing to draw or nothing to add. It owes a refusal in the f
 silence in the second, and the difference is who is waiting: a league asking for a sheet of a
 division with no drivers has made a mistake worth naming, while a league whose sanction is being
 enforced is owed that sanction whether or not a picture of it can be drawn.
+
+The sixth image type added **no rule**, and that is worth recording rather than passing over. Weather
+is the module's most divided aspect — six templates, three phases, two round formats, and a kind of
+round that holds no forecast at all — and every question it raised was answered by widening a rule this
+Principle already held. A capacity gained a third way of being fixed, a lifecycle gained a second
+dimension, a catalogue gained the datum that chooses it, and an id convention gained the sentence
+saying the catalogue outranks a parser. The fifth type needed a rule of its own; the sixth did not. A
+framework whose sixth instance extends its rules rather than adding to them has found its joints.
+
+Rule 12's third capacity is the addition that most deserved a rule of its own and correctly did not get
+one, because it answers Rule 12's own question — how much of a graphic is a shape the bot knows —
+for the case where the shape is known but **varies by which template is being asked for**. A league
+authoring for the sprint slot is authoring against a constant of the game it plays, not against its own
+configuration and not against a canvas of its own choosing. The module therefore knows the number, can
+state it, and can refuse a template falling short of it before a single round is run. That the same
+declaration is a floor upward and a ceiling nowhere is what lets one template serve a short qualifying
+of two slots and a long feature race of three without either being a fault.
+
+Principle IV's Mystery paragraph had been stale for as long as the module has posted its notice, and
+the image type is what made the staleness matter. Rule 8 draws no graphic where the source module
+posts nothing, so a principle forbidding any weather message for a mystery round would have made the
+mystery notice graphic unspecifiable — a picture of a posting the constitution said did not exist.
+Correcting the principle rather than exempting the graphic is the right order of repair. A rule that
+contradicts the shipped bot is a defect in the rule, and two documents disagreeing about whether a
+message is posted is worse than one document saying plainly that it is.
 
 ## Bot Behavior Standards
 
@@ -4156,6 +4448,36 @@ for team-level aggregates):
   appeal outcomes for this division are posted to this channel; if null, the bot falls
   back to `results_channel_id`.
 
+### New Entities (v4.7.0)
+
+**None.** The six weather image types introduce no entity and amend none, and the absence is recorded
+here so that it is not re-derived.
+
+- `forecast_messages` already keys a posted message by round, division and phase, and already admits
+  phase `0` for the mystery notice (migration 006). Each phase's message is therefore separately
+  addressable and separately replaceable, which is all the chain of Rule 8 needs; the image flow reads
+  and writes exactly the rows the textual flow reads and writes, and no column is added.
+- `Session` already carries `phase2_slot_type` and `phase3_slots` — the type drawn for a session and
+  the sequence drawn within it — which are what the phase 2 and phase 3 graphics place.
+- `MAX_SLOTS` and `SESSIONS_BY_FORMAT` in `models/session.py` are the constants Rule 12's third
+  capacity reads to compute a slot's floor: four sessions of at most three slots for the sprint slot,
+  two sessions of at most four for the plain one. They are read as they stand and MUST NOT be restated
+  in the image module, a second copy being a second thing to get wrong.
+- The six `weather_*_template` slots, the `weather` aspect and its toggle, the weather icon directory
+  and the four `images test weather-*` values are all part of the configuration surface delivered at
+  035 and 036, and are read as they stand.
+
+**Shipped assets.** `resources/weather/` gains the eight files of the module's own weather vocabulary —
+`sunny.svg`, `mixed.svg`, `rain.svg`, `clear.svg`, `light_cloud.svg`, `overcast.svg`, `wet.svg` and
+`very_wet.svg` — beside the `fallback.svg` it already holds, per Rule 13's closed-set clause and the
+author's ruling. This is the second class the module ships complete, after the markers, and the
+directory remains league-overridable on exactly the ordinary terms.
+
+The likelihood of rain, the session type draw and the slot draw are governed by Principle IV and are
+read as the weather service computed and persisted them. The graphic computes none of them and derives
+nothing: weather is the first image type to reach Rule 7's shared-rendering obligation without needing
+its derived-presentation clause at all.
+
 ### New Entities (v4.6.0)
 
 **None.** The two attendance image types introduce no entity and amend none, and the absence is
@@ -4430,4 +4752,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 4.6.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-13
+**Version**: 4.7.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-13

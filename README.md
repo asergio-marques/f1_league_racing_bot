@@ -1331,6 +1331,12 @@ Three phases fire automatically per round (non-Mystery formats only):
 All forecast messages go to each division forecast channel.
 Computation logs go to the server log channel.
 
+**Mystery rounds.** No weather is generated for a Mystery round — nothing is drawn, nothing is
+computed, and nothing is logged. At the Phase 1 horizon your drivers still get a message: a fixed
+notice telling them the weather is not pre-generated and will be set by the game at race time. It
+tags no division role, since the conditions are unknown to everyone alike. Nothing is posted at the
+Phase 2 and Phase 3 horizons.
+
 ---
 
 ## Running Tests
