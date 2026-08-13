@@ -1,8 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg"
-     xmlns:xlink="http://www.w3.org/1999/xlink"
-     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-     width="1200" height="1212" viewBox="0 0 1200 1212"
-     font-family="Inter, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif">
+<?xml version='1.0' encoding='UTF-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="1200" height="1212" viewBox="0 0 1200 1212" font-family="Inter, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif">
 
   <!-- ===================================================================
        Driver standings template
@@ -99,10 +96,10 @@
         separator being chrome that survives the emptying of the fields it
         divides.  -->
   <g id="season_number_group" inkscape:label="season_number_group">
-    <text class="eyebrow" x="48" y="36"><tspan>SEASON&#160;</tspan><tspan id="season_number" inkscape:label="season_number">1</tspan></text>
+    <text class="eyebrow" x="48" y="36"><tspan>SEASON </tspan><tspan id="season_number" inkscape:label="season_number">1</tspan></text>
   </g>
   <g id="division_tier_group" inkscape:label="division_tier_group">
-    <text class="eyebrow" x="184" y="36"><tspan>TIER&#160;</tspan><tspan id="division_tier" inkscape:label="division_tier">1</tspan></text>
+    <text class="eyebrow" x="184" y="36"><tspan>TIER </tspan><tspan id="division_tier" inkscape:label="division_tier">1</tspan></text>
   </g>
   <text id="division_name" inkscape:label="division_name" class="title" x="48" y="76">Division Name</text>
   <text id="result_status" inkscape:label="result_status" class="phase" x="1152" y="72" text-anchor="end">Final Results</text>
@@ -110,7 +107,7 @@
 
   <!--  round block  -->
   <text class="roundlbl" x="48" y="140">
-    <tspan>ROUND&#160;</tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">10</tspan>
+    <tspan>ROUND </tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">10</tspan>
   </text>
   <text class="track" x="48" y="188">Driver Standings</text>
   <text id="race_name" inkscape:label="race_name" class="sub" x="48" y="220">Grand Prix Name</text>
@@ -119,8 +116,8 @@
   <!--  column headers  -->
   <text class="colhead" x="72" y="318" text-anchor="end">POS</text>
   <text class="colhead" x="80" y="318">+/- PRV</text>
-  <text class="colhead" x="146" y="318">DRIVER &#183; TEAM</text>
-  <text class="colhead" x="352" y="318" text-anchor="end">PTS &#183; GAP</text>
+  <text class="colhead" x="146" y="318">DRIVER · TEAM</text>
+  <text class="colhead" x="352" y="318" text-anchor="end">PTS · GAP</text>
   <line x1="48" y1="326" x2="1152" y2="326" stroke="#262B33" stroke-width="1"/>
 
   <!-- ================= rows ================= -->
@@ -132,9 +129,9 @@
     </g>
     <text id="row_1_previous_position" inkscape:label="row_1_previous_position" class="prev" x="80" y="364" style="font-variant-numeric:tabular-nums">1</text>
     <image id="row_1_driver_flag" inkscape:label="row_1_driver_flag" x="118" y="340" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_1_driver_name" inkscape:label="row_1_driver_name" class="dname" x="146" y="350">Driver Name</text>
+    <text id="row_1_driver_name" inkscape:label="row_1_driver_name" class="dname" x="146" y="350" style="inline-size:140">Driver Name</text>
     <image id="row_1_team_image" inkscape:label="row_1_team_image" x="146" y="354" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_1_team_name" inkscape:label="row_1_team_name" class="tname" x="164" y="364">Team Name</text>
+    <text id="row_1_team_name" inkscape:label="row_1_team_name" class="tname" x="164" y="364" style="inline-size:120">Team Name</text>
     <text id="row_1_points" inkscape:label="row_1_points" class="pts" x="352" y="350" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_1_gap_to_leader" inkscape:label="row_1_gap_to_leader" class="gap" x="352" y="364" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_1_round_1_group" inkscape:label="row_1_round_1_group">
@@ -195,9 +192,9 @@
     </g>
     <text id="row_2_previous_position" inkscape:label="row_2_previous_position" class="prev" x="80" y="396" style="font-variant-numeric:tabular-nums">2</text>
     <image id="row_2_driver_flag" inkscape:label="row_2_driver_flag" x="118" y="372" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_2_driver_name" inkscape:label="row_2_driver_name" class="dname" x="146" y="382">Driver Name</text>
+    <text id="row_2_driver_name" inkscape:label="row_2_driver_name" class="dname" x="146" y="382" style="inline-size:140">Driver Name</text>
     <image id="row_2_team_image" inkscape:label="row_2_team_image" x="146" y="386" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_2_team_name" inkscape:label="row_2_team_name" class="tname" x="164" y="396">Team Name</text>
+    <text id="row_2_team_name" inkscape:label="row_2_team_name" class="tname" x="164" y="396" style="inline-size:120">Team Name</text>
     <text id="row_2_points" inkscape:label="row_2_points" class="pts" x="352" y="382" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_2_gap_to_leader" inkscape:label="row_2_gap_to_leader" class="gap" x="352" y="396" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_2_round_1_group" inkscape:label="row_2_round_1_group">
@@ -257,9 +254,9 @@
     </g>
     <text id="row_3_previous_position" inkscape:label="row_3_previous_position" class="prev" x="80" y="428" style="font-variant-numeric:tabular-nums">3</text>
     <image id="row_3_driver_flag" inkscape:label="row_3_driver_flag" x="118" y="404" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_3_driver_name" inkscape:label="row_3_driver_name" class="dname" x="146" y="414">Driver Name</text>
+    <text id="row_3_driver_name" inkscape:label="row_3_driver_name" class="dname" x="146" y="414" style="inline-size:140">Driver Name</text>
     <image id="row_3_team_image" inkscape:label="row_3_team_image" x="146" y="418" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_3_team_name" inkscape:label="row_3_team_name" class="tname" x="164" y="428">Team Name</text>
+    <text id="row_3_team_name" inkscape:label="row_3_team_name" class="tname" x="164" y="428" style="inline-size:120">Team Name</text>
     <text id="row_3_points" inkscape:label="row_3_points" class="pts" x="352" y="414" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_3_gap_to_leader" inkscape:label="row_3_gap_to_leader" class="gap" x="352" y="428" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_3_round_1_group" inkscape:label="row_3_round_1_group">
@@ -320,9 +317,9 @@
     </g>
     <text id="row_4_previous_position" inkscape:label="row_4_previous_position" class="prev" x="80" y="460" style="font-variant-numeric:tabular-nums">4</text>
     <image id="row_4_driver_flag" inkscape:label="row_4_driver_flag" x="118" y="436" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_4_driver_name" inkscape:label="row_4_driver_name" class="dname" x="146" y="446">Driver Name</text>
+    <text id="row_4_driver_name" inkscape:label="row_4_driver_name" class="dname" x="146" y="446" style="inline-size:140">Driver Name</text>
     <image id="row_4_team_image" inkscape:label="row_4_team_image" x="146" y="450" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_4_team_name" inkscape:label="row_4_team_name" class="tname" x="164" y="460">Team Name</text>
+    <text id="row_4_team_name" inkscape:label="row_4_team_name" class="tname" x="164" y="460" style="inline-size:120">Team Name</text>
     <text id="row_4_points" inkscape:label="row_4_points" class="pts" x="352" y="446" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_4_gap_to_leader" inkscape:label="row_4_gap_to_leader" class="gap" x="352" y="460" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_4_round_1_group" inkscape:label="row_4_round_1_group">
@@ -382,9 +379,9 @@
     </g>
     <text id="row_5_previous_position" inkscape:label="row_5_previous_position" class="prev" x="80" y="492" style="font-variant-numeric:tabular-nums">5</text>
     <image id="row_5_driver_flag" inkscape:label="row_5_driver_flag" x="118" y="468" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_5_driver_name" inkscape:label="row_5_driver_name" class="dname" x="146" y="478">Driver Name</text>
+    <text id="row_5_driver_name" inkscape:label="row_5_driver_name" class="dname" x="146" y="478" style="inline-size:140">Driver Name</text>
     <image id="row_5_team_image" inkscape:label="row_5_team_image" x="146" y="482" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_5_team_name" inkscape:label="row_5_team_name" class="tname" x="164" y="492">Team Name</text>
+    <text id="row_5_team_name" inkscape:label="row_5_team_name" class="tname" x="164" y="492" style="inline-size:120">Team Name</text>
     <text id="row_5_points" inkscape:label="row_5_points" class="pts" x="352" y="478" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_5_gap_to_leader" inkscape:label="row_5_gap_to_leader" class="gap" x="352" y="492" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_5_round_1_group" inkscape:label="row_5_round_1_group">
@@ -445,9 +442,9 @@
     </g>
     <text id="row_6_previous_position" inkscape:label="row_6_previous_position" class="prev" x="80" y="524" style="font-variant-numeric:tabular-nums">6</text>
     <image id="row_6_driver_flag" inkscape:label="row_6_driver_flag" x="118" y="500" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_6_driver_name" inkscape:label="row_6_driver_name" class="dname" x="146" y="510">Driver Name</text>
+    <text id="row_6_driver_name" inkscape:label="row_6_driver_name" class="dname" x="146" y="510" style="inline-size:140">Driver Name</text>
     <image id="row_6_team_image" inkscape:label="row_6_team_image" x="146" y="514" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_6_team_name" inkscape:label="row_6_team_name" class="tname" x="164" y="524">Team Name</text>
+    <text id="row_6_team_name" inkscape:label="row_6_team_name" class="tname" x="164" y="524" style="inline-size:120">Team Name</text>
     <text id="row_6_points" inkscape:label="row_6_points" class="pts" x="352" y="510" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_6_gap_to_leader" inkscape:label="row_6_gap_to_leader" class="gap" x="352" y="524" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_6_round_1_group" inkscape:label="row_6_round_1_group">
@@ -507,9 +504,9 @@
     </g>
     <text id="row_7_previous_position" inkscape:label="row_7_previous_position" class="prev" x="80" y="556" style="font-variant-numeric:tabular-nums">7</text>
     <image id="row_7_driver_flag" inkscape:label="row_7_driver_flag" x="118" y="532" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_7_driver_name" inkscape:label="row_7_driver_name" class="dname" x="146" y="542">Driver Name</text>
+    <text id="row_7_driver_name" inkscape:label="row_7_driver_name" class="dname" x="146" y="542" style="inline-size:140">Driver Name</text>
     <image id="row_7_team_image" inkscape:label="row_7_team_image" x="146" y="546" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_7_team_name" inkscape:label="row_7_team_name" class="tname" x="164" y="556">Team Name</text>
+    <text id="row_7_team_name" inkscape:label="row_7_team_name" class="tname" x="164" y="556" style="inline-size:120">Team Name</text>
     <text id="row_7_points" inkscape:label="row_7_points" class="pts" x="352" y="542" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_7_gap_to_leader" inkscape:label="row_7_gap_to_leader" class="gap" x="352" y="556" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_7_round_1_group" inkscape:label="row_7_round_1_group">
@@ -570,9 +567,9 @@
     </g>
     <text id="row_8_previous_position" inkscape:label="row_8_previous_position" class="prev" x="80" y="588" style="font-variant-numeric:tabular-nums">8</text>
     <image id="row_8_driver_flag" inkscape:label="row_8_driver_flag" x="118" y="564" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_8_driver_name" inkscape:label="row_8_driver_name" class="dname" x="146" y="574">Driver Name</text>
+    <text id="row_8_driver_name" inkscape:label="row_8_driver_name" class="dname" x="146" y="574" style="inline-size:140">Driver Name</text>
     <image id="row_8_team_image" inkscape:label="row_8_team_image" x="146" y="578" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_8_team_name" inkscape:label="row_8_team_name" class="tname" x="164" y="588">Team Name</text>
+    <text id="row_8_team_name" inkscape:label="row_8_team_name" class="tname" x="164" y="588" style="inline-size:120">Team Name</text>
     <text id="row_8_points" inkscape:label="row_8_points" class="pts" x="352" y="574" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_8_gap_to_leader" inkscape:label="row_8_gap_to_leader" class="gap" x="352" y="588" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_8_round_1_group" inkscape:label="row_8_round_1_group">
@@ -632,9 +629,9 @@
     </g>
     <text id="row_9_previous_position" inkscape:label="row_9_previous_position" class="prev" x="80" y="620" style="font-variant-numeric:tabular-nums">9</text>
     <image id="row_9_driver_flag" inkscape:label="row_9_driver_flag" x="118" y="596" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_9_driver_name" inkscape:label="row_9_driver_name" class="dname" x="146" y="606">Driver Name</text>
+    <text id="row_9_driver_name" inkscape:label="row_9_driver_name" class="dname" x="146" y="606" style="inline-size:140">Driver Name</text>
     <image id="row_9_team_image" inkscape:label="row_9_team_image" x="146" y="610" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_9_team_name" inkscape:label="row_9_team_name" class="tname" x="164" y="620">Team Name</text>
+    <text id="row_9_team_name" inkscape:label="row_9_team_name" class="tname" x="164" y="620" style="inline-size:120">Team Name</text>
     <text id="row_9_points" inkscape:label="row_9_points" class="pts" x="352" y="606" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_9_gap_to_leader" inkscape:label="row_9_gap_to_leader" class="gap" x="352" y="620" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_9_round_1_group" inkscape:label="row_9_round_1_group">
@@ -695,9 +692,9 @@
     </g>
     <text id="row_10_previous_position" inkscape:label="row_10_previous_position" class="prev" x="80" y="652" style="font-variant-numeric:tabular-nums">10</text>
     <image id="row_10_driver_flag" inkscape:label="row_10_driver_flag" x="118" y="628" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_10_driver_name" inkscape:label="row_10_driver_name" class="dname" x="146" y="638">Driver Name</text>
+    <text id="row_10_driver_name" inkscape:label="row_10_driver_name" class="dname" x="146" y="638" style="inline-size:140">Driver Name</text>
     <image id="row_10_team_image" inkscape:label="row_10_team_image" x="146" y="642" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_10_team_name" inkscape:label="row_10_team_name" class="tname" x="164" y="652">Team Name</text>
+    <text id="row_10_team_name" inkscape:label="row_10_team_name" class="tname" x="164" y="652" style="inline-size:120">Team Name</text>
     <text id="row_10_points" inkscape:label="row_10_points" class="pts" x="352" y="638" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_10_gap_to_leader" inkscape:label="row_10_gap_to_leader" class="gap" x="352" y="652" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_10_round_1_group" inkscape:label="row_10_round_1_group">
@@ -757,9 +754,9 @@
     </g>
     <text id="row_11_previous_position" inkscape:label="row_11_previous_position" class="prev" x="80" y="684" style="font-variant-numeric:tabular-nums">11</text>
     <image id="row_11_driver_flag" inkscape:label="row_11_driver_flag" x="118" y="660" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_11_driver_name" inkscape:label="row_11_driver_name" class="dname" x="146" y="670">Driver Name</text>
+    <text id="row_11_driver_name" inkscape:label="row_11_driver_name" class="dname" x="146" y="670" style="inline-size:140">Driver Name</text>
     <image id="row_11_team_image" inkscape:label="row_11_team_image" x="146" y="674" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_11_team_name" inkscape:label="row_11_team_name" class="tname" x="164" y="684">Team Name</text>
+    <text id="row_11_team_name" inkscape:label="row_11_team_name" class="tname" x="164" y="684" style="inline-size:120">Team Name</text>
     <text id="row_11_points" inkscape:label="row_11_points" class="pts" x="352" y="670" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_11_gap_to_leader" inkscape:label="row_11_gap_to_leader" class="gap" x="352" y="684" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_11_round_1_group" inkscape:label="row_11_round_1_group">
@@ -820,9 +817,9 @@
     </g>
     <text id="row_12_previous_position" inkscape:label="row_12_previous_position" class="prev" x="80" y="716" style="font-variant-numeric:tabular-nums">12</text>
     <image id="row_12_driver_flag" inkscape:label="row_12_driver_flag" x="118" y="692" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_12_driver_name" inkscape:label="row_12_driver_name" class="dname" x="146" y="702">Driver Name</text>
+    <text id="row_12_driver_name" inkscape:label="row_12_driver_name" class="dname" x="146" y="702" style="inline-size:140">Driver Name</text>
     <image id="row_12_team_image" inkscape:label="row_12_team_image" x="146" y="706" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_12_team_name" inkscape:label="row_12_team_name" class="tname" x="164" y="716">Team Name</text>
+    <text id="row_12_team_name" inkscape:label="row_12_team_name" class="tname" x="164" y="716" style="inline-size:120">Team Name</text>
     <text id="row_12_points" inkscape:label="row_12_points" class="pts" x="352" y="702" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_12_gap_to_leader" inkscape:label="row_12_gap_to_leader" class="gap" x="352" y="716" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_12_round_1_group" inkscape:label="row_12_round_1_group">
@@ -882,9 +879,9 @@
     </g>
     <text id="row_13_previous_position" inkscape:label="row_13_previous_position" class="prev" x="80" y="748" style="font-variant-numeric:tabular-nums">13</text>
     <image id="row_13_driver_flag" inkscape:label="row_13_driver_flag" x="118" y="724" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_13_driver_name" inkscape:label="row_13_driver_name" class="dname" x="146" y="734">Driver Name</text>
+    <text id="row_13_driver_name" inkscape:label="row_13_driver_name" class="dname" x="146" y="734" style="inline-size:140">Driver Name</text>
     <image id="row_13_team_image" inkscape:label="row_13_team_image" x="146" y="738" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_13_team_name" inkscape:label="row_13_team_name" class="tname" x="164" y="748">Team Name</text>
+    <text id="row_13_team_name" inkscape:label="row_13_team_name" class="tname" x="164" y="748" style="inline-size:120">Team Name</text>
     <text id="row_13_points" inkscape:label="row_13_points" class="pts" x="352" y="734" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_13_gap_to_leader" inkscape:label="row_13_gap_to_leader" class="gap" x="352" y="748" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_13_round_1_group" inkscape:label="row_13_round_1_group">
@@ -945,9 +942,9 @@
     </g>
     <text id="row_14_previous_position" inkscape:label="row_14_previous_position" class="prev" x="80" y="780" style="font-variant-numeric:tabular-nums">14</text>
     <image id="row_14_driver_flag" inkscape:label="row_14_driver_flag" x="118" y="756" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_14_driver_name" inkscape:label="row_14_driver_name" class="dname" x="146" y="766">Driver Name</text>
+    <text id="row_14_driver_name" inkscape:label="row_14_driver_name" class="dname" x="146" y="766" style="inline-size:140">Driver Name</text>
     <image id="row_14_team_image" inkscape:label="row_14_team_image" x="146" y="770" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_14_team_name" inkscape:label="row_14_team_name" class="tname" x="164" y="780">Team Name</text>
+    <text id="row_14_team_name" inkscape:label="row_14_team_name" class="tname" x="164" y="780" style="inline-size:120">Team Name</text>
     <text id="row_14_points" inkscape:label="row_14_points" class="pts" x="352" y="766" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_14_gap_to_leader" inkscape:label="row_14_gap_to_leader" class="gap" x="352" y="780" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_14_round_1_group" inkscape:label="row_14_round_1_group">
@@ -1007,9 +1004,9 @@
     </g>
     <text id="row_15_previous_position" inkscape:label="row_15_previous_position" class="prev" x="80" y="812" style="font-variant-numeric:tabular-nums">15</text>
     <image id="row_15_driver_flag" inkscape:label="row_15_driver_flag" x="118" y="788" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_15_driver_name" inkscape:label="row_15_driver_name" class="dname" x="146" y="798">Driver Name</text>
+    <text id="row_15_driver_name" inkscape:label="row_15_driver_name" class="dname" x="146" y="798" style="inline-size:140">Driver Name</text>
     <image id="row_15_team_image" inkscape:label="row_15_team_image" x="146" y="802" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_15_team_name" inkscape:label="row_15_team_name" class="tname" x="164" y="812">Team Name</text>
+    <text id="row_15_team_name" inkscape:label="row_15_team_name" class="tname" x="164" y="812" style="inline-size:120">Team Name</text>
     <text id="row_15_points" inkscape:label="row_15_points" class="pts" x="352" y="798" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_15_gap_to_leader" inkscape:label="row_15_gap_to_leader" class="gap" x="352" y="812" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_15_round_1_group" inkscape:label="row_15_round_1_group">
@@ -1070,9 +1067,9 @@
     </g>
     <text id="row_16_previous_position" inkscape:label="row_16_previous_position" class="prev" x="80" y="844" style="font-variant-numeric:tabular-nums">16</text>
     <image id="row_16_driver_flag" inkscape:label="row_16_driver_flag" x="118" y="820" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_16_driver_name" inkscape:label="row_16_driver_name" class="dname" x="146" y="830">Driver Name</text>
+    <text id="row_16_driver_name" inkscape:label="row_16_driver_name" class="dname" x="146" y="830" style="inline-size:140">Driver Name</text>
     <image id="row_16_team_image" inkscape:label="row_16_team_image" x="146" y="834" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_16_team_name" inkscape:label="row_16_team_name" class="tname" x="164" y="844">Team Name</text>
+    <text id="row_16_team_name" inkscape:label="row_16_team_name" class="tname" x="164" y="844" style="inline-size:120">Team Name</text>
     <text id="row_16_points" inkscape:label="row_16_points" class="pts" x="352" y="830" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_16_gap_to_leader" inkscape:label="row_16_gap_to_leader" class="gap" x="352" y="844" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_16_round_1_group" inkscape:label="row_16_round_1_group">
@@ -1132,9 +1129,9 @@
     </g>
     <text id="row_17_previous_position" inkscape:label="row_17_previous_position" class="prev" x="80" y="876" style="font-variant-numeric:tabular-nums">17</text>
     <image id="row_17_driver_flag" inkscape:label="row_17_driver_flag" x="118" y="852" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_17_driver_name" inkscape:label="row_17_driver_name" class="dname" x="146" y="862">Driver Name</text>
+    <text id="row_17_driver_name" inkscape:label="row_17_driver_name" class="dname" x="146" y="862" style="inline-size:140">Driver Name</text>
     <image id="row_17_team_image" inkscape:label="row_17_team_image" x="146" y="866" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_17_team_name" inkscape:label="row_17_team_name" class="tname" x="164" y="876">Team Name</text>
+    <text id="row_17_team_name" inkscape:label="row_17_team_name" class="tname" x="164" y="876" style="inline-size:120">Team Name</text>
     <text id="row_17_points" inkscape:label="row_17_points" class="pts" x="352" y="862" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_17_gap_to_leader" inkscape:label="row_17_gap_to_leader" class="gap" x="352" y="876" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_17_round_1_group" inkscape:label="row_17_round_1_group">
@@ -1195,9 +1192,9 @@
     </g>
     <text id="row_18_previous_position" inkscape:label="row_18_previous_position" class="prev" x="80" y="908" style="font-variant-numeric:tabular-nums">18</text>
     <image id="row_18_driver_flag" inkscape:label="row_18_driver_flag" x="118" y="884" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_18_driver_name" inkscape:label="row_18_driver_name" class="dname" x="146" y="894">Driver Name</text>
+    <text id="row_18_driver_name" inkscape:label="row_18_driver_name" class="dname" x="146" y="894" style="inline-size:140">Driver Name</text>
     <image id="row_18_team_image" inkscape:label="row_18_team_image" x="146" y="898" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_18_team_name" inkscape:label="row_18_team_name" class="tname" x="164" y="908">Team Name</text>
+    <text id="row_18_team_name" inkscape:label="row_18_team_name" class="tname" x="164" y="908" style="inline-size:120">Team Name</text>
     <text id="row_18_points" inkscape:label="row_18_points" class="pts" x="352" y="894" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_18_gap_to_leader" inkscape:label="row_18_gap_to_leader" class="gap" x="352" y="908" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_18_round_1_group" inkscape:label="row_18_round_1_group">
@@ -1257,9 +1254,9 @@
     </g>
     <text id="row_19_previous_position" inkscape:label="row_19_previous_position" class="prev" x="80" y="940" style="font-variant-numeric:tabular-nums">19</text>
     <image id="row_19_driver_flag" inkscape:label="row_19_driver_flag" x="118" y="916" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_19_driver_name" inkscape:label="row_19_driver_name" class="dname" x="146" y="926">Driver Name</text>
+    <text id="row_19_driver_name" inkscape:label="row_19_driver_name" class="dname" x="146" y="926" style="inline-size:140">Driver Name</text>
     <image id="row_19_team_image" inkscape:label="row_19_team_image" x="146" y="930" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_19_team_name" inkscape:label="row_19_team_name" class="tname" x="164" y="940">Team Name</text>
+    <text id="row_19_team_name" inkscape:label="row_19_team_name" class="tname" x="164" y="940" style="inline-size:120">Team Name</text>
     <text id="row_19_points" inkscape:label="row_19_points" class="pts" x="352" y="926" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_19_gap_to_leader" inkscape:label="row_19_gap_to_leader" class="gap" x="352" y="940" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_19_round_1_group" inkscape:label="row_19_round_1_group">
@@ -1320,9 +1317,9 @@
     </g>
     <text id="row_20_previous_position" inkscape:label="row_20_previous_position" class="prev" x="80" y="972" style="font-variant-numeric:tabular-nums">20</text>
     <image id="row_20_driver_flag" inkscape:label="row_20_driver_flag" x="118" y="948" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_20_driver_name" inkscape:label="row_20_driver_name" class="dname" x="146" y="958">Driver Name</text>
+    <text id="row_20_driver_name" inkscape:label="row_20_driver_name" class="dname" x="146" y="958" style="inline-size:140">Driver Name</text>
     <image id="row_20_team_image" inkscape:label="row_20_team_image" x="146" y="962" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_20_team_name" inkscape:label="row_20_team_name" class="tname" x="164" y="972">Team Name</text>
+    <text id="row_20_team_name" inkscape:label="row_20_team_name" class="tname" x="164" y="972" style="inline-size:120">Team Name</text>
     <text id="row_20_points" inkscape:label="row_20_points" class="pts" x="352" y="958" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_20_gap_to_leader" inkscape:label="row_20_gap_to_leader" class="gap" x="352" y="972" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_20_round_1_group" inkscape:label="row_20_round_1_group">
@@ -1382,9 +1379,9 @@
     </g>
     <text id="row_21_previous_position" inkscape:label="row_21_previous_position" class="prev" x="80" y="1004" style="font-variant-numeric:tabular-nums">21</text>
     <image id="row_21_driver_flag" inkscape:label="row_21_driver_flag" x="118" y="980" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_21_driver_name" inkscape:label="row_21_driver_name" class="dname" x="146" y="990">Driver Name</text>
+    <text id="row_21_driver_name" inkscape:label="row_21_driver_name" class="dname" x="146" y="990" style="inline-size:140">Driver Name</text>
     <image id="row_21_team_image" inkscape:label="row_21_team_image" x="146" y="994" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_21_team_name" inkscape:label="row_21_team_name" class="tname" x="164" y="1004">Team Name</text>
+    <text id="row_21_team_name" inkscape:label="row_21_team_name" class="tname" x="164" y="1004" style="inline-size:120">Team Name</text>
     <text id="row_21_points" inkscape:label="row_21_points" class="pts" x="352" y="990" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_21_gap_to_leader" inkscape:label="row_21_gap_to_leader" class="gap" x="352" y="1004" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_21_round_1_group" inkscape:label="row_21_round_1_group">
@@ -1445,9 +1442,9 @@
     </g>
     <text id="row_22_previous_position" inkscape:label="row_22_previous_position" class="prev" x="80" y="1036" style="font-variant-numeric:tabular-nums">22</text>
     <image id="row_22_driver_flag" inkscape:label="row_22_driver_flag" x="118" y="1012" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_22_driver_name" inkscape:label="row_22_driver_name" class="dname" x="146" y="1022">Driver Name</text>
+    <text id="row_22_driver_name" inkscape:label="row_22_driver_name" class="dname" x="146" y="1022" style="inline-size:140">Driver Name</text>
     <image id="row_22_team_image" inkscape:label="row_22_team_image" x="146" y="1026" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_22_team_name" inkscape:label="row_22_team_name" class="tname" x="164" y="1036">Team Name</text>
+    <text id="row_22_team_name" inkscape:label="row_22_team_name" class="tname" x="164" y="1036" style="inline-size:120">Team Name</text>
     <text id="row_22_points" inkscape:label="row_22_points" class="pts" x="352" y="1022" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_22_gap_to_leader" inkscape:label="row_22_gap_to_leader" class="gap" x="352" y="1036" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_22_round_1_group" inkscape:label="row_22_round_1_group">
@@ -1507,9 +1504,9 @@
     </g>
     <text id="row_23_previous_position" inkscape:label="row_23_previous_position" class="prev" x="80" y="1068" style="font-variant-numeric:tabular-nums">23</text>
     <image id="row_23_driver_flag" inkscape:label="row_23_driver_flag" x="118" y="1044" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_23_driver_name" inkscape:label="row_23_driver_name" class="dname" x="146" y="1054">Driver Name</text>
+    <text id="row_23_driver_name" inkscape:label="row_23_driver_name" class="dname" x="146" y="1054" style="inline-size:140">Driver Name</text>
     <image id="row_23_team_image" inkscape:label="row_23_team_image" x="146" y="1058" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_23_team_name" inkscape:label="row_23_team_name" class="tname" x="164" y="1068">Team Name</text>
+    <text id="row_23_team_name" inkscape:label="row_23_team_name" class="tname" x="164" y="1068" style="inline-size:120">Team Name</text>
     <text id="row_23_points" inkscape:label="row_23_points" class="pts" x="352" y="1054" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_23_gap_to_leader" inkscape:label="row_23_gap_to_leader" class="gap" x="352" y="1068" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_23_round_1_group" inkscape:label="row_23_round_1_group">
@@ -1570,9 +1567,9 @@
     </g>
     <text id="row_24_previous_position" inkscape:label="row_24_previous_position" class="prev" x="80" y="1100" style="font-variant-numeric:tabular-nums">24</text>
     <image id="row_24_driver_flag" inkscape:label="row_24_driver_flag" x="118" y="1076" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_24_driver_name" inkscape:label="row_24_driver_name" class="dname" x="146" y="1086">Driver Name</text>
+    <text id="row_24_driver_name" inkscape:label="row_24_driver_name" class="dname" x="146" y="1086" style="inline-size:140">Driver Name</text>
     <image id="row_24_team_image" inkscape:label="row_24_team_image" x="146" y="1090" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_24_team_name" inkscape:label="row_24_team_name" class="tname" x="164" y="1100">Team Name</text>
+    <text id="row_24_team_name" inkscape:label="row_24_team_name" class="tname" x="164" y="1100" style="inline-size:120">Team Name</text>
     <text id="row_24_points" inkscape:label="row_24_points" class="pts" x="352" y="1086" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_24_gap_to_leader" inkscape:label="row_24_gap_to_leader" class="gap" x="352" y="1100" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_24_round_1_group" inkscape:label="row_24_round_1_group">
@@ -1632,9 +1629,9 @@
     </g>
     <text id="row_25_previous_position" inkscape:label="row_25_previous_position" class="prev" x="80" y="1132" style="font-variant-numeric:tabular-nums">25</text>
     <image id="row_25_driver_flag" inkscape:label="row_25_driver_flag" x="118" y="1108" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_25_driver_name" inkscape:label="row_25_driver_name" class="dname" x="146" y="1118">Driver Name</text>
+    <text id="row_25_driver_name" inkscape:label="row_25_driver_name" class="dname" x="146" y="1118" style="inline-size:140">Driver Name</text>
     <image id="row_25_team_image" inkscape:label="row_25_team_image" x="146" y="1122" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_25_team_name" inkscape:label="row_25_team_name" class="tname" x="164" y="1132">Team Name</text>
+    <text id="row_25_team_name" inkscape:label="row_25_team_name" class="tname" x="164" y="1132" style="inline-size:120">Team Name</text>
     <text id="row_25_points" inkscape:label="row_25_points" class="pts" x="352" y="1118" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_25_gap_to_leader" inkscape:label="row_25_gap_to_leader" class="gap" x="352" y="1132" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_25_round_1_group" inkscape:label="row_25_round_1_group">
@@ -1695,9 +1692,9 @@
     </g>
     <text id="row_26_previous_position" inkscape:label="row_26_previous_position" class="prev" x="80" y="1164" style="font-variant-numeric:tabular-nums">26</text>
     <image id="row_26_driver_flag" inkscape:label="row_26_driver_flag" x="118" y="1140" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_26_driver_name" inkscape:label="row_26_driver_name" class="dname" x="146" y="1150">Driver Name</text>
+    <text id="row_26_driver_name" inkscape:label="row_26_driver_name" class="dname" x="146" y="1150" style="inline-size:140">Driver Name</text>
     <image id="row_26_team_image" inkscape:label="row_26_team_image" x="146" y="1154" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
-    <text id="row_26_team_name" inkscape:label="row_26_team_name" class="tname" x="164" y="1164">Team Name</text>
+    <text id="row_26_team_name" inkscape:label="row_26_team_name" class="tname" x="164" y="1164" style="inline-size:120">Team Name</text>
     <text id="row_26_points" inkscape:label="row_26_points" class="pts" x="352" y="1150" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
     <text id="row_26_gap_to_leader" inkscape:label="row_26_gap_to_leader" class="gap" x="352" y="1164" text-anchor="end" style="font-variant-numeric:tabular-nums">-000</text>
     <g id="row_26_round_1_group" inkscape:label="row_26_round_1_group">
@@ -1839,5 +1836,5 @@
   <!--  footer  -->
   <line x1="48" y1="1174" x2="1152" y2="1174" stroke="#262B33" stroke-width="1"/>
   <text class="foot" x="48" y="1200">DRIVER CHAMPIONSHIP</text>
-  <text class="foot" x="1152" y="1200" text-anchor="end">RACE RESULT &#183; QUALIFYING RAISED</text>
+  <text class="foot" x="1152" y="1200" text-anchor="end">RACE RESULT · QUALIFYING RAISED</text>
 </svg>

@@ -240,12 +240,43 @@ RESULTS_QUALIFYING_SVG = _results_svg(b"best_lap", b"gap")
 RESULTS_RACE_SVG = _results_svg(b"time", b"fastest_lap", b"ingame_penalty")
 
 
+def _standings_svg(*row_extra: bytes) -> bytes:
+    """A sound standings template (040), built per championship.
+
+    Declares no round at all, which is sound: the results grid is an optional unit (XIV.3,
+    v4.5.0) and a template declaring none of it draws a classification alone. The two are
+    siblings, so each carries its own row catalogue and never the other's.
+    """
+    extra = b"".join(b'<text id="row_1_%s">x</text>' % name for name in row_extra)
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        b'<text id="division_name">D</text>'
+        b'<text id="round_number">1</text>'
+        b'<text id="result_status">F</text>'
+        b'<g id="row_1_group">'
+        b'<text id="row_1_position">1</text>'
+        b'<text id="row_1_team_name">T</text>'
+        b'<image id="row_1_team_image"/>'
+        b'<text id="row_1_points">0</text>'
+        + extra
+        + b"</g></svg>"
+    )
+
+
+STANDINGS_DRIVERS_SVG = _standings_svg(b"driver_name")
+STANDINGS_CONSTRUCTORS_SVG = _standings_svg()
+
+
 def sound_bytes(template_key: str) -> bytes:
     """The soundest bytes for *template_key* at the depth its type is checked to."""
     if template_key == "results_qualifying_template":
         return RESULTS_QUALIFYING_SVG
     if template_key == "results_race_template":
         return RESULTS_RACE_SVG
+    if template_key == "standings_drivers_template":
+        return STANDINGS_DRIVERS_SVG
+    if template_key == "standings_constructors_template":
+        return STANDINGS_CONSTRUCTORS_SVG
     return VALID_SVG
 
 
@@ -391,11 +422,12 @@ async def test_render_without_season(
     await config_service.set_field(SERVER_ID, "template_directory", "templates")
 
     for key, filename in TEMPLATE_COLUMNS.items():
-        # The two results templates carry a populated catalogue (039), so the rich sample
-        # bytes would fail Layer 2 for them; every other type is still checked to Layer 1.
+        # The results (039) and standings (040) templates carry a populated catalogue, so the
+        # rich sample bytes would fail Layer 2 for them; every other type is still checked to
+        # Layer 1 and draws from the generic sample filler.
         body = (
             sound_bytes(key)
-            if key.startswith("results_")
+            if key.startswith(("results_", "standings_"))
             else RICH_TEMPLATE
         )
         (template_dir / "templates" / filename).write_bytes(body)

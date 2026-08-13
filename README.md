@@ -1171,7 +1171,7 @@ Anything the render survived is listed alongside the image — a substituted fon
 
 A template is a plain SVG whose declared `width` and `height` are the canvas. The bot addresses elements by `id` and does exactly six things to a field: fill text, swap an image's `href`, recolour it, truncate it to the room it declares, wrap it inside a rectangle named by `shape-inside`, and empty or remove it.
 
-**Text bounds.** A field that receives a Discord display name should declare an `inline-size`; it is the only bound on a name of a length no league controls. Overflow is cut at a word boundary and ellipsised. A field that receives prose should declare `shape-inside` pointing at a rectangle. The text is set down half a pixel at a time until it fits, and at half the declared size is cut with an ellipsis.
+**Text bounds.** A field that receives a Discord display name **must** declare an `inline-size`; it is the only bound on a name of a length no league controls, and a field without one does not overflow tidily — the name runs across whatever is drawn beside it, and nothing reports that the graphic came out wrong. Overflow is cut at a word boundary and ellipsised. A field that receives prose should declare `shape-inside` pointing at a rectangle. The text is set down half a pixel at a time until it fits, and at half the declared size is cut with an ellipsis.
 
 **Naming.** Ids are lowercase `snake_case` and say what the field is, not where it sits — `driver_name`, not `text_47`. Anything the template repeats is named for the thing it repeats plus **either a number or a name**:
 

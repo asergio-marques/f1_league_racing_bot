@@ -83,15 +83,17 @@ def test_calendar_round_image_declares_the_track_asset_class():
     assert CALENDAR_CATALOGUE.asset_class_for("round_4_date") is None
 
 
-def test_the_other_eleven_catalogues_are_still_empty():
-    """The calendar (037), the lineup (038) and the two results types (039) are
-    specified; the rest await their own sessions."""
+def test_the_other_nine_catalogues_are_still_empty():
+    """The calendar (037), the lineup (038), the two results types (039) and the two
+    standings types (040) are specified; the rest await their own sessions."""
     populated = {key for key, cat in CATALOGUES.items() if not cat.is_empty}
     assert populated == {
         "calendar_template",
         "lineup_template",
         "results_qualifying_template",
         "results_race_template",
+        "standings_drivers_template",
+        "standings_constructors_template",
     }
 
 
