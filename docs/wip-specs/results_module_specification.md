@@ -271,10 +271,11 @@
 
 #### Corrections to the rendering of the table
 - A time penalty shall be rendered in seconds, signed, and to the precision with which it was recorded: a penalty of a whole number of seconds carries no decimal part, and one carrying a fraction of a second is rendered to three decimal places. Five seconds is "+5s" and five and a half "+5.500s". A penalty is never rounded to a whole second for display, and never rounded away from zero.
-    - The table at present renders every penalty column by an integer division of its milliseconds, so that five and a half seconds is shown as "+5s", a fraction of a second below one as "+0s", and a credit of five and a half seconds applied on appeal as "-6s", that division rounding towards negative infinity. The in-game penalty column, which is the one most often carrying a fraction of a second, is the column this is met in most.
-    - This is the rendering the image module re-presents. The graphic derives nothing of its own and states the rule above, so it is the table that shall be brought to it and not the reverse.
+    - This is the rendering the image module re-presents. The graphic derives nothing of its own, so the table and the graphic shall render a penalty by one and the same code and cannot differ.
+    - Corrected 2026-08-13. The table formerly rendered every penalty column by an integer division of its milliseconds, showing five and a half seconds as "+5s", a fraction below one as "+0s", and a credit of five and a half seconds applied on appeal as "-6s".
 - The best lap column of a qualifying table shall be emptied for an entry that was classified and set no time.
-    - The column at present falls back to the outcome recorded for the entry wherever no lap is held, and an entry that was classified holds an outcome of "CLASSIFIED", so the table prints that word in the column where a lap time belongs.
+    - An entry that did not finish, did not start or was disqualified carries its outcome in that column instead, whatever lap may have been recorded for it: the outcome displaces the lap rather than standing in for a missing one.
+    - Corrected 2026-08-13. The column formerly fell back to the outcome wherever no lap was held, so a classified entry with no lap printed the word "CLASSIFIED" where a lap time belongs, while a disqualified entry holding a lap printed the lap.
 
 ### Revising results
 - <NEW COMMAND> A "round results penalize" command shall be made available to trusted server users that will mandatorily intake a division name and round number. This will initiate a wizard with the following states:

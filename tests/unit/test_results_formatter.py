@@ -10,7 +10,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from models.session_result import OutcomeModifier, QualifyingSessionResult, RaceSessionResult
 from models.standings_snapshot import DriverStandingsSnapshot
-from utils.results_formatter import _collapse_trailing_zeros, format_driver_standings, format_qualifying_table, format_race_table
+from utils.results_formatter import (
+    NOT_APPLICABLE,
+    _collapse_trailing_zeros,
+    build_qualifying_rows,
+    build_race_rows,
+    fastest_lap_holder,
+    format_driver_standings,
+    format_qualifying_table,
+    format_race_table,
+    render_gap,
+    render_lap_time,
+    render_time_penalty,
+)
 
 
 def _make_qual(
@@ -237,3 +249,162 @@ def test_driver_standings_reserve_with_points_hidden_reserves_off():
     result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=False)
     assert "<@200>" not in result
 
+
+
+# ---------------------------------------------------------------------------
+# The shared rendering layer (039, Constitution XIV.7)
+#
+# These cover the single derivation both the textual table and the results graphic
+# draw from. A cell of None means "does not apply": the table renders NOT_APPLICABLE,
+# the graphic empties the field.
+# ---------------------------------------------------------------------------
+
+def test_render_time_penalty_whole_seconds_carries_no_decimal():
+    assert render_time_penalty(5000) == "+5s"
+
+
+def test_render_time_penalty_fraction_is_three_decimal_places():
+    """Five and a half seconds is "+5.500s" — never rounded to a whole second."""
+    assert render_time_penalty(5500) == "+5.500s"
+
+
+def test_render_time_penalty_sub_second_keeps_its_precision():
+    assert render_time_penalty(750) == "+0.750s"
+
+
+def test_render_time_penalty_negative_is_signed():
+    assert render_time_penalty(-5000) == "-5s"
+    assert render_time_penalty(-5500) == "-5.500s"
+
+
+def test_render_time_penalty_none_where_no_penalty_applied():
+    assert render_time_penalty(0) is None
+
+
+def test_render_lap_time_shows_hours_only_where_there_are_any():
+    assert render_lap_time(83456) == "1:23.456"
+    assert render_lap_time(5025678) == "1:23:45.678"
+
+
+def test_render_gap_shows_minutes_only_where_there_are_any():
+    assert render_gap(456) == "+0.456"
+    assert render_gap(83456) == "+1:23.456"
+
+
+def test_qualifying_reference_lap_is_first_placed_entry():
+    rows = build_qualifying_rows(
+        [_make_qual(1, 100, best_lap="1:23.000"), _make_qual(2, 101, best_lap="1:23.500")],
+        {100: 25, 101: 18},
+    )
+    assert rows[0].gap is None  # the entry holding the reference lap carries no gap
+    assert rows[1].gap == "+0.500"
+
+
+def test_qualifying_reference_falls_to_first_entry_holding_a_lap():
+    """Where the first-placed entry set no lap, the reference is the first that did."""
+    rows = build_qualifying_rows(
+        [
+            _make_qual(1, 100, outcome=OutcomeModifier.DNS, best_lap=None),
+            _make_qual(2, 101, best_lap="1:23.000"),
+            _make_qual(3, 102, best_lap="1:24.000"),
+        ],
+        {},
+    )
+    assert rows[1].gap == "+0.000"
+    assert rows[2].gap == "+1.000"
+
+
+def test_qualifying_gap_empty_for_every_entry_where_none_set_a_lap():
+    rows = build_qualifying_rows(
+        [
+            _make_qual(1, 100, outcome=OutcomeModifier.DNS, best_lap=None),
+            _make_qual(2, 101, outcome=OutcomeModifier.DNS, best_lap=None),
+        ],
+        {},
+    )
+    assert all(row.gap is None for row in rows)
+
+
+def test_qualifying_outcome_literal_displaces_the_best_lap():
+    rows = build_qualifying_rows([_make_qual(1, 100, outcome=OutcomeModifier.DSQ)], {})
+    assert rows[0].best_lap == "DSQ"
+
+
+def test_qualifying_sanctions_carry_dsq_from_the_phase_that_applied_it():
+    rows = build_qualifying_rows(
+        [_make_qual(1, 100), _make_qual(2, 101)],
+        {},
+        dsq_phase_map={0: "APPEAL"},
+    )
+    # Both fabricated rows share id 0, so both take the appeal DSQ; what matters is
+    # that it lands in the appeal cell and not the penalty one.
+    assert rows[0].appeal_penalty == "DSQ"
+    assert rows[0].postrace_penalty is None
+
+
+def test_race_first_placed_carries_total_time_and_others_an_interval():
+    leader = _make_race(1, 100)
+    follower = _make_race(2, 101)
+    follower = RaceSessionResult(**{**follower.__dict__, "base_time_ms": 5026678})
+    rows = build_race_rows([leader, follower], {})
+    assert rows[0].time == "1:23:45.678"
+    assert rows[1].time == "+1.000"
+
+
+def test_race_laps_behind_is_singular_for_one_and_plural_beyond():
+    one = RaceSessionResult(**{**_make_race(2, 101).__dict__, "laps_behind": 1})
+    many = RaceSessionResult(**{**_make_race(3, 102).__dict__, "laps_behind": 3})
+    rows = build_race_rows([_make_race(1, 100), one, many], {})
+    assert rows[1].time == "+1 Lap"
+    assert rows[2].time == "+3 Laps"
+
+
+def test_race_outcome_literal_displaces_the_time():
+    dnf = RaceSessionResult(
+        **{**_make_race(2, 101).__dict__, "outcome": OutcomeModifier.DNF}
+    )
+    rows = build_race_rows([_make_race(1, 100), dnf], {})
+    assert rows[1].time == "DNF"
+
+
+def test_race_every_entry_carries_its_own_time_where_the_leader_records_none():
+    leader = RaceSessionResult(**{**_make_race(1, 100).__dict__, "base_time_ms": None})
+    follower = _make_race(2, 101)
+    rows = build_race_rows([leader, follower], {})
+    assert rows[0].time is None
+    assert rows[1].time == "1:23:45.678"
+
+
+def test_race_ingame_penalty_keeps_its_fraction():
+    entry = RaceSessionResult(
+        **{**_make_race(1, 100).__dict__, "ingame_time_penalties_ms": 5500}
+    )
+    rows = build_race_rows([entry], {})
+    assert rows[0].ingame_penalty == "+5.500s"
+
+
+def test_race_disqualified_twice_carries_dsq_on_appeal_and_the_penalty_below():
+    entry = RaceSessionResult(
+        **{**_make_race(1, 100).__dict__, "postrace_time_penalties_ms": 10000}
+    )
+    rows = build_race_rows([entry], {}, dsq_phase_map={0: "APPEAL"})
+    assert rows[0].appeal_penalty == "DSQ"
+    assert rows[0].postrace_penalty == "+10s"
+
+
+def test_fastest_lap_holder_is_the_entry_the_bonus_was_conferred_on():
+    holder = RaceSessionResult(**{**_make_race(2, 101).__dict__, "fastest_lap_bonus": 1})
+    rows = build_race_rows([_make_race(1, 100), holder], {})
+    found = fastest_lap_holder(rows)
+    assert found is not None and found.driver_user_id == 101
+    assert [row.holds_fastest_lap for row in rows] == [False, True]
+
+
+def test_fastest_lap_holder_is_none_where_the_session_conferred_no_bonus():
+    assert fastest_lap_holder(build_race_rows([_make_race(1, 100)], {})) is None
+
+
+def test_text_table_renders_a_none_cell_as_the_placeholder():
+    """The table's placeholder and the graphic's emptying are the same cell (FR-013)."""
+    text = format_qualifying_table([_make_qual(1, 100)], {100: 25})
+    assert NOT_APPLICABLE in text  # the first-placed entry's gap

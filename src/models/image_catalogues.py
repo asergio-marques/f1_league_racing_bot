@@ -77,6 +77,17 @@ class RowSpec:
     #: resolves in (XIV.13). ``{"image": "track"}`` for a calendar's round image.
     assets: dict[str, str] = field(default_factory=dict)
 
+    #: Image field suffixes whose **absent datum** draws the class's ``fallback.svg``, and
+    #: raises **no** notice for it (XIV.13, v4.4.0). The fallback stands for the absence
+    #: itself rather than for a file that should have existed, so nothing has degraded and
+    #: there is nothing to report. Where the class carries no fallback the declaration is
+    #: inert and the field is removed — an absent datum is never fatal for want of a file.
+    #:
+    #: Declared per **field**, never per class: one class serves fields that answer absence
+    #: differently. A qualifying entry with no tyre recorded draws the tyre fallback; a
+    #: configured seat no driver occupies must draw no portrait and no flag at all.
+    fallback_when_absent: frozenset[str] = frozenset()
+
     @property
     def is_derived(self) -> bool:
         """True where the slot count comes from the template rather than from here."""
@@ -633,6 +644,18 @@ class FieldCatalogue:
 
         return ids
 
+    def draws_fallback_when_absent(self, field_id: str) -> bool:
+        """Whether an **absent datum** on *field_id* draws its class's fallback quietly.
+
+        Declared per field by :attr:`RowSpec.fallback_when_absent` (XIV.13, v4.4.0). False
+        for every field of every type that declares none, which leaves the absent datum to
+        Rule 3 — removed where the field is optional, fatal where it is mandatory.
+        """
+        if self.rows is None or not self.rows.fallback_when_absent:
+            return False
+        match = re.match(rf"^{re.escape(self.rows.prefix)}_\d+_(.*)$", field_id)
+        return match is not None and match.group(1) in self.rows.fallback_when_absent
+
     def asset_class_for(self, field_id: str) -> str | None:
         """The asset class of *field_id*, whole-graphic field or per-member alike."""
         direct = self.assets.get(field_id)
@@ -778,13 +801,172 @@ LINEUP_CATALOGUE = FieldCatalogue(
 )
 
 
-#: Template column → its catalogue. Fifteen entries, one per image type; the calendar and
-#: the lineup are populated and the remaining thirteen are still empty.
+#: What both results templates address, whatever the session they draw. Declared once and
+#: composed into each of the two catalogues below (XIV.10, v4.4.0: siblings may share the
+#: declaration of their common part and must remain separately addressable).
+_RESULTS_MANDATORY = frozenset(
+    {"division_name", "round_number", "race_name", "session_name", "result_status"}
+)
+_RESULTS_OPTIONAL = frozenset(
+    {
+        "season_number",
+        "division_tier",
+        # Column groups (XIV.2, v4.4.0): each wraps the heading of a sanction column and no
+        # cell of any row, and leaves while that phase stands open.
+        "postrace_penalty_group",
+        "appeal_penalty_group",
+    }
+)
+
+#: The row fields both kinds of results graphic carry.
+_RESULTS_ROW_FIELDS = frozenset(
+    {
+        "group",
+        "position",
+        "driver_name",
+        "driver_flag",
+        "team_name",
+        "team_image",
+        "postrace_penalty",
+        "appeal_penalty",
+        "points",
+    }
+)
+_RESULTS_ROW_MANDATORY = frozenset(
+    {
+        # The group is mandatory and valueless: the template must provide the row, and the
+        # render either fills it or removes it whole.
+        "group",
+        "position",
+        "driver_name",
+        "team_name",
+        "team_image",
+        "postrace_penalty",
+        "appeal_penalty",
+        "points",
+    }
+)
+_RESULTS_ROW_ASSETS = {"driver_flag": "flag", "team_image": "team"}
+
+
+#: The qualifying results catalogue — the third image type to be specified, and the first
+#: whose aspect is drawn by two templates rather than one.
+#:
+#: Its rows are a **template-derived** collection, as the calendar's rounds are: a league
+#: draws as many as its grid needs, so the capacity is counted from the file (XIV.12). The
+#: row's ordinal *is* the finishing position drawn upon it, and the position field is filled
+#: from that ordinal with no reconciliation attempted (XIV.11, v4.4.0).
+#:
+#: See specs/039-results-image-generation/contracts/results-catalogue.md.
+RESULTS_QUALIFYING_CATALOGUE = FieldCatalogue(
+    mandatory=_RESULTS_MANDATORY,
+    optional=_RESULTS_OPTIONAL,
+    rows=RowSpec(
+        prefix="row",
+        capacity=None,
+        fields=_RESULTS_ROW_FIELDS | {"tyre", "best_lap", "gap"},
+        mandatory_fields=_RESULTS_ROW_MANDATORY | {"best_lap", "gap"},
+        valueless_fields=frozenset({"group"}),
+        assets={**_RESULTS_ROW_ASSETS, "tyre": "tyre"},
+        # A tyre is a value the submission of a session need not carry, so its absence is a
+        # state worth depicting rather than a gap worth reporting (XIV.13, v4.4.0).
+        fallback_when_absent=frozenset({"tyre"}),
+    ),
+)
+
+
+#: The race results catalogue. Identical to its qualifying sibling but for the columns of its
+#: rows, and for the fastest-lap block — a **block group** (XIV.2, v4.4.0) wrapping fields that
+#: stand or fall together, removed when the session conferred no bonus.
+#:
+#: ``row_<x>_fastest_lap`` is the module's only data-driven recolour. A recolour does not
+#: consume the field: it is filled as any other (XIV.2).
+RESULTS_RACE_CATALOGUE = FieldCatalogue(
+    mandatory=_RESULTS_MANDATORY,
+    optional=_RESULTS_OPTIONAL
+    | {"fastest_lap_group", "fastest_lap_driver_name", "fastest_lap_time"},
+    rows=RowSpec(
+        prefix="row",
+        capacity=None,
+        fields=_RESULTS_ROW_FIELDS | {"time", "fastest_lap", "ingame_penalty"},
+        mandatory_fields=_RESULTS_ROW_MANDATORY
+        | {"time", "fastest_lap", "ingame_penalty"},
+        valueless_fields=frozenset({"group"}),
+        assets=dict(_RESULTS_ROW_ASSETS),
+    ),
+)
+
+
+#: Template column → its catalogue. Fifteen entries, one per image type; the calendar, the
+#: lineup and the two results types are populated and the remaining eleven are still empty.
 CATALOGUES: dict[str, FieldCatalogue] = {
     column: FieldCatalogue() for column in TEMPLATE_COLUMNS
 }
 CATALOGUES["calendar_template"] = CALENDAR_CATALOGUE
 CATALOGUES["lineup_template"] = LINEUP_CATALOGUE
+CATALOGUES["results_qualifying_template"] = RESULTS_QUALIFYING_CATALOGUE
+CATALOGUES["results_race_template"] = RESULTS_RACE_CATALOGUE
+
+
+def sibling_row_fields(template_key: str) -> set[str]:
+    """Row field ids belonging to a **sibling** image type and not to this one.
+
+    Two templates of one *aspect* are siblings — qualifying and race results, driver and
+    constructor standings, the six forecasts. A template declaring a sibling's row field is
+    the wrong file in that slot, and rendering it would draw one session's columns under
+    another's headings; XIV.3 (v4.4.0) makes that a fatal fault of the template.
+
+    An id belonging to **no** catalogue is not returned and is not a fault: a hand-authored
+    SVG carries identifiers on every node it holds, and only the ones a catalogue claims are
+    fields.
+
+    The sibling relation is read from ``ASPECT_TEMPLATES`` rather than hard-coded, so the
+    standings and weather types inherit this the moment their catalogues are written.
+    """
+    from models.image_constants import ASPECT_TEMPLATES
+
+    own = CATALOGUES.get(template_key)
+    if own is None or own.rows is None:
+        return set()
+
+    siblings = [
+        key
+        for keys in ASPECT_TEMPLATES.values()
+        if template_key in keys
+        for key in keys
+        if key != template_key
+    ]
+
+    foreign: set[str] = set()
+    for key in siblings:
+        catalogue = CATALOGUES.get(key)
+        if catalogue is None or catalogue.rows is None:
+            continue
+        foreign |= set(catalogue.rows.fields) - set(own.rows.fields)
+    return foreign
+
+
+def sibling_fields_declared(template_key: str, declared: Iterable[str]) -> list[str]:
+    """Every id in *declared* that belongs to a sibling's row catalogue, sorted.
+
+    Returns the offending ids so a report can name them; empty where the template declares
+    none, which is the ordinary case.
+    """
+    own = CATALOGUES.get(template_key)
+    if own is None or own.rows is None:
+        return []
+
+    foreign = sibling_row_fields(template_key)
+    if not foreign:
+        return []
+
+    pattern = re.compile(rf"^{re.escape(own.rows.prefix)}_\d+_(.*)$")
+    found: set[str] = set()
+    for name in declared:
+        match = pattern.match(name)
+        if match is not None and match.group(1) in foreign:
+            found.add(name)
+    return sorted(found)
 
 
 def reserve_capacity_problem(root, would_hold: int) -> str | None:

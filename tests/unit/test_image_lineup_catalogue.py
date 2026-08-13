@@ -244,4 +244,4 @@ def test_declared_capacities_still_excludes_the_lineup():
 
 
 def test_an_unspecified_type_is_still_empty():
-    assert catalogue_for("results_race_template").is_empty
+    assert catalogue_for("attendance_template").is_empty

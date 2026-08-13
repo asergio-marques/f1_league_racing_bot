@@ -123,6 +123,7 @@ These hold for every image type of the module and are stated here rather than re
     - it breaks its text into lines, where the field is a wrapping field as defined for the verdicts graphic;
     - it truncates its text to the room the field declares, as defined below;
     - it removes it, or empties its text.
+- A field carrying an image is removed rather than emptied, an image field having nothing to empty. Emptying one would leave it pointing at whatever file the template shipped, drawn as a stale picture or as a broken-image mark.
 - A colour shall be written into the inline style of the element, merged with the declarations already standing there. A presentation attribute loses to the stylesheet a template declares, and a style assigned wholesale takes with it the declarations the template placed upon the field.
 - Setting the colour of a field is not filling it. A field that is recoloured shall be filled as any other.
 
@@ -131,6 +132,7 @@ These hold for every image type of the module and are stated here rather than re
 - Where a template declares no node of that identifier but declares a layer whose label is the name of the field, the labelled layer shall be taken for that field. A league manager editing a template in an SVG editor reaches for the label, and the identifier the editor generated is not the one they set.
 - Where a node of that identifier and a layer of that label both exist and are not the same node, the node of that identifier is the field.
 - A layer is a group, and an operation that requires an element of a particular kind shall descend to it: the placing of text to the single text element the layer holds, the placing of an image to the single image element it holds. Where the layer holds no such element, or more than one, the field is not resolved and the error is that of a mandatory or optional field as its catalogue declares it. The removal of a field, and of the group wrapping it, acts upon the layer itself.
+- A field that is already an element of the kind the operation requires needs no descent. A text is placed upon a "text" element and upon a "tspan" alike, a manager labelling the styled run within a line as readily as the line itself.
 
 ### Removable groups
 - Any field named in a catalogue below, mandatory or optional, may be wrapped in a group bearing the name of that field followed by "_group".
@@ -200,6 +202,16 @@ These hold for every image type of the module and are stated here rather than re
 - These outcomes supersede any statement elsewhere in this document that a field is removed, or an error withheld, for want of a matching asset file. A statement of that kind continues to govern the case of an absent datum, where no asset is sought at all.
 - A fallback image is bound by the rules above as any other image is: plain SVG, authored at the aspect of the slot it fills, never padded at generation. Where one class serves slots of differing aspects, its fallback shall be authored to the aspect its ordinary assets carry.
 - A datum whose normalized form is "fallback" resolves to the fallback file. No further provision is made against this.
+- An absent datum is not a missing file, and no asset is sought for one. A catalogue below may nonetheless state, for a named image field, that an absent datum shall draw the fallback of its class, whereupon the fallback is drawn and no error whatsoever is reported: it stands for the absence itself and not for a file that should have existed. Where the directory holds no fallback the statement is inert and the field is removed as its catalogue declares it. The statement is made field by field and never for a class as a whole, a tyre that was never recorded being worth depicting where a seat that no driver occupies is not.
+
+### The name of a person
+- The name of a person placed upon a graphic shall be the display name of their Discord account on the server at the moment of generation, an image being unable to carry a Discord mention as a textual posting does.
+- Where that name cannot be reached, the first of the following that yields a non-empty value shall be taken:
+    - The server display name recorded in the driver's signup information;
+    - The Discord username recorded in the driver's signup information;
+    - The test display name of the driver, if the driver is a test driver;
+    - The driver's Discord user ID.
+- One person is drawn under one name throughout a graphic. A name resolved for a row is the name resolved for that person wherever else that graphic names them.
 
 ### The zone in which a time is drawn
 - A date and a time placed upon a graphic are rendered via the configurations introduced via "images config date-format", "images config time-format" and "images config time-zone", the abbreviation of the zone being appended to the time.
@@ -345,12 +357,7 @@ These hold for every image type of the module and are stated here rather than re
 - A reserve team shall be created in the team configuration of a server whenever that configuration is read or written and none is present.
 
 ### Resolution of the data to be placed
-- The name of a driver shall be resolved by taking the first of the following that yields a non-empty value, an image being unable to carry a Discord mention as the textual lineup does:
-    - The display name of the driver's Discord account on the server at the moment of generation;
-    - The server display name recorded in the driver's signup information;
-    - The Discord username recorded in the driver's signup information;
-    - The test display name of the driver, if the driver is a test driver;
-    - The driver's Discord user ID.
+- The name of a driver shall be resolved as the conventions above require of the name of a person.
 - The flag image of a driver shall be searched for in the configured flag directory under a filename equal to the nationality recorded in their signup information, normalized in the same manner as a team name. Nationalities are recorded as adjectives in canonical form, so that "British" yields "british"; a driver who stated none has "Other" recorded, yielding "other".
     - Where the nationality is absent, the "_flag" field shall be removed and a non-fatal error reported. As the request for nationality may be switched off entirely via "signup nationality toggle", a lineup with no flags at all is a legitimate outcome and no error whatsoever. Where a nationality is recorded, its image is resolved as the conventions above require.
 - The driver image of a driver shall be searched for in the configured driver image directory under a filename equal to the Discord user ID of that driver. It is keyed on the ID and not on a name, a display name being normalized into a filename that changes on the day the driver changes their nick, and a portrait supplied by the league should not go missing for that.
@@ -451,7 +458,7 @@ These hold for every image type of the module and are stated here rather than re
     - a race entry that finished laps behind carries the number of those laps in the place of an interval, prefixed with a plus sign, the word being singular for one lap and plural beyond it;
     - an entry that did not finish, did not start or was disqualified carries that outcome as the text of its best lap field or of its time field, whatever time may have been recorded for it and whatever number of laps it may have finished behind;
     - the points are those the session conferred, the fastest-lap bonus included. An entry that did not start or was disqualified is conferred none. An entry that did not finish is conferred none for its position but keeps the fastest-lap bonus where it holds it and finished within the position limit of the points configuration, and may therefore show points against an outcome of "DNF".
-- Where the textual table shows a dash for a value that does not apply, the text of the corresponding field shall be emptied rather than filled with a dash. The two sanction fields are the exception. A field carrying an image is removed rather than emptied, an image field having nothing to empty.
+- Where the textual table shows a dash for a value that does not apply, the text of the corresponding field shall be emptied rather than filled with a dash. The two sanction fields are the exception.
 - The sanction fields distinguish three states:
     - where the phase the field stands for has not yet been closed, the text of the field shall be emptied;
     - where the phase has been closed and applied nothing to the entry, the field shall carry a dash;
@@ -464,9 +471,9 @@ These hold for every image type of the module and are stated here rather than re
 - The in-game penalty of a race entry belongs to no phase and is known from the first posting onwards. Its field carries the penalty, rendered as any other time penalty is, or a dash where the game applied none, and is never left empty. It is the field most often carrying a fraction of a second.
 - The fastest-lap bonus is marked by the colour of the text of the "row_<x>_fastest_lap" field of the entry holding it, which shall be set to the colour configured via "images config fastest-lap-colour", written as an inline style in the manner the conventions above define. The field of every other entry keeps the colour the template gave it. It is the one field of the module a generation colours as well as fills, and it is filled as any other field is.
     - The colour is the only mark the module makes of the bonus. A template wanting a second cue that survives a colour of poor contrast - a plate behind the field, a weight, a legend - draws it as static chrome of its own. No row is recoloured where the session conferred no fastest-lap bonus, which is the case where the points configuration confers no fastest-lap points for that session, where the holder finished outside the position limit that configuration sets, or where the holder did not start or was disqualified.
-- The name of a driver shall be resolved as it is for the lineup graphic.
+- The name of a driver shall be resolved as the conventions above require of the name of a person.
 - The flag image of a driver shall be searched for as it is for the lineup graphic. Where the nationality is absent the field shall be removed and a non-fatal error reported; where one is recorded, its image is resolved as the conventions above require.
-- The tyre image of a qualifying entry shall be searched for in the configured tyre directory under a filename equal to the tyre compound recorded for the entry, normalized in the manner defined for the lineup graphic, so that "Soft" yields soft. Where no tyre is recorded for the entry the field shall be removed and no error reported, a tyre being a value the submission of a session need not carry. Where a tyre is recorded, its image is resolved as the conventions above require.
+- The tyre image of a qualifying entry shall be searched for in the configured tyre directory under a filename equal to the tyre compound recorded for the entry, normalized in the manner defined for the lineup graphic, so that "Soft" yields soft. Where no tyre is recorded for the entry the fallback of the tyre directory shall be drawn upon the field and no error reported, a tyre being a value the submission of a session need not carry and the fallback standing for that absence rather than for a file that should have existed. Where the tyre directory holds no fallback the field shall be removed instead, and still no error reported. Where a tyre is recorded, its image is resolved as the conventions above require.
 - The results of a session record the Discord role of the team an entry drove for, and not its name. The name to be placed, and the name to be normalized to search for the team image, shall be that of the team of the division holding that role, falling back to the name of the role itself should the division hold no such team. Normalization is that defined for the lineup graphic.
 - The team of an entry is the team its driver drove for in that session, which for a reserve driver standing in for another is the team whose car they drove and never the reserve team. A results graphic has no reserve block.
 - The session name is "Sprint Qualifying", "Sprint Race", "Feature Qualifying" or "Feature Race" for a round of the sprint format, and "Qualifying" or "Race" for a round of any other.
@@ -482,7 +489,7 @@ These hold for every image type of the module and are stated here rather than re
     - a field of the row catalogue of the other kind of session;
     - a mandatory field whose value cannot be determined at generation.
 - A flag image is resolved as the conventions above require. As the request for nationality may be switched off entirely via "signup nationality toggle", a graphic with no flags at all is a legitimate outcome and no error whatsoever.
-- A tyre image is resolved in the same manner. As a tyre need not be recorded against an entry at all, a qualifying graphic carrying no tyre image whatsoever is likewise a legitimate outcome and no error.
+- A tyre image is resolved in the same manner. As a tyre need not be recorded against an entry at all, a qualifying graphic every row of which carries the fallback of the tyre directory is likewise a legitimate outcome and no error.
 - The fields that do not depend on the entries of a session are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on them cannot be verified against a classification when the template is configured or at season review; at those moments it shall be verified only that the template declares at least one row, numbered continuously from 1, and holding every mandatory field of a row. At generation they are verified against the session being drawn.
 
 ### Generation and posting
@@ -603,7 +610,7 @@ These hold for every image type of the module and are stated here rather than re
 - The position and the points are those recorded in the standings of the round for which the graphic is drawn. Entries level on points are separated by the countback; two entries never share a position.
 - The composition of the driver classification is that of the textual driver standings: every non-reserve driver of the division is drawn, at zero points as at any other, and a reserve driver is drawn only where "results reserves toggle" is on and the driver holds points or has taken part in a race.
 - The composition of the constructor classification is that of the textual team standings: every non-reserve team of the division is drawn, at zero points as at any other.
-- The name of a driver shall be resolved as it is for the lineup graphic.
+- The name of a driver shall be resolved as the conventions above require of the name of a person.
 - The flag image of a driver shall be searched for as it is for the lineup graphic. Where the nationality is absent the field shall be removed and a non-fatal error reported; where one is recorded, its image is resolved as the conventions above require.
 - The image of a round shall be searched for as it is for the calendar graphic, the number of the round standing for the field in any error reported.
 - The team of a row of the drivers graphic is the team of the division seating the driver at the moment of generation, which for a reserve driver is the reserve team. It is not the team whose car the driver drove in any single round.

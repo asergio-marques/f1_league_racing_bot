@@ -49,9 +49,55 @@ VALID_SVG = (
     b"</svg>"
 )
 
+def _results_svg(*row_columns: bytes) -> bytes:
+    """A sound results template (039): five whole-graphic fields and one complete row.
+
+    Built per kind rather than shared, because the two results templates are **siblings**
+    and a field of the other's row catalogue is a fault of the file (XIV.3, v4.4.0). One
+    SVG carrying both kinds' columns would be sound for neither.
+    """
+    columns = b"".join(b'<text id="row_1_%s">x</text>' % name for name in row_columns)
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        b'<text id="division_name">D</text>'
+        b'<text id="round_number">1</text>'
+        b'<text id="race_name">R</text>'
+        b'<text id="session_name">S</text>'
+        b'<text id="result_status">F</text>'
+        b'<g id="row_1_group">'
+        b'<text id="row_1_position">1</text>'
+        b'<text id="row_1_driver_name">N</text>'
+        b'<text id="row_1_team_name">T</text>'
+        b'<image id="row_1_team_image"/>'
+        b'<text id="row_1_postrace_penalty">-</text>'
+        b'<text id="row_1_appeal_penalty">-</text>'
+        b'<text id="row_1_points">0</text>'
+        + columns
+        + b"</g></svg>"
+    )
+
+
+RESULTS_QUALIFYING_SVG = _results_svg(b"best_lap", b"gap")
+RESULTS_RACE_SVG = _results_svg(b"time", b"fastest_lap", b"ingame_penalty")
+
+
+def sound_bytes(template_key: str) -> bytes:
+    """The soundest bytes for *template_key* at the depth its type is checked to."""
+    if template_key == "results_qualifying_template":
+        return RESULTS_QUALIFYING_SVG
+    if template_key == "results_race_template":
+        return RESULTS_RACE_SVG
+    return VALID_SVG
+
+
 #: The image types whose catalogue is populated, and to which Layer 2 therefore applies.
 #: Every other type is checked to Layer 1 alone and must be *reported* as such (XIV.9.4).
-POPULATED = {"calendar_template", "lineup_template"}
+POPULATED = {
+    "calendar_template",
+    "lineup_template",
+    "results_qualifying_template",
+    "results_race_template",
+}
 VIEWBOX_ONLY_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"></svg>'
 NO_CANVAS_SVG = b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'
 NOT_SVG = b"this is not markup at all"
@@ -86,8 +132,8 @@ def templates(tmp_path):
     """A directory carrying all fifteen templates, each valid."""
     directory = tmp_path / "templates"
     directory.mkdir()
-    for filename in TEMPLATE_COLUMNS.values():
-        (directory / filename).write_bytes(VALID_SVG)
+    for key, filename in TEMPLATE_COLUMNS.items():
+        (directory / filename).write_bytes(sound_bytes(key))
     return directory
 
 
@@ -671,13 +717,15 @@ def test_layer_two_applies_to_a_populated_catalogue_and_skips_an_empty_one():
     assert any(isinstance(entry, CatalogueLayer) for entry in LAYERS)
     assert layer.applies_to("calendar_template")
     assert layer.applies_to("lineup_template")
-    # results-race has no catalogue yet, so Layer 2 *skips* rather than passes.
-    assert not layer.applies_to("results_race_template")
+    assert layer.applies_to("results_qualifying_template")
+    assert layer.applies_to("results_race_template")
+    # Attendance has no catalogue yet, so Layer 2 *skips* rather than passes.
+    assert not layer.applies_to("attendance_template")
 
 
 def test_empty_catalogue_leaves_depth_at_layer_one(tmp_path, templates):
     """XIV.9.4 — checked to the depth available, never reported as fully valid."""
-    report = _evaluate(_config("templates"), tmp_path, "results_race_template")
+    report = _evaluate(_config("templates"), tmp_path, "attendance_template")
     assert report.valid
     assert report.depth_checked == LAYER_RESOLUTION
 
@@ -765,7 +813,7 @@ def test_mixed_depths_are_reported_honestly(tmp_path, templates, catalogue_overr
     summary = ImageValidityService.depth_summary(reports)
 
     assert reports["calendar_template"].depth_checked == LAYER_CATALOGUE
-    assert reports["results_race_template"].depth_checked == LAYER_RESOLUTION
+    assert reports["attendance_template"].depth_checked == LAYER_RESOLUTION
     assert "layer 1" in summary and "layer 2" in summary
 
 
@@ -828,3 +876,111 @@ def test_mandatory_row_fields_join_the_mandatory_set(catalogue_override):
     }
     assert "row_1_team" in catalogue.all_known_ids()
     assert "row_1_team" not in catalogue.all_mandatory_ids()
+
+
+# ── 039: the results templates at the three verification moments ──────────
+#
+# The row structure is a property of the template alone, so it is complete at every one
+# of the three moments and refuses at each (XIV.9, v4.4.0 — a structural check is neither
+# a stand-in check nor a real-data check). The entries of a session are not knowable
+# before it is run and are checked only at the render.
+
+
+def test_a_sound_results_template_is_accepted_with_no_classification_in_view(
+    tmp_path, templates
+):
+    for key in ("results_qualifying_template", "results_race_template"):
+        report = _evaluate(_config("templates"), tmp_path, key)
+        assert report.valid, f"{key}: {report.reason}"
+        assert report.depth_checked == LAYER_CATALOGUE
+
+
+def test_a_missing_whole_graphic_field_is_named(tmp_path, templates):
+    (templates / "results_race_template.svg").write_bytes(
+        RESULTS_RACE_SVG.replace(b'<text id="race_name">R</text>', b"")
+    )
+    report = _evaluate(_config("templates"), tmp_path, "results_race_template")
+    assert not report.valid
+    assert "race_name" in report.reason
+
+
+def test_a_results_template_declaring_no_row_is_refused(tmp_path, templates):
+    (templates / "results_race_template.svg").write_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        b'<text id="division_name">D</text>'
+        b'<text id="round_number">1</text>'
+        b'<text id="race_name">R</text>'
+        b'<text id="session_name">S</text>'
+        b'<text id="result_status">F</text>'
+        b"</svg>"
+    )
+    report = _evaluate(_config("templates"), tmp_path, "results_race_template")
+    assert not report.valid
+    assert "no `row` at all" in report.reason
+
+
+def test_a_gap_in_the_row_numbering_is_refused(tmp_path, templates):
+    (templates / "results_race_template.svg").write_bytes(
+        RESULTS_RACE_SVG.replace(
+            b"</g></svg>", b'</g><text id="row_3_points">0</text></svg>'
+        )
+    )
+    report = _evaluate(_config("templates"), tmp_path, "results_race_template")
+    assert not report.valid
+    assert "gap" in report.reason
+
+
+def test_a_row_missing_a_mandatory_field_is_named(tmp_path, templates):
+    (templates / "results_race_template.svg").write_bytes(
+        RESULTS_RACE_SVG.replace(b'<text id="row_1_points">0</text>', b"")
+    )
+    report = _evaluate(_config("templates"), tmp_path, "results_race_template")
+    assert not report.valid
+    assert "row_1_points" in report.reason
+
+
+def test_a_siblings_row_field_is_refused_and_named(tmp_path, templates):
+    """The wrong file in the slot — one session's columns under another's headings."""
+    (templates / "results_race_template.svg").write_bytes(
+        RESULTS_RACE_SVG.replace(
+            b"</g></svg>", b'<text id="row_1_gap">+0.100</text></g></svg>'
+        )
+    )
+    report = _evaluate(_config("templates"), tmp_path, "results_race_template")
+    assert not report.valid
+    assert "row_1_gap" in report.reason
+    assert "other kind of results template" in report.reason
+
+
+def test_the_qualifying_template_refuses_a_race_field(tmp_path, templates):
+    (templates / "results_qualifying_template.svg").write_bytes(
+        RESULTS_QUALIFYING_SVG.replace(
+            b"</g></svg>", b'<text id="row_1_ingame_penalty">-</text></g></svg>'
+        )
+    )
+    report = _evaluate(_config("templates"), tmp_path, "results_qualifying_template")
+    assert not report.valid
+    assert "row_1_ingame_penalty" in report.reason
+
+
+def test_an_identifier_belonging_to_no_catalogue_is_not_a_fault(tmp_path, templates):
+    """A hand-authored SVG carries ids on every node; only catalogued ones are fields."""
+    (templates / "results_race_template.svg").write_bytes(
+        RESULTS_RACE_SVG.replace(
+            b"</g></svg>",
+            b'</g><rect id="path4711"/><g id="layer1"/><text id="footer">x</text></svg>',
+        )
+    )
+    report = _evaluate(_config("templates"), tmp_path, "results_race_template")
+    assert report.valid, report.reason
+
+
+def test_the_two_results_templates_are_reported_separately(tmp_path, templates):
+    """FR-031 — a report names which of the pair is at fault, never the aspect."""
+    from services.image_validity_service import evaluate_all_templates
+
+    (templates / "results_qualifying_template.svg").write_bytes(NO_CANVAS_SVG)
+    reports = evaluate_all_templates(_config("templates"), root=tmp_path)
+
+    assert not reports["results_qualifying_template"].valid
+    assert reports["results_race_template"].valid

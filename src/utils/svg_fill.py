@@ -299,6 +299,18 @@ def fill(spec: FillSpec) -> FillResult:
             )
             continue
 
+        # An **absent datum** on a field whose catalogue declares one (XIV.13, v4.4.0).
+        # There is nothing to look an asset up by, and the class's fallback stands for the
+        # absence itself rather than for a file that should have existed — so it is drawn,
+        # and nothing whatever is reported. A tyre the submission of a session never
+        # obliged is the case this exists for.
+        absent_datum = not (datum or "").strip()
+        depicts_absence = absent_datum and bool(
+            getattr(spec.catalogue, "draws_fallback_when_absent", lambda _f: False)(
+                field_id
+            )
+        )
+
         resolution = resolve_asset(Path(directory), datum)
 
         if resolution.found:
@@ -309,17 +321,26 @@ def fill(spec: FillSpec) -> FillResult:
         if resolution.used_fallback:
             _set_href(target, str(resolution.path))
             consumed.add(field_id)
-            notices.append(
-                RenderNotice(
-                    image_type=spec.image_type,
-                    notice_kind=NOTICE_ASSET_FALLBACK_USED,
-                    detail=(
-                        f"no `{asset_class}` image is supplied for “{datum}”; the "
-                        f"directory's fallback was drawn instead."
-                    ),
-                    field_id=field_id,
+            if not depicts_absence:
+                notices.append(
+                    RenderNotice(
+                        image_type=spec.image_type,
+                        notice_kind=NOTICE_ASSET_FALLBACK_USED,
+                        detail=(
+                            f"no `{asset_class}` image is supplied for “{datum}”; the "
+                            f"directory's fallback was drawn instead."
+                        ),
+                        field_id=field_id,
+                    )
                 )
-            )
+            continue
+
+        # The datum is absent, the field declares the fallback, and the class carries none:
+        # the declaration is inert and the field simply leaves. An absent datum is never
+        # fatal for want of a file — that severity belongs to a datum that *was* sought.
+        if depicts_absence:
+            _vacate(index, field_id, spec.image_type, removed_ids, notify=False)
+            consumed.add(field_id)
             continue
 
         # The asset is missing and its class carries no fallback: fatal, and the
@@ -434,8 +455,14 @@ def _descend(element: etree._Element, localname: str) -> etree._Element | None:
     So an operation that needs a particular kind of element descends to it. Exactly one
     candidate must be present — a layer holding two ``<text>`` nodes does not say which
     is the field, and guessing would fill the wrong one.
+
+    A text fill acts on a ``<text>`` **or a ``<tspan>``**, which is what XIV.2's operation
+    table names, so a field labelled on a tspan is already the element to fill and needs no
+    descent. Templates authored in a graphical editor carry these: a manager selects the
+    styled run inside a line and labels that, not the line.
     """
-    if etree.QName(element).localname == localname:
+    here = etree.QName(element).localname
+    if here == localname or (localname == "text" and here == "tspan"):
         return element
 
     candidates = [
@@ -518,9 +545,16 @@ def _vacate(
         element = index.resolve(field_id)
         if element is None:
             return None
-        _clear_children(element)
-        element.text = None
-        removed_ids.add(field_id)
+        if _descend(element, "image") is not None:
+            # An **image** field has nothing to empty, so it is removed rather than cleared
+            # (Constitution XIV.3, v4.4.0). Clearing one would leave the `<image>` pointing
+            # at whatever href the template shipped, drawn as a stale picture or as the
+            # broken-image mark Rule 6 exists to prevent.
+            _detach(element, removed_ids)
+        else:
+            _clear_children(element)
+            element.text = None
+            removed_ids.add(field_id)
 
     if not notify:
         return None

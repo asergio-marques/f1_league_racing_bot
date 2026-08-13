@@ -204,6 +204,26 @@ async def _get_primary_session_label(db_path: str, round_id: int) -> str:
     return results_formatter.format_session_label(st, is_sprint=is_sprint)
 
 
+async def _get_result_status(db_path: str, round_id: int) -> str:
+    """The round's results lifecycle stage, from which both phase closures follow (039)."""
+    async with get_connection(db_path) as db:
+        row = await (
+            await db.execute("SELECT result_status FROM rounds WHERE id = ?", (round_id,))
+        ).fetchone()
+    if row is None or not row["result_status"]:
+        return "PROVISIONAL"
+    return row["result_status"]
+
+
+async def _get_division_tier(db_path: str, division_id: int) -> int | None:
+    """The division's tier, an optional field of the results graphic."""
+    async with get_connection(db_path) as db:
+        row = await (
+            await db.execute("SELECT tier FROM divisions WHERE id = ?", (division_id,))
+        ).fetchone()
+    return None if row is None else row["tier"]
+
+
 def _label_from_status(result_status: str) -> str:
     """Map a round result_status value to the user-visible lifecycle label."""
     return {
@@ -263,8 +283,25 @@ async def post_session_results(
     track_name: str,
     label: str,
     is_sprint: bool = True,
+    *,
+    bot=None,
+    result_status: str | None = None,
 ) -> int:
-    """Format and send a single session result. Returns the Discord message ID."""
+    """Format and send a single session result. Returns the Discord message ID.
+
+    **The image path is a guard clause in front of an untouched body** (039). Where the
+    images module is enabled, the `results` aspect is on and this session's template is
+    valid, ``image_results_post.try_post`` produces the PNG, posts it under the heading and
+    the lifecycle label, replaces the previous message and returns its id.
+
+    Where it is not — no bot in scope, the module off, the aspect off, an invalid template,
+    or a render that failed an *uncommanded* posting — everything below runs exactly as it
+    did before 039. The graphic is an alternative output beside the text, not a reform of it
+    (Constitution XIV.7).
+
+    This function is the single funnel every reposting occasion reaches, which is why the
+    hook is here and not at its three call sites.
+    """
     session_type = SessionType(session_result.session_type)
     session_label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
 
@@ -290,6 +327,36 @@ async def post_session_results(
     season_number, division_name = await _get_heading_context(db_path, session_result.round_id)
     season_prefix = f"Season {season_number} " if season_number is not None else ""
     heading = f"**{season_prefix}{division_name} Round {round_number} — {session_label}**"
+
+    # ── The image path (039) ──────────────────────────────────────────────
+    if bot is not None:
+        try:
+            from services.image_results_post import try_post
+
+            outcome = await try_post(
+                bot,
+                guild,
+                results_channel,
+                heading=heading,
+                label=label,
+                session_result=session_result,
+                driver_rows=driver_rows,
+                points_map=points_map,
+                round_number=round_number,
+                race_name=track_name,
+                is_sprint=is_sprint,
+                result_status=result_status
+                or await _get_result_status(db_path, session_result.round_id),
+                division_name=division_name,
+                season_number=season_number,
+                division_tier=await _get_division_tier(db_path, session_result.division_id),
+                dsq_phase_map=dsq_phase_map,
+            )
+            if outcome.applicable and outcome.message_id is not None:
+                return outcome.message_id
+        except Exception as exc:  # noqa: BLE001 — never block a posting on the image path
+            log.error("results: image path failed for session %s: %s", session_result.id, exc)
+
     msg = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
 
     async with get_connection(db_path) as db:
@@ -499,6 +566,8 @@ async def post_round_results(
     results_channel: discord.TextChannel,
     guild: discord.Guild,
     label: str,
+    *,
+    bot=None,
 ) -> None:
     """Post results for all non-cancelled sessions of a round in session order."""
     from services.result_submission_service import SESSION_ORDER_SPRINT, SESSION_ORDER_NORMAL
@@ -562,7 +631,7 @@ async def post_round_results(
 
         await post_session_results(
             db_path, session_result, driver_rows, points_map, results_channel, guild,
-            round_number, track_name, label, is_sprint,
+            round_number, track_name, label, is_sprint, bot=bot,
         )
 
 
@@ -572,6 +641,8 @@ async def repost_round_results(
     division_id: int,
     guild: discord.Guild,
     label: str,
+    *,
+    bot=None,
 ) -> None:
     """Load the division's channels and repost/edit round results and standings."""
     async with get_connection(db_path) as db:
@@ -600,7 +671,7 @@ async def repost_round_results(
     if results_ch_id:
         rc = guild.get_channel(results_ch_id)
         if rc:
-            await post_round_results(db_path, round_id, division_id, rc, guild, label)
+            await post_round_results(db_path, round_id, division_id, rc, guild, label, bot=bot)
 
     if standings_ch_id:
         sc = guild.get_channel(standings_ch_id)
@@ -637,6 +708,8 @@ async def repost_results_for_division(
     db_path: str,
     division_id: int,
     guild: discord.Guild,
+    *,
+    bot=None,
 ) -> str:
     """Delete and repost all session results messages for every round in the division.
 
@@ -739,7 +812,7 @@ async def repost_results_for_division(
 
             await post_session_results(
                 db_path, session_result, driver_rows, points_map, rc, guild,
-                round_number, track_name, rnd_label, is_sprint,
+                round_number, track_name, rnd_label, is_sprint, bot=bot,
             )
 
     return "ok"
@@ -835,6 +908,8 @@ async def delete_and_repost_final_results(
     division_id: int,
     guild: discord.Guild,
     label: str,
+    *,
+    bot=None,
 ) -> None:
     """Delete all interim results/standings Discord messages for *round_id* and
     repost the final (post-penalty) versions.
@@ -920,7 +995,7 @@ async def delete_and_repost_final_results(
 
                 await post_session_results(
                     db_path, session_result, driver_rows, points_map, rc, guild,
-                    round_number, track_name, label, is_sprint,
+                    round_number, track_name, label, is_sprint, bot=bot,
                 )
 
     # ── Delete interim standings message and re-post final ─────────────────

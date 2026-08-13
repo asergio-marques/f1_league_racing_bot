@@ -183,12 +183,47 @@ _VALID_LINEUP_SVG = (
 )
 
 
+#: A sound results template (039) carries the five whole-graphic mandatory fields and one
+#: complete row. The two kinds share every field but the columns of their rows, and a
+#: template must carry its own kind's alone — a sibling's field is a fault (XIV.3, v4.4.0).
+def _results_svg(*row_columns: bytes) -> bytes:
+    columns = b"".join(
+        b'<text id="row_1_%s">x</text>' % name for name in row_columns
+    )
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        b'<text id="division_name">D</text>'
+        b'<text id="round_number">1</text>'
+        b'<text id="race_name">R</text>'
+        b'<text id="session_name">S</text>'
+        b'<text id="result_status">F</text>'
+        b'<g id="row_1_group">'
+        b'<text id="row_1_position">1</text>'
+        b'<text id="row_1_driver_name">N</text>'
+        b'<text id="row_1_team_name">T</text>'
+        b'<image id="row_1_team_image"/>'
+        b'<text id="row_1_postrace_penalty">-</text>'
+        b'<text id="row_1_appeal_penalty">-</text>'
+        b'<text id="row_1_points">0</text>'
+        + columns
+        + b"</g></svg>"
+    )
+
+
+_VALID_RESULTS_QUALIFYING_SVG = _results_svg(b"best_lap", b"gap")
+_VALID_RESULTS_RACE_SVG = _results_svg(b"time", b"fastest_lap", b"ingame_penalty")
+
+
 def _sound_bytes(filename: str) -> bytes:
     """The soundest template for *filename* at the depth its type is checked to."""
     if filename == TEMPLATE_COLUMNS["calendar_template"]:
         return _VALID_CALENDAR_SVG
     if filename == TEMPLATE_COLUMNS["lineup_template"]:
         return _VALID_LINEUP_SVG
+    if filename == TEMPLATE_COLUMNS["results_qualifying_template"]:
+        return _VALID_RESULTS_QUALIFYING_SVG
+    if filename == TEMPLATE_COLUMNS["results_race_template"]:
+        return _VALID_RESULTS_RACE_SVG
     return _VALID_SVG
 
 

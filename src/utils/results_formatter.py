@@ -1,11 +1,34 @@
-"""results_formatter.py — Format results tables and standings for Discord output."""
+"""results_formatter.py — Format results tables and standings for Discord output.
+
+**One rendering, two presentations** (Constitution XIV.7, v4.4.0). A value the textual table
+and the results *graphic* both draw is produced here, once, and each presenter places it. The
+row builders below — :func:`build_qualifying_rows` and :func:`build_race_rows` — own every
+such derivation: the reference-lap search, the interval rule, the laps-behind wording, the
+displacement of a time by an outcome literal, and the rendering of a time penalty. Neither
+presenter may restate any of them.
+
+A cell of ``None`` means **this value does not apply to this entry**. It is not "missing" and
+not "undeterminable". The textual table renders it as :data:`NOT_APPLICABLE`; the graphic
+empties the field, quietly, and no mandatory field is thereby offended (XIV.3).
+
+Three things deliberately stay with each presenter, and no row carries them:
+
+* the **mention substitution** — the table draws ``<@id>``, the graphic draws names (XIV.16);
+* the **sanction phase rule** — the wip-spec makes the emptying of a sanction field for a
+  phase not yet closed the one value the graphic carries that the table does not;
+* the **placeholder** for ``None``.
+
+See specs/039-results-image-generation/contracts/shared-rendering.md.
+"""
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from models.points_config import SessionType
 from models.session_result import (
     DriverSessionResult,
+    OutcomeModifier,
     QualifyingSessionResult,
     RaceSessionResult,
 )
@@ -22,8 +45,12 @@ _LAP_TIME_RE = re.compile(
     r"^(?:(?P<h>\d+):)?(?P<m>\d+):(?P<s>\d+)(?:\.(?P<ms>\d+))?$"
 )
 
+#: What a presenter draws where a cell is ``None``. The textual table writes it; the graphic
+#: empties the field instead and never draws it (FR-013).
+NOT_APPLICABLE = "—"
 
-def _best_lap_to_ms(s: str) -> int | None:
+
+def parse_lap_time(s: str) -> int | None:
     """Parse an absolute lap-time string to ms. Returns None on failure."""
     m = _LAP_TIME_RE.match((s or "").strip())
     if not m:
@@ -36,8 +63,8 @@ def _best_lap_to_ms(s: str) -> int | None:
     return (h * 3600 + mins * 60 + secs) * 1000 + ms
 
 
-def _ms_to_lap_time(ms: int) -> str:
-    """Format ms as M:SS.mmm or H:MM:SS.mmm."""
+def render_lap_time(ms: int) -> str:
+    """Format ms as M:SS.mmm or H:MM:SS.mmm — the hours shown only where there are any."""
     total_s, ms_part = divmod(ms, 1000)
     total_m, secs = divmod(total_s, 60)
     hours, mins = divmod(total_m, 60)
@@ -46,8 +73,8 @@ def _ms_to_lap_time(ms: int) -> str:
     return f"{mins}:{secs:02d}.{ms_part:03d}"
 
 
-def _ms_to_gap(gap_ms: int) -> str:
-    """Format a gap in ms as +SS.mmm or +M:SS.mmm etc."""
+def render_gap(gap_ms: int) -> str:
+    """Format a gap in ms as +SS.mmm, or +M:SS.mmm and +H:MM:SS.mmm where they are needed."""
     total_s, ms_part = divmod(gap_ms, 1000)
     total_m, secs = divmod(total_s, 60)
     hours, mins = divmod(total_m, 60)
@@ -56,6 +83,25 @@ def _ms_to_gap(gap_ms: int) -> str:
     if mins:
         return f"+{mins}:{secs:02d}.{ms_part:03d}"
     return f"+{secs}.{ms_part:03d}"
+
+
+def render_time_penalty(ms: int) -> str | None:
+    """A time penalty in signed seconds, to the precision it was recorded with.
+
+    A whole number of seconds carries no decimal part and a fraction is rendered to three
+    decimal places: five seconds is ``+5s`` and five and a half ``+5.500s``. A penalty is
+    **never** rounded to a whole second for display — the in-game penalty column carries a
+    fraction more often than not.
+
+    Returns None where no penalty was applied, which each presenter renders its own way.
+    """
+    if ms == 0:
+        return None
+    sign = "+" if ms > 0 else "-"
+    whole, fraction = divmod(abs(ms), 1000)
+    if fraction:
+        return f"{sign}{whole}.{fraction:03d}s"
+    return f"{sign}{whole}s"
 
 
 # ---------------------------------------------------------------------------
@@ -113,12 +159,171 @@ def format_session_label(session_type: SessionType, *, is_sprint: bool = True) -
 # Session result tables
 # ---------------------------------------------------------------------------
 
-def _pen_col(ms: int) -> str:
-    """Format a penalty column value from milliseconds. Returns '+Xs', '-Xs', or '—'."""
-    if ms == 0:
-        return "—"
-    sign = "+" if ms > 0 else ""
-    return f"{sign}{ms // 1000}s"
+@dataclass(frozen=True)
+class QualifyingRow:
+    """One row of a qualifying classification, every cell already rendered.
+
+    ``None`` means the value does not apply to this entry (see the module docstring).
+    """
+
+    position: int
+    driver_user_id: int
+    team_role_id: int
+    tyre: str | None
+    best_lap: str | None
+    gap: str | None
+    #: The sanction the penalty phase applied, before any phase-closure rule.
+    postrace_penalty: str | None
+    #: The sanction the appeal phase applied, before any phase-closure rule.
+    appeal_penalty: str | None
+    points: int
+
+
+@dataclass(frozen=True)
+class RaceRow:
+    """One row of a race classification, every cell already rendered."""
+
+    position: int
+    driver_user_id: int
+    team_role_id: int
+    #: Total race time for the first-placed entry, an interval, a lap count, or an outcome.
+    time: str | None
+    fastest_lap: str | None
+    ingame_penalty: str | None
+    postrace_penalty: str | None
+    appeal_penalty: str | None
+    points: int
+    holds_fastest_lap: bool
+
+
+def build_qualifying_rows(
+    driver_rows: list[QualifyingSessionResult],
+    points_by_driver: dict[int, int],
+    *,
+    dsq_phase_map: dict[int, str] | None = None,
+) -> list[QualifyingRow]:
+    """Resolve every cell of a qualifying classification, ordered by finishing position.
+
+    The **reference lap** is the best lap of the first-placed entry, or — where that entry
+    holds none — the best lap of the first entry of the classification that does. The entry
+    holding it carries no gap, and where no entry of the session holds a lap at all every gap
+    is ``None``.
+    """
+    sorted_rows = sorted(driver_rows, key=lambda r: r.finishing_position)
+
+    reference_ms: int | None = None
+    for row in sorted_rows:
+        ms = parse_lap_time(row.best_lap or "")
+        if ms is not None:
+            reference_ms = ms
+            break
+
+    built: list[QualifyingRow] = []
+    for row in sorted_rows:
+        # An entry that did not finish, did not start or was disqualified carries that
+        # outcome as the text of its best-lap field, **whatever time may have been recorded
+        # for it** — the outcome displaces the lap rather than standing in for a missing one.
+        # A classified entry holding no lap carries nothing, and is drawn as a cell that does
+        # not apply.
+        best_lap = (
+            row.best_lap or None
+            if row.outcome is OutcomeModifier.CLASSIFIED
+            else row.outcome.value
+        )
+
+        gap: str | None = None
+        if row.finishing_position != 1 and row.outcome.is_points_eligible:
+            own_ms = parse_lap_time(row.best_lap or "")
+            if own_ms is not None and reference_ms is not None:
+                gap = render_gap(own_ms - reference_ms)
+
+        phase = (dsq_phase_map or {}).get(row.id)
+        built.append(
+            QualifyingRow(
+                position=row.finishing_position,
+                driver_user_id=row.driver_user_id,
+                team_role_id=row.team_role_id,
+                tyre=row.tyre or None,
+                best_lap=best_lap,
+                gap=gap,
+                # Qualifying accepts no time penalty, only a disqualification.
+                postrace_penalty="DSQ" if phase == "PENALTY" else None,
+                appeal_penalty="DSQ" if phase == "APPEAL" else None,
+                points=points_by_driver.get(row.driver_user_id, 0),
+            )
+        )
+    return built
+
+
+def build_race_rows(
+    driver_rows: list[RaceSessionResult],
+    points_by_driver: dict[int, int],
+    *,
+    dsq_phase_map: dict[int, str] | None = None,
+) -> list[RaceRow]:
+    """Resolve every cell of a race classification, ordered by finishing position.
+
+    The time column carries, in this order of precedence: the outcome literal of an entry
+    that did not finish, did not start or was disqualified; the count of laps an entry
+    finished behind, singular for one and plural beyond; the total race time for the
+    first-placed entry; and the interval to that entry for anyone else. Where no time is
+    recorded for the first-placed entry, every entry carries its own total race time.
+    """
+    sorted_rows = sorted(driver_rows, key=lambda r: r.finishing_position)
+
+    # The reference is the **first-placed entry's** total time and no one else's. Where that
+    # entry records none, there is no interval to state and every entry carries its own total
+    # race time instead. This is deliberately unlike the qualifying reference lap, which does
+    # fall through to the first entry of the classification that holds one.
+    leader_total_ms = sorted_rows[0].total_time_ms if sorted_rows else None
+
+    built: list[RaceRow] = []
+    for row in sorted_rows:
+        if row.outcome in (row.outcome.DNF, row.outcome.DNS, row.outcome.DSQ):
+            time_cell: str | None = row.outcome.value
+        elif row.laps_behind is not None:
+            lap_word = "Lap" if row.laps_behind == 1 else "Laps"
+            time_cell = f"+{row.laps_behind} {lap_word}"
+        elif row.total_time_ms is not None:
+            if row.finishing_position == 1 or leader_total_ms is None:
+                time_cell = render_lap_time(row.total_time_ms)
+            else:
+                time_cell = render_gap(row.total_time_ms - leader_total_ms)
+        else:
+            time_cell = None
+
+        phase = (dsq_phase_map or {}).get(row.id)
+        built.append(
+            RaceRow(
+                position=row.finishing_position,
+                driver_user_id=row.driver_user_id,
+                team_role_id=row.team_role_id,
+                time=time_cell,
+                fastest_lap=(row.fastest_lap or "").strip() or None,
+                ingame_penalty=render_time_penalty(row.ingame_time_penalties_ms),
+                postrace_penalty=(
+                    "DSQ"
+                    if phase == "PENALTY"
+                    else render_time_penalty(row.postrace_time_penalties_ms)
+                ),
+                appeal_penalty=(
+                    "DSQ"
+                    if phase == "APPEAL"
+                    else render_time_penalty(row.appeal_time_penalties_ms)
+                ),
+                points=points_by_driver.get(row.driver_user_id, 0),
+                holds_fastest_lap=row.fastest_lap_bonus > 0,
+            )
+        )
+    return built
+
+
+def fastest_lap_holder(rows: list[RaceRow]) -> RaceRow | None:
+    """The entry the session conferred the fastest-lap bonus on, or None where none did."""
+    for row in rows:
+        if row.holds_fastest_lap:
+            return row
+    return None
 
 
 def format_qualifying_table(
@@ -133,44 +338,26 @@ def format_qualifying_table(
     Format per line:
       {pos}. @Driver (@&Team) — {tyre} — {best_lap} — {gap} — {postrace_pen} — {appeal_pen} — {pts} pts
 
-    Gap is computed on the fly as (driver_best_lap_ms - P1_best_lap_ms).  P1 shows "—"
-    for gap.  Non-classified drivers show their outcome in the best_lap field and "—"
-    for gap.  Postrace/appeal penalty columns show "DSQ" when a wizard-applied DSQ is
-    recorded in penalty_records/appeal_records for this result row; otherwise "—".
+    Every value is resolved by :func:`build_qualifying_rows`; this function places them and
+    computes nothing of its own (Constitution XIV.7). A cell the builder returns as ``None``
+    is drawn as :data:`NOT_APPLICABLE` here and emptied on the graphic.
     """
-    sorted_rows = sorted(driver_rows, key=lambda r: r.finishing_position)
-
-    # Find P1's best_lap_ms for gap computation
-    p1_ms: int | None = None
-    for row in sorted_rows:
-        ms = _best_lap_to_ms(row.best_lap or "")
-        if ms is not None:
-            p1_ms = ms
-            break
+    rows = build_qualifying_rows(
+        driver_rows, points_by_driver, dsq_phase_map=dsq_phase_map
+    )
 
     lines: list[str] = []
-    for row in sorted_rows:
+    for row in rows:
         driver_ref = (member_display or {}).get(row.driver_user_id) or f"<@{row.driver_user_id}>"
         team_ref = (team_display or {}).get(row.team_role_id) or f"<@&{row.team_role_id}>"
-        tyre = row.tyre or "—"
-        best_lap_display = row.best_lap or row.outcome.value
-
-        # Gap: compute for P2+; "—" for P1 and non-classified
-        gap_display = "—"
-        if row.finishing_position != 1 and row.outcome.is_points_eligible:
-            driver_ms = _best_lap_to_ms(row.best_lap or "")
-            if driver_ms is not None and p1_ms is not None:
-                gap_display = _ms_to_gap(driver_ms - p1_ms)
-
-        phase = (dsq_phase_map or {}).get(row.id)
-        postrace_pen = "DSQ" if phase == "PENALTY" else "—"
-        appeal_pen = "DSQ" if phase == "APPEAL" else "—"
-
-        pts = points_by_driver.get(row.driver_user_id, 0)
         lines.append(
-            f"**{row.finishing_position}.** {driver_ref} ({team_ref})"
-            f" — {tyre} — {best_lap_display} — {gap_display}"
-            f" — {postrace_pen} — {appeal_pen} — **{pts} pts**"
+            f"**{row.position}.** {driver_ref} ({team_ref})"
+            f" — {row.tyre or NOT_APPLICABLE}"
+            f" — {row.best_lap or NOT_APPLICABLE}"
+            f" — {row.gap or NOT_APPLICABLE}"
+            f" — {row.postrace_penalty or NOT_APPLICABLE}"
+            f" — {row.appeal_penalty or NOT_APPLICABLE}"
+            f" — **{row.points} pts**"
         )
     return "\n".join(lines)
 
@@ -187,73 +374,39 @@ def format_race_table(
     Format per line:
       {pos}. @Driver (@&Team) — {total_time_or_interval} — {fastest_lap} — {ingame_pen} — {postrace_pen} — {appeal_pen} — {pts} pts
 
-    Display rules:
-    - P1: total_time = base_time_ms + ingame + postrace + appeal, formatted as M:SS.mmm
-    - P2+ classified non-lapped: interval = driver_total_ms - P1_total_ms, as +SS.mmm
-    - Lapped: shows "+N Lap(s)"
-    - DNS/DNF/DSQ: shows the outcome literal
-    - ingame_pen: game-applied penalty in seconds (e.g. "+5s" or "—" when 0)
-    - postrace_pen: steward-applied penalty in seconds
-    - appeal_pen: appeal-phase adjustment in seconds
+    Every value is resolved by :func:`build_race_rows`; this function places them and computes
+    nothing of its own (Constitution XIV.7). A cell the builder returns as ``None`` is drawn as
+    :data:`NOT_APPLICABLE` here and emptied on the graphic.
 
-    A fastest-lap footnote is appended when any driver has fastest_lap_bonus > 0.
+    A fastest-lap footnote is appended when the session conferred the bonus.
     """
-    sorted_rows = sorted(driver_rows, key=lambda r: r.finishing_position)
-
-    # Find P1's total_time_ms for interval computation
-    p1_total_ms: int | None = None
-    for row in sorted_rows:
-        if row.total_time_ms is not None:
-            p1_total_ms = row.total_time_ms
-            break
+    rows = build_race_rows(driver_rows, points_by_driver, dsq_phase_map=dsq_phase_map)
 
     lines: list[str] = []
-    fl_driver_id: int | None = None
-    fl_time: str | None = None
-
-    for row in sorted_rows:
+    for row in rows:
         driver_ref = (member_display or {}).get(row.driver_user_id) or f"<@{row.driver_user_id}>"
         team_ref = (team_display or {}).get(row.team_role_id) or f"<@&{row.team_role_id}>"
-
-        # Time / interval column
-        if row.outcome in (row.outcome.DNF, row.outcome.DNS, row.outcome.DSQ):
-            time_display = row.outcome.value
-        elif row.laps_behind is not None:
-            lap_word = "Lap" if row.laps_behind == 1 else "Laps"
-            time_display = f"+{row.laps_behind} {lap_word}"
-        elif row.total_time_ms is not None:
-            if row.finishing_position == 1 or p1_total_ms is None:
-                time_display = _ms_to_lap_time(row.total_time_ms)
-            else:
-                time_display = _ms_to_gap(row.total_time_ms - p1_total_ms)
-        else:
-            time_display = "—"
-
-        # Fastest lap column
-        fl = (row.fastest_lap or "").strip()
-        fl_display = fl if fl else "—"
-
-        # Individual penalty columns; DSQ overrides the ms-derived value
-        phase = (dsq_phase_map or {}).get(row.id)
-        ingame_pen_display = _pen_col(row.ingame_time_penalties_ms)
-        postrace_pen_display = "DSQ" if phase == "PENALTY" else _pen_col(row.postrace_time_penalties_ms)
-        appeal_pen_display = "DSQ" if phase == "APPEAL" else _pen_col(row.appeal_time_penalties_ms)
-
-        pts = points_by_driver.get(row.driver_user_id, 0)
         lines.append(
-            f"**{row.finishing_position}.** {driver_ref} ({team_ref})"
-            f" — {time_display} — {fl_display}"
-            f" — {ingame_pen_display} — {postrace_pen_display} — {appeal_pen_display}"
-            f" — **{pts} pts**"
+            f"**{row.position}.** {driver_ref} ({team_ref})"
+            f" — {row.time or NOT_APPLICABLE}"
+            f" — {row.fastest_lap or NOT_APPLICABLE}"
+            f" — {row.ingame_penalty or NOT_APPLICABLE}"
+            f" — {row.postrace_penalty or NOT_APPLICABLE}"
+            f" — {row.appeal_penalty or NOT_APPLICABLE}"
+            f" — **{row.points} pts**"
         )
-        if row.fastest_lap_bonus > 0:
-            fl_driver_id = row.driver_user_id
-            fl_time = row.fastest_lap
 
     result = "\n".join(lines)
-    if fl_driver_id is not None:
-        fl_driver_ref = (member_display or {}).get(fl_driver_id) or f"<@{fl_driver_id}>"
-        result += f"\n🏎 **Fastest lap** — {fl_driver_ref} — {fl_time or '—'}"
+    holder = fastest_lap_holder(rows)
+    if holder is not None:
+        holder_ref = (
+            (member_display or {}).get(holder.driver_user_id)
+            or f"<@{holder.driver_user_id}>"
+        )
+        result += (
+            f"\n🏎 **Fastest lap** — {holder_ref} — "
+            f"{holder.fastest_lap or NOT_APPLICABLE}"
+        )
     return result
 
 

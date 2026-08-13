@@ -440,3 +440,120 @@ def test_expected_fields_omitted_means_only_unknown_fields_are_caught():
     root = _doc('<text id="a">x</text><text id="b">y</text>')
     result = fill(FillSpec(root=root, text={"a": "v"}))
     assert result.unresolved == []
+
+
+# ---------------------------------------------------------------------------
+# An absent datum drawing the class fallback (Constitution XIV.13, v4.4.0) — T015
+#
+# The three outcomes of a *sought* asset are unchanged. This is the fourth case: a
+# field whose catalogue declares that having no datum at all is a state worth
+# depicting. The fallback stands for the absence, so nothing is reported for it.
+# ---------------------------------------------------------------------------
+
+def _image_doc():
+    return _doc('<image id="row_1_tyre" xlink:href="x.svg" width="40" height="40"/>')
+
+
+def _tyre_dir(tmp_path, *, with_fallback: bool):
+    directory = tmp_path / "tyres"
+    directory.mkdir()
+    (directory / "soft.svg").write_text("<svg/>", encoding="utf-8")
+    if with_fallback:
+        (directory / "fallback.svg").write_text("<svg/>", encoding="utf-8")
+    return directory
+
+
+def _qualifying_catalogue():
+    from models.image_catalogues import RESULTS_QUALIFYING_CATALOGUE
+
+    return RESULTS_QUALIFYING_CATALOGUE
+
+
+def test_absent_datum_draws_the_class_fallback_and_reports_nothing(tmp_path):
+    root = _image_doc()
+    result = fill(
+        FillSpec(
+            root=root,
+            image_type="results_qualifying_template",
+            image_data={"row_1_tyre": ("tyre", "")},
+            asset_directories={"tyre": _tyre_dir(tmp_path, with_fallback=True)},
+            catalogue=_qualifying_catalogue(),
+        )
+    )
+    assert result.unresolved == []
+    assert result.notices == []
+    href = FieldIndex(root).resolve("row_1_tyre").get(
+        "{http://www.w3.org/1999/xlink}href"
+    )
+    assert href.endswith("fallback.svg")
+
+
+def test_absent_datum_removes_the_field_where_the_class_has_no_fallback(tmp_path):
+    """The declaration is inert without a fallback — and still not fatal, and still quiet."""
+    root = _image_doc()
+    result = fill(
+        FillSpec(
+            root=root,
+            image_type="results_qualifying_template",
+            image_data={"row_1_tyre": ("tyre", "")},
+            asset_directories={"tyre": _tyre_dir(tmp_path, with_fallback=False)},
+            catalogue=_qualifying_catalogue(),
+        )
+    )
+    assert result.unresolved == []
+    assert result.notices == []
+    assert FieldIndex(root).resolve("row_1_tyre") is None
+
+
+def test_a_recorded_datum_still_resolves_its_own_file(tmp_path):
+    root = _image_doc()
+    result = fill(
+        FillSpec(
+            root=root,
+            image_type="results_qualifying_template",
+            image_data={"row_1_tyre": ("tyre", "Soft")},
+            asset_directories={"tyre": _tyre_dir(tmp_path, with_fallback=True)},
+            catalogue=_qualifying_catalogue(),
+        )
+    )
+    assert result.unresolved == []
+    assert result.notices == []
+    href = FieldIndex(root).resolve("row_1_tyre").get(
+        "{http://www.w3.org/1999/xlink}href"
+    )
+    assert href.endswith("soft.svg")
+
+
+def test_a_missing_file_for_a_recorded_datum_still_raises_its_notice(tmp_path):
+    """The declaration covers an absent *datum*, never a missing *file*."""
+    root = _image_doc()
+    result = fill(
+        FillSpec(
+            root=root,
+            image_type="results_qualifying_template",
+            image_data={"row_1_tyre": ("tyre", "Intermediate")},
+            asset_directories={"tyre": _tyre_dir(tmp_path, with_fallback=True)},
+            catalogue=_qualifying_catalogue(),
+        )
+    )
+    assert result.unresolved == []
+    assert [n.field_id for n in result.notices] == ["row_1_tyre"]
+
+
+def test_an_undeclared_field_with_an_absent_datum_behaves_as_it_always_did(tmp_path):
+    """A flag with no nationality is not this case: the fallback is drawn *with* a notice."""
+    root = _doc('<image id="row_1_driver_flag" xlink:href="x.svg" width="40" height="40"/>')
+    directory = tmp_path / "flags"
+    directory.mkdir()
+    (directory / "fallback.svg").write_text("<svg/>", encoding="utf-8")
+    result = fill(
+        FillSpec(
+            root=root,
+            image_type="results_qualifying_template",
+            image_data={"row_1_driver_flag": ("flag", "")},
+            asset_directories={"flag": directory},
+            catalogue=_qualifying_catalogue(),
+        )
+    )
+    assert result.unresolved == []
+    assert [n.field_id for n in result.notices] == ["row_1_driver_flag"]

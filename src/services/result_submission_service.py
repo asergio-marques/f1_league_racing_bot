@@ -319,7 +319,7 @@ async def enter_penalty_state(
                     _results_label = "Provisional Results (amended)" if is_resubmission else "Provisional Results"
                     await results_post_service.post_round_results(
                         db_path, round_id, division_id, rc, guild,
-                        label=_results_label,
+                        label=_results_label, bot=bot,
                     )
 
             if standings_ch_id:
@@ -476,7 +476,7 @@ async def finalize_penalty_review(
     if guild:
         await _rps.delete_and_repost_final_results(
             db_path, round_id, division_id, guild,
-            label="Post-Race Penalty Results",
+            label="Post-Race Penalty Results", bot=interaction.client,
         )
         await _rps.repost_subsequent_standings(db_path, division_id, round_id, guild)
 
@@ -702,7 +702,7 @@ async def finalize_appeals_review(
     if guild:
         await _rps.delete_and_repost_final_results(
             db_path, round_id, division_id, guild,
-            label="Final Results",
+            label="Final Results", bot=interaction.client,
         )
         await _rps.repost_subsequent_standings(db_path, division_id, round_id, guild)
 
@@ -1054,7 +1054,7 @@ async def amend_session_result(
     if guild is not None:
         await results_post_service.delete_and_repost_final_results(
             db_path, round_id, division_id, guild,
-            label="Final Results",
+            label="Final Results", bot=bot,
         )
         await results_post_service.repost_subsequent_standings(
             db_path, division_id, round_id, guild

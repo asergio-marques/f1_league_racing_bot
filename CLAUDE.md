@@ -53,8 +53,8 @@ and the checks to run. Read it rather than guessing.
 ## Testing
 
 `pytest tests/ -q` from the repo root. Run it before and after a change and compare. The suite
-is expected to pass in full — as of 2026-08-12, 1135 passed, 1 skipped, 0 failed. Any failure is
-a real one; do not write it off as pre-existing without first confirming it on a clean tree.
+is expected to pass in full. Any failure is a real one; do not write it off as pre-existing
+without first confirming it on a clean tree.
 
 Tests that pin a date must pin "now" alongside it. Several services accept a `now` parameter for
 exactly this; a test that seeds a future date and lets the code read the wall clock passes today
