@@ -9,9 +9,13 @@ builds and the fill pipeline consumes — declared here so the contracts can ref
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
-| `constructor_standings_message_id` | TEXT | yes | The id of the message carrying the **constructor** standings for this round and division |
+| `constructor_standings_message_id` | INTEGER | yes | The id of the message carrying the **constructor** standings for this round and division |
 
 Migration `041_constructor_standings_message_id.sql`.
+
+**INTEGER, not TEXT** — corrected during implementation. The sibling `standings_message_id` is
+INTEGER in `017_results_core.sql`, a Discord snowflake fits SQLite's 64-bit integer, and a column of
+a different type beside it would invite a comparison that fails silently.
 
 **Where it is written.** On the row of the top-ranked driver, exactly as `standings_message_id`
 already is. The existing column continues to hold the driver standings message — under the textual
@@ -24,8 +28,13 @@ existed. A table would add a join to every posting to hold one nullable integer.
 **Existing rows** need no backfill: null is the correct value for a round posted by the textual flow,
 and null is what every row holds today.
 
-**Read path.** `_get_standings_message_id` gains a sibling, or a parameter naming which championship;
-both read the top-ranked driver's row for the division and round.
+**Read path.** `_get_standings_message_id` gained a `championship` parameter defaulting to the
+drivers, so every caller written before the image flow keeps its meaning unchanged, and
+`_set_standings_message_id` was added beside it.
+
+**`from_row` reads this one by name**, not by ordinal. It lands at index **10** — after
+`driver_profile_id`, which migration 020 added and which `from_row` does not read — so guessing the
+ordinal is how the two would silently swap.
 
 ---
 

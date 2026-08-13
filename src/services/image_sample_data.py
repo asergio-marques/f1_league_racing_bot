@@ -488,6 +488,39 @@ def build_spec(template_key: str, root, *, teams=None) -> FillSpec:
             asset_directories=directories,
         )
 
+    if template_key in (
+        "standings_drivers_template",
+        "standings_constructors_template",
+    ):
+        from services.image_standings_service import StandingsDataError, build_fill_spec
+        from utils.paths import resolve_within_project_root
+
+        if teams is None:
+            raise StandingsDataError(
+                "a standings preview needs the server's team configuration; none was "
+                "supplied to the sample builder"
+            )
+
+        # The packaged asset directories, for the same reason the calendar resolves its
+        # track directory here: a preview must still resolve its assets.
+        directories: dict[str, object] = {}
+        for asset_class, relative in (
+            ("team", "resources/teams"),
+            ("flag", "resources/flags"),
+            ("track", "resources/tracks"),
+            ("marker", "resources/markers"),
+        ):
+            try:
+                directories[asset_class] = resolve_within_project_root(relative)
+            except Exception:  # noqa: BLE001
+                pass
+
+        return build_fill_spec(
+            build_standings_drawing(root, template_key, teams),
+            root,
+            asset_directories=directories,
+        )
+
     # Ids *and* layer labels: a field may be addressed by either (Constitution XIV.2).
     # Indexing ids alone would make a template authored entirely with layer labels look
     # as though it declared nothing, and `/images test` would report every field unknown.
@@ -565,3 +598,158 @@ _SESSION_NAMES = {
     "results_qualifying_template": "Feature Qualifying",
     "results_race_template": "Feature Race",
 }
+
+
+def build_standings_drawing(root, template_key: str, teams):
+    """The fabricated classification `/images test standings` draws (wip-spec § "Test data").
+
+    One entry fewer than the rows the template declares, so the rendering of an unused row can
+    be judged; exactly one where the template declares a single row. Teams are the server's own
+    configuration, so a league reads its own liveries rather than invented ones.
+
+    The enumerated cases are assigned **in order** and any the declared row count cannot reach
+    are simply not drawn — which is what "insofar as the number of rows declared allows" means.
+    The cases needing a round grid (a driver absent from a round, DNF/DNS/DSQ) arrive with the
+    grid itself; this draws the classification.
+
+    The three movement columns are produced by ``standings_service.derive_movement`` — the same
+    derivation the real thing calls — so the preview exercises the arithmetic rather than
+    imitating it (Constitution XIV.7).
+    """
+    from models.image_catalogues import CapacityError, catalogue_for
+    from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
+    from services.image_standings_service import (
+        DRIVERS_TEMPLATE_KEY,
+        StandingsDataError,
+        resolve_drawing,
+    )
+    from services.standings_service import derive_gaps, derive_movement
+
+    configurable = [t for t in teams or [] if not getattr(t, "is_reserve", False)]
+    if not configurable:
+        raise StandingsDataError(
+            "the server holds no team beyond the reserve team, so there is no "
+            "classification to be drawn. Add a team with `/team add` first."
+        )
+    reserve_team = next(
+        (t for t in teams or [] if getattr(t, "is_reserve", False)), None
+    )
+    reserve_name = getattr(reserve_team, "name", None) or "Reserve"
+
+    try:
+        capacity = catalogue_for(template_key).capacity(root) or 0
+    except CapacityError as exc:
+        raise StandingsDataError(str(exc)) from exc
+
+    count = 1 if capacity <= 1 else capacity - 1
+    drivers = template_key == DRIVERS_TEMPLATE_KEY
+    if not drivers:
+        # A constructor classification cannot hold more teams than the server configures.
+        count = min(count, len(configurable))
+
+    # (points, previous position or None). In order: the leader who gained, one unchanged, one
+    # level on points with it and fallen, one the preceding standings do not hold, and one on
+    # no points at all. Between them they exercise all three markers, the empty leader gap and
+    # the absent movement record.
+    def case(index: int) -> tuple[int, int | None]:
+        points = max(0, 50 - (index - 1) * 6)
+        if index == 1:
+            return points, 3
+        if index == 2:
+            return points, 2
+        if index == 3:
+            return points, 1
+        if index == 4:
+            return points, None
+        if index == count and count >= 6:
+            return 0, index
+        return points, index + 1 if index % 2 else index
+
+    display_names: dict[int, str] = {}
+    team_names: dict[int, str] = {}
+    nationalities: dict[int, str | None] = {}
+    reserve_user_ids: set[int] = set()
+    snapshots: list = []
+    current: list[tuple[int, int, int]] = []
+    previous: dict[int, int] = {}
+
+    # The reserve driver of the wip-spec's enumeration, drawn because the toggle is on and
+    # they hold points. Placed late so it does not displace the earlier cases.
+    reserve_index = 5 if drivers and count >= 5 else None
+
+    for index in range(1, count + 1):
+        points, was = case(index)
+        # Two entries level on points, separated by the countback the record already applied.
+        if index == 3 and count >= 3:
+            points = case(2)[0]
+
+        if drivers:
+            key = _SAMPLE_ID_BASE + index
+            display_names[key] = (
+                LONG_DRIVER_NAME if index == 2 else f"Test Driver {index}"
+            )
+            if index == reserve_index:
+                reserve_user_ids.add(key)
+                team_names[key] = reserve_name
+            else:
+                record = configurable[(index - 1) % len(configurable)]
+                team_names[key] = getattr(record, "name", "") or f"Team {index}"
+            nationalities[key] = SAMPLE_LINEUP_NATIONALITIES[
+                (index - 1) % len(SAMPLE_LINEUP_NATIONALITIES)
+            ]
+            snapshots.append(
+                DriverStandingsSnapshot(
+                    id=0,
+                    round_id=1,
+                    division_id=1,
+                    driver_user_id=key,
+                    standing_position=index,
+                    total_points=points,
+                    finish_counts={},
+                    first_finish_rounds={},
+                    race_participant=True,
+                )
+            )
+        else:
+            key = 900_000 + index
+            record = configurable[(index - 1) % len(configurable)]
+            name = getattr(record, "name", "") or f"Team {index}"
+            display_names[key] = name
+            team_names[key] = name
+            snapshots.append(
+                TeamStandingsSnapshot(
+                    id=0,
+                    round_id=1,
+                    division_id=1,
+                    team_role_id=key,
+                    standing_position=index,
+                    total_points=points,
+                    finish_counts={},
+                    first_finish_rounds={},
+                )
+            )
+
+        current.append((key, index, points))
+        if was is not None:
+            previous[key] = was
+
+    movements = derive_movement(current, previous)
+    gaps = derive_gaps(current)
+
+    return resolve_drawing(
+        template_key=template_key,
+        division_name="Test Division",
+        round_number=1,
+        result_status="FINAL",
+        snapshots=snapshots,
+        display_names=display_names,
+        team_names=team_names,
+        movements=movements,
+        gaps=gaps,
+        nationalities=nationalities if drivers else None,
+        reserve_user_ids=reserve_user_ids,
+        show_reserves=True,
+        division_tier=1,
+        season_number=1,
+        race_name="Test Grand Prix",
+    )

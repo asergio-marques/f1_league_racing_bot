@@ -373,6 +373,47 @@ async def post_session_results(
 # Standings posting
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Standings composition
+#
+# The textual flow posts ONE message carrying both championships; the image flow posts TWO.
+# Composition is kept apart from posting so that a fallback can carry the failed
+# championship's section **alone** — Constitution XIV.7 as amended at v4.5.0 puts a fallback
+# at the grain of the graphic that failed, and never re-posts what a surviving graphic
+# already drew. With the two welded together, one failing championship could only fall back
+# by reposting both.
+#
+# See specs/040-standings-image-generation/contracts/standings-posting.md.
+# ---------------------------------------------------------------------------
+
+#: The two championships, in the order they are posted.
+STANDINGS_DRIVERS = "drivers"
+STANDINGS_CONSTRUCTORS = "constructors"
+
+_STANDINGS_SUBHEADINGS = {
+    STANDINGS_DRIVERS: "**Driver Standings**",
+    STANDINGS_CONSTRUCTORS: "**Team Standings**",
+}
+
+
+def standings_section(championship: str, body: str) -> str:
+    """One championship's section, sub-heading included.
+
+    The sub-heading belongs to the section rather than to the message, so that a section
+    posted alone still says which championship it is.
+    """
+    return f"{_STANDINGS_SUBHEADINGS[championship]}\n{body}"
+
+
+def compose_standings_message(heading: str, label: str, sections: list[str]) -> str:
+    """The heading, the lifecycle label, and one or more championship sections.
+
+    Passing both sections reproduces the message the textual flow has always posted, byte
+    for byte. Passing one is what a per-championship fallback posts.
+    """
+    return "\n\n".join([f"{heading}\n{label}", *sections])
+
+
 async def post_standings(
     db_path: str,
     division_id: int,
@@ -402,10 +443,13 @@ async def post_standings(
     season_prefix = f"Season {season_number} " if season_number is not None else ""
     primary_session_label = await _get_primary_session_label(db_path, round_id)
     heading = f"**{season_prefix}{division_name} Round {round_number} — {primary_session_label}**"
-    content = (
-        f"{heading}\n{label}\n\n"
-        f"**Driver Standings**\n{driver_text}\n\n"
-        f"**Team Standings**\n{team_text}"
+    content = compose_standings_message(
+        heading,
+        label,
+        [
+            standings_section(STANDINGS_DRIVERS, driver_text),
+            standings_section(STANDINGS_CONSTRUCTORS, team_text),
+        ],
     )
 
     # Look for existing standings message (stored in the top-ranked driver snapshot)
@@ -443,14 +487,31 @@ async def post_standings(
             await db.commit()
 
 
+#: Championship → the column naming the message that carries it. Both live on the row of the
+#: top-ranked driver, as the first of them always has.
+_STANDINGS_ID_COLUMNS = {
+    STANDINGS_DRIVERS: "standings_message_id",
+    STANDINGS_CONSTRUCTORS: "constructor_standings_message_id",
+}
+
+
 async def _get_standings_message_id(
-    db_path: str, division_id: int, round_id: int
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    championship: str = STANDINGS_DRIVERS,
 ) -> int | None:
-    """Return the standings_message_id for the given round's snapshot."""
+    """Return the message id carrying *championship* for the given round's snapshot.
+
+    Defaults to the driver standings, which is the message the textual flow posts for both
+    championships together — so every caller written before the image flow keeps its meaning
+    unchanged.
+    """
+    column = _STANDINGS_ID_COLUMNS[championship]
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            """
-            SELECT standings_message_id
+            f"""
+            SELECT {column} AS message_id
             FROM driver_standings_snapshots
             WHERE division_id = ? AND round_id = ?
             ORDER BY standing_position ASC
@@ -459,7 +520,37 @@ async def _get_standings_message_id(
             (division_id, round_id),
         )
         row = await cursor.fetchone()
-    return row["standings_message_id"] if row and row["standings_message_id"] else None
+    return row["message_id"] if row and row["message_id"] else None
+
+
+async def _set_standings_message_id(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    message_id: int | None,
+    championship: str = STANDINGS_DRIVERS,
+) -> None:
+    """Persist *message_id* for *championship* on the top-ranked driver's row.
+
+    Written on every posting, textual or graphic, so the two flows never disagree about
+    which message is which. The textual flow leaves the constructor column null.
+    """
+    column = _STANDINGS_ID_COLUMNS[championship]
+    async with get_connection(db_path) as db:
+        await db.execute(
+            f"""
+            UPDATE driver_standings_snapshots
+            SET {column} = ?
+            WHERE round_id = ? AND division_id = ?
+              AND driver_user_id = (
+                  SELECT driver_user_id FROM driver_standings_snapshots
+                  WHERE round_id = ? AND division_id = ?
+                  ORDER BY standing_position ASC LIMIT 1
+              )
+            """,
+            (message_id, round_id, division_id, round_id, division_id),
+        )
+        await db.commit()
 
 
 async def _get_reserve_user_ids(db_path: str, division_id: int) -> set[int]:

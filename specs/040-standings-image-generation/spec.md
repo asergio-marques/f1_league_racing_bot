@@ -267,8 +267,12 @@ logging channel.
 - **FR-007**: The system MUST treat a field belonging to the **sibling** catalogue's row as a fatal
   error at the moment the template is named — the wrong file in that slot. An id belonging to neither
   catalogue MUST be ignored.
-- **FR-008**: The system MUST fill each row's position field **from the ordinal** of that row, making
-  no comparison between it and the recorded standing position.
+- **FR-008**: The system MUST fill each row's position field from the position the standings
+  **recorded**, not from the row's ordinal. The two coincide only while every entry the standings hold
+  is drawn; a reserve who raced holds a position but is drawn only where the reserves toggle is on, so
+  with it off the recorded positions carry a gap the ordinals do not. The textual standings print the
+  recorded position, and XIV.7 forbids the graphic disagreeing with it. Row ordinals remain contiguous
+  from 1 and address the row alone.
 - **FR-009**: The system MUST draw no image of the track on the classification, no date of any round,
   no name of a points configuration, and no result of any session beyond the declared cells. The
   constructors graphic MUST carry no driver nationality and no team result in a session.

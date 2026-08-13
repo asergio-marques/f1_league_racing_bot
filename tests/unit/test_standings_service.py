@@ -663,3 +663,194 @@ async def test_classified_driver_ranks_above_dnf_at_same_position(db_path):
         "CLASSIFIED P6 (in finish_counts) should rank above DNF P6 (not in finish_counts)"
     )
 
+
+
+# ---------------------------------------------------------------------------
+# Movement — the three derived columns (T015)
+#
+# Constitution XIV.7 as amended at v4.5.0 admits these as a derived presentation, on the
+# condition that the derivation lives here rather than in the image module. These tests
+# pin the arithmetic and, above all, the two cases where the record is absent entirely.
+# ---------------------------------------------------------------------------
+
+from services.standings_service import (  # noqa: E402
+    MOVEMENT_GAINED,
+    MOVEMENT_LOST,
+    MOVEMENT_UNCHANGED,
+    derive_gaps,
+    derive_movement,
+    previous_standing_positions,
+    reference_round_id,
+)
+
+
+async def _division_with_rounds(db, count: int, *, cancelled: tuple[int, ...] = ()):
+    """A server, season and division holding *count* rounds. Returns (division_id, [ids])."""
+    await db.execute(
+        "INSERT INTO server_configs "
+        "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+        "VALUES (1, 10, 20, 30)"
+    )
+    cursor = await db.execute(
+        "INSERT INTO seasons (server_id, start_date, status, season_number) "
+        "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+    )
+    season_id = cursor.lastrowid
+    cursor = await db.execute(
+        "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id) "
+        "VALUES (?, 'Div 1', 777, 888)",
+        (season_id,),
+    )
+    division_id = cursor.lastrowid
+
+    round_ids: list[int] = []
+    for number in range(1, count + 1):
+        status = "CANCELLED" if number in cancelled else "ACTIVE"
+        cursor = await db.execute(
+            "INSERT INTO rounds "
+            "(division_id, round_number, format, scheduled_at, status) "
+            "VALUES (?, ?, 'NORMAL', ?, ?)",
+            (division_id, number, f"2026-0{number}-01T18:00:00", status),
+        )
+        round_ids.append(cursor.lastrowid)
+    return division_id, round_ids
+
+
+async def _snapshot(db, division_id, round_id, positions: dict[int, int]):
+    """Persist driver snapshots: driver_user_id -> standing_position."""
+    for driver_user_id, position in positions.items():
+        await db.execute(
+            "INSERT INTO driver_standings_snapshots "
+            "(round_id, division_id, driver_user_id, standing_position, total_points) "
+            "VALUES (?, ?, ?, ?, 0)",
+            (round_id, division_id, driver_user_id, position),
+        )
+
+
+# ── the pure arithmetic ───────────────────────────────────────────────────
+
+
+def test_the_leader_carries_a_gap_of_nought():
+    gaps = derive_gaps([(1, 1, 50), (2, 2, 30)])
+    assert gaps[1] == 0
+    assert gaps[2] == 20
+
+
+def test_the_gap_is_measured_against_the_highest_points():
+    gaps = derive_gaps([(1, 1, 50), (2, 2, 50)])
+    assert gaps == {1: 0, 2: 0}
+
+
+def test_the_gap_survives_a_division_with_no_reference_round():
+    """It is arithmetic over the classification drawn alone (contracts/derived-columns.md).
+
+    Nesting it inside the movement record once blanked the gap column for every entry the
+    reference round did not hold — which the rasterised PNG showed and no unit test did.
+    """
+    current = [(1, 1, 50), (2, 2, 32)]
+    assert derive_movement(current, None) == {1: None, 2: None}
+    assert derive_gaps(current) == {1: 0, 2: 18}
+
+
+def test_the_gap_survives_an_entry_the_reference_round_does_not_hold():
+    current = [(1, 1, 50), (2, 2, 32)]
+    moves = derive_movement(current, {1: 1})
+    gaps = derive_gaps(current)
+    assert moves[2] is None
+    assert gaps[2] == 18
+
+
+def test_the_three_directions():
+    previous = {1: 3, 2: 2, 3: 1}
+    moves = derive_movement([(1, 1, 30), (2, 2, 20), (3, 3, 10)], previous)
+    assert moves[1].direction == MOVEMENT_GAINED
+    assert moves[1].change == 2
+    assert moves[2].direction == MOVEMENT_UNCHANGED
+    assert moves[2].change == 0
+    assert moves[3].direction == MOVEMENT_LOST
+    assert moves[3].change == 2
+
+
+def test_the_change_is_unsigned_and_the_direction_carries_the_sense():
+    moves = derive_movement([(1, 5, 10)], {1: 2})
+    assert moves[1].change == 3
+    assert moves[1].direction == MOVEMENT_LOST
+    assert moves[1].previous_position == 2
+
+
+def test_no_reference_round_yields_no_record_for_any_entry():
+    """The first round of a division: absent entirely, never partly filled."""
+    moves = derive_movement([(1, 1, 30), (2, 2, 20)], None)
+    assert moves == {1: None, 2: None}
+
+
+def test_an_entry_the_reference_round_does_not_hold_yields_no_record():
+    """A driver who joined mid-season, or a reserve drawn in for the first time."""
+    moves = derive_movement([(1, 1, 30), (2, 2, 20)], {1: 1})
+    assert moves[1] is not None
+    assert moves[2] is None
+
+
+def test_an_empty_classification_derives_nothing():
+    assert derive_movement([], {1: 1}) == {}
+
+
+# ── the reference round ───────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_the_reference_round_is_the_one_before(db_path):
+    async with get_connection(db_path) as db:
+        division_id, rounds = await _division_with_rounds(db, 3)
+        await _snapshot(db, division_id, rounds[0], {1: 1})
+        await _snapshot(db, division_id, rounds[1], {1: 1})
+        await db.commit()
+    assert await reference_round_id(db_path, division_id, rounds[2]) == rounds[1]
+
+
+@pytest.mark.asyncio
+async def test_the_first_round_of_a_division_has_no_reference(db_path):
+    async with get_connection(db_path) as db:
+        division_id, rounds = await _division_with_rounds(db, 2)
+        await db.commit()
+    assert await reference_round_id(db_path, division_id, rounds[0]) is None
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_round_is_stepped_over(db_path):
+    """One cancelled round must not empty the column for every entry (R4)."""
+    async with get_connection(db_path) as db:
+        division_id, rounds = await _division_with_rounds(db, 3, cancelled=(2,))
+        await _snapshot(db, division_id, rounds[0], {1: 4})
+        await db.commit()
+    assert await reference_round_id(db_path, division_id, rounds[2]) == rounds[0]
+
+
+@pytest.mark.asyncio
+async def test_a_round_yet_to_be_run_is_stepped_over(db_path):
+    """It holds no standings, so it is skipped for the same reason a cancelled one is."""
+    async with get_connection(db_path) as db:
+        division_id, rounds = await _division_with_rounds(db, 4)
+        await _snapshot(db, division_id, rounds[0], {1: 2})
+        # rounds[1] and rounds[2] were never run — no snapshot rows at all
+        await db.commit()
+    assert await reference_round_id(db_path, division_id, rounds[3]) == rounds[0]
+
+
+@pytest.mark.asyncio
+async def test_previous_positions_are_read_from_the_reference_round(db_path):
+    async with get_connection(db_path) as db:
+        division_id, rounds = await _division_with_rounds(db, 3, cancelled=(2,))
+        await _snapshot(db, division_id, rounds[0], {7: 1, 8: 2})
+        await db.commit()
+    previous = await previous_standing_positions(db_path, division_id, rounds[2])
+    assert previous == {7: 1, 8: 2}
+
+
+@pytest.mark.asyncio
+async def test_no_reference_round_returns_none_not_an_empty_mapping(db_path):
+    """None and {} mean different things: no reference at all, versus nobody in it."""
+    async with get_connection(db_path) as db:
+        division_id, rounds = await _division_with_rounds(db, 2)
+        await db.commit()
+    assert await previous_standing_positions(db_path, division_id, rounds[0]) is None

@@ -928,15 +928,18 @@ class ImageCog(commands.Cog):
 
         templates = TEST_KIND_TEMPLATES[kind.value]
 
-        # Two kinds draw against the league's **own** team configuration rather than against
-        # invented teams: the lineup, whose fields are keyed by team name, and the results,
-        # whose rows carry each team's name and badge. Both are rejected outright where there
-        # is no team to draw — a generic render failure would not say so (FR-029, FR-047).
+        # Three kinds draw against the league's **own** team configuration rather than against
+        # invented teams: the lineup, whose fields are keyed by team name, and the results and
+        # standings, whose rows carry each team's name and badge. All are rejected outright
+        # where there is no team to draw — a generic render failure would not say so
+        # (FR-029, FR-047, and FR-063 for the standings).
         teams = None
         needs_teams = {
             "lineup_template",
             "results_qualifying_template",
             "results_race_template",
+            "standings_drivers_template",
+            "standings_constructors_template",
         } & set(templates)
         if needs_teams:
             teams = await self.bot.team_service.get_default_teams(  # type: ignore[attr-defined]

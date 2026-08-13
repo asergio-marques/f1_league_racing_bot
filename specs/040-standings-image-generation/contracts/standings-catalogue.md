@@ -36,6 +36,13 @@ The round heading is **top level and never under a row**. A cell belongs to its 
 both, and a node has one parent, so the cell lives under the row and the heading group carries chrome
 alone (XIV.2, discriminated column group).
 
+**The row ordinal is not the position.** `row_<x>_position` carries the position the standings
+recorded, read from the record. The two coincide only while every entry the standings hold is drawn;
+a reserve who raced holds a position but is drawn only where the reserves toggle is on, so with it off
+the recorded positions run 1, 2, 4 across rows 1, 2, 3. The textual standings print the recorded
+position and XIV.7 forbids the graphic disagreeing. XIV.11's "fill from the ordinal" governs a
+collection whose ordinal genuinely coincides with the datum, as a results row's does.
+
 `row_<x>_position_change_group` is a **block group** bearing its row's discriminator: it wraps
 `row_<x>_position_change` and `row_<x>_position_change_marker`, which stand or fall together.
 

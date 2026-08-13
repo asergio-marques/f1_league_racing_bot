@@ -32,10 +32,10 @@ Phase 5. This is the honest reading of two stories that overlap by design.
 
 **Purpose**: establish the baseline the change is measured against, and the assets the render needs.
 
-- [ ] T001 Run `pytest tests/ -q` from the repo root and record the counts; the baseline as of 2026-08-13 is 1399 passed, 1 skipped, 0 failed. Any pre-existing failure is investigated on a clean tree before proceeding, never written off
-- [ ] T002 [P] Author `resources/markers/gained.svg`, `resources/markers/lost.svg` and `resources/markers/unchanged.svg` — plain SVG, no `clipPath`, gradient, filter or text, authored at the 64 × 64 aspect `resources/README.md` records for the marker class (R10, FR-032)
-- [ ] T003 [P] Confirm `resources/flags/fallback.svg`, `resources/teams/fallback.svg`, `resources/tracks/fallback.svg` and `resources/markers/fallback.svg` are present, the asset outcomes of every story depending on them
-- [ ] T004 [P] Confirm `resources/templates/standings_drivers_template.svg` and `resources/templates/standings_constructors_template.svg` resolve, parse and declare a root canvas, and note how many rows, rounds and cars each declares
+- [X] T001 Run `pytest tests/ -q` from the repo root and record the counts; the baseline as of 2026-08-13 is 1399 passed, 1 skipped, 0 failed. Any pre-existing failure is investigated on a clean tree before proceeding, never written off
+- [X] T002 [P] Author `resources/markers/gained.svg`, `resources/markers/lost.svg` and `resources/markers/unchanged.svg` — plain SVG, no `clipPath`, gradient, filter or text, authored at the 64 × 64 aspect `resources/README.md` records for the marker class (R10, FR-032)
+- [X] T003 [P] Confirm `resources/flags/fallback.svg`, `resources/teams/fallback.svg`, `resources/tracks/fallback.svg` and `resources/markers/fallback.svg` are present, the asset outcomes of every story depending on them
+- [X] T004 [P] Confirm `resources/templates/standings_drivers_template.svg` and `resources/templates/standings_constructors_template.svg` resolve, parse and declare a root canvas, and note how many rows, rounds and cars each declares
 
 ---
 
@@ -50,31 +50,31 @@ complete.**
 
 ### The grid forms (R1, [contracts/standings-catalogue.md](./contracts/standings-catalogue.md))
 
-- [ ] T005 Add `columns: RowSpec | None` to `FieldCatalogue` in `src/models/image_catalogues.py` — a second top-level ordinal collection beside `rows`, counted against the division's calendar rather than against the classification
-- [ ] T006 Add `nested: NestedSpec | None` to `RowSpec` in `src/models/image_catalogues.py`, linking a row to the collection repeating within it; `NestedSpec` already takes its parent's id as a `stem`, so `field_id("row_3", 7, …)` needs no change
-- [ ] T007 Add `nested: NestedSpec | None` to `NestedSpec` in `src/models/image_catalogues.py` for the third level, and admit a capacity fixed **per containing member** — the count arrives through the binding, `capacity` stays `None`, and over-declaration is trimmed for that member alone (XIV.12, v4.5.0)
-- [ ] T008 Add `optional_unit: bool` to `RowSpec` and `NestedSpec` in `src/models/image_catalogues.py`: a template declaring no member of the collection is not faulty and every field of it and of anything nested inside is skipped, while `mandatory_fields` binds on every member a template does declare (XIV.3, v4.5.0)
-- [ ] T009 Declare the shared standings field sets and both `STANDINGS_DRIVERS_CATALOGUE` and `STANDINGS_CONSTRUCTORS_CATALOGUE` in `src/models/image_catalogues.py`, composing the common part once, and register them in `CATALOGUES` under `standings_drivers_template` and `standings_constructors_template`
-- [ ] T010 Extend `sibling_row_fields` in `src/models/image_catalogues.py` so the standings pair is a sibling relation like the results pair, returning `driver_name`/`driver_flag` against the constructors key and nothing of the drivers row against the drivers key
-- [ ] T011 [P] Add `tests/unit/test_image_standings_catalogue.py`: both catalogues' classifications; three-level id construction; rows, rounds and cars each counted from the template; a gap at any level raising `CapacityError`; a template declaring no round at all passing because the unit is optional; and `round_<z>_number` demanded once any round is declared
+- [X] T005 Add `columns: RowSpec | None` to `FieldCatalogue` in `src/models/image_catalogues.py` — a second top-level ordinal collection beside `rows`, counted against the division's calendar rather than against the classification
+- [X] T006 Add `nested: NestedSpec | None` to `RowSpec` in `src/models/image_catalogues.py`, linking a row to the collection repeating within it; `NestedSpec` already takes its parent's id as a `stem`, so `field_id("row_3", 7, …)` needs no change
+- [X] T007 Add `nested: NestedSpec | None` to `NestedSpec` in `src/models/image_catalogues.py` for the third level, and admit a capacity fixed **per containing member** — the count arrives through the binding, `capacity` stays `None`, and over-declaration is trimmed for that member alone (XIV.12, v4.5.0)
+- [X] T008 Add `optional_unit: bool` to `RowSpec` and `NestedSpec` in `src/models/image_catalogues.py`: a template declaring no member of the collection is not faulty and every field of it and of anything nested inside is skipped, while `mandatory_fields` binds on every member a template does declare (XIV.3, v4.5.0)
+- [X] T009 Declare the shared standings field sets and both `STANDINGS_DRIVERS_CATALOGUE` and `STANDINGS_CONSTRUCTORS_CATALOGUE` in `src/models/image_catalogues.py`, composing the common part once, and register them in `CATALOGUES` under `standings_drivers_template` and `standings_constructors_template`
+- [X] T010 Extend `sibling_row_fields` in `src/models/image_catalogues.py` so the standings pair is a sibling relation like the results pair, returning `driver_name`/`driver_flag` against the constructors key and nothing of the drivers row against the drivers key
+- [X] T011 [P] Add `tests/unit/test_image_standings_catalogue.py`: both catalogues' classifications; three-level id construction; rows, rounds and cars each counted from the template; a gap at any level raising `CapacityError`; a template declaring no round at all passing because the unit is optional; and `round_<z>_number` demanded once any round is declared
 
 ### The three derived columns (R4, [contracts/derived-columns.md](./contracts/derived-columns.md))
 
-- [ ] T012 Implement the reference-round lookup in `src/services/standings_service.py`: the most recent round of the division holding standings, strictly below the round drawn, stepping over cancelled and unrun rounds, and `None` where no earlier round holds any (R4)
-- [ ] T013 Implement `derive_movement` in `src/services/standings_service.py` returning per entry the gap to the leader, the previous position, the unsigned change and the direction (`gained`/`lost`/`unchanged`), or `None` for the whole record where the reference round does not exist or does not hold the entry — reading `standing_position` and never re-establishing the order
-- [ ] T014 Add the movement cell renderers to `src/utils/results_formatter.py` — the gap with its leading minus and empty for the leader, the unsigned change with `0` for unchanged — so the textual path can adopt the columns by calling rather than reimplementing (XIV.7)
-- [ ] T015 [P] Extend `tests/unit/test_standings_service.py`: the leader's empty gap; the step-back over a cancelled round and over an unrun one; the first round of a division yielding `None`; an entry absent from the reference round yielding `None`; and the three directions
+- [X] T012 Implement the reference-round lookup in `src/services/standings_service.py`: the most recent round of the division holding standings, strictly below the round drawn, stepping over cancelled and unrun rounds, and `None` where no earlier round holds any (R4)
+- [X] T013 Implement `derive_movement` in `src/services/standings_service.py` returning per entry the gap to the leader, the previous position, the unsigned change and the direction (`gained`/`lost`/`unchanged`), or `None` for the whole record where the reference round does not exist or does not hold the entry — reading `standing_position` and never re-establishing the order
+- [X] T014 Add the movement cell renderers to `src/utils/results_formatter.py` — the gap with its leading minus and empty for the leader, the unsigned change with `0` for unchanged — so the textual path can adopt the columns by calling rather than reimplementing (XIV.7)
+- [X] T015 [P] Extend `tests/unit/test_standings_service.py`: the leader's empty gap; the step-back over a cancelled round and over an unrun one; the first round of a division yielding `None`; an entry absent from the reference round yielding `None`; and the three directions
 
 ### The text path learns to post one championship (R6, [contracts/standings-posting.md](./contracts/standings-posting.md))
 
-- [ ] T016 Split `post_standings` in `src/services/results_post_service.py` so section formatting and message composition are separable: `format_driver_standings` and `format_team_standings` each yield one championship's section with its sub-heading, and the joining of the two moves to the caller
-- [ ] T017 Add the per-championship message id read and write to `src/services/results_post_service.py` — `_get_standings_message_id` gaining a championship parameter, and both ids written on the top-ranked driver's row on every posting, textual or graphic
-- [ ] T018 [P] Extend `tests/unit/test_results_post_service.py` asserting the composed textual message is **byte-identical** to its previous output, the split having changed how it is assembled and not what it says
+- [X] T016 Split `post_standings` in `src/services/results_post_service.py` so section formatting and message composition are separable: `format_driver_standings` and `format_team_standings` each yield one championship's section with its sub-heading, and the joining of the two moves to the caller
+- [X] T017 Add the per-championship message id read and write to `src/services/results_post_service.py` — `_get_standings_message_id` gaining a championship parameter, and both ids written on the top-ranked driver's row on every posting, textual or graphic
+- [X] T018 [P] Extend `tests/unit/test_results_post_service.py` asserting the composed textual message is **byte-identical** to its previous output, the split having changed how it is assembled and not what it says
 
 ### Persistence
 
-- [ ] T019 [P] Add `src/db/migrations/041_constructor_standings_message_id.sql` adding a nullable `constructor_standings_message_id TEXT` to `driver_standings_snapshots`, with the header comment explaining why one column could not name two messages
-- [ ] T020 [P] Add `constructor_standings_message_id: int | None = None` to `DriverStandingsSnapshot` in `src/models/standings_snapshot.py` and read it in `from_row`, defensively as the existing column is read
+- [X] T019 [P] Add `src/db/migrations/041_constructor_standings_message_id.sql` adding a nullable `constructor_standings_message_id TEXT` to `driver_standings_snapshots`, with the header comment explaining why one column could not name two messages
+- [X] T020 [P] Add `constructor_standings_message_id: int | None = None` to `DriverStandingsSnapshot` in `src/models/standings_snapshot.py` and read it in `from_row`, defensively as the existing column is read
 
 **Checkpoint**: the grid forms exist, both catalogues are registered, the three columns have exactly one derivation, the text path can post one section, and the second id has somewhere to live. User stories may now begin.
 
@@ -88,20 +88,20 @@ complete.**
 
 ### Tests for User Story 1
 
-- [ ] T021 [P] [US1] Add `tests/unit/test_image_standings_service.py` covering `resolve_drawing` for both championships: the heading fields, the lifecycle label from `result_status`, the driver name through the person-name convention, the team name through the team convention with its role-name fallback, and the drivers graphic drawing the division team seating the driver **now** rather than any round's team
-- [ ] T022 [P] [US1] Add `tests/unit/test_image_standings_fill.py` covering `build_fill_spec`: rows filled to the entry count, unused `row_<x>_group` removed with its fields marked off-canvas, the position filled from the ordinal, the movement block removed whole where the record is `None`, the previous position emptied in the same case, and no notice raised for either
-- [ ] T023 [P] [US1] Add sample-data coverage to `tests/unit/test_image_sample_data.py` asserting the fabricated classifications exhibit every enumerated case of the wip-spec's § "Test data" where the row count allows, and drop the excess cases where it does not
+- [X] T021 [P] [US1] Add `tests/unit/test_image_standings_service.py` covering `resolve_drawing` for both championships: the heading fields, the lifecycle label from `result_status`, the driver name through the person-name convention, the team name through the team convention with its role-name fallback, and the drivers graphic drawing the division team seating the driver **now** rather than any round's team
+- [X] T022 [P] [US1] Add `tests/unit/test_image_standings_fill.py` covering `build_fill_spec`: rows filled to the entry count, unused `row_<x>_group` removed with its fields marked off-canvas, the position filled from the ordinal, the movement block removed whole where the record is `None`, the previous position emptied in the same case, and no notice raised for either
+- [X] T023 [P] [US1] Add sample-data coverage to `tests/unit/test_image_sample_data.py` asserting the fabricated classifications exhibit every enumerated case of the wip-spec's § "Test data" where the row count allows, and drop the excess cases where it does not
 
 ### Implementation for User Story 1
 
-- [ ] T024 [US1] Add `src/services/image_standings_service.py` with the `StandingsDrawing`, `StandingsEntry`, `Movement` and `RoundCells` dataclasses of [data-model.md](./data-model.md), and a `StandingsDataError` raised for a fatal disagreement before anything is drawn
-- [ ] T025 [US1] Implement `resolve_drawing` in `src/services/image_standings_service.py` for the classification: read position and points from the snapshot, call `derive_movement` for the three columns, resolve names through the two conventions, and compose the driver classification exactly as the textual standings do — every non-reserve driver, and a reserve only where the reserves toggle is on and they hold points or have raced (FR-011)
-- [ ] T026 [US1] Implement `build_fill_spec` in `src/services/image_standings_service.py` for the classification: count the row capacity from the template, fill text through a `put` that empties rather than dashes, place `team_image`, `driver_flag` and `position_change_marker` into `image_data`, remove the movement group or empty-and-remove its parts where no group is declared, remove unused rows' groups and mark their fields off-canvas, and report the entry count through `row_count`
-- [ ] T027 [US1] Add `build_standings_drawing` to `src/services/image_sample_data.py` fabricating one entry fewer than the rows the template declares — or exactly one where it declares a single row — drawn from the server's team configuration, labelled "Final Results" for "Test Division" of tier 1 and season 1, exhibiting the enumerated cases in the spec's order
-- [ ] T028 [US1] Give the fabricated drivers nationalities the signup wizard accepts, at least one being that recorded for a driver who stated none, so the flag path is exercised in both states (FR-062)
-- [ ] T029 [US1] Extend `build_spec` in `src/services/image_sample_data.py` to dispatch both standings template keys through `image_standings_service.build_fill_spec`, resolving the packaged `resources/flags`, `resources/teams`, `resources/tracks` and `resources/markers` directories as the existing branches resolve theirs
-- [ ] T030 [US1] Extend the team guard in `src/cogs/image_cog.py` so `/images test standings` is rejected with a clear error where the server holds no team beyond the reserve team (FR-063), and report a fatal error to the invoking manager without falling back to any textual output (FR-064)
-- [ ] T031 [US1] Verify both PNGs against [quickstart.md](./quickstart.md) § 3 (classification rows) and § 4 — opened as rasterised images, never as SVG in a browser (Constitution XIV.14). Confirm all three markers draw their own artwork and **not** the class fallback
+- [X] T024 [US1] Add `src/services/image_standings_service.py` with the `StandingsDrawing`, `StandingsEntry`, `Movement` and `RoundCells` dataclasses of [data-model.md](./data-model.md), and a `StandingsDataError` raised for a fatal disagreement before anything is drawn
+- [X] T025 [US1] Implement `resolve_drawing` in `src/services/image_standings_service.py` for the classification: read position and points from the snapshot, call `derive_movement` for the three columns, resolve names through the two conventions, and compose the driver classification exactly as the textual standings do — every non-reserve driver, and a reserve only where the reserves toggle is on and they hold points or have raced (FR-011)
+- [X] T026 [US1] Implement `build_fill_spec` in `src/services/image_standings_service.py` for the classification: count the row capacity from the template, fill text through a `put` that empties rather than dashes, place `team_image`, `driver_flag` and `position_change_marker` into `image_data`, remove the movement group or empty-and-remove its parts where no group is declared, remove unused rows' groups and mark their fields off-canvas, and report the entry count through `row_count`
+- [X] T027 [US1] Add `build_standings_drawing` to `src/services/image_sample_data.py` fabricating one entry fewer than the rows the template declares — or exactly one where it declares a single row — drawn from the server's team configuration, labelled "Final Results" for "Test Division" of tier 1 and season 1, exhibiting the enumerated cases in the spec's order
+- [X] T028 [US1] Give the fabricated drivers nationalities the signup wizard accepts, at least one being that recorded for a driver who stated none, so the flag path is exercised in both states (FR-062)
+- [X] T029 [US1] Extend `build_spec` in `src/services/image_sample_data.py` to dispatch both standings template keys through `image_standings_service.build_fill_spec`, resolving the packaged `resources/flags`, `resources/teams`, `resources/tracks` and `resources/markers` directories as the existing branches resolve theirs
+- [X] T030 [US1] Extend the team guard in `src/cogs/image_cog.py` so `/images test standings` is rejected with a clear error where the server holds no team beyond the reserve team (FR-063), and report a fatal error to the invoking manager without falling back to any textual output (FR-064)
+- [X] T031 [US1] Verify both PNGs against [quickstart.md](./quickstart.md) § 3 (classification rows) and § 4 — opened as rasterised images, never as SVG in a browser (Constitution XIV.14). Confirm all three markers draw their own artwork and **not** the class fallback
 
 **Checkpoint**: both graphics can be produced and inspected without any league data. Every later story reuses this path.
 
@@ -289,3 +289,26 @@ Track B (US4):       T050, T051, T052 → T053 → T054 → T055 → T056 → T0
 - One migration is written (T019); it needs no data repair, the bot not being in production
 - The three marker files (T002) are shipped by the module because their vocabulary is the module's own (XIV.13, v4.5.0) — without them every row draws the fallback and raises a notice
 - Commit after each task or logical group; stop at any checkpoint to validate a story on its own
+
+## Found during implementation
+
+Work done outside the numbered tasks, recorded so it is not re-derived:
+
+- **T031 (PNG verification) found two real defects that no unit test caught.**
+  1. The gap to the leader was nested inside the movement record, so it blanked for every entry
+     the reference round did not hold. `derive_gaps` was split out of `derive_movement`, and
+     `contracts/derived-columns.md` had predicted exactly this ("the gap is never in that state").
+  2. Neither shipped standings template declared `inline-size` on any of its **327** name fields,
+     which XIV.5 makes a MUST — a long driver name ran across the team line beneath it. Widths were
+     set from each column's geometry (drivers 140/120, constructors 165/72) and truncation verified
+     as a rasterised PNG.
+- **`row_<x>_position` is filled from the recorded standing position, not the row ordinal.** The two
+  part company when a reserve who raced is filtered out; the textual standings print the recorded
+  one, and XIV.7 forbids the graphic disagreeing. The wip-spec sentence asserting they are equal was
+  corrected, along with FR-008 and `contracts/standings-catalogue.md`.
+- **A pre-existing XIV.2 defect in three other image types**, not fixed here: `put_optional` empties
+  an optional heading without removing its `<field>_group`, so calendar, lineup and results all draw
+  the label and plate around an emptied value. The standings catalogues declare those groups so this
+  type does not inherit it. Worth its own increment.
+- `docs/wip-specs/…` § "The room a text is given" and `README.md` both said a name field *may* or
+  *should* declare `inline-size` where the constitution says MUST; both corrected.

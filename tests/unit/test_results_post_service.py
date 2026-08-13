@@ -296,3 +296,95 @@ async def test_post_standings_includes_heading_and_label(tmp_path):
     assert "Beta" in content
     assert "Round 3" in content
     assert "Final Results" in content
+
+
+# ---------------------------------------------------------------------------
+# Standings composition — T018
+#
+# post_standings composed one message from both championships inline. It is now split so a
+# per-championship fallback can post one section alone (Constitution XIV.7, v4.5.0). The
+# split changed *how* the message is assembled and must not have changed what it says.
+# ---------------------------------------------------------------------------
+
+from services.results_post_service import (  # noqa: E402
+    STANDINGS_CONSTRUCTORS,
+    STANDINGS_DRIVERS,
+    compose_standings_message,
+    standings_section,
+)
+
+_HEADING = "**Season 3 Alpha Round 4 — Feature Race**"
+_LABEL = "Provisional Results"
+_DRIVERS = "1. <@1> — **25 pts**\n2. <@2> — **18 pts**"
+_TEAMS = "1. <@&10> — **43 pts**"
+
+
+def test_the_composed_message_is_byte_identical_to_the_previous_format():
+    """The exact string post_standings built inline before the split."""
+    expected = (
+        f"{_HEADING}\n{_LABEL}\n\n"
+        f"**Driver Standings**\n{_DRIVERS}\n\n"
+        f"**Team Standings**\n{_TEAMS}"
+    )
+    actual = compose_standings_message(
+        _HEADING,
+        _LABEL,
+        [
+            standings_section(STANDINGS_DRIVERS, _DRIVERS),
+            standings_section(STANDINGS_CONSTRUCTORS, _TEAMS),
+        ],
+    )
+    assert actual == expected
+
+
+def test_a_section_carries_its_own_sub_heading():
+    """So that a section posted alone still says which championship it is."""
+    assert standings_section(STANDINGS_DRIVERS, _DRIVERS).startswith(
+        "**Driver Standings**\n"
+    )
+    assert standings_section(STANDINGS_CONSTRUCTORS, _TEAMS).startswith(
+        "**Team Standings**\n"
+    )
+
+
+def test_one_championship_alone_carries_neither_the_other_nor_its_heading():
+    """The fallback grain: never re-post what a surviving graphic already drew."""
+    only_drivers = compose_standings_message(
+        _HEADING, _LABEL, [standings_section(STANDINGS_DRIVERS, _DRIVERS)]
+    )
+    assert "**Driver Standings**" in only_drivers
+    assert "**Team Standings**" not in only_drivers
+    assert _TEAMS not in only_drivers
+    # the heading and lifecycle label still ride on it — they are message text (XIV.16)
+    assert only_drivers.startswith(f"{_HEADING}\n{_LABEL}\n\n")
+
+
+def test_the_constructors_section_can_stand_alone_too():
+    only_teams = compose_standings_message(
+        _HEADING, _LABEL, [standings_section(STANDINGS_CONSTRUCTORS, _TEAMS)]
+    )
+    assert "**Team Standings**" in only_teams
+    assert "**Driver Standings**" not in only_teams
+
+
+def test_the_two_sections_posted_apart_say_everything_the_joint_message_says():
+    """Both falling back must leave a league no worse informed (SC-006)."""
+    joint = compose_standings_message(
+        _HEADING,
+        _LABEL,
+        [
+            standings_section(STANDINGS_DRIVERS, _DRIVERS),
+            standings_section(STANDINGS_CONSTRUCTORS, _TEAMS),
+        ],
+    )
+    apart = [
+        compose_standings_message(
+            _HEADING, _LABEL, [standings_section(STANDINGS_DRIVERS, _DRIVERS)]
+        ),
+        compose_standings_message(
+            _HEADING, _LABEL, [standings_section(STANDINGS_CONSTRUCTORS, _TEAMS)]
+        ),
+    ]
+    for body in (_DRIVERS, _TEAMS):
+        assert body in joint
+        assert sum(body in message for message in apart) == 1

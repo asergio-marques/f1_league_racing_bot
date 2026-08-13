@@ -81,12 +81,43 @@ RESULTS_QUALIFYING_SVG = _results_svg(b"best_lap", b"gap")
 RESULTS_RACE_SVG = _results_svg(b"time", b"fastest_lap", b"ingame_penalty")
 
 
+def _standings_svg(*row_extra: bytes) -> bytes:
+    """A sound standings template (040): three whole-graphic fields and one complete row.
+
+    It declares **no round at all**, which is sound: the results grid is an optional unit
+    (XIV.3, v4.5.0) and a template declaring none of it draws a classification alone. Built
+    per championship, the two being siblings whose row catalogues differ.
+    """
+    extra = b"".join(b'<text id="row_1_%s">x</text>' % name for name in row_extra)
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        b'<text id="division_name">D</text>'
+        b'<text id="round_number">1</text>'
+        b'<text id="result_status">F</text>'
+        b'<g id="row_1_group">'
+        b'<text id="row_1_position">1</text>'
+        b'<text id="row_1_team_name">T</text>'
+        b'<image id="row_1_team_image"/>'
+        b'<text id="row_1_points">0</text>'
+        + extra
+        + b"</g></svg>"
+    )
+
+
+STANDINGS_DRIVERS_SVG = _standings_svg(b"driver_name")
+STANDINGS_CONSTRUCTORS_SVG = _standings_svg()
+
+
 def sound_bytes(template_key: str) -> bytes:
     """The soundest bytes for *template_key* at the depth its type is checked to."""
     if template_key == "results_qualifying_template":
         return RESULTS_QUALIFYING_SVG
     if template_key == "results_race_template":
         return RESULTS_RACE_SVG
+    if template_key == "standings_drivers_template":
+        return STANDINGS_DRIVERS_SVG
+    if template_key == "standings_constructors_template":
+        return STANDINGS_CONSTRUCTORS_SVG
     return VALID_SVG
 
 
@@ -97,6 +128,8 @@ POPULATED = {
     "lineup_template",
     "results_qualifying_template",
     "results_race_template",
+    "standings_drivers_template",
+    "standings_constructors_template",
 }
 VIEWBOX_ONLY_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"></svg>'
 NO_CANVAS_SVG = b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'

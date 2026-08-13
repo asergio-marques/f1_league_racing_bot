@@ -414,6 +414,67 @@ def format_race_table(
 # Standings
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# The three movement columns
+#
+# The textual standings draw none of these today. They live here all the same, beside the
+# renderers they would sit with, so that adopting a column into the text path is a call and
+# not a reimplementation — which is the shared-rendering half of Constitution XIV.7.
+#
+# The *values* are derived in ``services/standings_service.derive_movement``; these turn one
+# into the string a field carries. See
+# specs/040-standings-image-generation/contracts/derived-columns.md.
+# ---------------------------------------------------------------------------
+
+
+def format_gap_to_leader(gap: int, *, is_leader: bool) -> str:
+    """The points separating an entry from the leader, with a leading minus.
+
+    Empty for the leader itself: there is no gap to draw, and XIV.3 has the graphic empty a
+    field rather than draw a placeholder where a value does not apply.
+    """
+    if is_leader:
+        return ""
+    return f"-{gap}"
+
+
+def format_position_change(change: int) -> str:
+    """The number of positions gained or lost, **without** a sign.
+
+    The direction is carried by the marker image beside it, not by the number, so a template
+    drawing the number alone still reads correctly. "0" where the entry neither gained nor
+    lost — a determined value, not an absent one.
+    """
+    return str(change)
+
+
+def format_previous_position(position: int) -> str:
+    """The position an entry held in the reference round."""
+    return str(position)
+
+
+def driver_is_drawn(
+    snapshot: DriverStandingsSnapshot,
+    reserve_user_ids: set[int],
+    show_reserves: bool,
+) -> bool:
+    """Whether *snapshot* belongs in the driver classification.
+
+    Non-reserve drivers are always drawn, at zero points as at any other. A reserve driver is
+    drawn only where the division's reserves toggle is on **and** they hold points or have
+    taken part in a race.
+
+    Extracted so the graphic composes its classification by calling the same rule the textual
+    standings compose theirs by, rather than restating it (Constitution XIV.7). The two
+    cannot disagree about who is in the championship.
+    """
+    if snapshot.driver_user_id in reserve_user_ids:
+        if not show_reserves:
+            return False
+        return snapshot.total_points != 0 or snapshot.race_participant
+    return True
+
+
 def format_driver_standings(
     snapshots: list[DriverStandingsSnapshot],
     reserve_user_ids: set[int],
@@ -422,16 +483,14 @@ def format_driver_standings(
 ) -> str:
     """Render driver standings as a ranked mention list.
 
-    Non-reserve drivers are always shown (even at 0 points).
-    Reserve drivers are shown only when they have points AND ``show_reserves=True``.
-    Format: ``{pos}. @Driver — **{total_points} pts**``
+    Composition is :func:`driver_is_drawn`. Format:
+    ``{pos}. @Driver — **{total_points} pts**``
     """
     sorted_snaps = sorted(snapshots, key=lambda s: s.standing_position)
     lines: list[str] = []
     for snap in sorted_snaps:
-        if snap.driver_user_id in reserve_user_ids:
-            if (snap.total_points == 0 and not snap.race_participant) or not show_reserves:
-                continue
+        if not driver_is_drawn(snap, reserve_user_ids, show_reserves):
+            continue
         driver_ref = (driver_display or {}).get(snap.driver_user_id) or f"<@{snap.driver_user_id}>"
         lines.append(f"{snap.standing_position}. {driver_ref} — **{snap.total_points} pts**")
     return "\n".join(lines) if lines else "No standings available."

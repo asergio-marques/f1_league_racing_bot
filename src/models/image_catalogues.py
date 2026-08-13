@@ -88,6 +88,21 @@ class RowSpec:
     #: configured seat no driver occupies must draw no portrait and no flag at all.
     fallback_when_absent: frozenset[str] = frozenset()
 
+    #: The collection repeating **inside** each member of this one, if any (XIV.11 nesting).
+    #: A standings grid's rounds hang here: :class:`NestedSpec` already takes its parent's
+    #: id as a ``stem``, so ``row_3`` is a stem like any other and
+    #: ``row_3_round_7_feature_race_result`` follows without a second id rule.
+    nested: NestedSpec | None = None
+
+    #: Where True, a template declaring **no** member of this collection is not faulty, and
+    #: every field of it — and of anything nested inside it — is skipped (XIV.3, v4.5.0). A
+    #: field this spec classifies mandatory then binds only on the members a template *does*
+    #: declare. The standings results grid is the case: a template drawing no round draws a
+    #: classification alone and owes no ``round_<z>_number``.
+    #:
+    #: This is the *scope* of a classification narrowing, not a third classification.
+    optional_unit: bool = False
+
     @property
     def is_derived(self) -> bool:
         """True where the slot count comes from the template rather than from here."""
@@ -111,6 +126,9 @@ class RowSpec:
         Reads through :class:`FieldIndex`, so a member addressed by a layer label counts
         exactly as one addressed by an ``@id`` (XIV.2) — a league manager sets the label
         and never sees the identifier their editor generated.
+
+        Declaring none raises, unless this collection is an :attr:`optional_unit`, in which
+        case none is a legitimate answer and the count is nought.
         """
         from utils.svg_document import FieldIndex
 
@@ -122,6 +140,8 @@ class RowSpec:
                 ordinals.add(int(match.group(1)))
 
         if not ordinals:
+            if self.optional_unit:
+                return 0
             raise CapacityError(
                 f"the template declares no `{self.prefix}` at all — it must declare at "
                 f"least one, numbered from 1"
@@ -147,23 +167,46 @@ class RowSpec:
             return None
         return self.declared_capacity(root)
 
-    def all_field_ids(self, root=None) -> set[str]:
-        """Every per-row field id across the capacity."""
+    def _nested_ids(self, root, *, mandatory_only: bool) -> set[str]:
+        """Every id contributed by the collection nested inside each member.
+
+        Empty where this collection nests nothing, and empty where no *root* is in view —
+        the nest's own capacity is counted from the template, so with no template there is
+        nothing to count and nought is the honest answer, as it is for a derived capacity.
+        """
+        if self.nested is None or root is None:
+            return set()
+
+        from utils.svg_document import FieldIndex
+
+        declared = set(FieldIndex(root).declared())
         capacity = self.capacity_for(root) or 0
-        return {
+        ids: set[str] = set()
+        for index in range(1, capacity + 1):
+            ids |= self.nested.ids_under(
+                self.row_id(index), declared, mandatory_only=mandatory_only
+            )
+        return ids
+
+    def all_field_ids(self, root=None) -> set[str]:
+        """Every per-row field id across the capacity, nested collections included."""
+        capacity = self.capacity_for(root) or 0
+        ids = {
             self.field_id(index, suffix)
             for index in range(1, capacity + 1)
             for suffix in self.fields
         }
+        return ids | self._nested_ids(root, mandatory_only=False)
 
     def mandatory_field_ids(self, root=None) -> set[str]:
-        """Every per-row field id a row cannot be drawn without."""
+        """Every per-row field id a row cannot be drawn without, nests included."""
         capacity = self.capacity_for(root) or 0
-        return {
+        ids = {
             self.field_id(index, suffix)
             for index in range(1, capacity + 1)
             for suffix in self.mandatory_fields
         }
+        return ids | self._nested_ids(root, mandatory_only=True)
 
     def valueless_field_ids(self, root=None) -> set[str]:
         """Every per-row field id that must be present but receives no value."""
@@ -209,6 +252,61 @@ class NestedSpec:
 
     #: Field suffix → asset class.
     assets: dict[str, str] = field(default_factory=dict)
+
+    #: A third level, hanging off each member of this one (XIV.11 nesting). The cars of a
+    #: round of a constructors grid are here: the round nest's member id ``row_3_round_7``
+    #: is the stem this one builds ``row_3_round_7_driver_2_name`` from.
+    nested: NestedSpec | None = None
+
+    #: Where True, a template declaring no member of this collection is not faulty and its
+    #: fields are skipped (XIV.3, v4.5.0). Mirrors :attr:`RowSpec.optional_unit`.
+    optional_unit: bool = False
+
+    #: Where True, the configured value bounding this collection belongs to the **containing
+    #: member** rather than to the graphic — the seats of the team on *this* row, not a
+    #: number that could be right for every row (XIV.12, v4.5.0).
+    #:
+    #: One template draws every containing member, so no declared count can satisfy them
+    #: all: the members a template declares are a **ceiling**, those beyond the containing
+    #: member's configured value are trimmed for that member alone and report nothing, and
+    #: the fatal test is against the data actually drawn. The count is read from the
+    #: configuration at each check and is never frozen here, which is why :attr:`capacity`
+    #: stays None.
+    capacity_per_member: bool = False
+
+    def ids_under(
+        self,
+        stem: str,
+        declared: Iterable[str],
+        *,
+        mandatory_only: bool = False,
+        count: int | None = None,
+    ) -> set[str]:
+        """Every id this collection and its own nests contribute beneath *stem*.
+
+        *count* overrides the count taken from the template, for a capacity the data fix.
+        A gap in the numbering yields the empty set rather than raising: the gap is a fault
+        the structural check reports in its own words, and enumerating ids is not the place
+        to discover it.
+        """
+        declared = set(declared)
+        if count is None:
+            try:
+                count = self.declared_capacity(stem, declared)
+            except CapacityError:
+                return set()
+
+        suffixes = self.mandatory_fields if mandatory_only else self.fields
+        ids: set[str] = set()
+        for index in range(1, count + 1):
+            if mandatory_only and self.first_member_mandatory_only and index > 1:
+                continue
+            ids.update(self.field_id(stem, index, suffix) for suffix in suffixes)
+            if self.nested is not None:
+                ids |= self.nested.ids_under(
+                    self.member_id(stem, index), declared, mandatory_only=mandatory_only
+                )
+        return ids
 
     def member_id(self, stem: str, index: int) -> str:
         """``team_red_bull_driver_2`` — the member itself."""
@@ -451,6 +549,16 @@ class FieldCatalogue:
     #: The repeating collection this type draws, if any — ordinal-discriminated.
     rows: RowSpec | None = None
 
+    #: A **second** top-level ordinal collection, where this type draws a grid. The round
+    #: headings of a standings graphic are here (XIV.2, the discriminated column group).
+    #:
+    #: Separate from :attr:`rows` because the two are counted against different data — rows
+    #: against the classification, columns against the division's calendar — and diverge
+    #: independently and in opposite directions. A column's *cells* are not here: a cell
+    #: belongs to its row and its column both and a node has one parent, so cells hang off
+    #: ``rows.nested`` and this carries the chrome alone.
+    columns: RowSpec | None = None
+
     #: The key-discriminated collection this type draws, if any (XIV.11, v4.3.0).
     keyed: KeyedSpec | None = None
 
@@ -468,6 +576,7 @@ class FieldCatalogue:
             not self.mandatory
             and not self.optional
             and self.rows is None
+            and self.columns is None
             and self.keyed is None
             and self.singleton is None
         )
@@ -490,6 +599,8 @@ class FieldCatalogue:
         ids = set(self.mandatory)
         if self.rows is not None:
             ids |= self.rows.mandatory_field_ids(root)
+        if self.columns is not None:
+            ids |= self.columns.mandatory_field_ids(root)
 
         if self.keyed is not None and binding is not None:
             for key in binding.team_keys:
@@ -522,6 +633,8 @@ class FieldCatalogue:
         ids = set(self.mandatory) | set(self.optional)
         if self.rows is not None:
             ids |= self.rows.all_field_ids(root)
+        if self.columns is not None:
+            ids |= self.columns.all_field_ids(root)
 
         if self.keyed is not None and binding is not None:
             for key in binding.team_keys:
@@ -620,6 +733,21 @@ class FieldCatalogue:
             return self.singleton.declared_capacity(self._declared(root))
         return None
 
+    def column_capacity(self, root=None) -> int | None:
+        """The capacity of the **second** top-level collection — a grid's columns.
+
+        Kept apart from :meth:`capacity`, which feeds the overflow guard counting the rows
+        of a classification. A standings grid's columns are counted against the division's
+        calendar instead, so conflating the two would refuse a driver placement because a
+        template drew few rounds, and would still miss the round that actually overflows it.
+
+        None where this type draws no columns, and None where the count is derived but no
+        *root* is supplied — unknown rather than nought.
+        """
+        if self.columns is None:
+            return None
+        return self.columns.capacity_for(root)
+
     def valueless_ids(self, root=None, binding=None) -> set[str]:
         """Field names the template must declare but the render never fills.
 
@@ -631,6 +759,8 @@ class FieldCatalogue:
         every reserve block would be reported undeterminable on every render.
         """
         ids = self.rows.valueless_field_ids(root) if self.rows is not None else set()
+        if self.columns is not None:
+            ids |= self.columns.valueless_field_ids(root)
 
         if self.singleton is not None and "group" in self.singleton.mandatory_fields:
             ids.add(self.singleton.group_id())
@@ -662,10 +792,16 @@ class FieldCatalogue:
         if direct is not None:
             return direct
 
-        if self.rows is not None and self.rows.assets:
-            match = re.match(rf"^{re.escape(self.rows.prefix)}_\d+_(.*)$", field_id)
-            if match is not None:
-                return self.rows.assets.get(match.group(1))
+        # Each ordinal collection is tried and **fallen through** rather than returned from,
+        # because one id may match a prefix without belonging to that level: a grid's
+        # `row_1_round_2_feature_race_result` matches the row pattern with a suffix the row
+        # knows nothing about, and belongs to the nest below it.
+        for spec in (self.rows, self.columns):
+            if spec is None:
+                continue
+            found = self._ordinal_asset(spec, field_id)
+            if found is not None:
+                return found
 
         # The singleton is tried before the keyed collection: `reserve_driver_1_image` is
         # unambiguous, while a keyed pattern would happily read `reserve` as a team key.
@@ -676,6 +812,39 @@ class FieldCatalogue:
 
         if self.keyed is not None:
             return self._keyed_asset(field_id)
+        return None
+
+    @staticmethod
+    def _ordinal_asset(spec: RowSpec, field_id: str) -> str | None:
+        """The asset class *field_id* takes from *spec* or from a collection nested in it.
+
+        Descends the nest chain so a grid's deeper levels can carry assets of their own. The
+        standings grid carries none — its cells are text — but the shape has to be right
+        before an image type needs it, and returning None rather than short-circuiting is
+        what lets the caller try the next collection.
+        """
+        match = re.match(rf"^{re.escape(spec.prefix)}_\d+_(.*)$", field_id)
+        if match is None:
+            return None
+        remainder = match.group(1)
+        if spec.assets:
+            found = spec.assets.get(remainder)
+            if found is not None:
+                return found
+
+        nest = spec.nested
+        while nest is not None:
+            nested_match = re.match(
+                rf"^{re.escape(nest.prefix)}_\d+_(.*)$", remainder
+            )
+            if nested_match is None:
+                return None
+            remainder = nested_match.group(1)
+            if nest.assets:
+                found = nest.assets.get(remainder)
+                if found is not None:
+                    return found
+            nest = nest.nested
         return None
 
     def _singleton_asset(self, field_id: str) -> str | None:
@@ -897,8 +1066,149 @@ RESULTS_RACE_CATALOGUE = FieldCatalogue(
 )
 
 
+#: The heading fields both standings championships share. The lifecycle label is drawn on
+#: the graphic *and* kept as message text: XIV.16 (v4.5.0) makes that split non-exclusive,
+#: so a picture forwarded away from its message still says which phase it stands after.
+_STANDINGS_MANDATORY = frozenset({"division_name", "round_number", "result_status"})
+
+#: The optional headings, each with the group that may wrap it. XIV.2 requires a declared
+#: ``<field>_group`` to leave whole wherever the field would be emptied, so that the label
+#: and plate standing around a value go with it; declaring the groups here is what lets the
+#: utility reach them. Every shipped template carries both.
+_STANDINGS_OPTIONAL = frozenset(
+    {
+        "season_number",
+        "season_number_group",
+        "division_tier",
+        "division_tier_group",
+        "race_name",
+        "race_name_group",
+    }
+)
+
+#: The row fields both championships share. The drivers row adds the driver's name and flag;
+#: neither is a field of the constructors row, and declaring one there is a sibling fault.
+_STANDINGS_ROW_FIELDS = frozenset(
+    {
+        "group",
+        "position",
+        "team_name",
+        "team_image",
+        "points",
+        "gap_to_leader",
+        "previous_position",
+        "position_change_group",
+        "position_change",
+        "position_change_marker",
+    }
+)
+_STANDINGS_ROW_MANDATORY = frozenset(
+    {"group", "position", "team_name", "team_image", "points"}
+)
+_STANDINGS_ROW_ASSETS = {
+    "team_image": "team",
+    "position_change_marker": "marker",
+}
+
+#: The four session cells a round of the grid may carry, on a driver's row directly and on a
+#: constructor's car. Every one is optional: a template draws the sessions it has room for.
+_STANDINGS_CELL_FIELDS = frozenset(
+    {
+        "sprint_qualifying_result",
+        "sprint_race_result",
+        "feature_qualifying_result",
+        "feature_race_result",
+    }
+)
+
+#: The round headings, shared by both championships. An **optional unit** (XIV.3, v4.5.0):
+#: a template declaring no round draws a classification alone and owes no field here, while
+#: one declaring any round owes that round its number — the image standing in addition to
+#: the number and never in its place.
+def _standings_columns() -> RowSpec:
+    return RowSpec(
+        prefix="round",
+        capacity=None,
+        optional_unit=True,
+        fields=frozenset({"group", "number", "image"}),
+        mandatory_fields=frozenset({"number"}),
+        valueless_fields=frozenset({"group"}),
+        assets={"image": "track"},
+    )
+
+
+#: The driver standings catalogue — the fourth image type to be specified, and the first to
+#: draw a **grid**: its fields are addressed on two ordinals at once, the row and the round.
+#:
+#: A cell belongs to its row and to its round both, and a node of an SVG file has one parent,
+#: so the cells hang off the row (``rows.nested``) and the headings stand at top level
+#: (``columns``) carrying chrome alone. Removing a round therefore reaches two id families,
+#: not one — XIV.12's "one capacity may govern several id families".
+#:
+#: See specs/040-standings-image-generation/contracts/standings-catalogue.md.
+STANDINGS_DRIVERS_CATALOGUE = FieldCatalogue(
+    mandatory=_STANDINGS_MANDATORY,
+    optional=_STANDINGS_OPTIONAL,
+    columns=_standings_columns(),
+    rows=RowSpec(
+        prefix="row",
+        capacity=None,
+        fields=_STANDINGS_ROW_FIELDS | {"driver_name", "driver_flag"},
+        mandatory_fields=_STANDINGS_ROW_MANDATORY | {"driver_name"},
+        valueless_fields=frozenset({"group", "position_change_group"}),
+        assets={**_STANDINGS_ROW_ASSETS, "driver_flag": "flag"},
+        nested=NestedSpec(
+            prefix="round",
+            capacity=None,
+            optional_unit=True,
+            fields=_STANDINGS_CELL_FIELDS | {"group"},
+            mandatory_fields=frozenset(),
+        ),
+    ),
+)
+
+
+#: The constructor standings catalogue. Its row carries no driver name and no flag, and its
+#: grid reaches a **third** level: the cells of a round stand for the team's cars one by one.
+#:
+#: That third level is the first collection whose data-fixed capacity varies by containing
+#: member (XIV.12, v4.5.0) — the seats configured for the team on *this* row. One template
+#: draws every row, so the cars it declares are a ceiling rather than a count.
+STANDINGS_CONSTRUCTORS_CATALOGUE = FieldCatalogue(
+    mandatory=_STANDINGS_MANDATORY,
+    optional=_STANDINGS_OPTIONAL,
+    columns=_standings_columns(),
+    rows=RowSpec(
+        prefix="row",
+        capacity=None,
+        fields=_STANDINGS_ROW_FIELDS,
+        mandatory_fields=_STANDINGS_ROW_MANDATORY,
+        valueless_fields=frozenset({"group", "position_change_group"}),
+        assets=dict(_STANDINGS_ROW_ASSETS),
+        nested=NestedSpec(
+            prefix="round",
+            capacity=None,
+            optional_unit=True,
+            # The round level of a constructors grid carries no field of its own: the
+            # wip-spec gives it no `row_<x>_round_<z>_group`, the cars below it being what
+            # a round of a team's row actually holds.
+            fields=frozenset(),
+            mandatory_fields=frozenset(),
+            nested=NestedSpec(
+                prefix="driver",
+                capacity=None,
+                capacity_per_member=True,
+                fields=_STANDINGS_CELL_FIELDS | {"group", "name"},
+                mandatory_fields=frozenset(),
+            ),
+        ),
+    ),
+)
+
+
 #: Template column → its catalogue. Fifteen entries, one per image type; the calendar, the
-#: lineup and the two results types are populated and the remaining eleven are still empty.
+#: lineup, the two results types and the two standings types are populated and the remaining
+#: nine are still empty.
 CATALOGUES: dict[str, FieldCatalogue] = {
     column: FieldCatalogue() for column in TEMPLATE_COLUMNS
 }
@@ -906,6 +1216,8 @@ CATALOGUES["calendar_template"] = CALENDAR_CATALOGUE
 CATALOGUES["lineup_template"] = LINEUP_CATALOGUE
 CATALOGUES["results_qualifying_template"] = RESULTS_QUALIFYING_CATALOGUE
 CATALOGUES["results_race_template"] = RESULTS_RACE_CATALOGUE
+CATALOGUES["standings_drivers_template"] = STANDINGS_DRIVERS_CATALOGUE
+CATALOGUES["standings_constructors_template"] = STANDINGS_CONSTRUCTORS_CATALOGUE
 
 
 def sibling_row_fields(template_key: str) -> set[str]:

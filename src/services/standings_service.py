@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
+from dataclasses import dataclass
 
 from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
@@ -509,3 +510,166 @@ async def cascade_recompute_from_round(
 
     for row in round_rows:
         await compute_and_persist_round(db_path, row["id"], division_id)
+
+
+# ---------------------------------------------------------------------------
+# Movement — the three columns a standings graphic draws and the table does not
+#
+# Constitution XIV.7 as amended at v4.5.0 admits these as a *derived presentation*:
+# arithmetic over figures the textual standings already publish, deciding nothing and
+# admitting no datum the bot did not already hold. Two conditions bind that admission, and
+# both are why this code lives here rather than in the image module:
+#
+#   1. The derivation belongs with the data, so the textual path can adopt the columns by
+#      calling this rather than growing a second implementation free to drift.
+#   2. A value requiring a *rule* to reach stays forbidden. The countback separating two
+#      entries level on points is already applied in the persisted ``standing_position``;
+#      this reads that order and never re-establishes it.
+#
+# See specs/040-standings-image-generation/contracts/derived-columns.md.
+# ---------------------------------------------------------------------------
+
+#: The three directions of a change of standing position. Each is the datum an asset is
+#: resolved from, so the module ships a file per direction (XIV.13, v4.5.0).
+MOVEMENT_GAINED = "gained"
+MOVEMENT_LOST = "lost"
+MOVEMENT_UNCHANGED = "unchanged"
+
+
+@dataclass(frozen=True)
+class Movement:
+    """One entry's change of position against the reference round.
+
+    The gap to the leader is deliberately **not** here: it is arithmetic over the
+    classification being drawn alone, so it exists even for the first round of a division
+    where there is no reference round and no movement at all. Nesting it here once made it
+    vanish with the movement record, which the graphic showed as a blank gap column on every
+    entry the reference round did not hold. :func:`derive_gaps` owns it.
+
+    ``change`` is unsigned; ``direction`` carries the sense.
+    """
+
+    previous_position: int
+    change: int
+    direction: str
+
+
+def derive_gaps(current: list[tuple[int, int, int]]) -> dict[int, int]:
+    """Key → the leader's points less this entry's.
+
+    *current* is ``(key, standing_position, total_points)``. Nought for the leader itself —
+    the *rendering* empties the leader's field, which is a presentation decision and not
+    this one's.
+
+    Separate from :func:`derive_movement` because it needs no reference round: a gap can
+    always be drawn, including on the graphic of a division's first round.
+    """
+    if not current:
+        return {}
+    leader_points = max(points for _, _, points in current)
+    return {key: leader_points - points for key, _, points in current}
+
+
+async def reference_round_id(
+    db_path: str, division_id: int, round_id: int
+) -> int | None:
+    """The round the movement of *round_id* is measured against, or None.
+
+    The most recent round of the division that **holds standings**, strictly below the one
+    drawn. A round recorded as cancelled and a round yet to be run hold none, so both are
+    stepped over rather than emptying the column for every entry of the graphic drawn after
+    them. Selecting on the presence of a snapshot rather than on the round's status is what
+    makes that true of either kind without asking why the standings are absent.
+
+    None where no earlier round of the division holds standings — the first round of a
+    division, or one every earlier round of which was cancelled.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT r.id
+            FROM rounds r
+            WHERE r.division_id = ?
+              AND r.round_number < (
+                  SELECT round_number FROM rounds WHERE id = ?
+              )
+              AND EXISTS (
+                  SELECT 1 FROM driver_standings_snapshots s
+                  WHERE s.round_id = r.id AND s.division_id = r.division_id
+              )
+            ORDER BY r.round_number DESC
+            LIMIT 1
+            """,
+            (division_id, round_id),
+        )
+        row = await cursor.fetchone()
+    return row["id"] if row else None
+
+
+async def previous_standing_positions(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    *,
+    teams: bool = False,
+) -> dict[int, int] | None:
+    """Key → the standing position it held in the reference round, or None.
+
+    The key is the driver's user id, or the team's Discord role id where *teams*. None —
+    distinct from an empty mapping — where there is no reference round at all, which is
+    what makes "the first round of a division" different from "a round nobody scored in".
+    """
+    reference = await reference_round_id(db_path, division_id, round_id)
+    if reference is None:
+        return None
+
+    table = "team_standings_snapshots" if teams else "driver_standings_snapshots"
+    key = "team_role_id" if teams else "driver_user_id"
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"""
+            SELECT {key} AS entry_key, standing_position
+            FROM {table}
+            WHERE division_id = ? AND round_id = ?
+            """,
+            (division_id, reference),
+        )
+        rows = await cursor.fetchall()
+    return {row["entry_key"]: row["standing_position"] for row in rows}
+
+
+def derive_movement(
+    current: list[tuple[int, int, int]],
+    previous: dict[int, int] | None,
+) -> dict[int, Movement | None]:
+    """Key → its :class:`Movement`, or None where the change cannot be determined.
+
+    *current* is ``(key, standing_position, total_points)`` for every entry of the
+    classification being drawn, in any order. *previous* is what
+    :func:`previous_standing_positions` returned.
+
+    The record is absent — never partly filled — in exactly two cases: no earlier round
+    holds standings, and the reference round does not hold this entry. Both are values the
+    data determine to be absent rather than values that could not be determined, so neither
+    is a failure and neither raises a notice (XIV.3, XIV.4).
+
+    The gap is never in that state and is not returned here: see :func:`derive_gaps`.
+    """
+    movements: dict[int, Movement | None] = {}
+    for key, position, _points in current:
+        if previous is None or key not in previous:
+            movements[key] = None
+            continue
+        was = previous[key]
+        if position < was:
+            direction = MOVEMENT_GAINED
+        elif position > was:
+            direction = MOVEMENT_LOST
+        else:
+            direction = MOVEMENT_UNCHANGED
+        movements[key] = Movement(
+            previous_position=was,
+            change=abs(was - position),
+            direction=direction,
+        )
+    return movements

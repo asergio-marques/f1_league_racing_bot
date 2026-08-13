@@ -186,6 +186,7 @@ These hold for every image type of the module and are stated here rather than re
 
 ### The room a text is given
 - A text field may declare an "inline-size" property, which states the room the template gives it.
+- A field carrying the name of a person shall declare one. A Discord display name is of no length the league controls, and a field left unbounded does not overflow tidily: it runs across whatever is drawn beside it, and the graphic is wrong in a way no error reports. This holds of every field naming a person on any graphic, the name of a driver on a classification and the name of a driver who drove a car in a round alike.
 - A text placed on such a field that exceeds that room shall be truncated at a word boundary, an ellipsis placed at its end, and a non-fatal error reported naming the field. A single word wider than that room shall be broken within itself.
 - A field declaring an "inline-size" and a "shape-inside" both is a wrapping field, and is wrapped and reduced as defined for the verdicts graphic rather than truncated.
 - A field declaring a "shape-inside" alone is likewise a wrapping field. The property states no other instruction than to flow the text within the shape.
@@ -617,7 +618,8 @@ These hold for every image type of the module and are stated here rather than re
             - row_<x>_round_<z>_driver_<w>_feature_race_result - Optional - Field on which the result obtained by that driver in the feature race session of that round is placed as text
 - The constructor standings graphic has no field carrying the nationality of a driver, and none carrying the result of a team in a session.
 - <w> is a value between 1 and the number of seats configured for the team of the row.
-- <x> is the ordinal of the row counted from the top of the classification, beginning at 1, and equals the standing position recorded for the entry placed on it.
+- <x> is the ordinal of the row counted from the top of the classification drawn, beginning at 1 and running without a gap. It is ordinarily the standing position recorded for the entry placed on it, but it is not that position and shall not be drawn in its place: the "row_<x>_position" field carries the position the standings recorded, read from the record and not from the ordinal.
+    - The two part company where an entry the standings hold is not drawn. A reserve driver who took part in a race holds a standing position whether or not "results reserves toggle" is on, and is drawn only where it is; with the toggle off the recorded positions of the entries below them keep the gap the reserve left, so a classification drawn on three rows may carry the positions 1, 2 and 4. The textual standings show that same gap, and a graphic drawing 1, 2 and 3 beside a table showing 1, 2 and 4 would be a second rendering of one value.
 - <z> is a value between 1 and the total number of rounds scheduled for the division.
 - The rows a template declares shall be numbered continuously from 1, and so shall the rounds and the cars of a round. A gap in any of the three numberings is a fatal error.
 - The graphic carries no image of the track, no date of any round, no name of a points configuration, and no result of any session beyond those of the fields above.
