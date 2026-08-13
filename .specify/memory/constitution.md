@@ -1,6 +1,184 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-13 — v4.4.0 → v4.5.0: MINOR — the graphic may arrange; the standings audit]
+  Version change    : 4.4.0 → 4.5.0
+  Bump rationale    : MINOR. Rules 2, 3, 7, 9, 10, 12, 13 and 16 of Principle XIV are expanded and
+                      one entity is amended. Nothing is removed and nothing conformant to v4.4.0
+                      becomes non-conformant. Every addition either admits a form that was
+                      previously unadmitted (the optional collection, the discriminated column
+                      group, the per-member nested capacity, the derived presentation) or places an
+                      obligation on the module rather than on a template (the shipped marker
+                      files). No template that rendered under v4.4.0 stops rendering under this one,
+                      which is the test v4.0.0 fixed for MAJOR.
+
+                      MAJOR was considered for the Rule 12 per-member clause, which withdraws a
+                      refusal v4.4.0 required — a template over-declaring a nested collection
+                      against a data-fixed capacity was refused and is now trimmed silently — and
+                      rejected. The clause widens what is accepted rather than narrowing it, so no
+                      artefact that worked ceases to; a template refused under v4.4.0 now renders,
+                      which is the benign direction.
+  Feature branch    : 040-standings-image-generation (created 2026-08-13 from main)
+
+  Session context   : 037 built the calendar, 038 the lineup, 039 the results. This session begins
+                      the fourth per-image-type utility — the **standings**, both championships —
+                      and no other type is in scope. Principle XIV was audited against
+                      `docs/wip-specs/image_module_specification.md` § "Standings image generation"
+                      as the three sessions before it audited their own sections. Eight divergences
+                      were found; three were put to the author and five settled by the precedent
+                      v4.1.0 set, that where the constitution stated a rule too narrowly the
+                      wip-spec wins.
+
+                      Standings is the first image type that **draws a grid**. A results table is
+                      one dimension of members; a standings graphic is a classification crossed
+                      with a calendar, and a cell of it belongs to a row and to a round both. It is
+                      also the first type whose graphic carries **columns the text path does not
+                      have** — the gap to the leader, the previous position and the position change
+                      — and the first whose two graphics are posted where the text path posts one
+                      message. Most of this amendment follows from those three facts.
+
+  Author's rulings  : - Derived columns     → **admit derived presentation**. Arithmetic over
+                                            figures the text path already publishes decides nothing
+                                            and admits no new datum; it is presentation, not
+                                            computation, and Rule 7's exception list stays closed at
+                                            two. Two conditions bind it: the derivation is written
+                                            in the service owning the data and never in the image
+                                            utility, and a value requiring a *rule* to reach — an
+                                            ordering, a tie-break, an award — remains forbidden. The
+                                            countback is the standings service's; the subtraction is
+                                            the graphic's.
+                      - Marker asset class  → **the module ships its own closed classes**. The three
+                                            directions of a position change are the module's own
+                                            vocabulary, not values a league supplies, so
+                                            `resources/markers/` gains `gained.svg`, `lost.svg` and
+                                            `unchanged.svg` beside its fallback. It is the rule
+                                            `mystery.svg` already follows in the track class,
+                                            generalised, and it stands apart from the prohibition on
+                                            shipping league-specific artwork.
+                      - Fallback grain      → **stated generally in Rule 7**. A fallback covers the
+                                            failed graphic's scope alone and never re-posts what a
+                                            surviving graphic carries. Where the text path's message
+                                            is coarser than one graphic it MUST be able to emit the
+                                            proper subset; that it cannot is a defect in the text
+                                            path, not a licence to post the whole. Binds attendance
+                                            and weather equally.
+
+  Settled by precedent (not put to the author, the wip-spec having stated the general form):
+                      - The optional collection; the discriminated column group and the grid's
+                        one-parent problem; the nested collection whose data-fixed capacity varies
+                        per containing member; one capacity governing several id families; and
+                        Rule 16's split being non-exclusive. Each is a form Rules 2, 3, 12 and 16
+                        did not admit because no image type before this one needed it.
+
+  Modified rules (Principle XIV):
+    - **2. Removable groups** — the group table gains a fifth form, the **column of a collection of
+      columns** (`round_<z>_group`), which bears its collection's discriminator and is removed when
+      the column does not exist rather than when its field is emptied for every member. It carries
+      v4.4.0's column prohibition for a reason stated more sharply: a cell of a grid belongs to its
+      row and to its column both, and a node of an SVG file has one parent. The cell lives under the
+      **row's** group, the column group carries chrome alone, and a column's cells leave the graphic
+      through Rule 12 rather than through containment. A block group MAY also stand inside a member
+      and bear that member's discriminator (`row_<x>_position_change_group`).
+    - **3. Every mandatory field MUST be resolved** — a **collection MAY be optional as a whole**,
+      with every collection nested inside it and every field of them, a template declaring none of
+      it drawing the graphic without that part entire. A field classified mandatory *within* such a
+      collection is mandatory only where the template declares the collection at all: the number of
+      a round must stand on every round a template draws, and a template drawing no round owes none.
+      This is the scope of a classification narrowing, as v4.3.0's per-member variation was, and not
+      a third classification.
+    - **7. Image output is additive** — two additions. **A derived presentation is not a
+      computation**, per the author's ruling, with the two conditions that bind it and the line
+      between measuring and deciding. And **a fallback is at the grain of the graphic that failed**,
+      which obliges the text path to emit a proper subset of its usual message where its natural
+      grain is coarser than one graphic.
+    - **9. Template validity** — the three moments are stated to be the moments a **template** is
+      evaluated, and not a bound on Rule 12's capacity check, which fires at any command changing
+      the data a template is measured against. A command seating a driver in a division names no
+      template and draws no graphic, and is refused all the same.
+    - **10. Field catalogue** — where a portion of a catalogue is optional as a unit (Rule 3), the
+      catalogue MUST name the collection at which the portion begins, so a check can tell a part
+      deliberately not drawn from a part left out by mistake.
+    - **12. Collection capacity** — two additions. **A capacity fixed by the data MAY vary by
+      containing member**: where the configured value bounding a nested collection belongs to the
+      containing member — the cars of a round, bounded by the seats of the team on the row — one
+      template serves every member and no declared count is right for all, so the declared members
+      are a ceiling, over-declaration is trimmed silently per member, and the fatal test is against
+      the data actually drawn. And **one capacity may govern several id families**: a round ordinal
+      standing as `round_<z>_group`, `row_<x>_round_<z>_group` and
+      `row_<x>_round_<z>_driver_<w>_group` is removed from all three by one decision.
+    - **13. Asset resolution** — a class whose data are a **closed set the module itself defines**
+      is shipped complete by the **module**, the league having nothing to be incomplete against. The
+      general cover-or-fallback obligation is discharged by the module rather than the league; a
+      league pointing the class at its own directory is bound as any other.
+    - **16. A graphic draws nothing a reader can act on** — two corrections. **The split is not
+      exclusive**: the rule governs what a picture cannot carry, and a plain label MAY be drawn both
+      as message text and on the graphic, so that a picture forwarded away from its message still
+      says which phase it stands after. v4.4.0's illustration read as though the two were
+      alternatives; the results type it described already contradicted that, `result_status` being a
+      mandatory field of both results templates. And the fixed rendering extends from a **person**
+      to any **entity of the server**, a team being reached through the Discord role its standings
+      record and falling back to the name of the role itself.
+    - **Rationale** — extended for the derived presentation, and for the pairing of Rules 12 and 13:
+      both admit a case where the module, and not the league, is the one who knows, which is Rule
+      3's mystery round applied twice more.
+
+  Added sections    : Data & State Management → **New Entities (v4.5.0)**:
+                      **DriverStandingsSnapshot** amended with `constructor_standings_message_id`
+                      beside the existing `standings_message_id`. The textual flow posts one message
+                      carrying both championships and one column sufficed; the image flow posts two,
+                      each of which must be replaceable without disturbing the other under Rule 4's
+                      unit of failure and Rule 7's fallback grain. It is the only part of this image
+                      type reaching outside the image module.
+  Removed sections  : None.
+
+  Consistency       : `docs/wip-specs/image_module_specification.md` was brought into step in the
+                      same change window per the close-out discipline in CLAUDE.md. One of its
+                      statements was found to be **self-contradictory** and is corrected; the rest
+                      are additions, the three rulings having gone the wip-spec's way.
+
+                      Corrected:
+                        - § "The capacity of a collection" — "Where the capacity is fixed by the
+                          data, a divergence in either direction is a fatal error" is contradicted
+                          by § "Standings image generation", which removes cars declared in excess
+                          of a team's configured seats silently. The general statement gains the
+                          per-containing-member case, which is what Rule 12 now states.
+
+                      Added, each being a rule that holds for every graphic and so placed in
+                      § "Conventions of every graphic" once rather than repeated per type:
+                        - § "The fallback image" — the module ships every file of a closed class it
+                          defines itself, on the model of the `mystery.svg` sentence already in
+                          § "A round of the mystery format".
+                        - § "What a graphic works out" (new) — the shared-rendering rule, the
+                          derived presentation the author admitted, where its code lives, and the
+                          line at which a value requiring a rule stays forbidden.
+                        - § "The name of a team" (new) — beside "The name of a person", the author's
+                          ruling having raised the standings section's role-based chain into the
+                          general rule for every graphic. The standings section now points at it
+                          rather than restating it.
+                        - § "Errors and the rejection of input" — the unit of failure is one
+                          graphic, and a fallback covers the failed graphic's part alone.
+                        - § "Removable groups" — the four group forms, and the column of a
+                          collection of columns with the one-parent rule that governs its cells.
+
+                      `README.md` and `resources/README.md` are deliberately **not** changed. Both
+                      enumerate what a clone ships, and `resources/markers/` holds `fallback.svg`
+                      alone today. The claim goes in when the files do, per the README's own rule
+                      that it describes the bot as it is and not as it is planned. This is an
+                      implementation task of the increment: `resources/markers/` gains `gained.svg`,
+                      `lost.svg` and `unchanged.svg`, and both READMEs then name them beside
+                      `tracks/mystery.svg` as shipped reserved files.
+
+  Deferred          : TODO(PER_TYPE_ASSET_SENTENCES) — carried from v4.0.0 and **further discharged
+                      here for the standings type**, whose flag, marker, team-image and track-image
+                      sentences each already separate the absent datum from the absent file and
+                      defer the latter to the conventions. The attendance, weather and verdicts
+                      sections still bundle the two. Nothing is ambiguous in force; the sentences
+                      want splitting as each of those types is built.
+
+  Templates confirmed aligned: no change required. Principle count is unchanged at I–XIV — this
+  amendment expands rules within Principle XIV — so plan-template.md's Constitution Check and the
+  Governance section's "I–XIV" both stand.
+
 [2026-08-12 — v4.3.0 → v4.4.0: MINOR — the graphic re-presents; the results audit]
   Version change    : 4.3.0 → 4.4.0
   Bump rationale    : MINOR. Rules 2, 3, 4, 7, 9, 10, 11 and 13 of Principle XIV are expanded and
@@ -2684,12 +2862,26 @@ is the ordinary behaviour of a group and is not a failure.
 | A member of a collection | `<collection>_<x>_group` (Rule 11) | that member is not drawn |
 | A **block** of fields standing or falling together | for the block (`fastest_lap_group`) | the condition the block depends on does not hold |
 | A **column** — the same field across every member | `<field>_group`, bearing no discriminator | that field is emptied for **every** member, and never while one member holds a value |
+| A **column of a collection of columns** | `<collection>_<z>_group` (Rule 11) | that column is not drawn at all |
 
 A column group wraps the static chrome of a column — its heading, its rule, its plate — and MUST
 NOT contain any member's cell: a cell belongs to the member it stands on and leaves the graphic
 with that member's group. The two forms therefore never contend for the same node. A template
 declaring no column group carries its heading over an emptied column, which is a template's choice
 and not a fault.
+
+Where the columns of a grid are themselves a **collection** — the rounds of a season drawn across a
+classification — the column group bears that collection's discriminator and is removed when the
+column does not exist, rather than when its field is emptied for every member. This is the column
+form at a second dimension and carries the same prohibition, for the same reason stated more
+sharply: a cell of such a grid belongs to its row and to its column both, and a node of an SVG file
+has one parent. The cell therefore lives under the **row's** group, the column group carries the
+heading and the chrome alone, and the removal of a column reaches its cells through the rule of
+Rule 12 rather than through containment.
+
+A block group MAY stand inside a member and bear that member's discriminator
+(`row_<x>_position_change_group`), the block form and Rule 11's nesting composing as any two forms
+do.
 
 **3. Every mandatory field MUST be resolved.**
 
@@ -2722,6 +2914,19 @@ configuration bounds may be mandatory and every member beyond it optional, so th
 obliged to declare the block at all without being obliged to declare a fixed number of it — the
 first reserve seat of a lineup is of this kind. This is still exactly two classifications; it is
 the *scope* over which one is declared that narrows.
+
+**A collection MAY be optional as a whole.** A catalogue MAY declare a named collection — together
+with every collection nested inside it and every field of them — optional **as a unit**, a template
+declaring none of it drawing the graphic without that part entire. The results grid of a standings
+graphic is of this kind: a template declaring no round draws a classification alone, and is not
+faulty for it. A field the catalogue classifies **mandatory within** such a collection is mandatory
+only where the template declares the collection at all — the number of a round MUST stand on every
+round a template draws, and a template drawing no round owes none. This is the *scope* narrowing
+again and not a third classification: the field is mandatory, over the members that exist.
+
+The catalogue MUST name the collection at which the optional portion begins (Rule 10). A portion so
+declared is all-or-nothing only in the sense that its mandatory fields bind once any member of it is
+declared; the optional fields within it remain individually optional as they would anywhere else.
 
 **A sibling's field is a problem.** Where an output aspect is drawn by more than one image type —
 qualifying and race results, driver and constructor standings, the six forecasts — a template
@@ -2821,6 +3026,15 @@ text in place of the graphic they asked for would deny them the chance and hide 
 it next fires unattended. The reverse holds for a scheduled posting, where there is nobody to
 tell and the league still needs its information.
 
+**A fallback is at the grain of the graphic that failed.** Where one event draws several graphics
+(Rule 4) and the text path's natural message is **coarser** than one graphic — one standings message
+carrying both championships where the graphic posts two — the text substitute MUST cover the failed
+graphic's scope and that scope alone, and MUST NOT re-post what the surviving graphics already
+carry. The text path MUST therefore be able to emit the proper subset. Where it cannot, that is a
+defect in the text path to be repaired, and never a licence to post the whole: a league that got its
+constructor standings as a picture and its driver standings as text has been told each thing once,
+which is the point of falling back at all.
+
 **One rendering, two presentations.** Where the graphic draws a value the text path also draws — a
 lap time, a gap, an interval, a time penalty, a points total, a session label — the two MUST be
 produced by one and the same formatting code, which the utility calls and MUST NOT restate. A
@@ -2832,6 +3046,30 @@ recorded laps — is derived by the code that derives it for the table.
 
 The exception is a value a rule of this Principle requires the graphic to draw *differently*. That
 list is closed at two: the zone of Rule 15, and the fixed renderings of Rule 16.
+
+**A derived presentation is not a computation.** A value that is **arithmetic over figures the text
+path already publishes** — the difference between two points totals, the distance between two
+recorded positions, the direction of that distance — decides nothing, admits no datum the bot did not
+already hold, and MAY be drawn by a graphic where the text path draws no column for it. This is not a
+third exception to the list above. It is a statement of where the line falls: the information is
+already expressed as text, and arranging it is presentation, which is the whole of what a second
+presentation does.
+
+Two conditions bind it, and without them it would swallow the rule:
+
+- **The derivation lives with the data, not with the graphic.** It MUST be written in the service of
+  the module that owns the figures — the standings service, not the image utility — so that the text
+  path can adopt the column later without a second implementation, and so that no image type holds a
+  private rendering of a value that is not private to it. This is the same obligation the paragraph
+  above places on a shared value; the value is simply not shared *yet*.
+- **A value requiring a rule is a computation and stays forbidden.** An ordering, a tie-break, an
+  eligibility, a points award, a sanction — anything decided rather than measured — is the source
+  module's and the graphic reads its result. The countback separating two entries level on points is
+  not the graphic's to apply; the gap between their totals is the graphic's to subtract.
+
+Where such a derivation reads a **second record of the same kind** — the standings of the round
+preceding the one drawn — it reads that record as the source module persisted it and MUST NOT
+recompute it. The graphic compares two facts; it does not re-establish either.
 
 **8. Images are attachments, not a new channel category.**
 
@@ -2888,6 +3126,13 @@ Season review reports; approval refuses. The review commits nothing that could b
 naming every faulty template with its own reason is the whole of its job, and the approval is
 where the season is stopped alongside the prerequisites of every other module.
 
+The three moments are the moments at which a **template** is evaluated, and the list is closed for
+that purpose. They do not bound Rule 12's capacity check, which is evaluated against a template
+wherever a command would change the data measured against it — a command seating a driver in a
+division is neither naming a template nor drawing a graphic, and is refused all the same where the
+assignment would carry the division past the rows its configured template declares (Rule 4,
+rejection at the earliest moment).
+
 - **Layer 1 — Resolution** is mandatory from the outset and applies to every template: the file
   resolves within the configured directory, parses as well-formed SVG, and declares a root
   `width` and `height` (Rule 1).
@@ -2920,7 +3165,9 @@ supplied per call site, or stored as a sidecar file beside the template.
 
 For a repeating collection the catalogue declares the collection's name, its **discriminator
 form** (Rule 11) and the **rule by which its capacity is fixed** (Rule 12) — never a bare number
-and never an enumeration of its members' ids.
+and never an enumeration of its members' ids. Where a portion of the catalogue is optional as a unit
+(Rule 3), the catalogue MUST name the collection at which that portion begins, so that the check of a
+template can tell a part deliberately not drawn from a part left out by mistake.
 
 - A generation utility MUST NOT be merged for an image type whose catalogue is not declared.
 - The catalogue is the *same object* consulted by the fill pipeline (Rule 3) and by validity
@@ -3012,6 +3259,25 @@ sides: both are declared and both are knowable, so neither may be quietly absorb
 data hold but leave *empty* — a team that has recruited nobody, a seat nobody occupies — is not a
 divergence at all: it is drawn, its text emptied and its image fields removed per Rule 3.
 
+**A capacity fixed by the data MAY vary by containing member.** Where a collection nests inside a
+member and the configured value fixing its capacity belongs to *that member* — the cars of a round of
+a constructors grid, bounded by the seats configured for the team on the row — one template must
+serve every member, and no single declared count can be right for all of them. There the members the
+template declares are a **ceiling**, not a count: those beyond the containing member's configured
+value are removed silently, per member, and over-declaration is not a divergence. The fatal test is
+against the **data actually drawn** — the drivers who drove that team's cars in that round — exactly
+as it is for a capacity fixed by the template. The catalogue MUST say which of the two a nested
+collection is; a collection whose bound is the same for every member remains an ordinary
+data-fixed capacity, refused in both directions.
+
+**One capacity may govern several id families.** Where an ordinal is drawn both as chrome and upon
+every member of another collection — a round of a results grid standing as `round_<z>_group`, as
+`row_<x>_round_<z>_group` on every row, and as `row_<x>_round_<z>_driver_<w>_group` on every car of
+every row — the capacity decision on that ordinal applies to **every** family bearing it, and its
+removal takes them all. This is how a column's cells leave the graphic, containment being unable to
+carry them (Rule 2). Where the template declares no group for one of those families, every field of
+that family bearing the ordinal is removed one by one instead.
+
 Overflow MUST NOT be silently truncated, and MUST NOT be spilled into continuation images.
 
 This holds for **every** collection of every image type, principal or incidental. A graphic that
@@ -3043,6 +3309,19 @@ asset class. Resolution MUST be deterministic and documented:
 - Every asset directory MUST cover each datum of its class a league can present it with, or
   hold a generic **fallback image** under the reserved name `fallback.svg` that covers those it
   does not.
+- Where the data of a class are **not values a league supplies** but a **closed set the module
+  itself defines** — the three directions of a change of standing position, `gained`, `lost` and
+  `unchanged` — the **module** MUST ship a file for every one of them under `resources/`, beside
+  that class's `fallback.svg`. The obligation of the bullet above is discharged by the module rather
+  than by the league, because the league has nothing to supply: it did not choose the vocabulary and
+  cannot be incomplete against it. A league MAY still point the class at a directory of its own and
+  is then bound exactly as any other league, its fallback covering what its own set omits.
+
+  This is the rule `mystery.svg` already follows in the track class, generalised. It stands apart
+  from `resources/` holding no league-specific artwork: a direction marker is the module's own
+  vocabulary drawn in the module's own terms, and shipping none of it would put the class's fallback
+  on every row of every graphic — three identical arrows and a notice apiece, which is not a
+  degradation a league can act on but a picture the module never had to draw wrong.
 
 Resolution has exactly **three** outcomes, and no others:
 
@@ -3104,13 +3383,22 @@ picture cannot honour.
 A mention, a link, a button and a live timestamp are interactive or per-reader elements of the text
 path. A picture carries none of them. Each MUST be either resolved to a **fixed rendering** the
 graphic draws, or left to the message text the image rides on — and the message keeps whatever it
-must: a results post keeps its heading and its lifecycle label as text and gives the table alone to
-the graphic.
+must: a results post keeps its heading and its lifecycle label as text and gives the table to the
+graphic.
 
-Where the element names a person, the fixed rendering is that person's **display name on the server
-at the moment of generation**. An image type MUST state the chain by which a name is reached where
-that one is unavailable, and MUST reach the same name wherever it draws that person, so that one
-driver is not two names on one graphic.
+**The split is not exclusive.** This rule governs elements a picture *cannot carry*. A plain text
+label is not one of them, and a value MAY be drawn both in the message text and on the graphic where
+the image type says so: a results or standings post keeps its lifecycle label as message text *and*
+draws it on the graphic, so that a picture saved or forwarded away from the message it rode on still
+says which phase it stands after. Nothing is resolved away here and nothing is lost; the rule is
+about what the graphic must give up, not about what the message must keep to itself.
+
+Where the element names an **entity of the server** — a person, or a team reached through a Discord
+role — the fixed rendering is that entity's **name on the server at the moment of generation**. For a
+person that is their display name; for a team it is the name the league gave the team holding the
+role, falling back to the name of the role itself. An image type MUST state the chain by which a name
+is reached where the first is unavailable, and MUST reach the same name wherever it draws that
+entity, so that one driver is not two names on one graphic.
 
 Rule 15 is this rule applied to time: the timestamp every reader saw in their own zone becomes the
 one configured zone drawn for all. Stating the general form once is what stops each image type
@@ -3175,6 +3463,24 @@ costs. Everything a reader could click, hover or resolve in their own zone is fl
 behind in the message text. The compensation is Rule 7's shared rendering: what the graphic *does*
 draw is drawn by the code the text path drew it with, so the two can differ in what they can carry
 without ever differing in what they say.
+
+That compensation is also why Rule 7 admits a **derived presentation**. The rule guards against a
+second set of facts, not against a second arrangement of one set. A gap between two points totals
+both already printed is not a fact the graphic invented; refusing it would have obliged a league to
+change what every driver reads as text before it could have a column the picture had room for, and
+would have bought nothing, since the two numbers were already on the page. What the rule keeps is the
+part that matters: the subtraction is written where the standings are computed, so the day the text
+path wants the column it takes the one that exists. A value needing a *rule* to reach — an ordering,
+a tie-break, an award — stays on the far side of the line, because that is where a graphic could
+start disagreeing with its own league.
+
+Rules 12 and 13 each gain a case where the bot, and not the league, is the one who knows. A nested
+collection whose bound differs from member to member cannot be refused for over-declaring, because
+one template draws every member and the author cannot satisfy all of their bounds at once; the
+declaration becomes a ceiling and the data drawn become the test. An asset class whose vocabulary the
+module wrote is not a set a league can be incomplete against, so the module ships it. Both are the
+same instinct as Rule 3's mystery round: where the module knows the answer, the module supplies it
+rather than reporting the gap.
 
 ## Bot Behavior Standards
 
@@ -3536,6 +3842,26 @@ for team-level aggregates):
   appeal outcomes for this division are posted to this channel; if null, the bot falls
   back to `results_channel_id`.
 
+### New Entities (v4.5.0)
+
+**DriverStandingsSnapshot** amended — `constructor_standings_message_id` (TEXT, nullable) added
+beside the existing `standings_message_id`, and set upon the row of the top-ranked driver as that
+column already is.
+
+The textual flow posts one message carrying both championships, so one column sufficed. The image
+flow posts two, the driver standings first and the constructor standings after, and each MUST be
+deletable and replaceable without disturbing the other — Rule 4's unit of failure being one graphic,
+and Rule 7's fallback being at that same grain. A single column could not name two messages. Both
+columns are written on every posting of the standings, textual or graphic, so that the two flows
+agree on which message is which; the textual flow leaves the second null.
+
+This is the only part of the standings image type reaching outside the image module. The
+classification, the position, the points and the countback that separates entries level on them are
+governed by Principle XII and read as the standings service records them; the gap, the previous
+position and the position change are derived under Rule 7's derived-presentation clause, in that same
+service and not in the image utility. The marker, flag, team-image and track-image directories are
+values of the configuration surface delivered at 035 and 036 and are read as they stand.
+
 ### New Entities (v4.4.0)
 
 **None.** The results image type introduces no entity and amends none, and the absence is recorded
@@ -3766,4 +4092,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 4.4.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-12
+**Version**: 4.5.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-13
