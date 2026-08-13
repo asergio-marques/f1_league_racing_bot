@@ -500,10 +500,10 @@ One entity is amended; no entity is introduced.
 
 - The countback separating entries level on points is applied by the standings service and persisted in
   the recorded standing position. The graphic reads that order and never re-derives it.
-- FR-065 constrains new submissions only. A round already recording a driver under two team roles —
-  which the validator permits today — is not migrated or repaired by this feature, and would still be
-  drawn by the pre-existing allocation rules. Whether any live data are in that state is worth checking
-  during planning; nothing in this spec depends on the answer.
+- FR-065 constrains new submissions and needs no backfill. The bot is not yet running in production,
+  so no recorded round can already hold a driver under two team roles, and FR-026 may treat the
+  invariant as guaranteed rather than re-adjudicating it. The same fact is why the migration in Key
+  Entities needs no data repair.
 - The row of the top-ranked driver carries both message ids, as it already carries the one. Existing
   rows keep their current column as the driver standings message; the new column starts empty.
 - FR-044 extends the wip-spec's driver-assignment rule to the constructors template by the same

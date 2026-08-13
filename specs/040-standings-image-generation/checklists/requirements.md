@@ -54,6 +54,6 @@ spec's Assumptions section: the constructors template's row ceiling being checke
 as the drivers' is at driver assignment (FR-044), and the migration treatment of the existing
 standings message id column.
 
-**Carried into planning**: FR-065 constrains new submissions only. Whether any live data already
-record a driver under two team roles in one round is worth checking during `/speckit-plan`; nothing in
-this spec depends on the answer.
+**Closed during planning**: FR-065 constrains new submissions and needs no backfill — the bot is not
+yet running in production, so no recorded round can already be in the state it forbids. FR-026 may
+therefore treat the invariant as guaranteed.
