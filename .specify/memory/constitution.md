@@ -1,6 +1,267 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-14 — v4.7.0 → v4.8.0: MINOR — the simplest graphic; Rule 7 inverted, from ceiling to floor]
+  Version change    : 4.7.0 → 4.8.0
+  Bump rationale    : MINOR. **No rule is added.** Seven are expanded (3, 4, 5, 10, 16, 17) or
+                      **inverted** (7). Nothing conformant to v4.7.0 becomes non-conformant: Rule 7's
+                      change is a pure loosening, and every other change either admits a form
+                      previously unadmitted or states in full a contract Rule 5 had only summarised.
+
+                      MAJOR was considered **twice** and rejected both times.
+
+                      For **Rule 7**, whose central constraint is not merely expanded but reversed in
+                      direction — the correspondence with the text path was written as a ceiling on
+                      what a graphic may say and is now a floor under what it must. What is deleted
+                      is a *prohibition*, so nothing built against v4.7.0 can fail under v4.8.0; a
+                      graphic conformant to the ceiling is conformant to its absence. The direct
+                      precedent is v4.7.0's own correction of Principle IV — a NON-NEGOTIABLE
+                      principle's paragraph rewritten, staying MINOR on the reasoning that widening
+                      a permission breaks nothing built against the prohibition. This is that shape,
+                      at a larger scale. A reader diffing this version is owed the warning all the
+                      same, which is what this entry is for: **Rule 7 now means something different
+                      from what it meant, and should be read again rather than recalled.**
+
+                      For **Rule 5**, whose two new problems — a `shape-inside` naming a rectangle the
+                      template does not declare, and a wrapped field on which no `line-height`
+                      resolves — make fatal what was not. Rejected on evidence rather than argument:
+                      of the fifteen shipped templates, `verdicts_template.svg` is the **only** one
+                      declaring `shape-inside` at all, and it declares `line-height` on all three of
+                      its wrapped fields. No template that rendered under v4.7.0 stops rendering
+                      under this one, which is the test v4.0.0 fixed for MAJOR. Verdicts is genuinely
+                      the module's first wrapping type.
+
+                      That this amendment adds no numbered rule is recorded rather than passed over,
+                      as v4.7.0's was. The seventh type is the module's **simplest** graphic and its
+                      hardest to place, and the two are one fact: with no collection, no ordinal and
+                      no capacity, everything this Principle built to manage repetition falls away,
+                      and what is left is the question it had never had to answer — what a graphic
+                      *is*, as against what it contains.
+  Feature branch    : 043-verdicts-image-generation (created 2026-08-14 from main)
+
+  Session context   : 037 built the calendar, 038 the lineup, 039 the results, 040 the standings, 041
+                      the two attendance graphics, 042 the six weather ones. This session begins the
+                      seventh per-image-type utility — the **verdict**, one template serving a
+                      post-race penalty, an appeal and an attendance sanction alike — and no other
+                      type is in scope. Principle XIV was audited against
+                      `docs/wip-specs/image_module_specification.md` § "Verdicts image generation" as
+                      the six sessions before it audited their own. Five divergences were put to the
+                      author; the rest were settled by the precedent v4.1.0 set, that where the
+                      constitution stated a rule too narrowly the wip-spec wins.
+
+                      The source module is **shipped**: `verdict_announcement_service.py` has posted
+                      penalty, appeal and autosanction announcements since 026, and the attendance
+                      module has composed the last of those since 041. Nothing here waits on the
+                      steward module, and nothing here anticipates it.
+
+  Author's rulings  : - The flag notice       → **verdicts inherits the suppression**. The results,
+                                              standings and attendance sections each carry the
+                                              sentence that a league switching nationality collection
+                                              off draws no flags and is told nothing (Rule 4); the
+                                              verdicts section omitted it. Ruled an oversight, not a
+                                              distinction: same switch, same field, same reason. The
+                                              wip-spec gains the sentence its three siblings carry.
+                      - Rule 7 itself         → **a floor, not a ceiling**, and this ruling supersedes
+                                              the two below it. The author's correction: the image
+                                              path must carry **at least** the information of the text
+                                              path and **may add to it**. The rule had said the
+                                              opposite — that every image must correspond to
+                                              information the bot can already express as text — and
+                                              that ceiling was wrong rather than merely narrow.
+                                              *Additive* was never a promise that a picture would say
+                                              no more than a message; it was a promise that turning
+                                              images on costs a league nothing. The prohibition on
+                                              **deciding** now carries Rule 7 alone, which is where
+                                              the weight always sat.
+
+                                              Recorded plainly because of how it was arrived at: the
+                                              two rulings below were each put to the author as a
+                                              request for an **exemption**, and each was granted as
+                                              one, before the author named the fault they shared. Both
+                                              are now instances of the rule rather than exceptions to
+                                              it, and neither needed a clause of its own. The audit
+                                              asked twice for permission to step over a line and did
+                                              not ask whether the line was drawn the right way round.
+                      - Flag and badge        → **imagery that identifies is drawn freely**. Put to
+                                              the author because the wip-spec says the graphic "adds
+                                              to the textual announcement the flag of the driver and
+                                              the badge of the team", and the penalty flow publishes
+                                              neither as text — a breach of the ceiling that had been
+                                              quietly true of the lineup, results, standings and
+                                              attendance flags for five sessions. Ruled that an image
+                                              depicting an **entity the graphic already names**
+                                              obliges the text path to publish nothing, and answers to
+                                              Rule 13 alone. Widening the test across modules was
+                                              offered as an alternative and declined. Superseded in
+                                              form by the ruling above and retained as an instance:
+                                              an image standing for a **fact** rather than an entity
+                                              is still a value read from the module that owns it.
+                      - The verdict stage     → **a graphic may name its own kind**. Put to the author
+                                              because `verdict_stage` is mandatory and the textual
+                                              announcement carries no stage whatever: the penalty and
+                                              appeal messages are identical in wording, verified
+                                              against `verdict_announcement_service` and the 026
+                                              message-format contract. Repairing the text path was
+                                              offered first, per Rule 7's then-instruction that an
+                                              inadequate text path is a defect and not a licence, and
+                                              **declined**. No change to the textual announcement
+                                              follows. Superseded in form by the ruling above: under
+                                              a floor, a graphic naming its own kind needs no
+                                              permission.
+                      - The absent session    → **emptied, not labelled**. The wip-spec put
+                                              "Attendance Sanction" on `session_name` *and* on
+                                              `verdict_stage`, so a sanction verdict would carry the
+                                              same two words twice under two headings. Ruled that the
+                                              session field is **emptied** — its group removed where
+                                              declared — and the label stands on the stage alone. The
+                                              field stays **mandatory**: the template must declare it,
+                                              and the data determine its value to be nothing, which
+                                              Rule 3 already holds is determined. Applied to the
+                                              wip-spec.
+                      - The redraw declaration → **static, declared explicitly**. Offered as
+                                              "ordinary, satisfied vacuously" — its message being
+                                              never reposted nor edited — and the author took the
+                                              stronger declaration. This obliged Rule 17 to admit a
+                                              **second ground** for staticity, a verdict drawing a
+                                              driver's display name being a value that plainly does
+                                              change. See below.
+
+  Settled by precedent (not put to the author, the wip-spec having stated the general form):
+                      - The wrapping contract in full. The conventions section forward-references the
+                        verdicts section for it ("wrapped and reduced as defined for the verdicts
+                        graphic"), so what is written there is general and not the type's own. Rule 5
+                        had summarised four of its clauses and omitted eight.
+                      - The graphic displacing the whole announcement but the mention.
+                      - A mention resolved in place inside free text a person wrote.
+                      - The module placing no ceiling on the length of a steward's prose.
+                      - One template serving three kinds; the type declaring no collection at all.
+                      - The graphic adding no precondition to the finalisation of a review or the
+                        enforcement of a sanction; no verdicts channel, no graphic; the pardon that is
+                        no verdict and carries none.
+
+  Modified rules (Principle XIV):
+    - **3. Every mandatory field MUST be resolved** — a **kind of record that has no such thing at
+      all** empties the field, where the paragraph above it governs a thing the record *has* and
+      withholds. A mystery round conceals a track it owns; an attendance sanction pertains to no
+      session because none was run. The classification is untouched — the template must still declare
+      a mandatory field, and the data determine its value to be nothing. The graphic MUST NOT write
+      the kind's label into the slot of the absent thing where another field already names the kind;
+      the text path may, a single-line heading having nowhere else to put it, and that is a difference
+      in arrangement rather than in rendering.
+    - **4. Problems and notices are distinct outcomes** — the problem list gains a wrapped field the
+      template gives no room or no leading to lay out (Rule 5).
+    - **5. Text bounds are declared by the template** — stated in full where it had been summarised.
+      A single word wider than its room is broken within itself. A wrapped field's `shape-inside`
+      names a rectangle that is the field's extent and is never drawn; a field declaring `inline-size`
+      and `shape-inside` both is wrapped, not truncated. The **wrapping contract**: the author's own
+      line breaks are honoured first and their blank lines counted against the budget; the line height
+      in force is the `line-height` resolving on the field; reduction by half-pixel steps to a floor of
+      half the declared size, with the leading scaled and the admissible line count recomputed, so a
+      field set smaller holds *more lines*; each field reduced alone, the canvas never resized;
+      `shape-inside` removed once the lines are laid out. **Two template defects are problems** and
+      both are structural under Rule 9. **Measurement** is against the declared face, against the
+      substituted face with a notice where it is not installed, and MUST **err narrow**. And the module
+      places **no ceiling** on free text.
+    - **7. Image output is additive** — **inverted**, and read again rather than recalled. The
+      correspondence with the text path was a **ceiling** ("every image MUST correspond to information
+      the bot can already express as text") and is now a **floor**: a graphic carries at least what the
+      posting it replaces carried, save what Rules 15 and 16 say a picture cannot carry, **and MAY
+      carry more**. There is no matching ceiling, and a graphic may draw what the text path has never
+      published anywhere.
+      **What replaces it** is the prohibition that was doing the work all along, gathered from the old
+      derived-presentation clause and promoted to the rule's centre: a graphic MUST NOT **decide**. A
+      value requiring a rule — an ordering, a tie-break, an eligibility, a points award, a sanction —
+      is the source module's and the graphic reads its result; a derivation lives with the data and
+      never in the image utility; a second record of the same kind is read as persisted, not
+      recomputed. A graphic may arrange, measure and depict; it may not settle.
+      **A fallback may therefore say less than the graphic would have**, which is stated and accepted:
+      the league is told everything it would have been told had images never existed, and not the
+      surplus. An image type MUST NOT answer this by holding its surplus back.
+      Also added, and unaffected by the inversion: **a graphic MAY displace all but what a picture
+      cannot carry**, the verdict standing at the opposite pole from the check-in call which displaces
+      nothing.
+      Retained as **instances** rather than exceptions: imagery that identifies an entity the graphic
+      already names, and a graphic naming its own kind. Both were drafted as exemptions from the
+      ceiling and were left standing, much shortened, once the ceiling went.
+    - **10. Every image type MUST declare a field catalogue** — two converses of the slot-selecting
+      datum. **Several kinds MAY share one slot** where they differ only in the values of fields; an
+      aspect gains a second slot only where the two would draw different *fields*. **An image type MAY
+      declare no collection at all**, whereupon Rules 11 and 12 bind nothing in its catalogue and
+      nothing else follows from the absence.
+    - **16. A graphic draws nothing a reader can act on** — **a mention standing inside a value is
+      content, and is resolved in place**. It is the fixed rendering of the rule's first paragraph and
+      not the markup-stripping of the paragraph before it: markup is an instruction the text path
+      added, so finding it inside means the handover is wrong, while a mention is a value a person put
+      there and no upstream repair could remove it without taking it out of the message too.
+    - **17. A graphic is redrawn whenever what it draws changes** — a **second ground for staticity**.
+      A type may be static because it draws nothing mutable (the check-in call) *or* because it draws
+      a **record of an event** rather than a view of a state, its values fixed at the moment the event
+      occurred. The test is not "can this datum ever change" but "can what this graphic *says* become
+      false while its message stands"; for a graphic of a state the two coincide, for a graphic of an
+      event they do not. A type taking this ground MUST say so and MUST be one whose corrections
+      arrive as **new postings** — a penalty overturned on appeal is its own verdict beside the first,
+      not an edit of it. The verdict is the second static type and the strongest case of the form:
+      its message is never edited either, so no message id need be persisted at all.
+
+  Added sections    : "New Entities (v4.8.0)" — **None**, recorded so it is not re-derived. No table
+                      records a verdict's message and the image flow adds no column. `PenaltyRecord`,
+                      `AppealRecord` and `DivisionResultsConfig.penalty_channel_id` are read as they
+                      stand, as are the attendance module's two enforcements.
+                      `translate_penalty` is the code Rule 7's one rendering obliges the graphic to
+                      call, and the compact sanction rendering of a results graphic MUST NOT be
+                      substituted for it. `utils/font_metrics.py` and the `fonttools` declaration
+                      already exist and are read as they stand. No asset class is added and no file
+                      is shipped: neither the flag nor the team-image vocabulary is the module's, so
+                      Rule 13's closed-set clause does not arise.
+
+                      A **note on the steward module** closes Principle XIV's rationale, at the
+                      author's invitation and deliberately confined to two tests rather than any
+                      prediction: a field added to the verdict catalogue is an amendment of its static
+                      declaration and is reviewed as one; and a verdict amended in place rather than
+                      superseded by a second verdict is no longer a record under Rule 17 and takes
+                      Rule 8's delete-and-repost, with the persisted message id the type does not have
+                      today. Nothing else about the steward module is written down here.
+
+  Removed sections  : none. **Principle VI is corrected**, not removed: its one-sentence restatement
+                      of the image module's additivity carried the same ceiling Rule 7 did ("every
+                      image corresponds to information the bot can already express as text") and now
+                      carries the floor, with the prohibition on deciding named beside it and Rule 7
+                      cited as the authority. Two principles stating one rule is how a correction goes
+                      half-applied, and the grep that found it is part of this audit rather than luck.
+
+  Deferred          : TODO(PER_TYPE_ASSET_SENTENCES) — carried since v4.0.0 and **discharged in full
+                      here**, verdicts having been the last type to carry it. Verified rather than
+                      assumed: its flag sentence separates the absent nationality (field removed,
+                      non-fatal error) from the absent file (deferred to the conventions), and its
+                      team-image sentence defers to the results type. The TODO is **closed**.
+
+  Templates confirmed aligned:
+  ✅ .specify/templates/plan-template.md — Constitution Check is a generic gate; principle count is
+     unchanged at I–XIV, so the Governance section's "I–XIV" stands
+  ✅ .specify/templates/spec-template.md — generic structure; no domain-specific changes needed
+  ✅ .specify/templates/tasks-template.md — phase structure aligns with updated principles
+  ✅ .specify/templates/agent-file-template.md — generic placeholders; no stale references
+
+  Wip-spec corrections applied in this same change, that document being the source of truth for rules
+  and the place a decision made in conversation must land:
+    - § Verdicts, "Handling of mismatches" — gains the nationality-toggle sentence its three siblings
+      carry.
+    - § Verdicts, "Resolution of the data to be placed" — an attendance sanction empties `session_name`
+      and removes its group, rather than carrying "Attendance Sanction" there.
+    - § Conventions, "When a graphic is drawn again" — the verdict graphic is named as the second
+      static graphic, and the record-of-an-event ground stated.
+
+  Known divergence for the increment to repair (not a constitution matter):
+    `svg_fill._DEFAULT_LINE_HEIGHT_RATIO` substitutes a leading of 1.2 where a wrapped field declares
+    no `line-height`. Rule 5 now makes that a problem. The constant predates any wrapping type and no
+    shipped template reaches it; it is an implementation task of 043.
+
+  `README.md` is **not** changed here, and was checked rather than assumed. No verdict graphic is
+  built, `image_catalogues.py` declares no verdict catalogue, and the README describes the bot as it
+  is. It is updated within the increment, when the behaviour it documents exists.
+
+  Follow-up TODOs   : None — all placeholders resolved, and the one long-standing TODO is closed.
+
 [2026-08-13 — v4.6.0 → v4.7.0: MINOR — one aspect, six templates; the notice that is a forecast's absence]
   Version change    : 4.6.0 → 4.7.0
   Bump rationale    : MINOR. **No rule is added.** Seven are expanded (3, 7, 8, 10, 11, 12, 16) and
@@ -2446,8 +2707,10 @@ be rejected or deferred via the governance process below.
 
 Output is available in two formats: text, which is always available, and images, which are
 produced by the image generation module (Principle XIV). Image output is strictly additive —
-every image corresponds to information the bot can already express as text, and no image
-path may replace or degrade a text path.
+every image carries at least what the posting it replaces carried, and no image path may
+replace or degrade a text path. A graphic MAY carry more than the text path publishes; what
+it MUST NOT do is decide anything the source module has not already settled. Principle XIV
+Rule 7 governs, and is the authority on both halves.
 
 **Rationale**: A controlled, documented expansion path allows the bot to grow toward full
 league management without sacrificing reliability or auditability. Each increment is gated
@@ -3299,6 +3562,21 @@ literal the type defines, and an asset is resolved from it by the ordinary slug 
 No field is emptied and no exemption arises, because there is nothing missing — the kind *is*
 the datum.
 
+**A kind of record that has no such thing at all empties the field.** The paragraph above governs a
+thing the record **has** and withholds — a track concealed until the round is run. Where the kind has
+**no such thing** — an attendance sanction, which pertains to no session because none was run against
+it — there is no value to define, and the field is **emptied**, its `_group` removed where one is
+declared. The field's classification is untouched: a mandatory field of this sort must still be
+declared by the template, and the data determine its value to be nothing, which this Rule already
+holds is determined.
+
+The graphic MUST NOT fill such a field with a label naming the kind. Where another field of the same
+graphic already names the kind — a verdict's stage reading "Attendance Sanction" — writing that label
+into the slot of the absent thing says it twice, the second time under a heading it does not answer.
+The text path MAY none the less carry the label there, a single-line heading having no other place to
+put it; that is a difference in what the two **arrange**, not in what they say, and Rule 7's one
+rendering is untouched.
+
 **A kind of record MAY instead have an image type of its own.** Where the graphic's principal
 collection has no members at all for that kind — a round of the mystery format, which runs no session
 and for which no forecast is computed — the module MAY give the kind its **own template slot**,
@@ -3316,7 +3594,8 @@ of its catalogue in full.
 
 - A **problem** is a disagreement between template and data (an unresolved mandatory field, an
   unknown field, a missing template, an asset that resolves to no file in a class carrying no
-  fallback, a collection larger than the template's declared capacity, rasteriser failure). A
+  fallback, a collection larger than the template's declared capacity, a wrapped field the template
+  gives no room or no leading to lay out (Rule 5), rasteriser failure). A
   problem MUST abort the render; no partial image may be posted.
 - A **notice** is a non-fatal degradation the render survives (a substituted font, a wrapped
   field reduced to its size floor and cut, a single-line field cut to its declared
@@ -3357,11 +3636,59 @@ falling back to text or rejecting the command that asked for it.
 
 Single-line fields that may receive unbounded input — any field carrying a Discord display
 name — MUST declare an `inline-size`; overflow is cut at a word boundary, ended with an
-ellipsis, and raises a notice. Wrapped fields MUST declare `shape-inside`; the text is set
-down by half-pixel steps until it fits, and at the floor of half the template-declared size
-is cut at a word boundary with an ellipsis and raises a notice. Line height MUST scale with
-the reduced size, and the admissible line count MUST be recomputed at the reduced leading.
-Overflow MUST NOT be silently clipped by the rasteriser.
+ellipsis, and raises a notice. A single word wider than the room it is given MUST be broken
+within itself rather than allowed to run across what stands beside it. Overflow MUST NOT be
+silently clipped by the rasteriser.
+
+Wrapped fields MUST declare `shape-inside`, naming a rectangle of the template that is the extent of
+the field: its width is what the text is wrapped against, its height what the text may occupy. That
+rectangle carries neither fill nor stroke and is never itself drawn. A field declaring `inline-size`
+and `shape-inside` both is a wrapped field, and is wrapped rather than truncated.
+
+**The wrapping contract**, which every image type inherits:
+
+- The text is broken **first at the line breaks its author entered**, and each piece so obtained
+  broken again at word boundaries into lines no wider than the rectangle. A break the author entered
+  begins a line of the field; a run of them leaves the blank lines between, and each blank line counts
+  against the field's budget as a line of text does. Prose written in paragraphs is drawn in
+  paragraphs.
+- Each line carries the horizontal coordinate and the anchoring the field declares, and each line
+  after the first is offset from the one above it by the **line height in force** — the `line-height`
+  resolving upon the field, whether declared on it or inherited by it.
+- The lines the rectangle admits are its height divided by that line height. Where the text set at the
+  template-declared size occupies more, the field's size is set down by half-pixel steps and the text
+  wrapped again, to a floor of **half** the template-declared size; at that floor it is cut at a word
+  boundary, ended with an ellipsis, and raises a notice naming the field.
+- Line height MUST scale with the reduced size, and the admissible line count MUST be recomputed at
+  the reduced leading. A field set smaller therefore holds **more lines**, rather than the same number
+  more widely spaced, and the reduction can win room where otherwise it could only narrow lines it was
+  already limited to.
+- Each wrapped field is reduced **on its own**. The canvas is not resized, and no other field follows
+  the size of the field reduced.
+- `shape-inside` MUST be removed from the field once its lines are laid out, the rasteriser otherwise
+  re-flowing text the module has already set.
+
+**Two template defects are problems** (Rule 4), and both are **structural** under Rule 9 — read off
+the template alone, needing no data — so each is complete at every one of the three moments and
+refuses at each with the severity that moment carries:
+
+- a `shape-inside` naming a rectangle the template does not declare;
+- a wrapped field upon which no `line-height` resolves. A default leading substituted here would
+  silently decide how much of a league's prose is drawn, which is the template's decision and not the
+  module's.
+
+**Measurement.** A text's width is measured against the font family, weight, style and size the field
+declares. Where that font is not installed on the machine, the measurement MUST be made against the
+face the rasteriser would substitute and a notice raised naming the field and the font. The
+measurement need not agree exactly with the width the rasteriser draws, which applies kerning and
+shaping it need not; it MUST **err narrow**, so that a line the measurement admits is a line the
+canvas holds.
+
+**The module places no ceiling on free text.** Where a field carries prose a person wrote — a
+steward's description, a steward's justification — no length limit is imposed at its source, and the
+answer to a long one is the reduction and the cut above. It is for the league to declare a rectangle
+the longest such text its people write will fit, and a template giving unbounded prose a single
+unwrapped line is relying on it staying short.
 
 **6. Assets are aspect-authored, never padded by the generator.**
 
@@ -3378,9 +3705,19 @@ is why Rule 14 exists.
 
 **7. Image output is additive.**
 
-Image generation MUST NOT replace or alter any existing text output path. Every image the
-module produces MUST correspond to information the bot can already express as text, and the
-text path MUST remain functional when the module is disabled or a render fails.
+Image generation MUST NOT replace or alter any existing text output path, which MUST remain
+functional when the module is disabled or a render fails.
+
+**A graphic carries at least what the posting it replaces carried, and MAY carry more.** This is what
+*additive* means, and it is a **floor** and not a ceiling. Turning a league's images on MUST NOT cost
+that league anything its text posting told them — save what Rules 15 and 16 say a picture cannot
+carry, which is the closed list of two this Principle admits and the one place a graphic is permitted
+to say less.
+
+**There is no matching ceiling.** A graphic MAY draw what the text path has never published anywhere:
+a flag beside a name it prints, the stage at which a verdict was issued, the gap between two totals no
+table has a column for. A picture has room a message has not, and denying it the use of that room
+would buy a reader nothing while costing them the part of the graphic that made it worth drawing.
 
 What a failed render does next depends on who asked for the posting:
 
@@ -3393,6 +3730,14 @@ A user standing at the keyboard is the one person able to fix the template; sile
 text in place of the graphic they asked for would deny them the chance and hide the defect until
 it next fires unattended. The reverse holds for a scheduled posting, where there is nobody to
 tell and the league still needs its information.
+
+**A fallback may therefore say less than the graphic would have.** Where the substitute is posted,
+whatever the graphic would have added beyond the text path's own vocabulary is simply not said. This
+is accepted, and it is why a fallback is a fallback rather than an equivalent: the league is told
+everything it would have been told had images never existed — the floor above, in full — and is not
+told the surplus a working render would have drawn. An image type MUST NOT answer this by holding its
+surplus back. Levelling every graphic down to what a message can say would forfeit the whole reason to
+draw one, to spare a reader a difference they only ever meet when something has already gone wrong.
 
 **Additive means adding no precondition either.** The generation and the posting of a graphic MUST
 NOT prevent, delay or condition anything the source module would have done without it. The
@@ -3414,6 +3759,14 @@ Two consequences follow: its fallback is the message posted **without the attach
 changing, there being no text to restore that was never given up; and its toggle alters the textual
 flow in no respect whatever, an image carrying no button.
 
+**And a graphic MAY displace all but what a picture cannot carry.** The verdict graphic stands at the
+opposite pole from the check-in call: the announcement's heading, its driver line, its sanction, its
+description and its justification all move onto the canvas, and the message it rides on keeps the
+**mention alone**. Rule 16 decides what must stay behind — a mention being a thing a picture cannot
+carry — and the paragraphs above decide what is restored when a render fails, which is the
+announcement entire. Displacing nothing and displacing all but the unpicturable are the two ends of
+one rule and not two rules, and an image type states for itself where between them it falls.
+
 **A fallback is at the grain of the graphic that failed.** Where one event draws several graphics
 (Rule 4) and the text path's natural message is **coarser** than one graphic — one standings message
 carrying both championships where the graphic posts two — the text substitute MUST cover the failed
@@ -3428,50 +3781,56 @@ lap time, a gap, an interval, a time penalty, a points total, a session label �
 produced by one and the same formatting code, which the utility calls and MUST NOT restate. A
 change to how the text path renders such a value is a change to the graphic by the same stroke, and
 no image type may hold a private rendering of a value that is not private to it. The graphic is a
-second presentation of one output, not a second output: nothing is computed for it that the text
-path does not compute, and a value derived at generation — a qualifying gap worked out from two
-recorded laps — is derived by the code that derives it for the table.
+second presentation of one output, not a second output: a value derived at generation — a qualifying
+gap worked out from two recorded laps — is derived by the code that derives it for the table.
 
 The exception is a value a rule of this Principle requires the graphic to draw *differently*. That
 list is closed at two: the zone of Rule 15, and the fixed renderings of Rule 16.
 
-**The correspondence is with the text path, not with the message the graphic rides on.** Every image
-MUST correspond to information the bot can already express as text, and that test is taken against the
-source module's textual output **entire** — never against the single message the graphic is attached
-to. A graphic MAY therefore carry a value the module published in **another message of the same
-flow**: the likelihood of rain computed and posted at phase 1 stands on the phase 2 and phase 3
-graphics, where neither of those messages carries it.
+**The floor is measured against the source module's output entire**, never against the single message
+the graphic is attached to. A graphic MAY therefore gather onto one canvas what the text path said
+across three messages: the likelihood of rain computed and posted at phase 1 stands on the phase 2 and
+phase 3 graphics, where neither of those messages carries it. Gathering is **arranging**, which is the
+whole of what a second presentation does.
 
-Nothing is added to what a league is told. The value was published, it is the source module's, it is
-persisted by that module, and it is rendered by the code that rendered it the first time — the
-obligations above binding it exactly as they bind a value the two paths draw together. A graphic
-gathering onto one canvas what the text path said across three messages is **arranging**, which is the
-whole of what a second presentation does. What the rule still forbids is a value the text path never
-published anywhere, in any message, at any horizon.
+**What a graphic MUST NOT do is decide.** With no ceiling on subject matter, this is the prohibition
+carrying the weight, and it falls on *computation* rather than on information:
 
-**A derived presentation is not a computation.** A value that is **arithmetic over figures the text
-path already publishes** — the difference between two points totals, the distance between two
-recorded positions, the direction of that distance — decides nothing, admits no datum the bot did not
-already hold, and MAY be drawn by a graphic where the text path draws no column for it. This is not a
-third exception to the list above. It is a statement of where the line falls: the information is
-already expressed as text, and arranging it is presentation, which is the whole of what a second
-presentation does.
+- **A value requiring a rule is the source module's, and the graphic reads its result.** An ordering,
+  a tie-break, an eligibility, a points award, a sanction — anything **decided** rather than measured
+  or read — MUST NOT be worked out for a graphic. The countback separating two entries level on points
+  is not the graphic's to apply; the gap between their totals is the graphic's to subtract.
+- **A derivation lives with the data, not with the graphic.** Where a graphic draws a value the text
+  path has no column for — the difference between two points totals, the distance between two recorded
+  positions, the direction of that distance — the working out MUST be written in the service of the
+  module owning the figures, never in the image utility. The text path can then take up the column
+  whenever it wants it, without a second implementation, and no image type holds a private rendering
+  of a value that is not private to it.
+- **A second record of the same kind is read, not recomputed.** Where such a derivation reads the
+  standings of the round preceding the one drawn, it reads them as the source module persisted them.
+  The graphic compares two facts; it does not re-establish either.
 
-Two conditions bind it, and without them it would swallow the rule:
+Together these are the whole of the constraint. A graphic may **arrange** anything the bot holds, may
+**measure** across it, and may **depict** it in whatever medium its template gives it; what it may not
+do is **settle** anything. The line runs between a picture that presents a league's season and a
+picture that quietly becomes a second authority on it, and it falls exactly where a rule would have to
+be applied to reach the value.
 
-- **The derivation lives with the data, not with the graphic.** It MUST be written in the service of
-  the module that owns the figures — the standings service, not the image utility — so that the text
-  path can adopt the column later without a second implementation, and so that no image type holds a
-  private rendering of a value that is not private to it. This is the same obligation the paragraph
-  above places on a shared value; the value is simply not shared *yet*.
-- **A value requiring a rule is a computation and stays forbidden.** An ordering, a tie-break, an
-  eligibility, a points award, a sanction — anything decided rather than measured — is the source
-  module's and the graphic reads its result. The countback separating two entries level on points is
-  not the graphic's to apply; the gap between their totals is the graphic's to subtract.
+**Two consequences worth naming**, each of which reads as an exception only if the ceiling is imagined
+back into place:
 
-Where such a derivation reads a **second record of the same kind** — the standings of the round
-preceding the one drawn — it reads that record as the source module persisted it and MUST NOT
-recompute it. The graphic compares two facts; it does not re-establish either.
+- **Imagery that identifies.** A flag, a badge, a livery, a portrait — an image standing for an entity
+  the graphic already names — is drawn freely, and obliges the text path to publish no column it has
+  never had. It settles nothing; it depicts what the text already named. An image standing for a
+  **fact** rather than an entity — a tyre compound, a weather condition, the direction of a change of
+  standing position — is a value like any other and is read from the module that owns it. A datum's
+  medium never changes what it is.
+- **A graphic naming its own kind.** The stage at which a verdict was issued, the phase a forecast
+  stands at, the point of a lifecycle a table was drawn at — a graphic MAY write down what kind of
+  posting it is, whether or not the message ever said so in words. A picture is separable from the
+  channel that gave it its context: saved, forwarded, or read a season later it carries only what is
+  drawn on it, and a verdict unable to say whether it was a penalty or the appeal that overturned one
+  is a picture of nothing in particular.
 
 **8. Images are attachments, not a new channel category.**
 
@@ -3637,6 +3996,20 @@ the other slot when the one selected is unconfigured or invalid. A selection rea
 would put a template a league authored for one case under the data of another, which is precisely the
 fault Rule 3's sibling test exists to catch, arrived at by the module's own hand instead of by a
 misplaced file.
+
+**Several kinds MAY share one slot.** The converse holds and is the ordinary case: where the kinds of
+a thing differ only in the **values of fields** — the three kinds of verdict, told apart by the stage
+and the session drawn upon them — they are one image type, one template slot and one catalogue, and
+the kind is a datum the graphic **draws** rather than a slot it **chooses**. An aspect gains a second
+slot only where the two would draw different **fields**, which is what obliged results, standings and
+weather to take a slot each and what leaves verdicts with one.
+
+**An image type MAY declare no collection at all.** Where a graphic draws one subject and no list of
+anything — one decision, upon one driver, at one round — its catalogue declares fields alone, and
+Rules 11 and 12 bind nothing in it: no discriminator, no capacity, no floor. Nothing else follows from
+the absence. A type declaring no collection is exempt from no other rule of this Principle, and the
+statement is here only so that a checker reading a catalogue with no collection in it knows it is
+reading a complete one.
 
 **11. Template ids follow a fixed convention.**
 
@@ -3927,6 +4300,19 @@ path does afterwards, to the message rather than to the datum. An image type tha
 stripping markup **inside** a value it was handed has been given the wrong thing, and the repair is in
 the code that handed it over.
 
+**A mention standing inside a value is content, and is resolved in place.** Where a person — or a
+module composing prose on a person's behalf — writes a mention **into** free text the graphic draws,
+that mention is part of what was written. It MUST be resolved to the entity's fixed rendering above,
+in the position it stands, and the text around it drawn as it was written. The justification the
+attendance module composes for a sacking is built around such a mention, and reaches the canvas
+carrying the name alone.
+
+This is the fixed rendering of the first paragraph and not the markup-stripping of the one before it,
+and the distinction is worth holding. Markup is an instruction the text path added to a value, so
+finding it inside means the handover is wrong. A mention is a value a person put there, and no repair
+upstream could take it out without taking it out of the **message** too — which is the one place it
+belongs, the message being where a reader can act on it.
+
 Rule 15 is this rule applied to time: the timestamp every reader saw in their own zone becomes the
 one configured zone drawn for all. Stating the general form once is what stops each image type
 inventing its own answer to a question every picture asks.
@@ -3953,6 +4339,28 @@ and the moment its check-in locks, and draws deliberately no driver, no team, no
 attendance point and no roster: everything the presses of its three buttons alter lives in the embed,
 which is edited, and stays off the picture, which is not. An image type that finds it needs such a
 value is simply not static, and takes Rule 8's delete-and-repost like every other.
+
+**A type MAY instead be static because it draws a record rather than a state.** The obligation admits
+two ways of being satisfied. The check-in graphic satisfies it by **drawing nothing mutable**. A
+**verdict** satisfies it differently: every value it draws was fixed at the moment the decision was
+taken, and a later change of the world does not falsify it. A driver renaming their Discord account
+does not make the verdict wrong — the graphic records the name under which the decision was issued,
+which is what a record is for.
+
+The test is therefore not "can this datum ever change" but "can what this graphic **says** become
+false while its message stands". For a graphic of a **state** the two questions are the same. For a
+graphic of an **event** they are not: the event is over, its facts are settled, and only a change to
+the event itself could falsify the picture. A verdict admits none — a penalty overturned on appeal is
+announced as **its own verdict**, a second posting standing beside the first, and the first remains a
+true record of what was decided when it was decided.
+
+A type taking this ground MUST say so, and MUST be one whose corrections arrive as **new postings**
+rather than as edits to old ones. Where a correction would instead amend the posting that stands, the
+type is drawing a state after all and is not static.
+
+The verdict is the second static type, and the strongest case of the form rather than a third form:
+its message is never edited either, so Rule 8's delete-and-repost does not arise for it in any shape
+and no message id need be persisted for it at all.
 
 The obligation is held by the author of the type and not by a check the module runs — a field's
 mutability is a fact about the module that owns the datum, not a property visible in the catalogue.
@@ -4021,15 +4429,27 @@ behind in the message text. The compensation is Rule 7's shared rendering: what 
 draw is drawn by the code the text path drew it with, so the two can differ in what they can carry
 without ever differing in what they say.
 
-That compensation is also why Rule 7 admits a **derived presentation**. The rule guards against a
-second set of facts, not against a second arrangement of one set. A gap between two points totals
-both already printed is not a fact the graphic invented; refusing it would have obliged a league to
-change what every driver reads as text before it could have a column the picture had room for, and
-would have bought nothing, since the two numbers were already on the page. What the rule keeps is the
-part that matters: the subtraction is written where the standings are computed, so the day the text
-path wants the column it takes the one that exists. A value needing a *rule* to reach — an ordering,
-a tie-break, an award — stays on the far side of the line, because that is where a graphic could
-start disagreeing with its own league.
+That compensation is also why Rule 7 is a **floor and not a ceiling**. For six image types the rule
+read as though a graphic could draw only what the bot already said in words, and the reading was
+wrong in a way that only became visible once a type wanted a flag beside a name it was already
+printing. *Additive* was never a promise that the picture would say no more than the message; it was a
+promise that turning images on would cost a league nothing. Those are different sentences, and only
+the second is worth defending — the first would have obliged a league to add a nationality column to
+a text table before its picture could carry a flag, which buys a reader nothing and costs them a
+column.
+
+What replaced the ceiling is the prohibition that was doing the real work all along: a graphic may not
+**decide**. A gap between two points totals both already printed is not a fact the graphic invented; a
+countback separating two entries level on those totals is, and stays on the far side of the line,
+because that is where a graphic could start disagreeing with its own league. Arranging, measuring and
+depicting are safe in a way that settling never is, and the condition attached to a derivation —
+that the subtraction is written where the standings are computed — is what keeps even the safe case
+from quietly becoming the image module's private arithmetic.
+
+The cost is stated rather than hidden: a fallback now says **less** than the graphic would have. That
+is the right trade. A reader meets the fallback only when something has already gone wrong, and
+levelling every graphic down to what a message can say, permanently, to spare them that difference
+would forfeit the whole reason to draw one.
 
 Rules 12 and 13 each gain a case where the bot, and not the league, is the one who knows. A nested
 collection whose bound differs from member to member cannot be refused for over-declaring, because
@@ -4087,6 +4507,59 @@ mystery notice graphic unspecifiable — a picture of a posting the constitution
 Correcting the principle rather than exempting the graphic is the right order of repair. A rule that
 contradicts the shipped bot is a defect in the rule, and two documents disagreeing about whether a
 message is posted is worse than one document saying plainly that it is.
+
+The seventh image type is the module's **simplest** graphic and its **hardest** one to place, and the
+two facts are the same fact. A verdict draws one decision upon one driver: no collection, no ordinal,
+no capacity, no floor, one template for all three of its kinds. Everything this Principle had built to
+manage repetition falls away, and what is left standing is the part it had never had to answer —
+what a graphic **is**, as against what it contains. Six types had told the module how to arrange many
+things on a canvas. The seventh asked what a picture of a single decision owes, and three rules had to
+say more than they had said.
+
+Rule 7 was **inverted**, and the seventh type is what exposed it. Two of its questions — may a verdict
+draw a flag the announcement never prints, may it name the stage it was issued at — were each put as
+a request for an exemption, and each was granted as one before the author named the actual fault: the
+rule had been written as a ceiling on what a graphic may say, when what *additive* protects is a
+**floor** under what it must. A picture that says more than a message costs a league nothing. A
+picture that says less costs them exactly what images were turned on to add. Only the second was ever
+worth a rule, and the two exemptions dissolve into instances the moment the rule points the right way.
+
+That leaves the prohibition on **deciding** carrying Rule 7 by itself, which is where it belongs and
+where it was always doing the work. A graphic may arrange, measure and depict; it may not settle. The
+countback stays forbidden, the derivation still lives with the data, and a second record of the same
+kind is still read rather than recomputed — none of which needed the ceiling to hold, and all of which
+the ceiling was obscuring.
+
+Rule 17's second ground is the one that mattered most to get right. Staticity had been justified once,
+by a graphic that draws nothing mutable, and a verdict draws a driver's name — a value that changes.
+Reading the obligation as "no mutable datum" would have forced every verdict into delete-and-repost,
+persisting a message id for a message nothing will ever edit, to keep a record current with a world
+that has moved past it. The obligation is about **truth**, not about mutability: a record of an event
+cannot go stale, because it was never a claim about now. Saying so is what lets an event-shaped
+graphic be static honestly, and the condition attached — that corrections arrive as new postings —
+is exactly the property that makes the claim hold.
+
+Rule 5 was thin for six types because none of them wrapped. A results table draws figures, a calendar
+draws dates, a forecast draws icons; every one of them knew roughly how long its values were. A
+verdict draws **prose a person wrote**, of no length anybody controls, and the wrapping contract had
+to be stated in full the moment a type existed to exercise it. That it is stated as a general contract
+rather than as the verdict's own is deliberate: it is the steward module's graphics, and any later
+type carrying free text, that would otherwise each invent an answer.
+
+**A note on the steward module.** The verdict type is specified against the penalty and appeal flow as
+it stands, and the steward module — the next feature of consequence — is expected to change what a
+verdict records and therefore what its catalogue declares. Nothing here pre-empts that, and no rule
+above is written in anticipation of it. Two tests are stated so that the change is taken deliberately
+rather than discovered:
+
+- A field added to the verdict catalogue is an amendment of its **static declaration** (Rule 17) and
+  MUST be reviewed as one, the question being whether the new value was settled at the moment the
+  decision was taken.
+- A verdict **amended in place** rather than superseded by a second verdict is no longer a record
+  under Rule 17, and takes Rule 8's delete-and-repost like any other graphic — with a persisted
+  message id, which the type deliberately does not have today.
+
+Neither is a prediction of what the steward module will do. Both are what it will have to answer.
 
 ## Bot Behavior Standards
 
@@ -4448,6 +4921,32 @@ for team-level aggregates):
   appeal outcomes for this division are posted to this channel; if null, the bot falls
   back to `results_channel_id`.
 
+### New Entities (v4.8.0)
+
+**None.** The verdict image type introduces no entity and amends none, and the absence is recorded
+here so that it is not re-derived.
+
+- A verdict is posted once and is never edited, replaced or deleted, and **no message id is persisted
+  for one**. This is Rule 17's static form at its strongest, and it needs no state whatever: no table
+  records a verdict's message, and the image flow adds no column to any that exists.
+- `PenaltyRecord`, `AppealRecord` and `DivisionResultsConfig.penalty_channel_id` (all v2.7.0) are read
+  as they stand. So are the attendance module's autosack and autoreserve enforcements, whose
+  announcements are verdicts of the third kind.
+- `verdict_announcement_service.translate_penalty` is the descriptive rendering of a sanction, and is
+  the code Rule 7's one rendering obliges the graphic to call. The **compact** rendering a results
+  graphic places in a sanction column is a second presentation of the same datum and MUST NOT be
+  substituted for it.
+- `utils/font_metrics.py` and the `fonttools` declaration in `requirements.txt` are the third
+  dependency the module was always specified to need — the means by which a text's width is measured
+  (Rule 5) — and are read as they stand. Inkscape remains the one dependency no package declaration
+  installs.
+- The `verdicts_template` slot, the `verdicts` aspect and its toggle, the `images test verdicts` value,
+  the flag directory and the team image directory are all part of the configuration surface delivered
+  at 035 and 036, and are read as they stand.
+- No asset class is added. The verdict draws a flag and a team image, both of classes already
+  configured, and ships no file of its own: neither vocabulary is the module's, so Rule 13's
+  closed-set clause does not arise.
+
 ### New Entities (v4.7.0)
 
 **None.** The six weather image types introduce no entity and amend none, and the absence is recorded
@@ -4752,4 +5251,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 4.7.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-13
+**Version**: 4.8.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-14
