@@ -19,6 +19,8 @@ from models.image_constants import (
     ASPECT_LABELS,
     ASPECTS,
     ASSET_LABELS,
+    LIVE_POSTING_ASPECTS,
+    PENDING_POSTING_ASPECTS,
     TEMPLATE_COLUMNS,
     TEMPLATE_COMMAND_NAMES,
     TEMPLATE_LABELS,
@@ -49,6 +51,30 @@ _SAMPLE_VARIANTS: dict[str, tuple] = {
     # penalty, and free text at five lengths (043).
     "verdicts_template": SAMPLE_VERDICT_CASES,
 }
+
+
+def toggle_enabled_lines(aspect: str, label: str, blocking: list[str]) -> list[str]:
+    """The reply confirming an aspect has been enabled.
+
+    An aspect with no posting path yet records intent alone, and says so: a manager who
+    enables one and sees no change in the next post would otherwise reasonably think it
+    broken. An aspect that does post says nothing of the sort — the claim was once made
+    of all eight and outlived the truth of it for seven.
+    """
+    lines = [f"✅ **{label}** image output **enabled**."]
+
+    if aspect not in LIVE_POSTING_ASPECTS:
+        lines.append(
+            "⏳ **Not yet in effect** — posting for this aspect is wired in a later "
+            "update. Use `/images test` to see what it will produce."
+        )
+
+    if blocking:
+        lines.append("")
+        lines.append("⚠️ It would not produce an image as configured:")
+        lines += [f"  ↳ {reason}" for reason in blocking]
+
+    return lines
 
 
 class ImageCog(commands.Cog):
@@ -559,21 +585,8 @@ class ImageCog(commands.Cog):
             await self._log(interaction, f"{label} image output disabled")
             return
 
-        lines = [f"✅ **{label}** image output **enabled**."]
-
-        # The toggle records intent; it changes no posted output in this increment
-        # (FR-017a). Saying so plainly matters: a manager who enables an aspect and sees
-        # no change in the next post would otherwise reasonably think it broken.
-        lines.append(
-            "⏳ **Not yet in effect** — image posting is wired in a later update. "
-            f"Use `/images test` to see what it will produce."
-        )
-
         blocking = await self._aspect_blocking_reasons(server_id, aspect.value)
-        if blocking:
-            lines.append("")
-            lines.append("⚠️ It would not produce an image as configured:")
-            lines += [f"  ↳ {reason}" for reason in blocking]
+        lines = toggle_enabled_lines(aspect.value, label, blocking)
 
         await self._reply(interaction, "\n".join(lines))
         await self._log(interaction, f"{label} image output enabled")
@@ -888,11 +901,17 @@ class ImageCog(commands.Cog):
             for reason in status.blocking_reasons:
                 lines.append(f"      ↳ {reason}")
 
-        lines += [
-            "",
-            "_Aspects are recorded but not yet in effect — image posting is wired in a "
-            "later update. Use `/images test` to see what each will produce._",
-        ]
+        # Named individually rather than as a blanket claim over all eight, and gone
+        # entirely once every aspect posts.
+        if PENDING_POSTING_ASPECTS:
+            pending = ", ".join(
+                ASPECT_LABELS[aspect] for aspect in PENDING_POSTING_ASPECTS
+            )
+            lines += [
+                "",
+                f"_Recorded but not yet in effect: **{pending}** — posting for these is "
+                "wired in a later update. Use `/images test` to see what they produce._",
+            ]
         return lines
 
 

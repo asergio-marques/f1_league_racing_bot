@@ -320,6 +320,48 @@ Cancels all scheduled rounds in the division (jobs + status flags) and posts a n
 | `name` | String | ✅ | Division name |
 | `channel` | Channel | ✅ | Channel where standings tables are posted |
 
+#### `/division lineup-channel` — Set the lineup posting channel for a division
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where the division's lineup is posted |
+
+#### `/division calendar-channel` — Set the calendar posting channel for a division
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where the division's calendar is posted |
+
+#### `/division attendance-channel` — Set the attendance logging channel for a division
+*Access: Trusted admin · Attendance module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where the attendance sheet is posted |
+
+#### `/division rsvp-channel` — Set the RSVP notice channel for a division
+*Access: Trusted admin · Attendance module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where check-in calls are posted |
+
+#### `/division verdicts-channel` — Set the verdicts channel for a division
+*Access: Trusted admin · Results & Standings module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where penalty and appeal verdicts are announced |
+
+> These eight channels are one per kind of image output. The image module draws nothing where its source module posts nothing, so an output with no channel set produces no picture — see [Configuring the image module](docs/how-to/configuring-the-image-module.md).
+
 #### `/division calendar-sync` — Repost a division's calendar
 *Access: Trusted admin*
 
@@ -1041,6 +1083,8 @@ No parameters. Displays the full attendance configuration for this server as an 
 
 The image module posts bot output as generated PNGs instead of text, by filling pre-prepared SVG templates. Enable it with `/module enable images`.
 
+> **Setting it up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, from a fresh clone to an approved season, follow [Configuring the image module](docs/how-to/configuring-the-image-module.md).
+
 **Prerequisite:** the machine running the bot must carry **Inkscape**, which converts the filled SVG to PNG. No Python dependency installs it — it is a separate program. Its absence is fatal to the whole module and is reported at `/season review`, at `/images config view` and at `/images test`. If Inkscape is installed somewhere unusual, set the `INKSCAPE` environment variable to the executable's full path.
 
 `lxml` and `fontTools` are ordinary Python dependencies and are already in `requirements.txt`.
@@ -1054,7 +1098,9 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 Flips that aspect between a generated image and the text the bot has always posted. All eight start disabled.
 
-> **`calendar`, `lineup` and `results` are live; the other five record intent only.**
+> **Seven of the eight aspects post live. `standings` is the exception** — it is configured,
+> validated and previewable with `/images test`, but no posting path reads its toggle yet, and
+> the toggle tells you so when you enable it.
 >
 > With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
 >

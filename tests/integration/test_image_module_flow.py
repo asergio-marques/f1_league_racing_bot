@@ -4,7 +4,8 @@ Exercises the full migrated schema via ``run_migrations``, then drives the servi
 the cog handlers call. The gate tests here are:
 
 * ``test_disable_retains_configuration`` — the Principle X.6 exception (FR-004a, SC-008)
-* ``test_toggles_are_inert``            — this increment changed no posted output (SC-004)
+* ``test_toggle_reply_*`` / ``test_aspect_section_footer_*`` — the two surfaces telling a
+  manager which aspects actually post, both read from ``LIVE_POSTING_ASPECTS``
 """
 from __future__ import annotations
 
@@ -500,6 +501,103 @@ async def test_season_review_and_config_view_agree(
 
     assert aspect_lines(view_lines) == aspect_lines(review_lines)
     assert any("phase 3" in ln.lower() and "sprint" in ln.lower() for ln in review_lines)
+
+
+# ── Which aspects actually post ───────────────────────────────────────────
+#
+# Both surfaces read LIVE_POSTING_ASPECTS, so they follow it when a posting path ships
+# and cannot drift apart in the meantime. These assert the *shape* of the claim rather
+# than its present membership, so wiring standings up does not falsify them.
+
+
+def test_live_and_pending_aspects_partition_the_eight():
+    """Every aspect is one or the other, and neither set is invented."""
+    from models.image_constants import LIVE_POSTING_ASPECTS, PENDING_POSTING_ASPECTS
+
+    assert LIVE_POSTING_ASPECTS <= set(ASPECTS)
+    assert set(PENDING_POSTING_ASPECTS) | set(LIVE_POSTING_ASPECTS) == set(ASPECTS)
+    assert not set(PENDING_POSTING_ASPECTS) & LIVE_POSTING_ASPECTS
+    # Report order is preserved, so the footer names them as the list above shows them.
+    assert list(PENDING_POSTING_ASPECTS) == [
+        a for a in ASPECTS if a in set(PENDING_POSTING_ASPECTS)
+    ]
+
+
+def test_toggle_reply_for_a_live_aspect_makes_no_not_yet_claim():
+    """An aspect that posts must not tell a manager it does nothing (the 035 wording)."""
+    from cogs.image_cog import toggle_enabled_lines
+    from models.image_constants import ASPECT_LABELS, LIVE_POSTING_ASPECTS
+
+    for aspect in sorted(LIVE_POSTING_ASPECTS):
+        lines = toggle_enabled_lines(aspect, ASPECT_LABELS[aspect], [])
+        text = "\n".join(lines)
+        assert "not yet in effect" not in text.lower(), aspect
+        assert text.startswith(f"✅ **{ASPECT_LABELS[aspect]}** image output **enabled**.")
+
+
+def test_toggle_reply_for_a_pending_aspect_says_so():
+    """An aspect with no posting path still warns, or the manager thinks it broken."""
+    from cogs.image_cog import toggle_enabled_lines
+    from models.image_constants import ASPECT_LABELS, PENDING_POSTING_ASPECTS
+
+    for aspect in PENDING_POSTING_ASPECTS:
+        lines = toggle_enabled_lines(aspect, ASPECT_LABELS[aspect], [])
+        text = "\n".join(lines)
+        assert "Not yet in effect" in text, aspect
+        assert "/images test" in text, aspect
+
+
+def test_toggle_reply_keeps_blocking_reasons():
+    """The not-yet notice must not have displaced the invalid-configuration warning."""
+    from cogs.image_cog import toggle_enabled_lines
+
+    lines = toggle_enabled_lines("calendar", "Calendar", ["the template is missing"])
+    text = "\n".join(lines)
+    assert "would not produce an image as configured" in text
+    assert "↳ the template is missing" in text
+
+
+async def test_aspect_section_footer_names_only_pending_aspects(
+    module_service, config_service, monkeypatch
+):
+    """`/images config view` must not disclaim the seven aspects that do post."""
+    import services.image_render_service as render_service
+    from cogs.image_cog import ImageCog
+    from models.image_constants import (
+        ASPECT_LABELS,
+        LIVE_POSTING_ASPECTS,
+        PENDING_POSTING_ASPECTS,
+    )
+    from services.image_validity_service import ImageValidityService
+
+    monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
+    await _enable(module_service, config_service)
+
+    validity = ImageValidityService(config_service, module_service)
+
+    class _Bot:
+        image_config_service = config_service
+        image_validity_service = validity
+
+    bot = _Bot()
+    bot.module_service = module_service
+
+    cog = ImageCog.__new__(ImageCog)
+    cog.bot = bot
+
+    lines = await cog.build_aspect_section(SERVER_ID)
+    footer = "\n".join(ln for ln in lines if ln.startswith("_"))
+
+    if not PENDING_POSTING_ASPECTS:
+        assert footer == ""
+        return
+
+    assert "not yet in effect" in footer.lower()
+    for aspect in PENDING_POSTING_ASPECTS:
+        assert ASPECT_LABELS[aspect] in footer, aspect
+    # The seven that post are named in the body above, never in the disclaimer.
+    for aspect in LIVE_POSTING_ASPECTS:
+        assert ASPECT_LABELS[aspect] not in footer, aspect
 
 
 # ── T068 — rendering from sample data, with no season (FR-036, SC-005) ────

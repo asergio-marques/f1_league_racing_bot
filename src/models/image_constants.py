@@ -129,6 +129,31 @@ ASPECT_LABELS: dict[str, str] = {
     "verdicts": "Verdicts",
 }
 
+#: The aspects whose toggle changes what the bot posts. An aspect is live once its
+#: source module calls the image module on the occasions it posts — in practice, once
+#: it has an `image_<aspect>_post` module wired into it.
+#:
+#: `standings` alone is not: it is configured, validated and previewable through
+#: `/images test`, but no posting path reads its toggle yet. Declaring that here rather
+#: than in the text of a reply keeps the toggle and the `/images config view` footer
+#: from disagreeing, and makes shipping the standings posting path a one-line change.
+LIVE_POSTING_ASPECTS: frozenset[str] = frozenset(
+    {
+        "calendar",
+        "lineup",
+        "results",
+        "attendance",
+        "rsvp",
+        "weather",
+        "verdicts",
+    }
+)
+
+#: The aspects a toggle records but no posting path acts upon yet, in report order.
+PENDING_POSTING_ASPECTS: tuple[str, ...] = tuple(
+    aspect for aspect in ASPECTS if aspect not in LIVE_POSTING_ASPECTS
+)
+
 
 # ── Asset directories ─────────────────────────────────────────────────────
 
