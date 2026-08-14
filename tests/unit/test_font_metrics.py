@@ -139,3 +139,139 @@ def test_measurement_falls_back_rather_than_raising():
 def test_unknown_glyphs_do_not_raise(index):
     resolved = resolve_family(next(iter(index)))
     assert measure("中文\U0001f600", resolved, 20) >= 0
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 043 — the face measured is the one declared, and the measurement errs narrow
+#
+# specs/043-verdicts-image-generation/contracts/text-wrapping.md § Measurement.
+# The whole line budget of a wrapped field rests on these two.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def _a_family_with_two_weights():
+    """A family this host carries at both a regular and a bold weight, or None."""
+    from utils.font_metrics import face_index  # noqa: PLC0415
+
+    for (family, italic), faces in face_index().items():
+        if italic:
+            continue
+        weights = {weight for weight, _width, _path in faces}
+        if any(w < 600 for w in weights) and any(w >= 600 for w in weights):
+            return family
+    return None
+
+
+def test_a_bold_declaration_resolves_to_a_heavier_face_than_a_regular_one():
+    """Measuring a bold field against the regular face admits lines that do not fit."""
+    family = _a_family_with_two_weights()
+    if family is None:
+        pytest.skip("no family on this host carries both a regular and a bold face")
+
+    regular = resolve_family(family, bold=False)
+    bold = resolve_family(family, bold=True)
+
+    assert regular.path != bold.path, "weight must select among a family's faces"
+    sample = "Handgloves reviewed mixing quartz"
+    assert measure(sample, bold, 40.0) > measure(sample, regular, 40.0)
+
+
+def test_the_regular_face_chosen_is_the_nearest_to_400_not_the_first_alphabetically():
+    """DejaVuSans-ExtraLight sorts before DejaVuSans and is materially narrower."""
+    from utils.font_metrics import face_index  # noqa: PLC0415
+
+    for (family, italic), faces in face_index().items():
+        if italic or len(faces) < 2:
+            continue
+        normal = [face for face in faces if face[0] < 600 and face[1] == 5]
+        if len({face[0] for face in normal}) < 2:
+            continue
+        chosen = resolve_family(family, bold=False).path
+        nearest = min(
+            normal, key=lambda face: (abs(face[0] - 400), abs(face[1] - 5), str(face[2]))
+        )[2]
+        assert chosen == nearest
+        return
+    pytest.skip("no family on this host carries two distinct non-bold weights")
+
+
+def test_measurement_errs_narrow_against_what_the_rasteriser_draws():
+    """A line the measurement admits must be a line the canvas holds (XIV.5).
+
+    Compared against the converter's own query rather than against a guess: it reports the
+    drawn width of the element, kerning and shaping included, which is exactly the number
+    the measurement must not fall below.
+    """
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    from services.image_render_service import find_converter  # noqa: PLC0415
+
+    executable = find_converter()
+    if executable is None:
+        pytest.skip("the rasteriser is not installed on this host")
+
+    family = "DejaVu Sans"
+    resolved = resolve_family(family, bold=False)
+    if resolved.substituted or resolved.path is None:
+        pytest.skip(f"{family} is not installed on this host")
+
+    sample = "Handgloves reviewed mixing quartz"
+    size = 40.0
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="200">'
+        f'<text id="probe" x="0" y="100" '
+        f'style="font-family:{family};font-size:{size:g}px">{sample}</text></svg>'
+    )
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "probe.svg"
+        path.write_text(svg, encoding="utf-8")
+        completed = subprocess.run(
+            [executable, str(path), "--query-id=probe", "--query-width"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+
+    if completed.returncode != 0 or not completed.stdout.strip():
+        pytest.skip("the rasteriser could not report a drawn width on this host")
+
+    drawn = float(completed.stdout.strip())
+    measured = measure(sample, resolved, size)
+
+    assert measured >= drawn, (
+        f"measurement must err narrow: measured {measured:.2f}px but the rasteriser "
+        f"draws {drawn:.2f}px, so a line admitted here would overrun the canvas"
+    )
+
+
+def test_a_condensed_face_never_stands_in_for_its_normal_sibling():
+    """Arial Narrow declares "Arial" as its typographic family (name ID 16).
+
+    Indexed on family alone it can win the "Arial" slot outright, and every line is then
+    measured narrower than the rasteriser draws it — the direction "errs narrow" forbids.
+    Found by rendering a verdict to PNG and watching its justification run off the canvas,
+    which is the whole reason XIV.14 requires the check be made against the raster.
+    """
+    from utils.font_metrics import face_index  # noqa: PLC0415
+
+    for (family, italic), faces in face_index().items():
+        if italic:
+            continue
+        widths = {width for _weight, width, _path in faces}
+        if 5 not in widths or all(width == 5 for width in widths):
+            continue
+
+        chosen = resolve_family(family, bold=False).path
+        chosen_width = next(
+            width for _weight, width, path in faces if path == chosen
+        )
+        assert chosen_width == 5, (
+            f"{family} resolved to a face of width class {chosen_width}, "
+            f"which is narrower or wider than the normal face the renderer will use"
+        )
+        return
+
+    pytest.skip("no family on this host carries both a normal and a condensed face")

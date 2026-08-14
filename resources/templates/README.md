@@ -24,7 +24,32 @@ server points it elsewhere with `/images config template-directory`.
 Qualifying and race are separate files, as are the two championships and the attendance
 sheet and check-in call — each pair shares too few columns to share one. A sprint and a
 feature session of the same kind *do* share a template, told apart by the session-name field
-alone.
+alone, and so do the three kinds of verdict.
+
+## The verdict template wraps its prose
+
+`verdicts_template.svg` is the only shipped template with **wrapped** fields, and the only
+one drawing text a person wrote rather than a value the bot computed. `description` and
+`justification` each declare `shape-inside` naming a rectangle below them — `description_shape`
+and `justification_shape` — and it is those rectangles, not the text elements, that decide how
+much prose fits.
+
+- **The rectangle is the field.** Its width is what the text wraps against; its height divided
+  by the field's `line-height` is how many lines it may occupy. It carries no fill and no
+  stroke and is never drawn: it is there to be moved, not seen. Narrowing one is how you take
+  a measure down to something easier on the eye; the cost is fewer characters before a long
+  verdict starts shrinking.
+- **`line-height` is required and is not guessed.** A wrapped field without one is refused the
+  moment you name the file. The bot will not substitute a leading, because the number it chose
+  would silently decide how much of a steward's prose your league sees.
+- **Keep the height a whole multiple of the line height.** The packaged file uses 156 ÷ 26 = six
+  lines. Changing either number changes the budget.
+- Long prose is set down half a pixel at a time to a floor of half the declared size, and cut
+  there with an ellipsis and a note. Because the leading falls with the size, a field set
+  smaller holds *more* lines rather than the same number spread wider.
+
+`penalty` may be wrapped the same way. It is a single unbounded line in the packaged file,
+which relies on sanction descriptions staying as short as they are today.
 
 ## These are a starting point, not a fixture
 

@@ -243,6 +243,7 @@ def test_declared_capacities_still_excludes_the_lineup():
     assert "lineup_template" not in declared_capacities()
 
 
-def test_an_unspecified_type_is_still_empty():
-    # The six weather types were specified at 042; verdicts alone awaits its own.
-    assert catalogue_for("verdicts_template").is_empty
+def test_the_last_unspecified_type_was_specified_at_043():
+    # The six weather types were specified at 042 and the verdict at 043, which was the
+    # last: every template column now carries a catalogue.
+    assert not catalogue_for("verdicts_template").is_empty

@@ -51,6 +51,20 @@ _GENERIC_FAMILIES = {
 #: Last resort when nothing at all resolves. Measurement then falls back to an estimate.
 _FALLBACK_ADVANCE_RATIO = 0.5
 
+#: CSS numeric weights at or above this count as bold, matching the usual rendering of
+#: `font-weight: bold` as 700 and the OS/2 usWeightClass of a semibold face.
+_BOLD_THRESHOLD = 600
+
+#: The two weight classes a declaration resolves towards. A family's nearest face to one
+#: of these is the one measured against.
+_WEIGHT_REGULAR = 400
+_WEIGHT_BOLD = 700
+
+#: OS/2 usWidthClass 5 is the normal width. A condensed face declaring the same typographic
+#: family as its normal sibling — Arial Narrow calls itself "Arial" at nameID 16 — would
+#: otherwise be measured against, and every line would be reckoned narrower than drawn.
+_WIDTH_NORMAL = 5
+
 
 @dataclass(frozen=True)
 class ResolvedFont:
@@ -83,6 +97,64 @@ def font_index() -> dict[str, Path]:
 
     log.debug("font_index: %d families indexed", len(index))
     return index
+
+
+@lru_cache(maxsize=1)
+def face_index() -> dict[tuple[str, bool], list[tuple[int, int, Path]]]:
+    """Map (lowercase family, italic) -> the faces of that family, by weight class.
+
+    ``font_index`` keys on the family alone and keeps the *first* file it meets, which on
+    a host carrying ``DejaVuSans-Bold.ttf``, ``DejaVuSans-ExtraLight.ttf`` and
+    ``DejaVuSans.ttf`` is whichever sorts first. That is fine for asking whether a family
+    exists and wrong for measuring text: XIV.5 requires the measurement be made against the
+    family, **weight and style** the field declares. Measuring a bold field against a
+    regular face admits lines the canvas will not hold, which is the one direction the
+    "errs narrow" obligation forbids; measuring a regular field against an extra-light one
+    does the same, more quietly.
+    """
+    index: dict[tuple[str, bool], list[tuple[int, int, Path]]] = {}
+    directories = _FONT_DIRS_WINDOWS if os.name == "nt" else _FONT_DIRS_POSIX
+
+    for directory in directories:
+        if not directory or not directory.is_dir():
+            continue
+        for path in directory.rglob("*"):
+            if path.suffix.lower() not in _FONT_SUFFIXES:
+                continue
+            for family, weight, width, italic in _faces_of(path):
+                index.setdefault((family.lower(), italic), []).append((weight, width, path))
+
+    log.debug("face_index: %d family/style pairs indexed", len(index))
+    return index
+
+
+def _faces_of(path: Path) -> list[tuple[str, int, int, bool]]:
+    """(family, OS/2 weight class, OS/2 width class, italic) per family name declared."""
+    try:
+        font = TTFont(path, fontNumber=0, lazy=True)
+    except Exception:  # noqa: BLE001
+        return []
+
+    weight, width, italic = _WEIGHT_REGULAR, _WIDTH_NORMAL, False
+    try:
+        os2 = font["OS/2"]
+        weight = int(getattr(os2, "usWeightClass", _WEIGHT_REGULAR))
+        width = int(getattr(os2, "usWidthClass", _WIDTH_NORMAL))
+        # fsSelection bit 0 is italic; bit 5 is bold, which some faces set without a
+        # usWeightClass to match.
+        selection = int(getattr(os2, "fsSelection", 0))
+        italic = bool(selection & 0x01)
+        if selection & 0x20:
+            weight = max(weight, _WEIGHT_BOLD)
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        try:
+            font.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    return [(family, weight, width, italic) for family in _families_of(path)]
 
 
 def _families_of(path: Path) -> list[str]:
@@ -127,21 +199,48 @@ def parse_font_family(declaration: str | None) -> list[str]:
     return families
 
 
-def resolve_family(declaration: str | None) -> ResolvedFont:
-    """Resolve a ``font-family`` list to the face a renderer would land on."""
+def _face(family: str, bold: bool, italic: bool) -> Path | None:
+    """The file whose weight is nearest the one asked for, or None.
+
+    The declared style is preferred; where a family carries no italic face the upright one
+    stands in, which is what the rasteriser will oblique for itself. Falling back to
+    ``font_index`` last keeps a family findable even where its OS/2 table would not read.
+    """
+    target = _WEIGHT_BOLD if bold else _WEIGHT_REGULAR
+    faces = face_index()
+
+    def rank(face: tuple[int, int, Path]) -> tuple[int, int, str]:
+        weight, width, path = face
+        return abs(weight - target), abs(width - _WIDTH_NORMAL), str(path)
+
+    for key in ((family.lower(), italic), (family.lower(), False)):
+        candidates = faces.get(key)
+        if candidates:
+            return min(candidates, key=rank)[2]
+
+    return font_index().get(family.lower())
+
+
+def resolve_family(
+    declaration: str | None, *, bold: bool = False, italic: bool = False
+) -> ResolvedFont:
+    """Resolve a ``font-family`` list to the face a renderer would land on.
+
+    *bold* and *italic* select among a family's faces (XIV.5). They default to the upright
+    regular so every existing caller keeps its behaviour.
+    """
     families = parse_font_family(declaration)
     requested = families[0] if families else "sans-serif"
-    index = font_index()
 
     for family in families:
-        hit = index.get(family.lower())
+        hit = _face(family, bold, italic)
         if hit is not None:
             return ResolvedFont(family, hit, requested, substituted=family != requested)
 
     # Nothing named resolved; try the generic fallbacks the last family implies.
     for family in families + ["sans-serif"]:
         for candidate in _GENERIC_FAMILIES.get(family.lower(), ()):
-            hit = index.get(candidate.lower())
+            hit = _face(candidate, bold, italic)
             if hit is not None:
                 return ResolvedFont(candidate, hit, requested, substituted=True)
 

@@ -1009,6 +1009,7 @@ These hold for every image type of the module and are stated here rather than re
 ### The wrapping of free text
 - The description and the justification are the fields a template is expected to declare as wrapping fields. Any text field of the graphic may be declared one.
 - A field is a wrapping field where the template declares a "shape-inside" property upon it naming a rectangle of the template. That rectangle is the extent of the field: its width is the width the text is wrapped against and its height the height the text shall occupy. It carries neither fill nor stroke and is never itself drawn.
+- The rectangle shall declare a width and a height. A wrapping field whose rectangle declares neither, or only one of the two, is a fatal error: the field has been given no room to lay its text out in, and drawing it as a single unwrapped line would put a steward's prose across the graphic with nothing reported.
 - The text shall be broken first at the line breaks the steward entered, and each piece so obtained broken again at word boundaries into lines no wider than the rectangle. A line break the steward entered begins a new line of the field; a run of them leaves the blank lines between, each counting against the budget as a line of text does. The textual announcement keeps the paragraphs a steward wrote and the graphic shall keep them too.
 - Each line is placed as a line of the field carrying the horizontal coordinate and the anchoring the field declares, and each line after the first is offset from the one above it by the line height in force.
 - The line height a field declares is the "line-height" property upon it, whether declared on the field itself or inherited by it. A wrapping field upon which no such property resolves is a fatal error. A single word wider than the rectangle shall be broken within itself.
@@ -1018,6 +1019,7 @@ These hold for every image type of the module and are stated here rather than re
 - The "shape-inside" property shall be removed from the field once its lines are laid out.
 - A field declaring an "inline-size" property and no "shape-inside" is not a wrapping field. It is a single-line field declaring the room it is given, and is truncated as the conventions above define.
 - The "penalty" field may be declared a wrapping field, as the description and the justification are. The descriptive rendering of a sanction is short today, and a template giving it a single unbounded line is relying upon its staying so.
+- The three faults above - a "shape-inside" naming a rectangle the template does not hold, a wrapping field upon which no line height resolves, and a rectangle declaring no usable extent - are read from the template alone and need no data whatsoever. Each shall therefore be verified at every moment a template file is verified, when it is configured, at season review and before every generation alike, and shall be reported naming the field at fault and distinguishably from the other two. A league shall be told that its prose cannot be laid out at the moment it names the file, and not when a steward first writes a long verdict.
 - The width of a text is measured against the font family, weight, style and size the field declares, for which purpose the third dependency named at the head of this document is required. Where the font a field declares is not installed on the machine, the measurement shall be made against the font the converter would substitute for it and a non-fatal error reported naming the field and the font.
 - The measurement need not agree exactly with the width the converter draws, which applies kerning and shaping the measurement need not. It shall err narrow, so that a line admitted by the measurement is a line the canvas holds.
 - The graphic relies upon no limit on the length of the free text of a verdict. It is for the league to declare a rectangle the longest verdicts its stewards write will fit.
@@ -1040,7 +1042,9 @@ These hold for every image type of the module and are stated here rather than re
 - Each of the following is a fatal error, naming what was found to be at fault:
     - a mandatory field of the graphic that the template does not hold;
     - a mandatory field whose value cannot be determined at generation;
-    - a wrapping field whose "shape-inside" property names a rectangle the template does not hold.
+    - a wrapping field whose "shape-inside" property names a rectangle the template does not hold;
+    - a wrapping field upon which no line height resolves;
+    - a wrapping field whose rectangle declares no usable width and height.
 - A flag image and a team image are each resolved as the conventions above require. As the request for nationality may be switched off entirely via "signup nationality toggle", a verdict with no flag at all is a legitimate outcome and no error whatsoever.
 - The truncation of a wrapping field, and the substitution of a font a field declares, are non-fatal and reported as such.
 

@@ -697,6 +697,143 @@ def build_weather_drawing(root, template_key: str):
     )
 
 
+# ── Verdicts (043) ────────────────────────────────────────────────────────
+#
+# Six images from one template: the three kinds of verdict, and both signs of a time
+# penalty. The free text is fabricated at five lengths, because the wrapping of a steward's
+# prose is the whole of this type's difficulty and the only way to judge it is by eye.
+
+#: The six cases `/images test verdicts` draws, in the order they are returned.
+SAMPLE_VERDICT_CASES = (
+    "penalty_added_sprint",
+    "penalty_removed",
+    "penalty_dsq",
+    "appeal",
+    "autosack",
+    "autoreserve",
+)
+
+#: One line of prose, comfortably inside any rectangle a league would draw.
+_VERDICT_TEXT_SHORT = "Contact at turn four."
+
+#: Enough to fill a six-line box at the size the packaged template declares.
+_VERDICT_TEXT_FULL = (
+    "The stewards reviewed onboard footage from both cars and from the car following. "
+    "Car 14 was alongside at the apex and had the corner. The contact was avoidable."
+)
+
+#: A little more than the box admits, so the reduction of the font size can be judged.
+_VERDICT_TEXT_OVER = _VERDICT_TEXT_FULL + (
+    " The driver was warned for the same manoeuvre in the preceding round, which the panel "
+    "took into account when setting the length of the penalty."
+)
+
+#: An order of magnitude too much, so the floor, the cut and the notice can be judged. It
+#: carries the steward's own paragraph breaks, which the graphic keeps as the message does.
+_VERDICT_TEXT_HUGE = "\n\n".join([_VERDICT_TEXT_OVER] * 12)
+
+#: What the textual announcement carries where the steward entered neither, **without** the
+#: channel emphasis that message applies (XIV.16).
+VERDICT_TEXT_NOT_PROVIDED = "(not provided)"
+
+
+def build_verdict_drawing(root, *, case: str = "penalty_added_sprint"):
+    """One fabricated verdict. `root` is unused: the type declares no collection to count."""
+    from services.image_verdict_service import (
+        VerdictDrawing,
+        VerdictKind,
+        resolve_mentions,
+        sanction_text,
+    )
+
+    driver = "Ada Lovelace"
+    common = dict(
+        season_number=1,
+        division_name="Test Division",
+        division_tier=1,
+        round_number=1,
+        race_name=SAMPLE_RESULTS_TRACK,
+        driver_name=driver,
+    )
+
+    if case == "penalty_added_sprint":
+        return VerdictDrawing(
+            kind=VerdictKind.PENALTY,
+            session_name="Sprint Race",
+            team_name="Test Team A",
+            driver_nationality=SAMPLE_LINEUP_NATIONALITIES[0],
+            penalty=sanction_text("TIME_PENALTY", 5),
+            description=_VERDICT_TEXT_SHORT,
+            justification=_VERDICT_TEXT_FULL,
+            **common,
+        )
+
+    if case == "penalty_removed":
+        return VerdictDrawing(
+            kind=VerdictKind.PENALTY,
+            session_name="Race",
+            team_name="Test Team B",
+            driver_nationality=SAMPLE_LINEUP_NATIONALITIES[1],
+            penalty=sanction_text("TIME_PENALTY", -3),
+            description=_VERDICT_TEXT_FULL,
+            justification=_VERDICT_TEXT_OVER,
+            **common,
+        )
+
+    if case == "penalty_dsq":
+        return VerdictDrawing(
+            kind=VerdictKind.PENALTY,
+            session_name="Qualifying",
+            team_name="Test Team A",
+            driver_nationality=SAMPLE_LINEUP_NATIONALITIES[2],
+            penalty=sanction_text("DSQ", None),
+            description=_VERDICT_TEXT_SHORT,
+            justification=_VERDICT_TEXT_HUGE,
+            **common,
+        )
+
+    if case == "appeal":
+        return VerdictDrawing(
+            kind=VerdictKind.APPEAL,
+            session_name="Feature Race",
+            team_name="Test Team B",
+            driver_nationality=SAMPLE_LINEUP_NATIONALITIES[3],
+            penalty=sanction_text("TIME_PENALTY", -5),
+            description=VERDICT_TEXT_NOT_PROVIDED,
+            justification=VERDICT_TEXT_NOT_PROVIDED,
+            **common,
+        )
+
+    # The two attendance sanctions: no session, no team, and a justification the attendance
+    # module composes around a Discord mention, which reaches the canvas as a name alone.
+    sacked = case == "autosack"
+    composed = (
+        f"<@{_SAMPLE_ID_BASE + 1}> ({driver}) has reached the 12 attendance point limit "
+        f"in order to be removed from their full-time seat. Therefore, they have been "
+        + (
+            "removed from all driving seats effective immediately, and their current "
+            "full-time seat will be offered to another driver."
+            if sacked
+            else "demoted to a reserve driver effective immediately, and their current "
+            "full-time seat will be offered to another driver."
+        )
+    )
+    return VerdictDrawing(
+        kind=VerdictKind.ATTENDANCE_SANCTION,
+        session_name=None,
+        team_name=None,
+        driver_nationality=SAMPLE_LINEUP_NATIONALITIES[4],
+        penalty="Sacked" if sacked else "Moved to Reserve",
+        description=(
+            "Sacked due to accumulation of attendance points."
+            if sacked
+            else "Moved to Reserve due to accumulation of attendance points."
+        ),
+        justification=resolve_mentions(composed, lambda _user_id: driver),
+        **common,
+    )
+
+
 def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec:
     """Build a FillSpec for *template_key* against the template's actual ids.
 
@@ -844,6 +981,26 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
 
         return build_fill_spec(
             build_rsvp_drawing(root, case=variant or "sprint"),
+            root,
+            asset_directories=directories,
+        )
+
+    if template_key == "verdicts_template":
+        from services.image_verdict_service import build_fill_spec
+        from utils.paths import resolve_within_project_root
+
+        directories = {}
+        for asset_class, relative in (
+            ("flag", "resources/flags"),
+            ("team", "resources/teams"),
+        ):
+            try:
+                directories[asset_class] = resolve_within_project_root(relative)
+            except Exception:  # noqa: BLE001
+                pass
+
+        return build_fill_spec(
+            build_verdict_drawing(root, case=variant or SAMPLE_VERDICT_CASES[0]),
             root,
             asset_directories=directories,
         )
