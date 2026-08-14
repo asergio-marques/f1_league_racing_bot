@@ -18,7 +18,7 @@ announcement, and test data.
 
 > **What makes this type different.** The verdict is the module's **simplest** graphic and the first to
 > raise the questions the six before it never had to answer. It declares **no collection at all** — no
-> ordinal, no capacity, no floor — and is the only type of the module of which that is true. **One
+> ordinal, no capacity, no floor — which only the weather mystery notice had done before it. **One
 > template serves three kinds** of verdict, told apart by the text on two fields rather than by a slot
 > of their own. It is the first type to draw **free text a person wrote**, of a length nobody controls,
 > and therefore the first to exercise the wrapping contract at all. It is the first graphic to
@@ -270,7 +270,9 @@ verdicts channel.
 - **FR-001**: The system MUST declare one field catalogue for the `verdicts_template` slot as a code
   constant in the module's shared declaration, serving all three kinds of verdict.
 - **FR-002**: The catalogue MUST declare **no collection** — no ordinal, no key, no capacity and no
-  floor. It is the only catalogue of the module of which this is true.
+  floor. The weather mystery catalogue, delivered at 042, is the only other of which this is true, and
+  is the working precedent that the fill pipeline and validity Layer 2 already carry such a catalogue
+  end to end.
 - **FR-003**: The catalogue MUST declare these text fields: `season_number` (optional), `division_name`
   (mandatory), `division_tier` (optional), `round_number` (mandatory), `race_name` (optional),
   `session_name` (mandatory), `verdict_stage` (mandatory), `driver_name` (mandatory), `team_name`

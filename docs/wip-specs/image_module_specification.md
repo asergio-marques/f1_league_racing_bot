@@ -988,7 +988,7 @@ These hold for every image type of the module and are stated here rather than re
 - Nothing is computed for the graphic, nothing is decided for it, and no command produces a verdict that exists only as an image.
 - The graphic adds to the textual announcement the flag of the driver and the badge of the team. It carries no Discord mention; the name of the driver stands in its place.
 - One template serves the three kinds of verdict, the three being distinguished by the text placed on the stage field and on the session name field alone.
-- The graphic holds no field addressed by an ordinal. It is the only graphic of the module of which this is true.
+- The graphic holds no field addressed by an ordinal, and declares no collection of any kind. The notice of a mystery round is the other graphic of which this is true; the two are the only ones, and they reach it from opposite directions - the notice because it says a forecast is not coming and so has almost nothing to draw, the verdict because its subject is a single decision upon a single driver.
 - For generation of a verdict graphic, the template may have the following fields, among which the mandatory fields will be verified at template file setting and before generation:
     - season_number - Optional - Field on which the season number of the server is placed
     - division_name - Mandatory - Field on which the name given to the division at "division add" is placed

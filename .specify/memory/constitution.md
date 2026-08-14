@@ -187,7 +187,10 @@ SYNC IMPACT REPORT
       datum. **Several kinds MAY share one slot** where they differ only in the values of fields; an
       aspect gains a second slot only where the two would draw different *fields*. **An image type MAY
       declare no collection at all**, whereupon Rules 11 and 12 bind nothing in its catalogue and
-      nothing else follows from the absence.
+      nothing else follows from the absence. Two types reach that — the mystery notice, which arrived
+      at v4.7.0 without the rule being written, and the verdict. The wip-spec called the verdict the
+      only one; it was written before the notice had a slot of its own, and is corrected in this same
+      change.
     - **16. A graphic draws nothing a reader can act on** — **a mention standing inside a value is
       content, and is resolved in place**. It is the fixed rendering of the rule's first paragraph and
       not the markup-stripping of the paragraph before it: markup is an instruction the text path
@@ -4010,6 +4013,12 @@ Rules 11 and 12 bind nothing in it: no discriminator, no capacity, no floor. Not
 the absence. A type declaring no collection is exempt from no other rule of this Principle, and the
 statement is here only so that a checker reading a catalogue with no collection in it knows it is
 reading a complete one.
+
+Two types reach this, from opposite directions: the **mystery notice**, which says a forecast is not
+coming and so has almost nothing to draw, and the **verdict**, whose subject is one decision upon one
+driver. That the first arrived without the rule being written is the reason for writing it — a
+catalogue of fields alone is a complete catalogue and not an unfinished one, and only a statement here
+tells a reader which.
 
 **11. Template ids follow a fixed convention.**
 
