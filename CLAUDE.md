@@ -32,6 +32,19 @@ and the checks to run. Read it rather than guessing.
 | `specs/NNN-*/` | **Derived.** Spec-kit output per increment. Do not hand-maintain, and never copy a wip-spec rule into it. |
 | `.specify/memory/constitution.md` | **Governance.** Amend only via `/speckit-constitution` — it carries a version bump and a sync impact report. Never edit by hand. |
 
+## Spec-kit task generation
+
+`/speckit-tasks` must never write a task or subtask that requires a live Discord bot — no
+"run the bot and invoke the command", no posting to a real channel, no manual check against a
+running server. That is full system testing: it happens by hand, after implementation, and is
+out of scope for the task list. Verification tasks it does write are automated ones that run
+under `pytest`.
+
+Test coverage is **not** optional here, whatever the stock spec-kit template says. Every
+implementation task must carry the unit test that covers it — named in the task itself or as
+its own task the implementation task depends on — and no story may park its coverage in a
+later polish phase.
+
 ## Working conventions
 
 - **British English** throughout, in prose and in identifiers alike (`colour`, `normalise`).
@@ -55,6 +68,19 @@ and the checks to run. Read it rather than guessing.
 `pytest tests/ -q` from the repo root. Run it before and after a change and compare. The suite
 is expected to pass in full. Any failure is a real one; do not write it off as pre-existing
 without first confirming it on a clean tree.
+
+**Every change to production code carries its unit tests with it.** Update or add the tests in
+the same change as the code, then run the suite — a production change reported complete without
+a test run, or leaving tests that no longer exercise the new behaviour, is not complete.
+
+**Every implementation task is covered by a unit test, and that test passes before the next
+task begins.** Coverage is not optional and is not deferred to a later polish phase: a task is
+finished when its behaviour is exercised by a test that passes, not when the code is written.
+Do not start the next task on a red or absent test.
+
+**No test may require a live Discord bot.** Anything that needs a running bot, a real gateway
+connection, or a real server belongs to full system testing, which is done by hand outside this
+repo. Tests here stub Discord and exercise the code beneath it.
 
 Tests that pin a date must pin "now" alongside it. Several services accept a `now` parameter for
 exactly this; a test that seeds a future date and lets the code read the wall clock passes today
