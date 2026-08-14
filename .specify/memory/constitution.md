@@ -1,14 +1,20 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-[2026-08-14 — v4.7.0 → v4.8.0: MINOR — the simplest graphic; Rule 7 inverted, from ceiling to floor]
+[2026-08-14 — v4.7.0 → v4.8.0: MINOR — the simplest graphic; Rule 7 inverted; the catalogues complete]
   Version change    : 4.7.0 → 4.8.0
-  Bump rationale    : MINOR. **No rule is added.** Seven are expanded (3, 4, 5, 10, 16, 17) or
+  Bump rationale    : MINOR. **No rule is added.** Eight are expanded (3, 4, 5, 9, 10, 16, 17) or
                       **inverted** (7). Nothing conformant to v4.7.0 becomes non-conformant: Rule 7's
                       change is a pure loosening, and every other change either admits a form
                       previously unadmitted or states in full a contract Rule 5 had only summarised.
 
-                      MAJOR was considered **twice** and rejected both times.
+                      **This entry covers the whole of 043, implementation included.** Rules 5 and 9
+                      were extended a second time once the type was built and two findings came back
+                      from the raster; both are recorded below under "Found in implementation". One
+                      increment, one version, as 037 through 042 each took — the branch is not merged,
+                      so nothing had ever read a version between this one and v4.7.0.
+
+                      MAJOR was considered **three times** and rejected each time.
 
                       For **Rule 7**, whose central constraint is not merely expanded but reversed in
                       direction — the correspondence with the text path was written as a ceiling on
@@ -22,14 +28,22 @@ SYNC IMPACT REPORT
                       same, which is what this entry is for: **Rule 7 now means something different
                       from what it meant, and should be read again rather than recalled.**
 
-                      For **Rule 5**, whose two new problems — a `shape-inside` naming a rectangle the
-                      template does not declare, and a wrapped field on which no `line-height`
-                      resolves — make fatal what was not. Rejected on evidence rather than argument:
-                      of the fifteen shipped templates, `verdicts_template.svg` is the **only** one
-                      declaring `shape-inside` at all, and both of its wrapped fields — `description`
-                      and `justification` — declare `line-height`. No template that rendered under
-                      v4.7.0 stops rendering under this one, which is the test v4.0.0 fixed for
-                      MAJOR. Verdicts is genuinely the module's first wrapping type.
+                      For **Rule 5**, whose three new problems — a `shape-inside` naming a rectangle
+                      the template does not declare, a wrapped field on which no `line-height`
+                      resolves, and a rectangle declaring no usable width and height — make fatal what
+                      was not. Rejected on evidence rather than argument: of the fifteen shipped
+                      templates, `verdicts_template.svg` is the **only** one declaring `shape-inside`
+                      at all, and both of its wrapped fields — `description` and `justification` —
+                      declare a `line-height` and name a rectangle carrying an explicit 1104 × 156. No
+                      template that rendered under v4.7.0 stops rendering under this one, which is the
+                      test v4.0.0 fixed for MAJOR. Verdicts is genuinely the module's first wrapping
+                      type.
+
+                      For **Rule 9**, where Layer 3 goes from reserved to enforced. Ratifying a layer
+                      is what XIV.9 was built to accommodate — "a layer MUST be ratified before it is
+                      enforced" — so this is the rule operating, not changing. The templates it newly
+                      refuses are the ones Rule 5 newly calls faulty, and the evidence above covers
+                      them.
 
                       That this amendment adds no numbered rule is recorded rather than passed over,
                       as v4.7.0's was. The seventh type is the module's **simplest** graphic and its
@@ -139,6 +153,29 @@ SYNC IMPACT REPORT
                         enforcement of a sanction; no verdicts channel, no graphic; the pardon that is
                         no verdict and carries none.
 
+  Found in implementation (not put to the author; both were caught by rasterising and looking at the
+  PNG, per Rule 14, and neither was found by reading the rules):
+                      - The third defect  → a `shape-inside` may name a rectangle that **exists** and
+                                            still declares no usable width and height. Every check for
+                                            the first two defects passes; the natural implementation
+                                            degrades to one unwrapped line and reports nothing. That is
+                                            a render which *succeeds and is wrong*, which is the worst
+                                            outcome Rule 4 exists to prevent. Now the third bullet of
+                                            Rule 5, enforced in the fill pipeline and in Layer 3.
+                                            Surfaced as a verdict's justification running off the edge
+                                            of the canvas with every check green.
+                      - The font resolver → **no rule changed**, and it is recorded because that is the
+                                            point. Rule 5 already required measurement against "the
+                                            font family, weight, style and size the field declares",
+                                            and the resolver honoured only the family — answering with
+                                            a *condensed* face for a family whose normal face the
+                                            rasteriser draws, and with whatever weight sorted first.
+                                            Lines were measured narrower than drawn, the one direction
+                                            "errs narrow" forbids. The rule was right; the code was
+                                            brought to it, and the obligation is now pinned by a test
+                                            comparing the measurement against the rasteriser's own
+                                            reported width.
+
   Modified rules (Principle XIV):
     - **3. Every mandatory field MUST be resolved** — a **kind of record that has no such thing at
       all** empties the field, where the paragraph above it governs a thing the record *has* and
@@ -158,10 +195,14 @@ SYNC IMPACT REPORT
       in force is the `line-height` resolving on the field; reduction by half-pixel steps to a floor of
       half the declared size, with the leading scaled and the admissible line count recomputed, so a
       field set smaller holds *more lines*; each field reduced alone, the canvas never resized;
-      `shape-inside` removed once the lines are laid out. **Two template defects are problems** and
-      both are structural under Rule 9. **Measurement** is against the declared face, against the
-      substituted face with a notice where it is not installed, and MUST **err narrow**. And the module
-      places **no ceiling** on free text.
+      `shape-inside` removed once the lines are laid out. **Three template defects are problems** and
+      all three are structural under Rule 9: a `shape-inside` naming a rectangle the template does not
+      declare, a wrapped field on which no `line-height` resolves, and a rectangle declaring no usable
+      width and height. Each MUST be reported naming the field at fault and distinguishably from the
+      other two, which is XIV.9's specific-attribution invariant applied within one layer; a paragraph
+      records why the third looks redundant and is not. **Measurement** is against the declared face,
+      against the substituted face with a notice where it is not installed, and MUST **err narrow**.
+      And the module places **no ceiling** on free text.
     - **7. Image output is additive** — **inverted**, and read again rather than recalled. The
       correspondence with the text path was a **ceiling** ("every image MUST correspond to information
       the bot can already express as text") and is now a **floor**: a graphic carries at least what the
@@ -183,6 +224,15 @@ SYNC IMPACT REPORT
       Retained as **instances** rather than exceptions: imagery that identifies an entity the graphic
       already names, and a graphic naming its own kind. Both were drafted as exemptions from the
       ceiling and were left standing, much shortened, once the ceiling went.
+    - **9. Template validity is a layered, extensible contract** — the layer list becomes a
+      **ratification record** rather than a plan. Layer 1 mandatory; **Layer 2 ratified and in force**;
+      **Layer 3 (Bounds declaration) ratified and in force**, checking Rule 5's three defects; **Layer
+      4 (Trial render) not ratified**, and a report MUST keep saying it was not applied.
+      The per-type ratification rule is **retained and explicitly not spent**: all fifteen catalogues
+      are now specified, so no type is skipped in practice, but the rule binds the next type added and
+      the skip-rather-than-pass behaviour MUST remain implemented and tested against a catalogue staged
+      empty for the purpose. Written that way because the condition no longer arises on its own, and a
+      behaviour nothing exercises is a behaviour that quietly rots.
     - **10. Every image type MUST declare a field catalogue** — two converses of the slot-selecting
       datum. **Several kinds MAY share one slot** where they differ only in the values of fields; an
       aspect gains a second slot only where the two would draw different *fields*. **An image type MAY
@@ -217,7 +267,13 @@ SYNC IMPACT REPORT
                       is shipped: neither the flag nor the team-image vocabulary is the module's, so
                       Rule 13's closed-set clause does not arise.
 
-                      A **note on the steward module** closes Principle XIV's rationale, at the
+                      Three rationale paragraphs close Principle XIV besides. One records that the
+                      per-type specification is **complete** at fifteen catalogues, and that Layer 3
+                      cost one class and one registry entry — the stable surface XIV.9's first
+                      invariant was written to guarantee, verified rather than assumed. One records
+                      that this increment's findings were caught by the raster and not by the rules,
+                      and that two of them were failures to honour rules already stated. And a **note
+                      on the steward module** closes it, at the
                       author's invitation and deliberately confined to two tests rather than any
                       prediction: a field added to the verdict catalogue is an amendment of its static
                       declaration and is reviewed as one; and a verdict amended in place rather than
@@ -3671,14 +3727,25 @@ and `shape-inside` both is a wrapped field, and is wrapped rather than truncated
 - `shape-inside` MUST be removed from the field once its lines are laid out, the rasteriser otherwise
   re-flowing text the module has already set.
 
-**Two template defects are problems** (Rule 4), and both are **structural** under Rule 9 — read off
-the template alone, needing no data — so each is complete at every one of the three moments and
-refuses at each with the severity that moment carries:
+**Three template defects are problems** (Rule 4), and all three are **structural** under Rule 9 —
+read off the template alone, needing no data — so each is complete at every one of the three moments
+and refuses at each with the severity that moment carries. Each MUST be reported naming the field at
+fault and distinguishably from the other two:
 
 - a `shape-inside` naming a rectangle the template does not declare;
 - a wrapped field upon which no `line-height` resolves. A default leading substituted here would
   silently decide how much of a league's prose is drawn, which is the template's decision and not the
-  module's.
+  module's;
+- a rectangle declaring **no usable width and height**. It is named, and it exists, and it still gives
+  the text nowhere to go: there is no measure to wrap against and no budget to count lines from.
+
+The third is the one a reader would think redundant and is the one that cost most to find. A named
+rectangle with no extent is not an absent rectangle — every check for the first passes — and the
+natural implementation degrades to a single unwrapped line, which draws a steward's prose straight
+across the graphic and **reports nothing**. That is the worst outcome the whole of Rule 4 exists to
+prevent: not a render that fails, but one that succeeds and is wrong. A defect that cannot be
+distinguished from soundness by any check the module makes is exactly the kind that has to be named
+explicitly.
 
 **Measurement.** A text's width is measured against the font family, weight, style and size the field
 declares. Where that font is not installed on the machine, the measurement MUST be made against the
@@ -3943,10 +4010,21 @@ rejection at the earliest moment).
 - **Layer 1 — Resolution** is mandatory from the outset and applies to every template: the file
   resolves within the configured directory, parses as well-formed SVG, and declares a root
   `width` and `height` (Rule 1).
-- **Deeper layers** — field-catalogue conformance (Rule 2), addressability of every required
-  field (Rule 3), declared text bounds (Rule 5), trial render — are ratified per image type as
-  that type's field catalogue is specified, and MUST NOT be enforced against an image type
-  whose catalogue does not yet exist.
+- **Layer 2 — Catalogue conformance** is **ratified and in force**: the template declares every
+  field its catalogue makes mandatory (Rule 3), carries no field belonging to a **sibling**
+  catalogue, and can be counted where its capacity is fixed by the template (Rule 12).
+- **Layer 3 — Bounds declaration** is **ratified and in force**: every wrapped field
+  the template declares can actually be laid out, against the three defects of Rule 5.
+- **Layer 4 — Trial render** is **not ratified** and MUST NOT be enforced. A report MUST continue to
+  state that it was not applied rather than presenting a template as fully valid (invariant 4).
+
+**A deeper layer is ratified per image type**, as that type's field catalogue is specified, and MUST
+NOT be enforced against an image type whose catalogue does not yet exist. **All fifteen
+catalogues are specified**, so no type is skipped by Layers 2 and 3 in practice. The rule stands
+none the less and is not spent: it binds the next type added, and the skip-rather-than-pass behaviour
+it requires MUST remain implemented and tested against a catalogue staged empty for the purpose. A
+condition that no longer arises on its own is not a condition that has stopped mattering — it is one
+whose next occurrence will be a new image type, written by someone reading this.
 
 The following MUST hold as layers are added:
 
@@ -4554,6 +4632,24 @@ verdict draws **prose a person wrote**, of no length anybody controls, and the w
 to be stated in full the moment a type existed to exercise it. That it is stated as a general contract
 rather than as the verdict's own is deliberate: it is the steward module's graphics, and any later
 type carrying free text, that would otherwise each invent an answer.
+
+**The per-type specification is complete, and Rule 9 is what that completeness cost.** With the
+verdict, all fifteen catalogues are written and Layers 2 and 3 apply to every one of them. The module
+has arrived where v4.0.0 pointed it: a template is checked against its own fields, and against its own
+text bounds, at the moment a league names the file. What is worth recording is that the layered design
+paid off in the direction it was built for — Layer 3 was added as one class and one registry entry,
+and changed no command, no state and no report shape, which is exactly the stable surface XIV.9's
+first invariant demanded and the reason that invariant was written before any deeper layer existed.
+
+The third defect of Rule 5 is the one this Principle nearly missed, and how it surfaced is worth
+recording. It was not found by reading the rules: it was found by rasterising a verdict and looking at
+the PNG, where a steward's justification ran off the edge of the canvas with every check passing and
+nothing reported. Rule 14 exists for exactly this, and it earned its place again. So did the
+obligation that a measurement **err narrow** — the same render exposed a font resolver that was
+answering with a *condensed* face for a family whose normal face the rasteriser would draw, and with
+whatever weight sorted first for a family with several. Neither was a rule that needed writing; both
+were rules this document already stated and code that did not honour them. That is the ordinary way a
+NON-NEGOTIABLE principle is broken, and only the raster showed it.
 
 **A note on the steward module.** The verdict type is specified against the penalty and appeal flow as
 it stands, and the steward module — the next feature of consequence — is expected to change what a
