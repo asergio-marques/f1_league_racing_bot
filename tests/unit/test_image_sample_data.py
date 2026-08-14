@@ -88,3 +88,185 @@ class TestWeatherSampleData:
         for key in ("weather_p3_template", "weather_p3_sprint_template"):
             for session in self._drawing(key).sessions:
                 assert "*" not in (session.summary or "")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 043 — the six verdicts `/images test verdicts` draws (T021-T023)
+#
+# specs/043-verdicts-image-generation/contracts/verdicts-posting.md § The test command.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+VERDICT_TEMPLATE = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" '
+    b'xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="675">'
+    b'<text id="season_number">1</text>'
+    b'<text id="division_name">D</text>'
+    b'<text id="division_tier">1</text>'
+    b'<text id="round_number">1</text>'
+    b'<text id="race_name">R</text>'
+    b'<g id="session_name_group"><text id="session_name">S</text></g>'
+    b'<text id="verdict_stage">V</text>'
+    b'<text id="driver_name">N</text>'
+    b'<image id="driver_flag" xlink:href="x.svg"/>'
+    b'<g id="team_name_group">'
+    b'<text id="team_name">T</text><image id="team_image" xlink:href="x.svg"/>'
+    b"</g>"
+    b'<text id="penalty">P</text>'
+    b'<text id="description">De</text>'
+    b'<text id="justification">J</text>'
+    b"</svg>"
+)
+
+
+def _verdict_root():
+    from utils.svg_document import parse_svg_bytes
+
+    return parse_svg_bytes(VERDICT_TEMPLATE)
+
+
+def _all_verdict_drawings():
+    from services.image_sample_data import SAMPLE_VERDICT_CASES, build_verdict_drawing
+
+    return {case: build_verdict_drawing(None, case=case) for case in SAMPLE_VERDICT_CASES}
+
+
+def test_six_verdict_cases_are_drawn_from_the_one_template():
+    from services.image_sample_data import SAMPLE_VERDICT_CASES
+
+    assert len(SAMPLE_VERDICT_CASES) == 6
+    assert set(SAMPLE_VERDICT_CASES) == {
+        "penalty_added_sprint",
+        "penalty_removed",
+        "penalty_dsq",
+        "appeal",
+        "autosack",
+        "autoreserve",
+    }
+
+
+def test_the_six_cases_cover_all_three_kinds_and_both_signs_of_a_time_penalty():
+    from services.image_verdict_service import VerdictKind
+
+    drawings = _all_verdict_drawings()
+
+    assert {d.kind for d in drawings.values()} == set(VerdictKind)
+    assert drawings["penalty_added_sprint"].penalty == "5 seconds added"
+    assert drawings["penalty_removed"].penalty == "3 seconds removed"
+    assert drawings["penalty_dsq"].penalty == "Disqualified"
+    assert drawings["appeal"].stage == "Appeal"
+
+
+def test_one_case_draws_a_sprint_session_so_its_naming_can_be_judged():
+    drawings = _all_verdict_drawings()
+    assert drawings["penalty_added_sprint"].session_name == "Sprint Race"
+
+
+def test_the_two_attendance_sanctions_name_no_session_and_no_team():
+    drawings = _all_verdict_drawings()
+    for case in ("autosack", "autoreserve"):
+        assert drawings[case].session_name is None
+        assert drawings[case].team_name is None
+
+
+def test_the_composed_justification_reaches_the_canvas_carrying_a_name_alone():
+    """The attendance module writes `<@id> (name)`; the graphic mentions nobody."""
+    drawings = _all_verdict_drawings()
+    for case in ("autosack", "autoreserve"):
+        justification = drawings[case].justification
+        assert "<@" not in justification
+        assert justification.startswith("Ada Lovelace has reached")
+        assert "Ada Lovelace (Ada Lovelace)" not in justification
+
+
+def test_the_fabricated_free_text_covers_five_lengths():
+    """One line, exactly full, slightly over, wildly over, and neither entered."""
+    from services.image_sample_data import VERDICT_TEXT_NOT_PROVIDED
+
+    drawings = _all_verdict_drawings()
+    texts = [d.description for d in drawings.values()] + [
+        d.justification for d in drawings.values()
+    ]
+    lengths = sorted(len(t) for t in texts)
+
+    assert min(lengths) < 60, "no single-line case"
+    assert any(150 < length < 400 for length in lengths), "no box-filling case"
+    assert max(lengths) > 3000, "no case an order of magnitude over"
+    assert VERDICT_TEXT_NOT_PROVIDED in texts, "no case where the steward entered neither"
+
+
+def test_the_not_provided_text_carries_no_channel_markup():
+    """The message italicises it; the graphic draws the value the markup adorned."""
+    from services.image_sample_data import VERDICT_TEXT_NOT_PROVIDED
+
+    assert "*" not in VERDICT_TEXT_NOT_PROVIDED
+    assert "_" not in VERDICT_TEXT_NOT_PROVIDED
+
+
+def test_one_fabricated_text_carries_the_paragraphs_a_steward_wrote():
+    drawings = _all_verdict_drawings()
+    assert any("\n\n" in d.justification for d in drawings.values())
+
+
+def test_the_nationalities_are_ones_the_signup_wizard_accepts():
+    from services.image_sample_data import SAMPLE_LINEUP_NATIONALITIES
+
+    drawings = _all_verdict_drawings()
+    used = {d.driver_nationality for d in drawings.values()}
+    assert used <= set(SAMPLE_LINEUP_NATIONALITIES)
+    assert "Other" in used, "the value recorded for a driver who stated none must appear"
+
+
+def test_build_spec_draws_each_case_from_the_verdicts_template():
+    from services.image_sample_data import SAMPLE_VERDICT_CASES, build_spec
+
+    for case in SAMPLE_VERDICT_CASES:
+        spec = build_spec("verdicts_template", _verdict_root(), variant=case)
+        assert spec.image_type == "verdicts_template"
+        assert spec.text["division_name"] == "Test Division"
+        assert spec.text["verdict_stage"]
+
+
+def test_build_spec_empties_the_session_and_team_for_a_sanction():
+    from services.image_sample_data import build_spec
+
+    spec = build_spec("verdicts_template", _verdict_root(), variant="autosack")
+    assert "session_name" in spec.empty_quietly
+    assert "team_name" in spec.empty_quietly
+    assert "team_image" in spec.remove
+
+
+# ── The `/images test verdicts` command wiring (T025-T027) ────────────────
+
+
+def test_the_test_command_draws_six_images_from_the_one_verdicts_template():
+    from cogs.image_cog import _SAMPLE_VARIANTS
+    from models.image_constants import TEST_KIND_TEMPLATES
+    from services.image_sample_data import SAMPLE_VERDICT_CASES
+
+    assert TEST_KIND_TEMPLATES["verdicts"] == ("verdicts_template",)
+    assert _SAMPLE_VARIANTS["verdicts_template"] == SAMPLE_VERDICT_CASES
+    assert len(_SAMPLE_VARIANTS["verdicts_template"]) == 6
+
+
+def test_a_verdict_preview_is_refused_when_the_server_holds_no_track():
+    """There is no round for a verdict to pertain to, and a render failure would not say so."""
+    import inspect
+
+    from cogs import image_cog
+
+    source = inspect.getsource(image_cog)
+    guard = source.split("needs_tracks = {", 1)[1].split("}", 1)[0]
+    assert "verdicts_template" in guard
+    assert '"verdict"' in source, "the rejection must name what could not be drawn"
+
+
+def test_a_verdict_preview_needs_no_team_configuration():
+    """Its team name is a value it is handed, not a key its template is authored against."""
+    import inspect
+
+    from cogs import image_cog
+
+    source = inspect.getsource(image_cog)
+    guard = source.split("needs_teams = {", 1)[1].split("}", 1)[0]
+    assert "verdicts_template" not in guard

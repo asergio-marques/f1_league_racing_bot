@@ -83,30 +83,15 @@ def test_calendar_round_image_declares_the_track_asset_class():
     assert CALENDAR_CATALOGUE.asset_class_for("round_4_date") is None
 
 
-def test_only_verdicts_is_still_empty():
+def test_every_catalogue_is_now_populated():
     """The calendar (037), the lineup (038), the two results types (039), the two standings
-    types (040), the two attendance types (041) and the six weather types (042) are
-    specified; verdicts alone awaits its own session."""
+    types (040), the two attendance types (041), the six weather types (042) and the verdict
+    (043) are all specified. No type is checked to Layer 1 alone any more."""
+    from models.image_constants import TEMPLATE_COLUMNS
+
     populated = {key for key, cat in CATALOGUES.items() if not cat.is_empty}
-    assert populated == {
-        "calendar_template",
-        "lineup_template",
-        "results_qualifying_template",
-        "results_race_template",
-        "standings_drivers_template",
-        "standings_constructors_template",
-        "attendance_template",
-        "rsvp_template",
-        "weather_p1_template",
-        "weather_p2_template",
-        "weather_p2_sprint_template",
-        "weather_p3_template",
-        "weather_p3_sprint_template",
-        "weather_mystery_template",
-    }
-    assert {key for key, cat in CATALOGUES.items() if cat.is_empty} == {
-        "verdicts_template"
-    }
+    assert populated == set(TEMPLATE_COLUMNS)
+    assert {key for key, cat in CATALOGUES.items() if cat.is_empty} == set()
 
 
 # ── 2. Derived capacity ───────────────────────────────────────────────────

@@ -280,9 +280,11 @@ def test_inline_size_alone_truncates():
 
 def test_shape_inside_without_inline_size_wraps(tmp_path):
     """Spec A-002 — a shape-inside is meaningless except as a wrap instruction."""
+    # `line-height` is declared because a wrapped field without one is a problem and never
+    # reaches layout (XIV.5, v4.8.0); the wrap this test pins is unaffected by its value.
     result, out = render(
         '<rect id="box" x="0" y="0" width="120" height="200"/>'
-        '<text id="prose" style="shape-inside:url(#box);font-size:10px">x</text>',
+        '<text id="prose" style="shape-inside:url(#box);font-size:10px;line-height:1.2">x</text>',
         text={"prose": "one two three four five six seven eight nine ten eleven"},
     )
     tspans = list(FieldIndex(out).resolve("prose"))

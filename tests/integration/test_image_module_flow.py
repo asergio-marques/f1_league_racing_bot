@@ -363,8 +363,25 @@ WEATHER_SVGS = {
 }
 
 
+#: A sound verdict template (043): the eight mandatory fields, and no collection at all.
+VERDICTS_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b'<text id="session_name">Race</text>'
+    b'<text id="verdict_stage">Post-Race Penalty</text>'
+    b'<text id="driver_name">A Driver</text>'
+    b'<text id="penalty">5 seconds added</text>'
+    b'<text id="description">Contact at turn four.</text>'
+    b'<text id="justification">Video evidence reviewed.</text>'
+    b"</svg>"
+)
+
+
 def sound_bytes(template_key: str) -> bytes:
     """The soundest bytes for *template_key* at the depth its type is checked to."""
+    if template_key == "verdicts_template":
+        return VERDICTS_SVG
     if template_key in WEATHER_SVGS:
         return WEATHER_SVGS[template_key]
     if template_key == "results_qualifying_template":
@@ -380,6 +397,29 @@ def sound_bytes(template_key: str) -> bytes:
     if template_key == "rsvp_template":
         return RSVP_SVG
     return VALID_SVG
+
+
+@pytest.fixture()
+def scratch_slot():
+    """Empty the verdicts catalogue, so a slot exists that constrains no template.
+
+    Two tests below render RICH_TEMPLATE — a synthetic file belonging to no image type —
+    and need a slot whose catalogue will not refuse it. Verdicts served that purpose while
+    it was unspecified; as of 043 every one of the fifteen carries a catalogue, so the
+    condition is staged rather than borrowed. What the tests prove is unchanged: a template
+    renders, and its notices are raised and persisted.
+
+    The sample data is still the verdict's own — ``build_spec`` keys on the template slot and
+    not on the catalogue — so RICH_TEMPLATE's `justification` box is filled with fabricated
+    prose and its wrapping is exercised for real.
+    """
+    from models.image_catalogues import CATALOGUES, FieldCatalogue
+
+    saved = dict(CATALOGUES)
+    CATALOGUES["verdicts_template"] = FieldCatalogue()
+    yield "verdicts_template"
+    CATALOGUES.clear()
+    CATALOGUES.update(saved)
 
 
 @pytest.fixture()
@@ -500,6 +540,12 @@ RICH_TEMPLATE = (
 ).encode()
 
 
+def _validity_service(config_service, module_service):
+    from services.image_validity_service import ImageValidityService
+
+    return ImageValidityService(config_service, module_service)
+
+
 def _render_service(db_path, config_service, module_service):
     from services.image_render_service import ImageRenderService
     from services.image_validity_service import ImageValidityService
@@ -510,7 +556,8 @@ def _render_service(db_path, config_service, module_service):
 
 
 async def test_render_without_season(
-    db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
+    db_path, module_service, config_service, template_dir, monkeypatch, tmp_path,
+    scratch_slot,
 ):
     """Every kind renders on a server with no season configured at all."""
     from services.image_render_service import converter_available
@@ -687,7 +734,8 @@ async def test_multi_variant_kinds_cover_two_templates():
 
 
 async def test_render_raises_notices_without_failing(
-    db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
+    db_path, module_service, config_service, template_dir, monkeypatch, tmp_path,
+    scratch_slot,
 ):
     """A substituted font and a truncated field are notices, not problems (XIV.4)."""
     from services.image_render_service import converter_available
@@ -703,10 +751,13 @@ async def test_render_raises_notices_without_failing(
     from services.image_sample_data import build_spec
 
     service = _render_service(db_path, config_service, module_service)
+    # The DSQ case carries the justification fabricated an order of magnitude too long for
+    # any box a league would draw, so RICH_TEMPLATE's 300x80 rectangle cuts it at the floor
+    # and raises its notice — which is the degradation this test is about (043 FR-018).
     outcome = await service.render(
         SERVER_ID,
         "verdicts_template",
-        lambda root: build_spec("verdicts_template", root),
+        lambda root: build_spec("verdicts_template", root, variant="penalty_dsq"),
         output_dir=tmp_path,
     )
 
@@ -1619,3 +1670,156 @@ def test_the_lineup_draws_a_test_driver_through_the_name_chain():
         resolve_driver_name(discord_user_id="900001", test_display_name="Test Driver 1")
         == "Test Driver 1"
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 043 — a verdict from an approved review, end to end (T038)
+#
+# Discord is stubbed: the send site records what it was handed. What this proves that the
+# unit tests do not is that a real render, through the real config and validity services,
+# produces a PNG for the real packaged template — and that the message beside it carries
+# the mention alone.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+class _RecordingChannel:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, object]] = []
+        self.guild = type("_G", (), {"id": SERVER_ID, "get_role": lambda self, r: None})()
+
+    async def send(self, content=None, *, file=None, **_kwargs):
+        self.sent.append((content, file))
+
+
+async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
+    db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
+):
+    """One PNG per penalty, on a message carrying the driver mention and nothing besides."""
+    from pathlib import Path
+
+    from services import verdict_announcement_service as vas
+    from services.image_render_service import converter_available
+    from services.image_verdict_service import VerdictKind
+
+    if not converter_available(use_cache=False):
+        pytest.skip("rasteriser not installed on this host")
+
+    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    await _enable(module_service, config_service)
+    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+    await config_service.set_aspect(SERVER_ID, "verdicts", True)
+
+    # The packaged template, so the render is against the file a league actually gets.
+    packaged = (
+        Path(__file__).resolve().parents[2]
+        / "resources"
+        / "templates"
+        / "verdicts_template.svg"
+    )
+    (template_dir / "templates" / "verdicts_template.svg").write_bytes(
+        packaged.read_bytes()
+    )
+
+    # PROJECT_ROOT is patched away from the repository, so the packaged asset directories
+    # are out of reach. A league carrying a fallback in each class is the ordinary case and
+    # is what the flag and the badge resolve through here (XIV.13).
+    for asset_class in ("flags", "teams"):
+        directory = template_dir / "resources" / asset_class
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "fallback.svg").write_bytes(
+            b'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"/>'
+        )
+
+    bot = type(
+        "_Bot",
+        (),
+        {
+            "db_path": db_path,
+            "module_service": module_service,
+            "image_config_service": config_service,
+            "image_validity_service": _validity_service(config_service, module_service),
+            "image_render_service": _render_service(
+                db_path, config_service, module_service
+            ),
+            "output_router": None,
+        },
+    )()
+
+    # The context queries have no season in this fixture; the graphic draws what it can and
+    # the optional fields it cannot determine are emptied, which is the point.
+    channel = _RecordingChannel()
+    await vas._send_verdict(
+        bot,
+        channel,
+        server_id=SERVER_ID,
+        db_path=db_path,
+        round_id=1,
+        kind=VerdictKind.PENALTY,
+        season_number=1,
+        division_name="Pro Division",
+        round_number=7,
+        session_label="Feature Race",
+        driver_discord_id=123456789012345678,
+        driver_display_name="Ada Lovelace",
+        driver_name="Ada Lovelace",
+        penalty_description="5 seconds added",
+        description_text="Contact at turn four.",
+        justification_text="Video evidence reviewed by the panel.",
+        team_name="Red Bull",
+    )
+
+    assert len(channel.sent) == 1
+    content, attached = channel.sent[0]
+    assert content == "<@123456789012345678>"
+    assert attached is not None, "the verdict must post as a graphic"
+    assert "Justification" not in content and "Ada Lovelace" not in content
+
+
+async def test_the_verdict_toggle_off_posts_the_textual_announcement(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """The toggle decides how a posting is dressed, never whether it happens."""
+    from services import verdict_announcement_service as vas
+    from services.image_verdict_service import VerdictKind
+
+    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    await _enable(module_service, config_service)
+    await config_service.set_aspect(SERVER_ID, "verdicts", False)
+
+    bot = type(
+        "_Bot",
+        (),
+        {
+            "db_path": db_path,
+            "module_service": module_service,
+            "image_config_service": config_service,
+            "image_validity_service": _validity_service(config_service, module_service),
+            "image_render_service": _render_service(
+                db_path, config_service, module_service
+            ),
+        },
+    )()
+
+    channel = _RecordingChannel()
+    await vas._send_verdict(
+        bot,
+        channel,
+        server_id=SERVER_ID,
+        db_path=db_path,
+        round_id=1,
+        kind=VerdictKind.PENALTY,
+        season_number=1,
+        division_name="Pro Division",
+        round_number=7,
+        session_label="Feature Race",
+        driver_discord_id=123,
+        driver_display_name="Ada Lovelace",
+        driver_name="Ada Lovelace",
+        penalty_description="5 seconds added",
+        description_text="Contact at turn four.",
+        justification_text="Reviewed.",
+    )
+
+    content, attached = channel.sent[0]
+    assert attached is None
+    assert "**Penalty**: 5 seconds added" in content

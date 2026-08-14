@@ -1088,7 +1088,13 @@ Flips that aspect between a generated image and the text the bot has always post
 >
 > **Six weather templates, and each is checked before a season depends on it.** Phases 2 and 3 are drawn from two files apiece — one for sprint rounds, one for every other format — chosen by the round's format and by nothing else. Each must declare at least as much as the formats it serves can demand: four sessions for a sprint file and two for a plain one, and for phase 3, three weather slots per session on the sprint file and four on the plain one. Declaring **fewer is refused the moment you name the file**, naming what it declares and what it needs; declaring more is fine, and the surplus is simply removed when a round does not fill it. `/season review` names any weather template that falls short — which phase, and whether it is the sprint file, the plain file or the mystery notice — and approval is refused while one stands.
 >
-> The remaining toggle, `verdicts`, changes what `/images config view` and `/season review` report, and nothing else. Wiring that source module is a later increment. Use `/images test` to see what an aspect will produce.
+> **`verdicts` replaces the announcement, keeping only the mention.** When the toggle is on, every verdict your stewards issue — a post-race penalty, an appeal correction, and the sacking or reserve move the bot enforces itself for attendance — is posted to the division's verdicts channel as a picture. The message beside it carries the driver's mention and nothing else: the heading, the sanction, the description and the justification are all on the canvas, and the driver's name stands there in place of a mention. The graphic adds the driver's flag and the team's badge, which the text announcement never carried.
+>
+> One template serves all three kinds; they differ only in the text on the stage and session fields. A verdict of an **attendance sanction** pertains to no session and names no team, so those fields come off the picture — wrap them in a `_group` if your template draws a label above them, so the label leaves with them. A round of the mystery format reads "Mystery GP".
+>
+> **A verdict is posted once and never touched again.** It is not edited, replaced or deleted, and an appeal that overturns a penalty is announced as a verdict of its own standing beside the first, which remains a true record of what was decided when it was decided.
+>
+> **A verdict that cannot be drawn never delays a sanction.** The review is finalised and the sanction enforced exactly as they would be with the images module switched off; the picture is made afterwards. A failed render posts that one verdict as text and leaves every other verdict of the same review, and of every other division, untouched. An attendance **pardon** is no verdict: it stays a log-channel record whatever the toggle says.
 
 #### `/images template <kind>` — Name the SVG file backing each image
 *Access: Server administrator*
@@ -1170,7 +1176,7 @@ Placing your own files is the operator's job; the bot resolves the paths and rep
 
 No parameters. Lists every setting with a validity status, and each aspect as ✅ enabled, ❌ disabled, or ⚠️ enabled but invalid. An invalid report names the individual template at fault — which weather phase and variant, or which half of a results or standings pair — never just the group.
 
-The report also states **how deeply templates were checked**. Layer 1 — the file resolves, parses as SVG, and declares a canvas — applies to all fifteen. Layer 2 checks that a template carries every field its image needs, and applies only to image types whose fields have been specified: the calendar, the lineup, and the two results templates. For the other eleven it is reported as *not applied* rather than as passed. The report never claims a template was verified more deeply than it was.
+The report also states **how deeply templates were checked**. Layer 1 — the file resolves, parses as SVG, and declares a canvas — applies to all fifteen. Layer 2 checks that a template carries every field its image needs, and that it carries no field belonging to a different image type. Layer 3 checks that every wrapped field can actually be laid out: its rectangle exists, declares a width and a height, and the field has a line height. All three now apply to all fifteen types, the last of their field sets having been specified. A fourth layer — a trial render — is not yet in force and is reported as *not applied* rather than as passed. The report never claims a template was verified more deeply than it was.
 
 The same summary is appended to `/season review`, which additionally names each template that would block approval. **`/season approve` refuses** while any of them is unusable — the review is where you see the problem, the approval is where the season stops.
 
@@ -1181,11 +1187,13 @@ The same summary is appended to `/season review`, which additionally names each 
 |-----------|------|----------|-------------|
 | `kind` | Choice | ✅ | `calendar`, `lineup`, `results`, `standings`, `attendance`, `rsvp`, `weather-p1`, `weather-p2`, `weather-p3`, `weather-mystery`, `verdicts` |
 
-Renders from built-in sample data and replies with the PNG, visible only to you. It reads no live season data, so it works on a server with no season configured. `results`, `standings`, `weather-p2` and `weather-p3` each return both of their variants.
+Renders from built-in sample data and replies with the PNG, visible only to you. It reads no live season data, so it works on a server with no season configured. `results`, `standings`, `weather-p2` and `weather-p3` each return both of their variants, and `verdicts` returns **six**.
 
 > **`lineup` is the exception.** Its fields are named after your teams, so a preview built from invented ones would prove nothing. It draws a fabricated "Test Division" holding exactly the teams in your server's list: every team but one filled, one left wholly empty so you can see unoccupied seats, and one reserve slot short of full so you can see an empty reserve slot too. Nobody has a portrait, so every driver image comes from the fallback and says so. If your server has no team beyond Reserve, the command is refused — there is no lineup to draw.
 
 > **`results` draws one entry fewer than your template has rows**, so you can judge how an unused row disappears, and it fills them from your server's teams. Both images are labelled *Final Results*, so both sanction columns are resolved. Between them the entries cover the cases worth looking at: an empty gap on pole and gaps under a second and over a minute; a driver with no tyre recorded and one who set no time; a total race time over an hour, an interval under a second and over a minute, a driver a lap down and another several; a retirement, a non-starter and a disqualification; in-game penalties of a whole second, of a fraction, and of none; a driver disqualified in the penalty phase and again on appeal; a driver conferred no points; and the fastest lap held by the driver who retired rather than the winner, so you can see the colour land somewhere other than the top row. If your server has no team beyond Reserve, the command is refused.
+
+> **`verdicts` returns six images from the one template**, because the wrapping of a steward's prose is the only thing about this graphic worth judging by eye and one picture cannot show it. Between them they cover all three kinds of verdict — a post-race penalty, an appeal, and both attendance sanctions — both signs of a time penalty and a disqualification, a sprint session name, and a verdict naming no session and no team. The description and justification are fabricated at five lengths: one line, exactly full, slightly over so you can see the type set down, an order of magnitude over so you can see it reach the floor and be cut, and one where the steward entered neither. Look at whether the prose stays inside its box and whether the paragraphs a steward wrote survive as paragraphs. If your server has no track list the command is refused — there is no round for a verdict to pertain to.
 
 Anything the render survived is listed alongside the image — a substituted font, a wrapped field cut at its size floor, a name cut to the width its column allows. Anything it could not survive returns no image and states why.
 
@@ -1193,7 +1201,16 @@ Anything the render survived is listed alongside the image — a substituted fon
 
 A template is a plain SVG whose declared `width` and `height` are the canvas. The bot addresses elements by `id` and does exactly six things to a field: fill text, swap an image's `href`, recolour it, truncate it to the room it declares, wrap it inside a rectangle named by `shape-inside`, and empty or remove it.
 
-**Text bounds.** A field that receives a Discord display name **must** declare an `inline-size`; it is the only bound on a name of a length no league controls, and a field without one does not overflow tidily — the name runs across whatever is drawn beside it, and nothing reports that the graphic came out wrong. Overflow is cut at a word boundary and ellipsised. A field that receives prose should declare `shape-inside` pointing at a rectangle. The text is set down half a pixel at a time until it fits, and at half the declared size is cut with an ellipsis.
+**Text bounds.** A field that receives a Discord display name **must** declare an `inline-size`; it is the only bound on a name of a length no league controls, and a field without one does not overflow tidily — the name runs across whatever is drawn beside it, and nothing reports that the graphic came out wrong. Overflow is cut at a word boundary and ellipsised. A word too wide for the room it is given is broken within itself rather than allowed to run off.
+
+**Wrapped fields.** A field that receives prose declares `shape-inside` pointing at a rectangle — which is what a graphical SVG editor writes when you *drag* a text frame rather than click a point. That rectangle is the field: its width is what the text wraps against and its height is how many lines it may occupy. It is never drawn, so give it no fill and no stroke; move or resize it to change how much prose fits.
+
+Two things a wrapped field **must** also carry, or the template is refused the moment you name it:
+
+- a `line-height`, declared on the field or inherited by it. It decides how many lines the rectangle admits, and the bot will not substitute one — a leading it chose for you would silently decide how much of a steward's prose gets drawn.
+- a rectangle that actually exists and declares a width and a height.
+
+The text is set down half a pixel at a time until it fits, and at half the declared size is cut at a word boundary with an ellipsis and a note. The leading falls with the size, so a field set smaller holds *more* lines rather than the same number spread wider. The line breaks the author typed are kept, blank lines and all.
 
 **Naming.** Ids are lowercase `snake_case` and say what the field is, not where it sits — `driver_name`, not `text_47`. Anything the template repeats is named for the thing it repeats plus **either a number or a name**:
 
@@ -1224,9 +1241,9 @@ Either way, nothing is ever dropped quietly to make the data fit.
 
 > **What is checked today.** For **every** template: the file resolving, parsing and declaring a canvas — enforced at the moment you name it and again before a season is approved.
 >
-> For the **calendar**, which is the first image type whose fields are specified, the check goes further: the mandatory fields must be present, and its rounds must be numbered from 1 with no gaps. A calendar template missing a field is refused when you name it, named in `/season review`, and blocks approval until you fix it.
+> **Every one of the fifteen types is now checked against its own fields.** A template missing a mandatory field is refused when you name it, named in `/season review`, and blocks approval until you fix it. So is one carrying a field that belongs to a different image type — the likeliest sign that a file has been put in the wrong slot. Where a type draws a repeating block, its numbering must run from 1 with no gaps.
 >
-> The other fourteen types are still checked to the file level alone — their fields have not been specified yet. Following the conventions above now is what makes those checks pass rather than fail when they switch on.
+> A template with a **wrapped** field is checked further still: the rectangle its `shape-inside` names must exist and must declare a width and a height, and the field must have a line height. All three are read from the file alone, so all three are caught the moment you name it rather than when a long piece of prose first arrives.
 
 **Fonts and casing.** Either embed the font your template names or author against a font the machine running the bot carries. A font it cannot resolve is substituted by the converter and your text is drawn in a face of another width, which changes where lines break — so two machines can draw the same template differently. Note also that `text-transform` is ignored: a label you want in capitals must be typed in capitals.
 

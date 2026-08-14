@@ -255,8 +255,104 @@ class CatalogueLayer:
         )
 
 
+class BoundsLayer:
+    """Layer 3 — every wrapped field the template declares can actually be laid out.
+
+    A field is *wrapped* where it carries ``shape-inside`` naming a rectangle. Three defects
+    make one unlayable, and all three are read off the **template alone** — no division, no
+    round, no classification (Constitution XIV.5, v4.8.0):
+
+    * the ``shape-inside`` names a rectangle the template does not declare;
+    * no ``line-height`` resolves upon the field, so the lines its box admits cannot be
+      counted — and no default may be substituted, a leading silently deciding how much of a
+      league's prose is drawn;
+    * the rectangle declares no usable width and height, so there is no room to lay out in.
+
+    Being structural, each is complete at every one of XIV.9's three moments and refuses at
+    each with that moment's severity. The same three are enforced again in the fill pipeline,
+    which is where a template configured before this layer existed is still caught; this layer
+    is what moves the telling forward to the moment the file is named.
+
+    ``applies_to`` follows Layer 2: a type with no catalogue is *skipped*, so a template whose
+    fields nothing claims is not reported as having been checked to a depth it was not.
+    """
+
+    number = LAYER_BOUNDS
+    name = LAYER_NAMES[LAYER_BOUNDS]
+
+    def applies_to(self, template_key: str) -> bool:
+        return not catalogue_for(template_key).is_empty
+
+    def check(self, ctx: TemplateContext) -> LayerResult:
+        from utils.svg_document import computed_style, length, stylesheet
+        from utils.svg_fill import (
+            _descend,
+            _font_size,
+            _line_height_ratio,
+            _shape_inside_id,
+        )
+
+        path = ctx.resolve()
+        try:
+            root = ctx.tree(path)
+        except SvgParseError as exc:  # Layer 1 already rejected this; belt and braces
+            return LayerResult(False, f"not a valid SVG file — {exc}")
+
+        catalogue = catalogue_for(ctx.template_key)
+        index = FieldIndex(root)
+        rules = stylesheet(root)
+
+        try:
+            declared = catalogue.all_mandatory_ids(root) | set(catalogue.optional)
+        except CapacityError:
+            # Layer 2 reports an uncountable collection in its own terms; this layer has
+            # nothing to add and must not report the same fault twice.
+            return LayerResult(True)
+
+        for field_id in sorted(declared):
+            element = index.resolve(field_id)
+            if element is None:
+                continue
+
+            # A field addressed by layer label resolves to the layer; the wrapped text is
+            # inside it. The fill pipeline's own descent is reused so the two cannot
+            # disagree about which element carries a field's style.
+            target = _descend(element, "text")
+            if target is None:
+                continue
+
+            style = computed_style(target, rules)
+            shape_id = _shape_inside_id(style)
+            if shape_id is None:
+                continue
+
+            rect = index.resolve(shape_id)
+            if rect is None:
+                return LayerResult(
+                    False,
+                    f"wrapped field `{field_id}` names shape-inside `{shape_id}`, "
+                    f"which the template does not declare",
+                )
+
+            if _line_height_ratio(style, _font_size(style)) is None:
+                return LayerResult(
+                    False,
+                    f"wrapped field `{field_id}` has no `line-height` resolving upon it, "
+                    f"so the number of lines its box admits cannot be worked out",
+                )
+
+            if length(rect.get("width")) is None or length(rect.get("height")) is None:
+                return LayerResult(
+                    False,
+                    f"wrapped field `{field_id}` names shape-inside `{shape_id}`, "
+                    f"which declares no usable width and height to lay the text out in",
+                )
+
+        return LayerResult(True)
+
+
 #: The ordered registry. A later session adds a layer by appending one entry here.
-LAYERS: list[ValidityLayer] = [ResolutionLayer(), CatalogueLayer()]
+LAYERS: list[ValidityLayer] = [ResolutionLayer(), CatalogueLayer(), BoundsLayer()]
 
 
 def evaluate_template(ctx: TemplateContext, layers: list[ValidityLayer] | None = None) -> ValidityReport:

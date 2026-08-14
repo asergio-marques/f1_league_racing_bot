@@ -46,9 +46,6 @@ ELLIPSIS = "…"
 #: Half a pixel at a time, per XIV.5.
 _SIZE_STEP = 0.5
 
-#: Fallback leading when a template declares no line-height.
-_DEFAULT_LINE_HEIGHT_RATIO = 1.2
-
 _SHAPE_INSIDE_RE = re.compile(r"url\(\s*#([^)\s]+)\s*\)")
 
 
@@ -401,6 +398,9 @@ def fill(spec: FillSpec) -> FillResult:
 
         shape_id = _shape_inside_id(style)
         if shape_id is not None:
+            # The three structural defects of a wrapped field (XIV.5, v4.8.0). Each is read
+            # off the template alone, so each is knowable long before a render — the layer
+            # of Rule 9 checks the same three against the same template.
             rect = index.resolve(shape_id)
             if rect is None:
                 unresolved.append(
@@ -408,7 +408,36 @@ def fill(spec: FillSpec) -> FillResult:
                     f"which the template does not declare"
                 )
                 continue
-            notice = _lay_out(element, rect, str(value), style, resolved, spec.image_type, field_id)
+
+            ratio = _line_height_ratio(style, _font_size(style))
+            if ratio is None:
+                unresolved.append(
+                    f"wrapped field `{field_id}` has no `line-height` resolving upon it, "
+                    f"so the number of lines its box admits cannot be worked out"
+                )
+                continue
+
+            box_width = length(rect.get("width"))
+            box_height = length(rect.get("height"))
+            if box_width is None or box_height is None:
+                unresolved.append(
+                    f"wrapped field `{field_id}` names shape-inside `{shape_id}`, "
+                    f"which declares no usable width and height to lay the text out in"
+                )
+                continue
+
+            notice = _lay_out(
+                element,
+                rect,
+                str(value),
+                style,
+                resolved,
+                spec.image_type,
+                field_id,
+                ratio=ratio,
+                box_width=box_width,
+                box_height=box_height,
+            )
             if notice is not None:
                 notices.append(notice)
             consumed.add(field_id)
@@ -624,10 +653,29 @@ def _crop_to(root: etree._Element, crop_y: float) -> None:
             root.set("viewBox", f"{parts[0]} {parts[1]} {parts[2]} {int(round(crop_y))}")
 
 
+def _is_bold(style: dict[str, str]) -> bool:
+    """True where the field declares a weight a bold face would be drawn for."""
+    raw = (style.get("font-weight") or "").strip().lower()
+    if raw in {"bold", "bolder"}:
+        return True
+    try:
+        return int(raw) >= 600
+    except ValueError:
+        return False
+
+
+def _is_italic(style: dict[str, str]) -> bool:
+    return (style.get("font-style") or "").strip().lower() in {"italic", "oblique"}
+
+
 def _resolve_font(
     style: dict[str, str], field_id: str, image_type: str
 ) -> tuple[ResolvedFont, RenderNotice | None]:
-    resolved = resolve_family(style.get("font-family"))
+    # Weight and style select among a family's faces, per XIV.5: a bold field measured
+    # against the regular face would admit lines the canvas does not hold.
+    resolved = resolve_family(
+        style.get("font-family"), bold=_is_bold(style), italic=_is_italic(style)
+    )
     if not resolved.substituted:
         return resolved, None
 
@@ -647,16 +695,21 @@ def _font_size(style: dict[str, str]) -> float:
     return length(style.get("font-size")) or 16.0
 
 
-def _line_height_ratio(style: dict[str, str], size: float) -> float:
-    """Resolve ``line-height`` to a multiple of the font size.
+def _line_height_ratio(style: dict[str, str], size: float) -> float | None:
+    """Resolve ``line-height`` to a multiple of the font size, or **None**.
 
     CSS gives it two meanings: a bare number is a *ratio* (`1.3`), while a value with a
     unit is an absolute length (`26px`). They must not be conflated — reading `1.3` as
     1.3px collapses the leading to nothing, and every line then "fits".
+
+    Returning None where nothing resolves is deliberate and is the rule, not a defensive
+    branch (XIV.5, v4.8.0). A substituted default would silently decide how many lines of
+    a league's prose are drawn, which is the template's decision; the caller makes the
+    absence a problem instead.
     """
     raw = (style.get("line-height") or "").strip()
     if not raw:
-        return _DEFAULT_LINE_HEIGHT_RATIO
+        return None
 
     try:
         return float(raw)  # unitless: already a ratio
@@ -666,7 +719,7 @@ def _line_height_ratio(style: dict[str, str], size: float) -> float:
     absolute = length(raw)
     if absolute is not None and size > 0:
         return absolute / size
-    return _DEFAULT_LINE_HEIGHT_RATIO
+    return None
 
 
 def _set_text(
@@ -790,6 +843,10 @@ def _lay_out(
     resolved: ResolvedFont,
     image_type: str,
     field_id: str,
+    *,
+    ratio: float,
+    box_width: float,
+    box_height: float,
 ) -> RenderNotice | None:
     """Wrap *value* against *rect*, descending by half a pixel until it fits (XIV.5).
 
@@ -797,19 +854,16 @@ def _lay_out(
     boundary and ended with an ellipsis. Line height scales with the reduced size and the
     admissible line count is recomputed at the reduced leading — which is what makes the
     floor buy substantially more room than the same line count set smaller.
+
+    *ratio*, *box_width* and *box_height* are resolved and validated by the caller: a
+    field with no leading, or a rectangle with no extent, is a **problem** and never
+    reaches layout.
     """
-    box_width = length(rect.get("width"))
-    box_height = length(rect.get("height"))
     box_x = length(rect.get("x")) or 0.0
     box_y = length(rect.get("y")) or 0.0
 
     declared_size = _font_size(style)
-    ratio = _line_height_ratio(style, declared_size)
     floor_size = declared_size / 2.0
-
-    if box_width is None or box_height is None:
-        _write_lines(element, [value], box_x, box_y, declared_size, declared_size * ratio)
-        return None
 
     size = declared_size
     truncated = False
@@ -854,17 +908,55 @@ def _lay_out(
     return None
 
 
+def _split_word(word: str, resolved: ResolvedFont, size: float, width: float) -> list[str]:
+    """Break a single word too wide for its box into pieces that fit (XIV.5).
+
+    Scans forward rather than trimming from the end, so the cost is proportional to the
+    word's length and not to its square. A character that will not fit on a line of its
+    own still yields a piece: emitting nothing would drop the word silently.
+    """
+    pieces: list[str] = []
+    remaining = word
+    while remaining:
+        if measure(remaining, resolved, size) <= width:
+            pieces.append(remaining)
+            break
+        cut = 1
+        while cut < len(remaining) and measure(remaining[: cut + 1], resolved, size) <= width:
+            cut += 1
+        pieces.append(remaining[:cut])
+        remaining = remaining[cut:]
+    return pieces
+
+
 def _wrap(value: str, resolved: ResolvedFont, size: float, width: float) -> list[str]:
-    """Break *value* into lines no wider than *width*, at word boundaries."""
+    """Break *value* into lines no wider than *width*, at word boundaries.
+
+    The author's own line breaks are honoured first and their blank lines kept, each
+    counting against the field's budget as a line of text does. A word wider than the box
+    is broken **within itself** rather than emitted as an over-wide line — a pasted URL in
+    a steward's justification is the case that meets this.
+    """
     lines: list[str] = []
     for paragraph in value.split("\n"):
         words = paragraph.split()
         if not words:
             lines.append("")
             continue
-        current = words[0]
-        for word in words[1:]:
-            candidate = f"{current} {word}"
+
+        current = ""
+        for word in words:
+            if measure(word, resolved, size) > width:
+                # Finish the line in progress, then break the word from a fresh one.
+                if current:
+                    lines.append(current)
+                    current = ""
+                pieces = _split_word(word, resolved, size, width)
+                lines.extend(pieces[:-1])
+                current = pieces[-1]
+                continue
+
+            candidate = word if not current else f"{current} {word}"
             if measure(candidate, resolved, size) <= width:
                 current = candidate
             else:

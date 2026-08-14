@@ -1614,9 +1614,66 @@ WEATHER_MYSTERY_CATALOGUE = FieldCatalogue(
 )
 
 
-#: Template column → its catalogue. Fifteen entries, one per image type; the calendar, the
-#: lineup, the two results types, the two standings types, the two attendance types and the
-#: six weather types are populated and the remaining one is still empty.
+# ── Verdicts ──────────────────────────────────────────────────────────────
+#
+# One template serves the three kinds of verdict — a post-race penalty, an appeal, and an
+# attendance sanction the bot enforced itself — the three being told apart by the text placed
+# on `verdict_stage` and `session_name` alone. They differ in no *field*, so they are one
+# image type and one slot rather than siblings (XIV.10, v4.8.0).
+#
+# It declares **no collection**: one decision, upon one driver, at one round. Only
+# WEATHER_MYSTERY_CATALOGUE had reached that before it, and the two arrive from opposite
+# directions — the notice because it says a forecast is not coming and so has almost nothing
+# to draw, the verdict because its subject is singular.
+#
+# `session_name` is **mandatory and may be drawn empty**. An attendance sanction pertains to
+# no session, so the data determine its value to be nothing, which XIV.3 holds is determined
+# rather than missing: the field is emptied, its group removed, and no notice arises. The
+# template must still declare it, which is what keeps it mandatory. The label "Attendance
+# Sanction" stands on `verdict_stage` alone and is never written here as well.
+#
+# `driver_flag` carries XIV.4's configured-absence suppression, justified per field: a league
+# that switched nationality collection off draws no flag and is told nothing, while a league
+# that collects it and holds none for this driver is told. The distinction is the lineup's and
+# is carried, not re-derived.
+_VERDICTS_MANDATORY = frozenset(
+    {
+        "division_name",
+        "round_number",
+        "session_name",
+        "verdict_stage",
+        "driver_name",
+        "penalty",
+        "description",
+        "justification",
+    }
+)
+
+_VERDICTS_OPTIONAL = frozenset(
+    {
+        "season_number",
+        "season_number_group",
+        "division_tier",
+        "division_tier_group",
+        "race_name",
+        "session_name_group",
+        "team_name",
+        "team_name_group",
+        "driver_flag",
+        "team_image",
+    }
+)
+
+VERDICTS_CATALOGUE = FieldCatalogue(
+    mandatory=_VERDICTS_MANDATORY,
+    optional=_VERDICTS_OPTIONAL,
+    assets={"driver_flag": "flag", "team_image": "team"},
+)
+
+
+#: Template column → its catalogue. Fifteen entries, one per image type; all fifteen — the
+#: calendar, the lineup, the two results types, the two standings types, the two attendance
+#: types, the six weather types and the verdict — are populated.
 CATALOGUES: dict[str, FieldCatalogue] = {
     column: FieldCatalogue() for column in TEMPLATE_COLUMNS
 }
@@ -1634,6 +1691,7 @@ CATALOGUES["weather_p2_sprint_template"] = WEATHER_P2_SPRINT_CATALOGUE
 CATALOGUES["weather_p3_template"] = WEATHER_P3_CATALOGUE
 CATALOGUES["weather_p3_sprint_template"] = WEATHER_P3_SPRINT_CATALOGUE
 CATALOGUES["weather_mystery_template"] = WEATHER_MYSTERY_CATALOGUE
+CATALOGUES["verdicts_template"] = VERDICTS_CATALOGUE
 
 
 def sibling_keys(template_key: str) -> list[str]:

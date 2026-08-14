@@ -310,8 +310,11 @@ def test_shape_inside_is_removed_not_set_to_none_after_lay_out():
 
 
 def test_shape_inside_from_an_id_rule_is_stripped_too():
+    # The rule carries `line-height` because a wrapped field without one is a problem and
+    # never reaches layout (XIV.5, v4.8.0). Inherited from the stylesheet counts, which is
+    # the same route this test is exercising for `shape-inside`.
     root = _doc(
-        '<style>#j { shape-inside: url(#box); font-size: 20px; }</style>'
+        '<style>#j { shape-inside: url(#box); font-size: 20px; line-height: 1.3; }</style>'
         '<rect id="box" x="10" y="20" width="300" height="120"/>'
         '<text id="j" style="font-family:Arial">placeholder</text>'
     )
@@ -557,3 +560,99 @@ def test_an_undeclared_field_with_an_absent_datum_behaves_as_it_always_did(tmp_p
     )
     assert result.unresolved == []
     assert [n.field_id for n in result.notices] == ["row_1_driver_flag"]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 043 — the wrapping contract completed (XIV.5, v4.8.0)
+#
+# specs/043-verdicts-image-generation/contracts/text-wrapping.md. Verdicts is the
+# module's first type to draw prose a person wrote, and these are the clauses the
+# pipeline did not yet hold.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+LONG_WORD = "A" * 400
+
+
+def test_wrapped_field_breaks_a_word_wider_than_its_box_within_itself():
+    """An over-wide word became its own over-wide line, running off the canvas."""
+    root = _doc(WRAP_DOC)
+    result = fill(FillSpec(root=root, text={"justification": LONG_WORD}))
+
+    assert result.unresolved == []
+    element = FieldIndex(root).resolve("justification")
+    size = float(element.get("style").split("font-size:")[1].split("px")[0])
+    resolved = resolve_family("Arial")
+
+    from utils.font_metrics import measure  # noqa: PLC0415
+
+    tspans = list(element)
+    assert len(tspans) > 1, "a 400-character word must be broken across lines"
+    for tspan in tspans:
+        assert measure(tspan.text or "", resolved, size) <= 300.0 + 0.5, (
+            f"line wider than its box: {tspan.text!r}"
+        )
+
+
+def test_single_line_field_breaks_a_word_wider_than_its_room_within_itself():
+    """The inline-size path already cut mid-word; this pins it so it stays that way."""
+    root = _doc(
+        '<text id="dn" style="font-family:Arial;font-size:20px;inline-size:120px">x</text>'
+    )
+    result = fill(FillSpec(root=root, text={"dn": LONG_WORD}))
+
+    assert result.unresolved == []
+    drawn = FieldIndex(root).resolve("dn").text
+    assert drawn.endswith(ELLIPSIS)
+    assert len(drawn) < len(LONG_WORD), "the word must be cut, not drawn whole"
+
+
+def test_wrapped_field_with_no_resolvable_line_height_is_a_problem():
+    """No default leading may be substituted: it decides how much prose is drawn."""
+    root = _doc(
+        '<rect id="box" x="10" y="20" width="300" height="120"/>'
+        '<text id="justification" style="font-family:Arial;font-size:20px;'
+        'shape-inside:url(#box)">placeholder</text>'
+    )
+    result = fill(FillSpec(root=root, text={"justification": "Anything at all."}))
+
+    assert result.unresolved, "a wrapped field with no leading must be fatal"
+    assert any("line-height" in problem for problem in result.unresolved)
+    assert any("justification" in problem for problem in result.unresolved)
+
+
+def test_inherited_line_height_satisfies_the_wrapped_field():
+    """It may be declared on the field or inherited by it — the stylesheet counts."""
+    root = _doc(
+        '<style>#justification { line-height: 1.3; }</style>'
+        '<rect id="box" x="10" y="20" width="300" height="120"/>'
+        '<text id="justification" style="font-family:Arial;font-size:20px;'
+        'shape-inside:url(#box)">placeholder</text>'
+    )
+    result = fill(FillSpec(root=root, text={"justification": "Anything at all."}))
+    assert result.unresolved == []
+
+
+def test_wrapped_field_whose_rectangle_has_no_extent_is_a_problem():
+    """It silently wrote one unwrapped line: no error, and text across the canvas."""
+    root = _doc(
+        '<rect id="box" x="10" y="20"/>'
+        '<text id="justification" style="font-family:Arial;font-size:20px;'
+        'line-height:1.3;shape-inside:url(#box)">placeholder</text>'
+    )
+    result = fill(FillSpec(root=root, text={"justification": "Anything at all."}))
+
+    assert result.unresolved, "a rectangle with no extent must be fatal"
+    assert any("justification" in problem for problem in result.unresolved)
+    assert any("box" in problem for problem in result.unresolved)
+
+
+def test_wrapped_field_naming_a_missing_rectangle_is_a_problem():
+    """Already held; pinned here beside its two siblings so the family stays together."""
+    root = _doc(
+        '<text id="justification" style="font-family:Arial;font-size:20px;'
+        'line-height:1.3;shape-inside:url(#nope)">placeholder</text>'
+    )
+    result = fill(FillSpec(root=root, text={"justification": "Anything at all."}))
+
+    assert any("nope" in problem for problem in result.unresolved)

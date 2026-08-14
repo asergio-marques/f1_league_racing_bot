@@ -24,6 +24,7 @@ from models.image_constants import (
     TEMPLATE_LABELS,
 )
 from models.image_module import STATE_DISABLED, STATE_ENABLED
+from services.image_sample_data import SAMPLE_VERDICT_CASES
 from utils.channel_guard import admin_only, channel_guard, server_admin_only
 from utils.paths import PathContainmentError, relative_to_root
 
@@ -44,6 +45,9 @@ _INVALID_ICON = "⚠️"
 _SAMPLE_VARIANTS: dict[str, tuple] = {
     "attendance_template": ("limits", "no_limits"),
     "rsvp_template": ("sprint", "normal", "mystery", "no_image", "no_deadline"),
+    # Six images from one template: the three kinds of verdict, both signs of a time
+    # penalty, and free text at five lengths (043).
+    "verdicts_template": SAMPLE_VERDICT_CASES,
 }
 
 
@@ -981,7 +985,7 @@ class ImageCog(commands.Cog):
         needs_tracks = {
             key
             for key in templates
-            if key in ("attendance_template", "rsvp_template")
+            if key in ("attendance_template", "rsvp_template", "verdicts_template")
             or (key.startswith("weather_") and key != "weather_mystery_template")
         }
         if needs_tracks:
@@ -995,6 +999,8 @@ class ImageCog(commands.Cog):
                     subject = "attendance sheet"
                 elif "rsvp_template" in needs_tracks:
                     subject = "check-in call"
+                elif "verdicts_template" in needs_tracks:
+                    subject = "verdict"
                 else:
                     subject = "weather forecast"
                 await interaction.followup.send(

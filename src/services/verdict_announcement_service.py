@@ -12,9 +12,34 @@ import discord
 
 from db.database import get_connection
 from models.points_config import SessionType
+from services import image_verdict_post
+from services.image_verdict_service import VerdictKind
 from utils import results_formatter
 
 log = logging.getLogger(__name__)
+
+#: What the announcement carries where the steward entered neither. The **message** italicises
+#: it; the graphic draws the value the markup adorned and leaves the distinguishing to the
+#: template's typography (Constitution XIV.16).
+NOT_PROVIDED = "(not provided)"
+
+
+def _for_message(value: str) -> str:
+    """Apply the channel emphasis the placeholder carries in the textual announcement."""
+    return f"*{NOT_PROVIDED}*" if value == NOT_PROVIDED else value
+
+
+def _graphic_name(display_name: str | None, discord_user_id: int) -> str:
+    """The name the graphic draws in place of a mention (XIV.16).
+
+    Resolved by the chain every graphic of the module resolves a person by, so one driver is
+    one name wherever the module names them.
+    """
+    from services.image_lineup_service import resolve_driver_name
+
+    return resolve_driver_name(
+        discord_user_id=discord_user_id, display_name=display_name
+    )
 
 # +Ns or -Ns  (with optional sign, digits, optional 's')
 _PENALTY_RE = re.compile(r"^([+-]?\d+)s?$", re.IGNORECASE)
@@ -23,11 +48,14 @@ _PENALTY_RE = re.compile(r"^([+-]?\d+)s?$", re.IGNORECASE)
 def translate_penalty(penalty_str: str) -> str:
     """Convert a raw penalty magnitude to a human-readable description.
 
+    A positive magnitude is time **added** to the driver's time, which is what a
+    time penalty does; a negative one is time removed, as an appeal correction does.
+
     | Input       | Output                    |
     |-------------|---------------------------|
-    | ``+5s``     | ``5 seconds removed``     |
-    | ``5s``      | ``5 seconds removed``     |
-    | ``-3s``     | ``3 seconds added``       |
+    | ``+5s``     | ``5 seconds added``       |
+    | ``5s``      | ``5 seconds added``       |
+    | ``-3s``     | ``3 seconds removed``     |
     | ``DSQ``     | ``Disqualified``          |
     """
     if penalty_str.strip().upper() == "DSQ":
@@ -39,6 +67,19 @@ def translate_penalty(penalty_str: str) -> str:
             return f"{abs(seconds)} seconds removed"
         return f"{seconds} seconds added"
     return penalty_str  # fallback: return raw value unchanged
+
+
+def describe_penalty(penalty_type: str | None, time_seconds: int | None) -> str:
+    """The descriptive rendering of a sanction, from the record's own two fields.
+
+    The one place the magnitude is turned into the sentence a league reads. Both the textual
+    announcement and the verdict graphic call it, so a change here reaches both by the same
+    stroke — Constitution XIV.7's one rendering, two presentations.
+    """
+    if penalty_type == "DSQ" or time_seconds is None:
+        return translate_penalty("DSQ")
+    magnitude = f"+{time_seconds}s" if time_seconds >= 0 else f"{time_seconds}s"
+    return translate_penalty(magnitude)
 
 
 async def _get_announcement_context(db_path: str, round_id: int) -> dict:
@@ -130,9 +171,103 @@ def _build_announcement_message(
         f"{separator}\n"
         f"**Driver**: {driver_ref}\n"
         f"**Penalty**: {penalty_description}\n"
-        f"**Description**: {description_text}\n"
-        f"**Justification**: {justification_text}"
+        f"**Description**: {_for_message(description_text)}\n"
+        f"**Justification**: {_for_message(justification_text)}"
     )
+
+
+async def _send_verdict(
+    bot,
+    target_channel,
+    *,
+    server_id: int,
+    db_path: str,
+    round_id: int,
+    kind,
+    season_number,
+    division_name: str,
+    round_number,
+    session_label: str | None,
+    driver_discord_id: int,
+    driver_display_name: str | None,
+    driver_name: str,
+    penalty_description: str,
+    description_text: str,
+    justification_text: str,
+    team_name: str | None = None,
+) -> None:
+    """Post one verdict: as a graphic where the toggle allows, as text otherwise.
+
+    The graphic **displaces the whole announcement but the mention** (Constitution XIV.7): its
+    heading, driver line, sanction, description and justification all move onto the canvas and
+    the message keeps the mention alone. A failed render falls back to the text this function
+    would have sent anyway — no state is persisted either way, so there is nothing to reconcile.
+
+    Called only after the review has been finalised or the sanction enforced. A graphic is
+    downstream of every state change it depicts and is never a precondition of one.
+    """
+    from services import image_verdict_post
+
+    render = None
+    if await image_verdict_post.verdicts_enabled(bot, server_id):
+        try:
+            drawing = await image_verdict_post.build_drawing(
+                bot,
+                db_path=db_path,
+                round_id=round_id,
+                kind=kind,
+                server_id=server_id,
+                season_number=season_number,
+                division_name=division_name,
+                round_number=round_number,
+                session_label=session_label,
+                driver_name=driver_name,
+                driver_discord_id=driver_discord_id,
+                penalty_description=penalty_description,
+                description_text=description_text,
+                justification_text=justification_text,
+                team_name=team_name,
+            )
+            render = await image_verdict_post.render_verdict(bot, server_id, drawing)
+        except Exception:  # noqa: BLE001 — a graphic never costs a league its announcement
+            log.exception("verdict graphic failed for driver %s", driver_discord_id)
+            render = None
+
+        subject = image_verdict_post.describe(
+            division_name=division_name,
+            round_number=round_number,
+            session_name=session_label,
+            driver_name=driver_name,
+            season_number=season_number,
+        )
+        if render is not None and render.notices:
+            await image_verdict_post.report_notices(
+                bot, server_id, subject, render.notices
+            )
+        if render is not None and render.problem:
+            await image_verdict_post.report(bot, server_id, subject, render.problem)
+
+    if render is not None and render.draws:
+        import discord as _discord
+
+        await target_channel.send(
+            f"<@{driver_discord_id}>",
+            file=_discord.File(str(render.png)),
+        )
+        return
+
+    content = _build_announcement_message(
+        season_number,
+        division_name,
+        round_number,
+        session_label or "Attendance Sanction",
+        driver_discord_id,
+        penalty_description,
+        description_text,
+        justification_text,
+        driver_display_name=driver_display_name,
+    )
+    await target_channel.send(content)
 
 
 async def post_penalty_announcements(
@@ -171,6 +306,8 @@ async def post_penalty_announcements(
 
     season_number = ctx["season_number"]
     division_name = ctx["division_name"]
+    server_id = getattr(getattr(target_channel, "guild", None), "id", 0)
+    KIND = VerdictKind.PENALTY
 
     for record in applied_penalties:
         try:
@@ -203,26 +340,37 @@ async def post_penalty_announcements(
             description_text = record.get("description") if hasattr(record, "get") else getattr(record, "description", "")
             justification_text = record.get("justification") if hasattr(record, "get") else getattr(record, "justification", "")
 
-            if penalty_type == "DSQ":
-                pen_str = "DSQ"
-            elif time_seconds is not None:
-                pen_str = f"+{time_seconds}s" if time_seconds >= 0 else f"{time_seconds}s"
-            else:
-                pen_str = "DSQ"
-            penalty_description = translate_penalty(pen_str)
+            penalty_description = describe_penalty(penalty_type, time_seconds)
 
-            content = _build_announcement_message(
-                season_number,
-                division_name,
-                round_number,
-                session_label,
-                driver_discord_id,
-                penalty_description,
-                description_text or "*(not provided)*",
-                justification_text or "*(not provided)*",
-                driver_display_name=test_display_name,
+            team_name = await image_verdict_post.team_name_for_entry(
+                bot,
+                getattr(target_channel, "guild", None),
+                server_id=server_id,
+                division_id=result_ctx["division_id"],
+                role_id=record.get("team_role_id")
+                if hasattr(record, "get")
+                else getattr(record, "team_role_id", None),
             )
-            await target_channel.send(content)
+
+            await _send_verdict(
+                bot,
+                target_channel,
+                server_id=server_id,
+                db_path=db_path,
+                round_id=result_ctx["round_id"],
+                kind=KIND,
+                season_number=season_number,
+                division_name=division_name,
+                round_number=round_number,
+                session_label=session_label,
+                driver_discord_id=driver_discord_id,
+                driver_display_name=test_display_name,
+                driver_name=_graphic_name(test_display_name, driver_discord_id),
+                penalty_description=penalty_description,
+                description_text=description_text or NOT_PROVIDED,
+                justification_text=justification_text or NOT_PROVIDED,
+                team_name=team_name,
+            )
 
         except Exception:
             log.exception(
@@ -266,6 +414,8 @@ async def post_appeal_announcements(
 
     season_number = ctx["season_number"]
     division_name = ctx["division_name"]
+    server_id = getattr(getattr(target_channel, "guild", None), "id", 0)
+    KIND = VerdictKind.APPEAL
 
     for record in applied_corrections:
         try:
@@ -297,26 +447,37 @@ async def post_appeal_announcements(
             description_text = record.get("description") if hasattr(record, "get") else getattr(record, "description", "")
             justification_text = record.get("justification") if hasattr(record, "get") else getattr(record, "justification", "")
 
-            if penalty_type == "DSQ":
-                pen_str = "DSQ"
-            elif time_seconds is not None:
-                pen_str = f"+{time_seconds}s" if time_seconds >= 0 else f"{time_seconds}s"
-            else:
-                pen_str = "DSQ"
-            penalty_description = translate_penalty(pen_str)
+            penalty_description = describe_penalty(penalty_type, time_seconds)
 
-            content = _build_announcement_message(
-                season_number,
-                division_name,
-                round_number,
-                session_label,
-                driver_discord_id,
-                penalty_description,
-                description_text or "*(not provided)*",
-                justification_text or "*(not provided)*",
-                driver_display_name=test_display_name,
+            team_name = await image_verdict_post.team_name_for_entry(
+                bot,
+                getattr(target_channel, "guild", None),
+                server_id=server_id,
+                division_id=result_ctx["division_id"],
+                role_id=record.get("team_role_id")
+                if hasattr(record, "get")
+                else getattr(record, "team_role_id", None),
             )
-            await target_channel.send(content)
+
+            await _send_verdict(
+                bot,
+                target_channel,
+                server_id=server_id,
+                db_path=db_path,
+                round_id=result_ctx["round_id"],
+                kind=KIND,
+                season_number=season_number,
+                division_name=division_name,
+                round_number=round_number,
+                session_label=session_label,
+                driver_discord_id=driver_discord_id,
+                driver_display_name=test_display_name,
+                driver_name=_graphic_name(test_display_name, driver_discord_id),
+                penalty_description=penalty_description,
+                description_text=description_text or NOT_PROVIDED,
+                justification_text=justification_text or NOT_PROVIDED,
+                team_name=team_name,
+            )
 
         except Exception:
             log.exception(
@@ -395,19 +556,25 @@ async def post_autosanction_announcement(
             "another driver."
         )
 
-    content = _build_announcement_message(
-        season_number,
-        division_name,
-        round_number,
-        "Attendance Sanction",
-        driver_discord_id,
-        penalty_label,
-        description_text,
-        justification_text,
-        driver_display_name=driver_display_name,
-    )
     try:
-        await target_channel.send(content)
+        await _send_verdict(
+            bot,
+            target_channel,
+            server_id=getattr(getattr(target_channel, "guild", None), "id", 0),
+            db_path=db_path,
+            round_id=round_id,
+            kind=VerdictKind.ATTENDANCE_SANCTION,
+            season_number=season_number,
+            division_name=division_name,
+            round_number=round_number,
+            session_label=None,
+            driver_discord_id=driver_discord_id,
+            driver_display_name=driver_display_name,
+            driver_name=_graphic_name(driver_display_name, driver_discord_id),
+            penalty_description=penalty_label,
+            description_text=description_text,
+            justification_text=justification_text,
+        )
     except Exception:
         log.exception(
             "post_autosanction_announcement: error posting announcement for driver %s",

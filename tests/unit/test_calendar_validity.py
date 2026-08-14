@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from models.image_catalogues import CATALOGUES, catalogue_for
 from services.image_validity_service import (
+    LAYER_BOUNDS,
     LAYER_CATALOGUE,
     LAYER_RESOLUTION,
     CatalogueLayer,
@@ -94,9 +95,21 @@ def test_layer_two_applies_to_the_calendar_now_it_has_a_catalogue():
 
 
 def test_layer_two_still_skips_a_type_with_no_catalogue():
-    """XIV.9.4 — a type checked shallowly must not read as fully valid."""
-    assert not CatalogueLayer().applies_to("verdicts_template")
-    assert CATALOGUES["verdicts_template"].is_empty
+    """XIV.9.4 — a type checked shallowly must not read as fully valid.
+
+    Every one of the fifteen catalogues is populated as of 043, so the condition is staged
+    rather than found: what it proves must still hold for whichever type is specified next.
+    """
+    from models.image_catalogues import FieldCatalogue
+
+    saved = dict(CATALOGUES)
+    try:
+        CATALOGUES["verdicts_template"] = FieldCatalogue()
+        assert not CatalogueLayer().applies_to("verdicts_template")
+        assert CATALOGUES["verdicts_template"].is_empty
+    finally:
+        CATALOGUES.clear()
+        CATALOGUES.update(saved)
 
 
 # ── A sound template ──────────────────────────────────────────────────────
@@ -105,7 +118,7 @@ def test_layer_two_still_skips_a_type_with_no_catalogue():
 def test_a_sound_template_passes_to_layer_two(named):
     report = named(_template(rounds=(1, 2, 3)))
     assert report.valid, report.reason
-    assert report.depth_checked == LAYER_CATALOGUE
+    assert report.depth_checked == LAYER_BOUNDS
 
 
 def test_a_single_round_template_is_sound(named):

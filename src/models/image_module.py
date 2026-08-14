@@ -97,6 +97,13 @@ PROBLEM_UNKNOWN_FIELD = "UNKNOWN_FIELD"
 PROBLEM_ASSET_UNRESOLVED = "ASSET_UNRESOLVED"
 PROBLEM_CAPACITY_EXCEEDED = "CAPACITY_EXCEEDED"
 PROBLEM_RASTERISER = "RASTERISER"
+#: A wrapped field the template gives no leading, or no room, to lay out (XIV.5, v4.8.0).
+#: Both are **structural** — read off the template alone — so both are complete at every one
+#: of the three validity moments and refuse at each. A `shape-inside` naming a rectangle the
+#: template does not declare is the third of that family and reports as
+#: :data:`PROBLEM_UNRESOLVED_VALUE`, the field having no extent to be resolved against.
+PROBLEM_WRAP_NO_LEADING = "WRAP_NO_LEADING"
+PROBLEM_WRAP_NO_EXTENT = "WRAP_NO_EXTENT"
 #: The one kind no league can provoke: a render asked for a type the module does not
 #: know. It is a Problem rather than an exception so every failure path returns
 #: uniformly and no traceback escapes into a Discord surface.

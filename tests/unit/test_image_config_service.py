@@ -339,8 +339,25 @@ _WEATHER_BY_FILENAME = {
 }
 
 
+#: A sound verdict template (043): the eight mandatory fields, and no collection at all.
+_VALID_VERDICTS_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b'<text id="session_name">Race</text>'
+    b'<text id="verdict_stage">Post-Race Penalty</text>'
+    b'<text id="driver_name">A Driver</text>'
+    b'<text id="penalty">5 seconds added</text>'
+    b'<text id="description">Contact at turn four.</text>'
+    b'<text id="justification">Video evidence reviewed.</text>'
+    b"</svg>"
+)
+
+
 def _sound_bytes(filename: str) -> bytes:
     """The soundest template for *filename* at the depth its type is checked to."""
+    if filename == TEMPLATE_COLUMNS["verdicts_template"]:
+        return _VALID_VERDICTS_SVG
     if filename in _WEATHER_BY_FILENAME:
         return _WEATHER_BY_FILENAME[filename]
     if filename == TEMPLATE_COLUMNS["calendar_template"]:
