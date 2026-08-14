@@ -616,6 +616,87 @@ def build_rsvp_drawing(root, *, case: str = "sprint"):
     )
 
 
+#: The fabricated weather each of the six templates draws (wip-spec "Test data").
+#:
+#: The sprint and endurance rounds are not two arbitrary examples: between them they reach the
+#: greatest session count the module can produce (four) and the greatest slot count (four, the
+#: endurance race being the only session that may be drawn so many).
+#:
+#: The phase 3 sequences are chosen so that every case the wip-spec enumerates is visible, so
+#: far as the sessions and slots the templates declare allow (FR-064) — a session of a single
+#: slot, a session of one weather throughout, a session whose slots differ, a session at its
+#: type's greatest slot count, and each of the five concrete weathers at least once.
+SAMPLE_WEATHER_SPRINT = (
+    # session type,               phase 2 draw, phase 3 sequence
+    ("SHORT_SPRINT_QUALIFYING", "sunny", ["Clear", "Clear"]),
+    ("LONG_SPRINT_RACE", "mixed", ["Overcast"]),
+    ("SHORT_FEATURE_QUALIFYING", "rain", ["Light Cloud", "Wet"]),
+    ("LONG_FEATURE_RACE", "mixed", ["Wet", "Very Wet", "Overcast"]),
+)
+
+SAMPLE_WEATHER_ENDURANCE = (
+    ("FULL_QUALIFYING", "rain", ["Clear", "Light Cloud", "Overcast"]),
+    ("FULL_RACE", "sunny", ["Overcast", "Wet", "Very Wet", "Wet"]),
+)
+
+#: Deliberately **not** a whole percentage, so that the rounding can be judged (FR-062). It
+#: renders as "30%": the graphic and the phase 1 message round to the nearest whole number.
+SAMPLE_RAIN_PROBABILITY = 0.3047
+
+_SAMPLE_WEATHER_ROUNDS = {
+    "SPRINT": ("SPRINT", "Silverstone Circuit", "British Grand Prix", "United Kingdom",
+               SAMPLE_WEATHER_SPRINT),
+    "ENDURANCE": ("ENDURANCE", "Circuit de Spa-Francorchamps", "Belgian Grand Prix",
+                  "Belgium", SAMPLE_WEATHER_ENDURANCE),
+}
+
+
+def build_weather_drawing(root, template_key: str):
+    """The fabricated forecast ``/images test weather-*`` draws.
+
+    Six images across four commands, one per template. Phases 2 and 3 draw a sprint round from
+    their sprint template and an endurance round from their plain one; phase 1 and the mystery
+    notice draw one apiece.
+    """
+    from services.image_weather_service import resolve_drawing
+
+    sprint = template_key.endswith("_sprint_template")
+    fmt, track, race, country, sessions = _SAMPLE_WEATHER_ROUNDS[
+        "SPRINT" if sprint else "ENDURANCE"
+    ]
+
+    if template_key == "weather_mystery_template":
+        return resolve_drawing(
+            phase=1,
+            template_key=template_key,
+            division_name="Test Division",
+            round_number=1,
+            round_format="MYSTERY",
+            division_tier=1,
+            season_number=1,
+        )
+
+    phase = 3 if "_p3" in template_key else (2 if "_p2" in template_key else 1)
+
+    return resolve_drawing(
+        phase=phase,
+        template_key=template_key,
+        division_name="Test Division",
+        round_number=1,
+        round_format=fmt,
+        track_name=track,
+        race_name=race,
+        country_name=country,
+        rain_probability=SAMPLE_RAIN_PROBABILITY,
+        sessions=[
+            {"session_type": session_type, "slot_type": slot_type, "slots": slots}
+            for session_type, slot_type, slots in sessions
+        ],
+        division_tier=1,
+        season_number=1,
+    )
+
+
 def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec:
     """Build a FillSpec for *template_key* against the template's actual ids.
 
@@ -763,6 +844,26 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
 
         return build_fill_spec(
             build_rsvp_drawing(root, case=variant or "sprint"),
+            root,
+            asset_directories=directories,
+        )
+
+    if template_key.startswith("weather_"):
+        from services.image_weather_service import build_fill_spec
+        from utils.paths import resolve_within_project_root
+
+        directories = {}
+        for asset_class, relative in (
+            ("track", "resources/tracks"),
+            ("weather", "resources/weather"),
+        ):
+            try:
+                directories[asset_class] = resolve_within_project_root(relative)
+            except Exception:  # noqa: BLE001
+                pass
+
+        return build_fill_spec(
+            build_weather_drawing(root, template_key),
             root,
             asset_directories=directories,
         )

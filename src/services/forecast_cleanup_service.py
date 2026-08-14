@@ -75,9 +75,10 @@ async def delete_forecast_message(
 ) -> None:
     """Delete the stored Discord message for *phase_number* of *round_id*.
 
-    Test-mode guard (FR-012): if test mode is active for the server that owns
-    this round, the deletion is silently skipped.  The row is retained so that
-    ``flush_pending_deletions`` can action it later when test mode is disabled.
+    **No test-mode guard.** This once skipped the deletion while test mode was active and
+    retained the row for ``flush_pending_deletions``; that was removed at an earlier
+    increment and deletion now behaves identically in test mode and live. The docstring said
+    otherwise until 2026-08-14.
 
     On Discord API failure (NotFound / Forbidden / HTTPException) the DB row is
     still removed so a stale reference does not block future clean-ups.
@@ -242,3 +243,107 @@ async def _discord_delete(bot: "Bot", channel_id: int, message_id: int) -> bool:
             message_id, channel_id, exc,
         )
         return False
+
+
+# ---------------------------------------------------------------------------
+# 042 — the one send site every weather posting takes
+# ---------------------------------------------------------------------------
+
+async def post_phase_message(
+    bot: "Bot",
+    *,
+    round_id: int,
+    division_id: int,
+    server_id: int,
+    channel_id: int,
+    phase_number: int,
+    text: str,
+    attachment=None,
+    attachment_text: str = "",
+    supersedes: int | None = None,
+) -> "discord.Message | None":
+    """Post one weather occasion, and only then destroy the one it supersedes.
+
+    The single send site for all four of the module's weather postings — the three phases and
+    the notice of a mystery round — and for both manners in which each may be drawn. Weather
+    is the module's only aspect with four occasions, so a per-occasion implementation of this
+    ordering would be four chances to get it wrong.
+
+    **Produce before destroy** (Constitution XIV.8). *supersedes* names the phase whose message
+    this one replaces, and it is deleted only once this message exists. A failure here leaves
+    the previous forecast standing, which is the whole point: the fallback path is the one
+    reached because something has already gone wrong.
+
+    **The manner of a message is no part of the chain** (XIV.8, v4.7.0). *supersedes* names a
+    phase, not a drawing: a message posted as text is deleted by an occasion posted as a
+    graphic and the reverse, each occasion reading only which message stands.
+
+    **A transport failure retries as text** (XIV.8, FR-057). *text* is the textual forecast and
+    is what is enqueued, never the rendered image — a queue is durable and outlives the state
+    that filled it, so a picture retried an hour from now is a picture of a round that has
+    moved on.
+
+    *attachment* is a ``discord.File`` where the league draws a graphic; *attachment_text* is
+    the message it rides on, which for a forecast is the division role mention and nothing
+    besides, and for a mystery notice is empty.
+    """
+    db_path: str = bot.db_path  # type: ignore[attr-defined]
+
+    if attachment is None:
+        # The textual path, unchanged: the router chunks it and owns its own retry.
+        class _Div:
+            forecast_channel_id = channel_id
+
+        msg = await bot.output_router.post_forecast(  # type: ignore[attr-defined]
+            _Div(), text, server_id=server_id
+        )
+    else:
+        channel = bot.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                log.error(
+                    "post_phase_message: cannot fetch forecast channel id=%s: %s",
+                    channel_id, exc,
+                )
+                return None
+        if not isinstance(channel, discord.TextChannel):
+            log.error("post_phase_message: channel id=%s is not a TextChannel", channel_id)
+            return None
+
+        try:
+            msg = await channel.send(
+                attachment_text,
+                file=attachment,
+                allowed_mentions=discord.AllowedMentions.all(),
+            )
+        except discord.HTTPException as exc:
+            log.warning(
+                "post_phase_message: failed to post phase %s for division %s: %s",
+                phase_number, division_id, exc,
+            )
+            try:
+                from services import retry_service
+
+                await retry_service.enqueue(
+                    db_path,
+                    server_id=server_id,
+                    channel_id=channel_id,
+                    content=text,
+                    failure_reason=(
+                        f"weather phase {phase_number} for division {division_id}: {exc}"
+                    ),
+                )
+            except Exception:  # noqa: BLE001 — the queue must never mask the original failure
+                log.exception("post_phase_message: could not enqueue the textual forecast")
+            return None
+
+    if msg is None:
+        # Nothing was posted, so nothing may be destroyed.
+        return None
+
+    await store_forecast_message(round_id, division_id, phase_number, msg, db_path)
+    if supersedes is not None:
+        await delete_forecast_message(round_id, division_id, supersedes, bot)
+    return msg

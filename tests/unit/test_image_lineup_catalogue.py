@@ -244,5 +244,5 @@ def test_declared_capacities_still_excludes_the_lineup():
 
 
 def test_an_unspecified_type_is_still_empty():
-    # The attendance types were specified at 041; the weather forecasts await their own.
-    assert catalogue_for("weather_p1_template").is_empty
+    # The six weather types were specified at 042; verdicts alone awaits its own.
+    assert catalogue_for("verdicts_template").is_empty

@@ -397,8 +397,12 @@ per substituted icon reaches the log channel and no forecast channel.
 - **FR-046**: The **manner** of a message MUST be no part of the chain: a message posted as text may be
   deleted by an occasion posted as a graphic and the reverse, each occasion reading which message stands
   and never how it was drawn.
-- **FR-047**: Deletions MUST remain suppressed while test mode is active, exactly as they are for the
-  textual flow.
+- **FR-047**: The image flow MUST delete exactly as the textual flow deletes, in test mode and outside
+  it alike, and MUST NOT hold any rule about deletion the textual flow does not.
+  *(Corrected 2026-08-14: the wip-spec said deletions "remain suppressed while the test mode is active,
+  as they are for the textual flow". They are not — suppression was removed from
+  `delete_forecast_message` at an earlier increment. The parity was always the point, and it is what
+  survives.)*
 - **FR-048**: The graphic MUST replace the textual forecast in the division's configured forecast channel
   and there alone.
 - **FR-049**: The failure of one phase MUST prevent neither the phases that follow it nor the same phase

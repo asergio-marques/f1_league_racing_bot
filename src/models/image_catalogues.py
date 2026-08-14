@@ -59,6 +59,24 @@ class RowSpec:
     #: exceeding it is a problem, not a truncation.
     capacity: int | None = 0
 
+    #: The least a template filling this **slot** must declare — XIV.12's third capacity,
+    #: fixed by the template slot (v4.7.0).
+    #:
+    #: Set alongside ``capacity=None``: the count still comes from the template, and this
+    #: constrains it from below. It exists because the other two readings cannot express a
+    #: floor. A fixed ``capacity`` makes over-declaration *fatal*, which would forbid a
+    #: template author drawing a fifth block as chrome; a bare ``None`` admits a template
+    #: too small to draw a round the league has already scheduled.
+    #:
+    #: The number is a constant of the **game**, not of the league — a round of the sprint
+    #: format holds four sessions and its longest allows three weather slots, whoever is
+    #: playing — which is what makes it declarable with no division in view, and what lets
+    #: the command naming a template refuse on it (XIV.9, a structural check).
+    #:
+    #: ``capacity=<int>`` together with a ``minimum`` is **not admitted**: a fixed capacity
+    #: is already both bounds.
+    minimum: int | None = None
+
     #: The per-row field suffixes, from which ``<prefix>_<x>_<field>`` is built.
     fields: frozenset[str] = frozenset()
 
@@ -129,6 +147,10 @@ class RowSpec:
 
         Declaring none raises, unless this collection is an :attr:`optional_unit`, in which
         case none is a legitimate answer and the count is nought.
+
+        Where a :attr:`minimum` is declared, declaring fewer than it also raises — the floor
+        of XIV.12's third capacity. The same :class:`CapacityError` carries it, so it refuses
+        at all three verification moments through the path the other two faults already take.
         """
         from utils.svg_document import FieldIndex
 
@@ -157,6 +179,30 @@ class RowSpec:
                 f"the numbering of `{self.prefix}` has a gap: it runs to {highest} but "
                 f"declares no {self.prefix} {shown}. Numbering must be contiguous from 1."
             )
+
+        if self.minimum is not None and highest < self.minimum:
+            raise CapacityError(
+                f"the template declares {highest} `{self.prefix}` "
+                f"{'member' if highest == 1 else 'members'} but this slot requires at least "
+                f"{self.minimum}. Declaring more than {self.minimum} is fine — the surplus is "
+                f"removed when the data do not fill it."
+            )
+
+        # The nest's own floor and numbering, per member. This has to be raised from here
+        # rather than left to id enumeration: ``NestedSpec.ids_under`` answers an uncountable
+        # nest with the empty set — deliberately, a fault being no business of enumeration —
+        # so a nest declaring too few members would otherwise contribute *nothing* and read as
+        # a template with no mandatory slot fields at all, which is silence where XIV.12
+        # requires a refusal.
+        # Confined to a nest that declares a floor — the slot-fixed form of XIV.12. Every
+        # other nest keeps the behaviour it had: a fault there is left to id enumeration and
+        # to the checks that already report it, and widening that is not this feature's to do.
+        if self.nested is not None and self.nested.minimum is not None:
+            declared = set(FieldIndex(root).declared())
+            for index in range(1, highest + 1):
+                # Raises on the nest's own floor and on a gap in its numbering. The call is
+                # made for that effect: the answer is discarded, and only the raise matters.
+                self.nested.declared_capacity(self.row_id(index), declared)
         return highest
 
     def capacity_for(self, root=None) -> int | None:
@@ -209,13 +255,31 @@ class RowSpec:
         return ids | self._nested_ids(root, mandatory_only=True)
 
     def valueless_field_ids(self, root=None) -> set[str]:
-        """Every per-row field id that must be present but receives no value."""
+        """Every per-row field id that must be present but receives no value.
+
+        Includes the nest's own valueless ids — a weather slot's ``group`` hangs off the
+        session that contains it, and is as much a container as the session's own group.
+        """
         capacity = self.capacity_for(root) or 0
-        return {
+        ids = {
             self.field_id(index, suffix)
             for index in range(1, capacity + 1)
             for suffix in self.valueless_fields
         }
+        if self.nested is None or root is None or not self.nested.valueless_fields:
+            return ids
+
+        from utils.svg_document import FieldIndex
+
+        declared = set(FieldIndex(root).declared())
+        for index in range(1, capacity + 1):
+            stem = self.row_id(index)
+            try:
+                count = self.nested.declared_capacity(stem, declared)
+            except CapacityError:
+                continue
+            ids |= self.nested.valueless_ids_under(stem, count)
+        return ids
 
 
 @dataclass(frozen=True)
@@ -238,11 +302,26 @@ class NestedSpec:
     #: Fixed slot count, or None to take it from the data or the template.
     capacity: int | None = None
 
+    #: The least a template filling this slot must declare **under each containing member** —
+    #: XIV.12's third capacity, fixed by the template slot (v4.7.0). Mirrors
+    #: :attr:`RowSpec.minimum`, and carries the same reasoning: a phase 3 weather template of
+    #: the sprint slot must declare three slots for every session it declares, three being the
+    #: greatest any session of a sprint round allows.
+    minimum: int | None = None
+
     #: Per-member field suffixes.
     fields: frozenset[str] = frozenset()
 
     #: Those of ``fields`` without which a member cannot be drawn.
     mandatory_fields: frozenset[str] = frozenset()
+
+    #: Those of ``fields`` the template must declare but which receive **no value** —
+    #: mirrors :attr:`RowSpec.valueless_fields` for a nested collection. A weather slot's
+    #: ``group`` is the case: XIV.3 makes a mandatory field fatal when absent *or* when its
+    #: value cannot be determined, and the second half cannot apply to a container the render
+    #: either leaves alone or removes whole. Without this every drawn slot group would be
+    #: reported undeterminable on every render.
+    valueless_fields: frozenset[str] = frozenset()
 
     #: Where True, ``mandatory_fields`` binds member **1 only** and every member beyond it
     #: is optional (XIV.3, v4.3.0 — a classification varying by member, declared by a rule
@@ -337,12 +416,25 @@ class NestedSpec:
             for suffix in self.fields
         }
 
+    def valueless_ids_under(self, stem: str, count: int) -> set[str]:
+        """Every id across *count* members that must be present but carries no value."""
+        return {
+            self.field_id(stem, index, suffix)
+            for index in range(1, count + 1)
+            for suffix in self.valueless_fields
+        }
+
     def declared_capacity(self, stem: str, declared: Iterable[str]) -> int:
         """Count the members *declared* holds under *stem*, requiring contiguity from 1.
 
         Used for the reserve block, whose slot count the template alone fixes. A gap is a
         fault of the template (XIV.11) and is fatal wherever it is met, so the same
         :class:`CapacityError` serves all three verification moments.
+
+        Where a :attr:`minimum` is declared, declaring fewer than it under a member that
+        declares **any** also raises — the floor of XIV.12's third capacity. A member
+        declaring none of the nest at all is left to the caller, which is what lets a session
+        the template does not declare stay silent rather than reporting a missing floor.
         """
         pattern = re.compile(
             rf"^{re.escape(stem)}_{re.escape(self.prefix)}_(\d+)(?:_.*)?$"
@@ -365,6 +457,15 @@ class NestedSpec:
                 f"the numbering of `{stem}_{self.prefix}` has a gap: it runs to {highest} "
                 f"but declares no {self.prefix} {shown}. Numbering must be contiguous "
                 f"from 1."
+            )
+
+        if self.minimum is not None and highest < self.minimum:
+            raise CapacityError(
+                f"`{stem}` declares {highest} `{self.prefix}` "
+                f"{'member' if highest == 1 else 'members'} but this slot requires at least "
+                f"{self.minimum} for every {stem.rsplit('_', 1)[0] or 'member'} it declares. "
+                f"Declaring more than {self.minimum} is fine — the surplus is removed when "
+                f"the data do not fill it."
             )
         return highest
 
@@ -1352,9 +1453,170 @@ RSVP_CATALOGUE = FieldCatalogue(
 )
 
 
+# ── Weather ───────────────────────────────────────────────────────────────
+#
+# Six templates serve one aspect — the module's most divided. Three phases, two round-format
+# variants for each of phases 2 and 3, and a notice for a kind of round that runs no phase at
+# all.
+
+
+def _weather_floors(formats: tuple[str, ...]) -> tuple[int, int]:
+    """(sessions, slots) — the greatest *formats* can demand, for a template slot's floor.
+
+    XIV.12's third capacity is fixed by the **template slot**, and the number is a constant of
+    the game rather than of the league: a round of the sprint format holds four sessions and
+    its longest session allows three weather slots, whoever is playing.
+
+    Derived from the weather module's own constants at import, never written as literals — a
+    figure copied here would be a second thing to keep true (FR-015).
+    """
+    from models.round import RoundFormat
+    from models.session import MAX_SLOTS, SESSIONS_BY_FORMAT
+
+    sessions = 0
+    slots = 0
+    for name in formats:
+        types = SESSIONS_BY_FORMAT[RoundFormat(name)]
+        sessions = max(sessions, len(types))
+        for session_type in types:
+            slots = max(slots, MAX_SLOTS[session_type])
+    return sessions, slots
+
+
+#: The sprint slot serves rounds of the sprint format alone; the plain slot serves every other
+#: format that runs a phase. A mystery round runs none and reaches neither.
+_SPRINT_SESSIONS_FLOOR, _SPRINT_SLOTS_FLOOR = _weather_floors(("SPRINT",))
+_PLAIN_SESSIONS_FLOOR, _PLAIN_SLOTS_FLOOR = _weather_floors(("NORMAL", "ENDURANCE"))
+
+
+#: The heading fields every phase graphic carries. The mystery notice carries four of them and
+#: nothing else — it announces that no forecast is coming, and has nothing else to say.
+_WEATHER_HEADING_MANDATORY = frozenset(
+    {"division_name", "phase_description", "round_number", "track_name"}
+)
+
+_WEATHER_HEADING_OPTIONAL = frozenset(
+    {
+        "season_number",
+        "season_number_group",
+        "division_tier",
+        "division_tier_group",
+        "race_name",
+        "race_name_group",
+        "country_name",
+        "country_name_group",
+        "track_image",
+        "track_image_group",
+    }
+)
+
+#: Phase 2 draws one weather type per session; phase 3 draws the sequence within it. The two
+#: meanings of "slot" belong to different phases and are told apart by **this catalogue**,
+#: never by parsing an id (XIV.11, v4.7.0): ``session_<x>_slot_type`` is a field of the session
+#: and ``session_<x>_slot_<y>_label`` a field of one of its slots.
+_P2_SESSION_FIELDS = frozenset({"group", "name", "slot_type", "slot_type_icon"})
+_P3_SESSION_FIELDS = frozenset(
+    {"group", "name", "slot_type", "slot_type_icon", "summary"}
+)
+
+
+def _p2_sessions(minimum: int) -> RowSpec:
+    return RowSpec(
+        prefix="session",
+        capacity=None,
+        minimum=minimum,
+        fields=_P2_SESSION_FIELDS,
+        mandatory_fields=frozenset({"group", "name", "slot_type"}),
+        valueless_fields=frozenset({"group"}),
+        assets={"slot_type_icon": "weather"},
+    )
+
+
+def _p3_sessions(minimum: int, slot_minimum: int) -> RowSpec:
+    return RowSpec(
+        prefix="session",
+        capacity=None,
+        minimum=minimum,
+        fields=_P3_SESSION_FIELDS,
+        # The type is **optional** here: phase 3's subject is the sequence, and a template
+        # may carry it without restating what phase 2 drew.
+        mandatory_fields=frozenset({"group", "name"}),
+        valueless_fields=frozenset({"group"}),
+        assets={"slot_type_icon": "weather"},
+        nested=NestedSpec(
+            prefix="slot",
+            capacity=None,
+            minimum=slot_minimum,
+            fields=frozenset({"group", "label", "icon"}),
+            mandatory_fields=frozenset({"group", "label"}),
+            valueless_fields=frozenset({"group"}),
+            assets={"icon": "weather"},
+        ),
+    )
+
+
+#: Phase 1 — the likelihood of rain, and the heading. It holds no session, so no floor and no
+#: variant arise: one template serves every format.
+WEATHER_P1_CATALOGUE = FieldCatalogue(
+    mandatory=_WEATHER_HEADING_MANDATORY | {"rain_probability"},
+    optional=_WEATHER_HEADING_OPTIONAL,
+    assets={"track_image": "track"},
+)
+
+#: Phase 2 — one weather type per session. ``rain_probability`` is optional from here on: the
+#: value is phase 1's, carried forward because XIV.7 (v4.7.0) admits a value the text path
+#: published in **another message of the same flow**.
+WEATHER_P2_CATALOGUE = FieldCatalogue(
+    mandatory=_WEATHER_HEADING_MANDATORY,
+    optional=_WEATHER_HEADING_OPTIONAL | {"rain_probability", "rain_probability_group"},
+    assets={"track_image": "track"},
+    rows=_p2_sessions(_PLAIN_SESSIONS_FLOOR),
+)
+
+WEATHER_P2_SPRINT_CATALOGUE = FieldCatalogue(
+    mandatory=_WEATHER_HEADING_MANDATORY,
+    optional=_WEATHER_HEADING_OPTIONAL | {"rain_probability", "rain_probability_group"},
+    assets={"track_image": "track"},
+    rows=_p2_sessions(_SPRINT_SESSIONS_FLOOR),
+)
+
+#: Phase 3 — the sequence drawn within each session.
+WEATHER_P3_CATALOGUE = FieldCatalogue(
+    mandatory=_WEATHER_HEADING_MANDATORY,
+    optional=_WEATHER_HEADING_OPTIONAL | {"rain_probability", "rain_probability_group"},
+    assets={"track_image": "track"},
+    rows=_p3_sessions(_PLAIN_SESSIONS_FLOOR, _PLAIN_SLOTS_FLOOR),
+)
+
+WEATHER_P3_SPRINT_CATALOGUE = FieldCatalogue(
+    mandatory=_WEATHER_HEADING_MANDATORY,
+    optional=_WEATHER_HEADING_OPTIONAL | {"rain_probability", "rain_probability_group"},
+    assets={"track_image": "track"},
+    rows=_p3_sessions(_SPRINT_SESSIONS_FLOOR, _SPRINT_SLOTS_FLOOR),
+)
+
+#: The notice of a round of the mystery format — the first image type in the module that
+#: exists for a **kind of record** rather than for an output aspect (XIV.3, v4.7.0).
+#:
+#: Such a round conceals its track, runs no session and computes no forecast. The notice says
+#: a forecast is not coming, so it shares with a forecast only the heading fields naming who
+#: and when. It is not an exemption: it draws every field of its own catalogue in full.
+WEATHER_MYSTERY_CATALOGUE = FieldCatalogue(
+    mandatory=frozenset({"division_name", "round_number"}),
+    optional=frozenset(
+        {
+            "season_number",
+            "season_number_group",
+            "division_tier",
+            "division_tier_group",
+        }
+    ),
+)
+
+
 #: Template column → its catalogue. Fifteen entries, one per image type; the calendar, the
-#: lineup, the two results types, the two standings types and the two attendance types are
-#: populated and the remaining seven are still empty.
+#: lineup, the two results types, the two standings types, the two attendance types and the
+#: six weather types are populated and the remaining one is still empty.
 CATALOGUES: dict[str, FieldCatalogue] = {
     column: FieldCatalogue() for column in TEMPLATE_COLUMNS
 }
@@ -1366,6 +1628,12 @@ CATALOGUES["standings_drivers_template"] = STANDINGS_DRIVERS_CATALOGUE
 CATALOGUES["standings_constructors_template"] = STANDINGS_CONSTRUCTORS_CATALOGUE
 CATALOGUES["attendance_template"] = ATTENDANCE_CATALOGUE
 CATALOGUES["rsvp_template"] = RSVP_CATALOGUE
+CATALOGUES["weather_p1_template"] = WEATHER_P1_CATALOGUE
+CATALOGUES["weather_p2_template"] = WEATHER_P2_CATALOGUE
+CATALOGUES["weather_p2_sprint_template"] = WEATHER_P2_SPRINT_CATALOGUE
+CATALOGUES["weather_p3_template"] = WEATHER_P3_CATALOGUE
+CATALOGUES["weather_p3_sprint_template"] = WEATHER_P3_SPRINT_CATALOGUE
+CATALOGUES["weather_mystery_template"] = WEATHER_MYSTERY_CATALOGUE
 
 
 def sibling_keys(template_key: str) -> list[str]:

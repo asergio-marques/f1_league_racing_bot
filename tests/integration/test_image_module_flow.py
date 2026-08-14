@@ -294,8 +294,79 @@ RSVP_SVG = (
 )
 
 
+#: The weather headings every phase graphic must carry (042).
+_WEATHER_HEADING = (
+    b'<text id="division_name">D</text>'
+    b'<text id="phase_description">P</text>'
+    b'<text id="round_number">1</text>'
+    b'<text id="track_name">T</text>'
+)
+
+
+def _weather_p2_svg(sessions: int) -> bytes:
+    """A sound phase 2 template. No slot and no summary: both are phase 3's alone."""
+    blocks = b"".join(
+        b'<g id="session_%d_group">'
+        b'<text id="session_%d_name">S</text>'
+        b'<text id="session_%d_slot_type">Mixed</text>'
+        b"</g>" % (n, n, n)
+        for n in range(1, sessions + 1)
+    )
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        + _WEATHER_HEADING
+        + blocks
+        + b"</svg>"
+    )
+
+
+def _weather_p3_svg(sessions: int, slots: int) -> bytes:
+    """A sound phase 3 template, declaring the slot floor its variant requires (XIV.12)."""
+    blocks = b""
+    for n in range(1, sessions + 1):
+        cells = b"".join(
+            b'<g id="session_%d_slot_%d_group">'
+            b'<text id="session_%d_slot_%d_label">Clear</text>'
+            b"</g>" % (n, m, n, m)
+            for m in range(1, slots + 1)
+        )
+        blocks += (
+            b'<g id="session_%d_group"><text id="session_%d_name">S</text>' % (n, n)
+            + cells
+            + b"</g>"
+        )
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        + _WEATHER_HEADING
+        + blocks
+        + b"</svg>"
+    )
+
+
+WEATHER_SVGS = {
+    "weather_p1_template": (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        + _WEATHER_HEADING
+        + b'<text id="rain_probability">30%</text>'
+        + b"</svg>"
+    ),
+    "weather_p2_template": _weather_p2_svg(2),
+    "weather_p2_sprint_template": _weather_p2_svg(4),
+    "weather_p3_template": _weather_p3_svg(2, 4),
+    "weather_p3_sprint_template": _weather_p3_svg(4, 3),
+    "weather_mystery_template": (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        b'<text id="division_name">D</text>'
+        b'<text id="round_number">1</text>'
+        b"</svg>"
+    ),
+}
+
+
 def sound_bytes(template_key: str) -> bytes:
     """The soundest bytes for *template_key* at the depth its type is checked to."""
+    if template_key in WEATHER_SVGS:
+        return WEATHER_SVGS[template_key]
     if template_key == "results_qualifying_template":
         return RESULTS_QUALIFYING_SVG
     if template_key == "results_race_template":
@@ -453,12 +524,12 @@ async def test_render_without_season(
     await config_service.set_field(SERVER_ID, "template_directory", "templates")
 
     for key, filename in TEMPLATE_COLUMNS.items():
-        # The results (039), standings (040) and attendance (041) templates carry a populated
-        # catalogue, so the rich sample bytes would fail Layer 2 for them; every other type is
-        # still checked to Layer 1 and draws from the generic sample filler.
+        # The results (039), standings (040), attendance (041) and weather (042) templates
+        # carry a populated catalogue, so the rich sample bytes would fail Layer 2 for them;
+        # verdicts alone is still checked to Layer 1 and draws the generic sample filler.
         body = (
             sound_bytes(key)
-            if key.startswith(("results_", "standings_", "attendance_", "rsvp_"))
+            if key.startswith(("results_", "standings_", "attendance_", "rsvp_", "weather_"))
             else RICH_TEMPLATE
         )
         (template_dir / "templates" / filename).write_bytes(body)
@@ -467,7 +538,7 @@ async def test_render_without_season(
     # are not where the samples look for them. A results template declares a team badge and
     # a flag on every row, and an asset class with neither its file nor a fallback is fatal
     # by design (XIV.13) — so the fallbacks a real deployment ships are recreated here.
-    for folder in ("teams", "flags", "tyres", "drivers", "tracks"):
+    for folder in ("teams", "flags", "tyres", "drivers", "tracks", "weather", "markers"):
         assets = template_dir / "resources" / folder
         assets.mkdir(parents=True, exist_ok=True)
         (assets / "fallback.svg").write_bytes(

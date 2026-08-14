@@ -266,8 +266,83 @@ _VALID_RSVP_SVG = (
 )
 
 
+#: The weather headings every phase graphic must carry (042).
+_WEATHER_HEADING = (
+    b'<text id="division_name">D</text>'
+    b'<text id="phase_description">P</text>'
+    b'<text id="round_number">1</text>'
+    b'<text id="track_name">T</text>'
+)
+
+
+def _weather_p2_svg(sessions: int) -> bytes:
+    """A sound phase 2 template. No slot and no summary: both are phase 3's alone."""
+    blocks = b"".join(
+        b'<g id="session_%d_group">'
+        b'<text id="session_%d_name">S</text>'
+        b'<text id="session_%d_slot_type">Mixed</text>'
+        b"</g>" % (n, n, n)
+        for n in range(1, sessions + 1)
+    )
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        + _WEATHER_HEADING
+        + blocks
+        + b"</svg>"
+    )
+
+
+def _weather_p3_svg(sessions: int, slots: int) -> bytes:
+    """A sound phase 3 template, declaring the slot floor its variant requires."""
+    blocks = b""
+    for n in range(1, sessions + 1):
+        cells = b"".join(
+            b'<g id="session_%d_slot_%d_group">'
+            b'<text id="session_%d_slot_%d_label">Clear</text>'
+            b"</g>" % (n, m, n, m)
+            for m in range(1, slots + 1)
+        )
+        blocks += (
+            b'<g id="session_%d_group"><text id="session_%d_name">S</text>' % (n, n)
+            + cells
+            + b"</g>"
+        )
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        + _WEATHER_HEADING
+        + blocks
+        + b"</svg>"
+    )
+
+
+_VALID_WEATHER_SVGS = {
+    "weather_p1_template": (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        + _WEATHER_HEADING
+        + b'<text id="rain_probability">30%</text>'
+        + b"</svg>"
+    ),
+    "weather_p2_template": _weather_p2_svg(2),
+    "weather_p2_sprint_template": _weather_p2_svg(4),
+    "weather_p3_template": _weather_p3_svg(2, 4),
+    "weather_p3_sprint_template": _weather_p3_svg(4, 3),
+    "weather_mystery_template": (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        b'<text id="division_name">D</text>'
+        b'<text id="round_number">1</text>'
+        b"</svg>"
+    ),
+}
+
+_WEATHER_BY_FILENAME = {
+    TEMPLATE_COLUMNS[key]: svg for key, svg in _VALID_WEATHER_SVGS.items()
+}
+
+
 def _sound_bytes(filename: str) -> bytes:
     """The soundest template for *filename* at the depth its type is checked to."""
+    if filename in _WEATHER_BY_FILENAME:
+        return _WEATHER_BY_FILENAME[filename]
     if filename == TEMPLATE_COLUMNS["calendar_template"]:
         return _VALID_CALENDAR_SVG
     if filename == TEMPLATE_COLUMNS["lineup_template"]:

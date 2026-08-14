@@ -102,7 +102,7 @@ reordering, the phase 2 message was deleted first and this window existed.
 re-run the round. Confirm a phase that fell back to text is deleted by a following phase posted as a
 graphic, and the reverse.
 
-**Test mode (FR-047)**: with test mode active, confirm no deletion occurs on either path.
+**Test mode (FR-047)**: with test mode active, confirm the image path deletes exactly as the textual path does — deletion is *not* suppressed, and has not been since an earlier increment.
 
 ---
 

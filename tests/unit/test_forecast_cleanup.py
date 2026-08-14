@@ -436,3 +436,140 @@ class TestDiscordErrorHandling:
 
         row = await _get_stored_row(db_path, 1, 1, 3)
         assert row is None
+
+
+# ---------------------------------------------------------------------------
+# 042 — post_phase_message: the chain across occasions (T016, T038)
+#
+# The mixed-manner chain of FR-046 is tested here rather than in
+# test_round_lifecycle.py, which the task named: that file's harness bootstraps a results
+# round for the penalty lifecycle and carries no forecast fixtures, while this one already
+# runs the migrations and seeds divisions and rounds. The chain lives in
+# forecast_cleanup_service, so it is tested against the real table it writes.
+# ---------------------------------------------------------------------------
+
+class TestPostPhaseMessageChain:
+    """Produce before destroy, and a chain indifferent to how a message was drawn."""
+
+    @staticmethod
+    def _bot_posting(db_path, message, *, test_mode=False):
+        """A bot whose **textual** posting succeeds and returns *message*."""
+        bot = _make_bot(db_path, test_mode_active=test_mode)
+        bot.output_router.post_forecast = AsyncMock(return_value=message)
+        return bot
+
+    @staticmethod
+    def _bot_attaching(db_path, message, *, test_mode=False):
+        """A bot whose **graphic** posting succeeds — ``channel.send`` returns *message*.
+
+        The channel `_make_bot` builds is already specced as a ``discord.TextChannel``, which
+        is what ``post_phase_message`` checks before sending, so the same object serves the
+        send and the later delete.
+        """
+        bot = _make_bot(db_path, test_mode_active=test_mode)
+        bot.get_channel.return_value.send = AsyncMock(return_value=message)
+        return bot
+
+    @pytest.mark.asyncio
+    async def test_a_text_message_is_superseded_by_a_graphic(self, tmp_path):
+        """FR-046 — the occasion reads which message stands, never how it was drawn."""
+        from services.forecast_cleanup_service import post_phase_message
+
+        db_path = await _make_db(str(tmp_path))
+        await _seed_base(db_path)
+
+        # Phase 1 posted as **text**.
+        bot = self._bot_posting(db_path, _make_mock_message(111))
+        await post_phase_message(
+            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            phase_number=1, text="phase 1 forecast",
+        )
+        assert (await _get_stored_row(db_path, 1, 1, 1)) is not None
+
+        # Phase 2 posted as a **graphic**, superseding it.
+        bot2 = self._bot_attaching(db_path, _make_mock_message(222))
+        await post_phase_message(
+            bot2, round_id=1, division_id=1, server_id=1, channel_id=99,
+            phase_number=2, text="phase 2 forecast",
+            attachment=MagicMock(), attachment_text="<@&1>", supersedes=1,
+        )
+
+        assert (await _get_stored_row(db_path, 1, 1, 1)) is None, "phase 1 was not superseded"
+        row = await _get_stored_row(db_path, 1, 1, 2)
+        assert row is not None and row["message_id"] == 222
+
+    @pytest.mark.asyncio
+    async def test_a_graphic_is_superseded_by_a_text_fallback(self, tmp_path):
+        """The reverse: a phase that fell back to text supersedes one posted as a picture."""
+        from services.forecast_cleanup_service import post_phase_message
+
+        db_path = await _make_db(str(tmp_path))
+        await _seed_base(db_path)
+
+        bot = self._bot_attaching(db_path, _make_mock_message(333))
+        await post_phase_message(
+            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            phase_number=2, text="phase 2 forecast",
+            attachment=MagicMock(), attachment_text="<@&1>",
+        )
+        assert (await _get_stored_row(db_path, 1, 1, 2)) is not None
+
+        # Phase 3's render failed, so the text is posted — and still supersedes.
+        bot3 = self._bot_posting(db_path, _make_mock_message(444))
+        await post_phase_message(
+            bot3, round_id=1, division_id=1, server_id=1, channel_id=99,
+            phase_number=3, text="phase 3 forecast", supersedes=2,
+        )
+
+        assert (await _get_stored_row(db_path, 1, 1, 2)) is None
+        assert (await _get_stored_row(db_path, 1, 1, 3))["message_id"] == 444
+
+    @pytest.mark.asyncio
+    async def test_a_failed_posting_leaves_the_standing_forecast_alone(self, tmp_path):
+        """Produce before destroy (FR-045). The window this rule exists to close."""
+        from services.forecast_cleanup_service import post_phase_message
+
+        db_path = await _make_db(str(tmp_path))
+        await _seed_base(db_path)
+
+        bot = self._bot_posting(db_path, _make_mock_message(111))
+        await post_phase_message(
+            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            phase_number=2, text="phase 2 forecast",
+        )
+
+        # Phase 3's posting fails outright.
+        failing = _make_bot(db_path)
+        failing.output_router.post_forecast = AsyncMock(return_value=None)
+        result = await post_phase_message(
+            failing, round_id=1, division_id=1, server_id=1, channel_id=99,
+            phase_number=3, text="phase 3 forecast", supersedes=2,
+        )
+
+        assert result is None
+        assert (await _get_stored_row(db_path, 1, 1, 2)) is not None, (
+            "the standing forecast was destroyed by a posting that never succeeded"
+        )
+        assert (await _get_stored_row(db_path, 1, 1, 3)) is None
+
+    @pytest.mark.asyncio
+    async def test_test_mode_treats_both_manners_alike(self):
+        """FR-047, corrected 2026-08-14.
+
+        The wip-spec said deletions stay suppressed while test mode is active, "as they are
+        for the textual flow". They are **not**: suppression was removed from
+        ``delete_forecast_message`` at some earlier increment, and the two tests above this
+        class say so in their own docstrings. The obligation that survives is the one that
+        was always the point — the image flow does whatever the textual flow does — so that
+        is what is asserted here.
+        """
+        import inspect
+
+        from services.forecast_cleanup_service import post_phase_message
+
+        source = inspect.getsource(post_phase_message)
+        # One delete call, reached identically whether or not an attachment was posted.
+        assert source.count("delete_forecast_message(") == 1
+        assert "test_mode" not in source, (
+            "the image flow must not grow a test-mode rule the textual flow does not have"
+        )

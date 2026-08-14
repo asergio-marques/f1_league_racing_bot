@@ -116,3 +116,101 @@ class TestFormatSlotsForLog:
         result = format_slots_for_log(["Clear"])
         assert "draws" not in result
         assert "→" not in result
+
+
+# ---------------------------------------------------------------------------
+# The three shared renderings (042, T013)
+#
+# Constitution XIV.7 obliges the graphic and the message to draw a shared value from one
+# rendering. None of these three was reachable without composing a whole Discord message
+# around it until this increment lifted them out.
+# ---------------------------------------------------------------------------
+
+from utils.message_builder import (  # noqa: E402
+    format_rain_probability,
+    format_session_weather_type,
+    format_slot_sequence,
+    phase1_message,
+    session_type_label,
+)
+
+
+class TestFormatRainProbability:
+    """The likelihood of rain, rounded to the nearest whole number (FR-023, FR-023a).
+
+    Nothing asserted on this rendering before 042, which is what let it sit at one decimal
+    place while the weather module's rule said otherwise.
+    """
+
+    def test_a_value_that_is_not_a_whole_percentage_rounds_to_the_nearest(self):
+        assert format_rain_probability(0.3047) == "30%"
+        assert format_rain_probability(0.3062) == "31%"
+
+    def test_it_rounds_half_up_rather_than_to_even(self):
+        # Python's round() would give 12 for 12.5 and 14 for 13.5; half-up gives 13 and 14.
+        assert format_rain_probability(0.125) == "13%"
+        assert format_rain_probability(0.135) == "14%"
+
+    def test_the_bounds_are_whole(self):
+        assert format_rain_probability(0.0) == "0%"
+        assert format_rain_probability(1.0) == "100%"
+
+    def test_no_decimal_point_survives(self):
+        for raw in (0.0001, 0.5555, 0.9999):
+            assert "." not in format_rain_probability(raw)
+
+    def test_the_message_and_the_rendering_agree(self):
+        rendered = format_rain_probability(0.3047)
+        assert rendered in phase1_message(1, "Spa", 0.3047)
+
+
+class TestFormatSessionWeatherType:
+    """The type drawn for a session — one of exactly three (FR-026)."""
+
+    @pytest.mark.parametrize(
+        "raw,expected", [("sunny", "Sunny"), ("mixed", "Mixed"), ("rain", "Rain")]
+    )
+    def test_the_three_types(self, raw, expected):
+        assert format_session_weather_type(raw) == expected
+
+
+class TestFormatSlotSequence:
+    """The sequence as a value, with the channel's emphasis left to the message (FR-029)."""
+
+    def test_a_varying_sequence_carries_no_emphasis(self):
+        assert format_slot_sequence(["Clear", "Wet"]) == "Clear → Wet"
+        assert "*" not in format_slot_sequence(["Clear", "Light Cloud", "Overcast"])
+
+    def test_the_forecast_message_still_emphasises(self):
+        assert format_slots_for_forecast(["Clear", "Wet"]) == "*Clear* → *Wet*"
+
+    def test_the_two_collapse_identically_for_one_weather(self):
+        for slots in (["Clear"], ["Wet", "Wet"], ["Very Wet", "Very Wet", "Very Wet"]):
+            assert format_slot_sequence(slots) == format_slots_for_forecast(slots)
+            assert "*" not in format_slot_sequence(slots)
+
+    def test_stripping_the_emphasis_is_never_the_graphic_s_job(self):
+        """The value comes out unadorned; the message adds markup on top of it."""
+        plain = format_slot_sequence(["Clear", "Wet", "Overcast"])
+        emphasised = format_slots_for_forecast(["Clear", "Wet", "Overcast"])
+        assert emphasised.replace("*", "") == plain
+
+
+class TestSessionTypeLabel:
+    """Already shared, and already correct — FR-025 needs no work (research R6)."""
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("SHORT_SPRINT_QUALIFYING", "Sprint Qualifying"),
+            ("LONG_SPRINT_RACE", "Sprint Race"),
+            ("SHORT_FEATURE_QUALIFYING", "Feature Qualifying"),
+            ("LONG_FEATURE_RACE", "Feature Race"),
+            ("SHORT_QUALIFYING", "Qualifying"),
+            ("LONG_RACE", "Race"),
+            ("FULL_QUALIFYING", "Qualifying"),
+            ("FULL_RACE", "Race"),
+        ],
+    )
+    def test_the_length_qualifier_is_stripped(self, raw, expected):
+        assert session_type_label(raw) == expected

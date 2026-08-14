@@ -99,14 +99,19 @@
     <text id="session_1_slot_type" inkscape:label="session_1_slot_type" class="stype3" x="528" y="308" text-anchor="end">Type</text>
     <text id="session_1_summary" inkscape:label="session_1_summary" class="summary" x="72" y="334">Summary of the session</text>
     <g id="session_1_slot_1_group" inkscape:label="session_1_slot_1_group">
-      <rect x="72" y="350" width="234" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
-      <image id="session_1_slot_1_icon" inkscape:label="session_1_slot_1_icon" x="174" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
-      <text id="session_1_slot_1_label" inkscape:label="session_1_slot_1_label" class="slotlbl" x="189" y="414" text-anchor="middle">Weather</text>
+      <rect x="72" y="350" width="156" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_1_slot_1_icon" inkscape:label="session_1_slot_1_icon" x="135" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_1_slot_1_label" inkscape:label="session_1_slot_1_label" class="slotlbl" x="150" y="414" text-anchor="middle">Weather</text>
     </g>
     <g id="session_1_slot_2_group" inkscape:label="session_1_slot_2_group">
-      <rect x="330" y="350" width="234" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
-      <image id="session_1_slot_2_icon" inkscape:label="session_1_slot_2_icon" x="432" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
-      <text id="session_1_slot_2_label" inkscape:label="session_1_slot_2_label" class="slotlbl" x="447" y="414" text-anchor="middle">Weather</text>
+      <rect x="240" y="350" width="156" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_1_slot_2_icon" inkscape:label="session_1_slot_2_icon" x="303" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_1_slot_2_label" inkscape:label="session_1_slot_2_label" class="slotlbl" x="318" y="414" text-anchor="middle">Weather</text>
+    </g>
+    <g id="session_1_slot_3_group" inkscape:label="session_1_slot_3_group">
+      <rect x="408" y="350" width="156" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_1_slot_3_icon" inkscape:label="session_1_slot_3_icon" x="471" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_1_slot_3_label" inkscape:label="session_1_slot_3_label" class="slotlbl" x="486" y="414" text-anchor="middle">Weather</text>
     </g>
   </g>
 
@@ -119,14 +124,19 @@
     <text id="session_2_slot_type" inkscape:label="session_2_slot_type" class="stype3" x="1092" y="308" text-anchor="end">Type</text>
     <text id="session_2_summary" inkscape:label="session_2_summary" class="summary" x="636" y="334">Summary of the session</text>
     <g id="session_2_slot_1_group" inkscape:label="session_2_slot_1_group">
-      <rect x="636" y="350" width="234" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
-      <image id="session_2_slot_1_icon" inkscape:label="session_2_slot_1_icon" x="738" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
-      <text id="session_2_slot_1_label" inkscape:label="session_2_slot_1_label" class="slotlbl" x="753" y="414" text-anchor="middle">Weather</text>
+      <rect x="636" y="350" width="156" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_2_slot_1_icon" inkscape:label="session_2_slot_1_icon" x="699" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_2_slot_1_label" inkscape:label="session_2_slot_1_label" class="slotlbl" x="714" y="414" text-anchor="middle">Weather</text>
     </g>
     <g id="session_2_slot_2_group" inkscape:label="session_2_slot_2_group">
-      <rect x="894" y="350" width="234" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
-      <image id="session_2_slot_2_icon" inkscape:label="session_2_slot_2_icon" x="996" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
-      <text id="session_2_slot_2_label" inkscape:label="session_2_slot_2_label" class="slotlbl" x="1011" y="414" text-anchor="middle">Weather</text>
+      <rect x="804" y="350" width="156" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_2_slot_2_icon" inkscape:label="session_2_slot_2_icon" x="867" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_2_slot_2_label" inkscape:label="session_2_slot_2_label" class="slotlbl" x="882" y="414" text-anchor="middle">Weather</text>
+    </g>
+    <g id="session_2_slot_3_group" inkscape:label="session_2_slot_3_group">
+      <rect x="972" y="350" width="156" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_2_slot_3_icon" inkscape:label="session_2_slot_3_icon" x="1035" y="358" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_2_slot_3_label" inkscape:label="session_2_slot_3_label" class="slotlbl" x="1050" y="414" text-anchor="middle">Weather</text>
     </g>
   </g>
 
@@ -139,14 +149,19 @@
     <text id="session_3_slot_type" inkscape:label="session_3_slot_type" class="stype3" x="528" y="496" text-anchor="end">Type</text>
     <text id="session_3_summary" inkscape:label="session_3_summary" class="summary" x="72" y="522">Summary of the session</text>
     <g id="session_3_slot_1_group" inkscape:label="session_3_slot_1_group">
-      <rect x="72" y="538" width="234" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
-      <image id="session_3_slot_1_icon" inkscape:label="session_3_slot_1_icon" x="174" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
-      <text id="session_3_slot_1_label" inkscape:label="session_3_slot_1_label" class="slotlbl" x="189" y="602" text-anchor="middle">Weather</text>
+      <rect x="72" y="538" width="156" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_3_slot_1_icon" inkscape:label="session_3_slot_1_icon" x="135" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_3_slot_1_label" inkscape:label="session_3_slot_1_label" class="slotlbl" x="150" y="602" text-anchor="middle">Weather</text>
     </g>
     <g id="session_3_slot_2_group" inkscape:label="session_3_slot_2_group">
-      <rect x="330" y="538" width="234" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
-      <image id="session_3_slot_2_icon" inkscape:label="session_3_slot_2_icon" x="432" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
-      <text id="session_3_slot_2_label" inkscape:label="session_3_slot_2_label" class="slotlbl" x="447" y="602" text-anchor="middle">Weather</text>
+      <rect x="240" y="538" width="156" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_3_slot_2_icon" inkscape:label="session_3_slot_2_icon" x="303" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_3_slot_2_label" inkscape:label="session_3_slot_2_label" class="slotlbl" x="318" y="602" text-anchor="middle">Weather</text>
+    </g>
+    <g id="session_3_slot_3_group" inkscape:label="session_3_slot_3_group">
+      <rect x="408" y="538" width="156" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_3_slot_3_icon" inkscape:label="session_3_slot_3_icon" x="471" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_3_slot_3_label" inkscape:label="session_3_slot_3_label" class="slotlbl" x="486" y="602" text-anchor="middle">Weather</text>
     </g>
   </g>
 
@@ -159,17 +174,22 @@
     <text id="session_4_slot_type" inkscape:label="session_4_slot_type" class="stype3" x="1092" y="496" text-anchor="end">Type</text>
     <text id="session_4_summary" inkscape:label="session_4_summary" class="summary" x="636" y="522">Summary of the session</text>
     <g id="session_4_slot_1_group" inkscape:label="session_4_slot_1_group">
-      <rect x="636" y="538" width="234" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
-      <image id="session_4_slot_1_icon" inkscape:label="session_4_slot_1_icon" x="738" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
-      <text id="session_4_slot_1_label" inkscape:label="session_4_slot_1_label" class="slotlbl" x="753" y="602" text-anchor="middle">Weather</text>
+      <rect x="636" y="538" width="156" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_4_slot_1_icon" inkscape:label="session_4_slot_1_icon" x="699" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_4_slot_1_label" inkscape:label="session_4_slot_1_label" class="slotlbl" x="714" y="602" text-anchor="middle">Weather</text>
     </g>
     <g id="session_4_slot_2_group" inkscape:label="session_4_slot_2_group">
-      <rect x="894" y="538" width="234" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
-      <image id="session_4_slot_2_icon" inkscape:label="session_4_slot_2_icon" x="996" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
-      <text id="session_4_slot_2_label" inkscape:label="session_4_slot_2_label" class="slotlbl" x="1011" y="602" text-anchor="middle">Weather</text>
+      <rect x="804" y="538" width="156" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_4_slot_2_icon" inkscape:label="session_4_slot_2_icon" x="867" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_4_slot_2_label" inkscape:label="session_4_slot_2_label" class="slotlbl" x="882" y="602" text-anchor="middle">Weather</text>
+    </g>
+    <g id="session_4_slot_3_group" inkscape:label="session_4_slot_3_group">
+      <rect x="972" y="538" width="156" height="76" rx="8" fill="#1A1E25" stroke="#262B33" stroke-width="1"/>
+      <image id="session_4_slot_3_icon" inkscape:label="session_4_slot_3_icon" x="1035" y="546" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>
+      <text id="session_4_slot_3_label" inkscape:label="session_4_slot_3_label" class="slotlbl" x="1050" y="602" text-anchor="middle">Weather</text>
     </g>
   </g>
 
   <!--  footer  -->
-  <text class="foot" x="48" y="658">FORECAST &#183; PHASE 3 OF 3</text>
+  <text class="foot" x="48" y="658">FORECAST</text>
 </svg>

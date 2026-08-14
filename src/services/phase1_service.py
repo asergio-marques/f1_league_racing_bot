@@ -112,18 +112,25 @@ async def run_phase1(round_id: int, bot: "Bot") -> None:
         )
         await db.commit()
 
-    # Build division-like object for output_router
-    class _Div:
-        forecast_channel_id = row["forecast_channel_id"]
+    # The graphic, where the league draws one. Reached only now — after the draw, after the
+    # persistence — so that it can gate nothing (XIV.7). A failure leaves ``attachment`` None
+    # and the textual forecast below is posted exactly as it always was.
+    from services.forecast_cleanup_service import post_phase_message
+    from services.image_weather_post import attach_forecast
 
-    msg = await bot.output_router.post_forecast(
-        _Div(),
-        phase1_message(row["mention_role_id"], track_name, rpc),
+    attachment = await attach_forecast(bot, round_id, 1, row["server_id"])
+
+    await post_phase_message(
+        bot,
+        round_id=round_id,
+        division_id=row["division_id"],
         server_id=row["server_id"],
+        channel_id=row["forecast_channel_id"],
+        phase_number=1,
+        text=phase1_message(row["mention_role_id"], track_name, rpc),
+        attachment=attachment,
+        attachment_text=f"<@&{row['mention_role_id']}>",
     )
-    if msg is not None:
-        from services.forecast_cleanup_service import store_forecast_message
-        await store_forecast_message(round_id, row["division_id"], 1, msg, bot.db_path)
 
     await bot.output_router.post_log(
         row["server_id"],
