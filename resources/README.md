@@ -21,11 +21,22 @@ with `/images config <directory>`.
 
 - the fifteen default templates in `templates/`, one per image type;
 - one `fallback.svg` in each asset directory;
-- `tracks/mystery.svg`, drawn for a round whose track is concealed until it is run.
+- `tracks/mystery.svg`, drawn for a round whose track is concealed until it is run;
+- `markers/gained.svg`, `markers/lost.svg` and `markers/unchanged.svg`, the three directions
+  a standing position can move;
+- the eight `weather/` icons — `sunny.svg`, `mixed.svg` and `rain.svg` for the type of
+  weather drawn for a session, and `clear.svg`, `light_cloud.svg`, `overcast.svg`,
+  `wet.svg` and `very_wet.svg` for a concrete weather within one.
 
-**Not shipped:** the assets for any particular track, team, driver, nationality, tyre or
-weather condition. Those are a league's own, and the module exists to let each league bring
-its own design language rather than inherit one.
+**Not shipped:** the assets for any particular track, team, driver, nationality or tyre.
+Those are a league's own, and the module exists to let each league bring its own design
+language rather than inherit one.
+
+**Why the markers and the weather icons are different.** Those two sets are not a league's
+values at all — they are the bot's own vocabulary, fixed and closed, and no league chose
+them. A league cannot have an incomplete set of something it did not define, so the module
+ships every file rather than leaving each directory to fall back on every render. Replace
+them freely; keep the filenames, the aspect and the no-text rule below.
 
 So a fresh clone draws every graphic, and draws each of them entirely out of fallbacks. That
 is the intended starting point: the module works from the first render, and a league

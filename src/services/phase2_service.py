@@ -121,16 +121,28 @@ async def run_phase2(round_id: int, bot: "Bot") -> None:
     class _Div:
         forecast_channel_id = row["forecast_channel_id"]
 
-    from services.forecast_cleanup_service import delete_forecast_message, store_forecast_message
-    await delete_forecast_message(round_id, row["division_id"], phase_number=1, bot=bot)
+    from services.forecast_cleanup_service import post_phase_message
+    from services.image_weather_post import attach_forecast
 
-    msg = await bot.output_router.post_forecast(
-        _Div(),
-        phase2_message(row["mention_role_id"], track_name, session_slots),
+    attachment = await attach_forecast(bot, round_id, 2, row["server_id"])
+
+    # Produce before destroy (Constitution XIV.8). The phase 1 message stands until the phase
+    # 2 message replacing it exists: deleting first would leave the division with no forecast
+    # at all whenever this posting fails, which is the window the rule exists to close. Both
+    # manners take this one send site, so the image flow inherits the ordering rather than
+    # holding a second copy of it.
+    await post_phase_message(
+        bot,
+        round_id=round_id,
+        division_id=row["division_id"],
         server_id=row["server_id"],
+        channel_id=row["forecast_channel_id"],
+        phase_number=2,
+        text=phase2_message(row["mention_role_id"], track_name, session_slots),
+        attachment=attachment,
+        attachment_text=f"<@&{row['mention_role_id']}>",
+        supersedes=1,
     )
-    if msg is not None:
-        await store_forecast_message(round_id, row["division_id"], 2, msg, bot.db_path)
 
     await bot.output_router.post_log(
         row["server_id"],

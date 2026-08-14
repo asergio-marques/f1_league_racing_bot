@@ -23,7 +23,9 @@ Formats available for rounds are:
 	- Mystery Round - Short Qualifying and Long Race, undefined track
 	- Endurance Round - Full Qualifying and Full Race, previously defined track
 
-If a round is configured as a Mystery Round, the bot shall remain inactive: Phases 1, 2 and 3 shall not be performed.
+If a round is configured as a Mystery Round, no weather shall be generated for it: Phases 1, 2 and 3 shall not be performed, no rain probability shall be calculated, and nothing shall be written to the logging channel for that round.
+
+At the horizon of Phase 1, the bot shall post to the weather forecast channel of the division a fixed notice stating that the weather of the round is not pre-generated and shall be determined by the game at race time. That notice shall carry no mention of the division role, the conditions being unknown to every participant alike, and shall stand in the place of the Phase 1 message for such a round. Nothing shall be posted at the horizons of Phases 2 and 3.
 
 The number of available weather slots for each of the session types is as follows:
 	- Short Qualifying / Short Feature Qualifying - 2

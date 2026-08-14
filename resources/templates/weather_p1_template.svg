@@ -91,5 +91,5 @@
 
   <!--  footer  -->
   <line x1="48" y1="628" x2="1152" y2="628" stroke="#262B33" stroke-width="1"/>
-  <text class="foot" x="48" y="654">FORECAST · PHASE 1 OF 3</text>
+  <text class="foot" x="48" y="654">FORECAST</text>
 </svg>

@@ -971,11 +971,19 @@ class ImageCog(commands.Cog):
                 )
                 return
 
-        # The attendance sheet and the check-in call are both drawn against a round, and a
-        # round is drawn against a track. With no track list there is no sheet to draw and no
-        # round for a call to pertain to, and a generic render failure would not say so
-        # (FR-068, FR-071).
-        needs_tracks = {"attendance_template", "rsvp_template"} & set(templates)
+        # The attendance sheet, the check-in call and every weather graphic are drawn against
+        # a round, and a round is drawn against a track. With no track list there is no sheet
+        # to draw, no round for a call to pertain to and no forecast to be made, and a generic
+        # render failure would not say so (FR-068, FR-071; 042 FR-058).
+        #
+        # The notice of a mystery round is the one exception: such a round conceals its track
+        # and records none, so the notice needs no track list to be drawn against.
+        needs_tracks = {
+            key
+            for key in templates
+            if key in ("attendance_template", "rsvp_template")
+            or (key.startswith("weather_") and key != "weather_mystery_template")
+        }
         if needs_tracks:
             from db.database import get_connection
             from services.track_service import get_all_tracks
@@ -983,11 +991,12 @@ class ImageCog(commands.Cog):
             async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
                 tracks = await get_all_tracks(db)
             if not tracks:
-                subject = (
-                    "attendance sheet"
-                    if "attendance_template" in needs_tracks
-                    else "check-in call"
-                )
+                if "attendance_template" in needs_tracks:
+                    subject = "attendance sheet"
+                elif "rsvp_template" in needs_tracks:
+                    subject = "check-in call"
+                else:
+                    subject = "weather forecast"
                 await interaction.followup.send(
                     f"⛔ This server's track list is empty, so there is no round for a "
                     f"{subject} to be drawn against. Add tracks first.",

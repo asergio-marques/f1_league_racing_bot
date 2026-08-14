@@ -48,14 +48,29 @@ async def run_mystery_notice(round_id: int, bot: "Bot") -> None:
         )
         return
 
-    class _Div:
-        forecast_channel_id = row["forecast_channel_id"]
+    # The graphic, where the league draws one. The notice is the posting made at the phase 1
+    # horizon for such a round (Principle IV, as corrected at constitution v4.7.0), and it is
+    # a posting the module makes rather than one it withholds — which is the whole of what
+    # lets an image type draw it at all (XIV.8, "no posting, no graphic").
+    #
+    # It carries **no division role mention**, as its textual counterpart carries none: the
+    # conditions are unknown to every participant alike (FR-052).
+    from services.forecast_cleanup_service import post_phase_message
+    from services.image_weather_post import attach_forecast
 
-    msg = await bot.output_router.post_forecast(
-        _Div(), mystery_notice_message(), server_id=row["server_id"]
+    attachment = await attach_forecast(bot, round_id, 1, row["server_id"])
+
+    await post_phase_message(
+        bot,
+        round_id=round_id,
+        division_id=row["division_id"],
+        server_id=row["server_id"],
+        channel_id=row["forecast_channel_id"],
+        phase_number=0,
+        text=mystery_notice_message(),
+        attachment=attachment,
+        attachment_text="",
     )
-    if msg is not None:
-        await store_forecast_message(round_id, row["division_id"], 0, msg, bot.db_path)
 
     async with get_connection(bot.db_path) as db:
         await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = ?", (round_id,))

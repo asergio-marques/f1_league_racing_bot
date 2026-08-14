@@ -1078,7 +1078,17 @@ Flips that aspect between a generated image and the text the bot has always post
 >
 > **Both attendance templates are checked before a season depends on them.** With `attendance` on, a driver assignment that would push a division past the rows your sheet template declares is **refused**, and the driver is not assigned — enlarge the template first. `/season review` warns you where your sheet template draws fewer round columns than your longest division holds, or your check-in template names fewer sessions than a sprint round runs; both are warnings and neither blocks approval, because which division and which round are actually drawn is decided later.
 >
-> The remaining three toggles change what `/images config view` and `/season review` report, and nothing else. Wiring each of those source modules is a later increment. Use `/images test` to see what an aspect will produce.
+> With `weather` on, all three forecast phases are posted to a division's forecast channel as pictures instead of text, on a message carrying the division role mention and nothing besides. The heading the text carried is gone; the graphic says which phase it stands for in words. It adds an icon for the type of weather drawn for each session and one for every concrete weather within it, in place of the emoji the text used, and it carries the likelihood of rain on all three phases though only the phase 1 message ever printed it.
+>
+> **The chain of postings is unchanged.** Phase 2's posting deletes phase 1's message and phase 3's deletes phase 2's, exactly as before — and the replacement is always posted *before* the old one is deleted, so a forecast that cannot be drawn leaves the standing one where it is. That phase falls back to text and the log channel says why. The manner of a message is no part of the chain: a phase that fell back to text is superseded by a phase posted as a picture, and the reverse, without either noticing.
+>
+> A **mystery round** posts its notice as a picture too, carrying the heading fields alone — no track, no session, no forecast — and no role mention, as its textual notice carries none. Nothing at all is posted at the phase 2 and phase 3 horizons for such a round. The notice posted when an amendment invalidates a round's forecasts stays text whatever the toggle says.
+>
+> **A forecast that cannot be drawn never delays a draw.** Every random draw, every stored phase result and every calculation-log entry happens exactly as it would with the images module switched off; the picture is made afterwards, from what was stored.
+>
+> **Six weather templates, and each is checked before a season depends on it.** Phases 2 and 3 are drawn from two files apiece — one for sprint rounds, one for every other format — chosen by the round's format and by nothing else. Each must declare at least as much as the formats it serves can demand: four sessions for a sprint file and two for a plain one, and for phase 3, three weather slots per session on the sprint file and four on the plain one. Declaring **fewer is refused the moment you name the file**, naming what it declares and what it needs; declaring more is fine, and the surplus is simply removed when a round does not fill it. `/season review` names any weather template that falls short — which phase, and whether it is the sprint file, the plain file or the mystery notice — and approval is refused while one stands.
+>
+> The remaining toggle, `verdicts`, changes what `/images config view` and `/season review` report, and nothing else. Wiring that source module is a later increment. Use `/images test` to see what an aspect will produce.
 
 #### `/images template <kind>` — Name the SVG file backing each image
 *Access: Server administrator*
@@ -1135,7 +1145,9 @@ Every directory is a path relative to the project root, and one that resolves ou
 | `weather-icon-directory` | `resources/weather` | Weather condition icons |
 | `tyre-directory` | `resources/tyres` | Tyre compound icons |
 
-**What is already there.** A clone ships the fifteen default templates and one `fallback.svg` in each of the seven asset directories — so the module draws every graphic from the first render, entirely out of placeholders. No circuit, team, driver, flag, tyre or weather artwork ships: that is your league's to make, and you replace the placeholders a class at a time, seeing your own files appear as you go. See [resources/README.md](resources/README.md) for the naming rule and the aspect each class expects.
+**What is already there.** A clone ships the fifteen default templates and one `fallback.svg` in each of the seven asset directories — so the module draws every graphic from the first render, entirely out of placeholders. No circuit, team, driver, flag or tyre artwork ships: that is your league's to make, and you replace the placeholders a class at a time, seeing your own files appear as you go.
+
+**Weather icons are the exception, and ship complete.** `resources/weather/` carries all eight the bot can ask for — `sunny`, `mixed` and `rain` for a session's type, and `clear`, `light_cloud`, `overcast`, `wet` and `very_wet` for a concrete weather — because you did not choose that vocabulary and cannot be incomplete against it. Every forecast therefore draws a correct icon out of the box. Replace them freely; keep the filenames. See [resources/README.md](resources/README.md) for the naming rule and the aspect each class expects.
 
 Placing your own files is the operator's job; the bot resolves the paths and reports what it finds.
 
@@ -1330,6 +1342,12 @@ Three phases fire automatically per round (non-Mystery formats only):
 
 All forecast messages go to each division forecast channel.
 Computation logs go to the server log channel.
+
+**Mystery rounds.** No weather is generated for a Mystery round — nothing is drawn, nothing is
+computed, and nothing is logged. At the Phase 1 horizon your drivers still get a message: a fixed
+notice telling them the weather is not pre-generated and will be set by the game at race time. It
+tags no division role, since the conditions are unknown to everyone alike. Nothing is posted at the
+Phase 2 and Phase 3 horizons.
 
 ---
 

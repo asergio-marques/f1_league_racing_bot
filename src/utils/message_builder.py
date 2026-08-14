@@ -5,6 +5,7 @@ All output is plain text (no embeds) per Constitution Principle VII.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -25,14 +26,40 @@ def discord_ts(dt: datetime, fmt: str = "F") -> str:
     return f"<t:{int(dt.timestamp())}:{fmt}>"
 
 
+def format_rain_probability(rpc: float) -> str:
+    """The likelihood of rain as a percentage — ``0.3047`` → ``"30%"``.
+
+    Rounded to the **nearest whole number**, which is the rule the weather module has always
+    carried and which this rendering did not honour: it produced one decimal place until
+    2026-08-14, when the author ruled the textual form should round to the nearest integer as
+    the graphic does.
+
+    Half-up rather than Python's banker's rounding, so that the answer does not depend on
+    which side of an even number a value happens to fall.
+
+    This is the one rendering of the value. The forecast message and the phase 1, 2 and 3
+    graphics all call it, so the picture and the message cannot disagree (Constitution
+    XIV.7).
+    """
+    return f"{math.floor(rpc * 100 + 0.5)}%"
+
+
+def format_session_weather_type(slot_type: str) -> str:
+    """The type of weather drawn for a session — ``"mixed"`` → ``"Mixed"``.
+
+    One of "Sunny", "Mixed" or "Rain". Shared by the phase 2 message and by the phase 2 and
+    phase 3 graphics (Constitution XIV.7).
+    """
+    return str(slot_type).capitalize()
+
+
 def phase1_message(division_role_id: int, track: str, rpc_pct: float) -> str:
     """Phase 1 forecast: rain probability preview (T−5 days)."""
     role_mention = f"<@&{division_role_id}>"
-    pct = round(rpc_pct * 100, 1)
     return (
         f"{role_mention} 🏁 **Weather Forecast — Phase 1** (5 days out)\n"
         f"**Track**: {track}\n"
-        f"**Rain Probability**: {pct}%\n"
+        f"**Rain Probability**: {format_rain_probability(rpc_pct)}\n"
         f"A more detailed forecast will follow at T−2 days."
     )
 
@@ -56,7 +83,10 @@ def phase2_message(
     ]
     for session_label, slot in session_slots:
         icon = _slot_icon(slot)
-        lines.append(f"  {icon} **{session_label}**: {slot.capitalize()} conditions expected")
+        lines.append(
+            f"  {icon} **{session_label}**: "
+            f"{format_session_weather_type(slot)} conditions expected"
+        )
     lines.append("\nFull slot-by-slot forecast will follow at T−2 hours.")
     return "\n".join(lines)
 
@@ -111,13 +141,32 @@ def phase_log_message(
     return f"{header}\n```json\n{body}\n```"
 
 
-def format_slots_for_forecast(slots: list[str]) -> str:
-    """Format a session's Phase 3 slot sequence for the forecast channel.
+def format_slot_sequence(slots: list[str]) -> str:
+    """A session's Phase 3 slot sequence as a **value**, carrying no channel markup.
 
     Rules (FR-024, amended 2026-03-04):
-    - Single slot (len == 1): return the bare label; no arrow, no simplification marker.
-    - All slots identical (len > 1, exact match): return the single type label.
-    - Otherwise: return slots joined by " → " with each entry in italics.
+    - Single slot (len == 1): the bare label; no arrow, no simplification marker.
+    - All slots identical (len > 1, exact match): the single type label.
+    - Otherwise: the slots joined by " → ".
+
+    This is what a weather graphic draws. The italics the forecast message applies are an
+    instruction to Discord rather than part of the value, so they are added by the message
+    and never baked in here — Constitution XIV.16 (v4.7.0) puts the separation in the code
+    that hands the value over, precisely so that no image type has to strip markup back out
+    of a string it was given.
+    """
+    if len(slots) == 1:
+        return slots[0]
+    if len(set(slots)) == 1:
+        return slots[0]
+    return " → ".join(slots)
+
+
+def format_slots_for_forecast(slots: list[str]) -> str:
+    """The same sequence as the forecast **message** presents it, emphasis included.
+
+    Identical to :func:`format_slot_sequence` but for italicising each entry of a sequence
+    that varies. A session of one weather, or of one slot, carries no emphasis in either.
     """
     if len(slots) == 1:
         return slots[0]

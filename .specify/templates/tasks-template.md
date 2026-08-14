@@ -8,7 +8,9 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
+**Tests**: MANDATORY in this project — this overrides the upstream template's "tests are optional". Every implementation task is covered by a unit test, named in the task itself or as its own task the implementation task depends on. Coverage is never parked in a later polish phase, and that test must pass before the next task begins.
+
+**Live Discord is out of scope**: no task or subtask may require a running bot, a real gateway connection, or a real server — that is full system testing, done by hand after implementation. Test tasks written here run under `pytest` with Discord stubbed.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -79,7 +81,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 1 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 1 (MANDATORY) ⚠️
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
@@ -105,7 +107,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 2 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 2 (MANDATORY) ⚠️
 
 - [ ] T018 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
 - [ ] T019 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
@@ -127,7 +129,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 3 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 3 (MANDATORY) ⚠️
 
 - [ ] T024 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
 - [ ] T025 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
@@ -153,7 +155,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX [P] Documentation updates in docs/
 - [ ] TXXX Code cleanup and refactoring
 - [ ] TXXX Performance optimization across all stories
-- [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
+- [ ] TXXX [P] Additional unit tests in tests/unit/ (never the *first* coverage of a task — that ships with the task)
 - [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
 
@@ -178,7 +180,7 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Within Each User Story
 
-- Tests (if included) MUST be written and FAIL before implementation
+- Tests MUST be written and FAIL before implementation, and MUST pass before the next task begins
 - Models before services
 - Services before endpoints
 - Core implementation before integration
@@ -198,7 +200,7 @@ Examples of foundational tasks (adjust based on your project):
 ## Parallel Example: User Story 1
 
 ```bash
-# Launch all tests for User Story 1 together (if tests requested):
+# Launch all tests for User Story 1 together:
 Task: "Contract test for [endpoint] in tests/contract/test_[name].py"
 Task: "Integration test for [user journey] in tests/integration/test_[name].py"
 
@@ -245,7 +247,7 @@ With multiple developers:
 - [P] tasks = different files, no dependencies
 - [Story] label maps task to specific user story for traceability
 - Each user story should be independently completable and testable
-- Verify tests fail before implementing
+- Verify tests fail before implementing, and pass before starting the next task
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence

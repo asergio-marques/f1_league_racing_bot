@@ -137,6 +137,89 @@ RSVP_SVG = (
 )
 
 
+#: The weather headings every phase graphic must carry (042).
+_WEATHER_HEADING = (
+    b'<text id="division_name">D</text>'
+    b'<text id="phase_description">P</text>'
+    b'<text id="round_number">1</text>'
+    b'<text id="track_name">T</text>'
+)
+
+
+def _weather_p2_svg(sessions: int) -> bytes:
+    """A sound phase 2 template: the heading plus *sessions* complete sessions.
+
+    It declares no slot and no summary — both belong to the phase 3 catalogue alone, and a
+    phase 2 template carrying either is the wrong file for its slot (XIV.3, FR-002).
+    """
+    blocks = b"".join(
+        b'<g id="session_%d_group">'
+        b'<text id="session_%d_name">S</text>'
+        b'<text id="session_%d_slot_type">Mixed</text>'
+        b"</g>" % (n, n, n)
+        for n in range(1, sessions + 1)
+    )
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        + _WEATHER_HEADING
+        + blocks
+        + b"</svg>"
+    )
+
+
+def _weather_p3_svg(sessions: int, slots: int) -> bytes:
+    """A sound phase 3 template: *sessions* sessions of *slots* slots apiece.
+
+    The slot count is the floor its slot requires — three for the sprint variant (the feature
+    race being the longest session a sprint round holds) and four for the plain one (the
+    endurance race). Declaring fewer is refused at every validity moment (XIV.12, v4.7.0).
+    """
+    blocks = b""
+    for n in range(1, sessions + 1):
+        cells = b"".join(
+            b'<g id="session_%d_slot_%d_group">'
+            b'<text id="session_%d_slot_%d_label">Clear</text>'
+            b"</g>" % (n, m, n, m)
+            for m in range(1, slots + 1)
+        )
+        blocks += (
+            b'<g id="session_%d_group"><text id="session_%d_name">S</text>' % (n, n)
+            + cells
+            + b"</g>"
+        )
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        + _WEATHER_HEADING
+        + blocks
+        + b"</svg>"
+    )
+
+
+WEATHER_P1_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    + _WEATHER_HEADING
+    + b'<text id="rain_probability">30%</text>'
+    + b"</svg>"
+)
+
+#: The notice of a mystery round — the heading fields naming who and when, and nothing else.
+WEATHER_MYSTERY_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b"</svg>"
+)
+
+WEATHER_SVGS = {
+    "weather_p1_template": WEATHER_P1_SVG,
+    "weather_p2_template": _weather_p2_svg(2),
+    "weather_p2_sprint_template": _weather_p2_svg(4),
+    "weather_p3_template": _weather_p3_svg(2, 4),
+    "weather_p3_sprint_template": _weather_p3_svg(4, 3),
+    "weather_mystery_template": WEATHER_MYSTERY_SVG,
+}
+
+
 def sound_bytes(template_key: str) -> bytes:
     """The soundest bytes for *template_key* at the depth its type is checked to."""
     if template_key == "results_qualifying_template":
@@ -151,11 +234,14 @@ def sound_bytes(template_key: str) -> bytes:
         return ATTENDANCE_SVG
     if template_key == "rsvp_template":
         return RSVP_SVG
+    if template_key in WEATHER_SVGS:
+        return WEATHER_SVGS[template_key]
     return VALID_SVG
 
 
 #: The image types whose catalogue is populated, and to which Layer 2 therefore applies.
 #: Every other type is checked to Layer 1 alone and must be *reported* as such (XIV.9.4).
+#: Only the verdicts type is still unspecified.
 POPULATED = {
     "calendar_template",
     "lineup_template",
@@ -165,7 +251,17 @@ POPULATED = {
     "standings_constructors_template",
     "attendance_template",
     "rsvp_template",
+    "weather_p1_template",
+    "weather_p2_template",
+    "weather_p2_sprint_template",
+    "weather_p3_template",
+    "weather_p3_sprint_template",
+    "weather_mystery_template",
 }
+
+#: The one type still checked to Layer 1 alone — the stand-in wherever a test needs a
+#: catalogue that is genuinely empty.
+UNSPECIFIED_KEY = "verdicts_template"
 VIEWBOX_ONLY_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"></svg>'
 NO_CANVAS_SVG = b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'
 NOT_SVG = b"this is not markup at all"
@@ -289,9 +385,10 @@ def test_three_failure_reasons_are_mutually_distinguishable(tmp_path, templates)
 
 
 def test_viewbox_only_template_declares_a_canvas(tmp_path, templates):
-    (templates / "weather_p1_template.svg").write_bytes(VIEWBOX_ONLY_SVG)
-    report = _evaluate(_config("templates"), tmp_path, "weather_p1_template")
+    (templates / TEMPLATE_COLUMNS[UNSPECIFIED_KEY]).write_bytes(VIEWBOX_ONLY_SVG)
+    report = _evaluate(_config("templates"), tmp_path, UNSPECIFIED_KEY)
     assert report.valid
+    assert report.depth_checked == LAYER_RESOLUTION
 
 
 def test_invalid_report_always_carries_the_path_searched(tmp_path, templates):
@@ -789,13 +886,15 @@ def test_layer_two_applies_to_a_populated_catalogue_and_skips_an_empty_one():
     assert layer.applies_to("results_race_template")
     assert layer.applies_to("attendance_template")
     assert layer.applies_to("rsvp_template")
-    # Weather has no catalogue yet, so Layer 2 *skips* rather than passes.
-    assert not layer.applies_to("weather_p1_template")
+    assert layer.applies_to("weather_p1_template")
+    assert layer.applies_to("weather_p3_sprint_template")
+    # Verdicts has no catalogue yet, so Layer 2 *skips* rather than passes.
+    assert not layer.applies_to(UNSPECIFIED_KEY)
 
 
 def test_empty_catalogue_leaves_depth_at_layer_one(tmp_path, templates):
     """XIV.9.4 — checked to the depth available, never reported as fully valid."""
-    report = _evaluate(_config("templates"), tmp_path, "weather_p1_template")
+    report = _evaluate(_config("templates"), tmp_path, UNSPECIFIED_KEY)
     assert report.valid
     assert report.depth_checked == LAYER_RESOLUTION
 
@@ -883,7 +982,7 @@ def test_mixed_depths_are_reported_honestly(tmp_path, templates, catalogue_overr
     summary = ImageValidityService.depth_summary(reports)
 
     assert reports["calendar_template"].depth_checked == LAYER_CATALOGUE
-    assert reports["weather_p1_template"].depth_checked == LAYER_RESOLUTION
+    assert reports[UNSPECIFIED_KEY].depth_checked == LAYER_RESOLUTION
     assert "layer 1" in summary and "layer 2" in summary
 
 

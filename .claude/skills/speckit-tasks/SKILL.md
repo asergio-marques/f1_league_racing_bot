@@ -142,7 +142,7 @@ The tasks.md should be immediately executable - each task must be specific enoug
 
 **CRITICAL**: Tasks MUST be organized by user story to enable independent implementation and testing.
 
-**Tests are OPTIONAL**: Only generate test tasks if explicitly requested in the feature specification or if user requests TDD approach.
+**Tests are MANDATORY in this project**: every implementation task must be covered by a unit test — named in the task itself or as its own task the implementation task depends on. Never park a task's first coverage in a later polish phase, and never generate a task or subtask that requires a live Discord bot (that is full system testing, done by hand after implementation). Test tasks run under `pytest` with Discord stubbed.
 
 ### Checklist Format (REQUIRED)
 

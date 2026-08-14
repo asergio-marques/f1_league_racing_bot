@@ -95,8 +95,8 @@ def test_layer_two_applies_to_the_calendar_now_it_has_a_catalogue():
 
 def test_layer_two_still_skips_a_type_with_no_catalogue():
     """XIV.9.4 — a type checked shallowly must not read as fully valid."""
-    assert not CatalogueLayer().applies_to("weather_p1_template")
-    assert CATALOGUES["weather_p1_template"].is_empty
+    assert not CatalogueLayer().applies_to("verdicts_template")
+    assert CATALOGUES["verdicts_template"].is_empty
 
 
 # ── A sound template ──────────────────────────────────────────────────────

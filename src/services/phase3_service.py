@@ -138,16 +138,27 @@ async def run_phase3(round_id: int, bot: "Bot") -> None:
     class _Div:
         forecast_channel_id = row["forecast_channel_id"]
 
-    from services.forecast_cleanup_service import delete_forecast_message, store_forecast_message
-    await delete_forecast_message(round_id, row["division_id"], phase_number=2, bot=bot)
+    from services.forecast_cleanup_service import post_phase_message
+    from services.image_weather_post import attach_forecast
 
-    msg = await bot.output_router.post_forecast(
-        _Div(),
-        phase3_message(row["mention_role_id"], track_name, session_weather),
+    attachment = await attach_forecast(bot, round_id, 3, row["server_id"])
+
+    # Produce before destroy (Constitution XIV.8) — see phase2_service for the reasoning.
+    # This is the phase where it matters most: the phase 3 render is the one that falls back
+    # two hours before a race, and deleting the phase 2 forecast first would strip the
+    # division of its standing forecast on exactly the path where something already failed.
+    await post_phase_message(
+        bot,
+        round_id=round_id,
+        division_id=row["division_id"],
         server_id=row["server_id"],
+        channel_id=row["forecast_channel_id"],
+        phase_number=3,
+        text=phase3_message(row["mention_role_id"], track_name, session_weather),
+        attachment=attachment,
+        attachment_text=f"<@&{row['mention_role_id']}>",
+        supersedes=2,
     )
-    if msg is not None:
-        await store_forecast_message(round_id, row["division_id"], 3, msg, bot.db_path)
 
     await bot.output_router.post_log(
         row["server_id"],
