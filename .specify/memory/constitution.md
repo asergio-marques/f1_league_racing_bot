@@ -26,10 +26,10 @@ SYNC IMPACT REPORT
                       template does not declare, and a wrapped field on which no `line-height`
                       resolves — make fatal what was not. Rejected on evidence rather than argument:
                       of the fifteen shipped templates, `verdicts_template.svg` is the **only** one
-                      declaring `shape-inside` at all, and it declares `line-height` on all three of
-                      its wrapped fields. No template that rendered under v4.7.0 stops rendering
-                      under this one, which is the test v4.0.0 fixed for MAJOR. Verdicts is genuinely
-                      the module's first wrapping type.
+                      declaring `shape-inside` at all, and both of its wrapped fields — `description`
+                      and `justification` — declare `line-height`. No template that rendered under
+                      v4.7.0 stops rendering under this one, which is the test v4.0.0 fixed for
+                      MAJOR. Verdicts is genuinely the module's first wrapping type.
 
                       That this amendment adds no numbered rule is recorded rather than passed over,
                       as v4.7.0's was. The seventh type is the module's **simplest** graphic and its

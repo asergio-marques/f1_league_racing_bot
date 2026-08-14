@@ -23,11 +23,14 @@ _PENALTY_RE = re.compile(r"^([+-]?\d+)s?$", re.IGNORECASE)
 def translate_penalty(penalty_str: str) -> str:
     """Convert a raw penalty magnitude to a human-readable description.
 
+    A positive magnitude is time **added** to the driver's time, which is what a
+    time penalty does; a negative one is time removed, as an appeal correction does.
+
     | Input       | Output                    |
     |-------------|---------------------------|
-    | ``+5s``     | ``5 seconds removed``     |
-    | ``5s``      | ``5 seconds removed``     |
-    | ``-3s``     | ``3 seconds added``       |
+    | ``+5s``     | ``5 seconds added``       |
+    | ``5s``      | ``5 seconds added``       |
+    | ``-3s``     | ``3 seconds removed``     |
     | ``DSQ``     | ``Disqualified``          |
     """
     if penalty_str.strip().upper() == "DSQ":
