@@ -27,6 +27,11 @@ For this purpose, the Discord bot shall require three new dependencies: one with
     - verdicts - When enabled, posting of verdicts will be done via a bot-generated image. When disabled, verdict posting will be done via the traditional, previously implemented way (text).
     - All of the above shall be disabled by default.
     - Fallback behavior: if an error is found at any step of the image generation or posting procedure for any of the above possibilities, then the previous manner of posting this information will be utilized (text).
+    - An aspect whose source module does not yet call the image module on the occasions it posts records intent alone, and shall be declared as such.
+        - The confirmation of "images config toggle" shall state that the aspect is not yet in effect where the aspect is one of these, and shall state nothing of the kind where it is not. A claim made over every aspect alike ceases to be true of the first one wired, and misleads a manager into thinking a working aspect broken.
+        - The addendum to "images config view" shall name such aspects individually, and shall be absent entirely once none remains.
+        - Both shall read one and the same declaration of which aspects post, so that the two cannot disagree.
+        - Of the eight, "standings" alone is presently such an aspect: it is configured, validated and drawn by "images test", and no posting path reads its toggle.
 - <NEW COMMAND> A new "images config template-directory" will be made available to server administrators which will take in a string standing for the directory in which the image template files will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the template files will be searched in a "resources/templates" folder located at the project root.

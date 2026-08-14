@@ -29,6 +29,7 @@ and the checks to run. Read it rather than guessing.
 |---|---|
 | `docs/wip-specs/` | **Source.** Hand-written. Edit it when building shows it is wrong. |
 | `README.md` | **Source.** User-facing. |
+| `docs/how-to/` | **Derived, hand-written.** Task-ordered guides for a league manager. A guide owns the *order* of a job and links to the README for every rule — never restates one, or it rots. |
 | `specs/NNN-*/` | **Derived.** Spec-kit output per increment. Do not hand-maintain, and never copy a wip-spec rule into it. |
 | `.specify/memory/constitution.md` | **Governance.** Amend only via `/speckit-constitution` — it carries a version bump and a sync impact report. Never edit by hand. |
 
