@@ -108,4 +108,9 @@
 - After the attendance total is posted, it shall be verified whether any driver has crossed the autosack limits; if they are deemed to have done so, they will be unassigned from all their driving roles in all divisions, full-time or otherwise, and lose their driver role (the one automatically given out when a signup is approved)
 
 ## Test mode
-- <NEW COMMAND> A "test-mode rsvp" command shall be available to league managers, which will take as parameters the user ID of a driver (mandatory) and one of "accepted/tentative/rejected". This will serve to set the RSVP status of fake drivers in test mode.
+- A "test-mode rsvp set-status" command shall be available to league managers, which will take as its parameter the name of a division (mandatory). This will serve to set the RSVP status of fake drivers in test mode.
+    - The command shall require the division to belong to the active season and to have a check-in call currently posted; it shall be refused otherwise.
+    - The statuses shall be given in bulk through a modal, one entry per line in the form "<user ID>, <status>", the status being one of "accept", "tentative" or "decline".
+    - A driver omitted from the entries shall keep the status they hold. No entry shall return a driver to not having checked in.
+    - An entry naming a driver without a profile, or without an attendance record for the round, or carrying a status that cannot be read, shall be reported and passed over; the remaining entries shall still be applied.
+    - The check-in call shall be redrawn once after the entries are applied, and the change shall be written to the log channel.

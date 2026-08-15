@@ -10,6 +10,7 @@ produce **text**, and the bot does the real work when you paste it in.
 | Script | Generates | Reads | Writes |
 |---|---|---|---|
 | `test-roster/generate_test_roster.py` | drivers, teams and divisions | `test-roster/names.txt` | `roster.csv`, `test-roster/commands.txt` |
+| `check-in-data/generate_check_in_data.py` | RSVP check-ins and revisions | `roster.csv` | `check-in-data/<slug>_initial.txt`, `check-in-data/<slug>_changed.txt` |
 
 ## `roster.csv` — the shared contract
 
@@ -106,12 +107,90 @@ of history.
 > well, not just the CSV. The two files always describe the same roster, so a refused
 > overwrite leaves the pair consistent rather than half-updated.
 
+## `check-in-data/generate_check_in_data.py`
+
+Run it from the repo root:
+
+```
+python tools/data-generator/check-in-data/generate_check_in_data.py
+```
+
+It asks one question — which divisions to cover, comma-separated — and writes two files per
+division beside itself:
+
+```
+elite_initial.txt   the first check-in
+elite_changed.txt   the revisions, and only the revisions
+```
+
+The division comes first in the name so that a directory holding several of them lists each
+division's pair together.
+
+Both hold nothing but `<ID>, <status>`, one driver per line:
+
+```
+9000000000000000001, accept
+9000000000000000004, tentative
+9000000000000000009, decline
+```
+
+**That format is the modal's, not ours.** `/test-mode rsvp set-status division:<name>` opens a
+box that parses one entry per line, splits on the first comma, and reads the left half as a
+Discord user ID and the right as `accept`, `tentative` or `decline`. It has no token for
+"no response" and no comment syntax, so these files carry no header, no `#` lines and no mention
+tags — a stray one is reported as an invalid ID. Run the command once per division and paste the
+initial file, then run it again and paste the changed file.
+
+> The modal caps at 4000 characters, roughly 130 lines. The files are per-division and a
+> division is far smaller than that, which is why nothing here is written for a whole roster at
+> once.
+
+**Divisions must already be in `roster.csv`.** The script invents nobody: it reads the CSV for
+the IDs, matches your division name against it ignoring case, and asks again — listing the
+divisions the file actually holds — if you name one it does not. A missing `roster.csv` stops the
+run before the question, with the roster generator command to fix it.
+
+**Who does not check in.** Nought to a fifth of the division, drawn from the division at large
+so that the omissions fall across seated drivers and reserves in the proportion the division is
+made of. A *share* rather than a fixed count, so a division of ten and a division of forty come
+out equally well attended. Nought is deliberate — a round where everybody answers is a real one
+and worth generating. Should the draw have taken only reserves, one is exchanged for a seated
+driver, so a division that omits anybody at all omits a seat-holder, which is the case a league
+chases up. **An omitted driver is absent from the file entirely**, which is the only way to say
+`NO_RSVP`. At least one driver always checks in, and a division too small for a fifth to reach
+one driver simply omits nobody.
+
+**Who declines.** Nought to five seated drivers are pushed to `decline` outright, so a division
+reliably comes out with absences to plan around. Everyone else draws across all three statuses
+weighted towards accept — 65% accept, 25% tentative, 10% decline — so a reserve can decline too,
+just less often than a driver whose seat is going empty.
+
+**What changes.** One to ten drivers are drawn from the whole division for the revised file,
+those who never responded included. A driver who did respond moves to one of the *other* two
+statuses, so a revision always revises something; one who did not draws across all three, which
+is the late check-in every division sees a few of. Nothing can revert a driver to no response —
+the modal has no way to express it.
+
+**Filenames are slugged.** The division name is lower-cased, its spaces become underscores and
+anything else is dropped, so `Division 1` gives `division_1_initial.txt` and `Elite` gives
+`elite_initial.txt`. Accents fold to their base letter first, so `Pró Séries` gives
+`pro_series_initial.txt` rather than losing the letters they sat on. Two names that reduce to
+the same slug get a numbered suffix rather than one overwriting the other.
+
+Unlike `roster.csv`, these files are replaced without asking and without a backup. They are
+per-run output, not a contract anything else reads — regenerate them as often as you like.
+
 ## Adding a script here
 
 Give it its own subdirectory, read `roster.csv` for anything driver-shaped, and keep the same
-shape as the roster generator: prompt for what varies, print the commands, write them to a
-`commands.txt` beside the script. Add the generated filenames to `.gitignore` and a row to
-the table above.
+shape as the roster generator: prompt for what varies, and write what you generate to files
+beside the script. Add the generated filenames to `.gitignore` and a row to the table above.
+
+**What you write depends on how the bot takes it.** A generator whose output is one *command* per
+item writes them to a `commands.txt` and prints them too, as the roster generator does — the
+terminal is where you copy them from. A generator whose output is *pasted into a modal* writes
+data files and prints only a summary, as the check-in generator does; the block goes in whole,
+from the file, and echoing it to the terminal only gets in the way.
 
 These are developer tools run by hand — verify one by running it, not with a test under
 `pytest`, which does not collect this directory.

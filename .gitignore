@@ -222,3 +222,5 @@ poc/
 tools/data-generator/roster.csv
 tools/data-generator/roster_old.csv
 tools/data-generator/test-roster/commands.txt
+tools/data-generator/check-in-data/*_initial.txt
+tools/data-generator/check-in-data/*_changed.txt
