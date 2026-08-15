@@ -54,6 +54,10 @@ DIVISION_COLUMN = "Division"
 #: a normal team with normal seats.
 RESERVE_TEAM = "Reserve"
 
+#: Typed in place of the division list to stand for every division the roster holds. The
+#: roster generator spells its own token the same way, for the same reason.
+DEFAULT_DIVISIONS_TOKEN = "<<<DEFAULT>>>"
+
 # ─── Generation rules ────────────────────────────────────────────────────────
 
 #: The share of a division failing to check in at all, as a ceiling on the draw: nought to
@@ -179,6 +183,22 @@ def split_entries(raw):
     return entries
 
 
+def expand_default_divisions(entries, known):
+    """Replace any DEFAULT_DIVISIONS_TOKEN entry with every division the roster holds.
+
+    Expanding before validation rather than after means the token is simply a way of typing
+    the names out. It already covers every division, so naming one alongside it is a
+    duplicate and is refused as one.
+    """
+    expanded = []
+    for entry in entries:
+        if entry.strip().casefold() == DEFAULT_DIVISIONS_TOKEN.casefold():
+            expanded.extend(known)
+        else:
+            expanded.append(entry)
+    return expanded
+
+
 def validate_divisions(entries, known):
     """Return an error message describing why *entries* is unusable, or None.
 
@@ -218,8 +238,11 @@ def prompt_divisions(known, read_line=input):
     """
     canonical = {name.casefold(): name for name in known}
     while True:
-        raw = read_line("Divisions to generate check-in data for (comma-separated): ")
-        entries = split_entries(raw)
+        raw = read_line(
+            f"Divisions to generate check-in data for (comma-separated, or "
+            f"{DEFAULT_DIVISIONS_TOKEN} for all of them): "
+        )
+        entries = expand_default_divisions(split_entries(raw), known)
         error = validate_divisions(entries, known)
         if error is None:
             return [canonical[entry.casefold()] for entry in entries]

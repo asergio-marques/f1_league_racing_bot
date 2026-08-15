@@ -150,6 +150,11 @@ the IDs, matches your division name against it ignoring case, and asks again —
 divisions the file actually holds — if you name one it does not. A missing `roster.csv` stops the
 run before the question, with the roster generator command to fix it.
 
+**`<<<DEFAULT>>>` stands for every division in the file.** Type it at the question and it expands
+to all of them, which is the common case and saves typing the names out. It is the same token the
+roster generator uses for the current grid. Because it already covers everything, naming a
+division alongside it — `<<<DEFAULT>>>, Elite` — is the duplicate it looks like and is refused.
+
 **Who does not check in.** Nought to a fifth of the division, drawn from the division at large
 so that the omissions fall across seated drivers and reserves in the proportion the division is
 made of. A *share* rather than a fixed count, so a division of ten and a division of forty come
