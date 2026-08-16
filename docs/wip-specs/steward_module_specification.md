@@ -136,7 +136,7 @@
 
 ### Conduct cycle setup
 - <NEW COMMAND> A "steward conduct toggle" command will be made available to league managers, which shall have no inputs.
-  - This functionality is toggled off by default.
+  - This functionality is toggled off by default, and any of the other commands in this section fail if this functionality is toggled off.
 - <NEW COMMAND> A "steward conduct defense-submission-period" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the number of hours during which any involved/mentioned driver is able to provide evidence or arguments relevant to the Code of Conduct investigation in question. After this time elapses, the defense submission phase is over.
   - By default, this value will be set to 24.
   - Input value must be equal or greater than 1.
