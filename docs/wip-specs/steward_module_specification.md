@@ -105,7 +105,6 @@
   - Time penalty - Optional - Integer input only. Number of milisseconds added to the total race time of the offending driver.
   - Warning point - Optional - Integer input only. Number of warning points added to the driver license of the offending driver.
   - Penalty point - Optional - Integer input only. Number of penalty points added to the driver license of the offending driver.
-  - Discipline point - Optional - Integer input only. Number of discipline points added to the driver license of the offending driver.
   - Qualifying ban - Optional - Integer input only. Number of qualifying bans added to the driver license of the offending driver.
   - Race ban - Optional - Integer input only. Number of race bans added to the driver license of the offending driver.
   - Season ban - Optional - Checkbox that, if ticked, means that the offending driver's license will accrue a ban lasted for one season.
