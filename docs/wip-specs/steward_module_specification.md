@@ -110,7 +110,7 @@
   - Race ban - Optional - Integer input only. Number of race bans added to the driver license of the offending driver.
   - Season ban - Optional - Checkbox that, if ticked, means that the offending driver's license will accrue a ban lasted for one season.
   - League ban - Optional - Checkbox that, if ticked, means that the offending driver's license will accrue a league ban.
-  - This command shall fail if any report deliberation or appeal deliberation phases are on-going.
+  - Contrary to the others, this command may be accepted if any report deliberation or appeal deliberation phases are on-going.
 - <NEW COMMAND> A "steward outcome modify" command will be made available to league managers, which shall have as input a string standing for an outcome's ID. If this ID is valid, then a modal dialog much like the one opened by "steward outcome add" shall open, prefilled with the values of the outcome of the input ID. All fields with the exception of the ID can be modified.
   - This command shall fail if any report deliberation or appeal deliberation phases are on-going.
 - <NEW COMMAND> A "steward outcome remove" command will be made available to league managers, which shall have as input a string standing for an outcome's ID. If this ID is valid, then a modal dialog asking for confirmation of deletion of the outcome will appear. If accepted, then the outcome shall be removed from the list.
