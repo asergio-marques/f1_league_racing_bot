@@ -12,7 +12,8 @@
 ## Concepts
 - Driver license - A individual record of a driver's history in the league, onto which the current amount of warning/penalty/discipline points and their history (and each of those points' expirations dates), plus qualifying/race/season/league ban current information and history is appended to.
 - Steward - A trusted user denoted with a special role which may be different from that of league managers, which are able to see tickets and pass judgement on them.
-- Head steward - A privileged user denoted with a special role that serves as the leader of the stewarding team, and serves as a tie-breaker when verdicts for a given ticket are equally split. It is mandatory that a stewarding team has a head steward. They may defer tie-breaking capabilities on a ticket-by-ticket basis to another member of the stewarding team.
+- Head steward - A privileged user denoted with a special role that serves as the leader of the stewarding team, and serves as a tie-breaker when verdicts for a given ticket are equally split. It is mandatory that a stewarding team has a head steward. They may confer head steward responsabilities another member of the stewarding team for a temporary period.
+- Temporary head steward - Also referred to as temp head steward. A user with similar privileges as the head steward, which last only for a limited amount of time, as a result of being deferred head steward responsabilities temporarily. While a temporary head steward is active, the head steward loses their tie-break privilege.
 - Stewarding team - The collective composed of all stewards.
 - Stewarding cycle - The full process for stewarding after a round is scheduled to take place. This is an informal concept (meaning it's nothing specific). It kicks off at the time a round is scheduled to happen with the enabling of reports for that round, and ends only when all appeals' verdicts are posted (if there were any appeals) OR when all reports' verdicts are posted (if there were any reports) OR once the report submission deadline passes (if there were no reports). It is composed of the following stages:
   - Report submission - Active starting at the scheduled round time, and automatically disabled after a configured amount of time after the scheduled round time. Period of time in which drivers or the stewarding team can initiate reports against other drivers of the division.
@@ -20,6 +21,10 @@
   - Report deliberation - Active from the moment the defense submission stage ends, and automatically disabled after a configured period of time. Aims to allow stewards to vote on the final verdict, providing justification. After this period is over, verdicts of all reports are posted to the configured channel.
   - Appeal submission - Active for a configured period of time after the report deliberation ends. Lasts for a configured period of time; in it, drivers involved in submitted reports can appeal their outcome, if they have the required number of appeal tokens.
   - Appeal deliberation - Active from the moment the appeal submission ends, and automatically disabled after a configured period of time. Aims to allow stewards to vote on the final verdict, providing justification. After this period is over, the verdicts of all appeals are posted to the configured channel. After this, the round is taken as final, and its results cannot be changed.
+- Conduct investigation cycle -  <<< --- TBD --- >>>
+  - 
+  - 
+  - 
 - Ticket - A user-submitted incidence which may be either a report, an appeal or a Code of Conduct investigation. The former two may be public (seen by any driver of the division to which they pertain) or private (seen only by drivers involved and the stewarding team). The latter is always private to the utmost (only the steward team and the driver involved can see this).
 - Report - May also be referred to as stewards' report. This is an incidence submitted by either a driver or by a member representing the steward team as an anonymous collective, which may refer to one or more other drivers, pertaining to an incident that occurred during the most recent round.
 - Appeal - A special kind of ticket submitted by a driver or by a member representing the steward team as an anonymous collective which aims for this ticket to be judged once more, so that the ultimate verdict is passed. The submission of an appeal by a driver may require 1 or more appeal tokens to be spent.
@@ -34,13 +39,32 @@
 - Race ban - A possible direct or indirect outcome of a verdict for all ticket types. Race bans are appended to a driver's license. The driver that receives this sanction is thereby forbidden from taking part in the next round of the division in which they received a qualifying ban for, be it in the current season, or the next. This means that they may not be present in the classification of any sessions for the round they are banned for. If configured, the bot may automatically detect a failure to serve a race ban via a round's results, and automatically open a steward team report againt the offending driver. Race bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
 - Season ban - A possible direct or indirect outcome of a verdict for all ticket types. Season bans are appended to a driver's license. The driver that receives this sanction loses all their current seats for all divisions, full-time and reserve both. Drivers with a season ban will be assigned a special role, and will be unable to engage with the signup wizard. A season ban will expire after a set number of races (which may be a hard-bound value or the length of the current season), upon the current season's end (or the next season's end, if received on the final round), or after a fixed period of time. If configured, the bot may automatically detect if a driver has a given number of multiple season bans, and automatically open a steward team report against the offending driver with a view at bestowing a league ban. Season bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
 - League ban -  A possible direct or indirect outcome of a verdict for all ticket types. League bans are appended to a driver's license. The driver that receives this sanction thereby loses all their current seats for all divisions, full-time and reserve both. A driver that receives a league ban will be banned from the league server for a configured duration of time. Upon rejoining the server, all users that receive a league ban will be assigned a special role, and will be unable to engage with the signup wizard. League bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
+- Rule - A standardized penalty table item, which draws a relationship from a "standard penalty description/case" to a "standard penalty" which may be composed of 1 or more direct outcomes for a verdict of any ticket type.
 
 ## Configuring the stewarding module
+### Channels
+- <NEW COMMAND> A "division ticket-channel" command will be made available to league managers, which shall have as input a division name and a channel in which drivers for that division can interact to initiate tickets (reports and appeals both).
+- <NEW COMMAND> A "steward command-channel" command will be made available to league managers, which shall have as input a channel in which stewards will be able to input certain special bot commands. These commands must be explicitly marked as steward team actionable in these specifications, otherwise their use will be rejected, and no other commands but those will be accepted in this channel.
+- <NEW COMMAND> A "steward log-channel" command will be made available to league managers, which shall have as input a channel in which ALL commands utilized in the channel configured by "steward command-channel" will be logged for audit purposes, much in the same way they are already done by the log channel input in "bot init".
+
 ### Stewarding team setup
 - <NEW COMMAND> A "steward team-role" command will be made available to league managers, which shall have as input a user role that will be bestowed to all users designated as stewards.
-  - Upon usage, this command shall be validated to check that the steward role is not the same as the one configured by "steward head-role".
-- <NEW COMMAND> A "steward head-role" command will be made available to league managers, which shall have as input a user role that will be bestowed to the user designated as head steward.
-  - Upon usage, this command shall be validated to check that the head steward role is not assigned to more than 1 user, and that the role is not the same as the one configured by "steward team-role".
+  - This command is only valid if no user has steward status.
+  - Upon usage, this command shall be validated to check that the steward role is not the same as the one configured by "steward head-role" or "steward temp-head-role".
+- <NEW COMMAND> A "steward head-role" command will be made available to league managers, which shall have as optional input a user role that will be bestowed to the user designated as head steward.
+  - Upon usage, this command shall be validated to check that the head steward role is not assigned to more than 1 user, and that the role is not the same as the one configured by "steward team-role" or "steward temp-head-role".
+  - This command is only valid if no user has head steward status.
+  - If the input role parameter is empty, then head steward functionality is deactivated.
+- <NEW COMMAND> A "steward temp-head-role" command will be made available to the head steward to be utilized in the channel configured by "steward command-channel", which shall have as optional input a user role that will be bestowed to the user designated as head steward.
+  - Upon usage, this command shall be validated that the role is not the same as the one configured by "steward team-role" or "steward head-role".
+  - This command is only valid if no user has temporary head steward status.
+  - If the input role parameter is empty, then temporary head steward functionality is deactivated.
+- <NEW COMMAND> A "steward assign-temp-head" command will be made available to the head steward to be utilized in the channel configured by "steward command-channel" exclusively, which will have as input the user ID of a member belonging to the steward team. This command will confer the user with temporary head steward status.
+  - This command is only valid if the temporary head steward role configured by "steward temp-head-role" is not empty.
+  - This command is only valid if the target user is part of the steward team and is not the head steward.
+  - The head steward does not lose any of their powers with the exception of the voting tie-breaking capabilities, which are from then-on solely held by the temporary head steward.
+- <NEW COMMAND> A "steward remove-temp-head" command will be made available to the head steward to be utilized in the channel configured by "steward command-channel" exclusively, which will have no input. This command will remove the temporary head steward status from the user currently possessing it.
+  - This command is only valid if the temporary head steward role configured by "steward temp-head-role" is not empty.
 
 ### Stewarding cycle setup
 - <NEW COMMAND> A "steward report-submission-period" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the maximum number of hours during which drivers for that division or users belonging to the steward team (validated by checking whether they have the steward team role) are able to open a report. After this time elapses, the report submission phase is over.
@@ -60,25 +84,24 @@
   - Input value must be equal or greater than 1.
 - The sum of the values of the configurations above may not exceed 168 (7 times 24 hours). This validation must be done everytime one of the commands above is run; if failed, then the new value is not accepted.
 - Any changes done to these values above will NOT be applied for a given division until the next round is scheduled to take place.
-- <NEW COMMAND> A "steward appeal toggle"... <---TBD--->
-- <NEW COMMAND> A "steward appeal starting-tokens" will be made available to league managers, which shall have as input an integer standing for a number of tokens. This value will be the number of appeal tokens assigned to all drivers when they are assigned to a team.
+- <NEW COMMAND> A "steward appeal toggle" command will be made available to league managers, which shall have no inputs. This command shall activate and deactivate the appeal system.
+  - By default, the appeal functionality is enabled.
+- <NEW COMMAND> A "steward appeal starting-tokens" command will be made available to league managers, which shall have as input an integer standing for a number of tokens. This value will be the number of appeal tokens assigned to all drivers when they are assigned to a team.
   - By default, this value will be set to 0. This means that, effectively drivers have unlimited appeal abilities.
   - This value also serves as the maximum allowed number of appeal tokens for a given driver.
   - A driver's number of appeal tokens is reset to this value once their assignment to a team is approved (reserve team include), IF they are not assigned to a team in any division already.
-- <NEW COMMAND> A "steward appeal token-spend" will be made available to league managers, which shall have as input an integer standing for a number of tokens. This value will be the number of appeal tokens required for a driver to have so they may initiate an appeal regarding a previous report.
+- <NEW COMMAND> A "steward appeal token-spend" command will be made available to league managers, which shall have as input an integer standing for a number of tokens. This value will be the number of appeal tokens required for a driver to have so they may initiate an appeal regarding a previous report.
   - By default, this value will be set to 0. This means that, effectively drivers have unlimited appeal abilities.
   - This value cannot be greater than that configured by "steward appeal starting-tokens".
-  - This value shall be ignored if the appeal is initiated by a member of the steward team AND said member is not assigned to a team of the division to which the appeal pertains. < --- MOVE THIS RULE --- >
+  - This value shall be ignored if the appeal is initiated by a member of the steward team AND said member is not assigned to a team of the division to which the appeal pertains.
 
-### Channels
-- <NEW COMMAND> A "division ticket-channel" command will be made available to league managers, which shall have as input a division name and a channel in which drivers for that division can interact to initiate tickets (reports and appeals both).
-- <NEW COMMAND> A "steward command-channel" command will be made available to league managers, which shall have as input a channel in which stewards will be able to input certain special bot commands. These commands must be explicitly marked as steward team actionable in these specifications, otherwise their use will be rejected, and no other commands but those will be accepted in this channel.
-- <NEW COMMAND> A "steward log-channel" command will be made available to league managers, which shall have as input a channel in which ALL commands utilized in the channel configured by "steward command-channel" will be logged for audit purposes, much in the same way they are already done by the log channel input in "bot init".
-
-### Conduct
+### Conduct cycle setup
 - <NEW COMMAND> A "steward conduct-inv toggle" command will be made available to league managers, which shall have no inputs.
   - This functionality is toggled off by default.
-- <NEW COMMAND> A "steward conduct-inv start" command will be made available to the head steward to be utilized in the channel configured by "steward command-channel" exclusively, which will have as input the user ID of a server member (not necessarily a driver, only requires the "base_role" as configured by "module enable signup"), so that a CoC investigation is opened against said used.
-
+- <NEW COMMAND> A "steward conduct-inv start" command will be made available to the head steward and temporary head steward roles to be utilized in the channel configured by "steward command-channel" exclusively, which will have as input the user ID of a server member (not necessarily a driver, only requires the "base_role" as configured by "module enable signup"), so that a CoC investigation is opened against said used.
+- <NEW COMMAND> A "steward conduct-inv add" command will be made available to the league managers... <<< --- TBD --- >>>
+- <NEW COMMAND> A "steward conduct-rule add" command will be made available to the league managers... <<< --- TBD --- >>>
+- <NEW COMMAND> A "steward conduct-rule modify" command will be made available to the league managers... <<< --- TBD --- >>>
+- <NEW COMMAND> A "steward conduct-rule remove" command will be made available to the league managers... <<< --- TBD --- >>>
 
 ### Penalties
