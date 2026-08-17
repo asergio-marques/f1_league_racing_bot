@@ -173,8 +173,20 @@
   - Season ban - 0
 
 ## Stewarding cycle
+- By default, the bot shall post a "Ticket submission is currently closed"
+
 ### Report submission
-- 
+- At the scheduled start date of a round for a given division, the bot shall post a "Report incident" button to the configured ticket channel of the division, without mentioning the division role.
+- When a user presses this button, a modal dialog shall appear, with the following elements:
+  - Season - Mandatory -  Integer - Automatically generated, cannot be changed by anyone. Derived from the current season's number.
+  - Division - Mandatory -  String - Automatically generated, cannot be changed by anyone. Derived from the division to which the report channel is associated.
+  - Round - Mandatory -  Integer - Automatically generated, cannot be changed by anyone. Derived from the most recent round that took place.
+  - Involved drivers - Mandatory -  1..n mentions - 
+  - Session - Mandatory - Dropdown - Select which session the incident took place.. Option depend on round format: if round format is sprint, then the options available shall be "Sprint Qualifying", "Sprint Race", "Feature Qualifying" and "Feature Race", otherwise, the options available are just "Qualifying" and "Race"
+  - Lap - Mandatory if session = "Sprint race" or "Feature race" - Integer - 
+  - Complaint - Mandatory - 
+  - Evidence - Mandatory - 
+- After valid submission, the report will be henceforth designed as a string which follows format "S<x>_D<y>_R<z>_<w>", where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the report pertaining to this season, tier and round.
 
 ### Defense submission
 - 
