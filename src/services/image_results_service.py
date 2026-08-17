@@ -32,6 +32,7 @@ from utils.results_formatter import (
 )
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
+from utils.country_data import country_for_nationality
 
 log = logging.getLogger(__name__)
 
@@ -404,7 +405,7 @@ def build_fill_spec(
         flag_id = f"{stem}_driver_flag"
         if flag_id in declared:
             if entry.nationality:
-                image_data[flag_id] = ("flag", entry.nationality)
+                image_data[flag_id] = ("flag", country_for_nationality(entry.nationality))
             elif drawing.nationality_collected:
                 empty.append(flag_id)
             else:

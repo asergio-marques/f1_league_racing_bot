@@ -1000,6 +1000,9 @@ CALENDAR_CATALOGUE = FieldCatalogue(
         fields=frozenset(
             {
                 "group",
+                # The two classes a round may be pictured by (044). Both optional: a
+                # template declares either, both, or neither, and chooses per round.
+                "flag",
                 "image",
                 "number",
                 "country_name",
@@ -1015,7 +1018,7 @@ CALENDAR_CATALOGUE = FieldCatalogue(
             {"number", "country_name", "race_name", "date", "vertical_crop_point"}
         ),
         valueless_fields=frozenset({"vertical_crop_point"}),
-        assets={"image": "track"},
+        assets={"flag": "flag", "image": "track"},
     ),
 )
 
@@ -1228,6 +1231,10 @@ _STANDINGS_CELL_FIELDS = frozenset(
 #: owes that round its number — the image standing in addition to the number and never in
 #: its place.
 #:
+#: The image is the round's **country flag** and never a circuit map (044). A round stands
+#: here as a column heading, at a size no circuit outline survives, and XIV.13 admits a
+#: track-class field on the calendar and the check-in graphic alone.
+#:
 #: The three types that draw a round grid head it identically, and the wip-spec says so in as
 #: many words: the attendance sheet's round group "contains the fields of the round named
 #: below and no field of any row, **as it does on the standings graphics**". One function so
@@ -1237,10 +1244,10 @@ def _round_heading_columns() -> RowSpec:
         prefix="round",
         capacity=None,
         optional_unit=True,
-        fields=frozenset({"group", "number", "image"}),
+        fields=frozenset({"group", "number", "flag"}),
         mandatory_fields=frozenset({"number"}),
         valueless_fields=frozenset({"group"}),
-        assets={"image": "track"},
+        assets={"flag": "flag"},
     )
 
 
@@ -1416,6 +1423,8 @@ _RSVP_OPTIONAL = frozenset(
         "track_name_group",
         "country_name",
         "country_name_group",
+        "track_flag",
+        "track_flag_group",
         "track_image",
         "track_image_group",
         "deadline_date",
@@ -1441,7 +1450,7 @@ _RSVP_OPTIONAL = frozenset(
 RSVP_CATALOGUE = FieldCatalogue(
     mandatory=_RSVP_MANDATORY,
     optional=_RSVP_OPTIONAL,
-    assets={"track_image": "track"},
+    assets={"track_flag": "flag", "track_image": "track"},
     rows=RowSpec(
         prefix="session",
         capacity=None,
@@ -1505,8 +1514,8 @@ _WEATHER_HEADING_OPTIONAL = frozenset(
         "race_name_group",
         "country_name",
         "country_name_group",
-        "track_image",
-        "track_image_group",
+        "track_flag",
+        "track_flag_group",
     }
 )
 
@@ -1560,7 +1569,7 @@ def _p3_sessions(minimum: int, slot_minimum: int) -> RowSpec:
 WEATHER_P1_CATALOGUE = FieldCatalogue(
     mandatory=_WEATHER_HEADING_MANDATORY | {"rain_probability"},
     optional=_WEATHER_HEADING_OPTIONAL,
-    assets={"track_image": "track"},
+    assets={"track_flag": "flag"},
 )
 
 #: Phase 2 — one weather type per session. ``rain_probability`` is optional from here on: the
@@ -1569,14 +1578,14 @@ WEATHER_P1_CATALOGUE = FieldCatalogue(
 WEATHER_P2_CATALOGUE = FieldCatalogue(
     mandatory=_WEATHER_HEADING_MANDATORY,
     optional=_WEATHER_HEADING_OPTIONAL | {"rain_probability", "rain_probability_group"},
-    assets={"track_image": "track"},
+    assets={"track_flag": "flag"},
     rows=_p2_sessions(_PLAIN_SESSIONS_FLOOR),
 )
 
 WEATHER_P2_SPRINT_CATALOGUE = FieldCatalogue(
     mandatory=_WEATHER_HEADING_MANDATORY,
     optional=_WEATHER_HEADING_OPTIONAL | {"rain_probability", "rain_probability_group"},
-    assets={"track_image": "track"},
+    assets={"track_flag": "flag"},
     rows=_p2_sessions(_SPRINT_SESSIONS_FLOOR),
 )
 
@@ -1584,14 +1593,14 @@ WEATHER_P2_SPRINT_CATALOGUE = FieldCatalogue(
 WEATHER_P3_CATALOGUE = FieldCatalogue(
     mandatory=_WEATHER_HEADING_MANDATORY,
     optional=_WEATHER_HEADING_OPTIONAL | {"rain_probability", "rain_probability_group"},
-    assets={"track_image": "track"},
+    assets={"track_flag": "flag"},
     rows=_p3_sessions(_PLAIN_SESSIONS_FLOOR, _PLAIN_SLOTS_FLOOR),
 )
 
 WEATHER_P3_SPRINT_CATALOGUE = FieldCatalogue(
     mandatory=_WEATHER_HEADING_MANDATORY,
     optional=_WEATHER_HEADING_OPTIONAL | {"rain_probability", "rain_probability_group"},
-    assets={"track_image": "track"},
+    assets={"track_flag": "flag"},
     rows=_p3_sessions(_SPRINT_SESSIONS_FLOOR, _SPRINT_SLOTS_FLOOR),
 )
 

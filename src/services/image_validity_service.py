@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -32,6 +33,8 @@ from models.image_constants import (
     ASPECT_SOURCE_MODULE,
     ASPECT_TEMPLATES,
     ASPECTS,
+    ASSET_ASPECT_TOLERANCE,
+    ASSET_CLASS_ASPECTS,
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
     TEMPLATE_LABELS,
@@ -60,6 +63,8 @@ from utils.svg_document import (
 )
 
 log = logging.getLogger(__name__)
+
+_SVG_NS = "http://www.w3.org/2000/svg"
 
 #: Layer numbers. Only LAYER_RESOLUTION is implemented in this increment; the rest are
 #: reserved so their numbering is settled before their definitions arrive.
@@ -166,6 +171,107 @@ class ResolutionLayer:
         return LayerResult(True)
 
 
+#: The only two image types that may declare a field of the ``track`` class — the two on
+#: which the round is the graphic's subject and a circuit outline has room to read
+#: (Constitution XIV.13). Everywhere else a round is a column heading and draws its flag.
+MAP_BEARING_TEMPLATES = frozenset({"calendar_template", "rsvp_template"})
+
+
+def _slot_aspect(node) -> float | None:
+    """The declared width ÷ height of an image slot, or None where it declares neither.
+
+    A slot with no usable dimensions is already a fault of its own elsewhere; this
+    defers to that rather than dividing by zero or inventing a shape for it.
+    """
+    try:
+        width = float(node.get("width"))
+        height = float(node.get("height"))
+    except (TypeError, ValueError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return width / height
+
+
+def aspect_faults_of(root, template_key: str) -> list[str]:
+    """Every image slot of *root* declared at an aspect its class does not carry.
+
+    One class carries one aspect on every template of every image type (XIV.6). A
+    league authors one file per datum, and a class serving slots of two aspects would
+    letterbox that file wherever it did not match.
+
+    The comparison is **relative and tolerant**: template geometry is authored in
+    Inkscape and carries floating-point values, so an exact test would reject every
+    template a human drew. The tolerance still catches a square slot given a 3:2 flag,
+    which is a 50% error.
+    """
+    catalogue = catalogue_for(template_key)
+    if catalogue.is_empty:
+        return []
+
+    faults: list[str] = []
+    for node in root.iter(f"{{{_SVG_NS}}}image"):
+        field_id = node.get("id")
+        if not field_id:
+            continue
+        asset_class = catalogue.asset_class_for(field_id)
+        if asset_class is None:
+            continue
+        expected = ASSET_CLASS_ASPECTS.get(asset_class)
+        if expected is None:
+            continue
+        found = _slot_aspect(node)
+        if found is None:
+            continue
+        if abs(found - expected) / expected > ASSET_ASPECT_TOLERANCE:
+            faults.append(
+                f"`{field_id}` draws the {asset_class} class, which is authored at "
+                f"{_ratio_text(expected)}, but the slot is {_ratio_text(found)}. "
+                f"An asset drawn into it would be letterboxed; the generator never pads."
+            )
+    return faults
+
+
+#: The ids the track class is addressed by. Matched **by shape** rather than through the
+#: catalogue, because a type that may not draw a map no longer declares these fields at
+#: all — ``asset_class_for`` would return None and the trespass would pass unnoticed. A
+#: league converting an old template is the case this catches: the slot is left behind,
+#: the id still reads ``_image``, and nothing else would say so.
+_MAP_FIELD_IDS = re.compile(r"^(track_image|round_\d+_image)$")
+
+
+def map_bearing_faults_of(root, template_key: str) -> list[str]:
+    """Every track-class field declared by a type that may not draw one (XIV.13)."""
+    if template_key in MAP_BEARING_TEMPLATES:
+        return []
+
+    catalogue = catalogue_for(template_key)
+    if catalogue.is_empty:
+        return []
+
+    faults: list[str] = []
+    for node in root.iter(f"{{{_SVG_NS}}}image"):
+        field_id = node.get("id") or ""
+        is_map = catalogue.asset_class_for(field_id) == "track" or _MAP_FIELD_IDS.match(
+            field_id
+        )
+        if is_map:
+            faults.append(
+                f"`{field_id}` declares a circuit map, which only the calendar and the "
+                f"check-in graphic may draw. A round is a column heading here, and draws "
+                f"its country flag."
+            )
+    return faults
+
+
+def _ratio_text(value: float) -> str:
+    """A ratio a template author can act on: ``3:2`` rather than ``1.5``."""
+    for width, height in ((1, 1), (3, 2), (4, 3), (16, 9), (2, 1)):
+        if abs(value - width / height) < 0.005:
+            return f"{width}:{height}"
+    return f"{value:.3f}:1"
+
+
 class CatalogueLayer:
     """Layer 2 — the template carries every field its image type declares mandatory.
 
@@ -239,6 +345,20 @@ class CatalogueLayer:
                 f"{'belongs' if len(foreign) == 1 else 'belong'} {whose}. "
                 f"This looks like the wrong file for this slot.",
             )
+
+        # A track-class field on a type that may not draw one (XIV.13, 044). Checked
+        # before the aspect, because a slot that should not exist at all is a more useful
+        # thing to be told than that its shape is wrong.
+        trespass = map_bearing_faults_of(root, ctx.template_key)
+        if trespass:
+            return LayerResult(False, "; ".join(trespass))
+
+        # Every image slot at the aspect its class carries (XIV.6, 044). A slot at another
+        # shape letterboxes every asset drawn into it, and the generator never pads — no
+        # artwork a league could supply would answer it.
+        faults = aspect_faults_of(root, ctx.template_key)
+        if faults:
+            return LayerResult(False, "; ".join(faults))
 
         missing = sorted(name for name in mandatory if index.resolve(name) is None)
         if not missing:

@@ -19,9 +19,24 @@ SYNC IMPACT REPORT
                       The extension is a clarification in its own right and would have been PATCH
                       had it stood alone; it does not disturb the MAJOR reasoning below.
 
+                      **Found in implementation: the country examples were wrong, and are corrected
+                      here.** Building 044 showed that every illustration of a country name in this
+                      document contradicted the data it illustrated. Migration 029 seeds
+                      `tracks.country` as `United Kingdom` and `United States of America`; Rule 13,
+                      Rule 6 and the Track entity each said `Great Britain` and `United States`.
+                      Left standing, a British driver would have drawn `great_britain.svg` while the
+                      British Grand Prix drew `united_kingdom.svg` — **two files for one country, the
+                      exact duplication the rekey exists to remove**, reintroduced by the rekey's own
+                      documentation. The **rule** was right throughout and is unchanged; only the
+                      examples move, and the seed's spellings are authoritative because they are data
+                      and the examples were prose. No version movement: same unmerged increment, same
+                      reasoning as the Rule 6 note above. Seven sites corrected, the Track entity's
+                      among them — it is where the wrong spelling originated and the correction is
+                      worthless if the source of it is left in place.
+
                       **The flag class is rekeyed.** A driver's flag resolved by the nationality
                       adjective — `British` to `british.svg` — and now resolves by the country of
-                      that nationality, `great_britain.svg`. A flag directory that was **complete
+                      that nationality, `united_kingdom.svg`. A flag directory that was **complete
                       and conformant** under v4.8.0 is incomplete under v5.0.0: every file in it is
                       named wrongly, every driver draws the fallback, and a directory holding no
                       fallback makes the render fatal. That is the definition the versioning policy
@@ -82,7 +97,7 @@ SYNC IMPACT REPORT
                                               inversion of shipped data rather than new research.
                       - Circuits sharing a    → **acceptable, and intended**. Las Vegas, Miami and
                         country                the Circuit of the Americas all draw one
-                                              `united_states.svg`. Ruled not a collision to be
+                                              `united_states_of_america.svg`. Ruled not a collision to be
                                               broken by keying on the circuit instead.
                       - A miss                → **the class's own fallback, and never the other
                                               class**. A flag that does not resolve draws
@@ -123,6 +138,8 @@ SYNC IMPACT REPORT
                         two classes and which types may declare the map; the flag class keyed by
                         country, with the nationality-to-country map and the `Other` carry-through;
                         `mystery.svg` reserved in the flag directory; and the per-class fallback.
+                      - Principle XIV, Rule 6 and Rule 13, and the Track entity — the country
+                        examples corrected to the spellings migration 029 seeds. Rules unchanged.
                       - Data & State Management — "New Entities (v5.0.0)" added, recording that no
                         database entity changes and that the nationality-to-country map is a
                         module-shipped constant.
@@ -3910,7 +3927,7 @@ Layer 2 MUST refuse it, naming the offending field.
 **Rationale**: a league authors **one file per datum of a class**, and the rule above forbids the
 generator to pad. A class serving slots of two aspects would therefore letterbox that one file
 wherever it did not match, and no artwork a league could supply would answer it — the same
-`great_britain.svg` cannot be correct in a 3:2 slot and a 1:1 one at once. Per-slot authoring
+`united_kingdom.svg` cannot be correct in a 3:2 slot and a 1:1 one at once. Per-slot authoring
 (the paragraph above) and per-class files are only reconcilable if the class is uniform, so this
 is that rule carried to its conclusion rather than a second one.
 
@@ -4506,11 +4523,11 @@ survives, and a flag is what reads there.
 
 **The flag class is keyed by the country, for every field that draws from it.**
 
-- A round's flag resolves from the `country` of its Track, normalised: `Great Britain` yields
-  `great_britain.svg`.
+- A round's flag resolves from the `country` of its Track, normalised: `United Kingdom` yields
+  `united_kingdom.svg`.
 - A driver's flag resolves from the **country of their nationality**, not from the nationality
   itself. The module MUST ship a **total** map from each canonical nationality adjective to its
-  country name — `British` to `Great Britain` — and the flag resolves from that country
+  country name — `British` to `United Kingdom` — and the flag resolves from that country
   normalised.
 - A canonical nationality absent from that map is a defect in a module-shipped constant, not a
   render-time outcome. It MUST be caught by a test over the map's totality, never by a fallback
@@ -4519,7 +4536,8 @@ survives, and a flag is what reads there.
   carried through unchanged and resolves `other.svg`.
 
 One directory, one spelling, one file per country. Several circuits in one country resolve to the
-same flag — Las Vegas, Miami and the Circuit of the Americas each draw `united_states.svg` — and
+same flag — Las Vegas, Miami and the Circuit of the Americas each draw
+`united_states_of_america.svg` — and
 that is the intended result, not a collision to be broken.
 
 **Rationale**: keying the class on the country is what lets one directory serve a driver and a
@@ -5513,7 +5531,8 @@ Fields per track entry:
 - `canonical_name` (TEXT — the short display name used in all bot output, e.g.
   `"United Kingdom"`, `"Las Vegas"`).
 - `country` (TEXT — the country or territory in which the circuit is located, e.g.
-  `"Great Britain"`, `"United States"`).
+  `"United Kingdom"`, `"United States of America"` — the spellings migration 029 seeds, and
+  the datum a round's flag resolves by since v5.0.0).
 - `circuit_name` (TEXT — the formal circuit/venue name, e.g. `"Silverstone Circuit"`,
   `"Las Vegas Strip Circuit"`).
 - `mu_default` (REAL — bot-packaged mean rain probability; fractional 0–1).

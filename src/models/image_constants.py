@@ -254,3 +254,42 @@ ASSET_CLASS_DIRECTORIES: dict[str, str] = {
 #: The reserved filename standing in for a datum with no file of its own
 #: (Constitution XIV.13). One per asset directory; optional.
 FALLBACK_ASSET_NAME = "fallback.svg"
+
+#: The reserved filename standing in for a round whose track -- and with it its
+#: country -- is concealed until it is run (Constitution XIV.13). Reserved in the
+#: track image directory and the flag directory alike.
+MYSTERY_ASSET_NAME = "mystery.svg"
+
+#: Asset class -> the aspect ratio (width / height) every slot of that class must
+#: declare, on every template of every image type (Constitution XIV.6).
+#:
+#: The *ratio* binds, not the pixel size: a template may draw a flag slot at any
+#: dimensions so long as they are 3:2. One class carries one aspect because a league
+#: authors one file per datum and the generator never pads -- a class serving slots
+#: of two aspects would letterbox that one file wherever it did not match, and no
+#: artwork the league could supply would answer it.
+#:
+#: Two classes need not match each other, and flag and track deliberately do not.
+#: The constraint is *within* a class, never *across* two.
+#:
+#: XIV.6 leaves these numbers out of governance on purpose ("The aspect a class
+#: carries is not fixed by this Principle"), so this table is the authority and
+#: ``resources/README.md`` is its league-facing statement.
+ASSET_CLASS_ASPECTS: dict[str, float] = {
+    "track": 1.0,          # 120 x 120 -- circuit maps
+    "team": 1.0,           # 120 x 120
+    "flag": 1.5,           # 120 x  80 -- country flags, 3:2
+    "driver": 1.0,         # 120 x 120
+    "marker": 1.0,         #  64 x  64
+    "weather": 1.0,        #  64 x  64
+    "tyre": 1.0,           #  64 x  64
+}
+
+#: Relative tolerance for the aspect comparison (044, contracts/asset-aspect.md).
+#:
+#: Required rather than convenient. Template geometry is authored in Inkscape and
+#: carries floating-point values -- 120.00001 / 80 is not exactly 1.5 in binary
+#: floating point -- so an exact comparison would reject every template a human
+#: drew. 1% admits honest authoring and still catches a square slot given a 3:2
+#: flag, which is a 50% error. No plausible authoring mistake lands inside it.
+ASSET_ASPECT_TOLERANCE = 0.01

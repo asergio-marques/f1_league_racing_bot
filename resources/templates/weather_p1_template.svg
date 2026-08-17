@@ -15,8 +15,8 @@
        Mandatory : division_name, phase_description, round_number, track_name,
                    rain_probability
        Optional  : season_number, division_tier, race_name, country_name,
-                   track_image, season_number_group, division_tier_group,
-                   race_name_group, country_name_group, track_image_group
+                   track_flag, season_number_group, division_tier_group,
+                   race_name_group, country_name_group, track_flag_group
        =================================================================== -->
 
   <defs>
@@ -83,10 +83,10 @@
   <!-- track image: P1 carries the large slot and no small one, the id being unique.
        The plate is inside the group, so that a round carrying no track leaves no
        empty frame standing where the circuit would be. -->
-  <g id="track_image_group" inkscape:label="track_image_group">
-    <rect x="892" y="290" width="260" height="260" rx="14" fill="#14171C" stroke="#262B33" stroke-width="1"/>
-    <image id="track_image" inkscape:label="track_image"
-           x="912" y="310" width="220" height="220" preserveAspectRatio="xMidYMid meet"/>
+  <g id="track_flag_group" inkscape:label="track_flag_group">
+    <rect x="892" y="326.667" width="260" height="186.667" rx="14" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <image id="track_flag" inkscape:label="track_flag"
+           x="912" y="346.667" width="220" height="146.667" preserveAspectRatio="xMidYMid meet"/>
   </g>
 
   <!--  footer  -->

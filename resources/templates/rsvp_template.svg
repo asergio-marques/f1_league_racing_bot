@@ -91,6 +91,16 @@
   <!--  The plate is inside the group with the image it frames. A round of the
         mystery format records no track, and a plate left standing without one
         is an empty frame where the circuit should be.  -->
+  <!--  the round's country flag.  Optional and independent of the circuit map beside
+        it: a league may declare either, both, or neither (Constitution XIV.13).  The
+        flag class is authored at 3:2 on every template, the track class at 1:1, and the
+        two deliberately differ (XIV.6).  -->
+  <g id="track_flag_group" inkscape:label="track_flag_group">
+    <rect x="864" y="100" width="136" height="97" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <image id="track_flag" inkscape:label="track_flag"
+           x="874" y="110" width="116" height="77.3333" preserveAspectRatio="xMidYMid meet"/>
+  </g>
+
   <g id="track_image_group" inkscape:label="track_image_group">
     <rect x="1016" y="100" width="136" height="136" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
     <image id="track_image" inkscape:label="track_image"

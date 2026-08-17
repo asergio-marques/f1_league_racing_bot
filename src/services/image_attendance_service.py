@@ -33,6 +33,7 @@ from typing import Mapping, Sequence
 from models.image_catalogues import CapacityError, catalogue_for
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
+from utils.country_data import country_for_nationality
 
 ATTENDANCE_TEMPLATE_KEY = "attendance_template"
 
@@ -94,6 +95,11 @@ class RoundHeading:
     ordinal: int
     number: str
     track: str | None = None
+
+    #: The country the round is run in — the datum its flag resolves by (044).
+    #: ``track`` is retained: it still names the round and decides the mystery case,
+    #: it simply stopped being an asset datum when the heading moved to the flag class.
+    country: str | None = None
 
 
 @dataclass(frozen=True)
@@ -350,7 +356,7 @@ def build_fill_spec(
         flag_id = f"{stem}_driver_flag"
         if flag_id in declared:
             if entry.nationality:
-                image_data[flag_id] = ("flag", entry.nationality)
+                image_data[flag_id] = ("flag", country_for_nationality(entry.nationality))
             else:
                 remove.append(flag_id)
                 if drawing.nationality_collected:
@@ -367,12 +373,16 @@ def build_fill_spec(
     for heading in drawn_rounds:
         stem = f"{_ROUND_PREFIX}_{heading.ordinal}"
         put(f"{stem}_number", heading.number)
-        image_id = f"{stem}_image"
-        if image_id in declared:
-            if heading.track:
-                image_data[image_id] = ("track", heading.track)
+        # A round stands here as a column heading, so it draws its **country flag** and
+        # never a circuit map: no circuit outline survives this size (044, XIV.13). The
+        # flag stands for the round, not for a driver, so the league's nationality
+        # collection switch does not reach it.
+        flag_id = f"{stem}_flag"
+        if flag_id in declared:
+            if heading.country:
+                image_data[flag_id] = ("flag", heading.country)
             else:
-                remove.append(image_id)
+                remove.append(flag_id)
 
     # ── What the template declares beyond the data ────────────────────────
     # Rows beyond the drivers: each leaves by its group, which this type makes mandatory, and

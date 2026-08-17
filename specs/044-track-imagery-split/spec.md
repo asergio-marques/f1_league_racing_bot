@@ -19,22 +19,22 @@
 A league manager keeps a single folder of flag artwork. Every flag the bot draws — beside a
 driver's name on a lineup, and above a round on a standings table — is looked up in that one
 folder under the name of a **country**. A driver who signed up as `British` draws the same
-`great_britain.svg` that the British Grand Prix draws.
+`united_kingdom.svg` that the British Grand Prix draws.
 
 **Why this priority**: Every other story in this increment resolves a round's flag out of this
 directory, so none of them can be demonstrated until the directory is keyed the one way. It is
 also the only backward-incompatible part of the increment: until it lands, a league's flag folder
 is keyed on adjectives, and afterwards it is keyed on countries.
 
-**Independent Test**: Point the flag directory at a folder holding `great_britain.svg` and
+**Independent Test**: Point the flag directory at a folder holding `united_kingdom.svg` and
 `other.svg`, generate a lineup for a division holding one `British` driver and one who stated no
-nationality, and confirm the first draws `great_britain.svg`, the second `other.svg`, and no
+nationality, and confirm the first draws `united_kingdom.svg`, the second `other.svg`, and no
 notice is raised for either.
 
 **Acceptance Scenarios**:
 
 1. **Given** a driver whose signup records the nationality `British`, **When** any graphic drawing
-   that driver's flag is generated, **Then** the file `great_britain.svg` is resolved from the
+   that driver's flag is generated, **Then** the file `united_kingdom.svg` is resolved from the
    configured flag directory.
 2. **Given** a driver whose signup records `Other`, **When** their flag is drawn, **Then**
    `other.svg` is resolved, `Other` having been carried through as no country at all.
@@ -164,7 +164,7 @@ carries both a flag and a map per round, every one of them resolved from package
 ### Edge Cases
 
 - **A country with several circuits.** Las Vegas, Miami and the Circuit of the Americas all resolve
-  one `united_states.svg`. This is the intended result and no attempt is made to tell them apart.
+  one `united_states_of_america.svg`. This is the intended result and no attempt is made to tell them apart.
 - **A mystery round.** Conceals its track and thereby its country; both classes resolve the datum
   `Mystery`, and both directories carry a `mystery.svg` for it — the track directory's already
   shipped, the flag directory's newly authored at that class's 3:2.

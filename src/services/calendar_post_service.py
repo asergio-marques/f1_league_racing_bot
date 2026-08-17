@@ -134,10 +134,21 @@ async def render_calendar_image(
     if raw:
         track_directory = Path(raw)
 
+    # The calendar draws both imagery classes, so it needs both directories (044).
+    flag_directory = None
+    raw_flag = getattr(config, "flag_directory", None)
+    if raw_flag:
+        flag_directory = Path(raw_flag)
+
     return await bot.image_render_service.render(
         server_id,
         TEMPLATE_KEY,
-        lambda root: build_fill_spec(drawing, root, track_directory=track_directory),
+        lambda root: build_fill_spec(
+            drawing,
+            root,
+            track_directory=track_directory,
+            flag_directory=flag_directory,
+        ),
         output_dir=output_dir,
     )
 

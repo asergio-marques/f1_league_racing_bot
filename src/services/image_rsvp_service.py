@@ -314,6 +314,22 @@ def build_fill_spec(
     put_optional("deadline_date", drawing.deadline_date)
     put_optional("deadline_time", drawing.deadline_time)
 
+    # The round's country flag. The check-in graphic is one of the two types that may draw
+    # a circuit map as well (044, XIV.13); each class is optional and independent, so a
+    # template declares either, both, or neither. A mystery round conceals its country with
+    # its track, and both data are already the "Mystery" literal above, so each class
+    # resolves its own directory's mystery.svg with no special case here.
+    if "track_flag" in declared:
+        if drawing.country_name:
+            image_data["track_flag"] = ("flag", drawing.country_name)
+        else:
+            group_id = "track_flag_group"
+            if group_id in declared:
+                off_canvas.update(_ids_bearing(declared, group_id))
+                remove.append(group_id)
+            else:
+                remove.append("track_flag")
+
     # The track image. A mystery round resolves it from the datum "Mystery", drawing the
     # packaged mystery.svg — a league decides by the file it places there how a concealed
     # track is depicted (FR-029).

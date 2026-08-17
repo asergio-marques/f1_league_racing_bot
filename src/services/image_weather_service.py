@@ -329,18 +329,20 @@ def build_fill_spec(
     put_optional("season_number", drawing.season_number)
     put_optional("division_tier", drawing.division_tier)
 
-    # The track image, resolved from the track's own name by the module's slug rule. The
-    # mystery notice declares none.
-    if "track_image" in declared and not drawing.is_mystery:
-        if drawing.track_datum:
-            image_data["track_image"] = ("track", drawing.track_datum)
+    # The round's **country flag**, resolved from the country by the module's slug rule. A
+    # forecast heads a round rather than picturing it, so it draws no circuit map: XIV.13
+    # admits a track-class field on the calendar and the check-in graphic alone (044). The
+    # mystery notice declares neither.
+    if "track_flag" in declared and not drawing.is_mystery:
+        if drawing.country_name:
+            image_data["track_flag"] = ("flag", drawing.country_name)
         else:
-            group_id = "track_image_group"
+            group_id = "track_flag_group"
             if group_id in declared:
                 off_canvas.update(_ids_bearing(declared, group_id))
                 remove.append(group_id)
             else:
-                remove.append("track_image")
+                remove.append("track_flag")
 
     drawn = drawing.sessions[:capacity] if capacity else []
     nested = catalogue.rows.nested if catalogue.rows is not None else None

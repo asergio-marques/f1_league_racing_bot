@@ -19,8 +19,8 @@ shipped artwork and templates under `resources/`. `poc/` is out of scope and unt
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 Record the baseline: run `pytest tests/ -q` from the repo root and note the count (expected 1995 passed, 1 skipped). Every later phase compares against this.
-- [ ] T002 Confirm the Inkscape rasteriser resolves, by full path or the `INKSCAPE` environment variable, so the PNG verification tasks can run.
+- [X] T001 Record the baseline: run `pytest tests/ -q` from the repo root and note the count (expected 1995 passed, 1 skipped). Every later phase compares against this.
+- [X] T002 Confirm the Inkscape rasteriser resolves, by full path or the `INKSCAPE` environment variable, so the PNG verification tasks can run.
 
 ---
 
@@ -28,10 +28,10 @@ shipped artwork and templates under `resources/`. `poc/` is out of scope and unt
 
 **⚠️ Blocks every user story. R-001 is settled: the country vocabulary is the seed's.**
 
-- [ ] T003 Create `src/utils/country_data.py` with `NATIONALITY_COUNTRIES`, a total map from each canonical nationality adjective to its country name, spelled exactly as `tracks.country` spells it (`British` → `United Kingdom`, every US nationality → `United States of America`). Include `Other` → `Other`.
-- [ ] T004 Create `tests/unit/test_country_data.py` covering data-model V-1 totality (every value of `NATIONALITY_LOOKUP` is a key here), V-2 consistency (every country yielded, lowercased and excepting `Other`, is a key of `NATIONALITY_LOOKUP`), V-3 track coverage (every distinct `tracks.country` in migration 029 is reachable), and V-4 slug stability (one country yields one slug whichever path asked). Depends on T003.
-- [ ] T005 [P] Add `ASSET_CLASS_ASPECTS` to `src/models/image_constants.py`, keyed by asset class exactly as `ASSET_CLASS_DIRECTORIES` is: `flag` 3:2, every other class 1:1.
-- [ ] T006 [P] Extend `tests/unit/test_asset_resolver.py` to assert `ASSET_CLASS_ASPECTS` covers every key of `ASSET_CLASS_DIRECTORIES`, so a class added later cannot silently escape the aspect check. Depends on T005.
+- [X] T003 Create `src/utils/country_data.py` with `NATIONALITY_COUNTRIES`, a total map from each canonical nationality adjective to its country name, spelled exactly as `tracks.country` spells it (`British` → `United Kingdom`, every US nationality → `United States of America`). Include `Other` → `Other`.
+- [X] T004 Create `tests/unit/test_country_data.py` covering data-model V-1 totality (every value of `NATIONALITY_LOOKUP` is a key here), V-2 consistency (every country yielded, lowercased and excepting `Other`, is a key of `NATIONALITY_LOOKUP`), V-3 track coverage (every distinct `tracks.country` in migration 029 is reachable), and V-4 slug stability (one country yields one slug whichever path asked). Depends on T003.
+- [X] T005 [P] Add `ASSET_CLASS_ASPECTS` to `src/models/image_constants.py`, keyed by asset class exactly as `ASSET_CLASS_DIRECTORIES` is: `flag` 3:2, every other class 1:1.
+- [X] T006 [P] Extend `tests/unit/test_asset_resolver.py` to assert `ASSET_CLASS_ASPECTS` covers every key of `ASSET_CLASS_DIRECTORIES`, so a class added later cannot silently escape the aspect check. Depends on T005.
 
 **Checkpoint**: the vocabulary and the aspect table exist and are proven. `pytest tests/ -q` matches T001's baseline plus the new tests.
 
@@ -45,17 +45,17 @@ shipped artwork and templates under `resources/`. `poc/` is out of scope and unt
 
 ### Tests for User Story 1 (MANDATORY) ⚠️
 
-- [ ] T007 [P] [US1] Extend `tests/unit/test_image_lineup_service.py`: a `British` driver emits the flag datum `United Kingdom`; a driver recorded `Other` emits `Other`; an unmapped country draws `fallback.svg` with exactly one notice naming field and country; a league with nationality collection off emits no flag datum and raises nothing.
-- [ ] T008 [P] [US1] Extend `tests/unit/test_image_results_service.py` and `tests/unit/test_image_verdicts_service.py` for the same rekey, these two types drawing a driver flag but picturing no round.
+- [X] T007 [P] [US1] Extend `tests/unit/test_image_lineup_service.py`: a `British` driver emits the flag datum `United Kingdom`; a driver recorded `Other` emits `Other`; an unmapped country draws `fallback.svg` with exactly one notice naming field and country; a league with nationality collection off emits no flag datum and raises nothing.
+- [X] T008 [P] [US1] Extend `tests/unit/test_image_results_service.py` and `tests/unit/test_image_verdicts_service.py` for the same rekey, these two types drawing a driver flag but picturing no round.
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Re-point the driver flag datum in `src/services/image_lineup_service.py` from the nationality adjective to `NATIONALITY_COUNTRIES[nationality]`, leaving `Other` carried through unchanged. Depends on T003, T007.
-- [ ] T010 [P] [US1] Same re-point in `src/services/image_results_service.py` (line ~407). Depends on T003, T008.
-- [ ] T011 [P] [US1] Same re-point in `src/services/image_standings_service.py` (line ~314). Depends on T003.
-- [ ] T012 [P] [US1] Same re-point in `src/services/image_attendance_service.py` (line ~353). Depends on T003.
-- [ ] T013 [P] [US1] Same re-point in `src/services/image_verdict_service.py` (line ~235). Depends on T003, T008.
-- [ ] T014 [US1] Update the flag fixtures in `src/services/image_sample_data.py` so the test renders resolve country-named files, and extend `tests/unit/test_image_sample_data.py` to match. Depends on T009–T013.
+- [X] T009 [US1] Re-point the driver flag datum in `src/services/image_lineup_service.py` from the nationality adjective to `NATIONALITY_COUNTRIES[nationality]`, leaving `Other` carried through unchanged. Depends on T003, T007.
+- [X] T010 [P] [US1] Same re-point in `src/services/image_results_service.py` (line ~407). Depends on T003, T008.
+- [X] T011 [P] [US1] Same re-point in `src/services/image_standings_service.py` (line ~314). Depends on T003.
+- [X] T012 [P] [US1] Same re-point in `src/services/image_attendance_service.py` (line ~353). Depends on T003.
+- [X] T013 [P] [US1] Same re-point in `src/services/image_verdict_service.py` (line ~235). Depends on T003, T008.
+- [X] T014 [US1] Update the flag fixtures in `src/services/image_sample_data.py` so the test renders resolve country-named files, and extend `tests/unit/test_image_sample_data.py` to match. Depends on T009–T013.
 
 **Checkpoint**: US1 is independently demonstrable. Every driver flag across five graphics resolves by country; no round imagery has changed yet.
 
@@ -69,21 +69,21 @@ shipped artwork and templates under `resources/`. `poc/` is out of scope and unt
 
 ### Tests for User Story 2 (MANDATORY) ⚠️
 
-- [ ] T015 [P] [US2] Extend `tests/unit/test_image_standings_catalogue.py` and `tests/unit/test_image_attendance_catalogue.py`: the round heading field is `round_<z>_flag` of class `flag`, and no `track`-class field is declared by either type.
-- [ ] T016 [P] [US2] Extend `tests/unit/test_image_weather_catalogue.py`: `track_flag` of class `flag` replaces `track_image`, on all six weather slots.
-- [ ] T017 [P] [US2] Extend `tests/unit/test_image_standings_service.py` and `tests/unit/test_image_attendance_service.py`: a round heading emits a `flag`-class datum carrying the round's country, and no `track`-class datum is emitted at all.
-- [ ] T018 [P] [US2] Extend `tests/unit/test_image_weather_service.py` likewise, and assert a league with nationality collection off still gets flagged round headings — that switch governs drivers alone.
+- [X] T015 [P] [US2] Extend `tests/unit/test_image_standings_catalogue.py` and `tests/unit/test_image_attendance_catalogue.py`: the round heading field is `round_<z>_flag` of class `flag`, and no `track`-class field is declared by either type.
+- [X] T016 [P] [US2] Extend `tests/unit/test_image_weather_catalogue.py`: `track_flag` of class `flag` replaces `track_image`, on all six weather slots.
+- [X] T017 [P] [US2] Extend `tests/unit/test_image_standings_service.py` and `tests/unit/test_image_attendance_service.py`: a round heading emits a `flag`-class datum carrying the round's country, and no `track`-class datum is emitted at all.
+- [X] T018 [P] [US2] Extend `tests/unit/test_image_weather_service.py` likewise, and assert a league with nationality collection off still gets flagged round headings — that switch governs drivers alone.
 
 ### Implementation for User Story 2
 
-- [ ] T019 [P] [US2] Add `country: str | None` beside `track` on `RoundHeading` in `src/services/image_standings_service.py`, populate it from the track record, and emit `("flag", country)` for the heading in place of `("track", heading.track)`. Depends on T017.
-- [ ] T020 [P] [US2] The same on `RoundHeading` in `src/services/image_attendance_service.py` (line ~373). Depends on T017.
-- [ ] T021 [P] [US2] In `src/services/image_weather_service.py` (line ~336), emit `track_flag` as `("flag", country_name)` in place of `track_image` as `("track", track_datum)`. The service already carries `country_name`. Depends on T018.
-- [ ] T022 [US2] Rename the catalogue fields in `src/models/image_catalogues.py` for standings drivers, standings constructors, attendance and all six weather slots — `round_<z>_image` → `round_<z>_flag`, `track_image` → `track_flag` — and change each `assets={...}` entry from `"track"` to `"flag"`. Depends on T015, T016.
-- [ ] T023 [US2] Drop `("track", "track_image_directory")` from the directory requirements of `src/services/image_attendance_post.py` (line ~83) and `src/services/image_weather_post.py` (line ~180); neither draws the class any longer. Extend `tests/unit/test_image_attendance_post.py` and `tests/unit/test_image_weather_post.py`. Depends on T022.
-- [ ] T024 [US2] Re-author the round-heading slots in `resources/templates/standings_drivers_template.svg`, `standings_constructors_template.svg` and `attendance_template.svg`: rename the ids to `round_<z>_flag` **and re-geometry each slot from 1:1 to 3:2**. Depends on T022.
-- [ ] T025 [US2] The same for `track_image` → `track_flag` in the six weather templates — `weather_p1_template.svg`, `weather_p2_template.svg`, `weather_p2_sprint_template.svg`, `weather_p3_template.svg`, `weather_p3_sprint_template.svg`, `weather_mystery_template.svg` — renaming and **re-geometrying 1:1 → 3:2**. Depends on T022.
-- [ ] T026 [US2] Update the round-imagery fixtures in `src/services/image_sample_data.py` so these types feed a country and no track datum; extend `tests/unit/test_image_sample_data.py`. Depends on T019–T021.
+- [X] T019 [P] [US2] Add `country: str | None` beside `track` on `RoundHeading` in `src/services/image_standings_service.py`, populate it from the track record, and emit `("flag", country)` for the heading in place of `("track", heading.track)`. Depends on T017.
+- [X] T020 [P] [US2] The same on `RoundHeading` in `src/services/image_attendance_service.py` (line ~373). Depends on T017.
+- [X] T021 [P] [US2] In `src/services/image_weather_service.py` (line ~336), emit `track_flag` as `("flag", country_name)` in place of `track_image` as `("track", track_datum)`. The service already carries `country_name`. Depends on T018.
+- [X] T022 [US2] Rename the catalogue fields in `src/models/image_catalogues.py` for standings drivers, standings constructors, attendance and all six weather slots — `round_<z>_image` → `round_<z>_flag`, `track_image` → `track_flag` — and change each `assets={...}` entry from `"track"` to `"flag"`. Depends on T015, T016.
+- [X] T023 [US2] Drop `("track", "track_image_directory")` from the directory requirements of `src/services/image_attendance_post.py` (line ~83) and `src/services/image_weather_post.py` (line ~180); neither draws the class any longer. Extend `tests/unit/test_image_attendance_post.py` and `tests/unit/test_image_weather_post.py`. Depends on T022.
+- [X] T024 [US2] Re-author the round-heading slots in `resources/templates/standings_drivers_template.svg`, `standings_constructors_template.svg` and `attendance_template.svg`: rename the ids to `round_<z>_flag` **and re-geometry each slot from 1:1 to 3:2**. Depends on T022.
+- [X] T025 [US2] The same for `track_image` → `track_flag` in the six weather templates — `weather_p1_template.svg`, `weather_p2_template.svg`, `weather_p2_sprint_template.svg`, `weather_p3_template.svg`, `weather_p3_sprint_template.svg`, `weather_mystery_template.svg` — renaming and **re-geometrying 1:1 → 3:2**. Depends on T022.
+- [X] T026 [US2] Update the round-imagery fixtures in `src/services/image_sample_data.py` so these types feed a country and no track datum; extend `tests/unit/test_image_sample_data.py`. Depends on T019–T021.
 
 **Checkpoint**: four graphics draw flags at the right shape. **Verify as PNG, not as SVG in a browser** — a missed re-geometry is visible only in the raster.
 
@@ -97,15 +97,15 @@ shipped artwork and templates under `resources/`. `poc/` is out of scope and unt
 
 ### Tests for User Story 3 (MANDATORY) ⚠️
 
-- [ ] T027 [P] [US3] Extend `tests/unit/test_image_calendar_catalogue.py`: `round_<x>_flag` of class `flag` joins `round_<x>_image` of class `track`, both optional, both members of the existing round collection taking its ordinal and capacity.
-- [ ] T028 [P] [US3] Extend `tests/unit/test_image_calendar_fill.py`: a round declaring both draws both; declaring one draws one and raises nothing for the other; a round whose circuit has a map but whose country has no flag draws the map and the **flag** directory's fallback, never the map in the flag's place.
-- [ ] T029 [P] [US3] Extend `tests/unit/test_image_calendar_fill.py` for the mystery round: the flag slot resolves `mystery.svg` of the flag directory and the map slot `mystery.svg` of the track directory, with no field emptied and no notice raised.
+- [X] T027 [P] [US3] Extend `tests/unit/test_image_calendar_catalogue.py`: `round_<x>_flag` of class `flag` joins `round_<x>_image` of class `track`, both optional, both members of the existing round collection taking its ordinal and capacity.
+- [X] T028 [P] [US3] Extend `tests/unit/test_image_calendar_fill.py`: a round declaring both draws both; declaring one draws one and raises nothing for the other; a round whose circuit has a map but whose country has no flag draws the map and the **flag** directory's fallback, never the map in the flag's place.
+- [X] T029 [P] [US3] Extend `tests/unit/test_image_calendar_fill.py` for the mystery round: the flag slot resolves `mystery.svg` of the flag directory and the map slot `mystery.svg` of the track directory, with no field emptied and no notice raised.
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Add `round_<x>_flag` to the calendar catalogue in `src/models/image_catalogues.py` (entry at line ~1018), class `flag`, optional, beside the existing `round_<x>_image`. Depends on T027.
-- [ ] T031 [US3] Emit the second datum per round in `src/services/image_calendar_service.py` (line ~272): `("flag", entry.country_name)` alongside the existing `("track", entry.image_datum)`. The service already carries `country_name`. For a mystery round both take `MYSTERY_DATUM`. Depends on T028, T029, T030.
-- [ ] T032 [US3] Add `("flag", "flag_directory")` to the calendar's directory requirements in `src/services/calendar_post_service.py` (line ~133) and extend its test. Depends on T031.
+- [X] T030 [US3] Add `round_<x>_flag` to the calendar catalogue in `src/models/image_catalogues.py` (entry at line ~1018), class `flag`, optional, beside the existing `round_<x>_image`. Depends on T027.
+- [X] T031 [US3] Emit the second datum per round in `src/services/image_calendar_service.py` (line ~272): `("flag", entry.country_name)` alongside the existing `("track", entry.image_datum)`. The service already carries `country_name`. For a mystery round both take `MYSTERY_DATUM`. Depends on T028, T029, T030.
+- [X] T032 [US3] Add `("flag", "flag_directory")` to the calendar's directory requirements in `src/services/calendar_post_service.py` (line ~133) and extend its test. Depends on T031.
 
 **Checkpoint**: the calendar draws both classes, per round, independently of US4.
 
@@ -119,14 +119,14 @@ shipped artwork and templates under `resources/`. `poc/` is out of scope and unt
 
 ### Tests for User Story 4 (MANDATORY) ⚠️
 
-- [ ] T033 [P] [US4] Extend `tests/unit/test_image_rsvp_service.py`: `track_flag` and `track_flag_group` join `track_image` and `track_image_group`, both optional; a template declaring neither still produces the graphic and raises nothing.
-- [ ] T034 [P] [US4] Extend `tests/unit/test_image_rsvp_service.py` for the mystery round — both slots draw their class's `mystery.svg`, no mandatory field emptied — and for the removable group, so a round carrying no track leaves neither plate standing empty under a label.
+- [X] T033 [P] [US4] Extend `tests/unit/test_image_rsvp_service.py`: `track_flag` and `track_flag_group` join `track_image` and `track_image_group`, both optional; a template declaring neither still produces the graphic and raises nothing.
+- [X] T034 [P] [US4] Extend `tests/unit/test_image_rsvp_service.py` for the mystery round — both slots draw their class's `mystery.svg`, no mandatory field emptied — and for the removable group, so a round carrying no track leaves neither plate standing empty under a label.
 
 ### Implementation for User Story 4
 
-- [ ] T035 [US4] Add `track_flag` and `track_flag_group` to the check-in catalogue in `src/models/image_catalogues.py` (entry at line ~1419), class `flag`, optional. Depends on T033.
-- [ ] T036 [US4] Emit `("flag", country_name)` for `track_flag` in `src/services/image_rsvp_service.py` (line ~322) alongside the existing `track_image` datum, both taking the mystery literal for a concealed round. Depends on T034, T035.
-- [ ] T037 [US4] Add `("flag", "flag_directory")` to the check-in directory requirements in `src/services/image_rsvp_post.py` (line ~113) and extend `tests/unit/test_image_rsvp_post.py`. Depends on T036.
+- [X] T035 [US4] Add `track_flag` and `track_flag_group` to the check-in catalogue in `src/models/image_catalogues.py` (entry at line ~1419), class `flag`, optional. Depends on T033.
+- [X] T036 [US4] Emit `("flag", country_name)` for `track_flag` in `src/services/image_rsvp_service.py` (line ~322) alongside the existing `track_image` datum, both taking the mystery literal for a concealed round. Depends on T034, T035.
+- [X] T037 [US4] Add `("flag", "flag_directory")` to the check-in directory requirements in `src/services/image_rsvp_post.py` (line ~113) and extend `tests/unit/test_image_rsvp_post.py`. Depends on T036.
 
 **Checkpoint**: check-in draws both classes, independently of US3.
 
@@ -140,15 +140,15 @@ shipped artwork and templates under `resources/`. `poc/` is out of scope and unt
 
 ### Tests for User Story 5 (MANDATORY) ⚠️
 
-- [ ] T038 [P] [US5] Create `tests/unit/test_packaged_resources.py`: `resources/flags/` holds `fallback.svg` and `mystery.svg`; the new file is 3:2, is plain SVG with no `clipPath`, gradient or filter, and carries **no `<text>` element**; `resources/tracks/` still holds both of its reserved files at 1:1.
-- [ ] T039 [P] [US5] Extend `tests/unit/test_image_calendar_catalogue.py` and `tests/unit/test_image_rsvp_service.py` to assert the **packaged** calendar and check-in templates each declare both fields, so the shipped example cannot regress to one class.
+- [X] T038 [P] [US5] Create `tests/unit/test_packaged_resources.py`: `resources/flags/` holds `fallback.svg` and `mystery.svg`; the new file is 3:2, is plain SVG with no `clipPath`, gradient or filter, and carries **no `<text>` element**; `resources/tracks/` still holds both of its reserved files at 1:1.
+- [X] T039 [P] [US5] Extend `tests/unit/test_image_calendar_catalogue.py` and `tests/unit/test_image_rsvp_service.py` to assert the **packaged** calendar and check-in templates each declare both fields, so the shipped example cannot regress to one class.
 
 ### Implementation for User Story 5
 
-- [ ] T040 [P] [US5] Author `resources/flags/mystery.svg` at 3:2 (120 × 80), plain SVG, no text, conveying concealment by shape as `resources/tracks/mystery.svg` does. Depends on T038.
-- [ ] T041 [US5] Add twelve `round_<x>_flag` slots to `resources/templates/calendar_template.svg`, one per round of the existing grid, each at 3:2 and each inside that round's existing group. Depends on T030.
-- [ ] T042 [US5] Add `track_flag` and `track_flag_group` to `resources/templates/rsvp_template.svg` at 3:2, beside the existing `track_image` pair. Depends on T035.
-- [ ] T043 [US5] Render the calendar and check-in test images and **verify the PNGs**: both classes drawn, neither letterboxed, mystery round drawing each class's `mystery.svg`. Depends on T040, T041, T042.
+- [X] T040 [P] [US5] Author `resources/flags/mystery.svg` at 3:2 (120 × 80), plain SVG, no text, conveying concealment by shape as `resources/tracks/mystery.svg` does. Depends on T038.
+- [X] T041 [US5] Add twelve `round_<x>_flag` slots to `resources/templates/calendar_template.svg`, one per round of the existing grid, each at 3:2 and each inside that round's existing group. Depends on T030.
+- [X] T042 [US5] Add `track_flag` and `track_flag_group` to `resources/templates/rsvp_template.svg` at 3:2, beside the existing `track_image` pair. Depends on T035.
+- [X] T043 [US5] Render the calendar and check-in test images and **verify the PNGs**: both classes drawn, neither letterboxed, mystery round drawing each class's `mystery.svg`. Depends on T040, T041, T042.
 
 **Checkpoint**: a clean clone demonstrates the whole feature with no artwork placed and no configuration set.
 
@@ -158,21 +158,21 @@ shipped artwork and templates under `resources/`. `poc/` is out of scope and unt
 
 **Why here**: this enforces Constitution XIV.6 across every template. Running it before Phases 4–7 re-author them would fail on templates the increment is about to fix. It ships in the same increment, and T047 is what proves the re-geometry of Phase 4 actually happened.
 
-- [ ] T044 [P] Extend `tests/unit/test_image_validity_layers.py`: a 3:2 flag slot passes; a square flag slot is refused with a message naming field, class, expected aspect and found aspect; a 3:2 track slot is refused; **a slot at 120.00001 × 80 passes**, which is the tolerance case a naive implementation fails.
-- [ ] T045 Implement the per-class aspect check inside `CatalogueLayer` (Layer 2) in `src/services/image_validity_service.py`: for each image field the catalogue names, compare the slot's declared width÷height against `ASSET_CLASS_ASPECTS` within a **1% relative tolerance**, raising a problem on mismatch. Defer to the existing fault where a slot declares no usable dimensions rather than dividing by zero. Depends on T005, T044.
-- [ ] T046 Extend Layer 2 to refuse a template of any type but the calendar and the check-in graphic that declares a track-class field, naming the field (FR-009). Cover in `tests/unit/test_image_validity_layers.py`. Depends on T022, T045.
-- [ ] T047 Assert every one of the fifteen packaged templates passes the aspect check for every image field it declares, in `tests/unit/test_packaged_resources.py`. This is what catches a missed re-geometry from T024 or T025. Depends on T024, T025, T041, T042, T045.
+- [X] T044 [P] Extend `tests/unit/test_image_validity_layers.py`: a 3:2 flag slot passes; a square flag slot is refused with a message naming field, class, expected aspect and found aspect; a 3:2 track slot is refused; **a slot at 120.00001 × 80 passes**, which is the tolerance case a naive implementation fails.
+- [X] T045 Implement the per-class aspect check inside `CatalogueLayer` (Layer 2) in `src/services/image_validity_service.py`: for each image field the catalogue names, compare the slot's declared width÷height against `ASSET_CLASS_ASPECTS` within a **1% relative tolerance**, raising a problem on mismatch. Defer to the existing fault where a slot declares no usable dimensions rather than dividing by zero. Depends on T005, T044.
+- [X] T046 Extend Layer 2 to refuse a template of any type but the calendar and the check-in graphic that declares a track-class field, naming the field (FR-009). Cover in `tests/unit/test_image_validity_layers.py`. Depends on T022, T045.
+- [X] T047 Assert every one of the fifteen packaged templates passes the aspect check for every image field it declares, in `tests/unit/test_packaged_resources.py`. This is what catches a missed re-geometry from T024 or T025. Depends on T024, T025, T041, T042, T045.
 
 ---
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T048 [P] Correct the country examples in `docs/wip-specs/image_module_specification.md` per research R-001: `Great Britain` → `United Kingdom`, `united_states.svg` → `united_states_of_america.svg`. The rule is right; the illustration contradicts the seed.
-- [ ] T049 [P] Correct the same examples in `.specify/memory/constitution.md` Rule 13 — **via `/speckit-constitution`, never by hand**. The version does not move: v5.0.0 is unmerged, and this is the same increment.
-- [ ] T050 [P] Correct the same examples in `specs/044-track-imagery-split/spec.md` (SC-001 and the edge cases).
-- [ ] T051 Run the full `quickstart.md` validation end to end, PNG verification included.
-- [ ] T052 Run `pytest tests/ -q` and compare against T001's baseline. The suite is expected to pass in full.
-- [ ] T053 Invoke the **`close-out`** skill. This increment changes what a league sees, so `README.md` and `resources/README.md` both need bringing into step: the country-keyed naming rule, the rename callout for a league holding an adjective-keyed folder, the two `mystery.svg` files, which graphics draw which class, and the per-class aspect rule. Neither was updated earlier, deliberately — until now the behaviour was not built.
+- [X] T048 [P] Correct the country examples in `docs/wip-specs/image_module_specification.md` per research R-001: `Great Britain` → `United Kingdom`, `united_states.svg` → `united_states_of_america.svg`. The rule is right; the illustration contradicts the seed.
+- [X] T049 [P] Correct the same examples in `.specify/memory/constitution.md` Rule 13 — **via `/speckit-constitution`, never by hand**. The version does not move: v5.0.0 is unmerged, and this is the same increment.
+- [X] T050 [P] Correct the same examples in `specs/044-track-imagery-split/spec.md` (SC-001 and the edge cases).
+- [X] T051 Run the full `quickstart.md` validation end to end, PNG verification included.
+- [X] T052 Run `pytest tests/ -q` and compare against T001's baseline. The suite is expected to pass in full.
+- [X] T053 Invoke the **`close-out`** skill. This increment changes what a league sees, so `README.md` and `resources/README.md` both need bringing into step: the country-keyed naming rule, the rename callout for a league holding an adjective-keyed folder, the two `mystery.svg` files, which graphics draw which class, and the per-class aspect rule. Neither was updated earlier, deliberately — until now the behaviour was not built.
 
 ---
 

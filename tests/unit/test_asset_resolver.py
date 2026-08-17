@@ -348,3 +348,42 @@ def test_a_resolved_asset_is_written_as_a_uri_not_a_path(flags):
     href = out.find(".//{http://www.w3.org/2000/svg}image").get("href")
 
     assert href.startswith("file:///"), "the rasteriser cannot resolve a bare path"
+
+
+# --------------------------------------------------------------------------
+# Per-class aspect table (044, Constitution XIV.6)
+# --------------------------------------------------------------------------
+
+def test_every_asset_class_declares_an_aspect():
+    """A class added later must not silently escape the aspect check.
+
+    The check reads ASSET_CLASS_ASPECTS by class; a class present in the directory
+    table but absent here would be validated against nothing at all.
+    """
+    from models.image_constants import ASSET_CLASS_ASPECTS, ASSET_CLASS_DIRECTORIES
+
+    missing = set(ASSET_CLASS_DIRECTORIES) - set(ASSET_CLASS_ASPECTS)
+    assert not missing, f"asset classes with no declared aspect: {sorted(missing)}"
+
+    extra = set(ASSET_CLASS_ASPECTS) - set(ASSET_CLASS_DIRECTORIES)
+    assert not extra, f"aspects declared for unknown classes: {sorted(extra)}"
+
+
+def test_the_flag_class_is_three_by_two_and_the_track_class_square():
+    """The two classes deliberately differ; the constraint is within a class."""
+    from models.image_constants import ASSET_CLASS_ASPECTS
+
+    assert ASSET_CLASS_ASPECTS["flag"] == pytest.approx(1.5)
+    assert ASSET_CLASS_ASPECTS["track"] == pytest.approx(1.0)
+    assert ASSET_CLASS_ASPECTS["flag"] != ASSET_CLASS_ASPECTS["track"]
+
+
+def test_the_aspect_tolerance_admits_authoring_noise_and_catches_a_square_flag():
+    from models.image_constants import ASSET_ASPECT_TOLERANCE, ASSET_CLASS_ASPECTS
+
+    flag = ASSET_CLASS_ASPECTS["flag"]
+    authored = 120.00001 / 80          # what Inkscape actually writes
+    square = 120 / 120                 # a slot left at the track class's shape
+
+    assert abs(authored - flag) / flag <= ASSET_ASPECT_TOLERANCE
+    assert abs(square - flag) / flag > ASSET_ASPECT_TOLERANCE

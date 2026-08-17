@@ -177,7 +177,7 @@ async def render_forecast(
         config = await bot.image_config_service.get_config(server_id)
         directories: dict[str, Path] = {}
         for asset_class, column in (
-            ("track", "track_image_directory"),
+            ("flag", "flag_directory"),
             ("weather", "weather_icon_directory"),
         ):
             try:

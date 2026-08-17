@@ -278,7 +278,7 @@ def test_the_team_image_is_resolved_from_the_team_name():
 def test_a_recorded_nationality_resolves_a_flag():
     root = _template(1, _QUALIFYING_ROW)
     spec = build_fill_spec(_drawing(QUALIFYING_TEMPLATE_KEY, [_entry(1)]), root)
-    assert spec.image_data["row_1_driver_flag"] == ("flag", "British")
+    assert spec.image_data["row_1_driver_flag"] == ("flag", "United Kingdom")
 
 
 def test_an_absent_nationality_the_league_collects_is_an_ordinary_emptied_field():

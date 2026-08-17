@@ -270,3 +270,24 @@ def test_a_verdict_preview_needs_no_team_configuration():
     source = inspect.getsource(image_cog)
     guard = source.split("needs_teams = {", 1)[1].split("}", 1)[0]
     assert "verdicts_template" not in guard
+
+
+def test_every_sample_nationality_maps_to_a_country():
+    """The test renders must resolve country-named flag files (044, T014).
+
+    The fabricated drivers feed nationalities through the drawing services, which
+    map them to countries. A nationality added here that the map does not carry
+    would silently draw the flag directory's fallback on every test render.
+    """
+    from services.image_sample_data import SAMPLE_LINEUP_NATIONALITIES
+    from utils.country_data import NATIONALITY_COUNTRIES, country_for_nationality
+
+    for nationality in SAMPLE_LINEUP_NATIONALITIES:
+        assert nationality in NATIONALITY_COUNTRIES, (
+            f"sample nationality {nationality!r} has no country"
+        )
+        assert country_for_nationality(nationality)
+
+    # The "Other" case is deliberately present, and is not a country.
+    assert "Other" in SAMPLE_LINEUP_NATIONALITIES
+    assert country_for_nationality("Other") == "Other"

@@ -15,20 +15,31 @@ with `/images config <directory>`.
 | `weather/` | `/images config weather-icon-directory` | 64 × 64 |
 | `tyres/` | `/images config tyre-directory` | 64 × 64 |
 
+`tracks/` holds **circuit maps**, and only the calendar and check-in graphics draw from it.
+Every other graphic pictures a round with its country flag from `flags/`, which serves a
+driver's flag and a round's alike.
+
+**The aspect in this table is per class and is enforced.** Every slot of a class carries it
+on every template — flags 3:2, everything else 1:1 — and the bot refuses a template whose
+slot is the wrong shape for its class. You author one file per value, so a class serving
+two shapes would letterbox that file somewhere with no artwork able to fix it. The two
+classes need not match each other, and flags and maps deliberately do not.
+
 ## What ships here, and what does not
 
 **Shipped:**
 
 - the fifteen default templates in `templates/`, one per image type;
 - one `fallback.svg` in each asset directory;
-- `tracks/mystery.svg`, drawn for a round whose track is concealed until it is run;
+- `tracks/mystery.svg` and `flags/mystery.svg`, drawn for a round whose track — and with it
+  its country — is concealed until it is run;
 - `markers/gained.svg`, `markers/lost.svg` and `markers/unchanged.svg`, the three directions
   a standing position can move;
 - the eight `weather/` icons — `sunny.svg`, `mixed.svg` and `rain.svg` for the type of
   weather drawn for a session, and `clear.svg`, `light_cloud.svg`, `overcast.svg`,
   `wet.svg` and `very_wet.svg` for a concrete weather within one.
 
-**Not shipped:** the assets for any particular track, team, driver, nationality or tyre.
+**Not shipped:** the assets for any particular circuit, team, driver, country or tyre.
 Those are a league's own, and the module exists to let each league bring its own design
 language rather than inherit one.
 
@@ -58,6 +69,13 @@ So `Red Bull Racing` is looked up as `teams/red_bull_racing.svg`, and `São Paul
 `tracks/sao_paulo.svg`. Driver portraits are the one exception: they are keyed on the
 Discord user ID, so a portrait does not go missing when a driver changes their nickname.
 
+**Flags are keyed on a country**, never on a nationality. A driver who signed up as `British`
+draws `flags/united_kingdom.svg` — the bot maps the nationality to its country first — and a
+round draws the flag of the country its circuit sits in, so every circuit in one country
+shares one file. Spell the country as the bot's track list spells it: `United Kingdom`, not
+`Great Britain`; `United States of America`, not `United States`. `Other`, recorded for a
+driver who gave no nationality, is not a country and keeps `flags/other.svg`.
+
 ## `fallback.svg`
 
 When the file for a specific value is not there, the bot draws that directory's
@@ -77,14 +95,16 @@ any league's palette. Two things to keep if you do:
   any would render differently from one machine to the next. The shipped ones are pure
   vector for that reason.
 
-## `tracks/mystery.svg`
+## `mystery.svg`
 
-A Mystery round records no track, so there is no name to look one up by. The bot draws this
-file instead, and writes "Mystery GP" where the grand prix name belongs — a Mystery round
-appears on a calendar like any other round, marked as such, and never leaves a hole.
+A Mystery round records no track, so there is no name to look one up by — and no country
+either, the one being read from the other. The bot draws `tracks/mystery.svg` where a circuit
+map belongs and `flags/mystery.svg` where a round's flag belongs, and writes "Mystery GP"
+where the grand prix name belongs — a Mystery round appears like any other round, marked as
+such, and never leaves a hole.
 
-It is a reserved name in the same way `fallback.svg` is: replace the artwork freely, but keep
-the filename, the aspect, and the no-text rule above.
+It is a reserved name in the same way `fallback.svg` is, in **both** directories: replace the
+artwork freely, but keep the filename, the aspect, and the no-text rule above.
 
 ## Authoring your own assets
 

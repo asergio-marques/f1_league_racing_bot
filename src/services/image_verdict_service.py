@@ -22,6 +22,7 @@ from pathlib import Path
 from models.image_catalogues import catalogue_for
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
+from utils.country_data import country_for_nationality
 
 TEMPLATE_KEY = "verdicts_template"
 
@@ -232,7 +233,7 @@ def build_fill_spec(
     place("driver_name", drawing.driver_name)
     if "driver_flag" in declared:
         if drawing.driver_nationality:
-            image_data["driver_flag"] = ("flag", str(drawing.driver_nationality))
+            image_data["driver_flag"] = ("flag", country_for_nationality(drawing.driver_nationality))
         else:
             remove.append("driver_flag")
 

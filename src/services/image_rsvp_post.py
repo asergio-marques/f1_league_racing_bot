@@ -107,13 +107,19 @@ async def try_attach(
             time_zone=getattr(config, "time_zone", None),
         )
 
+        # The check-in graphic may draw both imagery classes, so both directories are
+        # resolved (044). Each answers its own miss with its own fallback.
         directories: dict[str, Path] = {}
-        try:
-            directories["track"] = resolve_within_project_root(
-                config.track_image_directory
-            )
-        except Exception:  # noqa: BLE001
-            pass
+        for asset_class, column in (
+            ("track", "track_image_directory"),
+            ("flag", "flag_directory"),
+        ):
+            try:
+                directories[asset_class] = resolve_within_project_root(
+                    getattr(config, column)
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
         decision = await bot.image_render_service.render_for_posting(
             server_id,

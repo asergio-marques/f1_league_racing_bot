@@ -108,8 +108,10 @@ per division, not per server, so a league with three divisions sets three of eac
 
 **Two bits of data worth sorting early**, because they show up on several pictures:
 
-- **Driver nationalities**, which is where the little flags come from. A driver who never gave
-  one is recorded as "Other" and gets the "Other" flag.
+- **Driver nationalities**, which is where the little flags come from. The bot turns a
+  nationality into a **country** and looks the flag up under that, so `British` draws
+  `united_kingdom.svg`. A driver who never gave one is recorded as "Other" and gets the
+  "Other" flag.
 - **Your team list**, which the lineup picture is built around entirely. See the warning in
   step 5.
 
@@ -143,20 +145,37 @@ look for.
 
 ## Step 4 — Put in your own artwork
 
-There are seven folders of artwork. Each starts with a single plain grey placeholder, and you
-replace them a folder at a time.
+There are seven folders of artwork. Each starts with a plain grey placeholder, and you replace
+them a folder at a time. Three arrive with more than that: the arrows and weather symbols come
+complete, and the track and flag folders each carry a `mystery.svg` as well.
 
 The bot looks in these folders unless you point it somewhere else:
 
 | Command to move the folder | Starts as | Holds | Size to draw at |
 |---|---|---|---|
-| `/images config track-image-directory` | `resources/tracks` | Circuit pictures | 120 × 120 |
+| `/images config track-image-directory` | `resources/tracks` | Circuit maps — calendar and check-in only | 120 × 120 |
 | `/images config team-image-directory` | `resources/teams` | Team badges | 120 × 120 |
 | `/images config driver-image-directory` | `resources/drivers` | Driver photos | 120 × 120 |
-| `/images config flag-directory` | `resources/flags` | Nationality flags | 120 × 80 |
+| `/images config flag-directory` | `resources/flags` | Country flags — drivers **and** rounds | 120 × 80 |
 | `/images config marker-directory` | `resources/markers` | Up/down arrows for standings | 64 × 64 |
 | `/images config weather-icon-directory` | `resources/weather` | Weather symbols | 64 × 64 |
 | `/images config tyre-directory` | `resources/tyres` | Tyre compounds | 64 × 64 |
+
+### Which pictures use which folder
+
+Worth knowing before you start drawing, because it decides how much artwork you actually need:
+
+- **Country flags** appear on nearly everything — beside a driver's name, and above a round on
+  the standings, the attendance sheet and the weather forecasts.
+- **Circuit maps** appear on the **calendar** and the **check-in call** only. Everywhere else a
+  round is a narrow column heading, too small for a circuit outline to read, so it gets the flag.
+
+On those two pictures a round can carry the flag, the map, both, or neither — that is decided by
+the drawing file, not by a setting, so it belongs to step 5 rather than here. The packaged
+calendar and check-in files show both.
+
+One flag serves every circuit in the same country, so three American rounds need one file, not
+three.
 
 ### Naming the files
 
@@ -170,9 +189,9 @@ called **São Paulo** needs **`sao_paulo.svg`**.
 
 | Folder | The filename comes from |
 |---|---|
-| Circuit pictures | The track's **name** — not its short track ID |
+| Circuit maps | The track's **name** — not its short track ID |
 | Team badges | The team's name |
-| Nationality flags | The nationality itself — `british.svg`. A driver who gave none needs `other.svg` |
+| Country flags | The **country** — `united_kingdom.svg`. Never the nationality: `british.svg` is not looked for. A driver who gave none needs `other.svg` |
 | Driver photos | The driver's **Discord user ID number**, so their photo does not vanish when they change their nickname |
 | Arrows and weather | Fixed names the bot already uses — these come complete, just replace the pictures |
 | Tyre compounds | The compound name — `soft.svg` |
@@ -209,9 +228,9 @@ will not post a card with a hole in it. That one spare file in each folder is wh
 half-finished set of artwork from stopping your pictures, which matters most at the start, when
 most of your artwork does not exist yet.
 
-Two filenames are spoken for: `fallback.svg`, and `mystery.svg` in the track folder, used for a
-round whose track is kept secret. Both come with the bot. Replace the pictures if you like, but
-keep the names.
+Two filenames are spoken for: `fallback.svg`, and `mystery.svg` — the latter in **both** the
+track folder and the flag folder, used for a round whose track, and so whose country, is kept
+secret. All of them come with the bot. Replace the pictures if you like, but keep the names.
 
 ---
 
@@ -262,6 +281,19 @@ can find them.
 > One more thing: while lineup pictures are switched on, **every division must field the same
 > teams with the same number of seats**, because one drawing file serves them all. Switch the
 > lineup off and that requirement goes away.
+
+> **Deciding how a round is pictured is a drawing-file job.** On the calendar and the check-in
+> call, the flag blank and the circuit-map blank are separate and both optional: keep both, drop
+> one, or drop both, and the calendar decides it round by round. The files that come with the bot
+> keep both, so you can see each and delete what you do not want. The other pictures get the flag
+> and have no map blank to give them — a drawing file that adds one is refused.
+
+> **A blank has to be the right shape for what goes in it.** Flag blanks are 3:2 and every other
+> kind is square. The bot refuses a drawing file whose blank is the wrong shape, and tells you
+> which blank, what shape it wanted and what it found — because it never stretches or pads a
+> picture to fit, so a wrongly shaped blank would smear every flag you ever draw into it and no
+> artwork of yours could put it right. The rule and the sizes are in
+> [main README](../../README.md#image-module).
 
 > **The weather drawings have a minimum.** Phases 2 and 3 each have two versions — one for sprint
 > weekends, one for everything else — because a sprint weekend has more sessions to show. If a

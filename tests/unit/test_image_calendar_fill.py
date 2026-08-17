@@ -266,3 +266,62 @@ def test_template_declaring_no_round_is_fatal_at_projection():
     etree.SubElement(root, f"{{{SVG_NS}}}text").set("id", "division_name")
     with pytest.raises(CalendarDataError, match="declares no `round`"):
         build_fill_spec(_draw([_round(1)]), root)
+
+
+# --------------------------------------------------------------------------
+# 044 — the two round imagery classes
+# --------------------------------------------------------------------------
+
+def _spec_for_ids(image_ids, *, country="United Kingdom",
+                  track="Silverstone Circuit", mystery=False):
+    """A one-round calendar whose round declares *image_ids* and nothing else extra."""
+    root = _template(1)
+    for image_id in image_ids:
+        node = etree.SubElement(root, f"{{{SVG_NS}}}image")
+        node.set("id", image_id)
+        node.set("y", "1")
+    tracks = {track: NS(name=track, gp_name="A Grand Prix", country=country)}
+    drawing = resolve_drawing(
+        division_name="Elite",
+        division_tier=1,
+        season_number=3,
+        rounds=[_round(1, "MYSTERY" if mystery else "NORMAL", track)],
+        tracks=tracks,
+    )
+    return build_fill_spec(drawing, root)
+
+
+def test_a_round_declaring_both_draws_both():
+    spec = _spec_for_ids(["round_1_flag", "round_1_image"])
+    assert spec.image_data["round_1_flag"] == ("flag", "United Kingdom")
+    assert spec.image_data["round_1_image"] == ("track", "Silverstone Circuit")
+
+
+def test_a_round_declaring_only_the_flag_draws_only_the_flag():
+    spec = _spec_for_ids(["round_1_flag"], country="Brazil")
+    assert spec.image_data["round_1_flag"] == ("flag", "Brazil")
+    assert "round_1_image" not in spec.image_data
+
+
+def test_a_round_declaring_only_the_map_draws_only_the_map():
+    spec = _spec_for_ids(["round_1_image"])
+    assert spec.image_data["round_1_image"] == ("track", "Silverstone Circuit")
+    assert "round_1_flag" not in spec.image_data
+
+
+def test_a_round_declaring_neither_draws_neither_and_raises_nothing():
+    spec = _spec_for_ids([])
+    assert "round_1_flag" not in spec.image_data
+    assert "round_1_image" not in spec.image_data
+
+
+def test_a_mystery_round_resolves_each_class_from_its_own_directory():
+    """The concealed round takes the ``Mystery`` literal in both classes.
+
+    Each resolves its own directory's ``mystery.svg``; neither is emptied and
+    neither raises. The track directory's file already ships; the flag
+    directory's is added by this increment.
+    """
+    spec = _spec_for_ids(["round_1_flag", "round_1_image"], mystery=True)
+    assert spec.image_data["round_1_flag"] == ("flag", "Mystery")
+    assert spec.image_data["round_1_image"] == ("track", "Mystery")

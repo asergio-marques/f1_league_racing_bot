@@ -24,6 +24,7 @@ from typing import Mapping, Sequence
 
 from models.image_catalogues import RESERVE_KEY, LineupBinding, catalogue_for
 from utils.asset_resolver import normalise
+from utils.country_data import country_for_nationality
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
 
@@ -165,8 +166,9 @@ def _seat_of(
         seat_number=seat_number,
         driver_name=name,
         # Resolved from the *datum*; the file is found, fallen back on, or fatal, by the
-        # ordinary rule of Constitution XIV.13.
-        flag_datum=str(nationality).strip() if has_nationality else None,
+        # ordinary rule of Constitution XIV.13. The datum is the driver's **country**,
+        # not their nationality: one flag directory serves a driver and a round alike.
+        flag_datum=country_for_nationality(nationality),
         portrait_datum=key,
         occupied=True,
         flag_missing=not has_nationality and nationality_collected,
