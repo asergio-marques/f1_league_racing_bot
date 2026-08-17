@@ -213,6 +213,11 @@ These hold for every image type of the module and are stated here rather than re
 
 ### Images placed on a graphic
 - An image file shall be authored at exactly the aspect of the slot it is placed into, padded with transparent margins where the subject of the image does not fill that aspect.
+- One class of image carries one aspect, and every slot of that class carries it, on every template of every kind. A league authors one file per datum of a class, and a class serving slots of two aspects would letterbox that one file wherever it did not match, which no authoring can answer.
+    - A country flag is drawn at 3:2, and every flag slot of every template carries that aspect, whether the flag stands for a driver or for a round.
+    - A track map is drawn at 1:1, and every track map slot of every template carries that aspect.
+    - The two classes do not share an aspect with each other, and are not required to. A template drawing both places two slots of differing shape, which is the business of whoever authors it.
+- A template declaring a slot of a class at an aspect other than that of the class is invalid and shall be refused, the offending field being named.
 - An image whose aspect differs from that of its slot is letterboxed, and the converter fills the resulting band by carrying the outermost pixels of the image outward rather than leaving it transparent, so that a border or a background colour at the edge of the image is drawn across the band. The module does not pad an image at generation.
 - An image file shall be referenced by the graphic as a URI. A filesystem path is not one, and a path so referenced is resolved to nothing by the converter and drawn as a broken-image mark.
 
@@ -225,7 +230,7 @@ These hold for every image type of the module and are stated here rather than re
     - it is not found and the directory holds a fallback, whereupon the fallback is placed upon the field and a non-fatal error reported, naming the field and the datum that had no file of its own;
     - it is not found and the directory holds no fallback, whereupon the error is fatal and the generation is abandoned.
 - These outcomes supersede any statement elsewhere in this document that a field is removed, or an error withheld, for want of a matching asset file. A statement of that kind continues to govern the case of an absent datum, where no asset is sought at all.
-- A fallback image is bound by the rules above as any other image is: plain SVG, authored at the aspect of the slot it fills, never padded at generation. Where one class serves slots of differing aspects, its fallback shall be authored to the aspect its ordinary assets carry.
+- A fallback image is bound by the rules above as any other image is: plain SVG, authored at the aspect of the slot it fills, never padded at generation. One class carrying one aspect, its fallback is authored to that aspect as every other file of the class is.
 - A datum whose normalized form is "fallback" resolves to the fallback file. No further provision is made against this.
 - An absent datum is not a missing file, and no asset is sought for one. A catalogue below may nonetheless state, for a named image field, that an absent datum shall draw the fallback of its class, whereupon the fallback is drawn and no error whatsoever is reported: it stands for the absence itself and not for a file that should have existed. Where the directory holds no fallback the statement is inert and the field is removed as its catalogue declares it. The statement is made field by field and never for a class as a whole, a tyre that was never recorded being worth depicting where a seat that no driver occupies is not.
 
@@ -235,6 +240,8 @@ These hold for every image type of the module and are stated here rather than re
     - the map of the track of the round, searched for in the directory configured via "images config track-image-directory".
 - A field of the track image class shall be declared only by the calendar graphic and by the check-in graphic. Every other graphic drawing imagery for a round draws the country flag and nothing else. A template of any other kind declaring a track image field is invalid and shall be refused.
 - A calendar or check-in template may declare either field, both, or neither, each being optional and each removable on its own terms.
+    - The calendar makes that choice for each round of its grid separately, one round drawing both where another draws one or neither, the two fields of a round bearing its ordinal as every other field of it does.
+- The templates packaged with the module for the calendar and for the check-in graphic shall each declare both fields, so that a league sees the two classes drawn from the first render and has a working example of each to author against.
 - A field is named for the class it draws. A field drawing a country flag carries the "_flag" suffix a driver's flag already carries; a field drawing a track map carries the "_image" suffix.
 
 ### The country a flag stands for

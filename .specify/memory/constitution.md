@@ -6,6 +6,19 @@ SYNC IMPACT REPORT
   Bump rationale    : MAJOR, and the first since v4.0.0. Two changes to Rule 13 are backward
                       incompatible, and either alone would carry the bump.
 
+                      **Rule 6 was extended after this entry was first written, and the version was
+                      deliberately not bumped to 5.0.1.** Per-class aspect uniformity was found
+                      while specifying 044: converting four templates' round headings from the track
+                      class to the flag class means re-geometrying those slots, and Rule 6 was
+                      silent on whether a class holds one aspect across templates. The author ruled
+                      that v5.0.0 absorbs it, the branch being unmerged — the same reasoning v4.8.0
+                      recorded for 043 ("one increment, one version ... the branch is not merged, so
+                      nothing had ever read a version between this one and v4.7.0"), and the same
+                      that 037 through 042 each took. **No reader has seen a v5.0.0 without the Rule
+                      6 paragraphs**, so there is no version for a 5.0.1 to distinguish itself from.
+                      The extension is a clarification in its own right and would have been PATCH
+                      had it stood alone; it does not disturb the MAJOR reasoning below.
+
                       **The flag class is rekeyed.** A driver's flag resolved by the nationality
                       adjective — `British` to `british.svg` — and now resolves by the country of
                       that nationality, `great_britain.svg`. A flag directory that was **complete
@@ -90,8 +103,23 @@ SYNC IMPACT REPORT
                                               stated, put to the author as such, and **confirmed**;
                                               it is a rule of this version on the same footing as
                                               the rest.
+                      - Aspect uniformity     → **within a class, never across two**. Raised while
+                                              specifying 044. A class holds one aspect on every
+                                              template of every kind — a flag is 3:2 whether it
+                                              stands for a driver or a round, a map is 1:1 — and the
+                                              two classes are **not** brought into line with each
+                                              other. A first reading that the two should share one
+                                              aspect was put to the author and corrected. Rule 6 was
+                                              silent on the point and now states it.
 
-  Modified sections : - Principle XIV, Rule 13 — three subsections added before the Rationale: the
+  Modified sections : - Principle XIV, Rule 6 — three paragraphs added after the aspect-authoring
+                        paragraph: one class carries one aspect on every template and Layer 2
+                        refuses a slot declared at another; the rationale that per-class files and
+                        a non-padding generator are only reconcilable if the class is uniform; and
+                        that two classes need not match each other, flags at 3:2 and maps at 1:1
+                        deliberately differing. The aspect a class carries is left to the asset
+                        documentation rather than fixed here.
+                      - Principle XIV, Rule 13 — three subsections added before the Rationale: the
                         two classes and which types may declare the map; the flag class keyed by
                         country, with the nationality-to-country map and the `Other` carry-through;
                         `mystery.svg` reserved in the flag directory; and the per-class fallback.
@@ -3874,6 +3902,26 @@ be authored at exactly the aspect ratio of the slot they fill, padded with trans
 by their author where the subject does not fill that aspect. The generator MUST NOT pad or
 letterbox an asset. A league supplying its own assets is bound by the same requirement, and
 the module MUST document it wherever asset upload is offered.
+
+**One class carries one aspect, and every slot of that class MUST carry it — on every template,
+of every image type.** A template declaring a slot of a class at any other aspect is invalid, and
+Layer 2 MUST refuse it, naming the offending field.
+
+**Rationale**: a league authors **one file per datum of a class**, and the rule above forbids the
+generator to pad. A class serving slots of two aspects would therefore letterbox that one file
+wherever it did not match, and no artwork a league could supply would answer it — the same
+`great_britain.svg` cannot be correct in a 3:2 slot and a 1:1 one at once. Per-slot authoring
+(the paragraph above) and per-class files are only reconcilable if the class is uniform, so this
+is that rule carried to its conclusion rather than a second one.
+
+**Two classes need not match each other, and the flag and track classes deliberately do not.**
+A country flag is drawn at 3:2 and a circuit map at 1:1, wherever each appears. A template drawing
+both — which only the calendar and the check-in graphic may (Rule 13) — places two slots of
+differing shape, and that is the business of whoever authors it. The constraint is *within* a
+class, never *across* two.
+
+The aspect a class carries is not fixed by this Principle. It belongs to the asset documentation a
+league reads, and changing one is a change to every template declaring that class's slots.
 
 An asset MUST be referenced by an href that is a **URI**. A bare filesystem path is not one: the
 rasteriser resolves it to nothing and draws a broken-image mark, which no render-time check
