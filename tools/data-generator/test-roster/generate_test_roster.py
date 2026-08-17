@@ -10,6 +10,8 @@ roster across them, then writes:
   - commands.txt  (always, beside this script) — one ready-to-paste command per driver
   - roster.csv    (only with --record, in tools/data-generator/) — the ID / name / team /
     division mapping, for the sibling generator scripts to consume
+  - teams.txt     (only with --record, in tools/data-generator/) — the team names alone,
+    because a team whose seats both went empty has no row in the CSV to be found by
 
 Nothing here touches the database or needs a running bot. The synthetic IDs simply
 mirror the convention in src/services/test_roster_service.py, so the CSV lines up with
@@ -36,6 +38,7 @@ COMMANDS_PATH = SCRIPT_DIR / "commands.txt"
 NAMES_PATH = SCRIPT_DIR / "names.txt"
 CSV_PATH = DATA_DIR / "roster.csv"
 CSV_BACKUP_PATH = DATA_DIR / "roster_old.csv"
+TEAMS_PATH = DATA_DIR / "teams.txt"
 
 # ─── Generation rules ────────────────────────────────────────────────────────
 
@@ -262,9 +265,14 @@ def format_command(row):
 # ─── Output ──────────────────────────────────────────────────────────────────
 
 def confirm_overwrite(read_line=input):
-    """Ask whether the existing CSV may be replaced. Only an explicit yes passes."""
+    """Ask whether the existing CSV may be replaced. Only an explicit yes passes.
+
+    One question covers both recorded files: they describe the same roster and are
+    written together, so consenting to one is consenting to the other.
+    """
     print(f"\n{CSV_PATH} already exists.")
-    print(f"Overwriting it will move the current file to {CSV_BACKUP_PATH.name}.")
+    print(f"Overwriting it will move the current file to {CSV_BACKUP_PATH.name}, ")
+    print(f"and replace {TEAMS_PATH.name} alongside it.")
     answer = read_line("Overwrite? [y/N]: ")
     return answer.strip().casefold() in ("y", "yes")
 
@@ -281,6 +289,20 @@ def write_csv(roster):
         writer = csv.writer(handle)
         writer.writerow(CSV_HEADERS)
         writer.writerows(roster)
+
+
+def write_teams(teams):
+    """Write the team names to TEAMS_PATH, one per line, in input order.
+
+    The CSV cannot answer "which teams exist" on its own: it lists drivers, so a team
+    whose two seats both came out empty leaves no row behind. Those are precisely the
+    teams the bot ranks first when it hands out reserves, so a sibling that distributes
+    them needs the list itself rather than the names it can infer from the drivers.
+
+    The reserve team is left out. It is added to every division by the bot rather than
+    named here, and it is never a candidate to receive a reserve.
+    """
+    TEAMS_PATH.write_text("\n".join(teams) + "\n", encoding="utf-8")
 
 
 def write_commands(roster):
@@ -340,6 +362,7 @@ def main(argv=None):
 
     if args.record:
         write_csv(roster)
+        write_teams(teams)
 
     print(
         f"\n{len(roster)} drivers across {len(divisions)} division(s) "
@@ -348,6 +371,7 @@ def main(argv=None):
     print(f"Commands written to {COMMANDS_PATH}")
     if args.record:
         print(f"Roster written to {CSV_PATH}")
+        print(f"Teams written to {TEAMS_PATH}")
     return 0
 
 

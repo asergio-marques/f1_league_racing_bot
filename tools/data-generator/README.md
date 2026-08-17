@@ -9,8 +9,9 @@ produce **text**, and the bot does the real work when you paste it in.
 
 | Script | Generates | Reads | Writes |
 |---|---|---|---|
-| `test-roster/generate_test_roster.py` | drivers, teams and divisions | `test-roster/names.txt` | `roster.csv`, `test-roster/commands.txt` |
+| `test-roster/generate_test_roster.py` | drivers, teams and divisions | `test-roster/names.txt` | `roster.csv`, `teams.txt`, `test-roster/commands.txt` |
 | `check-in-data/generate_check_in_data.py` | RSVP check-ins and revisions | `roster.csv` | `check-in-data/<slug>_initial.txt`, `check-in-data/<slug>_changed.txt` |
+| `results-data/generate_results_data.py` | a round's session results | `roster.csv`, `teams.txt`, `check-in-data/<slug>_*.txt` | `results-data/<slug>_<stamp>_<n>_<stage>_<session>.txt` |
 
 ## `roster.csv` — the shared contract
 
@@ -38,6 +39,26 @@ lining up with the roster actually loaded into the bot.
 
 Generated output is gitignored. Only the scripts are tracked, so a roster is a local working
 file and never lands in a commit.
+
+## `teams.txt` — the other half of the contract
+
+Written beside `roster.csv` by the same `--record` run, one team name per line in the order
+they were typed:
+
+```
+Alpine
+Aston Martin
+Audi
+```
+
+**The CSV cannot answer "which teams exist".** It lists drivers, so a team whose two seats
+both came out empty leaves no row behind it — and those are precisely the teams the bot puts
+*first* in line when it hands out reserves. A generator that inferred the team list from the
+driver rows would never see them, and would distribute reserves differently from the bot
+while looking entirely correct.
+
+`Reserve` is not in the file. The bot adds it to every division itself, and it is never a
+team that can receive a reserve.
 
 ## `test-roster/generate_test_roster.py`
 
@@ -99,13 +120,16 @@ A missing or empty `names.txt` stops the run before it asks you anything, so you
 part-way through a set of answers when it fails.
 
 **`--record`.** Without it, only `commands.txt` is written and this directory is untouched.
-With it, `roster.csv` is written too. If a `roster.csv` is already there you are asked to
-confirm; the existing file is moved to `roster_old.csv` and replaced, keeping one generation
-of history.
+With it, `roster.csv` and `teams.txt` are written too. If a `roster.csv` is already there you
+are asked to confirm; the existing file is moved to `roster_old.csv` and replaced, keeping one
+generation of history. `teams.txt` is replaced outright — it is three lines of names that the
+CSV beside it can always be regenerated with, so a backup of it would only be one more file to
+keep in step.
 
 > Answering anything but yes aborts the run **entirely** — `commands.txt` is left alone as
-> well, not just the CSV. The two files always describe the same roster, so a refused
-> overwrite leaves the pair consistent rather than half-updated.
+> well, not just the recorded pair. One question covers all three files because they describe
+> one and the same roster, so a refused overwrite leaves them consistent rather than
+> half-updated.
 
 ## `check-in-data/generate_check_in_data.py`
 
@@ -184,6 +208,106 @@ the same slug get a numbered suffix rather than one overwriting the other.
 
 Unlike `roster.csv`, these files are replaced without asking and without a backup. They are
 per-run output, not a contract anything else reads — regenerate them as often as you like.
+
+## `results-data/generate_results_data.py`
+
+Run it from the repo root:
+
+```
+python tools/data-generator/results-data/generate_results_data.py
+```
+
+It asks two questions — which divisions to cover, and whether the round is a normal or a
+sprint one — and writes one file per session of that round beside itself:
+
+```
+normal round                            sprint round
+<slug>_<stamp>_1_feature_quali.txt      <slug>_<stamp>_1_sprint_quali.txt
+<slug>_<stamp>_2_feature_race.txt       <slug>_<stamp>_2_sprint_race.txt
+                                        <slug>_<stamp>_3_feature_quali.txt
+                                        <slug>_<stamp>_4_feature_race.txt
+```
+
+The number is the order the bot asks for the sessions in, so the files paste in the order
+they are named.
+
+**The stamp is the moment the run started**, as `20260817_091538`, and every file a run
+writes carries the same one — the run prints it when it finishes. It sits between the
+division and the session so that a directory sorts each run's output together, and so that
+successive runs sit side by side instead of overwriting one another, which is what tells one
+run's data from another's. Nothing is ever cleaned up for you: delete the runs you are done
+with.
+
+Each file holds nothing but result lines, in the format the round-results wizard expects —
+`Position, Driver, Team, Tyre, Best Lap, Gap` for a qualifying session and
+`Position, Driver, Team, Total Time, Fastest Lap, Time Penalties` for a race:
+
+```
+1, <@9000000000000000017>, @Red Bull, Soft, 1:11.606, N/A
+2, <@9000000000000000009>, @Ferrari, Soft, 1:11.645, +0.039
+3, <@9000000000000000023>, @Haas, N/A, DNF, N/A
+```
+
+```
+1, <@9000000000000000017>, @Red Bull, 46:23.569, 1:14.523, 0.000
+2, <@9000000000000000009>, @Ferrari, +5.321, 1:14.232, 3.000
+3, <@9000000000000000023>, @Haas, +1 Lap, 1:15.011, 0.000
+```
+
+**The winner's race time is absolute and everyone else's is a gap to it.** That is how a
+classification is read, and how the bot reconstructs the times: it takes the first absolute
+entry as its reference and adds each delta back onto it, so only the leader may carry one.
+A gap past a minute is written `+1:09.321` rather than `+69.321` — both parse, but only one
+is what a timing screen shows.
+
+**The team is a name, not a tag.** The driver is a raw `<@ID>` because that is a mention
+already, but a role has no such form that survives being typed out, so `@Red Bull` is left for
+Discord to resolve as you paste. Everything else is exactly what the wizard parses.
+
+**It reads the check-in files, so results follow the RSVPs.** `<slug>_initial.txt` with
+`<slug>_changed.txt` applied over it decides who was expected; a driver in neither never
+answered. Divisions must therefore have been through the check-in generator first, and one
+that has not is refused at the question rather than generated as an empty round.
+
+**Reserves are placed in teams the way the bot places them.** The distribution is a port of
+`run_reserve_distribution` in `src/services/rsvp_service.py` — the same six priority tiers,
+the same demotion once a team holds a reserve so that no team takes a second while another
+still needs its first, and the same re-sort before every placement. Two things differ, both
+because this runs offline: there are no constructors' standings to break a tie with, so the
+tie-break falls through to team name, which is what the bot does before the first round of a
+season anyway; and the acceptance order the bot reads from its timestamps is taken from the
+order the lines appear in, the initial file before the changed one, which is the order the
+two blocks are pasted in.
+
+**Who ends up in the results.** Three rules, applied in that order:
+
+- **A tentative driver is drawn either way, an accepted one is in, and everyone else is out.**
+  Tentative is exactly the answer that tells a league nothing, so both readings of it are
+  worth generating.
+- **A reserve appears only if the distribution gave them a team.** One left on standby has
+  none, and the bot refuses a result that lists a driver under the reserve team. Where a
+  reserve was placed against a tentative driver's seat and that driver was drawn in as well,
+  the tentative driver stands down — taking that seat is why the reserve is there, and no team
+  may field more than its two cars.
+- **Nought to a tenth of those who accepted fail to appear**, and miss every session of the
+  round rather than some of them.
+
+The draw is made once for the whole round. Every session lists the same drivers under the same
+teams, because the bot records a driver under one team across a round and rejects a submission
+that contradicts an earlier session; only the finishing order is redrawn each time.
+
+**The special cases are peppered, not applied everywhere.** A session draws its own
+retirements, disqualifications, non-starters and lapped drivers, all weighted so that most
+sessions have none — a race full of retirements is not worth generating every time, but one
+that has a couple now and again is what the results table has to cope with. Gaps are derived
+from the lap times rather than drawn beside them, so the column cannot contradict the one it
+is a gap in, and the orders the bot's validator insists on are the orders these come out in:
+classified before DNF before DSQ in qualifying, and lead-lap before lapped before DNF, DNS and
+DSQ in a race.
+
+Unlike the check-in files, these are never replaced: the run stamp in the name means a run
+only collides with another started in the same second. They accumulate until you clear them
+out, and like every other generated file here they are gitignored.
 
 ## Adding a script here
 
