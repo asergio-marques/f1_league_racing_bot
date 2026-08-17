@@ -193,6 +193,8 @@
 - The bot shall read the inputs of the trusted user to create the data entry for the results of the session. The expected format depends on the type of session, but will always require Position, Driver, and Team.
 - For the driver column, a driver that is assigned to that division must be tagged. If the driver is not assigned to the division, or if there is no driver tagged at all, then the input will fail.
 - For the team column, a team role must be tagged as well. This will allow easy identification of the team.
+- The team tagged in the Team column shall never be the reserve team. A reserve stands in for a team's car and is recorded under that team; the reserve team fields no cars of its own.
+- No more than two drivers shall be recorded under any one team within a single session, counting a reserve standing in for that team against its two.
 - If the results input for any session within a round are not valid, then they shall be requested once more.
 - There is a special reserved input for every session which is "CANCELLED". This allows users to not submit results for sessions that were not run due to whatever issues.
 - All inputs pertaining to round results must be logged in the log channel configured for the server. The season number, division and round number shall be explicited for each raw result input logged for easy search.
@@ -210,6 +212,7 @@
         6, @REALLY The Last One, @Atlassian Williams Racing, N/A, N/A, N/A
 - Qualifying results are considered valid if the expected format is met for all of the lines, and if they meet ALL of the following criteria:
     - The positions denoted are in descending order (1st to last) and continuous (no gaps);
+    - The entries are ordered by outcome: those that set a valid lap first, then DNF, then DNS, then DSQ;
     - All drivers are assigned to the division of the round;
     - The role in the Team column of every line does indeed belong to one of the teams;
     - For every entry, the driver in the Driver column is assigned to the team identified in the Team column OR is assigned to the reserve team;
@@ -238,6 +241,8 @@
         6, @REALLY The Last One, @Atlassian Williams Racing, DSQ, N/A, 0.000
 - Race results are considered valid if the expected format is met for all of the line, and if they meet ALL of the following criteria:
     - The positions denoted are in descending order (1st to last) and continuous (no gaps);
+    - The entries are ordered by outcome: finishers on the lead lap first, then lapped drivers, then DNF, then DNS, then DSQ;
+    - Among the lapped drivers, the number of laps behind does not decrease as the position increases;
     - All drivers are assigned to the division of the round;
     - The role in the Team column of every line does indeed belong to one of the teams;
     - For every entry, the driver in the Driver column is assigned to the team identified in the Team column OR is assigned to the reserve team;

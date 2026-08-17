@@ -781,6 +781,8 @@ All fields above apply, plus:
 
 **Race ordering rules:**
 - Rows must be ordered: classified entries (lead-lap or lapped times) → `DNF` → `DNS` → `DSQ`. Any violation is rejected.
+- Among lapped drivers, the lap count must not decrease as the position increases — a driver two laps down cannot be placed ahead of one a single lap down.
+- No team role may appear on more than two rows, and the reserve role is never a valid entry in the team column: a reserve is submitted under the team whose car they drove. A seated driver must be submitted under their own team.
 - Setting both `postrace penalty` **and** `appeal penalty` to `DSQ` on the same row is invalid (amend only).
 - A driver whose either penalty field is `DSQ` has their outcome recorded as `DSQ` regardless of the `total time` value.
 
@@ -833,6 +835,7 @@ All fields above apply, plus:
 
 **Ordering rules (both formats):**
 - Rows must be ordered: classified entries (valid lap time) → `DNF` → `DNS` → `DSQ`. Any violation is rejected.
+- No team role may appear on more than two rows, and the reserve role is never a valid entry in the team column: a reserve is submitted under the team whose car they drove. A seated driver must be submitted under their own team.
 - Setting both `postrace penalty` **and** `appeal penalty` to `DSQ` on the same row is invalid (amend only).
 - A driver whose either penalty field is `DSQ` has their outcome recorded as `DSQ` regardless of the `best lap` value (amend only).
 
