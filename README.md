@@ -93,6 +93,8 @@ This registers:
 - **Interaction channel** -- the only channel where commands are accepted
 - **Log channel** -- where computation audit logs are posted
 
+> **Setting a league up for the first time?** This README is the reference — every command, in its own right. For the order to do them in, from an invited bot to an approved season, follow [Configuring the core bot](docs/how-to/configuring-the-core-bot.md).
+
 ---
 
 ## Prefix Commands (Bot Owner)
@@ -124,6 +126,10 @@ Clears any guild-scoped command overrides and pushes the latest global slash com
 | `interaction_channel` | Channel | ✅ | The only channel where bot commands are accepted |
 | `log_channel` | Channel | ✅ | Channel where computation audit logs are posted |
 | `force` | Boolean | — | Set `True` to overwrite an existing configuration (default: `False`) |
+
+Exempt from the interaction-channel rule, since no channel is configured until it has run. Requires **Manage Server** instead.
+
+On the **first** run for a server it also seeds the team list with the **Reserve** team, which has unlimited seats and cannot be removed or renamed. No other team is created — build the rest of the list with `/team add`.
 
 ---
 
@@ -159,7 +165,11 @@ Season configuration is a multi-step flow: run `/season setup`, add divisions wi
 #### `/season setup` — Start season configuration
 *Access: Trusted admin*
 
-No parameters. Creates a pending season tied to today's date and enables the `/division` and `/round` setup commands.
+Creates a pending season tied to today's date and enables the `/division` and `/round` setup commands. Refused if a season is already in setup or active for this server.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `game_edition` | Integer | ✅ | Game edition year — `25` for F1 25. Range 1–9999 |
 
 #### `/division add` — Add a division
 *Access: Trusted admin · Requires active `/season setup` session*
@@ -168,8 +178,11 @@ No parameters. Creates a pending season tied to today's date and enables the `/d
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name (used to reference it in subsequent commands) |
 | `role` | Role | ✅ | Discord role mentioned when referencing this division |
-| `forecast_channel` | Channel | — | Channel where weather forecast messages are posted. Required when the weather module is enabled; must be omitted when disabled. |
-| `tier` | Integer | — | Tier number for this division (1 = top tier; must be sequential and unique within the season). Default: `1` |
+| `tier` | Integer | ✅ | Tier number for this division (1 = top tier; must be 1 or higher, and unique within the season) |
+
+Tiers must additionally be **sequential from 1 with no gaps** across the whole season. That is checked at `/season approve`, not here, so a half-built season may hold a gap while you are still adding divisions.
+
+Division channels are not set here. Assign them afterwards with the `/division *-channel` commands.
 
 #### `/division duplicate` — Copy a division with a datetime offset
 *Access: Trusted admin · Setup only*
@@ -181,8 +194,7 @@ Clones all rounds from an existing division into a new one, shifting every sched
 | `source_name` | String | ✅ | Name of the division to copy from |
 | `new_name` | String | ✅ | Name for the new division |
 | `role` | Role | ✅ | Discord role for the new division |
-| `forecast_channel` | Channel | — | Forecast channel for the new division. Required when the weather module is enabled; must be omitted when disabled. |
-| `tier` | Integer | — | Tier number for the new division (must be unique within the season). Default: `1` |
+| `tier` | Integer | ✅ | Tier number for the new division (must be 1 or higher, and unique within the season) |
 | `day_offset` | Integer | — | Days to shift all round datetimes (can be negative). Default: `0` |
 | `hour_offset` | Float | — | Hours to shift all round datetimes (can be negative; decimals OK). Default: `0.0` |
 
@@ -203,6 +215,18 @@ Permanently removes the division and all its rounds from the pending setup.
 | `current_name` | String | ✅ | Current name of the division |
 | `new_name` | String | ✅ | New name for the division |
 
+#### `/division amend` — Correct a division's name, tier or role
+*Access: Trusted admin · Setup only*
+
+At least one optional field must be provided; the command is refused if all three are omitted. Correcting a division after the fact is what this is for — `/division rename` changes only the name.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Current name of the division to amend |
+| `new_name` | String | — | New name for the division |
+| `tier` | Integer | — | New tier number (must be unique within the season) |
+| `role` | Role | — | New Discord role for the division |
+
 #### `/round add` — Add a round to a division
 *Access: Trusted admin · Requires active `/season setup` session*
 
@@ -213,7 +237,7 @@ Round numbers are **auto-assigned** by sorting all rounds in the division by `sc
 | `division_name` | String | ✅ | Exact name of the division this round belongs to |
 | `format` | String | ✅ | Race format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE` |
 | `scheduled_at` | String | ✅ | Race date and time in ISO format: `YYYY-MM-DDTHH:MM:SS` (UTC) |
-| `track` | String | — | Track ID or name — use the autocomplete dropdown (e.g. `27` or `United Kingdom`). Omit for Mystery rounds. |
+| `track` | String | — | Track ID or exact circuit name — use the autocomplete dropdown (e.g. `12` or `Silverstone Circuit`). Required for every format except `MYSTERY`, where it must be omitted. |
 
 #### `/round delete` — Remove a round from setup
 *Access: Trusted admin · Setup only*
@@ -258,9 +282,9 @@ Posts a cancellation notice to each active division's forecast channel before de
 #### `/season complete` — Mark the active season as complete
 *Access: Trusted admin*
 
-No parameters. Triggers the season-end flow manually. The bot will refuse if any non-cancelled round is not yet finalized, and will list the outstanding rounds. Once all rounds are finalized it executes the season-end sequence (standings archival, server reset) in the same way that `/season cancel` would not — but without deleting any data prematurely.
+No parameters. Triggers the season-end flow manually. The bot refuses if any non-cancelled round is not yet finalized, and lists the outstanding rounds. Once all rounds are finalized it archives the season: status becomes `COMPLETED`, a history entry is written for every assigned driver, and completion is announced in the log channel. **No data is deleted** — that is what distinguishes this from `/season cancel`.
 
-> **Note:** Season completion is no longer automatic. A league manager must run this command once every round in every division has been finalized.
+> **Note:** Season completion is not automatic. A league manager must run this command once every round in every division has been finalized. Nothing else marks a season complete.
 
 #### `/round amend` — Amend a round in the active season
 *Access: Trusted admin*
@@ -271,7 +295,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 |-----------|------|----------|-------------|
 | `division_name` | String | ✅ | Name of the division containing the round |
 | `round_number` | Integer | ✅ | The round number to amend |
-| `track` | String | — | New track — use the autocomplete dropdown (e.g. `05` or `Bahrain`). Amending invalidates prior weather phases. |
+| `track` | String | — | New track — track ID or exact circuit name, use the autocomplete dropdown (e.g. `4` or `Bahrain International Circuit`). Amending invalidates prior weather phases. |
 | `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC). Amending re-triggers the scheduler and renumbers rounds. |
 | `format` | String | — | New format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE`. Amending invalidates prior weather phases. |
 
@@ -303,6 +327,8 @@ Cancels all scheduled rounds in the division (jobs + status flags) and posts a n
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
 | `channel` | Channel | ✅ | Channel where weather forecast messages are posted |
+
+Required for every division while the weather module is enabled: `/season approve` is refused until each one has a forecast channel, and a division created by `/division duplicate` does not inherit the source division's. For the rest of the module's setup, see [Configuring the weather module](docs/how-to/configuring-the-weather-module.md).
 
 #### `/division results-channel` — Set the results posting channel for a division
 *Access: Trusted admin · Results & Standings module required*
@@ -379,20 +405,24 @@ It reposts in whichever form your configuration calls for: the image where the i
 
 ### Test Mode Commands
 
-Test mode allows triggering weather phases on demand without waiting for the real scheduled times. Useful for verifying the bot setup before a live season.
+Test mode drives the season's scheduled events on demand, without waiting for their real fire times. Useful for verifying a setup before a live season. See [Testing with test mode](docs/how-to/test-mode.md) for the workflow.
 
 #### `/test-mode toggle` — Enable or disable test mode
-*Access: Interaction role*
+*Access: Trusted admin*
 
 No parameters. Flips test mode on/off; state persists across bot restarts.
 
-#### `/test-mode advance` — Execute the next pending phase
-*Access: Interaction role · Requires test mode active*
+Enabling it seeds the **Standard** and **Half Points** points configurations onto the current season if none are attached. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**.
 
-No parameters. Immediately runs the next pending weather phase in the queue (ordered by round date, then division). Bypasses all scheduled time checks — rounds can be advanced at any time regardless of their configured date.
+#### `/test-mode advance` — Execute the next pending event
+*Access: Trusted admin · Requires test mode active*
+
+No parameters. Immediately runs the next pending scheduled event, bypassing its fire time. The queue is read from the scheduler itself, so it holds only what was genuinely scheduled — with the weather module off, no weather phase is ever advanced.
+
+Events are taken in scheduled-fire-time order, tie-broken by round then phase, and cover mystery-round notices, weather phases 1–3, and result submission.
 
 #### `/test-mode review` — View phase completion status
-*Access: Interaction role · Requires test mode active*
+*Access: Trusted admin · Requires test mode active*
 
 No parameters. Displays a summary of all rounds for the active season, showing which phases (✅/⏳) have been completed per round and division.
 
@@ -406,6 +436,53 @@ Manually sets the `former_driver` flag on a driver profile. Only available when 
 | `user` | Member | ✅ | The driver whose flag is being updated |
 | `value` | Boolean | ✅ | The new value for the `former_driver` flag (`True` / `False`) |
 
+#### `/test-mode roster add` — Add a fake driver
+*Access: Trusted admin · Requires test mode active*
+
+Creates a synthetic driver profile occupying a real seat, so a division can be filled without real Discord accounts. Responds with a mention string to paste into result submissions.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `driver_name` | String | ✅ | Display name for the fake driver |
+| `team_name` | String | ✅ | Team to seat them in (must exist in the division) |
+| `division` | String | ✅ | Division name |
+
+#### `/test-mode roster remove` — Remove one fake driver
+*Access: Trusted admin · Requires test mode active*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user_id` | String | ✅ | Synthetic user ID, as shown by `roster add` or `roster list` |
+
+#### `/test-mode roster list` — List a division's fake drivers
+*Access: Trusted admin · Requires test mode active*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division` | String | ✅ | Division name |
+
+Prints each fake driver with their synthetic user ID — the cheat sheet for result submission.
+
+#### `/test-mode roster clear` — Remove every fake driver from a division
+*Access: Trusted admin · Requires test mode active*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division` | String | ✅ | Division name |
+
+#### `/test-mode rsvp set-status` — Bulk-set RSVP statuses
+*Access: Trusted admin · Requires test mode active · Attendance module*
+
+Opens a modal for setting the RSVP status of every test driver in the division's currently open check-in, so a check-in can be driven to a known state without waiting on button presses.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division` | String | ✅ | Division name; the division must be in the active season and have an open RSVP |
+
+> Turning test mode **off** deletes every fake driver on the server, across all divisions. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached.
+
+See [Testing with test mode](docs/how-to/test-mode.md) for how these fit together.
+
 ---
 
 ### Module Commands
@@ -418,11 +495,17 @@ Modules extend the bot beyond weather generation. Five modules are available: **
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `module_name` | Choice | ✅ | Module to enable: `weather`, `signup`, `results`, `attendance`, or `images` |
-| `channel` | Channel | — | *(signup only)* Channel designated for signup interactions |
-| `base_role` | Role | — | *(signup only)* Role granted to members eligible to sign up |
-| `signed_up_role` | Role | — | *(signup only)* Role granted on successful signup completion |
 
-The **attendance** module requires the results module to be enabled first, and cannot be enabled while a season is active.
+The module name is the only parameter. A module that needs channels or roles is configured by its own commands afterwards — the signup module by `/signup channel`, `/signup base-role` and `/signup complete-role`.
+
+Ordering and timing constraints:
+
+| Module | Constraint |
+|---|---|
+| `results` | Cannot be enabled or disabled while a season is **active** |
+| `attendance` | Requires `results` to be enabled first, and cannot be enabled while a season is **active** |
+| `weather` | If a season is active, every division must already have a forecast channel. Enabling runs any overdue phases immediately and schedules the rest |
+| `signup`, `images` | No constraint |
 
 #### `/module disable` — Disable a bot module
 *Access: Server administrator*
@@ -431,7 +514,53 @@ The **attendance** module requires the results module to be enabled first, and c
 |-----------|------|----------|-------------|
 | `module_name` | Choice | ✅ | Module to disable: `weather`, `signup`, `results`, `attendance`, or `images` |
 
-Disabling a module cancels its scheduled jobs and clears its channel and role configuration; historical data is always retained. The **images** module is the exception: it stores only filesystem paths and display preferences, none of which can go stale while it is off, so disabling it clears nothing but the enabled flag and re-enabling restores the configuration exactly.
+Disabling a module cancels its scheduled jobs and clears its channel and role configuration; historical data is always retained. Two modules are exceptions. The **images** module stores only filesystem paths and display preferences, none of which can go stale while it is off, so disabling it clears nothing but the enabled flag and re-enabling restores the configuration exactly. The **weather** module likewise clears nothing: division forecast channels, the configured phase deadlines, recorded phase results and forecast messages already posted all survive, and only the scheduled jobs are cancelled.
+
+---
+
+### Weather Module Commands
+
+> **Setting the weather module up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, follow [Configuring the weather module](docs/how-to/configuring-the-weather-module.md).
+
+The weather module's own configuration is these three commands and nothing else. Where forecasts are posted is set per division by [`/division weather-channel`](#division-weather-channel--set-the-weather-forecast-channel-for-a-division); the rain probability itself is packaged per circuit and cannot be changed — see [Track Distribution Parameters](#track-distribution-parameters).
+
+All three commands share the same preconditions, checked in this order:
+
+1. The weather module must be enabled — otherwise `❌ The weather module is not enabled.`
+2. **No season may be active** — otherwise `❌ Phase deadline configuration cannot be changed while a season is active.` Deadlines are therefore set during setup, or between seasons.
+3. The value must be at least 1.
+4. The ordering invariant below must hold.
+
+**Ordering.** Compared in hours, the three deadlines must be **strictly** decreasing: `phase_1_days × 24 > phase_2_days × 24 > phase_3_hours`. A rejection names both values in hours, so `phase-3-deadline: 48` against a 2-day Phase 2 is refused for landing at the same moment rather than before it.
+
+**When they take effect.** The values in force for a season are those stored when it is approved. Changing a deadline never moves a forecast for a season already running.
+
+#### `/weather config phase-1-deadline` — Days before the round to publish Phase 1
+*Access: Trusted admin · Weather module required · Setup only*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `days` | Integer | ✅ | Number of days before the round. Minimum 1. Default **5** |
+
+#### `/weather config phase-2-deadline` — Days before the round to publish Phase 2
+*Access: Trusted admin · Weather module required · Setup only*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `days` | Integer | ✅ | Number of days before the round. Minimum 1. Default **2** |
+
+#### `/weather config phase-3-deadline` — Hours before the round to publish Phase 3
+*Access: Trusted admin · Weather module required · Setup only*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `hours` | Integer | ✅ | Number of hours before the round. Minimum 1. Default **2** |
+
+Every successful reply echoes the other two deadlines, and the change is written to the log channel. There is no `/weather config view`: **`/season review`** is the only place the three values are read back.
+
+> **The posted forecasts do not describe your configured horizons.** The message text carries the fixed wording "(5 days out)", "(2 days out)" and "(2 hours out)" whatever the deadlines are set to. The forecast is published at the configured time; only its self-description is wrong.
+
+> **An amended round reverts to 5 / 2 / 2.** Rescheduling after `/round amend` uses the packaged defaults rather than the configured deadlines, as does phase recovery after a bot restart.
 
 ---
 
@@ -485,12 +614,12 @@ Revokes all placement roles, removes all season assignments, and transitions the
 #### `/team add` — Add a team to the server list
 *Access: Trusted admin*
 
-Adds the team to the server's default team list. If a Discord role is provided it is saved as the team's role mapping (granted/revoked on driver placement). If a SETUP season is active the team is also seeded into every division with 2 seats.
+Adds the team to the server's default team list and saves its role mapping (granted/revoked on driver placement). If a SETUP season is active the team is also seeded into every division with 2 seats.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Name of the new team (max 50 chars) |
-| `role` | Role | — | Discord role to grant drivers placed into this team |
+| `role` | Role | ✅ | Discord role to grant drivers placed into this team |
 
 **Naming.** A team name has to survive being turned into a lineup-template field name, so it is checked when you set it. The bot lowercases the name, strips accents, and replaces every run of anything that is not a letter or a digit with a single underscore — `Red Bull` becomes `red_bull`, `Force India (B)` becomes `force_india_b`. The name is rejected if that result:
 
@@ -1310,60 +1439,59 @@ Either way, nothing is ever dropped quietly to make the data fit.
 
 ---
 
-### Track Distribution Parameters
+### Track Commands
 
-#### `/track config` — Set per-track Beta distribution parameters
+#### `/track list` — List the available circuits
 *Access: Trusted admin*
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|--------------|
-| `track` | String | ✅ | Track ID or name (autocomplete supported) |
-| `mu` | Float | ✅ | Mean rain probability (0.0 – 1.0 exclusive, e.g. `0.30` for 30%) |
-| `sigma` | Float | ✅ | Dispersion / standard deviation (must be > 0) |
+No parameters. Returns the ID, circuit name and Grand Prix name of every track the bot carries, ephemerally.
 
-Changes take effect for all future Phase 1 draws. Existing results are not retroactively recalculated.
-
-#### `/track reset` — Revert to packaged default
-*Access: Trusted admin*
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|--------------|
-| `track` | String | ✅ | Track ID or name to reset |
-
-Removes the server override; the bot reverts to its packaged default values for that track.
-
-#### `/track info` — Inspect effective parameters
-*Access: Interaction role*
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|--------------|
-| `track` | String | ✅ | Track ID or name |
-
-Shows the effective μ and σ, whether they come from a server override or the bot's packaged default, and (for overrides) who set them and when.
+This is the only `/track` command. The circuit list is **fixed**: a league can neither add a circuit of its own nor retune one, and the per-server μ/σ overrides that earlier versions allowed have been removed along with the data they were stored in.
 
 ---
 
 ### Track ID Reference
 
-Use these IDs in `/round add` and `/round amend` — autocomplete will show the full list as you type.
+Use these IDs — or the exact circuit name — in `/round add` and `/round amend`. Autocomplete will show the list as you type, and `/track list` prints it in Discord.
 
-| ID | Track | ID | Track | ID | Track |
-|----|-------|----|-------|----|-------|
-| 01 | Abu Dhabi | 10 | China | 19 | Monza |
-| 02 | Australia | 11 | Hungary | 20 | Netherlands |
-| 03 | Austria | 12 | Imola | 21 | Portugal |
-| 04 | Azerbaijan | 13 | Japan | 22 | Qatar |
-| 05 | Bahrain | 14 | Las Vegas | 23 | Saudi Arabia |
-| 06 | Barcelona | 15 | Madrid | 24 | Singapore |
-| 07 | Belgium | 16 | Mexico | 25 | Texas |
-| 08 | Brazil | 17 | Miami | 26 | Turkey |
-| 09 | Canada | 18 | Monaco | 27 | United Kingdom |
+| ID | Circuit | Grand Prix |
+|----|---------|------------|
+| 1 | Albert Park Circuit | Australian |
+| 2 | Shanghai International Circuit | Chinese |
+| 3 | Suzuka International Racing Course | Japanese |
+| 4 | Bahrain International Circuit | Bahrain |
+| 5 | Jeddah Corniche Circuit | Saudi Arabian |
+| 6 | Miami International Autodrome | Miami |
+| 7 | Autodromo Internazionale Enzo e Dino Ferrari | Emilia Romagna |
+| 8 | Circuit de Monaco | Monaco |
+| 9 | Circuit de Barcelona-Catalunya | Barcelona-Catalunya |
+| 10 | Circuit Gilles Villeneuve | Canadian |
+| 11 | Red Bull Ring | Austrian |
+| 12 | Silverstone Circuit | British |
+| 13 | Circuit de Spa-Francorchamps | Belgian |
+| 14 | Hungaroring | Hungarian |
+| 15 | Circuit Zandvoort | Dutch |
+| 16 | Autodromo Nazionale Monza | Italian |
+| 17 | Circuito de Madring | Spanish |
+| 18 | Baku City Circuit | Azerbaijan |
+| 19 | Marina Bay Street Circuit | Singapore |
+| 20 | Circuit of the Americas | United States |
+| 21 | Autódromo Hermanos Rodriguez | Mexico City |
+| 22 | Autódromo José Carlos Pace | São Paulo |
+| 23 | Las Vegas Strip Circuit | Las Vegas |
+| 24 | Lusail International Circuit | Qatar |
+| 25 | Yas Marina Circuit | Abu Dhabi |
+| 26 | Autódromo Internacional do Algarve | Portuguese |
+| 27 | Istanbul Park | Turkish |
+| 28 | Circuit Paul Ricard | French |
+
+> A round stores the **circuit name**, not the ID. That name is also what the image module derives a circuit map's filename from — see [Configuring the image module](docs/how-to/configuring-the-image-module.md).
 
 ---
 
 ## Track Distribution Parameters
 
-Phase 1 draws the rain probability coefficient (`Rpc`) from a **Beta distribution** parameterised by two values per track:
+Phase 1 draws the rain probability coefficient (`Rpc`) from a **Beta distribution** parameterised by two values per track. Both ship with the bot and are **not configurable** — this section explains what they do, not how to change them.
 
 | Symbol | Name | Meaning |
 |--------|------|---------|
@@ -1398,26 +1526,31 @@ The Beta distribution changes shape depending on the derived parameters α = μ�
 
 ### Feasibility constraint
 
-σ must satisfy `σ < √(μ × (1 − μ))`. If this is violated, the Beta parameters become non-positive and sampling will fail — Phase 1 will block with an error to the log channel. Use `/track info` after setting parameters to verify.
+σ must satisfy `σ < √(μ × (1 − μ))`. If this is violated, the Beta parameters become non-positive and sampling fails — Phase 1 blocks with an error to the log channel. Every packaged pairing satisfies it.
 
-### Packaged defaults
+### Packaged values
 
-All 27 circuits ship with pre-tuned defaults. Use `/track info <track>` to inspect them or `/track config` to override them for your server.
+All 28 circuits ship with pre-tuned values. They are the same on every server and cannot be overridden.
 
 ---
 
 ## Weather Pipeline
 
-Three phases fire automatically per round (non-Mystery formats only):
+> **Setting the module up?** The three phases below are what it produces; [Configuring the weather module](docs/how-to/configuring-the-weather-module.md) is the order to configure it in, and [Weather Module Commands](#weather-module-commands) is the command reference.
 
-| Phase | Horizon | Output |
-|-------|---------|--------|
-| Phase 1 | T-5 days | Rain probability coefficient (Rpc) |
-| Phase 2 | T-2 days | Rain/mixed/sunny slot per session |
-| Phase 3 | T-2 hours | Slot-by-slot weather labels per session |
+Three phases fire automatically per round (non-Mystery formats only). There is no command to generate a forecast on demand; `/test-mode advance` is the only manual trigger.
 
-All forecast messages go to each division forecast channel.
-Computation logs go to the server log channel.
+| Phase | Horizon | Configured by | Output |
+|-------|---------|---------------|--------|
+| Phase 1 | T-5 days | `/weather config phase-1-deadline` | Rain probability coefficient (Rpc) |
+| Phase 2 | T-2 days | `/weather config phase-2-deadline` | Rain/mixed/sunny slot per session |
+| Phase 3 | T-2 hours | `/weather config phase-3-deadline` | Slot-by-slot weather labels per session |
+
+The horizons shown are the packaged defaults, **not** fixed values — each is configurable per server, subject to the ordering rule in [Weather Module Commands](#weather-module-commands). A season runs on the values stored when it was approved.
+
+Each phase's message **supersedes** the previous one: the earlier forecast is deleted only once the new one has posted, so a failed publish never leaves a division with no forecast at all. The Phase 3 message is deleted 24 hours after the round starts.
+
+All forecast messages go to each division forecast channel, on a message mentioning that division's role. Computation logs go to the server log channel.
 
 **Mystery rounds.** No weather is generated for a Mystery round — nothing is drawn, nothing is
 computed, and nothing is logged. At the Phase 1 horizon your drivers still get a message: a fixed

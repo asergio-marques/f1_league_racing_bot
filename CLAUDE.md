@@ -27,10 +27,12 @@ and the checks to run. Read it rather than guessing.
 
 | Path | Status |
 |---|---|
-| `docs/wip-specs/` | **Source.** Hand-written. Edit it when building shows it is wrong. |
+| `docs/wip-specs/` | **Source for rules, but known stale.** Hand-written. Edit it when building shows it is wrong. As of 2026-08-17 several are heavily outdated: **where a wip-spec and the implementation disagree, the implementation wins.** Verify against `src/` before quoting one, and correct the document rather than the code. |
 | `README.md` | **Source.** User-facing. |
-| `docs/how-to/` | **Derived, hand-written.** Task-ordered guides for a league manager. A guide owns the *order* of a job and links to the README for every rule — never restates one, or it rots. |
-| `specs/NNN-*/` | **Derived.** Spec-kit output per increment. Do not hand-maintain, and never copy a wip-spec rule into it. |
+| `docs/how-to/` | **Derived, hand-written.** Task-ordered guides for a league manager. A guide owns the *order* of a job and links to the README for every rule — never restates one, or it rots. **A module's guide covers that module only:** core setup is named as a prerequisite and linked, never explained, and findings about core behaviour belong in the core guide or the README, not in it. |
+| `docs/how-to/test-mode.md` | **Derived, hand-written.** For maintainers, not leagues — how test mode substitutes for a live season. Technical register, not strictly a `how-to/` guide, but placed in the same directory for ease. |
+| `docs/wip-specs/known_issues.md` | **Not a spec.** A register of verified defects and oddities in the shipped code. Records what is wrong, never what shall be done — do not read an entry as a rule, and do not fix one without being asked. Add to it when reading the code turns up a defect out of scope for the task in hand. |
+| `specs/NNN-*/` | **Derived, and a historical record.** Spec-kit output per increment. Do not hand-maintain, never copy a wip-spec rule into it, and never read it as current behaviour — it describes one increment as planned, not the bot as it stands. |
 | `.specify/memory/constitution.md` | **Governance.** Amend only via `/speckit-constitution` — it carries a version bump and a sync impact report. Never edit by hand. |
 
 ## Spec-kit task generation

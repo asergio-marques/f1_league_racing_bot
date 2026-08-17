@@ -55,6 +55,8 @@ even where a nearby section keeps it — the Lineup section of the image spec mo
 opposite and is not the pattern to follow. A short clause of justification is fine where a
 reader would otherwise think the rule a mistake; a paragraph is not.
 
+**Pitch it like the attendance or results spec, not the image one.** Those two are the register to aim for: declarative bullets, nested one level, a section per job. The image module spec is far longer and more granular than a wip-spec needs to be — treat it as an outlier rather than the standard to match.
+
 **Put it where it belongs.** These documents have a shape; follow it rather than appending.
 The image module spec runs: `## Configuration`, `## Conventions of every graphic`, then one
 `## X image generation` per type, each with `### Resolution of the data to be placed`,
