@@ -7,6 +7,8 @@ It covers only the parts every league needs, whichever features you use. The fiv
 It sends you to the reference for the fine print:
 
 - **[The main README](../../README.md)** — every command in full, with its parameters and who may run it.
+- **[Configuring the signup module](configuring-the-signup-module.md)** — if you want your drivers enrolling themselves, and help putting the ones who do into teams.
+- **[Configuring the attendance module](configuring-the-attendance-module.md)** — if you want the bot asking your drivers whether they are racing, and keeping score of who does not.
 - **[Configuring the weather module](configuring-the-weather-module.md)** — if you want generated forecasts before each round.
 - **[Configuring the image module](configuring-the-image-module.md)** — if you want the bot posting pictures rather than text.
 
@@ -90,9 +92,9 @@ Five modules, **all off to begin with**. The bot works without any of them, but 
 
 | Module | What it adds |
 |---|---|
-| `signup` | A sign-up process drivers work through themselves, in their own private channel |
+| `signup` | A sign-up process drivers work through themselves, in their own private channel — see [its own guide](configuring-the-signup-module.md) |
 | `results` | Result submission, points, standings, penalties and appeals |
-| `attendance` | Check-in calls before a race, attendance records, and penalties for missing one |
+| `attendance` | Check-in calls before a race, attendance records, and penalties for missing one — see [its own guide](configuring-the-attendance-module.md) |
 | `weather` | Generated forecasts published in three phases before each round — see [its own guide](configuring-the-weather-module.md) |
 | `images` | Posts pictures instead of text — see [its own guide](configuring-the-image-module.md) |
 
@@ -105,7 +107,7 @@ Five modules, **all off to begin with**. The bot works without any of them, but 
 | `weather` | Can be turned on mid-season, but every division must already have a forecast channel. It then immediately runs any forecast that is already overdue |
 | `signup` and `images` | Free to switch at any time |
 
-**Turning a module off clears its settings** — its channels and roles are forgotten, and its scheduled jobs are cancelled. Your history is always kept, but you will be setting the module up again from scratch if you turn it back on. The images module is the exception: it forgets nothing and comes back exactly as it was.
+**Turning a module off clears its settings** — its channels and roles are forgotten, and its scheduled jobs are cancelled. Your history is always kept, but you will be setting the module up again from scratch if you turn it back on. Two modules are exceptions. The images module forgets nothing and comes back exactly as it was. The signup module forgets its channel and its two roles, but keeps its time slots and its question settings whatever the message says.
 
 Each module then has its own configuration, which is not covered here. Start from [Slash Commands](../../README.md#slash-commands) in the README and find that module's section.
 

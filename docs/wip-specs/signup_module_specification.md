@@ -45,8 +45,8 @@ If a user leaves the Discord server, their entry must remain in the database.
 When test mode is enabled, it shall be possible for a system administrator to manually set the former driver flag of a driver to true or to false <NEW COMMAND>.
 
 # Teams
-Teams are a component of a division that are created automatically upon division creation.
-    - By default, the following teams exist and are configurable: Alpine, Aston Martin, Ferrari, Haas, McLaren, Mercedes, Racing Bulls, Red Bull, Sauber, Williams.
+Each server holds a list of default teams. A division's own teams are created from that list automatically upon division creation.
+    - The default list ships with the "Reserve" team only. No other team is created for a server, and a league shall build its own list.
     - There is an extra team, called "Reserve" which shall always exist and shall not be configurable.
     - A server administrator shall be able to add, modify or remove a team to the default configuration (except Reserve) <NEW COMMAND>.
     - A server administrator shall be able to add, modify or remove a team to ALL the divisions of the current season only during season setup (except Reserve) <NEW COMMAND>.
@@ -78,24 +78,35 @@ Bot initialization flow, right now, accounts only for the weather forecast funct
 
 # Signup wizard and flow
 ## Enabling signup flow
-- <NEW COMMAND> A "module enable signup" command will be made available to server administrators to enable signup functionality. This command will take a channel designated the "general sign up channel", a user role which will be denominated the "base role", and a user role which will be denominated the "signed up" role.
+- A "module enable signup" command shall be made available to server administrators to enable signup functionality. This command shall take the module name and nothing else.
+- The general sign up channel, the "base role" and the "signed up" role shall each be set by a command of their own, available to server administrators: "signup channel", "signup base-role" and "signup complete-role".
+    - Setting the sign up channel shall apply the channel permissions described below. Setting the base role shall re-apply them, removing the overwrite of the role it replaces.
+    - Until all three are set, it shall not be possible to open signups.
+    - While the signup module is enabled, season approval shall be blocked until all three are set, and the bot shall name each one that is missing.
 - The general sign up channel shall be visible only to trusted users (tier 2 admins), server admins, and those with the base role.
+- The general sign up channel may not be the bot interaction channel.
 - The bot shall modify the permissions of the channel configured as general sign-up channel so that it is only visible to server administrators, users with the trusted role (tier 2 admins), and users with the "base role". No other interaction aside from pressing a button shall be possible in this channel, for those of the "base role".
 - <NEW COMMAND> A "module disable signup" command will be made available to server administrators to disable signup functionality, clearing all settings from the previous enabling.
 
 ## Signup module configuration
-- <NEW COMMAND> A "signup nationality toggle" will made available to server administrators which will toggle on and off whether a driver's nationality is requested during the signups. By default, the nationality will be requested.
-- <NEW COMMAND> A "signup time-type toggle" command will be made available to server administrators that provides two options via buttons: "Time Trial" or "Short Qualification". The option chosen will be recorded for use in the signup wizard. By default, the "Time Trial" option is active.
-- <NEW COMMAND> A "signup time-image toggle" command will be made available to server administrators which will toggle on and off whether an image is required to be posted so that a signup time is accepted. The option chosen will be recorded for use in the signup wizard. By default, the time image will be necessary.
-- <NEW COMMAND> A "signup time-slot add" command will be made available to trusted roles (tier 2, non admins) to introduce the time slots users may select for their availability. This command will accept a day of the week and a time of day in the HH:mm format (military time) or hh:mm AM/PM format (not sure if nomenclature is right). There will be no configured time slots by default. Each time slot shall be attributed an integer, in chronological order.
-- <NEW COMMAND> A "signup time-slot remove" command will be made available to trusted roles (tier 2, non admins) to remove time slots configured above. The available time slots will be listed with clarification to what day of the week and time of day they pertain to. If there are no configured time slots, this command will be blocked.
-- <NEW COMMAND> A "signup enable" command will be made available to trusted roles (tier 2, non admins), in which 0..x tracks of those configured must be selected by the user; these are the sign-up tracks to be shown to the user later, so the choices will require persistance.
-- It shall not be possible to enable signups if there are no configured time slots.
-- It shall be possible to set 0 signup tracks.
+- A "signup nationality" command shall be made available which will toggle on and off whether a driver's nationality is requested during the signups. By default, the nationality will be requested.
+- A "signup time-type" command shall be made available which toggles between two options: "Time Trial" or "Short Qualification". The option chosen will be recorded for use in the signup wizard. By default, the "Time Trial" option is active.
+- A "signup time-image" command shall be made available which will toggle on and off whether an image is required to be posted so that a signup time is accepted. The option chosen will be recorded for use in the signup wizard. By default, the time image will be necessary.
+- A "signup config view" command shall display the configured channel, both roles, whether signups are open, and all three settings above. It shall be the only signup command that remains available while the module is disabled.
+- A "signup time-slot add" command shall be made available to introduce the time slots users may select for their availability. This command will accept a day of the week and a time of day in the HH:mm format (military time) or hh:mm AM/PM format. There will be no configured time slots by default. Each time slot shall be attributed an integer, in chronological order. Slot times are recorded and displayed as UTC; no per-server timezone shall be configurable.
+- A "signup time-slot remove" command shall be made available to remove time slots configured above. The available time slots will be listed with clarification to what day of the week and time of day they pertain to. If there are no configured time slots, this command will be blocked.
+- A "signup time-slot list" command shall list the configured time slots.
+- No more than 25 time slots may be configured, and time slots may not be added or removed while signups are open.
+- The three configuration commands above and the time-slot commands shall be available to holders of the Manage Server permission.
+- A "signup open" command shall be made available, in which 0..x tracks of those configured must be selected by the user; these are the sign-up tracks to be shown to the user later, so the choices will require persistance.
+    - This command shall additionally accept an optional close time, as an ISO 8601 UTC datetime that shall be in the future. When given, the bot shall close the signup window automatically at that instant, and shall re-arm or immediately execute the closure after a restart.
+    - The announcement shall state the close time when one is set.
+- It shall not be possible to open signups if there are no configured time slots.
+- It shall be possible to set 0 signup tracks. Where no tracks are set, no signup times shall be collected and drivers shall have no time sum to be seeded on.
 - Once enabled, the bot shall post a button that allows the initiation of the signup procedure by users with the "base role" in the "general sign up channel". Likewise, the bot shall post a message informing that "signups are open", listing the signup tracks as well, as well as whether image proof of the signup times is necessary.
-- <NEW COMMAND> A "signup disable" command will be made available to trusted roles (tier 2, non admins), no parameters. When run, if there are no incomplete signups (no users in the Pending Signup Completion, Pending Admin Approval, Pending Driver Correction states), the signups will be immediately disabled; otherwise, if there are incomplete signups, the administrator shall be informed of all the drivers and their signup channels, and prompted to either confirm or cancel the closing of the signups via buttons.
-        - NOTE: If they do not exist, new driver state transitions from Pending Signup Completion, Pending Admin Approval, Pending Driver Correction to Not Signed Up are necessary.
-- Once disabled, the button that allows the initiation of the signup shall be deleted by the bot, which shall likewise post a message informing that "signups are closed".
+- A "signup close" command shall be made available, no parameters. When run, if there are no incomplete signups (no users in the Pending Signup Completion, Pending Admin Approval, Pending Driver Correction states), the signups will be immediately closed; otherwise, if there are incomplete signups, the administrator shall be informed of all the drivers and their signup channels, and prompted to either confirm or cancel the closing of the signups via buttons.
+        - Closing the window shall transition only drivers in the Pending Signup Completion state to Not Signed Up. Drivers in Pending Admin Approval and Pending Driver Correction shall retain their state and may still be approved, rejected or corrected after the window has closed.
+- Once closed, the button that allows the initiation of the signup shall be deleted by the bot, which shall likewise post a message informing that "signups are closed".
 
 ## Signup wizard
 ### Key driver state transitions
@@ -140,7 +151,7 @@ Bot initialization flow, right now, accounts only for the weather forecast funct
         - This effectively means that when a driver is in "pending signup completion" state, the signup wizard shall transition states sequentially, but when a driver is in "pending driver correction" state, the signup wizard will hop from "unengaged" to parameter states and back directly.
 
 ## Placement of drivers
-    - <NEW COMMAND> A "signup unassigned" command shall be made available to trusted role users to list all users in the "unassigned" state. This command will return text containing the following data, per line, and in seeding order:
+    - A "signup unassigned list" command shall be made available to trusted role users to list all users in the "unassigned" state. This command will return text containing the following data, per line, and in seeding order:
         - Seeding (to be explained later)
         - Discord User ID and display name
         - Platform
@@ -151,18 +162,23 @@ Bot initialization flow, right now, accounts only for the weather forecast funct
         - Sum of all signup times
         - Signup notes
     - An easier, quicker way to implement the above command will be to have an "unassigned" driver list that is indexed by seeding number, holding only the "discord user ID" and the sum of all signup times. This last parameter shall determine the seeding; drivers with lower signup time sum shall be seeded higher (e.g. 3:40.055 would be seed 1, 3:40.097 seed 2, 3:41.423 seed 3, etc). This way, the seeding is always kept up to date.
+        - The sum of signup times shall be computed at the transition to "unassigned" and shall not be recomputed thereafter. Drivers with no recorded time shall be seeded last, and ties shall be broken by order of approval.
+    - A "signup unassigned export" command shall be made available to trusted role users, returning the same drivers as a CSV file in seeding order. The columns shall be: seed, display name, Discord user ID, driver type, time sum, one column per configured availability slot marking those the driver selected, three preferred team columns, platform and platform ID.
     - <NEW COMMAND> A "driver assign" command shall be made available to trusted role users, which will take a discord user ID, an integer signifying a division tier (or a string signifying a division name), and an integer signifying one of the currently configured teams (plus Reserve).
         - In order for this command to be valid, the driver profile associated with the ID shall be in state "unassigned" or "assigned" (this permits multiple tier assignment). 
         - In order for this command to be valid, the team of the tier input shall have at least 1 open spot (if configurable). Reserve teams have limitless seats, so it shall always be possible to append a driver to a Reserve seat.
         - In order for this command to be valid, the driver may not have been assigned to any other team (including Reserve) in the same tier.
+        - In order for this command to be valid, there shall be a season in setup or active state. Placement shall not require the season to be active.
         - If the "driver assign" command is successful and the driver state is "unassigned", it shall change to "assigned".
-        - If the "driver assign" command is successful, the discord user will be granted with the role pertaining to the division they were assigned to.
+        - If the season is active, the discord user shall be granted the roles pertaining to the division and to the team they were assigned to, immediately. If the season is in setup, no roles shall be granted at this point; they shall all be granted when the season is approved.
     - <NEW COMMAND> A "driver unassign" command shall be made available to trusted role users, which will take a discord user ID an an integer signifying a division tier (or a string signifying a division name).
         - Clarity: This is the only command that allows the change from "assigned" to "unassigned"
         - In order for this command to be valid, the driver profile associated with the ID must be in state "assigned".
         - In order for this command to be valid, the driver must be assigned to a team in the division specified.
         - If the "driver unassign" command is successful and the driver has no other assignments, its state shall change to "unassigned".
-        - If the "driver unassign" command is successful, the discord user will have the role pertaining to the division they were assigned to removed.
+        - If the season is active, the discord user shall have the role pertaining to the division they were assigned to removed. If the season is in setup, no role shall be removed, the driver never having held one.
+        - A team role shall be revoked only where the driver no longer holds a seat in any team, across all divisions, that maps to that role.
+    - Every successful assignment, unassignment and sacking shall cause the division's lineup message to be deleted and reposted in the division's configured lineup channel.
     - <NEW COMMAND> A "driver sack" command shall be made available to trusted role users, which will take a discord user ID.
         - In order for this command to be valid, the driver profile associated with the ID must be in state "unassigned" or "assigned"
         - If the "driver sack" command is successful, the driver's state will be changed to "not signed up".

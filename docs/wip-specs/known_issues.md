@@ -42,6 +42,58 @@ Found on 2026-08-17 while writing the weather module how-to guide, unless stated
 - `/track config`, `/track reset` and `/track info` were removed along with the `track_rpc_params` table in migration 029. Only `/track list` remains, and μ and σ are seeded per circuit.
 - This is intended behaviour, not a defect, but it was documented as configurable in the README until 2026-08-17 and may still be assumed by anyone working from memory or from `specs/`.
 
+## Attendance
+
+Found on 2026-08-17 while writing the attendance module how-to guide.
+
+**`/attendance config rsvp-absent-penalty` fails every time it is run.**
+- `config_rsvp_absent_penalty` in `src/cogs/attendance_cog.py:262` calls `attendance_service.update_rsvp_absent_penalty`. No such method exists — `AttendanceService` defines `update_no_rsvp_penalty`, `update_absent_penalty` and `update_no_show_penalty` only. The command defers ephemerally and then raises `AttributeError`.
+- A league sees the interaction fail to respond. The penalty a driver pays for accepting a check-in and then not appearing is therefore fixed at its enable-time default of 1 and cannot be changed by any command. `/attendance config show` continues to display it, so the value shown is correct but unreachable.
+- The README documented this command as `/attendance config no-show-penalty` until 2026-08-17, a name that has never existed in the code. The service method it should be calling is `update_no_show_penalty`, and the column is `no_show_penalty` — the command name is the only place `rsvp_absent` appears.
+
+**Amending a round destroys its check-in and never rebuilds it.**
+- `amend_round` in `src/services/amendment_service.py:135` calls `scheduler_service.cancel_round`, which removes *every* job carrying that `round_id` — the RSVP notice, last-notice and deadline included. Only the weather jobs are rescheduled afterwards; `schedule_attendance_round` is called from `src/cogs/season_cog.py:3617` at `/season approve` and nowhere else.
+- A league that moves a round's date, changes its circuit or changes its format loses that round's check-in call permanently. No call means no `driver_round_attendance` rows, so the round asks nobody anything and charges nobody — it is recorded as perfect attendance for the whole division.
+- Nothing reports it. The invalidation notice a league does see is about the forecast, and says nothing about the check-in.
+
+**A season approved inside the notice window silently skips that round's check-in.**
+- `schedule_attendance_round` only adds a job whose fire time is still in the future, logging "Skipping … fire time is in the past" for the rest.
+- Approving on the Thursday with the default 5-day notice therefore leaves round 1 with no call, no reminder and no deadline, and the same free-pass outcome as above. The weather pipeline handles the equivalent case by catching up and firing overdue phases immediately; attendance does not.
+- `/season approve` succeeds with no warning, and `/season review` shows nothing amiss.
+
+**There is no way to post a check-in call by hand.**
+- The three RSVP entry points are scheduler callbacks wired in `src/bot.py:144-158` and the test-mode `advance` phases. No command posts a call for a nominated round.
+- Every skipped or failed call above is therefore terminal for that round. `_report_call_failure` tells the league manager to post it again; there is no command that does so.
+
+## Signup
+
+Found on 2026-08-17 while writing the signup module how-to guide.
+
+**`/signup config channel` raises on every invocation and configures nothing.**
+- `config_channel` in `src/cogs/signup_cog.py:691-695` is a deprecated alias whose body is `await self.signup_channel(interaction, channel)`. Inside a cog, `self.signup_channel` resolves to the `app_commands.Command` object, and `app_commands.Command` defines no `__call__` anywhere in its MRO on the installed discord.py 2.7.1. The command raises `TypeError: 'Command' object is not callable`.
+- A league sees the interaction fail. The sibling alias `/signup config roles` has a body of its own and does work, so one half of the deprecated pair functions and the other does not — and the README documented the broken half as the way to set the channel until 2026-08-17.
+
+**An armed auto-close timer cannot be cancelled.**
+- `/signup close` refuses while `close_at` is set and directs the caller to `/signup cancel-timer` (`src/cogs/signup_cog.py:1453`). That string is the only occurrence of `cancel-timer` in `src/`; no such command is registered.
+- A league that passes `close_time` to `/signup open` therefore has no way to close the window early. The only escapes are waiting for the timer to fire or `/module disable signup`, which clears the signup channel and both roles.
+
+**Availability slot IDs are list positions, not identifiers, and removing one silently repoints stored answers.**
+- `get_slots` in `src/services/signup_module_service.py:142-164` numbers slots `1..N` in chronological order on every read, and `_resequence_slots` (`:215-229`) rewrites the stored column on every add and remove. The dataclass comment in `src/models/signup_module.py:69` claims sequence IDs are "never reused after removal", and the `/signup time-slot remove` parameter is described as a "Stable sequence ID"; neither is true.
+- `signup_records.availability_slot_ids` stores those positions. Removing a slot shifts every later slot down one, so a driver recorded as available at `#3` is thereafter read as available at whatever now occupies `#3`. Nothing warns, and `/signup unassigned export` presents the shifted values as fact.
+- Edits are blocked only while the window is open, so the damaging case — editing between windows, with signup records already stored — is fully permitted.
+
+**`/module disable signup` reports a clearance it does not perform.**
+- `delete_config` in `src/services/signup_module_service.py:86-92` deletes the `signup_module_config` row only. The comment at `src/cogs/module_cog.py:778` claims the delete cascades to settings and slots, but `signup_module_settings` and `signup_availability_slots` carry foreign keys to `server_configs`, not to the config row.
+- The reply is "✅ Signup module disabled. All signup configuration has been cleared." In fact the time slots, the three question toggles, every `signup_records` row and every `signup_wizard_records` row survive. Only the channel and the two roles are cleared. Re-enabling restores the old slots and toggles, which is convenient but is not what the message describes.
+
+**The close confirmation counts more drivers than it transitions.**
+- `signup_close` in `src/cogs/signup_cog.py:1459-1471` lists drivers in `PENDING_SIGNUP_COMPLETION`, `PENDING_ADMIN_APPROVAL` and `PENDING_DRIVER_CORRECTION`, and warns that closing "will transition all in-progress drivers to **Not Signed Up**". `execute_forced_close` in `src/cogs/module_cog.py:47-51` transitions `PENDING_SIGNUP_COMPLETION` only, which is what spec 028 FR-002/003 requires.
+- The retention is correct and the warning is wrong. A league manager is told they are about to discard drivers who are merely awaiting their approval, and may cancel a close they had no reason to avoid. Those drivers also receive no closure notice in their wizard channels, since only the transitioned ones are messaged.
+
+**A restart during the correction-parameter window strands the driver.**
+- The five-minute window opened by **Request Changes** is an in-memory `asyncio.sleep` task (`src/services/wizard_service.py:1597-1602`), and the reason-capture map in `src/cogs/admin_review_cog.py:23` is an in-memory dict. The wizard record is `UNENGAGED` in this state, so `recover_wizards` re-arms nothing.
+- A driver caught by a restart in `AWAITING_CORRECTION_PARAMETER` waits indefinitely. No admin command returns them to the review queue; their own **Cancel Signup** button is the only exit.
+
 ## Core setup and access
 
 Found on 2026-08-17 while writing the core configuration how-to guide.

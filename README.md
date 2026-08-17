@@ -257,7 +257,9 @@ No parameters. Displays the pending season configuration with **Approve** and **
 #### `/season approve` — Commit the configuration
 *Access: Trusted admin*
 
-No parameters. Saves all pending divisions and rounds to the database and arms the weather scheduler. Equivalent to pressing Approve in `/season review`.
+No parameters. Saves all pending divisions and rounds to the database and arms the weather scheduler, and — with the attendance module on — every round's check-in call, reminder and deadline. Equivalent to pressing Approve in `/season review`.
+
+> **Approve early enough for the first round's check-in.** Attendance timings are read once, here, and anything whose moment has already passed is skipped without warning. Approving inside the notice window — three days out with the default five-day notice, say — leaves that round with no check-in call at all, and therefore no attendance records and no penalties for anyone. Weather catches up on overdue phases; attendance does not.
 
 ---
 
@@ -298,6 +300,8 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 | `track` | String | — | New track — track ID or exact circuit name, use the autocomplete dropdown (e.g. `4` or `Bahrain International Circuit`). Amending invalidates prior weather phases. |
 | `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC). Amending re-triggers the scheduler and renumbers rounds. |
 | `format` | String | — | New format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE`. Amending invalidates prior weather phases. |
+
+> **Amending a round costs it its check-in.** The scheduler is re-triggered for the forecasts only. A round's RSVP notice, last reminder and deadline are cancelled along with everything else and are never rescheduled, so an amended round posts no check-in call, opens no attendance records, and counts nothing against anyone. Nothing warns you at the time.
 
 #### `/round cancel` — Cancel a round in the active season
 *Access: Trusted admin*
@@ -516,6 +520,8 @@ Ordering and timing constraints:
 
 Disabling a module cancels its scheduled jobs and clears its channel and role configuration; historical data is always retained. Two modules are exceptions. The **images** module stores only filesystem paths and display preferences, none of which can go stale while it is off, so disabling it clears nothing but the enabled flag and re-enabling restores the configuration exactly. The **weather** module likewise clears nothing: division forecast channels, the configured phase deadlines, recorded phase results and forecast messages already posted all survive, and only the scheduled jobs are cancelled.
 
+The **signup** module reports that all of its configuration has been cleared, but clears only the signup channel and the two roles. Its availability time slots and its three wizard settings survive and are restored on re-enabling. See [known issues](docs/wip-specs/known_issues.md).
+
 ---
 
 ### Weather Module Commands
@@ -580,7 +586,11 @@ Transfers an existing driver profile from one Discord account to another. Provid
 #### `/driver assign` — Assign a driver to a team and division
 *Access: Trusted admin*
 
-Places an Unassigned driver into a specific team seat within a division for the active season. Also grants the division role and the team role (if configured via `/team add`).
+Places an Unassigned driver into a specific team seat within a division. Requires a season in either **SETUP** or **ACTIVE** state — placement does not wait for approval.
+
+**When roles are granted depends on the season state.** For an **ACTIVE** season the division role and the team role (if configured via `/team add`) are granted immediately. For a **SETUP** season no roles are granted at assignment; they are granted in bulk to every placed driver at `/season approve`.
+
+A driver may hold at most one seat per division. Non-Reserve teams run out of seats; the Reserve team always has room.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -591,7 +601,9 @@ Places an Unassigned driver into a specific team seat within a division for the 
 #### `/driver unassign` — Remove a driver from a division
 *Access: Trusted admin*
 
-Removes a driver's placement from one division. Revokes the division role and (if no other team-role seat remains) the team role. If this was their only assignment the driver reverts to Unassigned.
+Removes a driver's placement from one division. If this was their only assignment the driver reverts to Unassigned. Requires a season in **SETUP** or **ACTIVE** state.
+
+For an **ACTIVE** season this revokes the division role and, if no other seat mapping to it remains in any division, the team role. For a **SETUP** season no role is revoked, the driver never having held one.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -679,22 +691,46 @@ Sets the Discord role granted to (and revoked from) drivers placed in the Reserv
 
 ### Signup Module Commands
 
+> **Setting the signup module up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, follow [Configuring the signup module](docs/how-to/configuring-the-signup-module.md).
+
 All commands below require the signup module to be enabled (`/module enable signup`). Most commands also require being invoked from the configured interaction channel.
 
-#### `/signup config channel` — Set the signup channel
-*Access: Trusted admin*
+#### `/signup channel` — Set the signup channel
+*Access: Server administrator*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `channel` | Channel | ✅ | Channel for signup interactions |
 
-#### `/signup config roles` — Set the signup roles
+Applies the channel's permission overwrites: `@everyone` cannot view, the base role can view but not send, and the interaction role can view and send. Setting a new signup channel clears **all** overwrites from the previously configured channel. The signup channel may not be the interaction channel.
+
+#### `/signup base-role` — Set the base role
+*Access: Server administrator*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `role` | Role | ✅ | Role granted to all members eligible to sign up |
+
+#### `/signup complete-role` — Set the completion role
+*Access: Server administrator*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `role` | Role | ✅ | Role granted when a driver's signup is approved |
+
+All three of the above must be set before `/signup open` will run, and — while the signup module is enabled — before `/season approve` will commit a season.
+
+#### `/signup config roles` — Set both signup roles at once
 *Access: Trusted admin*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `base_role` | Role | ✅ | Role granted to members eligible to sign up |
 | `signed_up_role` | Role | ✅ | Role granted on successful signup completion |
+
+Deprecated alias retained for backwards compatibility; prefer `/signup base-role` and `/signup complete-role`.
+
+> **`/signup config channel` is non-functional.** It is retained as a deprecated alias but raises `TypeError` on invocation and sets nothing. Use `/signup channel`. See [known issues](docs/wip-specs/known_issues.md).
 
 #### `/signup config view` — View current signup configuration
 *Access: Trusted admin*
@@ -742,16 +778,26 @@ No parameters.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `track_ids` | String | — | Space- or comma-separated track IDs for required lap times (e.g. `01 03 12`). Omit to require no specific tracks. |
+| `close_time` | String | — | Auto-close instant as an ISO 8601 UTC datetime (e.g. `2026-09-01T20:00:00`). Must be in the future; a value with no timezone is read as UTC. Omit to leave the window open until closed by hand. |
+
+Refused unless the signup channel, base role and completion role are all set and at least one availability time slot exists. Opening with no `track_ids` collects no lap times, so approved drivers have no total to seed on.
 
 #### `/signup close` — Close the signup window
 *Access: Trusted admin*
 
-No parameters. If drivers are currently in progress you will be prompted to confirm transitioning them to Not Signed Up.
+No parameters. If drivers are currently in progress you will be prompted to confirm; the confirmation lists everyone in `PENDING_SIGNUP_COMPLETION`, `PENDING_ADMIN_APPROVAL` and `PENDING_DRIVER_CORRECTION`, but only drivers in `PENDING_SIGNUP_COMPLETION` are transitioned to Not Signed Up. Drivers awaiting approval or correction retain their state and may still be approved after the window has closed.
 
-#### `/signup unassigned` — List all Unassigned drivers seeded by lap time
+Refused outright while an auto-close timer set by `/signup open close_time:` is armed. See [known issues](docs/wip-specs/known_issues.md).
+
+#### `/signup unassigned list` — List all Unassigned drivers seeded by lap time
 *Access: Trusted admin*
 
-No parameters. Displays all drivers in the Unassigned state, ordered by total lap time ascending (fastest first). Drivers with no lap time on record appear last.
+No parameters. Displays all drivers in the Unassigned state, ordered by total lap time ascending (fastest first). Drivers with no lap time on record appear last; ties break on approval order.
+
+#### `/signup unassigned export` — Export Unassigned drivers to CSV
+*Access: Trusted admin*
+
+No parameters. Returns `unassigned_drivers.csv` with the columns `Seed`, `Display Name`, `Discord User ID`, `Driver Type`, `Lap Total`, one column per configured availability slot (marked `X` where the driver selected it), `Preferred Team 1`–`3`, `Platform` and `Platform ID`.
 
 ---
 
@@ -1128,7 +1174,11 @@ Toggles whether reserve drivers appear in the publicly posted standings for the 
 
 ### Attendance Module
 
-All commands below require the attendance module to be enabled (`/module enable attendance`).
+> **Setting the attendance module up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, follow [Configuring the attendance module](docs/how-to/configuring-the-attendance-module.md).
+
+All commands below require the attendance module to be enabled (`/module enable attendance`). Where check-in calls and attendance sheets are posted is set per division by [`/division rsvp-channel`](#division-rsvp-channel--set-the-rsvp-notice-channel-for-a-division) and [`/division attendance-channel`](#division-attendance-channel--set-the-attendance-logging-channel-for-a-division).
+
+> **A check-in call that fails to post is reported in the log channel**, naming the season, the division and the round. This matters more than it sounds: when a call cannot be posted, the round's attendance rows are never opened, so nobody is asked to check in and nothing is ever counted against anyone — the round ends up recorded as perfect attendance for the whole division. The report tells you to post it again once the cause is cleared, though no command currently does so — a call that failed is lost with the round. It appears whether or not the images module is enabled, because the fault is in the call and not in any picture.
 
 #### `/attendance config rsvp-notice` — Set the RSVP notice lead time
 *Access: Trusted admin · No active season*
@@ -1136,8 +1186,6 @@ All commands below require the attendance module to be enabled (`/module enable 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `days` | Integer | ✅ | Days before the race to send the first RSVP notice (≥ 1) |
-
-> **A check-in call that fails to post is now reported in the log channel**, naming the season, the division and the round. This matters more than it sounds: when a call cannot be posted, the round's attendance rows are never opened, so nobody is asked to check in and nothing is ever counted against anyone — the round ends up recorded as perfect attendance for the whole division. The report tells you to post it again. It appears whether or not the images module is enabled, because the fault is in the call and not in any picture.
 
 #### `/attendance config rsvp-last-notice` — Set the last RSVP reminder
 *Access: Trusted admin · No active season*
@@ -1167,12 +1215,14 @@ All commands below require the attendance module to be enabled (`/module enable 
 |-----------|------|----------|-------------|
 | `points` | Integer | ✅ | Points applied when a NO_RSVP, TENTATIVE, or DECLINED driver does not appear in results (≥ 0). Stacks with the no-RSVP penalty for NO_RSVP drivers. |
 
-#### `/attendance config no-show-penalty` — Set the no-show penalty
+#### `/attendance config rsvp-absent-penalty` — Set the no-show penalty
 *Access: Trusted admin*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `points` | Integer | ✅ | Points applied when a driver RSVPs **ACCEPTED** but does not appear in session results (≥ 0) |
+
+> **Limitation:** This command does not currently work. It calls a service method that does not exist, so the interaction fails and the value is never written — the penalty stays at its default of **1** for every server and cannot be changed by any means. `/attendance config show` still reports it, correctly, as 1.
 
 #### `/attendance config autoreserve` — Set the auto-reserve threshold
 *Access: Trusted admin*
