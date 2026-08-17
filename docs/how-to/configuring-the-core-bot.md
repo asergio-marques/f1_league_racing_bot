@@ -93,7 +93,7 @@ Five modules, **all off to begin with**. The bot works without any of them, but 
 | Module | What it adds |
 |---|---|
 | `signup` | A sign-up process drivers work through themselves, in their own private channel — see [its own guide](configuring-the-signup-module.md) |
-| `results` | Result submission, points, standings, penalties and appeals |
+| `results` | Result submission, points, standings, penalties and appeals — see [its own guide](configuring-the-results-module.md) |
 | `attendance` | Check-in calls before a race, attendance records, and penalties for missing one — see [its own guide](configuring-the-attendance-module.md) |
 | `weather` | Generated forecasts published in three phases before each round — see [its own guide](configuring-the-weather-module.md) |
 | `images` | Posts pictures instead of text — see [its own guide](configuring-the-image-module.md) |

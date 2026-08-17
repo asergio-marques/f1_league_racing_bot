@@ -7,7 +7,7 @@ Test mode gives you two things the normal season does not:
 1. **A way to fire the next scheduled event now**, in order, without touching its fire time.
 2. **Synthetic drivers**, so a division can be filled and results submitted for it without recruiting real Discord accounts.
 
-This is a developer and maintainer document. For configuring a league, see [Configuring the core bot](how-to/configuring-the-core-bot.md).
+This is a developer and maintainer document. For configuring a league, see [Configuring the core bot](configuring-the-core-bot.md).
 
 > **This is not a substitute for the test suite.** `pytest tests/ -q` covers the logic. Test mode covers the parts that only exist against a live gateway — that a message posts, that a role is actually granted, that an embed renders. Nothing in `tests/` may depend on a running bot, so this is where that class of check lives.
 
@@ -41,7 +41,7 @@ Two on **disable**:
 
 Runs the single next pending event and reports what it did. Run it repeatedly to walk a season forward.
 
-**The queue comes from the APScheduler job store, not from the database.** That is the design decision worth knowing, because it means the queue holds only what was genuinely scheduled: with the weather module disabled at approval time, no weather phase jobs exist, and `advance` will never produce one. If an event you expected does not appear, the question is whether it was ever scheduled — not whether `advance` skipped it.
+**The queue is led by the APScheduler job store rather than by the database.** That is the design decision worth knowing, because it means the queue holds only what a live season would genuinely fire: with the weather module disabled at approval time, no weather phase jobs exist, and `advance` will never produce one. Enablement is honoured on the database side too — the fallback described below checks each module's flag before offering its phase. If an event you expected does not appear, the question is whether that module was on when the season was approved, not whether `advance` skipped it.
 
 Ordering is APScheduler's own fire-time order:
 
@@ -57,7 +57,11 @@ Phase numbers in the queue entry mean:
 | 1, 2, 3 | Weather phases |
 | 4 | Result submission |
 
-**One case is handled outside the job store.** A mystery round whose notice has been sent but which has no active session results never gets a `results_r{id}` job — `schedule_round` skips it for `MYSTERY` format. It is picked up by a database-state fallback once every scheduler-backed job is exhausted, so it always comes last.
+**Result submission is the exception: it never comes from the job store.** `get_pending_advance_jobs` filters results jobs out deliberately, so that a past-dated job which already auto-fired can neither block the wizard nor trigger it twice. Phase 4 is detected from database state instead — a round with no active session results and a provisional result status is due for submission — and it is therefore reached for every round format, mystery included.
+
+**Database state also covers everything the job store has lost.** Before returning a scheduler job, `advance` checks every chronologically earlier round for work the scheduler cannot see: phases evicted by misfire grace, RSVP jobs never created because the round was already past-dated at approval, and result submission. Where the job store holds nothing at all, that same check drives the whole queue. This is why `advance` still works on a test season built entirely in the past, when almost nothing was ever scheduled.
+
+> `get_next_pending_phase` and `get_pending_advance_jobs` both carry a comment claiming `schedule_round` skips the results job for `MYSTERY` rounds. It does not — it schedules one for every format. The behaviour above does not depend on the claim; only the comments are wrong.
 
 When there is nothing left, `advance` says so and points at `/season complete`.
 
@@ -127,4 +131,4 @@ Driving a check-in through the buttons requires as many Discord accounts as ther
 
 ## Access
 
-Every command in this document requires the interaction role, the configured command channel, and Discord's **Manage Server** permission — the same as the rest of the administrative surface. Full parameter tables are in the [Test Mode Commands](../README.md#test-mode-commands) section of the README.
+Every command in this document requires the interaction role, the configured command channel, and Discord's **Manage Server** permission — the same as the rest of the administrative surface. Full parameter tables are in the [Test Mode Commands](../../README.md#test-mode-commands) section of the README.

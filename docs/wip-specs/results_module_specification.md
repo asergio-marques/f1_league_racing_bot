@@ -9,8 +9,10 @@
 - If there is an active season, it shall not be possible to enable the weather module if not all divisions have a weather forecast channel configured.
 - <NEW COMMAND> There will be a new "results channel" command, usable by trusted admins, that has as input a division name and a channel on which race results shall be posted by the bot, formatted. May only be used by server admins.
 - <NEW COMMAND> There will be a new "standings channel" command, usable by trusted admins, that has as input a division name and a channel on which standings shall be posted by the bot, formatted. May only be used by server admins.
-- If there is not an active season, it shall not be possible to approve the season if the results & standings module is enabled AND not all divisions have a results channel and a standings configured AND there is no existing points configuration (every position of every possible session gives 0 points).
-- If there is an active season, it shall not be possible to enable the results & standings module.
+- There shall be a "verdicts channel" command, usable by trusted admins, that has as input a division name and a channel on which penalty and appeal verdicts shall be posted by the bot. Automatic attendance sanctions are announced in the same channel.
+- If the results & standings module is enabled, the approval of a season setup shall fail if any division lacks a results channel, a standings channel or a verdicts channel, or if no points configuration is attached to the season. Each missing item shall be named individually.
+- If there is an active season, it shall not be possible to enable the results & standings module. It shall equally not be possible to disable it.
+- Disabling the results & standings module shall disable the attendance module with it.
 
 ## Results
 ### Design
@@ -158,6 +160,15 @@
 - <NEW COMMAND> A "results config fl" command will be made available to trusted server users that will intake the string that IDs the points configuration to be changed in the server points schema store, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race) and an integer signifying the number of points gained for having the shortest lap time in a session. The session types "Sprint Quali" and "Feature Quali" are invalid for this command.
 - <NEW COMMAND> A "results config fl-plimit" command will be made available to trusted server users that will intake the string that IDs the points configuration to be changed in the server points schema store, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race) and an integer signifying the lowest valid position for which a driver is eligible for fastest-lap points (e.g. if this is configured to 10, then if the 11th place driver gets the fastest lap, then they get no points). The session types "Sprint Quali" and "Feature Quali" are invalid for this command.
 
+#### Setting many positions at once
+- There shall be a "results config bulk-session" command, available to trusted server users, that intakes the configuration name and a session type and opens a form in which many positions are given at once, one "position, points" pair per line. Blank lines are skipped; a position must be a positive integer and its points non-negative; where a position appears more than once the last value given wins and the override is reported. Every valid pair is applied and every rejected line is reported back, so a partly-wrong input still applies what was right.
+- There shall be a "results config xml-import" command, available to trusted server users, that intakes the name of an existing configuration and an XML payload, given either as pasted text or as an attached file. One payload may carry several session types, each with any number of positions and a fastest-lap bonus with an optional position limit.
+    - The import is applied atomically: any validation failure leaves the configuration untouched.
+    - Positions not named in the payload are left as they stand, so a partial import is safe.
+    - An unknown session type, negative points, a position below 1, or a fastest-lap element on a qualifying session shall be rejected. Points within one session block must not increase as position increases, and two positive values may not tie.
+    - A session block carrying neither a position nor a fastest-lap element shall be skipped silently.
+    - Both the success and the failure of an import shall be logged in the server's log channel.
+
 #### Linking configs to seasons
 - <NEW COMMAND> A "results config append" command will be made available to trusted server users that will intake the string that IDs the points configuration to be applied to the current season. The command is only valid if there is a season being setup; if there is no season or if there is an active (approved) season, this command fails.
     - There may be multiple points configurations attached to one season.
@@ -170,20 +181,22 @@
 
 #### Changing points system mid-season
 - There will be a flag denoted the modified flag that is false by default.
-- <NEW COMMAND> A "results amend toggle" command will be made available to server administrators that will enable and disable the modification of the configurations in the season points schema store. By default, this will be disabled.
+- <NEW COMMAND> A "results amend toggle" command will be made available to trusted server users that will enable and disable the modification of the configurations in the season points schema store. By default, this will be disabled.
     - It shall not be possible to "toggle off" if the modified flag is true.
 - <NEW COMMAND> A "results amend revert" command will be made available to trusted users that will copy over the season's points schema store onto the modification schema store, thereby reverting all uncommitted modifications. This command is invalid if "results amend" is toggled off.
 - Once "results amend revert" is run successfully, the "modified flag" is set to false.
 - <NEW COMMAND> A "results amend session" command will be made available to trusted users that will intake the string that IDs the points configuration in the modification store to be changed, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race), an integer signifying position, and an integer signifying the number of points gained. This command is invalid if "results amend" is toggled off.
 - <NEW COMMAND> A "results amend fl" command will be made available to trusted server users that will intake the string that IDs the points configuration to be changed in the modification schema store, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race) and an integer signifying the number of points gained for having the shortest lap time in a session. The session types "Sprint Quali" and "Feature Quali" are invalid for this command.
 - <NEW COMMAND> A "results amend fl-plimit" command will be made available to trusted server users that will intake the string that IDs the points configuration to be changed in the modification schema store, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race) and an integer signifying the lowest valid position for which a driver is eligible for fastest-lap points (e.g. if this is configured to 10, then if the 11th place driver gets the fastest lap, then they get no points). The session types "Sprint Quali" and "Feature Quali" are invalid for this command.
-- Once one of "results amend session", "results amend fl" and "results amend fl-plimit" is run successfully, the modified flag is set to true.
-- <NEW COMMAND> A "results amend review" command will be made available to server administrators, which will display the contents of the configurations stored in the modification store via the bot, alongside a button to approve or reject.
-- If approved, then the contents of the season points schema store will be overwritten by the modification store. All round results, and standings after each round result, shall be recalculated and reposted in the appropriate channels for each division. The modified flag will then be set to false, and the modification store cleared.
+- There shall be a "results amend bulk-session" command, available to trusted users, that intakes the configuration name and a session type and opens a form taking many positions at once, on the same terms as "results config bulk-session". It writes to the modification store, and is invalid if "results amend" is toggled off.
+- Once one of "results amend session", "results amend fl", "results amend fl-plimit" and "results amend bulk-session" is run successfully, the modified flag is set to true.
+- <NEW COMMAND> A "results amend review" command will be made available to trusted server users, which will display the contents of the configurations stored in the modification store via the bot, alongside a button to approve or reject.
+- If approved, then the contents of the season points schema store will be overwritten by the modification store. All round results, and standings after each round result, shall be recalculated and reposted in the appropriate channels for each division. The modified flag will then be set to false, the modification store cleared, and amending mode switched off.
 - If rejected, nothing happens. The modification store will remain as it is, and the amending mode will remain active.
 
 #### Viewing configs after season approval
 - <NEW COMMAND> A "results config view" will be made available to trusted server users to view the many points configurations applied to the current season. There is one mandatory input, the name/ID of the points configuration, and one optional input, the session type whose points configuration is to be posted; if this optional parameter is omitted, then the configuration for all sessions pertaining to the input name/ID shall be posted.
+- While the season is in setup, the command reads the server points schema store; once the season is approved, it reads the season's own store.
 - When listing points configuration for any session, if all positions beyond a certain point yield 0 points, then they shall all be listed as "xth+" to prevent repetition.
 
 ### Submitting round results
@@ -199,7 +212,17 @@
 - There is a special reserved input for every session which is "CANCELLED". This allows users to not submit results for sessions that were not run due to whatever issues.
 - All inputs pertaining to round results must be logged in the log channel configured for the server. The season number, division and round number shall be explicited for each raw result input logged for easy search.
 - Once the results introduced to a given session are attributed, the bot shall post buttons, each containing the name of a points configuration in the season, for the user to choose one. This will be saved together with the results of a session. So for each session, there's one chosen configuration from which to get the points-per-position information. This information shall be persisted.
-- <MODIFIED COMMAND> There is a "round cancel" command initially implemented in the scope of the weather module. Its functionality shall be enhanced to also cancel the request for round results specified by the first bullet point. If this request for round results has already been triggered, the "round cancel" command will fail.
+    - Where exactly one configuration is attached to the season, it shall be chosen without asking and the choice stated.
+- A driver shall be recorded under one team role across every session of a round; see "One driver, one team, for the whole of a round" below.
+- The channel shall be private to the server's admin role, and shall be deleted once the round is settled.
+- <MODIFIED COMMAND> There is a "round cancel" command initially implemented in the scope of the weather module. Its functionality shall be enhanced to also cancel the request for round results specified by the first bullet point. If this request for round results has already been triggered, the "round cancel" command will fail. It shall equally fail once any results exist for the round.
+
+#### The two sanction columns of an amendment
+- The formats below describe a first submission. A re-insertion through "round results amend" shall carry two further columns after them, holding the post-race penalty and the appeal penalty, so that an amendment preserves sanctions already applied rather than discarding them.
+    - For a race session, each is either "N/A", a number of seconds, or "DSQ".
+    - For a qualifying session, each is either "N/A" or "DSQ".
+    - Setting both to "DSQ" on one line shall be rejected.
+    - An entry either of whose sanction columns is "DSQ" shall be recorded as disqualified whatever its time column says.
 
 #### Sprint Quali and Feature 
 - The expected format for Race results is "Position, Driver, Team, Tyre, Best Lap, Gap", with each line representing a different player's result.
@@ -278,6 +301,15 @@
     - Qualifying sessions: Position, Discord display name, Team, Tyre, Best Lap, Gap, Points Gained
     - Race sessions: Position, Discord display name, Team, Total Time, Fastest Lap, Time Penalties, Points Gained (if any)
 - The points conferred to each driver will be determined by the points configuration applied to each session: points are attributed by finishing position and, depending on the settings of the configuration (points for fastest lap and placement limit for fastest lap points), for the lowest lap time as well.
+- A driver who did not start, or was disqualified, receives neither position points nor the fastest-lap bonus. A driver who did not finish receives no position points but remains eligible for the bonus.
+
+#### The three states of a round's results
+- Every results and standings posting shall carry a label naming the state the round has reached, and each new state shall replace the posting of the one before it rather than adding to it.
+    - **Provisional Results** — every session submitted, no sanction applied.
+    - **Post-Race Penalty Results** — stage one of the review committed.
+    - **Final Results** — stage two of the review committed. The round is settled.
+- A round re-submitted through the resubmit button shall be published as provisional again, marked as amended.
+- Where a session was cancelled, the results channel shall carry a note to that effect in place of a table.
 
 #### Corrections to the rendering of the table
 - A time penalty shall be rendered in seconds, signed, and to the precision with which it was recorded: a penalty of a whole number of seconds carries no decimal part, and one carrying a fraction of a second is rendered to three decimal places. Five seconds is "+5s" and five and a half "+5.500s". A penalty is never rounded to a whole second for display, and never rounded away from zero.
@@ -288,20 +320,39 @@
     - Corrected 2026-08-13. The column formerly fell back to the outcome wherever no lap was held, so a classified entry with no lap printed the word "CLASSIFIED" where a lap time belongs, while a disqualified entry holding a lap printed the lap.
 
 ### Revising results
-- <NEW COMMAND> A "round results penalize" command shall be made available to trusted server users that will mandatorily intake a division name and round number. This will initiate a wizard with the following states:
-        - Start - A button for each session in will be posted by the bot. If there are no penalties registered by the user, show only a "cancel" button. If there are penalties registered by the user, show also a "review" button.
-        - Insert User ID - After choosing the session, the bot will request a user ID repeatedly until a user ID is provided. It will be possible to "go back" via a button, which will make the wizard go back to the session buttons.
-        - Insert time penalty - After inserting a user ID, the bot will request a string representing the time penalty (in seconds) to be added to the driver's total race time. There will also be a button for disqualifying a driver. There will also be a button for cancelling, which will make the user return to "Insert User ID", and another to cancel and go back to "Start".
-            - If "DSQ", then the driver's result will be invalidated, and they will be dropped to the bottom of the results' table, being ranked last.
-            - If an integer, that number will then be added to the total race time of the driver.
-            - If the session chosen is "Sprint Qualifying" or "Feature Qualifying", then no time penalties are accepted; only disqualification is accepted.
-            - If the input for the penalty is valid, the bot will request a new user ID.
-        - Review - Once the review button is pressed, a list of penalties will be displayed, with a button to "approve", "make changes" or "cancel".
-    - Once cancelled in "Review", the wizard with exit entirely.
-    - Once "Make changes" is chosen in "Review", the wizard will return to the "Start" state.
-    - Once approved in "Review", the corrections will be applied, the gap to leader recalculated for all drivers, and the positions of all drivers in all sessions will be recalculated and reposted in the appropriate channels.    
-- <NEW COMMAND> A "round results amend" command shall be made available to trusted server users that will intake a division name and round number mandatorily, and optionally, a session name as well. The user will then be requested to re-insert session results in the same format as when first submitting round results.
+#### Penalties and appeals are settled in the submission channel
+Penalties are not applied by a command. Once every session of a round has been submitted or cancelled, the submission channel remains open and carries the round through two review stages before it closes. Each stage is worked from buttons, and a round passes through three published states: provisional, post-race penalty, and final.
+
+- Any message posted in the submission channel while it is in a review stage shall be deleted, with a reply saying why.
+- Every button in both stages shall be usable by holders of the server's interaction role.
+- A round in which every session was cancelled shall skip both stages: the channel closes and no standings are computed for that round.
+
+**Stage one — post-race penalties.** The prompt shall carry:
+- **Add Penalty** — asks which session, then takes the driver as a mention or user ID, the sanction, a description and a justification. Both texts are mandatory and both are published in the verdict.
+    - The sanction shall be either "DSQ" or a whole number of seconds, positive or negative. Fractions of a second shall be rejected.
+    - "DSQ" invalidates the entry, which is ranked last in that session.
+    - A number of seconds is added to the driver's total race time.
+    - For "Sprint Qualifying" and "Feature Qualifying", only "DSQ" is accepted.
+    - A negative sanction shall be rejected where its magnitude exceeds the time penalties the driver already carries in that session, counting anything staged in the same review, or where it would produce a negative total race time.
+    - A driver not present in the chosen session's results shall be rejected.
+- **No Penalties / Confirm** — proceeds with nothing applied. Where entries are staged, it shall first ask for confirmation that they are to be discarded.
+- **Approve** — proceeds with what is staged. It shall be unavailable while nothing is staged.
+- **Resubmit Initial Results** — discards the staged penalties, supersedes the round's submitted results, and restarts collection from the first session.
+- **Attendance Pardon** — stages an attendance pardon, per the attendance module specification.
+- One **Remove** button per staged entry.
+
+Approving stage one shall present the staged list again with a choice of returning to staging, with the list intact, or committing. Committing shall apply every penalty, recompute positions, times and points for the sessions affected, republish the round's results and standings under the post-race penalty state, recompute the standings of every later round, and post one verdict per decision to the division's verdicts channel.
+
+**Stage two — appeals.** Committing stage one shall post a second prompt to the same channel, carrying **Add Correction**, **No Changes / Confirm**, **Approve** and one **Remove** per staged correction. A correction takes and validates the same values as a penalty, and is the surface for overturning one.
+
+Approving stage two shall apply any staged corrections, republish the round's results and standings under the final state, post a verdict for each correction, recompute the standings of every later round, mark the round final, and delete the submission channel. There shall be no second confirmation on this stage.
+
+#### Amending a submitted session
+- <NEW COMMAND> A "round results amend" command shall be made available to trusted server users that will intake a division name and round number mandatorily, and optionally, a session name as well. Where the session is omitted, the bot shall ask which one. The user will then be requested to re-insert session results in the same format as when first submitting round results, extended by the two sanction columns described under "Submitting round results".
+    - The command shall be refused for a round that has not been marked final by both review stages.
+    - The results shall be re-inserted in a channel created for the purpose, private to the server's admin role, carrying a button to abandon the amendment.
     - After insertion, the results are validated for format, and the standings of all rounds after the one that was amended (including) shall be output once more.
+    - The points configuration recorded for the session shall be kept where it is still attached to the season; otherwise the user shall be asked to choose one.
 
 ## Standings
 ### Design
@@ -327,8 +378,11 @@
         - NOTE: There will be a "nth place first obtained on Round Number" for each place a driver has finished in. If there are no entries for a given place, then it is assumed that the drivers finished 0 times in that position.
 
 ### Detailed functionality specification for standings
-- <NEW COMMAND> A "results reserves toggle" command will be made available to trusted server users. When toggled on, drivers belonging to the Reserve team will be relevant for the driver standings, and will therefore show up in the classification. When toggled off, drivers belonging to the Reserve team will accrue points all the same, but will not show up in the driver standings.
-- <NEW COMMAND> A "standings sync" command will be made available to trusted server users, which will take as input the name of a division.
+- <NEW COMMAND> A "results reserves toggle" command will be made available to trusted server users, which takes the name of a division and applies to that division alone. When toggled on, drivers belonging to the Reserve team will be relevant for the driver standings, and will therefore show up in the classification. When toggled off, drivers belonging to the Reserve team will accrue points all the same, but will not show up in the driver standings. Reserves shall be shown by default.
+- <NEW COMMAND> A "results standings sync" command will be made available to trusted server users, which will take as input the name of a division. It shall delete every standings message the bot holds for that division and post the standings of each round that has results afresh, in round order, each under the state that round has reached.
+- <NEW COMMAND> A "results rounds sync" command will be made available to trusted server users, which will take as input the name of a division. It shall delete every session results message the bot holds for that division and post the results of every session of every round afresh, in round order, each under the state that round has reached.
+- Every driver seated in a non-reserve seat of a division shall appear in the driver standings from the outset, on zero points, whether or not they have taken part in a round. Every non-reserve team of the division shall likewise appear in the team standings.
+- Where two entries cannot be separated on points or on countback, an entry that has taken part in at least one session shall rank above one that has taken part in none.
 - If a driver that was assigned only to the reserve team in a given division is then assigned to a configurable team, the points they have accrued as a driver will stand all-the-same, and will be reflected on their position on the standings.
 
 

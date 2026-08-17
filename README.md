@@ -350,6 +350,8 @@ Required for every division while the weather module is enabled: `/season approv
 | `name` | String | ✅ | Division name |
 | `channel` | Channel | ✅ | Channel where standings tables are posted |
 
+Required for every division while the results & standings module is enabled, along with [`/division verdicts-channel`](#division-verdicts-channel--set-the-verdicts-channel-for-a-division): `/season approve` is refused until each division has all three, and a division created by `/division duplicate` does not inherit them. For the rest of the module's setup, see [Configuring the results & standings module](docs/how-to/configuring-the-results-module.md).
+
 #### `/division lineup-channel` — Set the lineup posting channel for a division
 *Access: Trusted admin*
 
@@ -803,7 +805,9 @@ No parameters. Returns `unassigned_drivers.csv` with the columns `Seed`, `Displa
 
 ### Results Module Commands
 
-All commands below require the results module to be enabled (`/module enable results`). Most commands also require the `results` module gate, and some also require Server Admin access.
+> **Setting the results & standings module up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, follow [Configuring the results & standings module](docs/how-to/configuring-the-results-module.md).
+
+All commands below require the results module to be enabled (`/module enable results`) and the **Manage Server** permission. Where results, standings and verdicts are posted is set per division by [`/division results-channel`](#division-results-channel--set-the-results-posting-channel-for-a-division), [`/division standings-channel`](#division-standings-channel--set-the-standings-posting-channel-for-a-division) and [`/division verdicts-channel`](#division-verdicts-channel--set-the-verdicts-channel-for-a-division); all three are required before a season can be approved.
 
 #### Points Config Management
 
@@ -882,6 +886,16 @@ Only allowed when the season is in **SETUP** status.
 | `session` | Choice | — | Optional: filter output to a specific session type |
 
 Displays position-to-points mappings and fastest-lap settings. Works for both server-level configs (SETUP) and season-attached configs (ACTIVE).
+
+##### `/results config bulk-session` — Set many positions at once via a modal
+*Access: Trusted admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Config name |
+| `session` | Choice | ✅ | Session type |
+
+Opens a modal taking one `position, points` pair per line (up to 2 000 characters). Blank lines are skipped. `position` must be ≥ 1 and `points` ≥ 0; a repeated position takes its last value and the override is reported. Valid pairs are applied even when other lines fail, and every rejected line is listed back. Applied changes are written to the log channel.
 
 ##### `/results config xml-import` — Import a full points configuration from XML
 *Access: Trusted admin · Results module required*
@@ -1037,20 +1051,33 @@ All fields above apply, plus:
 
 After all sessions of a round are submitted, the submission channel enters **penalty review state** instead of closing immediately. The bot posts a penalty review prompt with the following buttons:
 
-- **➕ Add Penalty** — opens a modal to enter a driver mention and penalty value (e.g. `+5s`, `-3s`, `DSQ`). Positive and negative time penalties are supported for race sessions; only DSQ is accepted for qualifying sessions. A zero-second penalty is rejected. Negative penalties are also rejected if they would produce a negative total race time.
-- **🗑 Clear All** — prompts for confirmation, then clears the entire staged list.
-- **✅ Approve** — disabled until at least one or zero penalties have been staged; moves to the approval step (see below).
-- **Remove [driver] [penalty]** — a per-entry button appears for each staged penalty, allowing individual removals.
+- **➕ Add Penalty** — prompts for the session, then opens a modal taking a driver mention or user ID, a penalty value (e.g. `+5s`, `-3s`, `DSQ`), a description and a justification. Both text fields are required and both are published in the verdict. Positive and negative time penalties are supported for race sessions; only DSQ is accepted for qualifying sessions. Values are **whole seconds only**. Negative penalties are rejected if their magnitude exceeds the time penalties the driver already carries in that session, or if they would produce a negative total race time.
+- **No Penalties / Confirm** — moves to the approval step with nothing applied. When entries are staged, it first asks for confirmation that they are to be discarded.
+- **✅ Approve** — disabled while nothing is staged; moves to the approval step (see below).
+- **🔄 Resubmit Initial Results** — discards the staged penalties, supersedes the submitted results, and restarts collection from the first session.
+- **🏳️ Attendance Pardon** — stages an attendance pardon; see [Attendance Module](#attendance-module). Present regardless of whether that module is enabled.
+- **Remove #N** — a per-entry button appears for each staged penalty, allowing individual removals.
+
+Only members holding the configured interaction role may use these buttons.
 
 Once **Approve** is pressed, the bot posts an **approval message** to the submission channel with:
-- **✏️ Make Changes** — returns to the penalty review prompt.
-- **✅ Approve** — applies all staged penalties, recomputes positions and points for all affected sessions, deletes and reposts the interim results and standings, cascades standing recalculations to subsequent rounds, then closes the submission channel. The round is marked **finalized**.
+- **✏️ Make Changes** — returns to the penalty review prompt with the staged list intact.
+- **✅ Approve** — applies all staged penalties, recomputes positions and points for all affected sessions, deletes and reposts the results and standings under the **Post-Race Penalty Results** label, cascades standing recalculations to subsequent rounds, posts one verdict per decision to the division's verdicts channel, and runs the attendance pipeline where that module is enabled. The submission channel then enters **appeals review** (see below) — it is not closed here, and the round is not yet final.
+
+##### Post-submission appeals review — Correct or overturn a penalty
+
+Approving the penalty stage posts a second prompt to the same channel, carrying **➕ Add Correction**, **No Changes / Confirm**, **✅ Approve** and a **Remove #N** per staged correction. A correction takes the same values as a penalty and is applied in the same way; it is the surface for overturning a sanction on appeal.
+
+Approving here — or **No Changes / Confirm** with nothing staged — deletes and reposts everything under the **Final Results** label, records each correction, posts its verdict, cascades subsequent standings, marks the round **FINAL**, and deletes the submission channel. There is no second confirmation step on this stage.
 
 **Notes:**
 - Any message posted in the submission channel while it is in penalty review state is automatically deleted with an explanatory reply.
 - Penalties can be positive (`+5s`, `5s`, `5`) or negative (`-3s`, `-3`) for race sessions.
 - A DSQ on the fastest-lap holder forfeits the bonus; no other driver receives it.
-- A round that is finalized blocks `/test-mode advance` until approved.
+- A round that has been submitted but has not reached **FINAL** blocks `/test-mode advance` until both review stages are approved.
+- `/round cancel` is refused once a submission channel is open or any results exist for the round.
+- On bot restart, a channel already in penalty or appeals review is restored and its prompt reposted. A channel still **mid-submission** is not: the round's submitted sessions are discarded and collection restarts from the first session, with a notice in the log channel.
+- A round in which every session is submitted as `CANCELLED` skips both review stages entirely — the channel closes and no standings are computed for it.
 
 ##### Fastest-lap tie-breaking — FL override header
 
@@ -1069,7 +1096,6 @@ Rules:
 - The override replaces automatic time-comparison entirely for that submission.
 - Omitting the header restores normal behaviour: the lowest lap time wins; ties fall to the driver listed highest (lowest finishing position).
 - The header is ignored for qualifying submissions.
-- On bot restart, open penalty review channels are automatically restored.
 
 ##### `/round results amend` — Re-submit results for a completed session
 *Access: Trusted admin · Results module required*
@@ -1087,7 +1113,7 @@ Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in
 #### Mid-Season Points Amendment
 
 ##### `/results amend toggle` — Enable or disable amendment mode
-*Access: Server admin*
+*Access: Trusted admin*
 
 No parameters. Toggles amendment mode for the active season. When amendment mode is active, changes made via `/results amend session`, `/results amend fl`, and `/results amend fl-plimit` are staged in a modification store and do not affect live standings until approved with `/results amend review`.
 
@@ -1132,10 +1158,24 @@ Requires amendment mode to be active. Race session types only.
 | `session` | Choice | ✅ | Race session type |
 | `limit` | Integer | ✅ | New position limit |
 
-##### `/results amend review` — Review and approve modification store changes
-*Access: Server admin*
+##### `/results amend bulk-session` — Stage many position changes at once via a modal
+*Access: Trusted admin*
 
-No parameters. Displays a diff of the staged changes against the current season points. Approve to atomically overwrite season points and recalculate all standings. Reject to leave the modification store unchanged.
+Requires amendment mode to be active.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Config name |
+| `session` | Choice | ✅ | Session type |
+
+Same modal and same input rules as [`/results config bulk-session`](#results-config-bulk-session--set-many-positions-at-once-via-a-modal), writing to the modification store instead of the server config.
+
+##### `/results amend review` — Review and approve modification store changes
+*Access: Trusted admin*
+
+No parameters. Displays a diff of the staged changes against the current season points. Approve to atomically overwrite season points, recalculate all standings for every division from the first round, and switch amendment mode back off. Reject to leave the modification store and amendment mode as they are.
+
+> **The recalculation currently lands in the database only.** Approving reports that standings were "recomputed and reposted"; the recomputation happens, and every attempt to repost fails with an error in the log channel, so the results and standings channels keep showing the old points. Run [`/results rounds sync`](#results-rounds-sync--force-a-full-results-repost-for-a-division) and [`/results standings sync`](#results-standings-sync--force-a-full-standings-repost-for-a-division) for **each** division afterwards. Recorded in [known issues](docs/wip-specs/known_issues.md).
 
 ---
 
@@ -1168,7 +1208,7 @@ Deletes every existing session results Discord message for the division and repo
 |-----------|------|----------|-------------|
 | `division` | String | ✅ | Division name |
 
-Toggles whether reserve drivers appear in the publicly posted standings for the specified division.
+Toggles whether reserve drivers appear in the publicly posted standings for the specified division. Reserves are **shown by default**. Hiding them affects presentation only: a hidden reserve still accrues points, and those points still count towards the team whose car they drove.
 
 ---
 

@@ -94,6 +94,66 @@ Found on 2026-08-17 while writing the signup module how-to guide.
 - The five-minute window opened by **Request Changes** is an in-memory `asyncio.sleep` task (`src/services/wizard_service.py:1597-1602`), and the reason-capture map in `src/cogs/admin_review_cog.py:23` is an in-memory dict. The wizard record is `UNENGAGED` in this state, so `recover_wizards` re-arms nothing.
 - A driver caught by a restart in `AWAITING_CORRECTION_PARAMETER` waits indefinitely. No admin command returns them to the review queue; their own **Cancel Signup** button is the only exit.
 
+## Results & standings
+
+Found on 2026-08-17 while writing the results module how-to guide.
+
+**Approving a mid-season points amendment recalculates the standings but reposts nothing.**
+- `repost_round_results` in `src/services/results_post_service.py:729` takes `label` as a required positional parameter. `approve_amendment` calls it at `src/services/amendment_service.py:549` with four positional arguments and `bot=` only, so every call raises `TypeError: missing a required argument: 'label'`. The call sits inside a `try/except Exception` that logs and moves to the next round.
+- `cascade_recompute_from_round` runs first and succeeds, so the new points **are** written to every standings snapshot. Nothing in Discord changes. A league that approves an amendment is told "All standings recomputed and reposted", sees its results and standings channels still showing the old points, and finds one traceback per round in the log channel.
+- `/results rounds sync` and `/results standings sync` per division are the recovery, and they are not mentioned by the reply.
+- **This breaches the constitution, not merely the wip-spec.** The Amendment & Penalty section states that on approval "all affected results and standings MUST be reposted", and separately that standings for an affected round and all subsequent rounds "MUST be recomputed and reposted atomically". Half of that is happening.
+- The same call is made with the same omission at `src/services/penalty_service.py:459`, reachable only when `apply_penalties` is called without `_skip_post=True`. Both production callers pass it, and the integration tests that do not use a fake bot whose `get_guild` returns `None`, so that one is latent and untested rather than live.
+
+**A points configuration may be attached to a season without existing, and the season then refuses to approve with no message at all.**
+- `attach_config` in `src/services/season_points_service.py:28` inserts into `season_points_links` without checking that `config_name` is present in `points_config_store`. `remove_config` in `src/services/points_config_service.py:45` deletes the store row without clearing any link to it.
+- The R&S approval gate counts link rows, so it passes. `snapshot_configs_to_season` then calls `points_config_service.get_config_entries`, which raises `ConfigNotFoundError`, and `src/cogs/season_cog.py:3583` does not catch it. There is no `on_app_command_error` handler and no `tree.error` anywhere in `src/`, so the already-deferred interaction simply never receives a follow-up.
+- A league that mistypes `/results config append`, or removes a configuration still attached, sees `/season approve` do nothing whatever — no error, no reason, and the season left in SETUP. `/season review` continues to list the phantom name as attached.
+
+**Amending a round destroys its results submission and only rebuilds it for weather-enabled servers.**
+- `amend_round` in `src/services/amendment_service.py:135` calls `scheduler_service.cancel_round`, which removes every job carrying that `round_id`, the `results_*` job included. The re-scheduling call at `:156` is guarded by `is_weather_enabled`, and `schedule_round` is the only thing that recreates a results job outside `/season approve`.
+- A league running results with weather **off** loses that round's submission channel permanently: nothing opens at the scheduled time, the round is never scored, and it silently sits out the championship. With weather on the job is restored, except for a MYSTERY round whose T-5 has already passed, which is excluded by the condition at `:155`.
+- Nothing reports it. This is the same root cause as the attendance entry above; the results job is a second casualty of the same unguarded `cancel_round`.
+
+**A restart mid-submission discards every session already submitted for that round.**
+- `_recover_orphaned_submission_channels` in `src/bot.py:511` treats a channel with `in_penalty_review = 0` as a mid-submission orphan: it deletes the round's `session_results` rows and the channel, then re-triggers `run_result_submission_job` from the first session.
+- A league three sessions into a sprint weekend when the bot restarts pastes all four again. The log channel reports it, which is the only warning.
+- Defensible — a part-collected round has no coherent state to resume into — but the cost falls entirely on the person retyping four classifications, and no partial state is offered back.
+
+**`/round results amend` is a single attempt, and its errors go somewhere the caller is not looking.**
+- Every failure path in `round_results_amend` (`src/cogs/season_cog.py:3163`, `:3183`, `:3231`) calls `_cleanup_channel`, deleting the amend channel. The collection loop also has a hard `_AMEND_TIMEOUT_S = 300` at `:3102`, after which the channel is deleted with no message in it.
+- Validation errors, FL-override errors and internal failures are written to the **log channel**; the caller gets an ephemeral line telling them to look there. The channel they were typing in is gone by then.
+- A league correcting a classification therefore cannot iterate on a rejected block the way the original submission wizard allows — that one re-prompts in place. The asymmetry is not stated anywhere.
+
+**The submission channel pings the one role that cannot see it.**
+- `create_submission_channel` (`src/services/result_submission_service.py:85-96`) denies `@everyone` and grants the bot plus `server_configs.interaction_role_id`. The opening message at `:2301` mentions `divisions.mention_role_id` — the division's driver role — which holds no overwrite on the channel.
+- Discord does not notify a member of a mention in a channel they cannot read, so the ping reaches nobody, and the league managers who *can* act on it are never mentioned. A league finds out a round is waiting by noticing the channel, or not at all.
+- The spec says the bot shall notify "the trusted user role"; the code notifies the division role. `run_result_submission_job` never reads the interaction role for the mention, only for the overwrite.
+
+**A points configuration cannot be read back between seasons.**
+- `config_view` in `src/cogs/results_cog.py:645` fetches `get_season_for_server` and refuses with "No active or setup season found" when there is none, before it reaches the SETUP branch that reads the **server-level** store.
+- The store is server-scoped and survives every season, but the only command that displays it demands a season exist. A league planning next year's points before running `/season setup` cannot see what it built.
+- Same shape as the weather entry above: a server-scoped setting reachable only through a season-scoped surface.
+
+**Nothing lists the configurations a server holds.**
+- `/results config view` requires a name. `/season review` prints only the names *attached* to the current season (`src/cogs/season_cog.py:776`). No command enumerates `points_config_store`.
+- A league that has forgotten whether it called the table `100%`, `Full` or `Standard` has no way to find out, and `/results config append` will happily accept the wrong guess — see the first entry.
+
+**A zero-second penalty is accepted and produces a public verdict for nothing.**
+- `_TIME_PENALTY_RE` in `src/services/penalty_service.py:17` is `^([+-]?\d+)s?$`, so `0` parses to a `TIME` penalty of zero seconds. `validate_penalty_input` has no zero check, and neither does `AddPenaltyModal.on_submit`.
+- The penalty is staged, applied, recorded, and announced in the verdicts channel as a sanction, while changing no time, no position and no points.
+- The README documented this input as rejected until 2026-08-17.
+
+**The test-mode guard against a results job double-firing cancels a job ID that no longer exists.**
+- `src/cogs/test_mode_cog.py:253` calls `cancel_job(f"results_r{entry['round_id']}")`, commented as handling "a real future-dated results_r job … so it doesn't double-fire". Results jobs have been named `results_s{S}_d{D}_r{R}` since the human-readable job-ID convention landed (`src/services/scheduler_service.py:406`), and `cancel_job` swallows a miss silently. The correct id is already on the entry as `job_id` and is not used.
+- Suspicion rather than a confirmed fault: results jobs are excluded from `get_pending_advance_jobs`, and `run_result_submission_job` guards on an open submission channel, so the paths that would expose it are narrow — a weather-enabled test season with future-dated rounds, where `advance` opens the wizard and the genuine job then fires as well.
+- Two docstrings in the same path — `get_next_pending_phase` (`src/services/test_mode_service.py:88-91`) and `get_pending_advance_jobs` — additionally claim `schedule_round` skips the results job for MYSTERY rounds. It does not; it schedules one for every format. `docs/how-to/test-mode.md` repeated the claim until 2026-08-17.
+
+**A round whose every session is cancelled is scored, published and reviewed not at all.**
+- `run_result_submission_job` (`src/services/result_submission_service.py:2494`) compares the cancelled set against the full session list and, on a match, closes the submission channel without calling `enter_penalty_state`.
+- No standings snapshot is computed for that round, so the standings channel keeps the previous round's tables and the results channel holds only the per-session "this session was cancelled" notes. Attendance charges nobody, because the pipeline hangs off the penalty stage.
+- Consistent and probably intended, but a round can therefore exist in a division's calendar with no standings row of its own, which anything walking rounds in order should expect.
+
 ## Core setup and access
 
 Found on 2026-08-17 while writing the core configuration how-to guide.

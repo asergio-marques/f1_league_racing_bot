@@ -53,7 +53,7 @@ This guide covers the attendance module only. Setting the bot up, creating a sea
 /module enable results
 ```
 
-Attendance is refused outright without it, because attendance is worked out from your results: the bot decides who turned up by reading who appears in the session classifications you submit, and it only charges points once a round's post-race penalties are settled.
+Attendance is refused outright without it, because attendance is worked out from your results: the bot decides who turned up by reading who appears in the session classifications you submit, and it only charges points once a round's post-race penalties are settled. Setting that module up is a job of its own — follow [Setting up the results & standings module](configuring-the-results-module.md) for the order.
 
 That dependency runs both ways. **Turning results & standings off turns attendance off with it**, and it does so quietly — you get the one reply about results, and nothing tells you attendance went too.
 
