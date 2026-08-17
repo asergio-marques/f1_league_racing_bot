@@ -172,12 +172,31 @@
   - Race ban - 0
   - Season ban - 0
 
-## I think configuring is done for now, now onto the rest...
+## Stewarding cycle
+### Report submission
+- 
 
+### Defense submission
+- 
 
-<<< move these>>>
+### Report deliberation
+- 
+
+### Appeal submission
+- 
+
+### Appeal deliberation
+- 
+
+### Others?
+- 
+
+## Conduct cycle
+### Trigger
 - <NEW COMMAND> A "steward conduct-inv start" command will be made available to the head steward and temporary head steward roles to be utilized in the channel configured by "steward command-channel" exclusively, which will have as input 1 or more user IDs of a server member (not necessarily a driver, only requires the "base_role" as configured by "module enable signup"), so that a CoC investigation is opened against said user.
 
+### Defense submission
 - <NEW COMMAND> A "steward conduct-inv add" command will be made available to the league managers... <<< --- TBD --- >>>
 
-### Penalties
+### Investigation deliberation
+- 
