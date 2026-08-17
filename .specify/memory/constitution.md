@@ -1,6 +1,113 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-17 — v4.8.0 → v5.0.0: MAJOR — track imagery split in two; the flag class rekeyed by country]
+  Version change    : 4.8.0 → 5.0.0
+  Bump rationale    : MAJOR, and the first since v4.0.0. Two changes to Rule 13 are backward
+                      incompatible, and either alone would carry the bump.
+
+                      **The flag class is rekeyed.** A driver's flag resolved by the nationality
+                      adjective — `British` to `british.svg` — and now resolves by the country of
+                      that nationality, `great_britain.svg`. A flag directory that was **complete
+                      and conformant** under v4.8.0 is incomplete under v5.0.0: every file in it is
+                      named wrongly, every driver draws the fallback, and a directory holding no
+                      fallback makes the render fatal. That is the definition the versioning policy
+                      gives MAJOR — a backward-incompatible redefinition — and it is met without
+                      argument.
+
+                      **Four image types lose the track class.** Standings (both slots), the
+                      attendance sheet and the weather forecasts declared a track-class field and
+                      now declare a flag-class one. A template authored against v4.8.0 still
+                      *renders*, which was v4.0.0's test for MAJOR, but it renders a **different
+                      picture** from the one its author drew it to hold, and the id naming the field
+                      no longer names what is placed upon it. Rule 11's convention obliges the
+                      rename, so the catalogues change too.
+
+                      MINOR was considered and rejected. v4.8.0 rejected MAJOR three times on one
+                      consistent test — that nothing conformant to the prior version becomes
+                      non-conformant, Rule 7's inversion being a pure loosening. This amendment
+                      fails that test in both directions at once: it **removes** the track class
+                      from four types, and it **substitutes** one datum for another in a fifth. It
+                      is neither a loosening nor an expansion, and reading it as one would leave a
+                      league's flag directory silently broken under a version number that promised
+                      it would not be.
+
+                      A reader diffing this version is owed the plain warning: **an existing flag
+                      directory must be renamed file by file, and four templates must be re-read
+                      against their catalogues.** The bot is not in production, so no live league is
+                      affected, but the rules are versioned rather than the deployments.
+  Feature branch    : 044-track-imagery-split (created 2026-08-17 from main). The amendment precedes
+                      the increment, as the scope guard requires; nothing is implemented on it yet.
+                      Suggested next: /speckit-specify for the track imagery split.
+
+  Session context   : The image module has a prototype implementation end to end, and every graphic
+                      that draws a round drew a circuit map from `resources/tracks/`, one class and
+                      one configured directory serving every site. The author raised that a league
+                      wants a **flag in some places and a map in others**, which one class keyed one
+                      way cannot express. Principle XIV was audited for what the split touches:
+                      Rule 13 (classes, keying, fallbacks), Rule 11 (an id naming its class), Rule
+                      10 (a catalogue naming a class per field) and Rule 3's literal-value paragraph
+                      (a mystery round). Rules 10 and 3 needed no text; the substance sits in
+                      Rule 13 with cross-references out to the rest.
+
+  Author's rulings  : - Granularity           → **two optional fields, not a configuration toggle**.
+                                              The choice is not a setting a league flips per graphic
+                                              but two distinct elements a template declares. The map
+                                              field is available to the **calendar and check-in
+                                              kinds only**; every other type that used the track
+                                              class reverts to the country flag. The author's
+                                              reasoning, recorded as the Rule's rationale: a map
+                                              reads where the round is the subject and is unreadable
+                                              where the round is a column heading.
+                      - The flag's source     → **reuse the nationality flag directory, rekeyed by
+                                              country name**. Not a second directory. The
+                                              consequence the author accepted explicitly: a table
+                                              relating a driver's nationality to a country name must
+                                              exist, so that one directory serves both a driver and
+                                              a round. `utils/nationality_data.py` already holds
+                                              every country name as a lookup key, so the table is an
+                                              inversion of shipped data rather than new research.
+                      - Circuits sharing a    → **acceptable, and intended**. Las Vegas, Miami and
+                        country                the Circuit of the Americas all draw one
+                                              `united_states.svg`. Ruled not a collision to be
+                                              broken by keying on the circuit instead.
+                      - A miss                → **the class's own fallback, and never the other
+                                              class**. A flag that does not resolve draws
+                                              `flags/fallback.svg`; a map that does not resolve
+                                              draws `tracks/fallback.svg`. Rule 13's three-outcome
+                                              table is left standing verbatim; the cross-class
+                                              fall-through that would have made a fourth outcome was
+                                              put to the author and declined.
+                      - `flags/mystery.svg`   → **required, and ratified**. A mystery round conceals
+                                              its track and thereby its country, and Rule 3's
+                                              literal-value paragraph fills the field with the datum
+                                              `Mystery` and resolves it by the ordinary slug rule.
+                                              Once those graphics draw the flag class, that lookup
+                                              lands in the flag directory, which holds no such file.
+                                              Without it a concealed round draws the fallback and
+                                              raises a notice against a league that has done nothing
+                                              wrong. Derived from the four rulings above rather than
+                                              stated, put to the author as such, and **confirmed**;
+                                              it is a rule of this version on the same footing as
+                                              the rest.
+
+  Modified sections : - Principle XIV, Rule 13 — three subsections added before the Rationale: the
+                        two classes and which types may declare the map; the flag class keyed by
+                        country, with the nationality-to-country map and the `Other` carry-through;
+                        `mystery.svg` reserved in the flag directory; and the per-class fallback.
+                      - Data & State Management — "New Entities (v5.0.0)" added, recording that no
+                        database entity changes and that the nationality-to-country map is a
+                        module-shipped constant.
+                      - Governance — version line and last-amended date.
+
+  Templates requiring updates:
+                      ✅ .specify/templates/plan-template.md — Constitution Check is generic; no edit
+                      ✅ .specify/templates/spec-template.md — no domain-specific reference; no edit
+                      ✅ .specify/templates/tasks-template.md — phase structure unaffected; no edit
+
+  Follow-up TODOs   : None deferred in the constitution. Downstream work is out of this command's
+                      scope and is listed as Next Actions.
+
 [2026-08-14 — v4.7.0 → v4.8.0: MINOR — the simplest graphic; Rule 7 inverted; the catalogues complete]
   Version change    : 4.7.0 → 4.8.0
   Bump rationale    : MINOR. **No rule is added.** Eight are expanded (3, 4, 5, 9, 10, 16, 17) or
@@ -4323,6 +4430,67 @@ Resolution has exactly **three** outcomes, and no others:
   the submission of a session not obliging one. A configured seat that no driver occupies must draw
   no portrait and no flag at all, a fallback there being a ghost driver.
 
+**Track imagery is two classes, and a round is drawn by two distinct optional fields.**
+
+A round's imagery is never one class serving both purposes:
+
+- The **track** class holds circuit maps, resolved by the normalised name of the track, in the
+  directory `images config track-image-directory` names.
+- The **flag** class holds country flags, in the directory `images config flag-directory` names.
+  It is the same directory a driver's nationality draws from. There is one flag directory and
+  no second one.
+
+**Only the calendar and the check-in graphic MAY declare a field of the track class.** Every
+other image type that draws imagery for a round draws the flag class and nothing else. A
+catalogue (Rule 10) declaring a track-class field for any other type is invalid and Layer 2
+MUST refuse it. The two are separate optional fields, so a calendar or check-in template MAY
+declare either, both, or neither, each removable on its own terms under Rule 3.
+
+An id MUST name the class it draws (Rule 11). Where a type's single round-imagery field becomes
+flag-class, its catalogue MUST rename it to the `_flag` form a driver's flag already uses; an id
+reading `track_image` upon which a country flag is drawn is precisely the disagreement Rule 11
+exists to prevent.
+
+**Rationale**: a map earns its place where the graphic's subject is the round itself — a calendar
+naming where a season goes, a check-in asking a driver to attend one race. A standings table, an
+attendance sheet and a forecast draw the round as a *column heading*, at a size no circuit outline
+survives, and a flag is what reads there.
+
+**The flag class is keyed by the country, for every field that draws from it.**
+
+- A round's flag resolves from the `country` of its Track, normalised: `Great Britain` yields
+  `great_britain.svg`.
+- A driver's flag resolves from the **country of their nationality**, not from the nationality
+  itself. The module MUST ship a **total** map from each canonical nationality adjective to its
+  country name — `British` to `Great Britain` — and the flag resolves from that country
+  normalised.
+- A canonical nationality absent from that map is a defect in a module-shipped constant, not a
+  render-time outcome. It MUST be caught by a test over the map's totality, never by a fallback
+  drawn at render.
+- The value standing for **no stated nationality** is not a country and gains none: `Other` is
+  carried through unchanged and resolves `other.svg`.
+
+One directory, one spelling, one file per country. Several circuits in one country resolve to the
+same flag — Las Vegas, Miami and the Circuit of the Americas each draw `united_states.svg` — and
+that is the intended result, not a collision to be broken.
+
+**Rationale**: keying the class on the country is what lets one directory serve a driver and a
+round at once. Keyed on the adjective it could serve only the driver, and a round would need a
+second directory holding the same flags under different names — one authoring job done twice, and
+two places for a league's set to be incomplete.
+
+**`mystery.svg` is reserved in the flag directory as it is in the track directory.** A round of
+the mystery format conceals its track and thereby its country, and the datum `Mystery` fills its
+flag field by the ordinary rule of Rule 3's literal-value paragraph. The module MUST ship
+`resources/flags/mystery.svg` beside `resources/tracks/mystery.svg`. Without it, a concealed round
+draws the flag fallback and raises a notice against a league that has done nothing wrong.
+
+**A miss is answered by the class's own fallback and never by the other class.** The three
+outcomes above hold per class: a flag that does not resolve draws `flags/fallback.svg`, a map that
+does not resolve draws `tracks/fallback.svg`, and neither is ever substituted for the other.
+Drawing a map where a flag was asked for would silently put imagery on a graphic that its league
+did not choose, and the table above admits no fourth outcome.
+
 **Rationale**: the fallback is per asset *class*, not per template field, because the gap it
 answers belongs to the directory — a nationality with no flag drawn for it — and not to any one
 graphic. Making the miss fatal when even that is absent is what stops the module drawing a card
@@ -5026,6 +5194,26 @@ for team-level aggregates):
   appeal outcomes for this division are posted to this channel; if null, the bot falls
   back to `results_channel_id`.
 
+### New Entities (v5.0.0)
+
+**No database entity is added, and none is amended.** Track imagery is a resolution change, and it
+is recorded here so that it is not re-derived as a schema one.
+
+- `Track.country` is read as it stands. It has been an entity field since v2.9.0 and is now the
+  datum a round's flag resolves by; nothing about the registry changes.
+- The **nationality-to-country map** is a module-shipped constant, not a table. It belongs beside
+  `utils/nationality_data.py`, whose `NATIONALITY_LOOKUP` already carries every country name the
+  map needs as a key of its own — the obligation is to state the correspondence in the opposite
+  direction, adjective to country, and to leave no canonical adjective out of it. Its totality is
+  a unit-test obligation (Rule 13).
+- **No asset class is added and no directory is configured.** Both `track_image_directory` and
+  `flag_directory` are part of the configuration surface delivered at 035 and are read as they
+  stand. The change is which class a field draws from and which datum keys the flag, not what a
+  league configures.
+- `resources/flags/mystery.svg` is a new packaged file under a reserved name, beside
+  `resources/tracks/mystery.svg` (v4.6.0). It ships no league-specific artwork and is bound by
+  Rule 6 as any other asset.
+
 ### New Entities (v4.8.0)
 
 **None.** The verdict image type introduces no entity and amends none, and the absence is recorded
@@ -5356,4 +5544,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 4.8.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-14
+**Version**: 5.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-17
