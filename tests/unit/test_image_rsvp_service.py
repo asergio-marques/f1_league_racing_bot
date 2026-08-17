@@ -246,3 +246,77 @@ def test_no_per_driver_datum_can_reach_the_utility_at_all():
     parameters = set(inspect.signature(resolve_drawing).parameters)
     for mutable in ("driver", "team", "rsvp", "status", "points", "roster", "reserve"):
         assert not any(mutable in name for name in parameters), mutable
+
+
+# --------------------------------------------------------------------------
+# 044 — the check-in graphic pictures the round either way, or both
+# --------------------------------------------------------------------------
+
+def test_the_catalogue_declares_both_imagery_classes():
+    """The check-in graphic is one of the two types that may draw a circuit map."""
+    from models.image_catalogues import RSVP_CATALOGUE
+
+    assert RSVP_CATALOGUE.assets == {"track_flag": "flag", "track_image": "track"}
+    for field_id in ("track_flag", "track_flag_group", "track_image", "track_image_group"):
+        assert field_id in RSVP_CATALOGUE.optional, f"{field_id} must be optional"
+
+
+def _rsvp_root(image_ids):
+    """A check-in template declaring the mandatory text plus *image_ids*."""
+    from lxml import etree
+
+    ns = "http://www.w3.org/2000/svg"
+    root = etree.Element(f"{{{ns}}}svg")
+    root.set("width", "600")
+    root.set("height", "400")
+    for text_id in ("division_name", "round_number", "race_name", "round_format",
+                    "round_date", "round_time"):
+        node = etree.SubElement(root, f"{{{ns}}}text")
+        node.set("id", text_id)
+        node.text = "x"
+    for image_id in image_ids:
+        node = etree.SubElement(root, f"{{{ns}}}image")
+        node.set("id", image_id)
+    return root
+
+
+def _rsvp_spec(image_ids, **kw):
+    drawing = resolve_drawing(
+        division_name="Test Division",
+        round_number=1,
+        round_format=kw.pop("round_format", "NORMAL"),
+        scheduled_at=datetime(2026, 6, 14, 20, 0, tzinfo=timezone.utc),
+        track_name=kw.pop("track_name", "Silverstone Circuit"),
+        country_name=kw.pop("country_name", "United Kingdom"),
+        race_name="British Grand Prix",
+        **kw,
+    )
+    return build_fill_spec(drawing, _rsvp_root(image_ids))
+
+
+def test_a_template_declaring_both_draws_both():
+    spec = _rsvp_spec(["track_flag", "track_image"])
+    assert spec.image_data["track_flag"] == ("flag", "United Kingdom")
+    assert spec.image_data["track_image"] == ("track", "Silverstone Circuit")
+
+
+def test_a_template_declaring_only_one_draws_only_that_one():
+    spec = _rsvp_spec(["track_flag"])
+    assert spec.image_data["track_flag"] == ("flag", "United Kingdom")
+    assert "track_image" not in spec.image_data
+
+    spec = _rsvp_spec(["track_image"])
+    assert spec.image_data["track_image"] == ("track", "Silverstone Circuit")
+    assert "track_flag" not in spec.image_data
+
+
+def test_a_template_declaring_neither_still_produces_the_graphic():
+    spec = _rsvp_spec([])
+    assert "track_flag" not in spec.image_data
+    assert "track_image" not in spec.image_data
+
+
+def test_a_mystery_round_draws_each_class_from_its_own_mystery_file():
+    spec = _rsvp_spec(["track_flag", "track_image"], round_format="MYSTERY")
+    assert spec.image_data["track_flag"] == ("flag", "Mystery")
+    assert spec.image_data["track_image"] == ("track", "Mystery")

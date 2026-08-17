@@ -413,12 +413,15 @@ def build_results_drawing(root, template_key: str, teams):
 #: already finalised and a round yet to be run are both on the sheet. Round 2 is of the
 #: mystery format, and the last has no image file of its own in any shipped asset set, so the
 #: track fallback and its notice can both be read (wip-spec section "Test data").
+#: (circuit, is_mystery, country). The country is what the sheet's round heading resolves
+#: its flag by (044) — the circuit name is retained because it still names the round and
+#: still decides the mystery case. Countries are spelled as ``tracks.country`` spells them.
 SAMPLE_SHEET_ROUNDS = [
-    ("Silverstone Circuit", False),
-    (None, True),
-    ("Circuit de Spa-Francorchamps", False),
-    ("Suzuka International Racing Course", False),
-    ("Autódromo José Carlos Pace", False),
+    ("Silverstone Circuit", False, "United Kingdom"),
+    (None, True, None),
+    ("Circuit de Spa-Francorchamps", False, "Belgium"),
+    ("Suzuka International Racing Course", False, "Japan"),
+    ("Autódromo José Carlos Pace", False, "Brazil"),
 ]
 
 #: The round the fabricated sheet stands after: the third of five.
@@ -469,14 +472,16 @@ def build_attendance_drawing(root, teams, *, limits: bool = True):
     rounds_drawn = min(round_capacity, len(SAMPLE_SHEET_ROUNDS))
 
     # A round of the mystery format is drawn from the datum "Mystery" like any other round
-    # (wip-spec "A round of the mystery format"), never left without an image.
+    # (wip-spec "A round of the mystery format"), never left without an image. It conceals
+    # its country with its track, so both classes take the same literal.
     headings = [
         RoundHeading(
             ordinal=index,
             number=str(index),
             track="Mystery" if mystery else name,
+            country="Mystery" if mystery else country,
         )
-        for index, (name, mystery) in enumerate(
+        for index, (name, mystery, country) in enumerate(
             SAMPLE_SHEET_ROUNDS[:rounds_drawn], start=1
         )
     ]

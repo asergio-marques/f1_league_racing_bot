@@ -223,6 +223,7 @@ def build_fill_spec(
     root,
     *,
     track_directory: Path | None = None,
+    flag_directory: Path | None = None,
 ) -> FillSpec:
     """Project *drawing* onto *root*, deciding the crop and what leaves beside it.
 
@@ -268,6 +269,16 @@ def build_fill_spec(
         put(f"{prefix}_format", entry.format_label)
         put(f"{prefix}_date", entry.date_text)
         put(f"{prefix}_time", entry.time_text)
+        # A round is pictured two ways and the template chooses, round by round: the
+        # country flag, the circuit map, both, or neither (044, XIV.13). Each is optional
+        # and answers its own miss with its own class's fallback — a flag that does not
+        # resolve never draws the map, and the reverse.
+        #
+        # A mystery round conceals its track and thereby its country, and both data are
+        # already the ``Mystery`` literal by the resolution above, so each class resolves
+        # its own ``mystery.svg`` with no special case here.
+        if f"{prefix}_flag" in declared:
+            image_data[f"{prefix}_flag"] = ("flag", entry.country_name)
         if f"{prefix}_image" in declared:
             image_data[f"{prefix}_image"] = ("track", entry.image_datum)
 
@@ -310,8 +321,16 @@ def build_fill_spec(
         image_data=image_data,
         catalogue=catalogue,
     )
+    # Each class draws from its own configured directory, and never from the other's
+    # (044). A flag that does not resolve draws the flag directory's fallback, never a
+    # circuit map, and the reverse.
+    directories = {}
     if track_directory is not None:
-        spec.asset_directories = {"track": track_directory}
+        directories["track"] = track_directory
+    if flag_directory is not None:
+        directories["flag"] = flag_directory
+    if directories:
+        spec.asset_directories = directories
     return spec
 
 

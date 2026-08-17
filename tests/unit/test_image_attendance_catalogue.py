@@ -111,9 +111,9 @@ def test_the_round_cells_hang_off_the_row_and_the_headings_stand_at_top_level():
 
     columns = ATTENDANCE_CATALOGUE.columns
     assert columns.prefix == "round"
-    assert columns.fields == {"group", "number", "image"}
+    assert columns.fields == {"group", "number", "flag"}
     assert columns.mandatory_fields == {"number"}
-    assert columns.assets == {"image": "track"}
+    assert columns.assets == {"flag": "flag"}
 
     # The column carries chrome alone — no cell of any row.
     assert "points" not in columns.fields
@@ -152,12 +152,16 @@ def test_the_calls_top_level_fields_are_exactly_the_wip_specs():
         "track_name_group",
         "country_name",
         "country_name_group",
+        # The two imagery classes a round may be pictured by. The check-in graphic is
+        # one of the two types that may declare a track-class field at all (044).
+        "track_flag",
+        "track_flag_group",
         "track_image",
         "track_image_group",
         "deadline_date",
         "deadline_time",
     }
-    assert RSVP_CATALOGUE.assets == {"track_image": "track"}
+    assert RSVP_CATALOGUE.assets == {"track_flag": "flag", "track_image": "track"}
 
 
 def test_the_calls_sessions_are_an_ordinal_collection_optional_as_a_unit():

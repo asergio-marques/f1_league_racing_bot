@@ -51,7 +51,7 @@
                    row_<x>_driver_flag, row_<x>_gap_to_leader,
                    row_<x>_previous_position, row_<x>_position_change_group,
                    row_<x>_position_change, row_<x>_position_change_marker,
-                   round_<z>_group, round_<z>_image, row_<x>_round_<z>_group,
+                   round_<z>_group, round_<z>_flag, row_<x>_round_<z>_group,
                    row_<x>_round_<z>_{sprint_qualifying,sprint_race,
                    feature_qualifying,feature_race}_result
        Declined  : none &#183; every field of the driver standings catalogue is
@@ -1751,84 +1751,84 @@
   <g id="round_1_group" inkscape:label="round_1_group">
     <line x1="360" y1="262" x2="360" y2="1168" stroke="#262B33" stroke-width="1"/>
     <text id="round_1_number" inkscape:label="round_1_number" class="rnum" x="393" y="278" text-anchor="middle" style="font-variant-numeric:tabular-nums">1</text>
-    <image id="round_1_image" inkscape:label="round_1_image" x="383" y="286" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
+    <image id="round_1_flag" inkscape:label="round_1_flag" x="383" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="377" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="409" y="318" text-anchor="middle">F</text>
   </g>
   <g id="round_2_group" inkscape:label="round_2_group">
     <line x1="426" y1="262" x2="426" y2="1168" stroke="#262B33" stroke-width="1"/>
     <text id="round_2_number" inkscape:label="round_2_number" class="rnum" x="459" y="278" text-anchor="middle" style="font-variant-numeric:tabular-nums">2</text>
-    <image id="round_2_image" inkscape:label="round_2_image" x="449" y="286" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
+    <image id="round_2_flag" inkscape:label="round_2_flag" x="449" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="443" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="475" y="318" text-anchor="middle">F</text>
   </g>
   <g id="round_3_group" inkscape:label="round_3_group">
     <line x1="492" y1="262" x2="492" y2="1168" stroke="#262B33" stroke-width="1"/>
     <text id="round_3_number" inkscape:label="round_3_number" class="rnum" x="525" y="278" text-anchor="middle" style="font-variant-numeric:tabular-nums">3</text>
-    <image id="round_3_image" inkscape:label="round_3_image" x="515" y="286" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
+    <image id="round_3_flag" inkscape:label="round_3_flag" x="515" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="509" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="541" y="318" text-anchor="middle">F</text>
   </g>
   <g id="round_4_group" inkscape:label="round_4_group">
     <line x1="558" y1="262" x2="558" y2="1168" stroke="#262B33" stroke-width="1"/>
     <text id="round_4_number" inkscape:label="round_4_number" class="rnum" x="591" y="278" text-anchor="middle" style="font-variant-numeric:tabular-nums">4</text>
-    <image id="round_4_image" inkscape:label="round_4_image" x="581" y="286" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
+    <image id="round_4_flag" inkscape:label="round_4_flag" x="581" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="575" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="607" y="318" text-anchor="middle">F</text>
   </g>
   <g id="round_5_group" inkscape:label="round_5_group">
     <line x1="624" y1="262" x2="624" y2="1168" stroke="#262B33" stroke-width="1"/>
     <text id="round_5_number" inkscape:label="round_5_number" class="rnum" x="657" y="278" text-anchor="middle" style="font-variant-numeric:tabular-nums">5</text>
-    <image id="round_5_image" inkscape:label="round_5_image" x="647" y="286" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
+    <image id="round_5_flag" inkscape:label="round_5_flag" x="647" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="641" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="673" y="318" text-anchor="middle">F</text>
   </g>
   <g id="round_6_group" inkscape:label="round_6_group">
     <line x1="690" y1="262" x2="690" y2="1168" stroke="#262B33" stroke-width="1"/>
     <text id="round_6_number" inkscape:label="round_6_number" class="rnum" x="723" y="278" text-anchor="middle" style="font-variant-numeric:tabular-nums">6</text>
-    <image id="round_6_image" inkscape:label="round_6_image" x="713" y="286" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
+    <image id="round_6_flag" inkscape:label="round_6_flag" x="713" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="707" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="739" y="318" text-anchor="middle">F</text>
   </g>
   <g id="round_7_group" inkscape:label="round_7_group">
     <line x1="756" y1="262" x2="756" y2="1168" stroke="#262B33" stroke-width="1"/>
     <text id="round_7_number" inkscape:label="round_7_number" class="rnum" x="789" y="278" text-anchor="middle" style="font-variant-numeric:tabular-nums">7</text>
-    <image id="round_7_image" inkscape:label="round_7_image" x="779" y="286" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
+    <image id="round_7_flag" inkscape:label="round_7_flag" x="779" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="773" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="805" y="318" text-anchor="middle">F</text>
   </g>
   <g id="round_8_group" inkscape:label="round_8_group">
     <line x1="822" y1="262" x2="822" y2="1168" stroke="#262B33" stroke-width="1"/>
     <text id="round_8_number" inkscape:label="round_8_number" class="rnum" x="855" y="278" text-anchor="middle" style="font-variant-numeric:tabular-nums">8</text>
-    <image id="round_8_image" inkscape:label="round_8_image" x="845" y="286" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
+    <image id="round_8_flag" inkscape:label="round_8_flag" x="845" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="839" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="871" y="318" text-anchor="middle">F</text>
   </g>
   <g id="round_9_group" inkscape:label="round_9_group">
     <line x1="888" y1="262" x2="888" y2="1168" stroke="#262B33" stroke-width="1"/>
     <text id="round_9_number" inkscape:label="round_9_number" class="rnum" x="921" y="278" text-anchor="middle" style="font-variant-numeric:tabular-nums">9</text>
-    <image id="round_9_image" inkscape:label="round_9_image" x="911" y="286" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
+    <image id="round_9_flag" inkscape:label="round_9_flag" x="911" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="905" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="937" y="318" text-anchor="middle">F</text>
   </g>
   <g id="round_10_group" inkscape:label="round_10_group">
     <line x1="954" y1="262" x2="954" y2="1168" stroke="#262B33" stroke-width="1"/>
     <text id="round_10_number" inkscape:label="round_10_number" class="rnum" x="987" y="278" text-anchor="middle" style="font-variant-numeric:tabular-nums">10</text>
-    <image id="round_10_image" inkscape:label="round_10_image" x="977" y="286" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
+    <image id="round_10_flag" inkscape:label="round_10_flag" x="977" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="971" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="1003" y="318" text-anchor="middle">F</text>
   </g>
   <g id="round_11_group" inkscape:label="round_11_group">
     <line x1="1020" y1="262" x2="1020" y2="1168" stroke="#262B33" stroke-width="1"/>
     <text id="round_11_number" inkscape:label="round_11_number" class="rnum" x="1053" y="278" text-anchor="middle" style="font-variant-numeric:tabular-nums">11</text>
-    <image id="round_11_image" inkscape:label="round_11_image" x="1043" y="286" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
+    <image id="round_11_flag" inkscape:label="round_11_flag" x="1043" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="1037" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="1069" y="318" text-anchor="middle">F</text>
   </g>
   <g id="round_12_group" inkscape:label="round_12_group">
     <line x1="1086" y1="262" x2="1086" y2="1168" stroke="#262B33" stroke-width="1"/>
     <text id="round_12_number" inkscape:label="round_12_number" class="rnum" x="1119" y="278" text-anchor="middle" style="font-variant-numeric:tabular-nums">12</text>
-    <image id="round_12_image" inkscape:label="round_12_image" x="1109" y="286" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
+    <image id="round_12_flag" inkscape:label="round_12_flag" x="1109" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="1103" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="1135" y="318" text-anchor="middle">F</text>
   </g>

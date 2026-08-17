@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80" viewBox="0 0 120 80">
+  <!-- Drawn for a round of the mystery format, whose track is concealed until it is run
+       and whose country is concealed with it. Resolved by the ordinary slug rule from the
+       datum "Mystery" (Constitution XIV.13), exactly as tracks/mystery.svg is.
+       Same 3:2 aspect as this directory's other assets; plain SVG with no clipPath,
+       gradient or filter, and never padded by the generator (XIV.6).
+       Carries no text: text in an asset font-substitutes and would rasterise differently
+       from one machine to the next, so the concealment is drawn as a shape. -->
+  <rect width="120" height="80" fill="#e4e4e8"/>
+  <rect x="0" y="0" width="40" height="80" fill="#c9c9d0"/>
+  <rect x="80" y="0" width="40" height="80" fill="#c9c9d0"/>
+  <path d="M52 30 C52 21 68 21 68 31 C68 39 60 39 60 46"
+        fill="none" stroke="#8a8a95" stroke-width="6" stroke-linecap="round"
+        stroke-linejoin="round"/>
+  <circle cx="60" cy="57" r="4" fill="#8a8a95"/>
+  <rect x="0.75" y="0.75" width="118.5" height="78.5" fill="none" stroke="#8a8a95" stroke-width="1.5"/>
+</svg>

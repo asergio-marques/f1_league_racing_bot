@@ -172,12 +172,25 @@ def test_the_reserve_team_is_never_among_the_keyed_teams():
 # ── Nationality ───────────────────────────────────────────────────────────
 
 
-def test_a_recorded_nationality_becomes_the_flag_datum():
+def test_a_recorded_nationality_becomes_the_country_flag_datum():
+    """The datum is the driver's country, not their nationality (044, US1).
+
+    One flag directory serves a driver and a round alike, so both must ask it for
+    the same filename.
+    """
     seat = _draw([_team("Red Bull", [_seat(1, "a", nationality="Dutch")])]).teams[0].seats[0]
-    assert seat.flag_datum == "Dutch"
+    assert seat.flag_datum == "Netherlands"
+
+
+def test_the_country_datum_uses_the_track_registry_spelling():
+    """``British`` yields the spelling ``tracks.country`` holds, so that a British
+    driver and the British Grand Prix resolve one file (research R-001)."""
+    seat = _draw([_team("Red Bull", [_seat(1, "a", nationality="British")])]).teams[0].seats[0]
+    assert seat.flag_datum == "United Kingdom"
 
 
 def test_other_is_a_datum_like_any_other():
+    """``Other`` is not a country and gains none; it is carried through."""
     seat = _draw([_team("Red Bull", [_seat(1, "a", nationality="Other")])]).teams[0].seats[0]
     assert seat.flag_datum == "Other"
     assert seat.flag_missing is False

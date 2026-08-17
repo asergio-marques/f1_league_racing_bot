@@ -105,7 +105,7 @@ def test_a_penalty_places_every_text_field():
 
 def test_the_image_fields_carry_their_datum_and_class_not_a_path():
     spec = build_fill_spec(_penalty(), _root())
-    assert spec.image_data["driver_flag"] == ("flag", "British")
+    assert spec.image_data["driver_flag"] == ("flag", "United Kingdom")
     assert spec.image_data["team_image"] == ("team", "Red Bull")
 
 

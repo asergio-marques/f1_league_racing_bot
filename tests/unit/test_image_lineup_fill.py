@@ -196,7 +196,7 @@ def test_asset_data_carries_the_right_class_for_each_field():
         _drawing(reserve_seats=[_seat(1, "r1")]), _template(TWO_TEAMS)
     )
     assert spec.image_data["team_red_bull_image"] == ("team", "Red Bull")
-    assert spec.image_data["team_red_bull_driver_1_flag"] == ("flag", "British")
+    assert spec.image_data["team_red_bull_driver_1_flag"] == ("flag", "United Kingdom")
     assert spec.image_data["team_red_bull_driver_1_image"] == ("driver", "a")
     assert spec.image_data["reserve_image"] == ("team", "Reserve")
 

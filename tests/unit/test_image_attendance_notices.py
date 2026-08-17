@@ -45,7 +45,7 @@ def _sheet(rows=1, rounds=0):
             f"row_{r}_team_name", f"row_{r}_team_image", f"row_{r}_driver_flag",
         ]
     for z in range(1, rounds + 1):
-        ids += [f"round_{z}_group", f"round_{z}_number", f"round_{z}_image"]
+        ids += [f"round_{z}_group", f"round_{z}_number", f"round_{z}_flag"]
     return _svg(ids)
 
 
@@ -65,7 +65,7 @@ def _drawing(**kwargs):
 
 def test_a_recorded_nationality_draws_its_flag_and_reports_nothing():
     spec = build_fill_spec(_drawing(nationalities={1: "British"}), _sheet())
-    assert spec.image_data["row_1_driver_flag"] == ("flag", "British")
+    assert spec.image_data["row_1_driver_flag"] == ("flag", "United Kingdom")
     assert spec.empty == []
 
 
@@ -116,15 +116,15 @@ def test_a_driver_with_no_team_has_the_badge_removed_rather_than_left_stale():
 
 
 def test_a_round_image_is_resolved_by_its_track_naming_the_round_in_any_report():
-    drawing = _drawing(rounds=[RoundHeading(1, "1", "Nowhere Circuit")])
+    drawing = _drawing(rounds=[RoundHeading(1, "1", "Nowhere Circuit", "Nowhereland")])
     spec = build_fill_spec(drawing, _sheet(rounds=1))
-    assert spec.image_data["round_1_image"] == ("track", "Nowhere Circuit")
+    assert spec.image_data["round_1_flag"] == ("flag", "Nowhereland")
 
 
 def test_a_round_with_no_track_has_its_image_removed():
     drawing = _drawing(rounds=[RoundHeading(1, "1", None)])
     spec = build_fill_spec(drawing, _sheet(rounds=1))
-    assert "round_1_image" in spec.remove
+    assert "round_1_flag" in spec.remove
 
 
 # ── Where a report goes (FR-056, XIV.4) ───────────────────────────────────

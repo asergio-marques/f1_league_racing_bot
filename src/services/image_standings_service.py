@@ -27,6 +27,7 @@ from models.image_catalogues import CapacityError, catalogue_for
 from utils import results_formatter
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
+from utils.country_data import country_for_nationality
 
 DRIVERS_TEMPLATE_KEY = "standings_drivers_template"
 CONSTRUCTORS_TEMPLATE_KEY = "standings_constructors_template"
@@ -110,6 +111,11 @@ class RoundHeading:
     ordinal: int
     number: str
     track: str | None = None
+
+    #: The country the round is run in — the datum its flag resolves by (044).
+    #: ``track`` is retained: it still names the round and decides the mystery case,
+    #: it simply stopped being an asset datum when the heading moved to the flag class.
+    country: str | None = None
 
 
 @dataclass(frozen=True)
@@ -311,7 +317,7 @@ def build_fill_spec(
         flag_id = f"{stem}_driver_flag"
         if drawing.is_drivers and flag_id in declared:
             if entry.nationality:
-                image_data[flag_id] = ("flag", entry.nationality)
+                image_data[flag_id] = ("flag", country_for_nationality(entry.nationality))
             elif drawing.nationality_collected:
                 empty.append(flag_id)
             else:

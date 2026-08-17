@@ -30,7 +30,7 @@ HEADING = (
     '<text id="rain_probability">0%</text>'
     '<text id="season_number">1</text>'
     '<text id="division_tier">1</text>'
-    '<image id="track_image"/>'
+    '<image id="track_flag"/>'
 )
 
 SPRINT_SESSIONS = [
@@ -115,10 +115,12 @@ def test_the_heading_fields_are_filled():
     assert spec.text["rain_probability"] == "30%"
 
 
-def test_the_track_image_is_placed_by_its_datum_and_class():
+def test_the_round_flag_is_placed_by_its_datum_and_class():
     root = _p2_template(4)
     spec = build_fill_spec(_drawing(2, "SPRINT", SPRINT_SESSIONS), root)
-    assert spec.image_data["track_image"] == ("track", "Silverstone Circuit")
+    # A forecast heads a round rather than picturing it: country flag, no map (044).
+    assert spec.image_data["track_flag"] == ("flag", "United Kingdom")
+    assert "track_image" not in spec.image_data
 
 
 def test_an_optional_without_a_value_leaves_with_its_group():

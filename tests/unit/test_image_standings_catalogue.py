@@ -360,7 +360,8 @@ def test_each_asset_field_names_its_class():
     assert cat.asset_class_for("row_1_team_image") == "team"
     assert cat.asset_class_for("row_1_driver_flag") == "flag"
     assert cat.asset_class_for("row_1_position_change_marker") == "marker"
-    assert cat.asset_class_for("round_3_image") == "track"
+    assert cat.asset_class_for("round_3_flag") == "flag"
+    assert cat.asset_class_for("round_3_image") is None
 
 
 def test_the_constructors_graphic_resolves_no_flag():
@@ -406,3 +407,42 @@ def test_the_shipped_template_declares_nothing_its_catalogue_cannot_name(key):
 def test_the_shipped_template_carries_no_sibling_field(key):
     _, declared = _shipped(key)
     assert sibling_fields_declared(key, declared) == []
+
+
+# --------------------------------------------------------------------------
+# 044 — a round heading is a country flag, never a circuit map
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "catalogue",
+    [STANDINGS_DRIVERS_CATALOGUE, STANDINGS_CONSTRUCTORS_CATALOGUE],
+    ids=["drivers", "constructors"],
+)
+def test_the_round_heading_draws_a_flag_and_not_a_track_map(catalogue):
+    """A round is a column heading here, at a size no circuit outline survives.
+
+    Only the calendar and the check-in graphic may declare a track-class field
+    (Constitution XIV.13).
+    """
+    columns = catalogue.columns
+    assert "flag" in columns.fields
+    assert "image" not in columns.fields, "a standings round must not draw a map"
+    assert columns.assets.get("flag") == "flag"
+    assert "track" not in columns.assets.values()
+
+
+@pytest.mark.parametrize(
+    "catalogue",
+    [STANDINGS_DRIVERS_CATALOGUE, STANDINGS_CONSTRUCTORS_CATALOGUE],
+    ids=["drivers", "constructors"],
+)
+def test_no_field_of_a_standings_catalogue_draws_the_track_class(catalogue):
+    classes = set(catalogue.columns.assets.values()) | set(catalogue.rows.assets.values())
+    assert "track" not in classes
+
+
+def test_the_round_heading_flag_id_names_its_class():
+    """XIV.11 — an id must name the class it draws."""
+    columns = STANDINGS_DRIVERS_CATALOGUE.columns
+    assert columns.prefix == "round"
+    assert "flag" in columns.fields

@@ -53,7 +53,7 @@ def _sheet_svg(rows=3, rounds=0, extras=()):
         for z in range(1, rounds + 1):
             ids.append(f"row_{r}_round_{z}_points")
     for z in range(1, rounds + 1):
-        ids += [f"round_{z}_group", f"round_{z}_number", f"round_{z}_image"]
+        ids += [f"round_{z}_group", f"round_{z}_number", f"round_{z}_flag"]
     ids += list(extras)
     return _svg(ids)
 
@@ -316,7 +316,7 @@ def test_a_recorded_nationality_resolves_a_flag():
         nationalities={1: "British"},
     )
     spec = build_fill_spec(drawing, _sheet_svg(rows=1))
-    assert spec.image_data["row_1_driver_flag"] == ("flag", "British")
+    assert spec.image_data["row_1_driver_flag"] == ("flag", "United Kingdom")
 
 
 def test_an_absent_nationality_removes_the_flag_and_reports_it():
@@ -431,10 +431,10 @@ def test_a_rounds_image_is_resolved_from_its_track():
         round_number=1,
         records=_records((1, 4, {}, False)),
         display_names={1: "A"},
-        rounds=[RoundHeading(1, "1", "Silverstone Circuit")],
+        rounds=[RoundHeading(1, "1", "Silverstone Circuit", "United Kingdom")],
     )
     spec = build_fill_spec(drawing, _sheet_svg(rows=1, rounds=1))
-    assert spec.image_data["round_1_image"] == ("track", "Silverstone Circuit")
+    assert spec.image_data["round_1_flag"] == ("flag", "United Kingdom")
 
 
 # ── Unused rows ───────────────────────────────────────────────────────────

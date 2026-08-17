@@ -80,7 +80,6 @@ async def render_sheet(
         for asset_class, column in (
             ("team", "team_image_directory"),
             ("flag", "flag_directory"),
-            ("track", "track_image_directory"),
         ):
             try:
                 directories[asset_class] = resolve_within_project_root(

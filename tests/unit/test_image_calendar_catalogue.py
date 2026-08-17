@@ -167,3 +167,33 @@ def test_declared_capacities_still_reports_a_fixed_one():
     catalogue = FieldCatalogue(rows=spec)
     assert catalogue.capacity() == 20
     assert catalogue.capacity(_template()) == 20
+
+
+# --------------------------------------------------------------------------
+# 044 — a round is pictured two ways, and the template chooses per round
+# --------------------------------------------------------------------------
+
+def test_a_round_declares_both_a_flag_and_a_map_slot():
+    """The calendar is one of the two types that may draw a circuit map at all.
+
+    Both fields are optional, so a template may declare either, both, or neither
+    (Constitution XIV.13).
+    """
+    rounds = CALENDAR_CATALOGUE.rows
+    assert "flag" in rounds.fields, "a round must be able to draw its country flag"
+    assert "image" in rounds.fields, "the calendar keeps the circuit map"
+    assert "flag" not in rounds.mandatory_fields
+    assert "image" not in rounds.mandatory_fields
+
+
+def test_the_two_round_images_name_their_classes():
+    rounds = CALENDAR_CATALOGUE.rows
+    assert rounds.assets.get("flag") == "flag"
+    assert rounds.assets.get("image") == "track"
+
+
+def test_each_round_chooses_independently_by_ordinal():
+    """XIV.11/XIV.12 — both fields are members of the existing round collection."""
+    assert CALENDAR_CATALOGUE.asset_class_for("round_1_flag") == "flag"
+    assert CALENDAR_CATALOGUE.asset_class_for("round_7_flag") == "flag"
+    assert CALENDAR_CATALOGUE.asset_class_for("round_7_image") == "track"

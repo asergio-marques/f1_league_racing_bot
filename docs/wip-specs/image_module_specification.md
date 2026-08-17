@@ -86,13 +86,13 @@ For this purpose, the Discord bot shall require three new dependencies: one with
     - The input shall be rejected with a clear error unless it is a "#" followed by exactly six hexadecimal digits, of either case.
     - Upon a valid input, the contrast of the colour against the background the configured race results template draws behind that field shall be reported, and a warning issued where it falls below 4.5:1, which is the threshold at which text of that size is legible. The input is accepted all the same; it is the league's to choose.
     - By default, the colour shall be "#A020F0", purple being the convention of the sport for a fastest lap.
-- <NEW COMMAND> A new "images config track-image-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent the track will be searched.
+- <NEW COMMAND> A new "images config track-image-directory" command will be made available to server administrators which will take in a string standing for the directory in which the map files to be used to represent the track will be searched. Only the calendar and check-in graphics draw from this directory.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the template files will be searched in a "resources/tracks" folder located at the project root.
 - <NEW COMMAND> A new "images config team-image-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a team (logo, badge, car) will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the team image files will be searched in a "resources/teams" folder located at the project root.
-- <NEW COMMAND> A new "images config flag-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a driver's nationality will be searched.
+- <NEW COMMAND> A new "images config flag-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a country will be searched. One directory serves both the nationality of a driver and the country of a round, and its files are named for countries.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the flag image files will be searched in a "resources/flags" folder located at the project root.
 - <NEW COMMAND> A new "images config driver-image-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a driver themselves (portrait, photograph, avatar) will be searched.
@@ -213,6 +213,11 @@ These hold for every image type of the module and are stated here rather than re
 
 ### Images placed on a graphic
 - An image file shall be authored at exactly the aspect of the slot it is placed into, padded with transparent margins where the subject of the image does not fill that aspect.
+- One class of image carries one aspect, and every slot of that class carries it, on every template of every kind. A league authors one file per datum of a class, and a class serving slots of two aspects would letterbox that one file wherever it did not match, which no authoring can answer.
+    - A country flag is drawn at 3:2, and every flag slot of every template carries that aspect, whether the flag stands for a driver or for a round.
+    - A track map is drawn at 1:1, and every track map slot of every template carries that aspect.
+    - The two classes do not share an aspect with each other, and are not required to. A template drawing both places two slots of differing shape, which is the business of whoever authors it.
+- A template declaring a slot of a class at an aspect other than that of the class is invalid and shall be refused, the offending field being named.
 - An image whose aspect differs from that of its slot is letterboxed, and the converter fills the resulting band by carrying the outermost pixels of the image outward rather than leaving it transparent, so that a border or a background colour at the edge of the image is drawn across the band. The module does not pad an image at generation.
 - An image file shall be referenced by the graphic as a URI. A filesystem path is not one, and a path so referenced is resolved to nothing by the converter and drawn as a broken-image mark.
 
@@ -225,9 +230,30 @@ These hold for every image type of the module and are stated here rather than re
     - it is not found and the directory holds a fallback, whereupon the fallback is placed upon the field and a non-fatal error reported, naming the field and the datum that had no file of its own;
     - it is not found and the directory holds no fallback, whereupon the error is fatal and the generation is abandoned.
 - These outcomes supersede any statement elsewhere in this document that a field is removed, or an error withheld, for want of a matching asset file. A statement of that kind continues to govern the case of an absent datum, where no asset is sought at all.
-- A fallback image is bound by the rules above as any other image is: plain SVG, authored at the aspect of the slot it fills, never padded at generation. Where one class serves slots of differing aspects, its fallback shall be authored to the aspect its ordinary assets carry.
+- A fallback image is bound by the rules above as any other image is: plain SVG, authored at the aspect of the slot it fills, never padded at generation. One class carrying one aspect, its fallback is authored to that aspect as every other file of the class is.
 - A datum whose normalized form is "fallback" resolves to the fallback file. No further provision is made against this.
 - An absent datum is not a missing file, and no asset is sought for one. A catalogue below may nonetheless state, for a named image field, that an absent datum shall draw the fallback of its class, whereupon the fallback is drawn and no error whatsoever is reported: it stands for the absence itself and not for a file that should have existed. Where the directory holds no fallback the statement is inert and the field is removed as its catalogue declares it. The statement is made field by field and never for a class as a whole, a tyre that was never recorded being worth depicting where a seat that no driver occupies is not.
+
+### The imagery of a round
+- Two classes of image stand for a round, and a graphic draws them through two distinct optional fields:
+    - the country flag of the round, searched for in the directory configured via "images config flag-directory";
+    - the map of the track of the round, searched for in the directory configured via "images config track-image-directory".
+- A field of the track image class shall be declared only by the calendar graphic and by the check-in graphic. Every other graphic drawing imagery for a round draws the country flag and nothing else. A template of any other kind declaring a track image field is invalid and shall be refused.
+- A calendar or check-in template may declare either field, both, or neither, each being optional and each removable on its own terms.
+    - The calendar makes that choice for each round of its grid separately, one round drawing both where another draws one or neither, the two fields of a round bearing its ordinal as every other field of it does.
+- The templates packaged with the module for the calendar and for the check-in graphic shall each declare both fields, so that a league sees the two classes drawn from the first render and has a working example of each to author against.
+- A field is named for the class it draws. A field drawing a country flag carries the "_flag" suffix a driver's flag already carries; a field drawing a track map carries the "_image" suffix.
+
+### The country a flag stands for
+- Every flag placed upon a graphic, whether it stands for a driver or for a round, is searched for in the one directory configured via "images config flag-directory", under a filename equal to the name of a country, normalized as the conventions above require.
+- The flag of a round is resolved from the country recorded by the track object of that round. "United Kingdom" yields "united_kingdom.svg".
+- The flag of a driver is resolved from the country of the nationality recorded in their signup information, and not from the nationality itself. The module shall ship a map relating every canonical nationality adjective to the name of its country, so that "British" yields the country "United Kingdom" and thereby the file "united_kingdom.svg".
+    - That map shall be total over the canonical nationalities the signup wizard admits. A nationality absent from it is a defect of the module and shall be caught by a test over the map itself, never by a fallback drawn at generation.
+    - "Other", recorded for a driver who stated no nationality, is not a country and gains none. It is carried through unchanged and resolves the file "other.svg".
+- Several circuits located in one country resolve to one flag. Las Vegas, Miami and the Circuit of the Americas each draw "united_states_of_america.svg", which is intended and is no collision.
+
+### When the imagery of a round is not found
+- Each class answers a miss with its own fallback and never with the other class. A flag that is not found draws the fallback of the flag directory; a track map that is not found draws the fallback of the track image directory. Neither is ever substituted for the other, a graphic drawing imagery its league did not ask for being worse than one drawing a generic file.
 
 ### What a graphic works out
 - A graphic shall carry at least what the posting it replaces carried, and may carry more. That is the whole of what is meant by the image path adding to the textual one: a league turning its images on shall lose nothing its textual posting told it, save the two things a picture cannot carry, which are the zone in which a time is drawn and the elements a reader can act upon. Those two are defined in their own sections and are the only respects in which a graphic is permitted to say less.
@@ -268,8 +294,8 @@ These hold for every image type of the module and are stated here rather than re
     - "Mystery GP" upon the field naming the grand prix of the round;
     - "Mystery" upon the field naming the country of the round;
     - "Mystery" upon the field naming the track of the round, which is the value the round object records as its location.
-- An image standing for the track of such a round is resolved as the conventions above require from the datum "Mystery", drawing the "mystery.svg" file of the directory configured for that image, so that a league decides by the file it places there how a concealed track is depicted.
-- A generic "mystery.svg" shall ship in the packaged track image directory, as the fallback of each class does, so that a league draws a round of the mystery format without authoring one. It is a reserved name of that directory and is bound by the rules of every other image placed upon a graphic.
+- Such a round conceals its country with its track. Both the flag and the track map of such a round are resolved as the conventions above require from the datum "Mystery", drawing the "mystery.svg" file of the directory configured for that class, so that a league decides by the files it places there how a concealed round is depicted.
+- A generic "mystery.svg" shall ship in the packaged track image directory and in the packaged flag directory alike, as the fallback of each class does, so that a league draws a round of the mystery format without authoring one. It is a reserved name of both directories and is bound by the rules of every other image placed upon a graphic.
 - The mandatory fields of a mystery round therefore carry values as those of any other round do, and no exemption arises for it.
 
 ### Validity of a template file
@@ -282,7 +308,8 @@ These hold for every image type of the module and are stated here rather than re
     - division_name - Mandatory - Field on which the name given to the division at "division add" is placed
     - division_tier - Optional - Field on which the tier given to the division at "division add" is placed
     - round_<x>_group - Optional - Field acting as a container for every other field of the round, which shall be removed in its entirety when the division holds no round of that ordinal. Where the template declares no such group, every field bearing that ordinal shall be removed one by one instead
-    - round_<x>_image - Optional - Field on which an image representing the track where the round takes place at will be placed (e.g. country flag, track map), which will be derived from the track ID and searched for in the directory configured via "images config track-image-directory".
+    - round_<x>_flag - Optional - Field on which the flag of the country of the round will be placed, searched for in the directory configured via "images config flag-directory".
+    - round_<x>_image - Optional - Field on which the map of the track of the round will be placed, searched for in the directory configured via "images config track-image-directory". The calendar is one of the two graphics that may declare a field of this class.
     - round_<x>_number - Mandatory - Field on which the human-readable number of the round will be introduced as text, read from the round object definition.
     - round_<x>_country_name - Mandatory - Field on which the country where the track for the round is located, read from the track object definition.
     - round_<x>_race_name - Mandatory - Field on which the grand prix name of the round will be introduced as text, read from the track object definition.
@@ -309,11 +336,12 @@ These hold for every image type of the module and are stated here rather than re
 - The number of a round is the human-readable number read from the round object.
 - The grand prix name and the country are read from the track object of the round, found by the name the round records, a round holding the name of its track and not an identifier of it. The name of the track is read from the round itself.
 - A round whose track name matches no track of the server's list yields neither the one nor the other, and the generation is abandoned as it is for any mandatory field whose value cannot be determined, the calendar of that division being posted in the traditional textual manner instead. The graphic is in this one respect the more fragile of the two forms, the textual calendar naming the track the round records and consulting no track object at all.
-- The track image shall be searched for in the configured track image directory under a filename equal to the name of the track, normalized in the manner defined for the lineup graphic, and resolved as the conventions above require, the number of the round standing for the field in any error reported.
+- The track map shall be searched for in the configured track image directory under a filename equal to the name of the track, normalized in the manner defined for the lineup graphic, and resolved as the conventions above require, the number of the round standing for the field in any error reported.
+- The flag of the round shall be searched for in the configured flag directory under a filename equal to the country recorded by the track object, normalized in the same manner, and resolved as the conventions above require, the number of the round standing for the field in any error reported.
 - The date is read from the round object and rendered via the configuration introduced via "images config date-format". The time is read from the same and rendered via the configurations introduced via "images config time-format" and "images config time-zone", the abbreviation of the zone being appended to it.
 - A round for which no time is recorded shall have the text of its time field emptied, as any optional field whose value cannot be determined is. No round records no time at present, a round carrying its date and its time as one moment and no flag standing for a time not yet known, which is a deliberate decision and not an omission. The provision therefore stands against a round shape the bot does not today hold, and needs no provision of its own in the drawing of a calendar.
 - The format of a round is "Sprint", "Endurance" or "Mystery", and is emptied for a round of the normal format, so that a template author decides by the chrome they draw around the field whether an ordinary round is labelled or left unmarked.
-- A round of the mystery format is drawn as the conventions above require, its country name, race name and track name fields carrying the values named there and its image resolved from the datum "Mystery" in the configured track image directory. No field of such a round is emptied for want of a track and no error is reported.
+- A round of the mystery format is drawn as the conventions above require, its country name, race name and track name fields carrying the values named there and its flag and track map alike resolved from the datum "Mystery" in the directory configured for each class. No field of such a round is emptied for want of a track and no error is reported.
 - A template shall draw nothing between two fields that may be emptied independently of one another, a separator drawn between them being static chrome that survives the emptying of both. Where it draws such chrome all the same, it shall declare the removable group of that field defined in the conventions above.
 - The rounds are placed in the order in which they are run, the ordinal of a field being the number of the round it stands for.
 - Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash.
@@ -355,7 +383,7 @@ These hold for every image type of the module and are stated here rather than re
 - The "images test calendar" command shall generate one image, drawn for a division named "Test Division", of tier 1 and of season number 1, holding one round fewer than the number of rounds the template declares, so that the cut of the image at the crop point of a round that is not the last the template declares may be evaluated. Should the template declare a single round, one round shall be fabricated and the crop left evaluated at the height the template declares.
 - The rounds fabricated shall include, insofar as the number of rounds declared allows:
     - a round of the normal format, one of the sprint format, one of the endurance format and one of the mystery format, so that the rendering of a round carrying no track may be evaluated alongside the others;
-    - a round whose track is one of the server's track list for which no image file is found in the configured track image directory, so that the drawing of the fallback and the non-fatal error it reports may be evaluated;
+    - a round whose track is one of the server's track list for which no image file is found in the configured track image directory, and for whose country none is found in the configured flag directory, so that the drawing of the fallback of each class and the non-fatal errors they report may be evaluated;
     - rounds at dates spanning more than one month, so that the rendering of the configured date format may be evaluated.
 - Should the division fabricated hold no round at all, or the server's track list be empty, the command shall be rejected with a clear error, as there is no calendar to be drawn.
 
@@ -403,7 +431,7 @@ These hold for every image type of the module and are stated here rather than re
 
 ### Resolution of the data to be placed
 - The name of a driver shall be resolved as the conventions above require of the name of a person.
-- The flag image of a driver shall be searched for in the configured flag directory under a filename equal to the nationality recorded in their signup information, normalized in the same manner as a team name. Nationalities are recorded as adjectives in canonical form, so that "British" yields "british"; a driver who stated none has "Other" recorded, yielding "other".
+- The flag image of a driver shall be searched for in the configured flag directory under a filename equal to the country of the nationality recorded in their signup information, normalized in the same manner as a team name, as the conventions above require. Nationalities are recorded as adjectives in canonical form, and the module's map relates each to a country, so that "British" yields the country "United Kingdom" and thereby "united_kingdom.svg"; a driver who stated none has "Other" recorded, which is no country and is carried through to yield "other".
     - Where the nationality is absent, the "_flag" field shall be removed and a non-fatal error reported. As the request for nationality may be switched off entirely via "signup nationality toggle", a lineup with no flags at all is a legitimate outcome and no error whatsoever. Where a nationality is recorded, its image is resolved as the conventions above require.
 - The driver image of a driver shall be searched for in the configured driver image directory under a filename equal to the Discord user ID of that driver. It is keyed on the ID and not on a name, a display name being normalized into a filename that changes on the day the driver changes their nick, and a portrait supplied by the league should not go missing for that.
     - The image is resolved as the conventions above require. A league supplies one file per driver or none at all; the latter being the ordinary case, a league that supplies none shall place a fallback in the driver image directory, from which every portrait is then drawn.
@@ -604,7 +632,7 @@ These hold for every image type of the module and are stated here rather than re
         - For each round of ordinal <z>:
             - round_<z>_group - Optional - Field acting as a container for the heading of the round, which shall be removed in its entirety when the division holds no round of that ordinal. It contains the fields of the round named below and no field of any row: a result cell belongs to its row and to its round both, and a node of an SVG file has one parent
             - round_<z>_number - Mandatory - Field on which the human-readable number of the round is placed as text. A round a template draws shall always be identified by its number, the image below standing in addition to it and never in its place
-            - round_<z>_image - Optional - Field on which an image representing the track where the round takes place at will be placed (e.g. country flag, track map), which will be derived from the track ID and searched for in the directory configured via "images config track-image-directory"
+            - round_<z>_flag - Optional - Field on which the flag of the country of the round will be placed, searched for in the directory configured via "images config flag-directory". A round drawn as a column heading carries no track map, at a size no circuit outline survives
         - The graphic carries no grand prix name of any round of the grid. A round of the grid is identified by its number, and by its image where the template declares one.
         - For each row of ordinal <x> and each round of ordinal <z>:
             - row_<x>_round_<z>_group - Optional - Field acting as a container for every result cell of that round on that row, which shall be removed in its entirety when the division holds no round of that ordinal. Where the template declares no such group, every result cell bearing that ordinal shall be removed one by one instead
@@ -634,7 +662,7 @@ These hold for every image type of the module and are stated here rather than re
         - For each round of ordinal <z>:
             - round_<z>_group - Optional - Field acting as a container for the heading of the round, which shall be removed in its entirety when the division holds no round of that ordinal. It contains the fields of the round named below and no field of any row, for the reason given on the drivers graphic
             - round_<z>_number - Mandatory - Field on which the human-readable number of the round is placed as text. A round a template draws shall always be identified by its number, the image below standing in addition to it and never in its place
-            - round_<z>_image - Optional - Field on which an image representing the track where the round takes place at will be placed (e.g. country flag, track map), which will be derived from the track ID and searched for in the directory configured via "images config track-image-directory"
+            - round_<z>_flag - Optional - Field on which the flag of the country of the round will be placed, searched for in the directory configured via "images config flag-directory". A round drawn as a column heading carries no track map, at a size no circuit outline survives
         - The graphic carries no grand prix name of any round of the grid, as the drivers graphic carries none.
         - For each row of ordinal <x>, each round of ordinal <z> and each car of ordinal <w>:
             - row_<x>_round_<z>_driver_<w>_group - Optional - Field acting as a container for every other field bearing that ordinal, which shall be removed in its entirety when no driver drove that car of the team in that round, and when the division holds no round of that ordinal
@@ -770,7 +798,7 @@ These hold for every image type of the module and are stated here rather than re
         - For each round of ordinal <z>:
             - round_<z>_group - Optional - Field acting as a container for the heading of the round, which shall be removed in its entirety when the division holds no round of that ordinal. It contains the fields of the round named below and no field of any row, as it does on the standings graphics. A round the division holds but whose attendance has yet to be finalized keeps its group and is drawn with its cells emptied
             - round_<z>_number - Mandatory - Field on which the human-readable number of the round is placed as text. A round a template draws shall always be identified by its number, the image below standing in addition to it and never in its place
-            - round_<z>_image - Optional - Field on which an image representing the track where the round takes place at will be placed (e.g. country flag, track map), which will be derived from the track ID and searched for in the directory configured via "images config track-image-directory"
+            - round_<z>_flag - Optional - Field on which the flag of the country of the round will be placed, searched for in the directory configured via "images config flag-directory". A round drawn as a column heading carries no track map, at a size no circuit outline survives
         - The sheet carries no grand prix name of any round of the grid, as the standings graphics carry none.
         - For each row of ordinal <x> and each round of ordinal <z>:
             - row_<x>_round_<z>_points - Optional - Field on which the attendance points that round conferred upon the driver of the row are placed as text, which shall be removed when the division holds no round of that ordinal
@@ -782,7 +810,8 @@ These hold for every image type of the module and are stated here rather than re
     - race_name - Mandatory - Field on which the grand prix name of the round is placed as text, read from the track object definition
     - track_name - Optional - Field on which the name of the track of the round is placed as text, read from the round object definition
     - country_name - Optional - Field on which the country where the track of the round is located is placed as text, read from the track object definition
-    - track_image - Optional - Field on which an image representing the track of the round (e.g. country flag, track map) will be placed, searched for in the directory configured via "images config track-image-directory"
+    - track_flag - Optional - Field on which the flag of the country of the round will be placed, searched for in the directory configured via "images config flag-directory"
+    - track_image - Optional - Field on which the map of the track of the round will be placed, searched for in the directory configured via "images config track-image-directory". The check-in graphic is one of the two graphics that may declare a field of this class
     - round_format - Mandatory - Field on which the format of the round is placed as text
     - round_date - Mandatory - Field on which the date of the round is placed as text, read from the round object, formatted via the configuration introduced via "images config date-format"
     - round_time - Mandatory - Field on which the time of the round is placed as text, read from the round object, formatted via the configurations introduced via "images config time-format" and "images config time-zone"
@@ -815,8 +844,8 @@ These hold for every image type of the module and are stated here rather than re
 - A round of the mystery format is drawn as the conventions above require, its race name field reading "Mystery GP" and its image resolved from the datum "Mystery". The sheet standing after such a round names it as it names any other.
 - The check-in graphic re-presents the values the embed of the check-in call shows and never derives them by rules of its own.
 - The format of the round is "Normal", "Sprint", "Endurance" or "Mystery", which is the text the embed carries.
-- The name of the track is that recorded for the round, which is the value the embed carries as its location. The grand prix name and the country are read from the track object of the round. A round of the mystery format is drawn as the conventions above require, its track name, race name and country name fields carrying the values named there and its track image resolved from the datum "Mystery". No mandatory field of this graphic is emptied for want of a track.
-    - A template giving the country a card of its own or the track image a plate shall declare the removable group of those fields defined in the conventions above, so that a round carrying no track leaves neither standing empty under a label naming what is not there.
+- The name of the track is that recorded for the round, which is the value the embed carries as its location. The grand prix name and the country are read from the track object of the round. A round of the mystery format is drawn as the conventions above require, its track name, race name and country name fields carrying the values named there and its flag and track map alike resolved from the datum "Mystery". No mandatory field of this graphic is emptied for want of a track.
+    - A template giving the country a card of its own, or the flag or the track map a plate, shall declare the removable group of those fields defined in the conventions above, so that a round carrying no track leaves none of them standing empty under a label naming what is not there.
 - The name of a session is "Sprint Qualifying", "Sprint Race", "Feature Qualifying" or "Feature Race" for a round of the sprint format, and "Qualifying" or "Race" for a round of any other, as it is for the weather graphic. It carries no qualifier of the length of the session, so the short qualifying and long race of a round of the mystery format are named as those of any other round are.
 - The date and the time of the round are read from the round object, which always records them, and are rendered as the conventions above require, where the embed renders the same moment as a Discord timestamp.
 - The moment beyond which the check-in can no longer be altered is the scheduled time of the round less the number of hours configured via "attendance config rsvp-deadline", a configuration of 0 placing it at the scheduled time of the round itself. It is rendered as the date and the time of the round are. It is the deadline the module enforces upon full-time drivers; the later deadline a reserve driver is held to is carried by neither the graphic nor the embed.
@@ -839,7 +868,7 @@ These hold for every image type of the module and are stated here rather than re
     - a field of the catalogue of the other graphic of the module;
     - a mandatory field whose value cannot be determined at generation;
     - a sheet drawn for a division holding no driver at all.
-- A flag image, a team image and a track image are each resolved as the conventions above require. As the request for nationality may be switched off entirely via "signup nationality toggle", a sheet with no flags at all is a legitimate outcome and no error whatsoever.
+- The flag of a driver, the image of a team and the flag of a round are each resolved as the conventions above require, the sheet drawing no track map. As the request for nationality may be switched off entirely via "signup nationality toggle", a sheet with no flag of a driver upon it is a legitimate outcome and no error whatsoever; the flag of a round is unaffected by that switch, standing for the round and not for a driver.
 - The fields that do not depend on the division are verified at every moment the template is verified, a mandatory one that is absent being a fatal error. The fields that do depend on it cannot be verified against a division when the template is configured or at season review; at those moments it shall be verified only that a sheet template declares at least one row, numbered continuously from 1 and holding every mandatory field of a row, that the rounds it declares, if any, are numbered continuously from 1 and each hold the field carrying its number, and that the sessions a check-in template declares, if any, are numbered continuously from 1 and hold every mandatory field of a session. At season review the rounds of a sheet template shall additionally be verified against the greatest number of rounds any division of the season holds, and the sessions of a check-in template against the largest number of sessions any round of the season holds, a divergence being a warning only. At generation they are verified against the division and the round being drawn.
 
 ### Generation and posting
@@ -867,7 +896,7 @@ These hold for every image type of the module and are stated here rather than re
 ### Test data
 - The "images test attendance" command shall generate two sheets, both drawn for a division named "Test Division", of tier 1 and of season number 1, holding a calendar of five rounds and standing after the third of them, so that the emptying of the cells of a round yet to be run may be evaluated alongside those already finalized. One shall be drawn with both the autoreserve and the autosack limits configured, and the other with both disabled, so that the removal of the fields carrying them may be evaluated.
     - Round 2 of the calendar fabricated shall be of the mystery format, so that the drawing of a round carrying no track may be evaluated.
-    - One round of the calendar fabricated shall be one whose track is of the server's track list and for which no image file is found in the configured track image directory, so that the drawing of the fallback and the non-fatal error it reports may be evaluated.
+    - One round of the calendar fabricated shall be one whose track is of the server's track list and for whose country no image file is found in the configured flag directory, so that the drawing of the fallback and the non-fatal error it reports may be evaluated. The sheet draws no track map.
 - The drivers fabricated shall be one fewer than the number of rows the template declares, so that the rendering of an unused row may be evaluated, and shall be drawn from the teams of the team configuration of the server. Should the template declare a single row, one driver shall be fabricated and the unused row left unevaluated.
 - The drivers fabricated shall include, insofar as the number of rows declared allows:
     - a driver holding no attendance points at all, every round cell of whom is empty;
@@ -883,7 +912,7 @@ These hold for every image type of the module and are stated here rather than re
     - a round of the sprint format, so that the naming of four sessions may be evaluated;
     - a round of the normal format, so that the naming of two sessions may be evaluated;
     - a round of the mystery format, so that the rendering of a round carrying no track may be evaluated;
-    - a round whose track is one of the server's track list for which no image file is found in the configured track image directory, so that the drawing of the fallback and the non-fatal error it reports may be evaluated;
+    - a round whose track is one of the server's track list for which no image file is found in the configured track image directory, and for whose country none is found in the configured flag directory, so that the drawing of the fallback of each class and the non-fatal errors they report may be evaluated;
     - a round drawn against a deadline configured to 0, so that the deadline standing at the scheduled time of the round may be evaluated.
 - The rounds fabricated shall be at dates and times spanning more than one month and more than one half of the day, so that the rendering of the configured date and time formats may be evaluated.
 - Should the server's track list be empty, the command shall be rejected with a clear error, as there is no round for a call to pertain to.
@@ -904,7 +933,7 @@ These hold for every image type of the module and are stated here rather than re
     - track_name - Mandatory - Field on which the name of the track of the round is placed as text, read from the track object definition
     - race_name - Optional - Field on which the grand prix name of the round is placed as text, read from the track object definition
     - country_name - Optional - Field on which the country where the track of the round is located is placed as text, read from the track object definition
-    - track_image - Optional - Field on which an image representing the track of the round (e.g. country flag, track map) will be placed, searched for in the directory configured via "images config track-image-directory"
+    - track_flag - Optional - Field on which the flag of the country of the round will be placed, searched for in the directory configured via "images config flag-directory"
     - rain_probability - Mandatory on the phase 1 template, optional on the other two - Field on which the likelihood of rain calculated for the round is placed as text
 - The phase 1 template holds no field beyond those above.
 - The phase 2 template may additionally have, for each session of ordinal <x>:
@@ -931,7 +960,7 @@ These hold for every image type of the module and are stated here rather than re
 - The description of the phase is fixed text: "Initial chance of rain" for phase 1, "Initial session forecast" for phase 2 and "Final session forecast" for phase 3.
 - The likelihood of rain is that calculated in phase 1, rendered as the textual phase 1 message renders it, the percent sign included. The phase 2 and phase 3 graphics carry that same value.
 - The name of the track is that recorded for the round, and is the name the textual forecast carries. The grand prix name and the country are read from the track object.
-- The track image shall be searched for in the configured track image directory under a filename equal to the name of the track, normalized in the same manner as a team name, and resolved as the conventions above require.
+- The flag of the round shall be searched for in the configured flag directory under a filename equal to the country recorded by the track object, normalized in the same manner as a team name, and resolved as the conventions above require. The forecast draws no track map, the round standing upon it as a heading.
 - The name of a session is "Sprint Qualifying", "Sprint Race", "Feature Qualifying" or "Feature Race" for a round of the sprint format, and "Qualifying" or "Race" for a round of any other. It carries no qualifier of the length of the session.
 - The type of weather of a session is "Sunny", "Mixed" or "Rain". The phase 3 graphic carries the type phase 2 drew for that session.
 - The concrete weather of a slot is one of "Clear", "Light Cloud", "Overcast", "Wet" and "Very Wet".

@@ -19,11 +19,11 @@
                    session_<x>_group, session_<x>_name,
                    session_<x>_slot_<y>_group, session_<x>_slot_<y>_label
        Optional  : season_number, division_tier, race_name, country_name,
-                   track_image, rain_probability, session_<x>_slot_type,
+                   track_flag, rain_probability, session_<x>_slot_type,
                    session_<x>_slot_type_icon, session_<x>_summary,
                    session_<x>_slot_<y>_icon, season_number_group,
                    division_tier_group, race_name_group,
-                   country_name_group, track_image_group
+                   country_name_group, track_flag_group
        =================================================================== -->
 
   <defs>
@@ -82,10 +82,10 @@
   <text id="rain_probability" inkscape:label="rain_probability" class="statval" x="976" y="198"
         text-anchor="end" style="font-variant-numeric:tabular-nums">00.0%</text>
 
-  <g id="track_image_group" inkscape:label="track_image_group">
-    <rect x="1016" y="100" width="136" height="136" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
-    <image id="track_image" inkscape:label="track_image"
-           x="1026" y="110" width="116" height="116" preserveAspectRatio="xMidYMid meet"/>
+  <g id="track_flag_group" inkscape:label="track_flag_group">
+    <rect x="1016" y="119.333" width="136" height="97.333" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <image id="track_flag" inkscape:label="track_flag"
+           x="1026" y="129.333" width="116" height="77.3333" preserveAspectRatio="xMidYMid meet"/>
   </g>
 
   <line x1="48" y1="252" x2="1152" y2="252" stroke="#262B33" stroke-width="1"/>

@@ -1195,3 +1195,96 @@ def test_the_two_results_templates_are_reported_separately(tmp_path, templates):
 
     assert not reports["results_qualifying_template"].valid
     assert reports["results_race_template"].valid
+
+
+# --------------------------------------------------------------------------
+# 044 — per-class aspect, and the two types that may draw a circuit map
+# --------------------------------------------------------------------------
+
+def _root_with(images):
+    """An SVG root declaring *images* as (id, width, height)."""
+    from lxml import etree
+
+    ns = "http://www.w3.org/2000/svg"
+    root = etree.Element(f"{{{ns}}}svg")
+    root.set("width", "600")
+    root.set("height", "400")
+    for field_id, width, height in images:
+        node = etree.SubElement(root, f"{{{ns}}}image")
+        node.set("id", field_id)
+        node.set("width", str(width))
+        node.set("height", str(height))
+    return root
+
+
+def test_a_flag_slot_at_three_by_two_passes():
+    from services.image_validity_service import aspect_faults_of
+
+    root = _root_with([("round_1_flag", 120, 80)])
+    assert aspect_faults_of(root, "calendar_template") == []
+
+
+def test_a_flag_slot_left_square_is_refused_and_names_what_is_wrong():
+    """The likeliest defect of the conversion: an id renamed, the slot not reshaped."""
+    from services.image_validity_service import aspect_faults_of
+
+    faults = aspect_faults_of(_root_with([("round_1_flag", 120, 120)]), "calendar_template")
+    assert len(faults) == 1
+    message = faults[0]
+    assert "round_1_flag" in message      # the field
+    assert "flag" in message              # the class
+    assert "3:2" in message               # what was expected
+    assert "1:1" in message               # what was found
+
+
+def test_a_track_slot_at_three_by_two_is_refused():
+    from services.image_validity_service import aspect_faults_of
+
+    faults = aspect_faults_of(_root_with([("round_1_image", 120, 80)]), "calendar_template")
+    assert len(faults) == 1
+    assert "round_1_image" in faults[0]
+
+
+def test_authoring_noise_inside_the_tolerance_passes():
+    """The case a naive implementation fails.
+
+    Inkscape writes floating-point geometry, so 120.00001 / 80 is not exactly 1.5 in
+    binary floating point. An exact comparison would reject every hand-drawn template.
+    """
+    from services.image_validity_service import aspect_faults_of
+
+    root = _root_with([("round_1_flag", 120.00001, 80)])
+    assert aspect_faults_of(root, "calendar_template") == []
+
+
+def test_a_slot_declaring_no_usable_dimensions_defers_rather_than_dividing_by_zero():
+    from services.image_validity_service import aspect_faults_of
+
+    root = _root_with([("round_1_flag", 0, 0)])
+    assert aspect_faults_of(root, "calendar_template") == []
+
+
+def test_an_unknown_field_is_not_judged():
+    from services.image_validity_service import aspect_faults_of
+
+    root = _root_with([("not_a_catalogue_field", 120, 120)])
+    assert aspect_faults_of(root, "calendar_template") == []
+
+
+def test_only_the_calendar_and_check_in_may_declare_a_circuit_map():
+    from services.image_validity_service import map_bearing_faults_of
+
+    for template_key in ("calendar_template", "rsvp_template"):
+        root = _root_with([("track_image", 120, 120)] if template_key == "rsvp_template"
+                          else [("round_1_image", 120, 120)])
+        assert map_bearing_faults_of(root, template_key) == []
+
+
+def test_a_standings_template_declaring_a_circuit_map_is_refused():
+    from services.image_validity_service import map_bearing_faults_of
+
+    root = _root_with([("round_1_image", 120, 120)])
+    faults = map_bearing_faults_of(root, "standings_drivers_template")
+    assert len(faults) == 1
+    assert "round_1_image" in faults[0]
+    assert "country flag" in faults[0]

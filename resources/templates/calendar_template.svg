@@ -130,6 +130,8 @@
     <text id="round_1_format" inkscape:label="round_1_format" class="rfmt" x="172" y="279">FORMAT</text>
     <text id="round_1_date" inkscape:label="round_1_date" class="date" x="556" y="279" text-anchor="end"
           style="font-variant-numeric:tabular-nums">01 Jan 2025</text>
+    <image id="round_1_flag" inkscape:label="round_1_flag"
+           x="520" y="288" width="36" height="24" preserveAspectRatio="xMidYMid meet"/>
     <image id="round_1_image" inkscape:label="round_1_image"
            x="68" y="290" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
     <text id="round_1_race_name" inkscape:label="round_1_race_name" class="race" x="116" y="310">Grand Prix Name</text>
@@ -150,6 +152,8 @@
     <text id="round_2_format" inkscape:label="round_2_format" class="rfmt" x="748" y="279">FORMAT</text>
     <text id="round_2_date" inkscape:label="round_2_date" class="date" x="1132" y="279" text-anchor="end"
           style="font-variant-numeric:tabular-nums">01 Jan 2025</text>
+    <image id="round_2_flag" inkscape:label="round_2_flag"
+           x="1096" y="288" width="36" height="24" preserveAspectRatio="xMidYMid meet"/>
     <image id="round_2_image" inkscape:label="round_2_image"
            x="644" y="290" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
     <text id="round_2_race_name" inkscape:label="round_2_race_name" class="race" x="692" y="310">Grand Prix Name</text>
@@ -170,6 +174,8 @@
     <text id="round_3_format" inkscape:label="round_3_format" class="rfmt" x="172" y="383">FORMAT</text>
     <text id="round_3_date" inkscape:label="round_3_date" class="date" x="556" y="383" text-anchor="end"
           style="font-variant-numeric:tabular-nums">01 Jan 2025</text>
+    <image id="round_3_flag" inkscape:label="round_3_flag"
+           x="520" y="392" width="36" height="24" preserveAspectRatio="xMidYMid meet"/>
     <image id="round_3_image" inkscape:label="round_3_image"
            x="68" y="394" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
     <text id="round_3_race_name" inkscape:label="round_3_race_name" class="race" x="116" y="414">Grand Prix Name</text>
@@ -190,6 +196,8 @@
     <text id="round_4_format" inkscape:label="round_4_format" class="rfmt" x="748" y="383">FORMAT</text>
     <text id="round_4_date" inkscape:label="round_4_date" class="date" x="1132" y="383" text-anchor="end"
           style="font-variant-numeric:tabular-nums">01 Jan 2025</text>
+    <image id="round_4_flag" inkscape:label="round_4_flag"
+           x="1096" y="392" width="36" height="24" preserveAspectRatio="xMidYMid meet"/>
     <image id="round_4_image" inkscape:label="round_4_image"
            x="644" y="394" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
     <text id="round_4_race_name" inkscape:label="round_4_race_name" class="race" x="692" y="414">Grand Prix Name</text>
@@ -210,6 +218,8 @@
     <text id="round_5_format" inkscape:label="round_5_format" class="rfmt" x="172" y="487">FORMAT</text>
     <text id="round_5_date" inkscape:label="round_5_date" class="date" x="556" y="487" text-anchor="end"
           style="font-variant-numeric:tabular-nums">01 Jan 2025</text>
+    <image id="round_5_flag" inkscape:label="round_5_flag"
+           x="520" y="496" width="36" height="24" preserveAspectRatio="xMidYMid meet"/>
     <image id="round_5_image" inkscape:label="round_5_image"
            x="68" y="498" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
     <text id="round_5_race_name" inkscape:label="round_5_race_name" class="race" x="116" y="518">Grand Prix Name</text>
@@ -230,6 +240,8 @@
     <text id="round_6_format" inkscape:label="round_6_format" class="rfmt" x="748" y="487">FORMAT</text>
     <text id="round_6_date" inkscape:label="round_6_date" class="date" x="1132" y="487" text-anchor="end"
           style="font-variant-numeric:tabular-nums">01 Jan 2025</text>
+    <image id="round_6_flag" inkscape:label="round_6_flag"
+           x="1096" y="496" width="36" height="24" preserveAspectRatio="xMidYMid meet"/>
     <image id="round_6_image" inkscape:label="round_6_image"
            x="644" y="498" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
     <text id="round_6_race_name" inkscape:label="round_6_race_name" class="race" x="692" y="518">Grand Prix Name</text>
@@ -250,6 +262,8 @@
     <text id="round_7_format" inkscape:label="round_7_format" class="rfmt" x="172" y="591">FORMAT</text>
     <text id="round_7_date" inkscape:label="round_7_date" class="date" x="556" y="591" text-anchor="end"
           style="font-variant-numeric:tabular-nums">01 Jan 2025</text>
+    <image id="round_7_flag" inkscape:label="round_7_flag"
+           x="520" y="600" width="36" height="24" preserveAspectRatio="xMidYMid meet"/>
     <image id="round_7_image" inkscape:label="round_7_image"
            x="68" y="602" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
     <text id="round_7_race_name" inkscape:label="round_7_race_name" class="race" x="116" y="622">Grand Prix Name</text>
@@ -270,6 +284,8 @@
     <text id="round_8_format" inkscape:label="round_8_format" class="rfmt" x="748" y="591">FORMAT</text>
     <text id="round_8_date" inkscape:label="round_8_date" class="date" x="1132" y="591" text-anchor="end"
           style="font-variant-numeric:tabular-nums">01 Jan 2025</text>
+    <image id="round_8_flag" inkscape:label="round_8_flag"
+           x="1096" y="600" width="36" height="24" preserveAspectRatio="xMidYMid meet"/>
     <image id="round_8_image" inkscape:label="round_8_image"
            x="644" y="602" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
     <text id="round_8_race_name" inkscape:label="round_8_race_name" class="race" x="692" y="622">Grand Prix Name</text>
@@ -290,6 +306,8 @@
     <text id="round_9_format" inkscape:label="round_9_format" class="rfmt" x="172" y="695">FORMAT</text>
     <text id="round_9_date" inkscape:label="round_9_date" class="date" x="556" y="695" text-anchor="end"
           style="font-variant-numeric:tabular-nums">01 Jan 2025</text>
+    <image id="round_9_flag" inkscape:label="round_9_flag"
+           x="520" y="704" width="36" height="24" preserveAspectRatio="xMidYMid meet"/>
     <image id="round_9_image" inkscape:label="round_9_image"
            x="68" y="706" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
     <text id="round_9_race_name" inkscape:label="round_9_race_name" class="race" x="116" y="726">Grand Prix Name</text>
@@ -310,6 +328,8 @@
     <text id="round_10_format" inkscape:label="round_10_format" class="rfmt" x="748" y="695">FORMAT</text>
     <text id="round_10_date" inkscape:label="round_10_date" class="date" x="1132" y="695" text-anchor="end"
           style="font-variant-numeric:tabular-nums">01 Jan 2025</text>
+    <image id="round_10_flag" inkscape:label="round_10_flag"
+           x="1096" y="704" width="36" height="24" preserveAspectRatio="xMidYMid meet"/>
     <image id="round_10_image" inkscape:label="round_10_image"
            x="644" y="706" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
     <text id="round_10_race_name" inkscape:label="round_10_race_name" class="race" x="692" y="726">Grand Prix Name</text>
@@ -330,6 +350,8 @@
     <text id="round_11_format" inkscape:label="round_11_format" class="rfmt" x="172" y="799">FORMAT</text>
     <text id="round_11_date" inkscape:label="round_11_date" class="date" x="556" y="799" text-anchor="end"
           style="font-variant-numeric:tabular-nums">01 Jan 2025</text>
+    <image id="round_11_flag" inkscape:label="round_11_flag"
+           x="520" y="808" width="36" height="24" preserveAspectRatio="xMidYMid meet"/>
     <image id="round_11_image" inkscape:label="round_11_image"
            x="68" y="810" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
     <text id="round_11_race_name" inkscape:label="round_11_race_name" class="race" x="116" y="830">Grand Prix Name</text>
@@ -350,6 +372,8 @@
     <text id="round_12_format" inkscape:label="round_12_format" class="rfmt" x="748" y="799">FORMAT</text>
     <text id="round_12_date" inkscape:label="round_12_date" class="date" x="1132" y="799" text-anchor="end"
           style="font-variant-numeric:tabular-nums">01 Jan 2025</text>
+    <image id="round_12_flag" inkscape:label="round_12_flag"
+           x="1096" y="808" width="36" height="24" preserveAspectRatio="xMidYMid meet"/>
     <image id="round_12_image" inkscape:label="round_12_image"
            x="644" y="810" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
     <text id="round_12_race_name" inkscape:label="round_12_race_name" class="race" x="692" y="830">Grand Prix Name</text>
