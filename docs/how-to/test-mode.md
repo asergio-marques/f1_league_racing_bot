@@ -23,8 +23,8 @@ There is no on/off parameter — it flips, and the new state is persisted to `se
 
 Two side effects on **enable**, both aimed at getting to a testable season quickly:
 
-- If the current season (SETUP or ACTIVE) has no points configurations attached, **Standard** and **Half Points** are created and attached. This is idempotent — already-attached configs are left alone.
-- `/season approve` performs the same seeding, so a season approved under test mode will not fail its points-configuration gate.
+- Where a season is in SETUP or ACTIVE, **Standard** and **Half Points** are created and attached unless a config of that exact name is already linked. This runs unconditionally — a season already carrying configurations of its own gains these two on top of them, rather than being left alone.
+- `/season approve` performs the same seeding, so a season approved under test mode will not fail its points-configuration gate — but that path seeds only when nothing at all is attached, which the toggle path does not check.
 
 Two on **disable**:
 
@@ -53,15 +53,24 @@ Phase numbers in the queue entry mean:
 
 | `phase_number` | Event |
 |---|---|
-| 0 | Mystery-round notice |
+| 0 | Mystery-round notice — **database path only** |
 | 1, 2, 3 | Weather phases |
 | 4 | Result submission |
+| 5 | RSVP notice |
+| 6 | RSVP last notice |
+| 7 | RSVP deadline |
+
+Phase 0 never arrives from the job store: there is no mystery prefix in the job-store mapping, and a mystery round's notice is scheduled under the `weather_p1` prefix. A mystery round backed by a live job therefore comes back as phase 1 and `advance` dispatches it to `run_phase1`, which resolves the format and posts the notice. The `get_pending_advance_jobs` docstring claiming `0=mystery notice` is wrong in the same way as the two comments noted below.
 
 **Result submission is the exception: it never comes from the job store.** `get_pending_advance_jobs` filters results jobs out deliberately, so that a past-dated job which already auto-fired can neither block the wizard nor trigger it twice. Phase 4 is detected from database state instead — a round with no active session results and a provisional result status is due for submission — and it is therefore reached for every round format, mystery included.
 
+That database detection is load-bearing rather than a fallback: `/season approve` skips scheduling result-submission jobs altogether while the test-mode flag is set, so under test mode there is no results job for the job store to hold in the first place.
+
 **Database state also covers everything the job store has lost.** Before returning a scheduler job, `advance` checks every chronologically earlier round for work the scheduler cannot see: phases evicted by misfire grace, RSVP jobs never created because the round was already past-dated at approval, and result submission. Where the job store holds nothing at all, that same check drives the whole queue. This is why `advance` still works on a test season built entirely in the past, when almost nothing was ever scheduled.
 
-> `get_next_pending_phase` and `get_pending_advance_jobs` both carry a comment claiming `schedule_round` skips the results job for `MYSTERY` rounds. It does not — it schedules one for every format. The behaviour above does not depend on the claim; only the comments are wrong.
+> `get_next_pending_phase` carries a comment claiming `schedule_round` skips the results job for `MYSTERY` rounds. It does not — it schedules one for every format. The behaviour above does not depend on the claim; only the comment is wrong. (`get_pending_advance_jobs`'s comment says something different and correct: results jobs are excluded so a past-dated auto-fired job cannot block or double-trigger the wizard.)
+
+> `advance` also tries to cancel a round's results job by the ID `results_r{round_id}`, which is not the ID the scheduler created — the real one carries the season, division and round *number*. That cancellation is therefore a no-op, and the double-fire it claims to prevent is not prevented by it.
 
 When there is nothing left, `advance` says so and points at `/season complete`.
 
@@ -69,7 +78,9 @@ When there is nothing left, `advance` says so and points at `/season complete`.
 /test-mode review
 ```
 
-Prints every round of the active season with a ✅/⏳ per phase, per division. Use it to see where you are without advancing.
+Prints every round of the active season with a status per phase, per division. Use it to see where you are without advancing. Three symbols are defined — ✅ done, ⏳ pending with a job queued, ⚠️ pending with no job — and result submission renders instead as "✅ finalized" or "⏸️ pending review".
+
+> **⏳ never actually appears.** The summary probes job IDs of the form `phase1_r{round_id}`, `results_r{round_id}` and `rsvp_notice_r{round_id}`, while the scheduler creates `weather_p1_s{S}_d{D}_r{RoundNumber}` and its siblings — mismatched in both the prefix and the round identifier. No probe ever matches, so every pending phase renders ⚠️ whether or not its job is queued. Read ⚠️ as "pending", not as "the job is missing".
 
 ---
 

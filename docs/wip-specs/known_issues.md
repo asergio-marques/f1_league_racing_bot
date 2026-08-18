@@ -35,6 +35,11 @@ Found on 2026-08-17 while writing the weather module how-to guide, unless stated
 - Anyone holding the interaction role can repoint a division's forecast, results or standings channel.
 - The README documents `/division weather-channel` as *Access: Trusted admin*, which is the access the other five have and this one does not. Either the code or the README is wrong; which one is a decision, not an oversight to be corrected silently.
 
+**Disabling the weather module cancels every scheduled job for the season, not only the weather ones.**
+- `cancel_all_weather_for_server` in `src/services/scheduler_service.py:517` selects every round of a server's ACTIVE and SETUP seasons and calls `cancel_round` on each. `cancel_round` at `:501` removes every job carrying that `round_id` — its docstring says so explicitly — which is the forecast cleanup, the result-submission job and all three RSVP jobs alongside the three weather phases.
+- A league that turns weather off mid-season also stops collecting results and asking for check-ins, for every round still to come, with no warning and nothing in the reply beyond "All scheduled weather jobs have been cancelled". Nothing recreates those jobs except `/season approve`.
+- Same root cause as the `amend_round` entries under Attendance and Results & standings: `cancel_round` is round-scoped where every caller wants it job-kind-scoped. This is its third trigger, and the widest, because it applies to every remaining round at once rather than to one.
+
 **There is no way to read back the phase deadlines on their own.**
 - No `/weather config view` exists. `/season review` is the only surface that displays the three values, so a league between seasons must run a season-scoped command to check a server-scoped setting.
 
@@ -73,6 +78,11 @@ Found on 2026-08-17 while writing the signup module how-to guide.
 - `config_channel` in `src/cogs/signup_cog.py:691-695` is a deprecated alias whose body is `await self.signup_channel(interaction, channel)`. Inside a cog, `self.signup_channel` resolves to the `app_commands.Command` object, and `app_commands.Command` defines no `__call__` anywhere in its MRO on the installed discord.py 2.7.1. The command raises `TypeError: 'Command' object is not callable`.
 - A league sees the interaction fail. The sibling alias `/signup config roles` has a body of its own and does work, so one half of the deprecated pair functions and the other does not — and the README documented the broken half as the way to set the channel until 2026-08-17.
 
+**`/signup config roles` is not equivalent to the two commands it was deprecated in favour of.**
+- `config_roles` in `src/cogs/signup_cog.py:704` writes `base_role_id` and `signed_up_role_id` and stops. `signup_base_role` at `:882` additionally removes the outgoing base role's overwrite on the signup channel and applies the incoming one — `view_channel=True`, `send_messages=False`, `use_application_commands=True`.
+- A league that sets its roles through the deprecated alias gets a base role that cannot see the signup channel. Nothing reports it; the reply is "✅ Signup roles configured." and the failure surfaces later as drivers who cannot find the Sign Up button.
+- The two are also gated differently: `config_roles` carries `admin_only` (Manage Server) where `signup_base_role` and `signup_complete_role` carry `server_admin_only` (Administrator). The deprecated alias is the lower bar for the same setting.
+
 **An armed auto-close timer cannot be cancelled.**
 - `/signup close` refuses while `close_at` is set and directs the caller to `/signup cancel-timer` (`src/cogs/signup_cog.py:1453`). That string is the only occurrence of `cancel-timer` in `src/`; no such command is registered.
 - A league that passes `close_time` to `/signup open` therefore has no way to close the window early. The only escapes are waiting for the timer to fire or `/module disable signup`, which clears the signup channel and both roles.
@@ -104,6 +114,12 @@ Found on 2026-08-17 while writing the results module how-to guide.
 - `/results rounds sync` and `/results standings sync` per division are the recovery, and they are not mentioned by the reply.
 - **This breaches the constitution, not merely the wip-spec.** The Amendment & Penalty section states that on approval "all affected results and standings MUST be reposted", and separately that standings for an affected round and all subsequent rounds "MUST be recomputed and reposted atomically". Half of that is happening.
 - The same call is made with the same omission at `src/services/penalty_service.py:459`, reachable only when `apply_penalties` is called without `_skip_post=True`. Both production callers pass it, and the integration tests that do not use a fake bot whose `get_guild` returns `None`, so that one is latent and untested rather than live.
+
+**The points-ordering gate at `/season approve` cannot fire on a first approval.**
+- `validate_monotonic_ordering` in `src/services/season_points_service.py:109` reads `season_points_entries`, and `/season approve` calls it at `src/cogs/season_cog.py:3480`. The only thing that populates that table for a season being approved is `snapshot_configs_to_season`, called a hundred lines later at `:3583`. The other two writers are `approve_amendment` and `ensure_test_configs`, neither of which runs on the path to a first approval.
+- The gate therefore inspects an empty table, finds no violations and passes. A league can approve a season whose second place is worth more than its first, and score a whole championship on it; the refusal that was meant to catch it never comes.
+- It does fire on a season that has already been approved once and re-approved, and on one that acquired entries through test mode, which is why the check is not obviously dead.
+- The README and the results how-to both described the gate as the safety net for a wrongly built table until 2026-08-18.
 
 **A points configuration may be attached to a season without existing, and the season then refuses to approve with no message at all.**
 - `attach_config` in `src/services/season_points_service.py:28` inserts into `season_points_links` without checking that `config_name` is present in `points_config_store`. `remove_config` in `src/services/points_config_service.py:45` deletes the store row without clearing any link to it.
@@ -166,6 +182,19 @@ Found on 2026-08-17 while writing the core configuration how-to guide.
 **`/bot-init` promises default teams it does not create.**
 - `src/cogs/init_cog.py` calls `seed_default_teams_if_empty` under the comment "Seed default F1 teams + Reserve". The method inserts the Reserve team and nothing else.
 - The behaviour is defensible — a league names its own teams — but a reader of the cog is told a full grid ships, and does not.
+
+## Test mode
+
+Found on 2026-08-18 while auditing the how-to guides against the implementation.
+
+**`/test-mode review` reports every pending phase as having no job, because it probes job IDs the scheduler never creates.**
+- `build_review_summary` in `src/services/test_mode_service.py:528` builds probe IDs of the form `phase1_r{round_id}`, `mystery_r{round_id}`, `results_r{round_id}` and `rsvp_notice_r{round_id}`, and tests them against the live set from `get_job_ids_for_rounds`. The scheduler creates `weather_p1_s{S}_d{D}_r{RoundNumber}` and its siblings (`src/services/scheduler_service.py:372-415`) — a different prefix, and the round *number* rather than the round *id*.
+- No probe can ever match. `_phase_status` therefore returns ⚠️ "pending, no job" for every outstanding phase, and the ⏳ state it defines is unreachable. A maintainer reading the summary is told the schedule is empty when it is fully armed.
+- `/test-mode advance` carries the same mismatch: its `cancel_job(f"results_r{round_id}")` at `src/cogs/test_mode_cog.py:253` names a job that does not exist, so the double-fire its comment claims to prevent is not prevented by it.
+
+**`get_pending_advance_jobs` documents a phase number it cannot return.**
+- Its docstring at `src/services/scheduler_service.py:609` lists `0=mystery notice`, but `_PHASE_PREFIX_MAP` at `:619` has no mystery prefix and a mystery round's notice is scheduled under `weather_p1`. Phase 0 arises only on the database path in `test_mode_service`.
+- Harmless in effect — a mystery round comes back as phase 1 and `run_phase1` resolves the format and posts the notice — but the docstring is a third comment in this area describing behaviour the code does not have.
 
 ## Season lifecycle
 

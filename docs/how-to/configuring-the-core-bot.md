@@ -8,6 +8,7 @@ It sends you to the reference for the fine print:
 
 - **[The main README](../../README.md)** — every command in full, with its parameters and who may run it.
 - **[Configuring the signup module](configuring-the-signup-module.md)** — if you want your drivers enrolling themselves, and help putting the ones who do into teams.
+- **[Configuring the results & standings module](configuring-the-results-module.md)** — if you want results submitted, points scored and championship tables kept.
 - **[Configuring the attendance module](configuring-the-attendance-module.md)** — if you want the bot asking your drivers whether they are racing, and keeping score of who does not.
 - **[Configuring the weather module](configuring-the-weather-module.md)** — if you want generated forecasts before each round.
 - **[Configuring the image module](configuring-the-image-module.md)** — if you want the bot posting pictures rather than text.
@@ -30,7 +31,7 @@ You do not need to read those first. Start here.
 
 ## Before you start
 
-**Somebody has to run the bot on a computer.** It is not a service you invite and forget — it is a program that must stay running for forecasts to post and results to be collected. If it is switched off, nothing happens; nothing queues up and catches up later, except where this guide says so.
+**Somebody has to run the bot on a computer.** It is not a service you invite and forget — it is a program that must stay running for forecasts to post and results to be collected. If it is switched off, nothing happens while it is down. Some of it is picked up when it starts again — missed weather phases, missed check-in deadlines and a signup window's auto-close timer are all recovered — but anything else that came due is simply missed.
 
 Three things have to be done on that computer, by hand, before any command in this guide works. They are covered in [Setup](../../README.md#setup) in the main README:
 
@@ -60,7 +61,7 @@ Three decisions, and they shape everything after:
 | **Interaction channel** | The **only** channel the bot accepts commands in |
 | **Log channel** | Where the bot explains itself — what it worked out, what it could not find, why something fell back |
 
-Run it anywhere; it is the one command that does not require the command channel, because until it has run there is no command channel.
+Run it anywhere; it is one of only two commands that do not require the command channel, because until it has run there is no command channel. `/bot-reset` is the other.
 
 **Pick a private channel for logs.** The bot writes a great deal there — every command that succeeded, every picture it could not draw, every driver it could not place. It is written for you, not for your drivers.
 
@@ -69,6 +70,7 @@ Run it anywhere; it is the one command that does not require the command channel
 | To run | You need |
 |---|---|
 | Most commands in this guide | The interaction role **and** Discord's **Manage Server** permission |
+| `/season status`, and `/division weather-channel`, `results-channel` and `standings-channel` | The interaction role alone |
 | `/module enable` and `/module disable` | Discord's **Administrator** permission |
 | `/bot-init` and `/bot-reset` | **Manage Server**, from any channel |
 
@@ -103,15 +105,19 @@ Five modules, **all off to begin with**. The bot works without any of them, but 
 | Module | The rule |
 |---|---|
 | `attendance` | Turn `results` on first. Attendance is refused without it |
-| `results` and `attendance` | Cannot be turned on **or off** while a season is active. Decide before you approve |
+| `results` and `attendance` | Cannot be turned **on** while a season is active. Decide before you approve |
 | `weather` | Can be turned on mid-season, but every division must already have a forecast channel. It then immediately runs any forecast that is already overdue |
 | `signup` and `images` | Free to switch at any time |
 
-**Turning a module off clears its settings** — its channels and roles are forgotten, and its scheduled jobs are cancelled. Your history is always kept, but you will be setting the module up again from scratch if you turn it back on. Two modules are exceptions. The images module forgets nothing and comes back exactly as it was. The signup module forgets its channel and its two roles, but keeps its time slots and its question settings whatever the message says.
+> **Turning one off is not guarded the way turning it on is.** `results` and `attendance` refuse to be *enabled* mid-season, but both will happily be *disabled* mid-season, with no warning that a season is running.
+
+> **Turning `results` off takes `attendance` with it.** If attendance is on, disabling results disables it too, in the same breath. Your reply says nothing about it — only the log channel records it.
+
+**Turning a module off clears less than you would expect.** Only the signup module behaves the way the phrase suggests: it forgets its channel and its two roles, though it keeps its time slots and its question settings whatever the message says. Of the rest, `attendance` forgets only which channels each division posts to, and `weather`, `results` and `images` forget nothing at all — every channel, deadline, penalty value and points configuration survives, and the module comes back as it was. What weather does do is cancel the scheduled jobs for every remaining round.
 
 Each module then has its own configuration, which is not covered here. Start from [Slash Commands](../../README.md#slash-commands) in the README and find that module's section.
 
-> **Decide now, not later.** Two of the five cannot be changed once a season is running, and a third changes what `/season approve` demands of you. This step being early is not an accident.
+> **Decide now, not later.** Two of the five cannot be turned *on* once a season is running, turning either off mid-season does real damage without warning you, and a third changes what `/season approve` demands of you. This step being early is not an accident.
 
 ---
 
@@ -179,7 +185,7 @@ If two divisions race the same calendar at different times, build the first one 
 /division duplicate source_name:Pro new_name:Academy role:@Academy tier:2 hour_offset:2
 ```
 
-That copies every round across and shifts each by the offset you give. Far quicker than typing a second calendar, and offsets can be negative or fractional.
+That copies every round across and shifts each by the offset you give. Far quicker than typing a second calendar. There are two offsets — `day_offset` and `hour_offset` — and you can use either or both. Both may be negative; only `hour_offset` accepts a decimal.
 
 Got something wrong? During setup you can fix any of it:
 
@@ -199,7 +205,7 @@ Four things to know:
 
 - **Times are UTC**, always, in the form `YYYY-MM-DDTHH:MM:SS`. When the bot posts a time to your drivers it converts it to each person's own local time, so put in the real UTC time and let it do that.
 - **You never give a round number.** The bot sorts the division's rounds by date and numbers them. Add a round in the middle later and everything after it renumbers itself.
-- **Four formats**: `NORMAL`, `SPRINT`, `MYSTERY` and `ENDURANCE`.
+- **Four formats**: `NORMAL`, `SPRINT`, `MYSTERY` and `ENDURANCE`. You type the format rather than picking it from a list — case does not matter, but a name that is not one of the four is refused. Only `track` offers autocomplete.
 - **A `MYSTERY` round takes no track**, and every other format must have one. That is the whole point of a mystery round: the circuit is kept secret until the weekend.
 
 `/round delete` removes one during setup, and renumbers what remains.
@@ -230,7 +236,9 @@ The other six belong to modules. Set the ones whose module you turned on in step
 | `/division rsvp-channel` | `attendance` | Check-in calls |
 | `/division attendance-channel` | `attendance` | The attendance sheet |
 
-**Approval will refuse a season that is missing any of these for an enabled module**, so it is cheaper to do them all now than to discover it at step 8.
+**Approval will refuse a season that is missing any of those six for an enabled module**, so it is cheaper to do them all now than to discover it at step 8.
+
+> **The calendar and lineup channels are not checked.** Unlike the six above, a division missing either is simply skipped at approval — no refusal, no warning. It posts no calendar and no lineup, and the first you know of it is the silence. Set them.
 
 ---
 
@@ -293,11 +301,11 @@ Things change. During an active season:
 
 | Command | What it does |
 |---|---|
-| `/round amend` | Change a round's track, time or format. Changing the time renumbers the division's rounds; changing the track or format throws away any forecast already generated for it |
+| `/round amend` | Change a round's track, time or format. Changing the time renumbers the division's rounds; changing **any** of the three throws away every forecast already generated for that round |
 | `/round cancel` | Call off one round. Needs `CONFIRM`, and posts a notice to the division |
 | `/division cancel` | Call off a whole division. Needs `CONFIRM` |
 | `/division calendar-sync` | Repost a division's calendar with your changes on it |
-| `/clean-bot` | Delete the bot's own messages in the command channel — handy after a long review |
+| `/clean-bot` | Delete the bot's own messages in the command channel — handy after a long review. It looks back over the last 500 messages only, so run it more than once on a busy channel |
 
 > **The posted calendar does not update itself.** It is the calendar the season was approved with, and it stays that way. `/round amend` changes what the bot *does*, but the picture or the message your drivers scroll back to is untouched until you run `/division calendar-sync`. This trips up nearly everyone once.
 
@@ -329,7 +337,7 @@ If you need to abandon a season rather than finish it:
 /bot-reset confirm:CONFIRM
 ```
 
-Deletes every season, division, round and result, and keeps your `/bot-init` settings and team list so the bot stays usable straight away. Add `full:True` to wipe the configuration too, in which case you start again from step 1.
+Deletes every season, division, round and result, and keeps your `/bot-init` settings and team list so the bot stays usable straight away. Add `full:True` to wipe the `/bot-init` configuration too, in which case you start again from step 1 — but **not** from step 3: your team list survives either way, and there is no command that deletes it wholesale.
 
 ---
 
@@ -355,7 +363,7 @@ Deletes every season, division, round and result, and keeps your `/bot-init` set
 |---|---|
 | A command refuses with a short message only you can see | You are not in the command channel, or you lack the interaction role. Check the channel first — it is almost always the channel |
 | A command does not appear in Discord's menu at all | The command list has not reached your server yet. Whoever hosts the bot can push it through immediately with `!sync` |
-| "You need the Administrator permission" | Only `/module enable` and `/module disable` ask for that. Someone with it has to run them |
+| "You need the Administrator permission" | `/module enable` and `/module disable` ask for it, as do the three `/signup` commands that name a channel or a role and every `/images` command that names a folder or a drawing file. Someone with it has to run them |
 | The bot placed a driver but the role did not appear | The bot's own role sits below the role it is trying to grant. Move it up |
 | Approval refuses over tiers | A division was deleted and left a gap. `/division amend` something into it |
 | "Unknown track" | The circuit name has to match exactly. Use the ID instead, or `/track list` to see the spellings |
@@ -363,6 +371,6 @@ Deletes every season, division, round and result, and keeps your `/bot-init` set
 | The calendar in the channel is out of date | It only changes when you run `/division calendar-sync` |
 | A division posts nothing where the others post fine | That division is missing the channel for it. Check step 6 |
 | The season will not complete | Some round is not finalised. The refusal names them |
-| Nothing at all is happening on schedule | The bot is not running. Nothing catches up by itself except weather, and only when you re-enable the module |
+| Nothing at all is happening on schedule | The bot is not running. Starting it again picks up missed weather phases, missed check-in deadlines and a signup auto-close timer; anything else that came due while it was down is missed |
 
 Anything the bot works out, fails to find, or falls back on is written to the log channel. When something is behaving oddly and this table has not explained it, read that channel — the answer is nearly always sitting in it.

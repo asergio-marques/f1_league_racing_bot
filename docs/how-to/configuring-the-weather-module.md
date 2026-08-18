@@ -33,9 +33,11 @@ This guide covers the weather module only. Setting the bot up, creating a season
 | Commands | You need |
 |---|---|
 | `/module enable weather` | **Administrator** |
-| `/weather config` — the three timing commands | **Manage Server** |
-| `/division weather-channel` | The usual bot role |
+| `/weather config` — the three timing commands | **Manage Server**, and the module already on |
+| `/division weather-channel` | The usual bot role, and the module already on |
 | Anything under `/images` | See the image guide |
+
+> **Every command in this guide is gated on the module being on.** Run one before step 1 and you are told the weather module is not enabled — not that you lack a permission. Step 1 genuinely has to come first.
 
 > **The timings can only be set before a season is running.** All three `/weather config` commands are refused while a season is active, and the timings in force are the ones the bot noted when the season was approved. If you are going to change them, change them now — see step 3.
 
@@ -95,6 +97,8 @@ Every reply also tells you where the other two stand, which saves setting one an
 
 > **An amended round falls back to the standard timings.** If a round's track, time or format is changed after the season is running, its forecasts are rescheduled at 5 days, 2 days and 2 hours regardless of what you set here.
 
+> **So does a restart.** When the bot starts again with forecasts still outstanding, it works out which ones it missed using 5 days, 2 days and 2 hours — not your settings. A league running custom timings loses them quietly every time the bot is restarted.
+
 To see what is currently set, run `/season review` — the weather block lists all three. There is no separate command for reading them back.
 
 ---
@@ -112,9 +116,9 @@ You choose a round's format when you add the round; this is what each one does t
 
 A longer session gets more slots, so its weather has more room to change. None of this is a setting; it follows from the format.
 
-> **Mystery rounds get no weather at all.** Nothing is drawn, nothing is worked out, nothing is logged. At the phase 1 moment your drivers get a fixed notice saying the weather is not decided in advance and the game will set it at race time. It pings nobody, because the conditions are as unknown to you as to them. Nothing is posted at the phase 2 and phase 3 moments.
+> **Mystery rounds get no weather.** Nothing is worked out and nothing is recorded. At the phase 1 moment your drivers get a fixed notice saying the weather is not decided in advance and the game will set it at race time — and where the image module is on, that notice is drawn from a template of its own rather than posted as text. It pings nobody, because the conditions are as unknown to you as to them. Nothing is posted at the phase 2 and phase 3 moments.
 
-**A round needs a track for weather to be possible.** The chance of rain is drawn from the circuit, so a round with no track recorded cannot be forecast — the bot stops and says so in the log channel. Mystery rounds are the deliberate exception.
+**A round needs a track for weather to be possible.** The chance of rain is drawn from the circuit, so a round with no track recorded cannot be forecast. The bot stops — and says nothing, anywhere you can see. Nothing reaches the forecast channel and nothing reaches the log channel; only the bot's own log file on the host records it. Mystery rounds are the deliberate exception.
 
 ---
 
@@ -127,7 +131,7 @@ Out of the box, forecasts are text. With the image module on and the weather out
 /images config toggle weather
 ```
 
-There are **six** weather drawing files, not three: phases 2 and 3 each have a sprint version as well, because a sprint weekend has four sessions to show rather than two. The bot picks by the round's format and nothing else.
+There are **six** weather drawing files, not three: one per phase, a sprint version of phases 2 and 3 — because a sprint weekend has four sessions to show rather than two — and one for the mystery-round notice. The bot picks by the round's format and nothing else.
 
 Follow [Setting up the image module](configuring-the-image-module.md) for the order — the drawing files, the weather symbols, and the flags a forecast draws for the round's country.
 
@@ -144,9 +148,9 @@ You are not going to wait five days to find out whether any of this works.
 /test-mode advance
 ```
 
-`advance` fires the next thing due — the next weather phase for the next round — straight away, and posts it to the real forecast and log channels so you see exactly what your drivers will see. Run it again for the next one. `/test-mode review` shows what is still pending.
+`advance` fires the next scheduled event due — often the next weather phase, but equally a results collection or a check-in call where those modules are on — straight away, and posts it to the real channels so you see exactly what your drivers will see. Run it again for the next one. `/test-mode review` shows what is still pending. [Testing with test mode](test-mode.md) covers the whole of it.
 
-> **Turning test mode off clears out every forecast the bot is holding**, not only the ones it posted while you were testing. On a season that has not started that is exactly what you want. On a season already running it will take down forecasts your drivers were reading, and the bot will not put them back — only the next phase will. Do your testing before the season is approved.
+> **Turning test mode off clears out every forecast the bot is holding**, not only the ones it posted while you were testing, and it deletes every fake driver on the server at the same time. On a season that has not started that is exactly what you want. On a season already running it will take down forecasts your drivers were reading, and the bot will not put them back — only the next phase will. Do your testing before the season is approved.
 
 ---
 
@@ -162,10 +166,11 @@ Three posts per round, each replacing the last, so the channel never fills up wi
 
 The higher the chance of rain from phase 1, the more rain and mixed sessions phase 2 tends to hand out, and the wetter phase 3 tends to draw. It is a draw, not a decision — a low chance of rain can still produce a wet race, which is the point of the thing.
 
-**Two other messages** can appear in the same channel:
+**Three other kinds of message** can appear in the same channel:
 
 - **A mystery round notice**, at the phase 1 moment, pinging nobody.
 - **An invalidation notice**, if a round's track, time or format is changed after a forecast has gone out. It tells drivers the old forecasts no longer count, and a fresh one follows automatically.
+- **A cancellation notice**, if a round, a division or the whole season is called off. All three are posted to the forecast channel, and they arrive whether or not the weather module is on.
 
 **And one disappears.** Twenty-four hours after a race starts, the bot deletes that round's final forecast, so the channel holds the forecast that matters and nothing else.
 
@@ -209,10 +214,10 @@ Worth running through before the season is approved.
 | What you see | Usually means |
 |---|---|
 | No forecast at all for a division | No forecast channel set for it, or the module is off |
-| No forecast for one round only | It is a mystery round — that is intended. Otherwise the round has no track, and the log channel says so |
+| No forecast for one round only | It is a mystery round — that is intended. Otherwise the round has no track, and nothing anywhere will tell you so: check the round with `/season review` |
 | A season that will not approve | A division is missing its forecast channel. The bot names which |
 | The post says "5 days out" but arrived earlier or later | Known: the wording is fixed and does not follow your timing settings. The timing itself is correct |
-| A round's forecasts went back to 5 days / 2 days / 2 hours | Known: amending a round resets its timings to the standard ones |
+| A round's forecasts went back to 5 days / 2 days / 2 hours | Known: amending a round resets its timings to the standard ones, and so does restarting the bot with forecasts outstanding |
 | `/weather config` refused | Either a season is running, or the value would put the phases out of order. The reply says which |
 | Two invalidation notices for one change | Amending more than one thing at once posts one per change |
 | Text where you expected a picture | The forecast worked and the drawing did not. The log channel names the reason — most often a drawing file or the converter |

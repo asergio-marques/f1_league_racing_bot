@@ -368,6 +368,8 @@ Required for every division while the results & standings module is enabled, alo
 | `name` | String | ✅ | Division name |
 | `channel` | Channel | ✅ | Channel where the division's calendar is posted |
 
+> **Neither of these two is enforced at approval**, unlike the six module channels above. A division missing its lineup or calendar channel is silently skipped — `/season approve` neither refuses nor warns, and the division simply posts no lineup and no calendar for the whole season.
+
 #### `/division attendance-channel` — Set the attendance logging channel for a division
 *Access: Trusted admin · Attendance module required*
 
@@ -520,9 +522,21 @@ Ordering and timing constraints:
 |-----------|------|----------|-------------|
 | `module_name` | Choice | ✅ | Module to disable: `weather`, `signup`, `results`, `attendance`, or `images` |
 
-Disabling a module cancels its scheduled jobs and clears its channel and role configuration; historical data is always retained. Two modules are exceptions. The **images** module stores only filesystem paths and display preferences, none of which can go stale while it is off, so disabling it clears nothing but the enabled flag and re-enabling restores the configuration exactly. The **weather** module likewise clears nothing: division forecast channels, the configured phase deadlines, recorded phase results and forecast messages already posted all survive, and only the scheduled jobs are cancelled.
+Historical data is always retained. How much configuration a disable actually clears varies by module, and only signup behaves the way the phrase suggests:
 
-The **signup** module reports that all of its configuration has been cleared, but clears only the signup channel and the two roles. Its availability time slots and its three wizard settings survive and are restored on re-enabling. See [known issues](docs/wip-specs/known_issues.md).
+| Module | What disabling clears |
+|---|---|
+| `signup` | The signup channel and the two roles. Its availability time slots and its three wizard settings survive and are restored on re-enabling, though the reply reports that all configuration has been cleared |
+| `attendance` | The per-division channel bindings only. The server-level notice, reminder and deadline timings and every penalty value survive |
+| `weather` | Nothing. Division forecast channels, the configured phase deadlines, recorded phase results and forecast messages already posted all survive; scheduled jobs are cancelled |
+| `results` | Nothing. Channels, points configurations and season attachments all survive |
+| `images` | Nothing. It stores only filesystem paths and display preferences, none of which can go stale while it is off, so re-enabling restores the configuration exactly |
+
+> **Disabling `results` disables `attendance` with it**, where attendance is on. The reply names only results; the cascade is recorded in the log channel and audited as `ATTENDANCE_MODULE_CASCADE_DISABLED`.
+
+> **Disabling `weather` cancels more than the weather jobs.** Job cancellation is scoped by round rather than by kind, so it also removes the result-submission job and all three RSVP jobs for every remaining round of an active or setup season. Nothing recreates them short of `/season approve`. See [known issues](docs/wip-specs/known_issues.md).
+
+Enabling is guarded where disabling is not: `results` and `attendance` both refuse to be enabled while a season is ACTIVE, and neither refuses to be disabled. See [known issues](docs/wip-specs/known_issues.md).
 
 ---
 
@@ -794,12 +808,14 @@ Refused outright while an auto-close timer set by `/signup open close_time:` is 
 #### `/signup unassigned list` — List all Unassigned drivers seeded by lap time
 *Access: Trusted admin*
 
-No parameters. Displays all drivers in the Unassigned state, ordered by total lap time ascending (fastest first). Drivers with no lap time on record appear last; ties break on approval order.
+No parameters. Displays all drivers in the Unassigned state, ordered by total lap time ascending (fastest first), in an ephemeral reply. Drivers with no lap time on record appear last; ties break on **submission** order — the moment the driver sent their form in or last corrected it, not the moment they were approved.
 
 #### `/signup unassigned export` — Export Unassigned drivers to CSV
 *Access: Trusted admin*
 
-No parameters. Returns `unassigned_drivers.csv` with the columns `Seed`, `Display Name`, `Discord User ID`, `Driver Type`, `Lap Total`, one column per configured availability slot (marked `X` where the driver selected it), `Preferred Team 1`–`3`, `Platform` and `Platform ID`.
+No parameters. Returns `unassigned_drivers.csv` in an ephemeral reply, with the columns `Seed`, `Display Name`, `Discord User ID`, `Driver Type`, `Lap Total`, one column per configured availability slot (marked `X` where the driver selected it), `Preferred Team 1`–`3`, `Platform` and `Platform ID`.
+
+> **The preferred teammate and the notes are not exported**, though `/signup unassigned list` displays both. Read them off the list where they bear on how you place someone.
 
 ---
 
@@ -1053,16 +1069,16 @@ After all sessions of a round are submitted, the submission channel enters **pen
 
 - **➕ Add Penalty** — prompts for the session, then opens a modal taking a driver mention or user ID, a penalty value (e.g. `+5s`, `-3s`, `DSQ`), a description and a justification. Both text fields are required and both are published in the verdict. Positive and negative time penalties are supported for race sessions; only DSQ is accepted for qualifying sessions. Values are **whole seconds only**. Negative penalties are rejected if their magnitude exceeds the time penalties the driver already carries in that session, or if they would produce a negative total race time.
 - **No Penalties / Confirm** — moves to the approval step with nothing applied. When entries are staged, it first asks for confirmation that they are to be discarded.
-- **✅ Approve** — disabled while nothing is staged; moves to the approval step (see below).
+- **✅ Approve** — applies the staged penalties immediately (see below). It is never disabled: pressed with nothing staged it replies that no penalties are staged and points at **No Penalties / Confirm**.
 - **🔄 Resubmit Initial Results** — discards the staged penalties, supersedes the submitted results, and restarts collection from the first session.
 - **🏳️ Attendance Pardon** — stages an attendance pardon; see [Attendance Module](#attendance-module). Present regardless of whether that module is enabled.
 - **Remove #N** — a per-entry button appears for each staged penalty, allowing individual removals.
 
 Only members holding the configured interaction role may use these buttons.
 
-Once **Approve** is pressed, the bot posts an **approval message** to the submission channel with:
-- **✏️ Make Changes** — returns to the penalty review prompt with the staged list intact.
-- **✅ Approve** — applies all staged penalties, recomputes positions and points for all affected sessions, deletes and reposts the results and standings under the **Post-Race Penalty Results** label, cascades standing recalculations to subsequent rounds, posts one verdict per decision to the division's verdicts channel, and runs the attendance pipeline where that module is enabled. The submission channel then enters **appeals review** (see below) — it is not closed here, and the round is not yet final.
+**✅ Approve** commits on the first press, with no confirmation step: it applies all staged penalties, recomputes positions and points for all affected sessions, deletes and reposts the results and standings under the **Post-Race Penalty Results** label, cascades standing recalculations to subsequent rounds, posts one verdict per decision to the division's verdicts channel, and runs the attendance pipeline where that module is enabled. The submission channel then enters **appeals review** (see below) — it is not closed here, and the round is not yet final.
+
+The separate **approval message**, carrying **✏️ Make Changes** to return to the penalty prompt with the staged list intact and **✅ Approve** to proceed, belongs to the **No Penalties / Confirm** path — it is what the bot posts when the round is being finalised with nothing applied, either because nothing was staged or because a staged list has just been cleared.
 
 ##### Post-submission appeals review — Correct or overturn a penalty
 
@@ -1463,7 +1479,9 @@ The same summary is appended to `/season review`, which additionally names each 
 |-----------|------|----------|-------------|
 | `kind` | Choice | ✅ | `calendar`, `lineup`, `results`, `standings`, `attendance`, `rsvp`, `weather-p1`, `weather-p2`, `weather-p3`, `weather-mystery`, `verdicts` |
 
-Renders from built-in sample data and replies with the PNG, visible only to you. It reads no live season data, so it works on a server with no season configured. `results`, `standings`, `weather-p2` and `weather-p3` each return both of their variants, and `verdicts` returns **six**.
+Renders from built-in sample data and replies with the PNG, visible only to you. It reads no live season data, so it works on a server with no season configured. `results`, `standings`, `weather-p2` and `weather-p3` each return both of their variants, `attendance` returns **two**, `rsvp` **five**, and `verdicts` **six**.
+
+**Two things it does read.** `lineup`, `results`, `standings` and `attendance` draw against your server's own team list and are refused where it holds nothing beyond Reserve; `attendance`, `rsvp`, `verdicts` and every weather kind but `weather-mystery` are drawn against a round and are refused where the track list is empty. The refusal names which of the two is missing. `calendar` and `weather-mystery` need neither, which makes them the two that work on a bare server.
 
 > **`lineup` is the exception.** Its fields are named after your teams, so a preview built from invented ones would prove nothing. It draws a fabricated "Test Division" holding exactly the teams in your server's list: every team but one filled, one left wholly empty so you can see unoccupied seats, and one reserve slot short of full so you can see an empty reserve slot too. Nobody has a portrait, so every driver image comes from the fallback and says so. If your server has no team beyond Reserve, the command is refused — there is no lineup to draw.
 

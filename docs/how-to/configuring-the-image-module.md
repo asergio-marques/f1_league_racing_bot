@@ -53,7 +53,9 @@ If somebody else hosts the bot for you, you will need their help for the artwork
 
 The bot sends you back a picture.
 
-Nothing has been set up yet, and that is deliberate. The bot comes with all fifteen drawing files and a plain grey placeholder for every piece of artwork, so it can draw everything from day one. You are not starting with a blank page — you are starting with a working page and swapping its pieces out one at a time.
+Nothing has been set up yet, and that is deliberate. The bot comes with all fifteen drawing files and a plain grey placeholder for every piece of artwork, so it can draw without you supplying anything. You are not starting with a blank page — you are starting with a working page and swapping its pieces out one at a time.
+
+The calendar is the one to start with because it needs nothing of yours. Most other kinds do: the lineup, the results, the standings and the attendance sheet are drawn against your **real team list** and are refused outright until you have a team beyond Reserve, and the attendance sheet, the check-in call, the verdicts and every weather kind but the mystery notice need the circuit list. If `/images test` refuses, it names which of the two is missing.
 
 Switching the module on does not change anything the bot posts yet. All eight kinds of output stay off until you turn them on, which is step 6.
 
@@ -108,9 +110,12 @@ The default date style includes the day of the week, which is usually the bit pe
 
 ## Step 4 — Put in your own artwork
 
-There are seven folders of artwork. Each starts with a plain grey placeholder, and you replace them a folder at a time. Three arrive with more than that: the arrows and weather symbols come complete, and the track and flag folders each carry a `mystery.svg` as well.
+There are seven folders of artwork. Each starts with a plain grey placeholder, and you replace them a folder at a time. Four arrive with more than that: the markers and the weather symbols come complete, and the track and flag folders each carry a `mystery.svg` as well.
 
-The bot looks in these folders unless you point it somewhere else:
+The bot looks in these folders unless you point it somewhere else. Two things about moving one:
+
+- **The folder has to sit inside the bot's own project folder.** Anything outside it is refused outright and your existing setting is left alone, so artwork on a separate drive will not work — copy it in instead.
+- **A folder that does not exist is accepted anyway.** The bot stores the path and warns you that nothing is there yet, rather than refusing. That is the opposite of how the drawing-file commands behave, so read the reply.
 
 | Command to move the folder | Starts as | Holds | Size to draw at |
 |---|---|---|---|
@@ -118,7 +123,7 @@ The bot looks in these folders unless you point it somewhere else:
 | `/images config team-image-directory` | `resources/teams` | Team badges | 120 × 120 |
 | `/images config driver-image-directory` | `resources/drivers` | Driver photos | 120 × 120 |
 | `/images config flag-directory` | `resources/flags` | Country flags — drivers **and** rounds | 120 × 80 |
-| `/images config marker-directory` | `resources/markers` | Up/down arrows for standings | 64 × 64 |
+| `/images config marker-directory` | `resources/markers` | Standings movement markers — up, down and unchanged | 64 × 64 |
 | `/images config weather-icon-directory` | `resources/weather` | Weather symbols | 64 × 64 |
 | `/images config tyre-directory` | `resources/tyres` | Tyre compounds | 64 × 64 |
 
@@ -135,9 +140,9 @@ One flag serves every circuit in the same country, so three American rounds need
 
 ### Naming the files
 
-The bot works out the filename from the thing it is drawing. It takes the name, makes it lowercase, drops any accents, and turns every space or punctuation mark into an underscore.
+The bot works out the filename from the thing it is drawing. It trims the name, makes it lowercase, drops any accents, turns each **run** of spaces and punctuation into a *single* underscore, and drops any underscore left at the start or the end.
 
-So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`**, and a track called **São Paulo** needs **`sao_paulo.svg`**.
+So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`**, a track called **São Paulo** needs **`sao_paulo.svg`**, and **Alfa Romeo (Sauber)** needs **`alfa_romeo_sauber.svg`** — one underscore between each word, and none trailing.
 
 **What the name is taken from** varies by folder, and this is the part that trips people up:
 
@@ -178,7 +183,9 @@ Two filenames are spoken for: `fallback.svg`, and `mystery.svg` — the latter i
 
 Fifteen of them, one per kind of picture, and they all come with the bot. You can leave every one alone to begin with and restyle them later.
 
-To use your own, put it in the templates folder (`resources/templates` by default) and name it:
+That folder starts as `resources/templates`, and `/images config template-directory` moves it — under the same rules as the artwork folders in step 4: it must sit inside the project folder, and one that does not exist is accepted with a warning rather than refused.
+
+To use your own drawing file, put it in that folder and name it:
 
 ```
 /images template calendar          filename: my_calendar.svg
@@ -232,6 +239,8 @@ This comes last on purpose. Switching something on before its drawing file is bi
 
 The check-in call is the odd one out — it *adds* a picture rather than replacing anything. The message, the roster and the buttons all stay exactly as they were.
 
+**Standings is the other odd one out, and for a less happy reason: it does not post a picture yet.** No standings post is drawn today whatever the switch says, so the championship tables carry on as text. The switch records what you want and nothing more; `/images config view` marks it as recorded but not yet in effect, and `/images test standings` is the only way to see the drawing. Switch it on if you like — it changes nothing until the posting path exists.
+
 When you switch something on, the bot tells you if it would not work as things stand, and whether that output posts pictures yet.
 
 > **If a picture fails, only that picture fails.** The division falls back to its usual text post and the log channel explains why; other divisions still get their pictures. Nothing is ever held up waiting for a picture — results, penalties, forecasts and standings all happen exactly as they would with the module off, and the picture is drawn afterwards.
@@ -244,13 +253,13 @@ When you switch something on, the bot tells you if it would not work as things s
 /images config view
 ```
 
-Lists every setting and whether it is usable, and each of the eight outputs as ✅ on, ❌ off, or ⚠️ on but broken. If something is broken it names the exact drawing file at fault — which weather phase, or which half of the results or standings pair.
+Lists every setting and whether it is usable, and each of the eight outputs as ✅ on, ❌ off, or ⚠️ on but broken. Drawing files and artwork folders only ever show ✅ or ⚠️ — never ❌, since there is always something to fall back on. If something is broken it names the exact drawing file at fault — which weather phase, or which half of the results or standings pair.
 
 ```
 /images test <kind>
 ```
 
-Draws one kind from made-up sample data and sends you the picture, visible only to you. It does not touch your real season, so it works before you have set one up. A few kinds send several pictures — results, standings and weather phases 2 and 3 send both versions, and verdicts sends six, because how long text wraps is the only thing worth judging by eye there.
+Draws one kind from made-up sample data and sends you the picture, visible only to you. It reads no season data, so it works before you have approved one — but it does draw against your real team list and circuit list, and refuses without them, as step 1 describes. Several kinds send more than one picture: results, standings and weather phases 2 and 3 send both versions, the attendance sheet sends two, the check-in call five, and verdicts six, because how long text wraps is the only thing worth judging by eye there.
 
 Remember: **`/images test` uses the artwork that came with the bot, not yours.** It checks your drawing files, not your badges and flags.
 

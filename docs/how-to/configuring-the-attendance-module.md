@@ -30,7 +30,7 @@ This guide covers the attendance module only. Setting the bot up, creating a sea
 
 **The bot must already be set up, and you need a season with divisions, teams and seated drivers.** Attendance works round by round and driver by driver, so there must be rounds to check into and people to ask. If you have not got that far, follow [Setting up the bot for your league](configuring-the-core-bot.md) first; this guide picks up from there.
 
-**Seat some drivers in the Reserve team.** It is created for you by `/bot-init` and belongs to every division, so there is nothing to set up — but an empty one means reserve distribution has nobody to distribute, and auto-reserve has nowhere to move anybody to.
+**Seat some drivers in the Reserve team.** The bot creates it for you and puts it in every division, so there is nothing to set up — but an empty one means reserve distribution has nobody to distribute, and auto-reserve has nowhere to move anybody to. Seating drivers is core setup; see [Setting up the bot for your league](configuring-the-core-bot.md).
 
 **Who is allowed to run what.** Every command below also has to be run in the bot's usual command channel by someone with the usual bot role.
 
@@ -106,6 +106,8 @@ They have to stay in that order — the call first, the reminder after it, the d
 
 **Two of the three can be switched off by setting them to `0`.** A last reminder of `0` means no chasing message at all. A deadline of `0` means check-in stays open right up to the moment the race is scheduled to start. The notice itself cannot be switched off; there is no check-in without a call.
 
+> **With the reminder off, the ordering is no longer enforced.** The bot only compares the reminder against the deadline when the reminder is non-zero, so a reminder of `0` leaves the deadline unchecked against the notice — a notice of 5 days and a deadline of 200 hours is accepted, and closes check-in before it opens. Keep the deadline the smaller number yourself.
+
 **Do this before the season is approved.** The bot reads all three at approval and schedules every round of the season against them there and then. Afterwards the commands are refused, and there is no way to shift a running season's check-ins.
 
 > **Approving a season close to its first race silently costs you that round's check-in.** Anything whose moment has already passed at the point of approval is simply not scheduled — approve on the Thursday with a 5-day notice and round 1's call never happens, its reminder never happens, and because the call is what opens the attendance records, that round counts nothing against anybody. Nothing warns you. Approve early, or shorten the notice for a season that starts soon.
@@ -160,9 +162,9 @@ Set either to `0` to switch it off.
 
 > **You can only have one of them.** Setting auto-reserve while auto-sack is active is refused, and the other way round. If you want to swap, set the one you have to `0` first — the refusal tells you which command to run.
 
-Either action is announced in the division's verdicts channel, the same place your penalty decisions go, so your league sees why a driver moved. The lineup post is redrawn to match, and the driver is marked on the next attendance sheet as having reached the limit.
+Either action is announced in the division's verdicts channel, the same place your penalty decisions go, so your league sees why a driver moved. The lineup post is redrawn to match, and the sheet for that same round is reposted straight away with the driver marked as having reached the limit.
 
-**Auto-reserve needs somewhere to put them.** If a division has no Reserve team, the sanction is skipped and only the log channel says so. A driver already in the Reserve team is left alone.
+**Auto-reserve needs somewhere to put them.** If a division has no Reserve team, the sanction is skipped **silently** — nothing is posted to the verdicts channel, nothing to the log channel, nothing anywhere you can see; it reaches only the bot's own log file on the host. A driver already in the Reserve team is left alone, equally silently.
 
 > **This is the one part of the module that changes your grid without being asked.** Try it in test mode before a real season depends on it, and pick numbers you would be comfortable defending — the bot does not ask twice and there is no undo beyond re-seating the driver by hand.
 
@@ -210,11 +212,11 @@ See [Test mode](test-mode.md) for the whole picture, including the synthetic dri
 
 **The call**, at the notice moment. A ping for the division role, then an embed titled with the season, the round and the circuit — or *Mystery*, for a mystery round. It gives the date as a live Discord timestamp, the location and the kind of weekend, then lists every driver grouped by team with the Reserve team last, a marker beside each name: `()` for no answer yet, `(✅)` accepted, `(❓)` tentative, `(❌)` declined. Under it, three buttons: **✅ Accept**, **❓ Tentative**, **❌ Decline**.
 
-Pressing one updates the roster in the message itself, so the division can see at a glance who is still missing. The driver gets a small private confirmation nobody else sees. Pressing the same button twice is harmless, and changing your mind is fine until the deadline.
+Pressing one updates the roster in the message itself, so the division can see at a glance who is still missing. The driver gets a small private confirmation nobody else sees. Pressing the same button twice is harmless, and changing your mind is fine until the deadline — except for a reserve who has not accepted, who can still change right up to the moment the race is scheduled to start. A reserve who *has* accepted is locked at the deadline like anybody else.
 
 **The reminder**, at the last-notice moment. If anyone full-time is still silent, the bot pings exactly those people and says how long is left. If everybody has answered, it says so instead and asks them to check nothing has changed.
 
-**The close**, at the deadline. The buttons disappear from the call, and the bot posts what the reserves did — each one placed into a named team, or told they are on standby because there was no seat for them. If no reserves were needed it says that instead.
+**The close**, at the deadline. The buttons disappear from the call, and the bot posts what the reserves did — each one placed into a named team, or told they are on standby because there was no seat for them. If nobody in the Reserve team accepted, or every seat was already filled, it posts a line saying no reserves were placed and all seats are filled. That single message covers both cases, so it appears even when seats were in fact empty and nobody volunteered.
 
 **The sheet**, after a round's post-race penalties are approved. It goes to the attendance channel, sorted worst first, one line per driver with their total. If you have set a threshold, the footer says what happens at it. Each new sheet replaces the last, so the channel always holds exactly one.
 
@@ -226,7 +228,7 @@ Pressing one updates the roster in the message itself, so the division can see a
 
 **Points are only charged when the round is finished with.** Not at provisional results, but when post-race penalties are approved. That is deliberate: it gives you a window to correct a classification that accidentally left somebody out before anyone is charged for it, and before a sanction can fire on a mistake.
 
-**Amending the results afterwards puts it right.** Re-run through `/round results amend` and the bot recalculates that round's attendance, every later round's totals, reposts the sheet and re-checks the thresholds. Pardons you granted are kept.
+**Amending the results afterwards puts it right.** Re-run through `/round results amend` and the bot recalculates that round's attendance, every later round's totals, reposts the sheet and re-checks the thresholds. Pardons you granted are kept. Two things to expect: the round has to be **FINAL** before `/round results amend` will touch it, so a round still sitting at post-race penalties is refused; and the recalculation happens when you *approve* the amendment, not when you submit it.
 
 > **Amending the round itself is a different thing, and it costs you the check-in.** Changing a round's date, circuit or format with `/round amend` cancels everything the bot had scheduled for it and only puts the forecasts back. The check-in call, the reminder and the deadline are gone for good, so that round never asks anybody anything and never charges anybody. Nothing warns you. If you must move a round, expect to treat it as an untracked one.
 
@@ -298,7 +300,7 @@ Worth running through before the season is approved.
 | `/attendance config` on a timing refused | Either a season is running, or the value would put the three out of order. The reply says which |
 | `/attendance config rsvp-absent-penalty` fails to respond | Known: the command is broken and that penalty cannot be changed from 1 |
 | Auto-reserve or auto-sack refused | The other one is set. Set it to `0` first |
-| A driver over the threshold who was not sanctioned | Auto-reserve with no Reserve team in that division, or the driver is in it already. The log channel says so |
+| A driver over the threshold who was not sanctioned | Auto-reserve with no Reserve team in that division, or the driver is in it already. Nothing is posted either way — check the division's Reserve team yourself |
 | Points charged later than you expected | They are charged when post-race penalties are approved, never at provisional results |
 | A driver charged for a round they raced | They are in no session's results. Correct the classification with `/round results amend` and the round is recalculated |
 | Reserves not distributed | Nobody in the Reserve team accepted, or there was no vacancy — an accepted seat is never a vacancy, however slow the driver was to answer |

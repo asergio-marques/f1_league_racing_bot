@@ -58,7 +58,7 @@ A driver's status lives on the driver, not on their signup form. "Reserve" is an
 
 The signup module can be switched on or off whenever you like — unlike weather, it is not tied to whether a season is running.
 
-Nothing is configured yet. The bot creates an empty settings record and tells you the three commands to run next, which are step 2.
+Nothing is configured yet. The bot creates an empty configuration record and tells you the three commands to run next, which are step 2. The question settings are not written at this point at all — until you change one, the bot simply falls back to its defaults.
 
 Turning the module off force-closes an open window, hands back the permissions it applied to your signup channel, and forgets your channel and your two roles.
 
@@ -176,7 +176,7 @@ You do not have to do anything to keep the window running. Drivers press the but
 | 8 | A lap time per track | Typing, plus a screenshot if required | You opened with no tracks |
 | 9 | Notes, 50 characters | Typing, or a No Notes button | — |
 
-Question 6 offers your team list, so **add your teams before you open** or drivers will be given nothing to choose from. Teams are core setup — see [Team Commands](../../README.md#team-commands).
+Question 6 offers your team list, so **add your teams before anyone presses the button** or drivers will be given nothing to choose from. The list is read when a driver starts their signup, not when the window opens, so a team added after `/signup open` still reaches everyone who has not started yet. Teams are core setup — see [Team Commands](../../README.md#team-commands).
 
 When a driver finishes, the bot posts a **Signup Review** panel in their channel summarising every answer, tells them to wait for an admin, and gives you three buttons.
 
@@ -206,6 +206,8 @@ There are no reminders. The bot never chases a driver who has not signed up, and
 
 If nobody is mid-signup it closes immediately. Otherwise you get a confirmation listing who is still going, with Confirm and Cancel buttons.
 
+> **One driver is invisible to that check.** Someone you have just sent back with **Request Changes**, before you have picked which field they are to redo, is not counted. If they are the only person in progress, `/signup close` closes on the spot with no confirmation at all.
+
 Closing deletes the Sign Up button, posts a **Signups are now closed** notice in the channel, and tells anyone still filling in the questionnaire that it is over.
 
 > **It drops fewer drivers than it warns you about.** The confirmation says every in-progress driver will be reset, and counts everyone still filling the form in *plus* everyone waiting on you. Only the ones still filling it in are actually dropped. Drivers waiting for your approval, or fixing something you sent back, keep their place — you can still approve them after the window has shut, and you should. See [known issues](../wip-specs/known_issues.md).
@@ -221,9 +223,11 @@ Closing deletes the Sign Up button, posts a **Signups are now closed** notice in
 /signup unassigned export
 ```
 
-`list` shows the queue in the channel: seed number, name, platform, driver type, lap total, preferred teams and teammate, and any notes. `export` sends the same thing as a CSV you can open in a spreadsheet — one row per driver, one column per time slot marked `X` where they said they were free, plus their three team preferences and platform details. The CSV is the one to use for anything more than a glance, because availability across a dozen slots is unreadable as text.
+`list` shows the queue privately, to you alone: seed number, name, platform, driver type, lap total, preferred teams and teammate, and any notes. `export` sends a CSV you can open in a spreadsheet, also privately — one row per driver, one column per time slot marked `X` where they said they were free, plus their three team preferences and platform details. The CSV is the one to use for anything more than a glance, because availability across a dozen slots is unreadable as text.
 
-Seeding adds up the lap times a driver submitted; the lowest total is seed 1. Drivers with no time recorded sort to the bottom, and ties go to whoever was approved first.
+> **The CSV is not quite everything `list` shows.** The preferred teammate and the notes are missing from it. If either matters to how you place people, read them off `list` — the export will not carry them.
+
+Seeding adds up the lap times a driver submitted; the lowest total is seed 1. Drivers with no time recorded sort to the bottom, and ties go to whoever **submitted** first — the moment they sent the form in, not the moment you approved it.
 
 > **A driver's total is worked out once, when you approve them, and never again.** There is no way to send an approved driver back for changes, and no command to re-time them. If someone's lap time is wrong, catch it on the review panel with **Request Changes** before you approve.
 
@@ -330,7 +334,7 @@ Worth running through before you open the window.
 | Drivers you expected to be dropped by a close are still there | Known: closing only drops drivers still filling the form in. Anyone waiting on you keeps their place — approve them |
 | The export shows the wrong availability | Known: a slot was removed, which renumbered the rest. The answers still point at the old numbers |
 | Your time slots came back after disabling the module | Known: disabling clears the channel and roles only, whatever the message says |
-| A driver stuck waiting after Request Changes | The bot restarted mid-correction. Their **Cancel Signup** button is the only way out; ask them to press it and sign up again |
+| A driver stuck waiting after Request Changes | The bot restarted mid-correction, so the five-minute timer is gone and the window will never close on its own. The field buttons still work — pick one and the flow carries on. Failing that, ask them to press **Cancel Signup** and start again |
 | Roles not granted after `/driver assign` | The season is still in setup. They are all granted at `/season approve` |
 | No lineup posted anywhere | That division has no lineup channel set |
 | Seeds that look meaningless | The window was opened with no tracks, so there are no lap times to sort on |

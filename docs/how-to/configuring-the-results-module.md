@@ -56,11 +56,13 @@ This guide covers the results & standings module only. Setting the bot up, creat
 /module enable results
 ```
 
-It can only be done while **no season is active**, so this belongs alongside your other setup, before approval. Switching it off is refused for the same reason, which means the decision is made once per season and you live with it.
+It can only be done while **no season is active**, so this belongs alongside your other setup, before approval.
+
+> **Switching it off is not guarded the same way.** Enabling is refused mid-season; disabling is not, and the bot says nothing about the season that is running. Treat the decision as one you make once per season regardless — turning the module off part-way through takes attendance with it and stops results being collected at all.
 
 Nothing happens immediately. The module needs channels to post to, a points table to score with, and an approved season to work through, which are the next three steps.
 
-> **Turning results & standings off turns attendance off with it**, and it does so quietly — you get the one reply about results, and nothing tells you attendance went too. Attendance also cannot be switched on until results is on, because it works out who turned up by reading your classifications. See [Setting up the attendance module](configuring-the-attendance-module.md).
+> **Turning results & standings off turns attendance off with it**, and it does so quietly — you get the one reply about results, and nothing in that reply tells you attendance went too. Only the log channel records it. Attendance also cannot be switched on until results is on, because it works out who turned up by reading your classifications. See [Setting up the attendance module](configuring-the-attendance-module.md).
 
 ---
 
@@ -103,9 +105,9 @@ A configuration starts with **every position in every session worth nothing**. F
 /results config view name: 100%
 ```
 
-Reads a configuration back to you privately. Positions worth nothing at the bottom of the table are collapsed into a single `11th+` line rather than listed one by one.
+Reads a configuration back to you privately. Positions worth nothing at the bottom of the table are collapsed into a single `P11+` line rather than listed one by one.
 
-> **Nothing is checked at the moment you set it.** You can give second place more points than first, and the bot will take it. The check happens at `/season approve`, which refuses the season and names the offending position — so a table built wrongly costs you a refused approval rather than a wrong championship. Ties between two positions worth something are refused too; two positions worth nothing are fine.
+> **Nothing is checked at the moment you set it, and nothing catches it later either.** You can give second place more points than first, and the bot will take it. There is a check meant to run at `/season approve` — but on a first approval it inspects a table the season has not been given yet, finds nothing, and passes. Do not rely on it: read the table back with `/results config view` before you approve, because a wrongly built table costs you a wrong championship rather than a refused approval. See [known issues](../wip-specs/known_issues.md).
 
 > **`/results config view` needs a season.** Between seasons there is none, and the command refuses — so a table you may want to check before starting your next season setup is unreachable until you have run `/season setup`. There is also no command that lists what configurations you hold, so keep a note of the names you chose.
 
@@ -122,7 +124,7 @@ Building a table does **not** put it in your season. Attaching it does, and it c
 
 **Attach as many as you will need.** On race day the bot offers you the attached configurations as buttons and you pick one **per session**, which is how a race stopped at half distance gets scored differently from the qualifying session that preceded it. Attach one only, and the bot picks it for you without asking.
 
-**A season cannot be approved with nothing attached.** That refusal, and the ordering check from step 3, are the two things this module adds to approval beyond the channels.
+**A season cannot be approved with nothing attached.** That is the one thing this module reliably adds to approval beyond the channels — the ordering check from step 3 does not fire on a first approval.
 
 **At approval the season takes its own private copy of every attached table.** From that moment the season is sealed off: editing the server's `100%` afterwards changes nothing about the running championship, and the copy is what every round is scored against. Changing a running season's points is a separate job, described under [Correcting something afterwards](#the-points-system-itself-mid-season), and it is deliberately harder.
 
@@ -153,7 +155,9 @@ Out of the box, everything this module posts is a text table. The image module t
 /images config toggle verdicts
 ```
 
-`results` replaces each session's classification, `standings` replaces both championship tables, and `verdicts` replaces the stewarding announcements. Follow [Setting up the image module](configuring-the-image-module.md) for the order — the drawing files, the flags and the badges. Results and standings each need **two** drawing files, one per kind of table, and either half can be broken on its own.
+`results` replaces each session's classification and `verdicts` replaces the stewarding announcements. Follow [Setting up the image module](configuring-the-image-module.md) for the order — the drawing files, the flags and the badges. Results and standings each need **two** drawing files, one per kind of table, and either half can be broken on its own.
+
+> **`standings` records your choice but does not act on it yet.** No standings post is drawn today, whatever the toggle says — the championship tables are still posted as text. `/images config view` marks it as recorded but not yet in effect, and `/images test standings` is the only way to see what it will look like. Set it if you want to; nothing changes until the posting path exists.
 
 > **A picture never delays or changes a result.** Scoring, standings, penalties and verdicts all happen exactly as they would with the module off; the drawing is made afterwards, and a drawing that fails falls back to the text table with the reason in the log channel.
 
@@ -195,13 +199,13 @@ See [Test mode](test-mode.md) for the whole picture.
 - Every team **mentioned as its role**, and never the Reserve role — a reserve is submitted under the team whose car they drove.
 - **No more than two lines per team**, counting a reserve standing in for it.
 - **Positions running 1, 2, 3… with no gaps**, and the order of outcomes respected: classified runners first, then lapped ones, then DNF, then DNS, then DSQ.
-- **One driver, one team, for the whole round.** Having recorded somebody under a team in one session, the bot refuses to record them under a different one in another, and names the session that disagrees.
+- **A driver under the team they are seated in.** Reserves are the exception, and a wide one: a reserve may be submitted under any real team, and under a different one in each session of the same round. Nothing checks a driver's team from one session against another, so a reserve who moved cars mid-weekend is accepted without comment.
 
 **A rejected block is explained line by line and asked for again.** Nothing is lost, you correct the message and paste it again, and the raw text of both the rejection and the acceptance goes to the log channel with the season, division, round and session named — which is what you go back to when somebody disputes what was submitted.
 
 **A session that was never run is typed as `CANCELLED`.** That records the session as cancelled, posts a note to the results channel saying so, and moves on. A round where you cancel every session finishes there and then: the channel closes, and no results, standings or review follow.
 
-**Then you choose the points configuration for that session**, from a button for each one attached to the season — or the bot picks it silently when only one is attached.
+**Then you choose the points configuration for that session**, from a button for each one attached to the season — or, when only one is attached, the bot picks it for you and says which it chose.
 
 **When the last session is in, the round is published as Provisional Results.** The classifications go to the results channel and both championship tables to the standings channel, and the submission channel turns into the penalty review described next.
 
@@ -221,7 +225,7 @@ The prompt carries five buttons:
 |---|---|
 | **➕ Add Penalty** | Pick a session, then give the driver, the sanction, a description and a justification |
 | **No Penalties / Confirm** | Move to approval with nothing applied. If you have anything staged, it asks whether you really mean to discard it |
-| **✅ Approve** | Move to approval with what you have staged. Greyed out until something is staged |
+| **✅ Approve** | Commit what you have staged, immediately. With nothing staged it refuses and points you at **No Penalties / Confirm** — the button is never greyed out |
 | **🔄 Resubmit Initial Results** | Throw the whole round's submission away and start collecting it again from the first session |
 | **🏳️ Attendance Pardon** | Only useful with the attendance module on — see [its guide](configuring-the-attendance-module.md) |
 
@@ -231,7 +235,9 @@ Each staged penalty also gets its own **Remove** button, so you can take one bac
 
 **Both the description and the justification are published.** They go into the verdict your whole league reads, so write them as though the driver will quote them back at you — because they will. This is the opposite of an attendance pardon, whose justification is never shown to anyone.
 
-**Approving is two clicks, not one.** The bot lists what you staged and asks again, with **✏️ Make Changes** to go back with the list intact and **✅ Approve** to commit. Committing applies every penalty, recomputes positions, times and points for the sessions affected, republishes the round as **Post-Race Penalty Results**, brings every later round's standings up to date, and posts one verdict per decision to the verdicts channel.
+**Approving is one click.** **✅ Approve** commits there and then, with no second confirmation: it applies every penalty, recomputes positions, times and points for the sessions affected, republishes the round as **Post-Race Penalty Results**, brings every later round's standings up to date, and posts one verdict per decision to the verdicts channel. Check the staged list before you press it, because nothing will ask you again.
+
+The second prompt you may have seen — **✏️ Make Changes** alongside **✅ Approve** — belongs to **No Penalties / Confirm**, not to approval. It is what the bot shows when you say you are finishing with nothing applied, so that a list you had staged is not discarded without being asked about.
 
 **This is also the moment attendance charges anybody.** If you run the attendance module, approving this stage is what closes the round's attendance, posts the sheet and fires any automatic sanction — which is exactly why the module waits this long.
 
@@ -239,7 +245,7 @@ Each staged penalty also gets its own **Remove** button, so you can take one bac
 
 A second prompt appears in the same channel, with the same shape: **➕ Add Correction**, **No Changes / Confirm**, **✅ Approve**, and a Remove button per correction. A correction takes the same values as a penalty and is the place to undo one on appeal — a `-5s` against a driver who was given five seconds unfairly, or a `DSQ` upheld.
 
-**Approving here finishes the round.** It republishes everything as **Final Results**, posts a verdict for each correction, updates every later standing, and **deletes the submission channel**. There is no second confirmation on this one: the button commits.
+**Approving here finishes the round.** It republishes everything as **Final Results**, posts a verdict for each correction, updates every later standing, and **deletes the submission channel**. As in stage one, **✅ Approve** commits on the first click, and **No Changes / Confirm** is the one that asks again if you have corrections staged.
 
 **A round with nothing to appeal is one click** — **No Changes / Confirm** — and most rounds will be.
 
@@ -273,7 +279,9 @@ A second prompt appears in the same channel, with the same shape: **➕ Add Corr
 
 Opens a private channel for one session of one settled round; paste the corrected classification and the bot validates it, rescores it, and republishes that round and every later standing. The format has **two extra columns** for the post-race and appeal penalties, so the corrected version carries the sanctions you had applied rather than losing them — the exact layout is under [`/round results amend`](../../README.md#round-results-amend--re-submit-results-for-a-completed-session).
 
-> **You get one attempt.** A block the bot rejects, an internal failure, or five minutes of silence deletes the channel, and you re-run the command to try again. The reason for a rejection goes to the log channel rather than to the channel you are looking at, so have that open. A restart also deletes an amend channel and abandons the amendment.
+There is a third parameter, `session`, offering Sprint Qualifying, Sprint Race, Feature Qualifying and Feature Race. Name it up front to go straight to that session; leave it out and the bot posts buttons to pick from. If the configuration the round was scored with is no longer attached to the season and more than one now is, it will also ask you which to rescore with.
+
+> **You get one attempt.** A block the bot rejects, an internal failure, or five minutes of silence deletes the channel, and you re-run the command to try again. The reason for a rejection goes to the log channel rather than to the channel you are looking at, so have that open. A restart also deletes an amend channel and abandons the amendment. There is a **❌ Cancel Amendment** button if you want out deliberately, and the channel only listens to the person who ran the command — nobody else can paste into it.
 
 ### The points system itself, mid-season
 
@@ -289,7 +297,7 @@ Changing what a win is worth halfway through a championship is a bigger thing th
 
 `/results amend revert` throws the working copy away and starts it again from the season's real tables. You cannot switch amendment mode off while changes are staged — revert or review them first, and the refusal says so.
 
-> **Approving an amendment does not update what your league can see, and says that it has.** The reply claims the standings were recomputed and reposted; the recomputation happens and the reposting fails on every round, leaving one error per round in the log channel. Your results and standings channels keep showing the old points until you run `/results rounds sync` and `/results standings sync` **for every division**. Do that immediately after approving, and check a channel before telling anybody the championship has been rescored.
+> **Approving an amendment does not update what your league can see, and says that it has.** The reply claims the standings were recomputed and reposted; the recomputation happens and the reposting fails on every round, leaving one error per round in the bot's own log file on the host — nothing appears in your log channel, so there is no sign of it anywhere you can see. Your results and standings channels keep showing the old points until you run `/results rounds sync` and `/results standings sync` **for every division**. Do that immediately after approving, and check a channel before telling anybody the championship has been rescored.
 
 ### Posts that went missing
 
@@ -328,11 +336,11 @@ Worth knowing so you do not go looking for the setting.
 - [ ] Every division has a results channel, a standings channel **and** a verdicts channel, including any you created by copying another
 - [ ] `/team reserve-role` is set, or no reserve can ever be submitted
 - [ ] At least one points configuration exists and its tables are filled in for every session type your calendar uses
-- [ ] No position is worth the same as or more than the one above it
+- [ ] No position is worth the same as or more than the one above it — check this yourself with `/results config view`, because approval will not
 - [ ] The fastest-lap bonus and its position limit are set, or deliberately left at nothing
 - [ ] Every configuration you will need is attached, and `/season review` lists the names you expect — spelled exactly as you built them
 - [ ] Reserve visibility is what you want, per division
-- [ ] If you want pictures: the image module is on, the three aspects are toggled, and both drawing files of each pair have rows enough for your biggest division
+- [ ] If you want pictures: the image module is on, the aspects are toggled, and both drawing files of each pair have rows enough for your biggest division — remembering that `standings` does not draw anything yet
 - [ ] You have taken one full round through submission, penalties and appeals with `/test-mode advance`
 
 ---
@@ -343,7 +351,7 @@ Worth knowing so you do not go looking for the setting.
 |---|---|
 | `/season approve` never replies at all | Known: a configuration is attached under a name that does not exist — a typo, or one you removed. Check `/season review` against your real names |
 | Season refused for a missing channel | A division is short of its results, standings or verdicts channel. The reply names each one |
-| Season refused over points ordering | A position is worth the same as or more than the one above it. The reply names the configuration, session and position |
+| A championship scoring second place above first | Known: the ordering check at `/season approve` does not fire on a first approval, so a wrongly ordered table gets through. Read it back with `/results config view` before you approve |
 | Season refused for having no points configuration | Nothing is attached. `/results config append` first |
 | No submission channel when a round started | The module is off, the division has no results channel, or the round was cancelled. The log channel says which |
 | No submission channel for a round you moved | Known: `/round amend` cancels the round's submission and only puts it back if the weather module is enabled. With weather off, that round can never be submitted |
