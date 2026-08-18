@@ -1,43 +1,6 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-[2026-08-18 — v5.0.0 → v5.0.1: PATCH — the `images test` command surface is eleven subcommands]
-  Version change    : 5.0.0 → 5.0.1
-  Bump rationale    : PATCH. No Core Principle is removed, redefined or added, and no rule changes
-                      meaning. Two statements in the versioned entity inventory described a command
-                      surface that feature 045 has since replaced, and are corrected to match it.
-
-                      Feature 045 withdrew `/images test <kind>` — one command taking a choice
-                      parameter of eleven values — and replaced it with eleven subcommands under a
-                      nested `test` group, each drawing a named division of the active season rather
-                      than a fabricated "Test Division". Two entity-inventory entries named the old
-                      shape: "New Entities (v4.7.0)" spoke of "the four `images test weather-*`
-                      values" and "New Entities (v4.8.0)" of "the `images test verdicts` value". Both
-                      now name the subcommands, and each records what it said before, so a reader of
-                      the older increment is not left thinking the inventory was wrong when written.
-
-                      `verdicts` became `verdict`, in the singular, at the author's naming. The
-                      **aspect** remains `verdicts`; only the preview command is singular, and the
-                      entry says so rather than leaving the divergence to be rediscovered.
-
-  Principles        : None modified, added or removed.
-  Sections          : "New Entities (v4.7.0)" and "New Entities (v4.8.0)" — wording only.
-
-  Compliance note   : **Rule XIV.13 gained a caller rather than losing one.** The withdrawn command
-                      resolved its assets from the packaged directories, hardcoded, whatever the
-                      league had configured — so the three outcomes Rule 13 defines for an asset
-                      (found; fallback drawn with a non-fatal error; fatal where the directory holds
-                      no fallback) never governed a preview at all. The eleven previews resolve the
-                      league's own configured directories exactly as a posting path does, which
-                      brings the preview under Rule 13 for the first time. This is a compliance gain
-                      and needs no rule change; it is recorded here because the absence was never
-                      noted when the command was specified.
-
-  Deferred          : None. `docs/wip-specs/known_issues.md` records three shipped defects found
-                      and fixed while building 045, and one that is **not** fixed — the standings
-                      round-column grid, deferred at feature 040 and still unimplemented. None of
-                      the four touches a governance rule.
-
 [2026-08-17 — v4.8.0 → v5.0.0: MAJOR — track imagery split in two; the flag class rekeyed by country]
   Version change    : 4.8.0 → 5.0.0
   Bump rationale    : MAJOR, and the first since v4.0.0. Two changes to Rule 13 are backward
@@ -5336,15 +5299,9 @@ here so that it is not re-derived.
   dependency the module was always specified to need — the means by which a text's width is measured
   (Rule 5) — and are read as they stand. Inkscape remains the one dependency no package declaration
   installs.
-- The `verdicts_template` slot, the `verdicts` aspect and its toggle, the `images test` preview of a
-  verdict, the flag directory and the team image directory are all part of the configuration surface
-  delivered at 035 and 036, and are read as they stand.
-  - The preview was a **value** of a single `images test` command when this entry was written. Feature
-    045 (2026-08-18) replaced that command with one subcommand per kind, and the value became
-    `/images test verdict` — singular, as the command is named. The aspect it previews keeps its
-    plural name.
-
-
+- The `verdicts_template` slot, the `verdicts` aspect and its toggle, the `images test verdicts` value,
+  the flag directory and the team image directory are all part of the configuration surface delivered
+  at 035 and 036, and are read as they stand.
 - No asset class is added. The verdict draws a flag and a team image, both of classes already
   configured, and ships no file of its own: neither vocabulary is the module's, so Rule 13's
   closed-set clause does not arise.
@@ -5365,13 +5322,8 @@ here so that it is not re-derived.
   two sessions of at most four for the plain one. They are read as they stand and MUST NOT be restated
   in the image module, a second copy being a second thing to get wrong.
 - The six `weather_*_template` slots, the `weather` aspect and its toggle, the weather icon directory
-  and the four `images test weather-*` previews are all part of the configuration surface delivered at
+  and the four `images test weather-*` values are all part of the configuration surface delivered at
   035 and 036, and are read as they stand.
-  - The four were **values** of a single `images test` command when this entry was written. Feature
-    045 (2026-08-18) replaced that command with one subcommand per kind, and the four values became
-    `/images test weather-p1`, `weather-p2`, `weather-p3` and `weather-mystery`.
-
-
 
 **Shipped assets.** `resources/weather/` gains the eight files of the module's own weather vocabulary —
 `sunny.svg`, `mixed.svg`, `rain.svg`, `clear.svg`, `light_cloud.svg`, `overcast.svg`, `wet.svg` and
@@ -5659,4 +5611,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 5.0.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-18
+**Version**: 5.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-17
