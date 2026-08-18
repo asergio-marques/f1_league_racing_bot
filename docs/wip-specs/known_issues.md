@@ -224,6 +224,11 @@ Found on 2026-08-18 while auditing the how-to guides against the implementation.
 
 ## Season lifecycle
 
+**`server_configs.previous_season_number` is written by nothing and read by nothing.**
+- The column is added by `src/db/migrations/008_driver_profiles_teams.sql:71` and carried on the model at `src/models/server_config.py:15`. `SeasonService.increment_previous_season_number` (`src/services/season_service.py:502`) is the only code that would write it, and nothing calls that method.
+- It therefore holds 0 on every server, whatever the league's history. The real previous season number is derived instead from `count_persisted_seasons`, which counts seasons that have reached ACTIVE, COMPLETED or CANCELLED status, and `save_pending_snapshot` numbers a new season at one higher than that tally.
+- The trap is that the column is the obvious-looking source for anything wanting "the previous season's number" and is always wrong. Found on 2026-08-19 while specifying feature 046, whose fabricated league needs exactly that number.
+
 **The automatic season-end path is dead code that six tests still exercise.**
 - Nothing in `src/` calls `check_and_schedule_season_end`. `_recover_season_end_jobs` in `src/bot.py` is an explicit no-op documented as such, and `/season complete` calls `execute_season_end` directly.
 - The function and its seven-days-after-the-last-round scheduling logic are therefore unreachable in production, while `tests/unit/test_season_end_service.py` covers them in six tests that pass. The suite reports coverage for a path that cannot run, which is the opposite of what coverage is read for.
