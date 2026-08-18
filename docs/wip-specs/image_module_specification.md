@@ -31,7 +31,7 @@ For this purpose, the Discord bot shall require three new dependencies: one with
         - The confirmation of "images config toggle" shall state that the aspect is not yet in effect where the aspect is one of these, and shall state nothing of the kind where it is not. A claim made over every aspect alike ceases to be true of the first one wired, and misleads a manager into thinking a working aspect broken.
         - The addendum to "images config view" shall name such aspects individually, and shall be absent entirely once none remains.
         - Both shall read one and the same declaration of which aspects post, so that the two cannot disagree.
-        - Of the eight, "standings" alone is presently such an aspect: it is configured, validated and drawn by "images test", and no posting path reads its toggle.
+        - Of the eight, "standings" alone is presently such an aspect: it is configured, validated and drawn by "images test standings", and no posting path reads its toggle.
 - <NEW COMMAND> A new "images config template-directory" will be made available to server administrators which will take in a string standing for the directory in which the image template files will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the template files will be searched in a "resources/templates" folder located at the project root.
@@ -73,9 +73,11 @@ For this purpose, the Discord bot shall require three new dependencies: one with
 - <MODIFY COMMAND> The "season review" command shall be augumented to display the enabling status of the images module, as well as all of the configurations above and if they are valid.
     - For the configurations modified via the "images config toggle" command, there shall be a distinction between "enabled" (checkmark), "disabled" (cross), and "enabled but invalid" (warning sign). In the case of the weather template, invalid must show which exact phase is invalid, whether it is the template of a round of the sprint format or that of a round of every other, and whether it is the template of the mystery notice; in the case of the results template, which of the qualifying and race templates is invalid; in the case of the standings template, which of the drivers and constructors templates is invalid.
 - <NEW COMMAND> A new "images config view" command will be made available to league managers which will print out all configurations above, plus the validity status of each one, in a manner similar to the addendum to "season review".
-- <NEW COMMAND> A new "images test" command will be made available to league managers, which takes in one string parameter, scoped to the following: calendar, lineup, results, standings, attendance, rsvp, weather-p1, weather-p2, weather-p3, weather-mystery, verdicts.
-    - This test command shall make use of test data specified for each type of generation.
+- <NEW COMMAND> A family of "images test" commands will be made available to league managers, one for each type of generation: calendar, lineup, results, standings, attendance, rsvp, weather-p1, weather-p2, weather-p3, weather-mystery, verdict.
+    - The "images test calendar" and "images test lineup" commands take one mandatory parameter, the name of a division. Every other command of the family takes two, the name of a division and the number of a round.
+    - Each command shall draw the division named, and where it takes one the round named, as a posting for that division and that round would draw it. It shall fabricate only the data a league cannot have configured in advance, which the "Test data" section of each type defines.
     - Any non-fatal errors shall be posted alongside the test output.
+    - The commands of this family are governed by the "The test commands" section of the conventions below.
 - <NEW COMMAND> A new "images config time-zone" command will be made available to league managers which will allow league managers to select the timezone with which to display times on images.
     - The zone shall be named in the IANA form, "Europe/Lisbon" and the like, and taken as free text completed as it is typed rather than chosen from a fixed list. Discord admits at most twenty-five choices to a parameter and the IANA database holds several hundred zones, so no fixed list can offer them all.
     - By default, the zone shall be "UTC", which is the zone the bot schedules and records in.
@@ -302,6 +304,24 @@ These hold for every image type of the module and are stated here rather than re
 - A file that cannot be parsed shall be reported as an invalid SVG file, naming the file and what was found to be at fault, and never as the raw error of the parser. A run of two hyphens within a comment is the readiest way to produce one.
 - The "text-transform" property is not honoured by the converter. A text is drawn in the casing it carries, and a fixed label a template wants in capitals is typed in capitals.
 
+### The test commands
+- The commands of the "images test" family exist so that a league manager may judge the configuration of their own league before a posting path acts upon it. Each shall therefore draw the league's own data wherever the league holds it, and fabricate only what a league cannot have configured in advance.
+- The name of a division shall be resolved among the divisions of the active season of the server. A name matching no such division shall be rejected with a clear error.
+- The number of a round shall be resolved among the rounds configured for the division named. A number matching no such round shall be rejected with a clear error.
+- The following further rejections apply, each with a clear error naming the condition that was not met:
+    - "images test calendar" shall be rejected where the division named holds no configured round;
+    - "images test lineup", "images test results", "images test standings" and "images test attendance" shall be rejected where the division named holds no team beyond the reserve team;
+    - "images test weather-p1", "images test weather-p2" and "images test weather-p3" shall be rejected where the round named is of the mystery format;
+    - "images test weather-mystery" shall be rejected where the round named is not of the mystery format.
+- Every rejection above shall be determined before a generation is attempted, so that a fault of configuration is never reported as a failure to render.
+- Where a type draws drivers and the division named holds at least one seated driver, its seats shall be drawn as they stand, an unoccupied seat being drawn unoccupied as a posting would draw it. Where the division holds no seated driver at all, every seat shall be filled with a fabricated driver rather than the command rejected.
+- A driver the league has seated shall be drawn with their own name and, where the league collects it, their own nationality. Fabrication reaches only a division that has seated nobody.
+- The nationalities given to fabricated drivers shall be among those the signup wizard accepts. Where the league does not collect a nationality at all, a fabricated driver shall be given none.
+- Every graphic a command of this family generates shall resolve its assets in the directories the league has configured, exactly as a posting for that division would resolve them, and shall answer a miss with the fallback of the class as the conventions above require. A command of this family shall not substitute the packaged directories for those the league configured.
+- The reply of a command of this family shall name every asset for which a fallback was drawn, the datum that had no file of its own, and the reason. An asset class the league has configured no directory for shall be distinguished in that reply from a class whose directory holds no file for the datum sought.
+- A command of this family shall write nothing to the records of the league and shall post nothing to any channel of a division. Its images and its errors alike are reported to the league manager who invoked it.
+- A fatal error met by a command of this family shall be reported to the league manager who invoked it and no image posted. The fallback to a textual posting defined for each type does not apply to it, no command of the family having a textual counterpart.
+
 ## Calendar image generation
 - For generation of a calendar graphic, the template may have the following fields, among which the mandatory fields will be verified at template file setting and before generation:
     - season_number - Optional - Field on which the season number of the server is placed
@@ -380,12 +400,9 @@ These hold for every image type of the module and are stated here rather than re
 - The date and the time of a round are drawn in the single configured zone, as the conventions above require, where the textual calendar renders them as a Discord timestamp.
 
 ### Test data
-- The "images test calendar" command shall generate one image, drawn for a division named "Test Division", of tier 1 and of season number 1, holding one round fewer than the number of rounds the template declares, so that the cut of the image at the crop point of a round that is not the last the template declares may be evaluated. Should the template declare a single round, one round shall be fabricated and the crop left evaluated at the height the template declares.
-- The rounds fabricated shall include, insofar as the number of rounds declared allows:
-    - a round of the normal format, one of the sprint format, one of the endurance format and one of the mystery format, so that the rendering of a round carrying no track may be evaluated alongside the others;
-    - a round whose track is one of the server's track list for which no image file is found in the configured track image directory, and for whose country none is found in the configured flag directory, so that the drawing of the fallback of each class and the non-fatal errors they report may be evaluated;
-    - rounds at dates spanning more than one month, so that the rendering of the configured date format may be evaluated.
-- Should the division fabricated hold no round at all, or the server's track list be empty, the command shall be rejected with a clear error, as there is no calendar to be drawn.
+- The "images test calendar" command shall generate one image, drawn for the division named, holding exactly the rounds configured for that division, in their configured order, with their configured tracks, formats, dates and times. It fabricates nothing.
+- The crop of the image shall be evaluated at the round count the division holds, that being the count a league would see.
+- Should the division named hold no configured round, the command shall be rejected with a clear error, as there is no calendar to be drawn.
 
 ## Lineup image generation
 - A lineup graphic represents the teams of one single division and the drivers occupying their seats. One graphic shall be generated per division; the same template file is reused for every division of the season. Its fields are addressed by the name of the team, and not by an ordinal number as the calendar's are, so that each team's block may be hand-designed with that team's own livery.
@@ -472,12 +489,10 @@ These hold for every image type of the module and are stated here rather than re
     - The "images test lineup" command is the one exception, having no textual counterpart to fall back to. A fatal error met by it shall be reported to the league manager who invoked it and no image posted.
 
 ### Test data
-- The "images test lineup" command shall generate a lineup image from a division named "Test Division", of tier 1 and of season number 1, holding exactly the teams of the team configuration of the server, the reserve team included.
-    - Every team but one shall be filled to its full seat count with fictitious drivers, the one being left entirely unoccupied so that the rendering of unoccupied seats may be evaluated.
-    - Reserve drivers shall be generated to one fewer than the number of reserve slots the template declares, so that the rendering of an unfilled reserve slot may be evaluated.
-    - The nationalities given to the fictitious drivers shall be among those the signup wizard accepts, at least one of them being that recorded for a driver who stated none.
-    - The drivers fabricated hold no Discord user ID for which a file exists in the configured driver image directory, so that the drawing of the fallback of that directory, and the non-fatal error it reports, may be evaluated. The field is not removed: an image that resolves to no file is resolved as the conventions above require, whatever the field receiving it.
-- Should the server hold no team beyond the reserve team, the command shall be rejected with a clear error, as there is no lineup to be drawn.
+- The "images test lineup" command shall generate a lineup image for the division named, holding exactly the teams of that division, the reserve team included, and the drivers seated upon them.
+    - Where the division named holds no seated driver at all, every seat shall be filled with a fabricated driver, so that a league that has configured its teams but not yet seated them may still judge the image.
+    - Where the division holds at least one seated driver, the seats are drawn as they stand, an unoccupied seat being drawn unoccupied as a posting would draw it.
+- Should the division named hold no team beyond the reserve team, the command shall be rejected with a clear error, as there is no lineup to be drawn.
 
 ## Results image generation
 - A results graphic represents the classification of one single session of one single round of one division, together with the sanctions applied to it and the points it conferred. One graphic shall be generated per session and shall replace the textual table of that session's post. The heading and the lifecycle label of the post shall remain as message text.
@@ -578,8 +593,8 @@ These hold for every image type of the module and are stated here rather than re
     - The "images test results" command is the one exception, having no textual counterpart to fall back to. A fatal error met by it shall be reported to the league manager who invoked it and no image posted.
 
 ### Test data
-- The "images test results" command shall generate two images, one from the qualifying template and one from the race template. Both shall be drawn for a division named "Test Division", of tier 1 and of season number 1, at round 1 of a track of the server's track list, and both shall be labelled "Final Results".
-- The entries fabricated for each shall be one fewer than the number of rows the template declares, so that the rendering of an unused row may be evaluated, and shall be drawn from the teams of the team configuration of the server. Should the template declare a single row, one entry shall be fabricated and the unused row left unevaluated.
+- The "images test results" command shall generate one image for each session the round named is run over, drawn from the qualifying template for a qualifying session and from the race template for a race, each drawn for the division and round named and each labelled "Final Results".
+- The entries fabricated shall be the drivers of the division named, each placed exactly once, and shall carry times, gaps, intervals and positions consistent with one another, so that a manager judges the drawing and not an evident nonsense.
 - The entries of the qualifying image shall include, insofar as the number of rows declared allows:
     - the first-placed driver, whose gap field is empty;
     - a driver with a gap of less than a second and one with a gap of more than a minute;
@@ -598,9 +613,9 @@ These hold for every image type of the module and are stated here rather than re
     - a driver disqualified in the penalty phase and again on appeal;
     - a driver conferred no points;
     - the holder of the fastest-lap bonus, who shall be the driver who did not finish and not the first-placed driver.
+- The cases listed above shall be drawn insofar as the driver count of the division named allows. A division of few drivers reaches fewer of them, and none is fabricated into existence to reach one.
 - The points configuration fabricated for the race image shall confer the fastest-lap bonus with no limit upon the position of its holder. An entry that did not finish is renumbered to the bottom of the classification, and under a configuration setting such a limit the case above could not be drawn at all.
-- The nationalities given to the fictitious drivers shall be among those the signup wizard accepts, at least one of them being that recorded for a driver who stated none.
-- Should the server hold no team beyond the reserve team, the command shall be rejected with a clear error.
+- Should the division named hold no team beyond the reserve team, the command shall be rejected with a clear error.
 
 ## Standings image generation
 - A standings graphic represents the classification of one championship of one division after one round. Two graphics are generated per round: one for the driver championship and one for the constructor championship.
@@ -744,10 +759,10 @@ These hold for every image type of the module and are stated here rather than re
     - The "images test standings" command is the one exception. A fatal error met by it shall be reported to the league manager who invoked it and no image posted.
 
 ### Test data
-- The "images test standings" command shall generate two images, one from the drivers template and one from the constructors template. Both shall be drawn for a division named "Test Division", of tier 1 and of season number 1, holding a calendar of as many rounds as the template declares and standing after all but two of them, so that the drawing of a round yet to be run may be evaluated alongside those already run and the grid drawn at the full width a league would see, and both shall be labelled "Final Results".
-    - Should the template declare fewer than three rounds, the division shall hold the rounds it declares and stand after the first of them. Should it declare none, the classification alone is drawn.
-    - At least one round already run shall be of the sprint format and at least one of the normal format, so that the rendering of a round bearing four sessions and of one bearing two may be evaluated.
-- The entries fabricated for each shall be one fewer than the number of rows the template declares, so that the rendering of an unused row may be evaluated, and shall be drawn from the teams of the team configuration of the server. Should the template declare a single row, one entry shall be fabricated and the unused row left unevaluated.
+- The "images test standings" command shall generate two images, one from the drivers template and one from the constructors template, both drawn for the division named and both labelled "Final Results".
+- The standings drawn shall be those standing after the round named, the grid holding the calendar the division actually configures, so that the rendering of a round yet to be run may be evaluated alongside those already run and the grid drawn at the width the league would see.
+- Results shall be fabricated for every round of that calendar up to and including the round named, and for none after it.
+- The entries fabricated shall be the drivers of the division named and the teams they are seated upon.
 - The entries of the drivers image shall include, insofar as the number of rows declared allows:
     - the first-placed driver, whose gap field is empty;
     - two drivers level on points, separated by the countback;
@@ -765,8 +780,8 @@ These hold for every image type of the module and are stated here rather than re
     - a team that gained positions since the preceding round, one that lost them, and one holding the position it held;
     - a team one of whose cars was driven in one round by a reserve standing in for the driver seated on it, so that the placing of a driver not seated in the team may be evaluated;
     - a team one of whose cars no driver drove in one round, so that the removal of the car may be evaluated.
-- The nationalities given to the fictitious drivers shall be among those the signup wizard accepts, at least one of them being that recorded for a driver who stated none.
-- Should the server hold no team beyond the reserve team, the command shall be rejected with a clear error, as there is no classification to be drawn.
+- The cases listed above shall be drawn insofar as the driver count, the team count and the round count of the division named allow. None is fabricated into existence to reach one.
+- Should the division named hold no team beyond the reserve team, the command shall be rejected with a clear error, as there is no classification to be drawn.
 
 ## Attendance image generation
 - Two graphics serve the attendance module, and two templates draw them.
@@ -894,10 +909,9 @@ These hold for every image type of the module and are stated here rather than re
     - The "images test attendance" and "images test rsvp" commands are the one exception, having no textual counterpart to fall back to. A fatal error met by one of them shall be reported to the league manager who invoked it and no image posted.
 
 ### Test data
-- The "images test attendance" command shall generate two sheets, both drawn for a division named "Test Division", of tier 1 and of season number 1, holding a calendar of five rounds and standing after the third of them, so that the emptying of the cells of a round yet to be run may be evaluated alongside those already finalized. One shall be drawn with both the autoreserve and the autosack limits configured, and the other with both disabled, so that the removal of the fields carrying them may be evaluated.
-    - Round 2 of the calendar fabricated shall be of the mystery format, so that the drawing of a round carrying no track may be evaluated.
-    - One round of the calendar fabricated shall be one whose track is of the server's track list and for whose country no image file is found in the configured flag directory, so that the drawing of the fallback and the non-fatal error it reports may be evaluated. The sheet draws no track map.
-- The drivers fabricated shall be one fewer than the number of rows the template declares, so that the rendering of an unused row may be evaluated, and shall be drawn from the teams of the team configuration of the server. Should the template declare a single row, one driver shall be fabricated and the unused row left unevaluated.
+- The "images test attendance" command shall generate a sheet drawn for the division named, holding the calendar that division configures and standing after the round named, so that the emptying of the cells of a round yet to be run may be evaluated alongside those already finalized. The autoreserve and autosack limits are drawn as the division configures them.
+- Attendance records shall be fabricated for every round of that calendar up to and including the round named, and for none after it.
+- The drivers drawn shall be the drivers of the division named.
 - The drivers fabricated shall include, insofar as the number of rows declared allows:
     - a driver holding no attendance points at all, every round cell of whom is empty;
     - a driver holding points conferred by more than one round;
@@ -906,16 +920,10 @@ These hold for every image type of the module and are stated here rather than re
     - two drivers level on totals, so that the alphabetical ordering of drivers level may be evaluated;
     - a driver of the reserve team distributed into a seat for one of the rounds run;
     - a driver who took no part in one of the rounds run and holds no record for it.
-- The nationalities given to the fictitious drivers shall be among those the signup wizard accepts, at least one of them being that recorded for a driver who stated none.
-- Should the server hold no team beyond the reserve team, or the server's track list be empty, the command shall be rejected with a clear error, as there is no sheet to be drawn.
-- The "images test rsvp" command shall generate one image for each of the cases below, each drawn for a division named "Test Division", of tier 1 and of season number 1, at round 1 of a track of the server's track list, and each reported to the league manager who invoked the command and never posted to the RSVP channel of a division:
-    - a round of the sprint format, so that the naming of four sessions may be evaluated;
-    - a round of the normal format, so that the naming of two sessions may be evaluated;
-    - a round of the mystery format, so that the rendering of a round carrying no track may be evaluated;
-    - a round whose track is one of the server's track list for which no image file is found in the configured track image directory, and for whose country none is found in the configured flag directory, so that the drawing of the fallback of each class and the non-fatal errors they report may be evaluated;
-    - a round drawn against a deadline configured to 0, so that the deadline standing at the scheduled time of the round may be evaluated.
-- The rounds fabricated shall be at dates and times spanning more than one month and more than one half of the day, so that the rendering of the configured date and time formats may be evaluated.
-- Should the server's track list be empty, the command shall be rejected with a clear error, as there is no round for a call to pertain to.
+- The cases listed above shall be drawn insofar as the driver count and the round count of the division named allow. None is fabricated into existence to reach one.
+- The sheet draws a driver's flag where the league collects a nationality and draws none where it does not, as a posted sheet does.
+- Should the division named hold no team beyond the reserve team, the command shall be rejected with a clear error, as there is no sheet to be drawn.
+- The "images test rsvp" command shall generate one image, drawn for the division and round named, carrying that round's own format, track, schedule and deadline. It fabricates nothing.
 
 ## Weather image generation
 - A weather graphic represents the forecast of one single phase of one single round of one division. One graphic shall be generated per phase and per division, and shall replace the textual forecast of that phase. The mention of the division role shall remain message text, the graphic itself carrying none; the heading of the textual forecast is carried over neither to the message nor to the graphic, the description of the phase standing in its place.
@@ -1004,18 +1012,16 @@ These hold for every image type of the module and are stated here rather than re
     - The "images test weather-p1", "images test weather-p2", "images test weather-p3" and "images test weather-mystery" commands are the one exception, having no textual counterpart to fall back to. A fatal error met by one of them shall be reported to the league manager who invoked it and no image posted.
 
 ### Test data
-- Each of the four "images test weather-" commands shall generate an image for each template it exercises, drawn for a division named "Test Division", of tier 1 and of season number 1, at round 1 of a track of the server's track list.
-- The "images test weather-p2" and "images test weather-p3" commands shall each generate two images: one for a round of the sprint format, drawn from the sprint template of that phase and holding four sessions, and one for a round of the endurance format, drawn from the plain template of that phase and holding two sessions, of which the race is the only session of the module that may be drawn four weather slots. Between them the two rounds reach the greatest number of sessions and the greatest number of slots the module can produce.
-- The "images test weather-p1" command shall generate one image and fabricate a likelihood of rain that is not a whole percentage, so that its rendering may be evaluated.
-- The "images test weather-p2" command shall fabricate a type of weather for each session of each round, among which each of the three types appears at least once, so that each of their icons may be evaluated.
-- The "images test weather-p3" command shall fabricate slots which include, insofar as the number of sessions and of slots the templates declare allows:
+- Each of the four "images test weather-" commands shall generate one image, drawn for the division and round named. The template exercised is that of the round's own format: the sprint template of the phase where the round is of the sprint format, and the plain template of the phase otherwise.
+- The "images test weather-p1" command shall fabricate a likelihood of rain between 0 and 100 per cent, which shall not be a whole percentage, so that its rendering may be evaluated.
+- The "images test weather-p2" command shall fabricate a type of weather for each session the round named is run over. Where the round is of the sprint format each of the three types shall appear at least once among them; otherwise two shall appear.
+- The "images test weather-p3" command shall fabricate slots for each session the round named is run over, among which each of the five weather types shall appear at least once, so that each of their icons may be evaluated. The slots shall further include, insofar as the number of sessions and of slots the round and its template allow:
     - a session of a single slot;
     - a session all of whose slots carry the same weather, so that the summary of a session of one weather may be evaluated;
     - a session whose slots do not all carry the same weather;
-    - a session holding the greatest number of slots the type of that session allows;
-    - each of the five concrete weather types at least once among the slots drawn, so that each of their icons may be evaluated.
-- The "images test weather-mystery" command shall generate the notice of a mystery round, which holds no session and carries no forecast.
-- Should a template declare fewer sessions than the round fabricated for it holds, or fewer slots than a session fabricated for it holds, the fatal error defined above shall be met and reported, naming which of the two templates of the phase was at fault.
+    - a session holding the greatest number of slots the type of that session allows.
+- The "images test weather-mystery" command shall generate the notice of the round named, which holds no session and carries no forecast.
+- Should the template declare fewer sessions than the round named holds, or fewer slots than a session of it holds, the fatal error defined above shall be met and reported, naming the template of the phase that was at fault.
 
 ## Verdicts image generation
 - A verdict graphic represents one single decision taken upon the drivers of one division: a penalty applied in the penalty phase, a correction applied in the appeal phase, or an attendance sanction enforced automatically. One graphic shall be generated per verdict and shall replace the textual announcement of that verdict. The mention of the driver the verdict pertains to shall remain message text.
@@ -1094,20 +1100,21 @@ These hold for every image type of the module and are stated here rather than re
 - Non-fatal errors gathered during generation shall be reported in the logging channel of the server, naming the season, the division, the round, the session and the driver they pertain to, and never in the verdicts channel of a division. Where the generation was triggered by a command, they shall additionally be reported alongside its output.
 - Should a fatal error be met at any step of the generation or posting of a verdict, the fallback behavior defined in the configuration section shall apply and that verdict be announced in the traditional textual manner instead. The fallback applies to a posting no command triggered; where a command did, that command shall be rejected as the conventions above require and nothing posted in consequence of it. The error shall be reported in the logging channel and, where a command triggered the generation, to the user who invoked it.
     - Where the posting of a generated image fails for a reason of the Discord service rather than of the generation, it is the textual announcement that shall be enqueued for retry.
-    - The "images test verdicts" command is the one exception, having no textual counterpart to fall back to. A fatal error met by it shall be reported to the league manager who invoked it and no image posted.
+    - The "images test verdict" command is the one exception, having no textual counterpart to fall back to. A fatal error met by it shall be reported to the league manager who invoked it and no image posted.
 
 ### Test data
-- The "images test verdicts" command shall generate one image for each of the cases below, each drawn for a division named "Test Division", of tier 1 and of season number 1, at round 1 of a track of the server's track list, and each reported to the league manager who invoked the command and never posted to the verdicts channel of a division:
-    - a verdict of the penalty phase carrying a time penalty added to the time of a driver, drawn for a session of a round of the sprint format so that the rendering of the name of a sprint session may be evaluated;
+- The "images test verdict" command shall generate one image for each of the cases below, each drawn for the division and round named, and each reported to the league manager who invoked the command and never posted to the verdicts channel of a division:
+    - a verdict of the penalty phase carrying a time penalty added to the time of a driver;
     - a verdict of the penalty phase carrying a time penalty removed from the time of a driver;
     - a verdict of the penalty phase carrying a disqualification;
     - a verdict of the appeal phase, so that the rendering of the stage of an appeal may be evaluated;
     - a verdict of an autosack and a verdict of an autoreserve, so that the rendering of a verdict naming no session and no team may be evaluated.
+- The sanction fabricated shall be drawn from those the module can record and issue, which are a time penalty added to the time of a driver, a time penalty removed from it, and a disqualification. Five seconds added, ten seconds added and three seconds removed shall each be drawn among the cases above. A sanction the module cannot issue shall never be drawn.
+- The driver a fabricated verdict pertains to shall be one of the drivers of the division named.
+- The session a fabricated verdict pertains to shall be one of those the round named is run over.
 - The descriptions and justifications fabricated shall include, insofar as the number of cases allows:
     - one short enough to occupy a single line of the field;
     - one filling the field to the greatest number of lines it admits;
     - one exceeding that number by a little, so that the reduction of the font size may be evaluated;
     - one exceeding it by an order of magnitude, so that the reduction to the floor, the truncation and the non-fatal error it reports may be evaluated;
     - one for which the steward entered neither a description nor a justification.
-- The nationalities given to the fictitious drivers shall be among those the signup wizard accepts, at least one of them being that recorded for a driver who stated none.
-- Should the server's track list be empty, the command shall be rejected with a clear error, as there is no round for a verdict to pertain to.
