@@ -72,26 +72,28 @@ async def render_sheet(
 ) -> SheetRender:
     """Render *drawing* to a PNG, or report why the textual sheet should stand instead."""
     from services.image_attendance_service import build_fill_spec
-    from utils.paths import resolve_within_project_root
+    from services.image_render_service import (
+        resolve_configured_directories,
+        spec_builder_with_faults,
+    )
 
     try:
         config = await bot.image_config_service.get_config(server_id)
-        directories: dict[str, Path] = {}
-        for asset_class, column in (
-            ("team", "team_image_directory"),
-            ("flag", "flag_directory"),
-        ):
-            try:
-                directories[asset_class] = resolve_within_project_root(
-                    getattr(config, column)
-                )
-            except Exception:  # noqa: BLE001
-                pass
+        directories, directory_faults = resolve_configured_directories(
+            config,
+            (
+                ("team", "team_image_directory"),
+                ("flag", "flag_directory"),
+            ),
+            image_type=ATTENDANCE_TEMPLATE_KEY,
+        )
 
         decision = await bot.image_render_service.render_for_posting(
             server_id,
             ATTENDANCE_TEMPLATE_KEY,
-            lambda root: build_fill_spec(drawing, root, asset_directories=directories),
+            spec_builder_with_faults(
+                build_fill_spec, drawing, directories, directory_faults
+            ),
             posting_origin=origin,
             bot=bot,
         )

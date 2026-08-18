@@ -105,6 +105,72 @@ _CACHE_TTL_SECONDS = 60.0
 _cache: tuple[float, str | None] | None = None
 
 
+# ── The league's own asset directories ────────────────────────────────────
+
+
+def resolve_configured_directories(
+    config,
+    pairs: tuple[tuple[str, str], ...],
+    *,
+    image_type: str = "unknown",
+) -> tuple[dict[str, Path], dict[str, str]]:
+    """Resolve the directories *config* names for *pairs*, keeping the rejections.
+
+    *pairs* is ``((asset_class, config_column), …)`` — each image type names the classes
+    it draws and no others.
+
+    Returns the resolved directories and, separately, the classes whose configured value
+    could not be resolved, mapped to the reason. Every posting path resolved these inside
+    a bare ``except`` that discarded the reason, after which the renderer reported the
+    class as *not configured* — which is not what happened, and left a league with a
+    fault it could not account for. The reason is now logged and carried through.
+
+    A configured directory is only rejected for containment or emptiness; a directory that
+    simply does not exist resolves and is returned, its assets falling back as XIV.13
+    requires.
+    """
+    from utils.paths import resolve_within_project_root
+
+    directories: dict[str, Path] = {}
+    faults: dict[str, str] = {}
+
+    if config is None:
+        return directories, faults
+
+    for asset_class, column in pairs:
+        configured = getattr(config, column, None)
+        try:
+            directories[asset_class] = resolve_within_project_root(configured)
+        except Exception as exc:  # noqa: BLE001 — the reason is the point
+            reason = str(exc) or exc.__class__.__name__
+            faults[asset_class] = reason
+            log.warning(
+                "%s: the configured %s directory %r was rejected — %s",
+                image_type,
+                asset_class,
+                configured,
+                reason,
+            )
+
+    return directories, faults
+
+
+def spec_builder_with_faults(build_fill_spec, drawing, directories, faults):
+    """A spec builder that carries the directory rejections onto the ``FillSpec``.
+
+    The renderer takes a callback rather than a spec, so this is where the two halves
+    meet: the posting path knows which directories were rejected, and the filler is what
+    reports an asset class it cannot resolve.
+    """
+
+    def _build(root):
+        spec = build_fill_spec(drawing, root, asset_directories=directories)
+        spec.asset_directory_faults = faults
+        return spec
+
+    return _build
+
+
 def find_converter(*, use_cache: bool = True) -> str | None:
     """Return the rasteriser's path, or None when it cannot be found.
 

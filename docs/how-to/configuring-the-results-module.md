@@ -157,7 +157,7 @@ Out of the box, everything this module posts is a text table. The image module t
 
 `results` replaces each session's classification and `verdicts` replaces the stewarding announcements. Follow [Setting up the image module](configuring-the-image-module.md) for the order — the drawing files, the flags and the badges. Results and standings each need **two** drawing files, one per kind of table, and either half can be broken on its own.
 
-> **`standings` records your choice but does not act on it yet.** No standings post is drawn today, whatever the toggle says — the championship tables are still posted as text. `/images config view` marks it as recorded but not yet in effect, and `/images test standings` is the only way to see what it will look like. Set it if you want to; nothing changes until the posting path exists.
+> **`standings` records your choice but does not act on it yet.** No standings post is drawn today, whatever the toggle says — the championship tables are still posted as text. `/images config view` marks it as recorded but not yet in effect. `/images test standings` will not show you one either: the drawing file has a column per round of the season, and the code to fill those columns was never written, so the preview reports the fields it cannot fill instead of sending a half-drawn table. Set the toggle if you want to; nothing changes until both the posting path and that grid exist.
 
 > **A picture never delays or changes a result.** Scoring, standings, penalties and verdicts all happen exactly as they would with the module off; the drawing is made afterwards, and a drawing that fails falls back to the text table with the reason in the log channel.
 

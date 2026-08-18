@@ -180,18 +180,11 @@ async def test_the_grid_needs_no_drivers_to_list_its_rounds(grid_db):
 # ── The two /images test guards (FR-068, FR-071) ──────────────────────────
 
 
-def test_the_track_guard_covers_both_templates_and_names_the_subject():
-    from cogs import image_cog
-
-    source = inspect.getsource(image_cog)
-    assert "get_all_tracks" in source
-    assert "track list is empty" in source
-    assert '"attendance_template", "rsvp_template"' in source
-
-
-def test_the_team_guard_covers_the_attendance_sheet():
-    from cogs import image_cog
-
-    source = inspect.getsource(image_cog)
-    guard = source.split("needs_teams = {", 1)[1].split("}", 1)[0]
-    assert "attendance_template" in guard
+# Two tests stood here asserting on the source text of the withdrawn
+# `/images test <kind>` command's `needs_tracks` and `needs_teams` guards. Feature 045
+# replaces that command with eleven previews whose refusals are covered directly against
+# `resolve_context` in `tests/unit/test_image_preview_service.py`.
+#
+# The team guard's successor is `require_teams`, which the attendance preview sets and
+# `test_a_division_with_only_a_reserve_team_is_refused` covers. The track guard has no
+# successor: a preview draws a real round, which names a real circuit.

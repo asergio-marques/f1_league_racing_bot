@@ -1,11 +1,18 @@
-"""Sample data for `/images test` (T064).
+"""Fabricated drawings, kept as a test fixture.
 
-Reads nothing live (FR-036): no season, division, round, team or driver query. The test
-command must work on a server with no season at all (SC-005).
+Written for the withdrawn `/images test <kind>` command, which drew every type from
+invented data. Feature 045 replaced that command with eleven previews drawn against the
+league's own division, so nothing in `src/` uses this any more — but four suites still lean
+on its builders to produce a drawing without seeding a database, which is a perfectly good
+reason for it to exist. It moved here from `src/services/` on 2026-08-18 so that dead
+production code stops shipping with the bot.
+
+Its premise no longer describes any command: no preview reads "nothing live", and none
+works on a server with no season. Read it as a fixture, never as a description of behaviour.
 
 The samples deliberately provoke each notice kind — a name long enough to trip an
-`inline-size` bound, and prose long enough to reach the wrap floor — so the diagnostic
-exercises the problem/notice distinction rather than assuming it.
+`inline-size` bound, and prose long enough to reach the wrap floor — so a diagnostic built
+on them exercises the problem/notice distinction rather than assuming it.
 """
 from __future__ import annotations
 

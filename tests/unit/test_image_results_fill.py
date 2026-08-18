@@ -402,7 +402,7 @@ def test_a_qualifying_graphic_addresses_no_block_and_no_race_column():
 
 from types import SimpleNamespace  # noqa: E402
 
-from services.image_sample_data import build_results_drawing  # noqa: E402
+from tests.support.image_sample_data import build_results_drawing  # noqa: E402
 from utils.svg_document import load_svg  # noqa: E402
 
 

@@ -22,10 +22,10 @@ from models.image_constants import (  # noqa: E402
     ASPECTS,
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
-    TEST_KIND_TEMPLATES,
 )
 from services.image_config_service import ImageConfigService  # noqa: E402
 from services.module_service import ModuleService  # noqa: E402
+from tests.support import KIND_TEMPLATES  # noqa: E402
 
 SERVER_ID = 4242
 
@@ -659,7 +659,7 @@ async def test_render_without_season(
 ):
     """Every kind renders on a server with no season configured at all."""
     from services.image_render_service import converter_available
-    from services.image_sample_data import build_spec
+    from tests.support.image_sample_data import build_spec
 
     if not converter_available(use_cache=False):
         pytest.skip("rasteriser not installed on this host")
@@ -696,7 +696,7 @@ async def test_render_without_season(
         cursor = await db.execute("SELECT COUNT(*) FROM seasons WHERE server_id = ?", (SERVER_ID,))
         assert (await cursor.fetchone())[0] == 0, "precondition: no season exists"
 
-    for kind, templates in TEST_KIND_TEMPLATES.items():
+    for kind, templates in KIND_TEMPLATES.items():
         for template_key in templates:
             outcome = await service.render(
                 SERVER_ID,
@@ -826,7 +826,7 @@ async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
 
 async def test_multi_variant_kinds_cover_two_templates():
     """FR-040: four kinds must return both of their variants."""
-    multi = {k: v for k, v in TEST_KIND_TEMPLATES.items() if len(v) > 1}
+    multi = {k: v for k, v in KIND_TEMPLATES.items() if len(v) > 1}
     assert set(multi) == {"results", "standings", "weather-p2", "weather-p3"}
     assert all(len(v) == 2 for v in multi.values())
 
@@ -846,7 +846,7 @@ async def test_render_raises_notices_without_failing(
     await config_service.set_field(SERVER_ID, "template_directory", "templates")
     (template_dir / "templates" / "verdicts_template.svg").write_bytes(RICH_TEMPLATE)
 
-    from services.image_sample_data import build_spec
+    from tests.support.image_sample_data import build_spec
 
     service = _render_service(db_path, config_service, module_service)
     # The DSQ case carries the justification fabricated an order of magnitude too long for
@@ -903,7 +903,7 @@ async def test_render_is_off_the_event_loop(
     import threading
 
     from services.image_render_service import converter_available
-    from services.image_sample_data import build_spec
+    from tests.support.image_sample_data import build_spec
 
     if not converter_available(use_cache=False):
         pytest.skip("rasteriser not installed on this host")
@@ -1638,7 +1638,7 @@ async def test_an_internal_problem_tells_the_user_nothing_to_act_on(
 async def test_a_clean_render_posts_the_image(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
-    from services.image_sample_data import build_spec
+    from tests.support.image_sample_data import build_spec
 
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)

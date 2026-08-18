@@ -239,7 +239,7 @@ def test_the_preview_supplies_the_track_directory():
     Found by rendering the shipped template rather than a fixture: the fixtures used in
     these tests declare no `round_<x>_image`, so nothing here exercised the path.
     """
-    from services.image_sample_data import build_spec
+    from tests.support.image_sample_data import build_spec
 
     root = etree.Element(f"{{{SVG_NS}}}svg")
     root.set("width", "600")

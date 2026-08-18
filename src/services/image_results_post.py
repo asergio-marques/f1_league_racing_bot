@@ -86,7 +86,8 @@ async def _nationality_collected(db_path: str, server_id: int) -> bool:
         async with get_connection(db_path) as db:
             row = await (
                 await db.execute(
-                    "SELECT nationality_required FROM signup_config WHERE server_id = ?",
+                    "SELECT nationality_required FROM signup_module_settings "
+                    "WHERE server_id = ?",
                     (server_id,),
                 )
             ).fetchone()
@@ -115,7 +116,9 @@ async def _driver_names(bot, guild, user_ids: list[int]) -> dict[int, str]:
                     f"SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name, "
                     f"       sr.server_display_name, sr.discord_username "
                     f"FROM driver_profiles dp "
-                    f"LEFT JOIN signup_records sr ON sr.driver_profile_id = dp.id "
+                    f"LEFT JOIN signup_records sr "
+                    f"       ON sr.server_id = dp.server_id "
+                    f"      AND sr.discord_user_id = CAST(dp.discord_user_id AS TEXT) "
                     f"WHERE dp.discord_user_id IN ({placeholders})",
                     [str(uid) for uid in user_ids],
                 )
@@ -154,7 +157,9 @@ async def _nationalities(bot, user_ids: list[int]) -> dict[int, str | None]:
             await db.execute(
                 f"SELECT dp.discord_user_id, sr.nationality "
                 f"FROM driver_profiles dp "
-                f"LEFT JOIN signup_records sr ON sr.driver_profile_id = dp.id "
+                f"LEFT JOIN signup_records sr "
+                    f"       ON sr.server_id = dp.server_id "
+                    f"      AND sr.discord_user_id = CAST(dp.discord_user_id AS TEXT) "
                 f"WHERE dp.discord_user_id IN ({placeholders})",
                 [str(uid) for uid in user_ids],
             )
@@ -253,26 +258,28 @@ async def build_drawing(
 async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
     """Render one session's results. Returns the render service's PostingDecision."""
     from services.image_results_service import build_fill_spec
-    from utils.paths import resolve_within_project_root
+    from services.image_render_service import (
+        resolve_configured_directories,
+        spec_builder_with_faults,
+    )
 
     config = await bot.image_config_service.get_config(server_id)
-    directories: dict[str, Path] = {}
-    for asset_class, column in (
-        ("team", "team_image_directory"),
-        ("flag", "flag_directory"),
-        ("tyre", "tyre_directory"),
-    ):
-        try:
-            directories[asset_class] = resolve_within_project_root(
-                getattr(config, column)
-            )
-        except Exception:  # noqa: BLE001
-            pass
+    directories, directory_faults = resolve_configured_directories(
+        config,
+        (
+            ("team", "team_image_directory"),
+            ("flag", "flag_directory"),
+            ("tyre", "tyre_directory"),
+        ),
+        image_type=template_key,
+    )
 
     return await bot.image_render_service.render_for_posting(
         server_id,
         drawing.template_key,
-        lambda root: build_fill_spec(drawing, root, asset_directories=directories),
+        spec_builder_with_faults(
+            build_fill_spec, drawing, directories, directory_faults
+        ),
         posting_origin=origin,
         bot=bot,
     )

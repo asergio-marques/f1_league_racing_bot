@@ -170,6 +170,32 @@ Found on 2026-08-17 while writing the results module how-to guide.
 - No standings snapshot is computed for that round, so the standings channel keeps the previous round's tables and the results channel holds only the per-session "this session was cancelled" notes. Attendance charges nobody, because the pipeline hangs off the penalty stage.
 - Consistent and probably intended, but a round can therefore exist in a division's calendar with no standings row of its own, which anything walking rounds in order should expect.
 
+## Images
+
+Found on 2026-08-18 while building the `/images test` previews. **All three were fixed the same day**, and are kept here as a record of what was wrong and of the coverage gap that let two of them ship.
+
+**Fixed — four image types joined a `signup_records` column that does not exist, and could not render at all.**
+- `signup_records` has no `driver_profile_id` column in any migration — it is keyed by `(server_id, discord_user_id)`, as `PRAGMA table_info` on a freshly migrated database confirms, and as `placement_service.py:289` joined it correctly all along.
+- Three sites joined it on the phantom column: `image_lineup_post.py`, and two in `image_results_post.py`. The second of those is `_nationalities`, which `attendance_service.py` and `image_verdict_post.py` both import, so the fault reached the lineup, the results, the attendance sheet and the verdict alike.
+- The query raised `sqlite3.OperationalError: no such column: sr.driver_profile_id` before any drawing was assembled, so every one of those four aspects fell back to its textual posting whatever a league configured.
+- **Why it shipped**: no test covered `build_drawing` for any of them. Every image suite exercises `resolve_drawing`, which is handed its rows and never issues a query. `tests/unit/test_image_post_signup_join.py` now runs the queries themselves against a migrated database.
+
+**Fixed — the nationality suppression switch reached no graphic at all.**
+- `_nationality_collected` in `image_results_post.py`, and a second inline copy in `image_lineup_post.py`, read `SELECT nationality_required FROM signup_config`. No migration creates `signup_config`; the setting lives in `signup_module_settings`.
+- Both were wrapped in a bare `except Exception` returning `True`, so the missing table was swallowed on every render and the switch was never observed. A league that switched nationality collection off still got flags drawn on all four graphics that draw them.
+
+**The standings round-column grid was never implemented, so no standings graphic can render.**
+- `StandingsDrawing` carries a `rounds: list[RoundHeading]` field and `RoundHeading` in `image_standings_service.py` is docstringed "One column of the grid. **Filled in US3**". That US3 belongs to feature 040 and never landed: `resolve_drawing` takes no `rounds` argument, `build_fill_spec` projects no round column, and nothing anywhere assigns the field.
+- The packaged `standings_drivers_template.svg` declares a round column per round of a season. With nothing filling them, a render is abandoned with `no value could be determined for round_1_number, round_2_number, …`.
+- The classification itself is sound — positions, points, gaps and movement all resolve — so the fault is confined to the grid of per-round columns beside it.
+- Found on 2026-08-18 while building `/images test standings`, which is the first code ever to take the standings through a full render. The aspect has no posting path, so nothing else has exercised it. The preview reports the unresolvable fields by name rather than drawing a partial picture, which is XIV.4 behaving correctly; it is nonetheless a standings defect and not an image-test one.
+
+**Fixed — a rejected asset directory was reported as an unconfigured asset class.**
+- Every posting path resolved its directories inside `try: … except Exception: pass`, so a configured path that was rejected was omitted from the map and the reason discarded. `utils/svg_fill.py` then reported `image field X names asset class Y, which is not configured` and abandoned the render — telling a league it had never set a directory it had in fact set.
+- `resolve_configured_directories` in `image_render_service.py` now logs the reason and carries it onto the `FillSpec`, and the message names what was actually wrong. The original wording survives for a class genuinely never configured.
+- **Reachability was always low**, and the entry should not be read as though it were not: `/images config *-directory` validates at the point of configuration — it rejects a path escaping the project root, rejects an empty value, and stores the result relative to the root. Nothing else writes those columns. Reaching the render-time rejection therefore takes a directory symlink or junction that moves outside the project *after* being set, or a hand-edited database.
+- A directory that merely does not exist is a separate case and was never affected: it resolves, and its assets fall back as Rule XIV.13 requires.
+
 ## Core setup and access
 
 Found on 2026-08-17 while writing the core configuration how-to guide.

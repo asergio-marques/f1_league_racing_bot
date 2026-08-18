@@ -227,6 +227,8 @@ These hold for every image type of the module and are stated here rather than re
 - Mandatory and optional classify the fields of a template, and nothing else. An asset is not a field: it is the file placed upon one. The rules of this section govern the resolution of an asset and are not qualified by the classification of the field receiving it.
 - Every asset directory shall cover each datum of its class that a league can present it with, or hold a file named "fallback.svg" that covers those it does not.
 - Where the data of a class are not values a league supplies but a closed set the module itself defines, as the three directions of a change of standing position are, a file for every one of them shall ship in the packaged directory of that class beside its fallback, as the "mystery.svg" file of the track image directory does. A league did not choose that vocabulary and cannot be incomplete against it, and a fallback drawn upon every member of every graphic is no degradation a league can act upon. A league pointing the class at a directory of its own is bound by the rules above as any other is.
+- The directory of a class is resolved before any asset of it is sought. A directory a league configured which cannot be resolved shall be reported as a configured directory that was rejected, naming the value and the reason, and never as a class for which no directory is configured. The two are distinct faults and a league can act only on the first where it is told which it met.
+    - A directory that resolves but names nothing on disk is not a rejection. It is an ordinary directory holding no file, and every asset sought in it falls back as the rules below require.
 - The resolution of an asset has three outcomes and no others:
     - the file named by the normalized datum is found, and is placed upon the field;
     - it is not found and the directory holds a fallback, whereupon the fallback is placed upon the field and a non-fatal error reported, naming the field and the datum that had no file of its own;
@@ -594,7 +596,8 @@ These hold for every image type of the module and are stated here rather than re
 
 ### Test data
 - The "images test results" command shall generate one image for each session the round named is run over, drawn from the qualifying template for a qualifying session and from the race template for a race, each drawn for the division and round named and each labelled "Final Results".
-- The entries fabricated shall be the drivers of the division named, each placed exactly once, and shall carry times, gaps, intervals and positions consistent with one another, so that a manager judges the drawing and not an evident nonsense.
+- The entries fabricated shall be the drivers seated on the teams the division fields, each placed exactly once, and shall carry times, gaps, intervals and positions consistent with one another, so that a manager judges the drawing and not an evident nonsense.
+    - The drivers of the reserve team are not entries of a classification. A reserve stands in for an absent driver and adds no car to the grid; drawing them alongside would state a field larger than the division runs, and would overflow a template authored for the field it does run.
 - The entries of the qualifying image shall include, insofar as the number of rows declared allows:
     - the first-placed driver, whose gap field is empty;
     - a driver with a gap of less than a second and one with a gap of more than a minute;
@@ -761,6 +764,7 @@ These hold for every image type of the module and are stated here rather than re
 ### Test data
 - The "images test standings" command shall generate two images, one from the drivers template and one from the constructors template, both drawn for the division named and both labelled "Final Results".
 - The standings drawn shall be those standing after the round named, the grid holding the calendar the division actually configures, so that the rendering of a round yet to be run may be evaluated alongside those already run and the grid drawn at the width the league would see.
+    - The per-round columns of the grid are **not drawn at present**. The drawing carries a field for them and nothing fills it, the work having been deferred when the standings type was specified and never taken up. A standings command therefore reports the fields it cannot determine and draws no image, as a mandatory field that cannot be resolved requires. The classification beside them — positions, points, gaps and movement — resolves in full.
 - Results shall be fabricated for every round of that calendar up to and including the round named, and for none after it.
 - The entries fabricated shall be the drivers of the division named and the teams they are seated upon.
 - The entries of the drivers image shall include, insofar as the number of rows declared allows:
@@ -1110,7 +1114,7 @@ These hold for every image type of the module and are stated here rather than re
     - a verdict of the appeal phase, so that the rendering of the stage of an appeal may be evaluated;
     - a verdict of an autosack and a verdict of an autoreserve, so that the rendering of a verdict naming no session and no team may be evaluated.
 - The sanction fabricated shall be drawn from those the module can record and issue, which are a time penalty added to the time of a driver, a time penalty removed from it, and a disqualification. Five seconds added, ten seconds added and three seconds removed shall each be drawn among the cases above. A sanction the module cannot issue shall never be drawn.
-- The driver a fabricated verdict pertains to shall be one of the drivers of the division named.
+- The driver a fabricated verdict pertains to shall be one of the drivers of the division named, and the same driver for every case of one invocation, so that the cases are read as a set of verdicts upon one driver rather than as unrelated pictures.
 - The session a fabricated verdict pertains to shall be one of those the round named is run over.
 - The descriptions and justifications fabricated shall include, insofar as the number of cases allows:
     - one short enough to occupy a single line of the field;
