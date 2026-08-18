@@ -8,12 +8,12 @@ class TestWeatherSampleData:
     """Six images across four commands, exercising every case FR-062–FR-065 enumerate."""
 
     def _drawing(self, key):
-        from services.image_sample_data import build_weather_drawing
+        from tests.support.image_sample_data import build_weather_drawing
         return build_weather_drawing(None, key)
 
     def test_the_rain_likelihood_is_not_a_whole_percentage(self):
         """FR-062 — so that the whole-number rounding is visible in the render."""
-        from services.image_sample_data import SAMPLE_RAIN_PROBABILITY
+        from tests.support.image_sample_data import SAMPLE_RAIN_PROBABILITY
 
         assert SAMPLE_RAIN_PROBABILITY * 100 != int(SAMPLE_RAIN_PROBABILITY * 100)
         assert self._drawing("weather_p1_template").rain_probability == "30%"
@@ -126,13 +126,13 @@ def _verdict_root():
 
 
 def _all_verdict_drawings():
-    from services.image_sample_data import SAMPLE_VERDICT_CASES, build_verdict_drawing
+    from tests.support.image_sample_data import SAMPLE_VERDICT_CASES, build_verdict_drawing
 
     return {case: build_verdict_drawing(None, case=case) for case in SAMPLE_VERDICT_CASES}
 
 
 def test_six_verdict_cases_are_drawn_from_the_one_template():
-    from services.image_sample_data import SAMPLE_VERDICT_CASES
+    from tests.support.image_sample_data import SAMPLE_VERDICT_CASES
 
     assert len(SAMPLE_VERDICT_CASES) == 6
     assert set(SAMPLE_VERDICT_CASES) == {
@@ -181,7 +181,7 @@ def test_the_composed_justification_reaches_the_canvas_carrying_a_name_alone():
 
 def test_the_fabricated_free_text_covers_five_lengths():
     """One line, exactly full, slightly over, wildly over, and neither entered."""
-    from services.image_sample_data import VERDICT_TEXT_NOT_PROVIDED
+    from tests.support.image_sample_data import VERDICT_TEXT_NOT_PROVIDED
 
     drawings = _all_verdict_drawings()
     texts = [d.description for d in drawings.values()] + [
@@ -197,7 +197,7 @@ def test_the_fabricated_free_text_covers_five_lengths():
 
 def test_the_not_provided_text_carries_no_channel_markup():
     """The message italicises it; the graphic draws the value the markup adorned."""
-    from services.image_sample_data import VERDICT_TEXT_NOT_PROVIDED
+    from tests.support.image_sample_data import VERDICT_TEXT_NOT_PROVIDED
 
     assert "*" not in VERDICT_TEXT_NOT_PROVIDED
     assert "_" not in VERDICT_TEXT_NOT_PROVIDED
@@ -209,7 +209,7 @@ def test_one_fabricated_text_carries_the_paragraphs_a_steward_wrote():
 
 
 def test_the_nationalities_are_ones_the_signup_wizard_accepts():
-    from services.image_sample_data import SAMPLE_LINEUP_NATIONALITIES
+    from tests.support.image_sample_data import SAMPLE_LINEUP_NATIONALITIES
 
     drawings = _all_verdict_drawings()
     used = {d.driver_nationality for d in drawings.values()}
@@ -218,7 +218,7 @@ def test_the_nationalities_are_ones_the_signup_wizard_accepts():
 
 
 def test_build_spec_draws_each_case_from_the_verdicts_template():
-    from services.image_sample_data import SAMPLE_VERDICT_CASES, build_spec
+    from tests.support.image_sample_data import SAMPLE_VERDICT_CASES, build_spec
 
     for case in SAMPLE_VERDICT_CASES:
         spec = build_spec("verdicts_template", _verdict_root(), variant=case)
@@ -228,7 +228,7 @@ def test_build_spec_draws_each_case_from_the_verdicts_template():
 
 
 def test_build_spec_empties_the_session_and_team_for_a_sanction():
-    from services.image_sample_data import build_spec
+    from tests.support.image_sample_data import build_spec
 
     spec = build_spec("verdicts_template", _verdict_root(), variant="autosack")
     assert "session_name" in spec.empty_quietly
@@ -236,40 +236,16 @@ def test_build_spec_empties_the_session_and_team_for_a_sanction():
     assert "team_image" in spec.remove
 
 
-# ── The `/images test verdicts` command wiring (T025-T027) ────────────────
-
-
-def test_the_test_command_draws_six_images_from_the_one_verdicts_template():
-    from cogs.image_cog import _SAMPLE_VARIANTS
-    from models.image_constants import TEST_KIND_TEMPLATES
-    from services.image_sample_data import SAMPLE_VERDICT_CASES
-
-    assert TEST_KIND_TEMPLATES["verdicts"] == ("verdicts_template",)
-    assert _SAMPLE_VARIANTS["verdicts_template"] == SAMPLE_VERDICT_CASES
-    assert len(_SAMPLE_VARIANTS["verdicts_template"]) == 6
-
-
-def test_a_verdict_preview_is_refused_when_the_server_holds_no_track():
-    """There is no round for a verdict to pertain to, and a render failure would not say so."""
-    import inspect
-
-    from cogs import image_cog
-
-    source = inspect.getsource(image_cog)
-    guard = source.split("needs_tracks = {", 1)[1].split("}", 1)[0]
-    assert "verdicts_template" in guard
-    assert '"verdict"' in source, "the rejection must name what could not be drawn"
-
-
-def test_a_verdict_preview_needs_no_team_configuration():
-    """Its team name is a value it is handed, not a key its template is authored against."""
-    import inspect
-
-    from cogs import image_cog
-
-    source = inspect.getsource(image_cog)
-    guard = source.split("needs_teams = {", 1)[1].split("}", 1)[0]
-    assert "verdicts_template" not in guard
+# The three tests that stood here asserted on the wiring of the withdrawn
+# `/images test <kind>` command — its `_SAMPLE_VARIANTS` table and the source text of its
+# `needs_tracks` / `needs_teams` guards. That command is replaced by the eleven previews of
+# feature 045, whose refusals are covered against the resolution path itself in
+# `tests/unit/test_image_preview_service.py` rather than by reading the cog's source.
+#
+# The track guard has no successor: a preview is drawn against a real round, which names a
+# real circuit, so "the server's track list is empty" is no longer a state a preview can be
+# in. The team guard's successor is `require_teams`, covered by
+# `test_a_division_with_only_a_reserve_team_is_refused`.
 
 
 def test_every_sample_nationality_maps_to_a_country():
@@ -279,7 +255,7 @@ def test_every_sample_nationality_maps_to_a_country():
     map them to countries. A nationality added here that the map does not carry
     would silently draw the flag directory's fallback on every test render.
     """
-    from services.image_sample_data import SAMPLE_LINEUP_NATIONALITIES
+    from tests.support.image_sample_data import SAMPLE_LINEUP_NATIONALITIES
     from utils.country_data import NATIONALITY_COUNTRIES, country_for_nationality
 
     for nationality in SAMPLE_LINEUP_NATIONALITIES:

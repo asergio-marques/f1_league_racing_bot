@@ -90,6 +90,11 @@ class FillSpec:
     #: asset class -> the configured directory it resolves in.
     asset_directories: dict[str, Path] = field(default_factory=dict)
 
+    #: Asset class -> why its **configured** directory could not be resolved. An
+    #: absent class is otherwise indistinguishable from one never configured, and a
+    #: league told it never set a directory it did in fact set has nothing to act on.
+    asset_directory_faults: dict[str, str] = field(default_factory=dict)
+
     #: The image type's field catalogue, when known.
     #:
     #: Mandatory and optional classify the **fields of the template**: whether the
@@ -290,10 +295,20 @@ def fill(spec: FillSpec) -> FillResult:
 
         directory = spec.asset_directories.get(asset_class)
         if directory is None:
-            unresolved.append(
-                f"image field `{field_id}` names asset class `{asset_class}`, "
-                f"which is not configured"
-            )
+            # A class the league configured, whose directory was rejected, is not a class
+            # it never configured. Saying so is the difference between a fault a manager
+            # can fix and one they cannot account for.
+            fault = spec.asset_directory_faults.get(asset_class)
+            if fault:
+                unresolved.append(
+                    f"image field `{field_id}` draws asset class `{asset_class}`, "
+                    f"whose configured directory was rejected — {fault}"
+                )
+            else:
+                unresolved.append(
+                    f"image field `{field_id}` names asset class `{asset_class}`, "
+                    f"which is not configured"
+                )
             continue
 
         # An **absent datum** on a field whose catalogue declares one (XIV.13, v4.4.0).

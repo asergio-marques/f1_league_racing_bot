@@ -179,6 +179,81 @@ ASSET_LABELS: dict[str, str] = {
 }
 
 
+
+#: Aspect -> the optional module whose output it replaces, or None for aspects drawn
+#: from the foundational concepts alone. Drives the third state of FR-031.
+ASPECT_SOURCE_MODULE: dict[str, str | None] = {
+    "calendar": None,
+    "lineup": None,
+    "results": "results",
+    "standings": "results",
+    "attendance": "attendance",
+    "rsvp": "attendance",
+    "weather": "weather",
+    "verdicts": "results",
+}
+
+ASPECT_LABELS: dict[str, str] = {
+    "calendar": "Calendar",
+    "lineup": "Lineup",
+    "results": "Session results",
+    "standings": "Standings",
+    "attendance": "Attendance sheet",
+    "rsvp": "Check-in call",
+    "weather": "Weather forecasts",
+    "verdicts": "Verdicts",
+}
+
+#: The aspects whose toggle changes what the bot posts. An aspect is live once its
+#: source module calls the image module on the occasions it posts — in practice, once
+#: it has an `image_<aspect>_post` module wired into it.
+#:
+#: `standings` alone is not: it is configured, validated and previewable through
+#: `/images test`, but no posting path reads its toggle yet. Declaring that here rather
+#: than in the text of a reply keeps the toggle and the `/images config view` footer
+#: from disagreeing, and makes shipping the standings posting path a one-line change.
+LIVE_POSTING_ASPECTS: frozenset[str] = frozenset(
+    {
+        "calendar",
+        "lineup",
+        "results",
+        "attendance",
+        "rsvp",
+        "weather",
+        "verdicts",
+    }
+)
+
+#: The aspects a toggle records but no posting path acts upon yet, in report order.
+PENDING_POSTING_ASPECTS: tuple[str, ...] = tuple(
+    aspect for aspect in ASPECTS if aspect not in LIVE_POSTING_ASPECTS
+)
+
+
+# ── Asset directories ─────────────────────────────────────────────────────
+
+#: Config column -> (command name, default directory).
+ASSET_DIRECTORIES: dict[str, tuple[str, str]] = {
+    "track_image_directory": ("track-image-directory", "resources/tracks"),
+    "team_image_directory": ("team-image-directory", "resources/teams"),
+    "flag_directory": ("flag-directory", "resources/flags"),
+    "driver_image_directory": ("driver-image-directory", "resources/drivers"),
+    "marker_directory": ("marker-directory", "resources/markers"),
+    "weather_icon_directory": ("weather-icon-directory", "resources/weather"),
+    "tyre_directory": ("tyre-directory", "resources/tyres"),
+}
+
+ASSET_LABELS: dict[str, str] = {
+    "track_image_directory": "Circuit images",
+    "team_image_directory": "Team badges",
+    "flag_directory": "Nationality flags",
+    "driver_image_directory": "Driver portraits",
+    "marker_directory": "Position-change markers",
+    "weather_icon_directory": "Weather icons",
+    "tyre_directory": "Tyre compounds",
+}
+
+
 # ── Test kinds ────────────────────────────────────────────────────────────
 
 #: The eleven `/images test` kinds -> the templates each renders.

@@ -1323,7 +1323,7 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 > **Setting it up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, from a fresh clone to an approved season, follow [Configuring the image module](docs/how-to/configuring-the-image-module.md).
 
-**Prerequisite:** the machine running the bot must carry **Inkscape**, which converts the filled SVG to PNG. No Python dependency installs it — it is a separate program. Its absence is fatal to the whole module and is reported at `/season review`, at `/images config view` and at `/images test`. If Inkscape is installed somewhere unusual, set the `INKSCAPE` environment variable to the executable's full path.
+**Prerequisite:** the machine running the bot must carry **Inkscape**, which converts the filled SVG to PNG. No Python dependency installs it — it is a separate program. Its absence is fatal to the whole module and is reported at `/season review`, at `/images config view` and by every `/images test` command. If Inkscape is installed somewhere unusual, set the `INKSCAPE` environment variable to the executable's full path.
 
 `lxml` and `fontTools` are ordinary Python dependencies and are already in `requirements.txt`.
 
@@ -1337,7 +1337,7 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 Flips that aspect between a generated image and the text the bot has always posted. All eight start disabled.
 
 > **Seven of the eight aspects post live. `standings` is the exception** — it is configured,
-> validated and previewable with `/images test`, but no posting path reads its toggle yet, and
+> validated and previewable with `/images test standings`, but no posting path reads its toggle yet, and
 > the toggle tells you so when you enable it.
 >
 > With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
@@ -1472,78 +1472,51 @@ The report also states **how deeply templates were checked**. Layer 1 — the fi
 
 The same summary is appended to `/season review`, which additionally names each template that would block approval. **`/season approve` refuses** while any of them is unusable — the review is where you see the problem, the approval is where the season stops.
 
-#### `/images test` — Render one kind from sample data
+#### `/images test` — Preview a kind against your own league
 *Access: Trusted admin*
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `kind` | Choice | ✅ | `calendar`, `lineup`, `results`, `standings`, `attendance`, `rsvp`, `weather-p1`, `weather-p2`, `weather-p3`, `weather-mystery`, `verdicts` |
+Eleven commands, one per kind of image. Each is drawn against a **division of your active season** — your rounds, your teams, your drivers, your circuits and your own artwork — and replies with the PNG, visible only to you.
 
-Renders from built-in sample data and replies with the PNG, visible only to you. It reads no live season data, so it works on a server with no season configured. `results`, `standings`, `weather-p2` and `weather-p3` each return both of their variants, `attendance` returns **two**, `rsvp` **five**, and `verdicts` **six**.
+| Command | Parameters |
+|---------|------------|
+| `/images test calendar` | `division` |
+| `/images test lineup` | `division` |
+| `/images test results` | `division`, `round` |
+| `/images test standings` | `division`, `round` |
+| `/images test attendance` | `division`, `round` |
+| `/images test rsvp` | `division`, `round` |
+| `/images test weather-p1` | `division`, `round` |
+| `/images test weather-p2` | `division`, `round` |
+| `/images test weather-p3` | `division`, `round` |
+| `/images test weather-mystery` | `division`, `round` |
+| `/images test verdict` | `division`, `round` |
 
-**Two things it does read.** `lineup`, `results`, `standings` and `attendance` draw against your server's own team list and are refused where it holds nothing beyond Reserve; `attendance`, `rsvp`, `verdicts` and every weather kind but `weather-mystery` are drawn against a round and are refused where the track list is empty. The refusal names which of the two is missing. `calendar` and `weather-mystery` need neither, which makes them the two that work on a bare server.
+`division` completes as you type, offering the divisions of the active season. Both parameters are required wherever they appear.
 
-> **`lineup` is the exception.** Its fields are named after your teams, so a preview built from invented ones would prove nothing. It draws a fabricated "Test Division" holding exactly the teams in your server's list: every team but one filled, one left wholly empty so you can see unoccupied seats, and one reserve slot short of full so you can see an empty reserve slot too. Nobody has a portrait, so every driver image comes from the fallback and says so. If your server has no team beyond Reserve, the command is refused — there is no lineup to draw.
+**What is real, and what is invented.** Everything a league configures is real: the division and its tier, the season number, the calendar, the teams, the seated drivers and their nationalities, and the artwork in the folders you set. What the bot invents is only what a round that has not been run cannot have — the finishing order, the forecast, the attendance points and the steward's verdict. A division with no seated driver at all has drivers invented for it as well, and the reply says so.
 
-> **`results` draws one entry fewer than your template has rows**, so you can judge how an unused row disappears, and it fills them from your server's teams. Both images are labelled *Final Results*, so both sanction columns are resolved. Between them the entries cover the cases worth looking at: an empty gap on pole and gaps under a second and over a minute; a driver with no tyre recorded and one who set no time; a total race time over an hour, an interval under a second and over a minute, a driver a lap down and another several; a retirement, a non-starter and a disqualification; in-game penalties of a whole second, of a fraction, and of none; a driver disqualified in the penalty phase and again on appeal; a driver conferred no points; and the fastest lap held by the driver who retired rather than the winner, so you can see the colour land somewhere other than the top row. If your server has no team beyond Reserve, the command is refused.
+**Sanctions a preview can draw.** A fabricated verdict carries five seconds added, ten seconds added, three seconds removed, or a disqualification. Those are the sanctions the bot can record and issue; a preview never draws one it cannot.
 
-> **`verdicts` returns six images from the one template**, because the wrapping of a steward's prose is the only thing about this graphic worth judging by eye and one picture cannot show it. Between them they cover all three kinds of verdict — a post-race penalty, an appeal, and both attendance sanctions — both signs of a time penalty and a disqualification, a sprint session name, and a verdict naming no session and no team. The description and justification are fabricated at five lengths: one line, exactly full, slightly over so you can see the type set down, an order of magnitude over so you can see it reach the floor and be cut, and one where the steward entered neither. Look at whether the prose stays inside its box and whether the paragraphs a steward wrote survive as paragraphs. If your server has no track list the command is refused — there is no round for a verdict to pertain to.
+**When a preview is refused**, the reply names the reason and nothing is rendered:
 
-Anything the render survived is listed alongside the image — a substituted font, a wrapped field cut at its size floor, a name cut to the width its column allows. Anything it could not survive returns no image and states why.
+| Refusal | Applies to |
+|---------|-----------|
+| No active season, or no division of that name | all eleven |
+| The division holds no configured round | `calendar` |
+| The division holds no round of that number | the nine that take one |
+| The division holds no team beyond Reserve | `lineup`, `results`, `standings`, `attendance` |
+| The round is a mystery round | `weather-p1`, `weather-p2`, `weather-p3` |
+| The round is **not** a mystery round | `weather-mystery` |
 
-#### Templates: what the bot expects
+**How many pictures.** `results` returns one per session of that round's format — two for a normal or endurance round, four for a sprint. `standings` returns both championships. `verdict` returns one per sanction, because how a steward's prose wraps is the only thing about that graphic worth judging by eye and one picture cannot show it. Every other kind returns one.
 
-A template is a plain SVG whose declared `width` and `height` are the canvas. The bot addresses elements by `id` and does exactly six things to a field: fill text, swap an image's `href`, recolour it, truncate it to the room it declares, wrap it inside a rectangle named by `shape-inside`, and empty or remove it.
+**Artwork, and what it tells you.** A preview resolves badges, flags and circuit imagery from the folders you configured, exactly as a real post does. Where a file is missing it draws the folder's `fallback.svg` and the reply names the asset it stood in for. Where a folder you configured could not be used at all, the reply names the folder and why. This is the difference between a preview that checks your drawing files and one that checks your whole configuration.
 
-**Text bounds.** A field that receives a Discord display name **must** declare an `inline-size`; it is the only bound on a name of a length no league controls, and a field without one does not overflow tidily — the name runs across whatever is drawn beside it, and nothing reports that the graphic came out wrong. Overflow is cut at a word boundary and ellipsised. A word too wide for the room it is given is broken within itself rather than allowed to run off.
+> **`lineup` is the one template you must author yourself**, and the preview is how you check it. Its fields are named after your teams, so it is drawn against your real team list and refused where you have none beyond Reserve. Where the division has teams but nobody seated, drivers are invented so the drawing can still be judged.
 
-**Wrapped fields.** A field that receives prose declares `shape-inside` pointing at a rectangle — which is what a graphical SVG editor writes when you *drag* a text frame rather than click a point. That rectangle is the field: its width is what the text wraps against and its height is how many lines it may occupy. It is never drawn, so give it no fill and no stroke; move or resize it to change how much prose fits.
+> **`standings` cannot produce a picture yet, and will say so.** The drawing file carries a column per round of the season, and the code to fill those columns was never written — see the note under the standings toggle. Everything else in the drawing resolves; the preview reports the fields it could not fill rather than sending a half-drawn table.
 
-Two things a wrapped field **must** also carry, or the template is refused the moment you name it:
-
-- a `line-height`, declared on the field or inherited by it. It decides how many lines the rectangle admits, and the bot will not substitute one — a leading it chose for you would silently decide how much of a steward's prose gets drawn.
-- a rectangle that actually exists and declares a width and a height.
-
-The text is set down half a pixel at a time until it fits, and at half the declared size is cut at a word boundary with an ellipsis and a note. The leading falls with the size, so a field set smaller holds *more* lines rather than the same number spread wider. The line breaks the author typed are kept, blank lines and all.
-
-**Naming.** Ids are lowercase `snake_case` and say what the field is, not where it sits — `driver_name`, not `text_47`. Anything the template repeats is named for the thing it repeats plus **either a number or a name**:
-
-- **By number**, which is the usual form: `row_<x>_<field>` for the rows of a table, `round_<x>_<field>` for the rounds of a calendar, `session_<x>_<field>` for the sessions of a forecast — `row_1_position`, `round_10_date`. Numbering starts at 1, with no gaps and no padding.
-- **By name**, which only the lineup uses: `team_red_bull_name`, `team_force_india_b_driver_1_flag`. The name is your team's, lowercased with accents stripped and every run of non-letters turned into one underscore — the same rule that turns a team name into an asset filename, so `Red Bull` gives you both `team_red_bull_name` and `red_bull.svg`. Teams are named rather than numbered so that each team's block can be drawn in that team's own livery, which a number could never point at.
-
-A block may also stand alone with no number at all, as the lineup's reserve block does: `reserve_name`, `reserve_driver_1_name`.
-
-Repeats may nest, each level adding its own name and number in the order they contain one another (`row_3_round_7_driver_1_name`, `team_red_bull_driver_2_flag`).
-
-**If your editor won't let you set the id.** Label the layer with the field's name instead. The bot looks for a node with the id first and falls back to a layer whose label matches, so `driver_name` works either way. If both exist, the id wins.
-
-**Removable blocks.** Wrap a field in a group named for it plus `_group` — `sanctions_group`, `row_7_group` — and the whole group leaves whenever the value is absent, taking its label, plate or separator with it. Without the group, only the field itself is emptied, and the chrome introducing it is left pointing at nothing. Removing a group never resizes the canvas, so put removable blocks where a gap is survivable.
-
-**Capacity.** How many of a thing your template provides is settled one of two ways, and which one applies depends on the thing.
-
-*Your template decides* for table rows, calendar rounds, forecast sessions, a team's cars, and a division's reserve seats — anything whose count no setting of yours bounds. You provide a fixed number of slots and the bot builds against it. Fewer entries than slots leaves the spare ones removed. **More** entries than slots is an error: the bot refuses the command that would grow the division past what your template can draw, and tells you the count, the capacity and which template was too small. Size each of these for the largest season the league will run.
-
-*Your configuration decides* for a lineup's teams and their seats. Here the template must match exactly what you have configured — every team, and every seat of every team. A team you configured that the template does not draw, and a team the template draws that you have not configured, are the same error seen from opposite sides, and both are refused. A team that has recruited nobody is **not** an error: it is drawn with every seat blank.
-
-Either way, nothing is ever dropped quietly to make the data fit.
-
-**Assets.** Assets are plain SVG, authored at exactly the aspect ratio of the slot they fill — the generator does not pad, so an asset of the wrong shape will be letterboxed with its edge pixels smeared across the band. Filenames are the thing they depict, normalised: lowercased, accents dropped, every run of punctuation or spaces collapsed to a single underscore, `.svg` on the end. `Red Bull Racing` is looked up as `red_bull_racing.svg` in the configured team directory. **Every asset directory needs a `fallback.svg`** unless you are certain it holds a file for every value the bot could ask it for. When a specific file is missing — a country you have no flag drawn for, say — the fallback is used and the bot logs which value needed it. Each class answers its own miss: a flag that is not there draws the flag directory's fallback and never a circuit map, and a map that is not there draws the track directory's fallback and never a flag. When there is no fallback either, **the graphic is not produced**: the bot will not quietly draw a card with a hole in it. One generic file per directory is what keeps an incomplete asset set from stopping your images.
-
-**One kind of asset, one shape, everywhere.** Each class of image has a single aspect ratio, and every slot of that class carries it on every template: **country flags are 3:2**, and **circuit maps, team badges and driver portraits are 1:1** (markers, weather icons and tyres too). The two do not have to match each other, and flags and maps deliberately don't — a template drawing both places two slots of different shape. What must not vary is one class across templates: you author one file per country, and a flag slot left square somewhere would letterbox that file with no way for you to fix it. **The bot refuses a template whose slot is the wrong shape for its class**, naming the field, the class, the shape it expected and the shape it found.
-
-**Reserved filenames.** `fallback.svg` is one, as above. `mystery.svg` is the other, and it belongs in **both** your track image directory and your flag directory: a Mystery round conceals its track and with it the country, so the bot draws that file wherever a circuit map or a round's flag belongs and writes "Mystery GP" where the grand prix name belongs. A Mystery round is drawn like any other round and marked as such — it never leaves a hole in a graphic and never stops one being produced. **All of these ship with the bot**, so a fresh clone draws every graphic from the first render.
-
-**Image references must be URIs.** Where your template already points at a picture, that `href` has to be a real URI — `file:///C:/…/logo.svg` or an embedded `data:` URI — not a bare path like `C:\assets\logo.svg`. Most SVG editors write one correctly; hand-edited files often do not. A bare path is the single most likely reason a template that looks perfect in a browser rasterises with a broken-image icon where the picture should be, which is why the advice below is to check the PNG.
-
-> **What is checked today.** For **every** template: the file resolving, parsing and declaring a canvas — enforced at the moment you name it and again before a season is approved.
->
-> **Every one of the fifteen types is now checked against its own fields.** A template missing a mandatory field is refused when you name it, named in `/season review`, and blocks approval until you fix it. So is one carrying a field that belongs to a different image type — the likeliest sign that a file has been put in the wrong slot. Where a type draws a repeating block, its numbering must run from 1 with no gaps.
->
-> A template with a **wrapped** field is checked further still: the rectangle its `shape-inside` names must exist and must declare a width and a height, and the field must have a line height. All three are read from the file alone, so all three are caught the moment you name it rather than when a long piece of prose first arrives.
-
-**Fonts and casing.** Either embed the font your template names or author against a font the machine running the bot carries. A font it cannot resolve is substituted by the converter and your text is drawn in a face of another width, which changes where lines break — so two machines can draw the same template differently. Note also that `text-transform` is ignored: a label you want in capitals must be typed in capitals.
-
-**Checking your work.** Look at the exported PNG, not the SVG in a browser. They disagree on precisely the things worth checking — flowed text, substituted fonts, and the crop. `/images test` returns the PNG.
+**Checking your work.** Look at the exported PNG, not the SVG in a browser. They disagree on precisely the things worth checking — flowed text, substituted fonts, and the crop. The `/images test` commands return the PNG.
 
 ---
 

@@ -108,7 +108,9 @@ async def build_drawing(bot, guild, division_id: int):
                     "LEFT JOIN driver_season_assignments dsa "
                     "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
                     "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
-                    "LEFT JOIN signup_records sr ON sr.driver_profile_id = dp.id "
+                    "LEFT JOIN signup_records sr "
+                    "       ON sr.server_id = dp.server_id "
+                    "      AND sr.discord_user_id = CAST(dp.discord_user_id AS TEXT) "
                     "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
                     (division_id, instance["id"]),
                 )
@@ -137,7 +139,8 @@ async def build_drawing(bot, guild, division_id: int):
         try:
             row = await (
                 await db.execute(
-                    "SELECT nationality_required FROM signup_config WHERE server_id = ?",
+                    "SELECT nationality_required FROM signup_module_settings "
+                    "WHERE server_id = ?",
                     (division["server_id"],),
                 )
             ).fetchone()
@@ -171,28 +174,30 @@ async def build_drawing(bot, guild, division_id: int):
 async def render_png(bot, server_id: int, guild, division_id: int, origin: PostingOrigin):
     """Render one division's lineup. Returns the render service's PostingDecision."""
     from services.image_lineup_service import build_fill_spec
-    from utils.paths import resolve_within_project_root
+    from services.image_render_service import (
+        resolve_configured_directories,
+        spec_builder_with_faults,
+    )
 
     _division, drawing = await build_drawing(bot, guild, division_id)
 
     config = await bot.image_config_service.get_config(server_id)
-    directories: dict[str, Path] = {}
-    for asset_class, column in (
-        ("team", "team_image_directory"),
-        ("flag", "flag_directory"),
-        ("driver", "driver_image_directory"),
-    ):
-        try:
-            directories[asset_class] = resolve_within_project_root(
-                getattr(config, column)
-            )
-        except Exception:  # noqa: BLE001
-            pass
+    directories, directory_faults = resolve_configured_directories(
+        config,
+        (
+            ("team", "team_image_directory"),
+            ("flag", "flag_directory"),
+            ("driver", "driver_image_directory"),
+        ),
+        image_type=LINEUP_TEMPLATE_KEY,
+    )
 
     return await bot.image_render_service.render_for_posting(
         server_id,
         "lineup_template",
-        lambda root: build_fill_spec(drawing, root, asset_directories=directories),
+        spec_builder_with_faults(
+            build_fill_spec, drawing, directories, directory_faults
+        ),
         posting_origin=origin,
         bot=bot,
     )

@@ -80,7 +80,10 @@ async def try_attach(
         from models.image_module import PostingOrigin
         from services.attendance_service import derive_checkin_deadline
         from services.image_rsvp_service import build_fill_spec, resolve_drawing
-        from utils.paths import resolve_within_project_root
+        from services.image_render_service import (
+            resolve_configured_directories,
+            spec_builder_with_faults,
+        )
 
         if not await rsvp_enabled(bot, server_id):
             return None
@@ -109,22 +112,21 @@ async def try_attach(
 
         # The check-in graphic may draw both imagery classes, so both directories are
         # resolved (044). Each answers its own miss with its own fallback.
-        directories: dict[str, Path] = {}
-        for asset_class, column in (
-            ("track", "track_image_directory"),
-            ("flag", "flag_directory"),
-        ):
-            try:
-                directories[asset_class] = resolve_within_project_root(
-                    getattr(config, column)
-                )
-            except Exception:  # noqa: BLE001
-                pass
+        directories, directory_faults = resolve_configured_directories(
+            config,
+            (
+                ("track", "track_image_directory"),
+                ("flag", "flag_directory"),
+            ),
+            image_type=RSVP_TEMPLATE_KEY,
+        )
 
         decision = await bot.image_render_service.render_for_posting(
             server_id,
             RSVP_TEMPLATE_KEY,
-            lambda root: build_fill_spec(drawing, root, asset_directories=directories),
+            spec_builder_with_faults(
+                build_fill_spec, drawing, directories, directory_faults
+            ),
             posting_origin=PostingOrigin.SCHEDULED,
             bot=bot,
         )

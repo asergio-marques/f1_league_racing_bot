@@ -8,20 +8,22 @@ drivers.
 
 **Before reporting any work on this repo complete, invoke the `close-out` skill.**
 
-Two documents carry this project's knowledge and both go stale silently:
+Three sets of documents carry this project's knowledge and all of them go stale silently:
 
 - `docs/wip-specs/*.md` — **the source of truth for rules.** What the bot shall do.
 - `README.md` — **what a league sees.** Commands, behaviour, authoring conventions.
+- `docs/how-to/*.md` — **the order to do a job in.** One guide per module, plus the core bot.
 
 Update them by *what changed*, not by the fact that something did. A refactor or a
-test-only change needs neither. A changed rule, a new command, or **a decision the user
-made in conversation** needs the wip-spec, and the README too when a league can see it.
+test-only change needs none of them. A changed rule, a new command, or **a decision the user
+made in conversation** needs the wip-spec, the README too when a league can see it, and the
+owning module's how-to guide when it alters a job a manager does or the order of its steps.
 
 Decisions made in chat are the ones that go missing. When the user answers a question, that
 answer is a project rule from that moment, and the chat log is not where it lives.
 
 The `close-out` skill holds the detail: house style for each document, where a rule belongs,
-and the checks to run. Read it rather than guessing.
+and the checks to run — including the `pytest tests/ -q` run. Read it rather than guessing.
 
 ## Documentation layout
 

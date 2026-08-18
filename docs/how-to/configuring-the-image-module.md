@@ -30,6 +30,8 @@ If Inkscape is installed somewhere unusual, tell the bot where by setting `INKSC
 INKSCAPE="C:/Program Files/Inkscape/bin/inkscape.exe"
 ```
 
+**You need a season with at least one division.** Every preview is drawn against a division of your active season — that is the whole point of them, since a picture drawn from invented data cannot tell you whether *your* configuration is right. Set the season up first, following [the core guide](configuring-the-core-bot.md). You do not need drivers seated yet: where a division has none, the bot invents them for the picture and says so.
+
 **You need to be able to put files on the computer running the bot.** This one catches people out: **there is no command for uploading artwork.** You cannot attach a logo to a Discord message and have the bot save it. Every drawing file and every badge, flag and photo is copied onto the bot's computer by hand. The commands only *tell the bot which folder to look in*.
 
 If somebody else hosts the bot for you, you will need their help for the artwork and template steps. Everything else you can do yourself from Discord.
@@ -48,14 +50,14 @@ If somebody else hosts the bot for you, you will need their help for the artwork
 
 ```
 /module enable images
-/images test calendar
+/images test calendar division:<your division>
 ```
 
-The bot sends you back a picture.
+The bot sends you back a picture — **your** division's calendar, with your rounds, your circuits and your dates.
 
-Nothing has been set up yet, and that is deliberate. The bot comes with all fifteen drawing files and a plain grey placeholder for every piece of artwork, so it can draw without you supplying anything. You are not starting with a blank page — you are starting with a working page and swapping its pieces out one at a time.
+Every preview is drawn against a division of your active season, so you need a season with at least one division before any of them will work. Start typing the division name and the bot completes it for you.
 
-The calendar is the one to start with because it needs nothing of yours. Most other kinds do: the lineup, the results, the standings and the attendance sheet are drawn against your **real team list** and are refused outright until you have a team beyond Reserve, and the attendance sheet, the check-in call, the verdicts and every weather kind but the mystery notice need the circuit list. If `/images test` refuses, it names which of the two is missing.
+The calendar is the one to start with because it needs only your rounds. The lineup, the results, the standings and the attendance sheet also need a team beyond Reserve, and every kind but the calendar and the lineup needs a round number as well. If a preview refuses, it names exactly which of those is missing — a wrong division name, a round the division does not have, or a team list with nothing but Reserve in it.
 
 Switching the module on does not change anything the bot posts yet. All eight kinds of output stay off until you turn them on, which is step 6.
 
@@ -163,11 +165,11 @@ Say your league has a team called **Red Bull** and you have its badge ready.
 2. **Do not put any words in the artwork.** Text inside a badge can come out in the wrong typeface on a different computer. Keep lettering as shapes, or leave it out.
 3. **Work out the filename**: `Red Bull` becomes `red_bull.svg`.
 4. **Copy it onto the bot's computer**, into the team badge folder (`resources/teams` unless you moved it). This is the by-hand step — there is no command for it.
-5. **Check it worked** by looking at a real post, or at the bot's log channel, which lists every picture it could not find and had to use the placeholder for. Do *not* use `/images test` for this — see the warning below.
+5. **Check it worked** by running the matching preview — `/images test lineup`, say — which draws with *your* folders and tells you every file it could not find. The log channel records the same thing for real posts.
 
 Every folder works the same way. Only the folder and the source of the name change.
 
-> **`/images test` will not show your artwork.** It always draws with the placeholders that came with the bot, whatever folders you have set up. It is there to check your *drawing files*, not your artwork. To check artwork, look at a real post or the log channel.
+> **The previews use your artwork.** They look in the folders you configured, exactly as a real post does, and fall back to the grey placeholder only where a file is genuinely missing. The reply names each one it fell back on, and the file it was looking for, so a missing badge is something you can see and fix rather than guess at.
 
 ### Always leave a `fallback.svg` in every folder
 
@@ -239,7 +241,9 @@ This comes last on purpose. Switching something on before its drawing file is bi
 
 The check-in call is the odd one out — it *adds* a picture rather than replacing anything. The message, the roster and the buttons all stay exactly as they were.
 
-**Standings is the other odd one out, and for a less happy reason: it does not post a picture yet.** No standings post is drawn today whatever the switch says, so the championship tables carry on as text. The switch records what you want and nothing more; `/images config view` marks it as recorded but not yet in effect, and `/images test standings` is the only way to see the drawing. Switch it on if you like — it changes nothing until the posting path exists.
+**Standings is the other odd one out, and for a less happy reason: it does not post a picture yet.** No standings post is drawn today whatever the switch says, so the championship tables carry on as text. The switch records what you want and nothing more, and `/images config view` marks it as recorded but not yet in effect.
+
+> **`/images test standings` does not produce a picture either, and will tell you so.** The drawing file has a column for each round of the season, and the part of the bot that fills those columns was never finished. The preview reports which fields it could not fill rather than sending you a half-drawn table. Everything else about the standings drawing — positions, points, gaps — resolves correctly; it is only the per-round columns that are missing.
 
 When you switch something on, the bot tells you if it would not work as things stand, and whether that output posts pictures yet.
 
@@ -256,16 +260,30 @@ When you switch something on, the bot tells you if it would not work as things s
 Lists every setting and whether it is usable, and each of the eight outputs as ✅ on, ❌ off, or ⚠️ on but broken. Drawing files and artwork folders only ever show ✅ or ⚠️ — never ❌, since there is always something to fall back on. If something is broken it names the exact drawing file at fault — which weather phase, or which half of the results or standings pair.
 
 ```
-/images test <kind>
+/images test calendar        division:<name>
+/images test lineup          division:<name>
+/images test results         division:<name>  round:<number>
+/images test standings       division:<name>  round:<number>
+/images test attendance      division:<name>  round:<number>
+/images test rsvp            division:<name>  round:<number>
+/images test weather-p1      division:<name>  round:<number>
+/images test weather-p2      division:<name>  round:<number>
+/images test weather-p3      division:<name>  round:<number>
+/images test weather-mystery division:<name>  round:<number>
+/images test verdict         division:<name>  round:<number>
 ```
 
-Draws one kind from made-up sample data and sends you the picture, visible only to you. It reads no season data, so it works before you have approved one — but it does draw against your real team list and circuit list, and refuses without them, as step 1 describes. Several kinds send more than one picture: results, standings and weather phases 2 and 3 send both versions, the attendance sheet sends two, the check-in call five, and verdicts six, because how long text wraps is the only thing worth judging by eye there.
+One command per kind, each drawn against a division of your active season and sent only to you. The calendar and the lineup take a division alone; every other kind also takes a round number.
 
-Remember: **`/images test` uses the artwork that came with the bot, not yours.** It checks your drawing files, not your badges and flags.
+**What is real and what is made up.** Your division, your rounds, your circuits, your teams, your drivers and your artwork are all real. What the bot invents is only what a round that has not been run yet cannot have: the finishing order, the forecast, the attendance points, the steward's verdict. If your division has no drivers seated at all, the bot invents those too and says so in the reply, so that you can still judge the drawing.
+
+Several kinds send more than one picture: the results send one per session of that round's format — two for a normal round, four for a sprint — the standings send both championships, and the verdict sends one per kind of penalty, because how long text wraps is the only thing worth judging by eye there.
+
+**When a preview refuses**, it names the reason: no division of that name, no round of that number, no team beyond Reserve, or a forecast asked of a mystery round (use `weather-mystery` for those, and only for those).
 
 `/season review` shows the same summary and names anything that would stop the season. **`/season approve` refuses to run** while something is broken — review is where you spot it, approval is where it stops you.
 
-> **Judge the finished picture, not the drawing file in a web browser.** They disagree on exactly the things worth checking — wrapped text, typefaces and missing images. `/images test` sends you the finished picture for this reason.
+> **Judge the finished picture, not the drawing file in a web browser.** They disagree on exactly the things worth checking — wrapped text, typefaces and missing images. The previews send you the finished picture for this reason.
 
 ---
 
@@ -284,7 +302,7 @@ Worth running through just before `/season approve`.
 - [ ] Your calendar drawing has room for your longest division's rounds
 - [ ] Your attendance drawing has room for that many rounds too, and the check-in drawing has room for a sprint weekend's sessions
 - [ ] The time zone is the one your league actually races in
-- [ ] You have looked at each output with `/images test` and been happy with it
+- [ ] You have looked at each output with its `/images test` command, against a real division, and been happy with it
 - [ ] Your artwork is on the bot's computer, correctly named — and every folder still has its `fallback.svg`
 - [ ] `/season review` reports nothing blocking
 
@@ -302,7 +320,8 @@ Worth running through just before `/season approve`.
 | One division posting text while the rest post pictures | The same thing, affecting only that division. The log channel says why |
 | The bot refusing to add a round or assign a driver | It would go past what your drawing file can show. Make the drawing bigger, or switch that output off |
 | Grey placeholders where your own artwork should be | Either the filename does not match, or it is in a folder the bot is not looking in. The log channel names what it could not find |
-| `/images test` showing grey placeholders | Normal — it always uses the artwork that came with the bot |
+| A preview showing grey placeholders | The bot could not find that file in your folder — the reply names which one, and what it was looking for |
+| A preview refusing outright | It names why: unknown division, no such round, no team beyond Reserve, or a forecast asked of a mystery round |
 | Nothing posted at all, and nothing in the log | Usually the channel for that output is not set, or the module behind it is off. Check step 2 |
 
 Smaller problems — a swapped typeface, a shortened name, a placeholder used — are reported with the picture and written to the log channel. They never appear in a channel your drivers read.

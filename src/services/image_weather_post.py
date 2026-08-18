@@ -171,26 +171,28 @@ async def render_forecast(
 ) -> ForecastRender:
     """Render *drawing* to a PNG, or report why the textual forecast should stand instead."""
     from services.image_weather_service import build_fill_spec
-    from utils.paths import resolve_within_project_root
+    from services.image_render_service import (
+        resolve_configured_directories,
+        spec_builder_with_faults,
+    )
 
     try:
         config = await bot.image_config_service.get_config(server_id)
-        directories: dict[str, Path] = {}
-        for asset_class, column in (
-            ("flag", "flag_directory"),
-            ("weather", "weather_icon_directory"),
-        ):
-            try:
-                directories[asset_class] = resolve_within_project_root(
-                    getattr(config, column)
-                )
-            except Exception:  # noqa: BLE001
-                pass
+        directories, directory_faults = resolve_configured_directories(
+            config,
+            (
+                ("flag", "flag_directory"),
+                ("weather", "weather_icon_directory"),
+            ),
+            image_type=drawing.template_key,
+        )
 
         decision = await bot.image_render_service.render_for_posting(
             server_id,
             drawing.template_key,
-            lambda root: build_fill_spec(drawing, root, asset_directories=directories),
+            spec_builder_with_faults(
+                build_fill_spec, drawing, directories, directory_faults
+            ),
             posting_origin=origin,
             bot=bot,
         )

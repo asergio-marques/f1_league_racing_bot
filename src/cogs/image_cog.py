@@ -26,7 +26,6 @@ from models.image_constants import (
     TEMPLATE_LABELS,
 )
 from models.image_module import STATE_DISABLED, STATE_ENABLED
-from services.image_sample_data import SAMPLE_VERDICT_CASES
 from utils.channel_guard import admin_only, channel_guard, server_admin_only
 from utils.paths import PathContainmentError, relative_to_root
 
@@ -37,20 +36,6 @@ _STATE_ICONS = {
     STATE_DISABLED: "❌",
 }
 _INVALID_ICON = "⚠️"
-
-
-#: Template key -> the sample variants ``/images test`` draws for it, in order. Two types draw
-#: more than one image: the attendance sheet, which must show its point-limit blocks both
-#: configured and removed, and the check-in call, whose five rounds exercise four sessions, two
-#: sessions, a concealed track, a track with no image file, and a deadline standing at the
-#: round's own start (wip-spec section "Test data"). Every other type draws one.
-_SAMPLE_VARIANTS: dict[str, tuple] = {
-    "attendance_template": ("limits", "no_limits"),
-    "rsvp_template": ("sprint", "normal", "mystery", "no_image", "no_deadline"),
-    # Six images from one template: the three kinds of verdict, both signs of a time
-    # penalty, and free text at five lengths (043).
-    "verdicts_template": SAMPLE_VERDICT_CASES,
-}
 
 
 def toggle_enabled_lines(aspect: str, label: str, blocking: list[str]) -> list[str]:
@@ -66,7 +51,7 @@ def toggle_enabled_lines(aspect: str, label: str, blocking: list[str]) -> list[s
     if aspect not in LIVE_POSTING_ASPECTS:
         lines.append(
             "⏳ **Not yet in effect** — posting for this aspect is wired in a later "
-            "update. Use `/images test` to see what it will produce."
+            "update. Use the matching `/images test` command to see what it will produce."
         )
 
     if blocking:
@@ -910,183 +895,458 @@ class ImageCog(commands.Cog):
             lines += [
                 "",
                 f"_Recorded but not yet in effect: **{pending}** — posting for these is "
-                "wired in a later update. Use `/images test` to see what they produce._",
+                "wired in a later update. Use the matching `/images test` command to see what they produce._",
             ]
         return lines
 
 
-    # ── /images test ──────────────────────────────────────────────────────
+    # ── /images test ── the eleven previews ─────────────────────────
 
-    @images.command(
+    # One command per image kind, each drawn against the league's own division and, where
+    # the kind pertains to one, its own round. Discord allows a group of subcommands
+    # beneath a top-level command and no further nesting, which is the depth `config` and
+    # `template` already use.
+    test = app_commands.Group(
         name="test",
-        description="Render one kind of image from sample data, to see what it produces.",
+        description="Preview an image against your own league's configuration.",
+        parent=images,
     )
-    @app_commands.describe(kind="Which kind of image to render.")
-    @app_commands.choices(
-        kind=[
-            app_commands.Choice(name="Calendar", value="calendar"),
-            app_commands.Choice(name="Lineup", value="lineup"),
-            app_commands.Choice(name="Session results", value="results"),
-            app_commands.Choice(name="Standings", value="standings"),
-            app_commands.Choice(name="Attendance sheet", value="attendance"),
-            app_commands.Choice(name="Check-in call", value="rsvp"),
-            app_commands.Choice(name="Weather — phase 1", value="weather-p1"),
-            app_commands.Choice(name="Weather — phase 2", value="weather-p2"),
-            app_commands.Choice(name="Weather — phase 3", value="weather-p3"),
-            app_commands.Choice(name="Weather — mystery notice", value="weather-mystery"),
-            app_commands.Choice(name="Verdicts", value="verdicts"),
-        ]
-    )
-    @channel_guard
-    @admin_only
-    async def test(
-        self, interaction: discord.Interaction, kind: app_commands.Choice[str]
-    ) -> None:
-        if not await self._guard_module_enabled(interaction):
-            return
 
-        from models.image_constants import TEST_KIND_TEMPLATES
+    async def _division_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        """The divisions of the active season, which is what a preview can be drawn for.
+
+        A division of an archived season is deliberately absent: a preview is a check on
+        what the league is about to run.
+        """
+        try:
+            season = await self.bot.season_service.get_active_season(  # type: ignore[attr-defined]
+                interaction.guild_id
+            )
+            if season is None:
+                return []
+            divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001 — an autocomplete never breaks the command
+            return []
+
+        typed = (current or "").strip().casefold()
+        return [
+            app_commands.Choice(name=division.name, value=division.name)
+            for division in divisions
+            if typed in division.name.casefold()
+        ][:25]
+
+    async def _run_preview(
+        self,
+        interaction: discord.Interaction,
+        *,
+        title: str,
+        division: str,
+        build,
+        round_number: int | None = None,
+        require_rounds: bool = False,
+        require_teams: bool = False,
+        require_mystery: bool | None = None,
+    ) -> None:
+        """The body every preview command shares.
+
+        Guards, then resolves, then draws. The order matters: a fault of configuration is
+        reported as one and never as a failure to render (FR-015), and the rasteriser is
+        checked before anything is resolved because its absence defeats every kind alike.
+        """
+        from services.image_preview_service import PreviewRefused, resolve_context
         from services.image_render_service import (
             converter_absent_message,
             converter_available,
         )
 
-        # Defer first: a multi-variant render will not meet the 3-second acknowledgement
-        # rule, and the rasteriser is a subprocess.
+        if not await self._guard_module_enabled(interaction):
+            return
+
+        # Defer first: several kinds draw more than one picture, and the rasteriser is a
+        # subprocess, so the three-second acknowledgement cannot be met otherwise.
         await interaction.response.defer(ephemeral=True)
 
-        # Reject at once when the converter is absent, attempting no render (FR-009).
         if not converter_available(use_cache=False):
             await interaction.followup.send(converter_absent_message(), ephemeral=True)
             return
 
-        templates = TEST_KIND_TEMPLATES[kind.value]
-
-        # Three kinds draw against the league's **own** team configuration rather than against
-        # invented teams: the lineup, whose fields are keyed by team name, and the results and
-        # standings, whose rows carry each team's name and badge. All are rejected outright
-        # where there is no team to draw — a generic render failure would not say so
-        # (FR-029, FR-047, and FR-063 for the standings).
-        teams = None
-        needs_teams = {
-            "lineup_template",
-            "results_qualifying_template",
-            "results_race_template",
-            "standings_drivers_template",
-            "standings_constructors_template",
-            "attendance_template",
-        } & set(templates)
-        if needs_teams:
-            teams = await self.bot.team_service.get_default_teams(  # type: ignore[attr-defined]
-                interaction.guild_id
+        try:
+            context = await resolve_context(
+                self.bot,
+                interaction.guild_id,
+                division,
+                guild=interaction.guild,
+                round_number=round_number,
+                require_rounds=require_rounds,
+                require_teams=require_teams,
+                require_mystery=require_mystery,
             )
-            if not [t for t in teams if not getattr(t, "is_reserve", False)]:
-                if "lineup_template" in needs_teams:
-                    drawn = "lineup"
-                elif "attendance_template" in needs_teams:
-                    drawn = "attendance sheet"
-                else:
-                    drawn = "classification"
-                await interaction.followup.send(
-                    f"⛔ This server holds no team beyond the Reserve team, so there is no "
-                    f"{drawn} to draw. Add one with `/team add` first.",
-                    ephemeral=True,
-                )
-                return
+        except PreviewRefused as refusal:
+            await interaction.followup.send(refusal.message, ephemeral=True)
+            return
 
-        # The attendance sheet, the check-in call and every weather graphic are drawn against
-        # a round, and a round is drawn against a track. With no track list there is no sheet
-        # to draw, no round for a call to pertain to and no forecast to be made, and a generic
-        # render failure would not say so (FR-068, FR-071; 042 FR-058).
-        #
-        # The notice of a mystery round is the one exception: such a round conceals its track
-        # and records none, so the notice needs no track list to be drawn against.
-        needs_tracks = {
-            key
-            for key in templates
-            if key in ("attendance_template", "rsvp_template", "verdicts_template")
-            or (key.startswith("weather_") and key != "weather_mystery_template")
-        }
-        if needs_tracks:
-            from db.database import get_connection
-            from services.track_service import get_all_tracks
-
-            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
-                tracks = await get_all_tracks(db)
-            if not tracks:
-                if "attendance_template" in needs_tracks:
-                    subject = "attendance sheet"
-                elif "rsvp_template" in needs_tracks:
-                    subject = "check-in call"
-                elif "verdicts_template" in needs_tracks:
-                    subject = "verdict"
-                else:
-                    subject = "weather forecast"
-                await interaction.followup.send(
-                    f"⛔ This server's track list is empty, so there is no round for a "
-                    f"{subject} to be drawn against. Add tracks first.",
-                    ephemeral=True,
-                )
-                return
+        try:
+            requests = await build(context)
+        except Exception as exc:  # noqa: BLE001 — reported, never raised at a manager
+            log.exception("images test: could not assemble %s", title)
+            await interaction.followup.send(
+                f"⛔ The data for this preview could not be assembled — {exc}",
+                ephemeral=True,
+            )
+            return
 
         outcomes = []
-        for template_key in templates:
-            for variant in _SAMPLE_VARIANTS.get(template_key, (None,)):
-                outcomes.append(
-                    (
-                        template_key,
-                        await self._render_sample(
-                            interaction.guild_id,
-                            template_key,
-                            teams=teams,
-                            variant=variant,
-                        ),
-                    )
-                )
+        for label, template_key, spec_builder in requests:
+            outcome = await self.bot.image_render_service.render(  # type: ignore[attr-defined]
+                interaction.guild_id, template_key, spec_builder
+            )
+            outcomes.append((label, template_key, outcome))
 
-        await self._send_test_results(interaction, kind, outcomes)
+        await self._send_preview(interaction, title=title, context=context, outcomes=outcomes)
 
-    async def _render_sample(
-        self, server_id: int, template_key: str, *, teams=None, variant=None
-    ):
-        """Render one template from sample data. Reads no live season data (FR-036).
+    # ── The two kinds that fabricate no outcome ──────────────────────
 
-        *teams* is the server's team configuration, needed by the lineup, the results, the
-        standings and the attendance sheet, and None for every other kind.
+    @test.command(
+        name="calendar",
+        description="Preview the calendar image for one of your divisions.",
+    )
+    @app_commands.describe(division="The division whose calendar to draw.")
+    @channel_guard
+    @admin_only
+    async def test_calendar(
+        self, interaction: discord.Interaction, division: str
+    ) -> None:
+        from services.image_preview_service import build_calendar_preview
 
-        *variant* selects which of a type's sample cases to draw, for the two types the
-        wip-spec asks for more than one image of: the attendance sheet with both point limits
-        configured and with both switched off, and the check-in call over its five rounds.
-        """
-        from services.image_sample_data import build_spec
+        async def _build(context):
+            return await build_calendar_preview(self.bot, context)
 
-        service = self.bot.image_render_service  # type: ignore[attr-defined]
-        return await service.render(
-            server_id,
-            template_key,
-            lambda root: build_spec(template_key, root, teams=teams, variant=variant),
+        await self._run_preview(
+            interaction,
+            title="Calendar",
+            division=division,
+            require_rounds=True,
+            build=_build,
         )
 
-    async def _send_test_results(
-        self, interaction: discord.Interaction, kind, outcomes
+    @test.command(
+        name="lineup",
+        description="Preview the lineup image for one of your divisions.",
+    )
+    @app_commands.describe(division="The division whose lineup to draw.")
+    @channel_guard
+    @admin_only
+    async def test_lineup(
+        self, interaction: discord.Interaction, division: str
     ) -> None:
-        """Attach every variant produced, and list every notice alongside (FR-038/40)."""
+        from services.image_preview_service import build_lineup_preview
+
+        async def _build(context):
+            return await build_lineup_preview(self.bot, context)
+
+        await self._run_preview(
+            interaction,
+            title="Lineup",
+            division=division,
+            require_teams=True,
+            build=_build,
+        )
+
+    @test.command(
+        name="results",
+        description="Preview the results image for one of your rounds.",
+    )
+    @app_commands.describe(
+        division="The division to draw for.", round="The round number to draw for."
+    )
+    @channel_guard
+    @admin_only
+    async def test_results(
+        self, interaction: discord.Interaction, division: str, round: int
+    ) -> None:
+        from services.image_preview_service import build_results_preview
+
+        async def _build(context):
+            return await build_results_preview(self.bot, context)
+
+        await self._run_preview(
+            interaction,
+            title="Results",
+            division=division,
+            round_number=round,
+            require_teams=True,
+            build=_build,
+        )
+
+    @test.command(
+        name="standings",
+        description="Preview the standings image for one of your rounds.",
+    )
+    @app_commands.describe(
+        division="The division to draw for.", round="The round number to draw for."
+    )
+    @channel_guard
+    @admin_only
+    async def test_standings(
+        self, interaction: discord.Interaction, division: str, round: int
+    ) -> None:
+        from services.image_preview_service import build_standings_preview
+
+        async def _build(context):
+            return await build_standings_preview(self.bot, context)
+
+        await self._run_preview(
+            interaction,
+            title="Standings",
+            division=division,
+            round_number=round,
+            require_teams=True,
+            build=_build,
+        )
+
+    @test.command(
+        name="attendance",
+        description="Preview the attendance sheet image for one of your rounds.",
+    )
+    @app_commands.describe(
+        division="The division to draw for.", round="The round number to draw for."
+    )
+    @channel_guard
+    @admin_only
+    async def test_attendance(
+        self, interaction: discord.Interaction, division: str, round: int
+    ) -> None:
+        from services.image_preview_service import build_attendance_preview
+
+        async def _build(context):
+            return await build_attendance_preview(self.bot, context)
+
+        await self._run_preview(
+            interaction,
+            title="Attendance sheet",
+            division=division,
+            round_number=round,
+            require_teams=True,
+            build=_build,
+        )
+
+    @test.command(
+        name="rsvp",
+        description="Preview the check-in call image for one of your rounds.",
+    )
+    @app_commands.describe(
+        division="The division to draw for.", round="The round number to draw for."
+    )
+    @channel_guard
+    @admin_only
+    async def test_rsvp(
+        self, interaction: discord.Interaction, division: str, round: int
+    ) -> None:
+        from services.image_preview_service import build_rsvp_preview
+
+        async def _build(context):
+            return await build_rsvp_preview(self.bot, context)
+
+        await self._run_preview(
+            interaction,
+            title="Check-in call",
+            division=division,
+            round_number=round,
+            build=_build,
+        )
+
+    @test.command(
+        name="verdict",
+        description="Preview the verdict image for one of your rounds.",
+    )
+    @app_commands.describe(
+        division="The division to draw for.", round="The round number to draw for."
+    )
+    @channel_guard
+    @admin_only
+    async def test_verdict(
+        self, interaction: discord.Interaction, division: str, round: int
+    ) -> None:
+        from services.image_preview_service import build_verdict_preview
+
+        async def _build(context):
+            return await build_verdict_preview(self.bot, context)
+
+        await self._run_preview(
+            interaction,
+            title="Verdict",
+            division=division,
+            round_number=round,
+            build=_build,
+        )
+
+    @test.command(
+        name="weather-p1",
+        description="Preview the weather — phase 1 image for one of your rounds.",
+    )
+    @app_commands.describe(
+        division="The division to draw for.", round="The round number to draw for."
+    )
+    @channel_guard
+    @admin_only
+    async def test_weather_p1(
+        self, interaction: discord.Interaction, division: str, round: int
+    ) -> None:
+        from services.image_preview_service import build_weather_preview
+
+        async def _build(context):
+            return await build_weather_preview(self.bot, context, phase=1)
+
+        await self._run_preview(
+            interaction,
+            title="Weather — phase 1",
+            division=division,
+            round_number=round,
+            require_mystery=False,
+            build=_build,
+        )
+
+    @test.command(
+        name="weather-p2",
+        description="Preview the weather — phase 2 image for one of your rounds.",
+    )
+    @app_commands.describe(
+        division="The division to draw for.", round="The round number to draw for."
+    )
+    @channel_guard
+    @admin_only
+    async def test_weather_p2(
+        self, interaction: discord.Interaction, division: str, round: int
+    ) -> None:
+        from services.image_preview_service import build_weather_preview
+
+        async def _build(context):
+            return await build_weather_preview(self.bot, context, phase=2)
+
+        await self._run_preview(
+            interaction,
+            title="Weather — phase 2",
+            division=division,
+            round_number=round,
+            require_mystery=False,
+            build=_build,
+        )
+
+    @test.command(
+        name="weather-p3",
+        description="Preview the weather — phase 3 image for one of your rounds.",
+    )
+    @app_commands.describe(
+        division="The division to draw for.", round="The round number to draw for."
+    )
+    @channel_guard
+    @admin_only
+    async def test_weather_p3(
+        self, interaction: discord.Interaction, division: str, round: int
+    ) -> None:
+        from services.image_preview_service import build_weather_preview
+
+        async def _build(context):
+            return await build_weather_preview(self.bot, context, phase=3)
+
+        await self._run_preview(
+            interaction,
+            title="Weather — phase 3",
+            division=division,
+            round_number=round,
+            require_mystery=False,
+            build=_build,
+        )
+
+    @test.command(
+        name="weather-mystery",
+        description="Preview the mystery notice image for one of your rounds.",
+    )
+    @app_commands.describe(
+        division="The division to draw for.", round="The round number to draw for."
+    )
+    @channel_guard
+    @admin_only
+    async def test_weather_mystery(
+        self, interaction: discord.Interaction, division: str, round: int
+    ) -> None:
+        from services.image_preview_service import build_weather_preview
+
+        async def _build(context):
+            return await build_weather_preview(self.bot, context, phase=0)
+
+        await self._run_preview(
+            interaction,
+            title="Mystery notice",
+            division=division,
+            round_number=round,
+            require_mystery=True,
+            build=_build,
+        )
+
+    test_calendar.autocomplete("division")(_division_autocomplete)
+    test_lineup.autocomplete("division")(_division_autocomplete)
+    test_results.autocomplete("division")(_division_autocomplete)
+    test_standings.autocomplete("division")(_division_autocomplete)
+    test_attendance.autocomplete("division")(_division_autocomplete)
+    test_rsvp.autocomplete("division")(_division_autocomplete)
+    test_verdict.autocomplete("division")(_division_autocomplete)
+    test_weather_p1.autocomplete("division")(_division_autocomplete)
+    test_weather_p2.autocomplete("division")(_division_autocomplete)
+    test_weather_p3.autocomplete("division")(_division_autocomplete)
+    test_weather_mystery.autocomplete("division")(_division_autocomplete)
+
+    async def _send_preview(
+        self, interaction: discord.Interaction, *, title: str, context, outcomes
+    ) -> None:
+        """Return the pictures, and say plainly what the render had to make do with.
+
+        Three things a manager needs and the withdrawn command gave none of: which
+        pictures were produced, which assets fell back to a placeholder and why, and
+        whether the drivers drawn were their own or invented.
+        """
         from services.image_render_service import ImageRenderService
 
         files: list[discord.File] = []
-        lines: list[str] = [f"**Test render — {kind.name}**"]
-        all_notices = []
+        header = f"**Preview — {title}** for `{context.division_name}`"
+        if context.round is not None:
+            header += f", round {context.round.round_number}"
+        lines: list[str] = [header]
 
-        for template_key, outcome in outcomes:
-            label = TEMPLATE_LABELS[template_key]
+        all_notices = []
+        for label, template_key, outcome in outcomes:
             if outcome.problem:
                 # A problem means no image at all: never a partial one (XIV.4).
                 lines.append(f"❌ {label}: {outcome.problem}")
             else:
                 lines.append(f"✅ {label}")
-                for path in outcome.png_paths:
-                    files.append(discord.File(str(path), filename=f"{template_key}.png"))
+                for index, path in enumerate(outcome.png_paths):
+                    suffix = f"_{index}" if index else ""
+                    files.append(
+                        discord.File(str(path), filename=f"{template_key}{suffix}.png")
+                    )
             all_notices.extend(outcome.notices)
+
+        # The drivers drawn are invented, and a manager must never mistake them for their
+        # own roster (FR-018).
+        if getattr(context, "fabricated_drivers", False):
+            lines.append("")
+            lines.append(
+                "ℹ️ This division has no seated driver, so the names and nationalities "
+                "drawn are invented. Seat your drivers to preview your own."
+            )
+
+        # A directory the league configured that could not be resolved, distinguished from
+        # a class it never configured (FR-037, FR-038).
+        if getattr(context, "directory_faults", None):
+            lines.append("")
+            lines.append("⚠️ **Asset directories** — these did not resolve as configured:")
+            for fault in context.directory_faults:
+                lines.append(
+                    f"  ↳ `{fault.asset_class}`: `{fault.configured_value}` — {fault.reason}"
+                )
 
         if all_notices:
             lines.append("")
@@ -1146,7 +1406,7 @@ def _verify_discord_group_limits() -> None:
     Cheap insurance: the limit is enforced by Discord at command-sync time, which is far
     from the edit that broke it. This turns that into an immediate startup error.
     """
-    for group in (ImageCog.images, ImageCog.config, ImageCog.template):
+    for group in (ImageCog.images, ImageCog.config, ImageCog.template, ImageCog.test):
         count = len(group.commands)
         if count > 25:
             raise RuntimeError(

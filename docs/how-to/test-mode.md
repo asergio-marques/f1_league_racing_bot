@@ -127,6 +127,21 @@ Driving a check-in through the buttons requires as many Discord accounts as ther
 
 ---
 
+## Previewing images
+
+The `/images test` commands are drawn against a **division of the active season** — its rounds, its teams, its seated drivers and the artwork folders the server configures. Until 2026-08-18 they drew a fabricated division instead and worked on a bare server; they no longer do, and a server with no active season is refused.
+
+Test mode is therefore how a maintainer previews an image without a real league behind it. A test season with one division and a few `roster add` drivers is enough for every kind, and the previews read that data exactly as they read a real league's.
+
+Two things worth knowing when previewing against a test season:
+
+- **A division with no seated driver still draws.** The bot invents drivers for the seats and says so in the reply. `roster add` is only needed when you want to see *particular* names, or to check a lineup drawing against your own team list.
+- **The round matters.** Nine of the eleven take a round number, and the round's format decides what is drawn — a sprint round draws four session results and a four-session forecast, a normal round two of each. Seed a round of each format if you want to see all of it.
+
+Nothing a preview does is written back, so previewing at any point in the order below is safe and changes no state.
+
+---
+
 ## A workable order
 
 1. `/test-mode toggle` — before `/season approve`, so the points configurations get seeded.
