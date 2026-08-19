@@ -195,6 +195,7 @@ def test_the_regular_face_chosen_is_the_nearest_to_400_not_the_first_alphabetica
     pytest.skip("no family on this host carries two distinct non-bold weights")
 
 
+@pytest.mark.rasteriser
 def test_measurement_errs_narrow_against_what_the_rasteriser_draws():
     """A line the measurement admits must be a line the canvas holds (XIV.5).
 
@@ -209,8 +210,6 @@ def test_measurement_errs_narrow_against_what_the_rasteriser_draws():
     from services.image_render_service import find_converter  # noqa: PLC0415
 
     executable = find_converter()
-    if executable is None:
-        pytest.skip("the rasteriser is not installed on this host")
 
     family = "DejaVu Sans"
     resolved = resolve_family(family, bold=False)

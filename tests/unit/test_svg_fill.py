@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from models.image_constants import (  # noqa: E402
+    NOTICE_FONT_SUBSTITUTED,
     NOTICE_INLINE_SIZE_TRUNCATED,
     NOTICE_WRAP_TRUNCATED,
 )
@@ -41,6 +42,12 @@ def _style_of(root, element_id):
 
 
 ARIAL = resolve_family("Arial")
+
+
+def _non_font_notices(result):
+    """Drop FONT_SUBSTITUTED: whether Arial itself is installed is a fact about the
+    host, not the truncation/wrap behaviour these invariants pin."""
+    return [n for n in result.notices if n.notice_kind != NOTICE_FONT_SUBSTITUTED]
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -350,7 +357,7 @@ def test_invariant_9_over_long_single_line_field_is_cut_and_noticed():
         )
     )
 
-    assert [n.notice_kind for n in result.notices] == [NOTICE_INLINE_SIZE_TRUNCATED]
+    assert [n.notice_kind for n in _non_font_notices(result)] == [NOTICE_INLINE_SIZE_TRUNCATED]
     text = FieldIndex(root).resolve("driver_1").text
     assert text.endswith(ELLIPSIS)
     assert len(text) < len("Bartholomew Fotheringay-Pemberton the Third")
@@ -362,7 +369,7 @@ def test_invariant_9_short_name_within_the_bound_is_untouched():
     )
     result = fill(FillSpec(root=root, text={"driver_1": "Verstappen"}))
 
-    assert result.notices == []
+    assert _non_font_notices(result) == []
     assert FieldIndex(root).resolve("driver_1").text == "Verstappen"
 
 
@@ -390,7 +397,7 @@ def test_field_without_a_bound_is_never_truncated():
     name = "Bartholomew Fotheringay-Pemberton the Third"
     result = fill(FillSpec(root=root, text={"d": name}))
 
-    assert result.notices == []
+    assert _non_font_notices(result) == []
     assert FieldIndex(root).resolve("d").text == name
 
 

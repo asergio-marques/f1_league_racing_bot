@@ -653,16 +653,13 @@ def _render_service(db_path, config_service, module_service):
     )
 
 
+@pytest.mark.rasteriser
 async def test_render_without_season(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path,
     scratch_slot,
 ):
     """Every kind renders on a server with no season configured at all."""
-    from services.image_render_service import converter_available
     from tests.support.image_sample_data import build_spec
-
-    if not converter_available(use_cache=False):
-        pytest.skip("rasteriser not installed on this host")
 
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
@@ -713,6 +710,7 @@ async def test_render_without_season(
             assert outcome.png_paths[0].stat().st_size > 0
 
 
+@pytest.mark.rasteriser
 async def test_wrapped_text_lands_inside_its_box_in_the_rasterised_png(tmp_path):
     """A PNG-level regression guard for the shape-inside trap.
 
@@ -722,12 +720,9 @@ async def test_wrapped_text_lands_inside_its_box_in_the_rasterised_png(tmp_path)
     because the coordinates in the markup were correct; only the rasterised output
     showed it. Hence this test looks at pixels.
     """
-    from services.image_render_service import converter_available, rasterise
+    from services.image_render_service import rasterise
     from utils.svg_document import parse_svg_bytes
     from utils.svg_fill import FillSpec, fill
-
-    if not converter_available(use_cache=False):
-        pytest.skip("rasteriser not installed on this host")
 
     PIL = pytest.importorskip("PIL.Image")
 
@@ -831,16 +826,12 @@ async def test_multi_variant_kinds_cover_two_templates():
     assert all(len(v) == 2 for v in multi.values())
 
 
+@pytest.mark.rasteriser
 async def test_render_raises_notices_without_failing(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path,
     scratch_slot,
 ):
     """A substituted font and a truncated field are notices, not problems (XIV.4)."""
-    from services.image_render_service import converter_available
-
-    if not converter_available(use_cache=False):
-        pytest.skip("rasteriser not installed on this host")
-
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field(SERVER_ID, "template_directory", "templates")
@@ -891,6 +882,7 @@ async def test_render_problem_yields_no_image(
     assert outcome.ok is False
 
 
+@pytest.mark.rasteriser
 async def test_render_is_off_the_event_loop(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
 ):
@@ -902,11 +894,7 @@ async def test_render_is_off_the_event_loop(
     """
     import threading
 
-    from services.image_render_service import converter_available
     from tests.support.image_sample_data import build_spec
-
-    if not converter_available(use_cache=False):
-        pytest.skip("rasteriser not installed on this host")
 
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
@@ -1617,9 +1605,16 @@ async def test_posting_origin_is_required_and_never_inferred(failing_render_serv
 
 @pytest.mark.asyncio
 async def test_an_internal_problem_tells_the_user_nothing_to_act_on(
-    db_path, config_service, module_service
+    db_path, config_service, module_service, monkeypatch
 ):
     """UNKNOWN_IMAGE_TYPE is a caller defect; echoing it would send a league hunting."""
+    # The rasteriser check runs first, so on a host without Inkscape it would answer
+    # RASTERISER and the unknown-type branch under test would never be reached. The
+    # test is about the reply to a caller defect, not about rasterising.
+    import services.image_render_service as render_service
+
+    monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
+
     service = _render_service(db_path, config_service, module_service)
 
     decision = await service.render_for_posting(
@@ -1635,6 +1630,7 @@ async def test_an_internal_problem_tells_the_user_nothing_to_act_on(
 
 
 @pytest.mark.asyncio
+@pytest.mark.rasteriser
 async def test_a_clean_render_posts_the_image(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1789,6 +1785,7 @@ class _RecordingChannel:
         self.sent.append((content, file))
 
 
+@pytest.mark.rasteriser
 async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
 ):
@@ -1796,11 +1793,7 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     from pathlib import Path
 
     from services import verdict_announcement_service as vas
-    from services.image_render_service import converter_available
     from services.image_verdict_service import VerdictKind
-
-    if not converter_available(use_cache=False):
-        pytest.skip("rasteriser not installed on this host")
 
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)

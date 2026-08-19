@@ -22,8 +22,10 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+    # `rasteriser`-marked tests need Inkscape, which is too heavy to install on a hosted
+    # runner for what it returns. They are run by hand — see CLAUDE.md, Testing.
     - name: Github Action for testing the code
-      run: coverage run -m pytest tests/ -q --junitxml=pytest-results.xml
+      run: coverage run -m pytest tests/ -q -m "not rasteriser" --junitxml=pytest-results.xml
 
     - name: Verify no test failed
       run: |
