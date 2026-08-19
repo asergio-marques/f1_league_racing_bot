@@ -196,6 +196,10 @@ Found on 2026-08-18 while building the `/images test` previews. **All three were
 - **Reachability was always low**, and the entry should not be read as though it were not: `/images config *-directory` validates at the point of configuration — it rejects a path escaping the project root, rejects an empty value, and stores the result relative to the root. Nothing else writes those columns. Reaching the render-time rejection therefore takes a directory symlink or junction that moves outside the project *after* being set, or a hand-edited database.
 - A directory that merely does not exist is a separate case and was never affected: it resolves, and its assets fall back as Rule XIV.13 requires.
 
+**A cancelled division is still offered as previewable.**
+- `SeasonService.get_divisions` (`src/services/season_service.py:766`) selects every division of a season without filtering on `status`, so a division cancelled by `/division cancel` comes back with the rest. The `/images test` division autocomplete and the name resolution in `image_preview_service.resolve_context` both read that list, so a manager can complete on, and draw a preview for, a division the league has cancelled.
+- The picture drawn is accurate for the data the division still holds, so nothing renders wrongly — the fault is that a preview offers a division the league has withdrawn. Other readers of `get_divisions` filter for themselves (`season_service.py:520` keeps `status != 'CANCELLED'`), which is what the preview path does not do. Found on 2026-08-19 while planning feature 046.
+
 ## Core setup and access
 
 Found on 2026-08-17 while writing the core configuration how-to guide.
@@ -223,6 +227,10 @@ Found on 2026-08-18 while auditing the how-to guides against the implementation.
 - Harmless in effect — a mystery round comes back as phase 1 and `run_phase1` resolves the format and posts the notice — but the docstring is a third comment in this area describing behaviour the code does not have.
 
 ## Season lifecycle
+
+**`get_setup_or_active_season` picks between a running season and a pending one arbitrarily.**
+- `SeasonService.get_setup_or_active_season` (`src/services/season_service.py:78`) is `WHERE status IN ('SETUP', 'ACTIVE') ... LIMIT 1` with no `ORDER BY`. Where a league is building next season while this one runs, both rows match and which is returned is whatever SQLite happens to yield first.
+- Its two callers are `/driver` commands (`src/cogs/driver_cog.py:123` and `:220`), so a driver operation can silently address the wrong season. Found on 2026-08-19 while planning feature 046, which needs the opposite guarantee and therefore adds a method of its own rather than reusing this one.
 
 **`server_configs.previous_season_number` is written by nothing and read by nothing.**
 - The column is added by `src/db/migrations/008_driver_profiles_teams.sql:71` and carried on the model at `src/models/server_config.py:15`. `SeasonService.increment_previous_season_number` (`src/services/season_service.py:502`) is the only code that would write it, and nothing calls that method.
