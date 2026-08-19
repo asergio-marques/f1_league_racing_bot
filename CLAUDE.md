@@ -99,3 +99,12 @@ repo. Tests here stub Discord and exercise the code beneath it.
 Tests that pin a date must pin "now" alongside it. Several services accept a `now` parameter for
 exactly this; a test that seeds a future date and lets the code read the wall clock passes today
 and fails silently months later.
+
+**CI enforces a clean pass and a coverage floor.** `.github/workflows/unit-test.yml` runs the
+suite under `coverage run` and fails the build if any test fails or errors, and separately if
+line coverage falls below that workflow's `MIN_COVERAGE_REQUIRED` value. Read the threshold from
+the workflow rather than quoting a number here — it moves independently of this file, and a
+number written here would go stale the moment someone changes it there. A change is not
+complete if it drops the suite below that floor or leaves a test failing or erroring. A skip is
+not itself a build failure, but it is a gap in what "the suite passes" actually verified — treat
+a new one as something to justify, not a convenient way to silence a broken test.

@@ -3,7 +3,7 @@ name: Check Python application
 on: [push]
 
 env:
-  MIN_COVERAGE_REQUIRED: 10
+  MIN_COVERAGE_REQUIRED: 75
 
 jobs:
   python-test-check:
@@ -11,10 +11,10 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v1
-    
+      uses: actions/checkout@v4
+
     - name: Set up Python 3.13
-      uses: actions/setup-python@v1
+      uses: actions/setup-python@v5
       with:
         python-version: 3.13
 
@@ -23,7 +23,21 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     - name: Github Action for testing the code
-      run: coverage run -m unittest discover
+      run: coverage run -m pytest tests/ -q --junitxml=pytest-results.xml
+
+    - name: Verify no test failed
+      run: |
+        python -c '
+        import sys, xml.etree.ElementTree as ET
+        root = ET.parse("pytest-results.xml").getroot()
+        suite = root.find("testsuite") if root.tag == "testsuites" else root
+        tests = int(suite.get("tests", 0))
+        failures = int(suite.get("failures", 0))
+        errors = int(suite.get("errors", 0))
+        skipped = int(suite.get("skipped", 0))
+        print(f"{tests} tests ran: {failures} failed, {errors} errored, {skipped} skipped")
+        sys.exit(1 if failures or errors else 0)
+        '
 
     - name: Github Action to retrieve coverage percentage
       id: total-coverage
