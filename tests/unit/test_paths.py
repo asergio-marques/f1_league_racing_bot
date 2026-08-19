@@ -5,8 +5,7 @@ why the implementation resolves rather than string-matching.
 """
 from __future__ import annotations
 
-import os
-import sys
+from pathlib import Path
 
 import pytest
 
@@ -55,17 +54,24 @@ def test_absolute_path_outside_root_is_rejected(root, tmp_path_factory):
         resolve_within_project_root(str(outside), root=root)
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32" and not os.environ.get("CI"),
-    reason="symlink creation on Windows needs developer mode or admin rights",
-)
-def test_symlinked_parent_escaping_root_is_rejected(root, tmp_path_factory):
-    outside = tmp_path_factory.mktemp("outside_target")
+def test_symlinked_parent_escaping_root_is_rejected(root, tmp_path_factory, monkeypatch):
+    """A symlinked parent is simulated rather than created: real symlinks need
+    developer mode or admin rights on Windows, which CI runners and dev machines
+    do not reliably grant. Standing in a plain directory for the link and making
+    its `resolve()` report the outside target exercises the same containment
+    check that a genuine symlink would trigger, on every platform."""
+    outside = tmp_path_factory.mktemp("outside_target").resolve()
     link = root / "resources" / "escape"
-    try:
-        link.symlink_to(outside, target_is_directory=True)
-    except (OSError, NotImplementedError):
-        pytest.skip("symlinks unavailable on this host")
+    link.mkdir()
+
+    real_resolve = Path.resolve
+
+    def fake_resolve(self, *args, **kwargs):
+        if self == link:
+            return outside
+        return real_resolve(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", fake_resolve)
 
     with pytest.raises(PathContainmentError):
         resolve_within_project_root("resources/escape/templates", root=root)
