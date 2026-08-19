@@ -129,13 +129,18 @@ Driving a check-in through the buttons requires as many Discord accounts as ther
 
 ## Previewing images
 
-The `/images test` commands are drawn against a **division of the active season** — its rounds, its teams, its seated drivers and the artwork folders the server configures. Until 2026-08-18 they drew a fabricated division instead and worked on a bare server; they no longer do, and a server with no active season is refused.
+The `/images test` commands draw the server's own data — its rounds, its teams, its seated drivers and the artwork folders it configures. Which season they read is decided for them: the **approved** season where there is one, the season **pending approval** where there is none approved, and neither where the server holds no season at all.
 
-Test mode is therefore how a maintainer previews an image without a real league behind it. A test season with one division and a few `roster add` drivers is enough for every kind, and the previews read that data exactly as they read a real league's.
+That last case is the one worth knowing. A server with no season is **not** refused: the bot invents a whole league — division, calendar, circuits, round and drivers — over the server's own configured team names, and says so in the reply. So the previews work on a bare server without test mode being involved at all.
 
-Two things worth knowing when previewing against a test season:
+Test mode is therefore no longer *required* to preview an image, but it remains how you preview one against **particular** data. A test season with one division and a few `roster add` drivers is enough for every kind, and the previews read that data exactly as they read a real league's.
 
-- **A division with no seated driver still draws.** The bot invents drivers for the seats and says so in the reply. `roster add` is only needed when you want to see *particular* names, or to check a lineup drawing against your own team list.
+Five things worth knowing when previewing against a test season:
+
+- **A test season still in SETUP draws.** It does not need approving first. It is drawn exactly as it will be once `/season approve` has run, and the reply says it is pending.
+- **A mock driver is drawn by its `roster add` name.** It is a seated driver, not an empty seat, so no names are invented over a division seated with them.
+- **A mock driver records no nationality**, having no signup behind it. Where the league collects nationality, such a driver draws **no flag**, exactly as a real posting would, and the reply counts how many were drawn that way. Blank flags here are not a broken flag directory.
+- **A division with no seated driver still draws.** The bot invents drivers for the seats and says so. `roster add` is only needed when you want to see particular names, or to check a lineup drawing against your own team list.
 - **The round matters.** Nine of the eleven take a round number, and the round's format decides what is drawn — a sprint round draws four session results and a four-session forecast, a normal round two of each. Seed a round of each format if you want to see all of it.
 
 Nothing a preview does is written back, so previewing at any point in the order below is safe and changes no state.

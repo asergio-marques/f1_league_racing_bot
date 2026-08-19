@@ -31,6 +31,8 @@ from services.image_preview_service import (  # noqa: E402
     PreviewContext,
     PreviewDriver,
     PreviewRefused,
+    build_attendance_preview,
+    build_calendar_preview,
     resolve_asset_directories,
     resolve_context,
 )
@@ -346,19 +348,30 @@ class TestTeamsAndDrivers:
 
 
 class TestRefusals:
-    async def test_no_active_season_is_refused(self, bot, db_path):
-        with pytest.raises(PreviewRefused) as caught:
-            await resolve_context(bot, SERVER_ID, "Division 1")
-        assert caught.value.reason == REASON_NO_SEASON
+    async def test_no_season_is_no_longer_refused_but_fabricated(self, bot, db_path):
+        """046 withdraws the refusal 045 raised here.
+
+        A server with no season draws an invented league instead. The calendar draws no
+        team, so it is drawn even on a server that has configured none.
+        """
+        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="calendar")
+
+        assert context.fabricated_league is True
 
     async def test_an_archived_season_is_not_drawn_from(self, bot, db_path):
-        """A-001 — the preview checks what the league is about to run."""
+        """A-001 — the preview checks what the league is about to run.
+
+        Such a server holds no previewable season, so it falls to the fabricated league
+        rather than drawing the archived one. The assertion that matters is that the
+        archived division's name is *not* what comes back.
+        """
         season_id = await _seed_season(db_path, status="ARCHIVED")
         await _seed_division(db_path, season_id, "Old Division")
 
-        with pytest.raises(PreviewRefused) as caught:
-            await resolve_context(bot, SERVER_ID, "Old Division")
-        assert caught.value.reason == REASON_NO_SEASON
+        context = await resolve_context(bot, SERVER_ID, "Old Division", kind="calendar")
+
+        assert context.fabricated_league is True
+        assert context.division_name != "Old Division"
 
     async def test_an_unknown_division_is_refused_and_the_known_ones_named(
         self, bot, league
@@ -514,3 +527,212 @@ class TestAssetDirectories:
         assert context.asset_directories
         assert isinstance(context.directory_faults, list)
         assert all(isinstance(f, DirectoryFault) for f in context.directory_faults)
+
+
+# ── The context carries the calendar (046 T005/T006) ──────────────────────
+
+
+class TestContextCarriesTheCalendar:
+    """`context.rounds` is resolved once and is what the builders draw.
+
+    Three builders used to re-query the calendar by ``division_id``. A fabricated league
+    has no division row, so a re-query would have handed it an empty calendar rather than
+    the one it invented — which is why the context has to be self-sufficient.
+    """
+
+    async def test_resolve_context_carries_the_divisions_rounds(self, bot, league):
+        context = await resolve_context(bot, SERVER_ID, "Division 1")
+
+        assert [r.round_number for r in context.rounds] == [1, 2, 3]
+
+    async def test_the_calendar_draws_from_the_context_not_the_database(
+        self, bot, league
+    ):
+        """Emptying `context.rounds` empties the calendar, though the division holds three.
+
+        The calendar refuses an empty round list outright, so the refusal *is* the proof:
+        a builder still querying by ``division_id`` would have found the three seeded
+        rounds and drawn them happily.
+        """
+        from services.image_calendar_service import CalendarDataError
+
+        context = await resolve_context(bot, SERVER_ID, "Division 1")
+        assert len(context.rounds) == 3
+        context.rounds = []
+
+        with pytest.raises(CalendarDataError):
+            await build_calendar_preview(bot, context)
+
+    async def test_the_calendar_draws_exactly_the_rounds_the_context_holds(
+        self, bot, league
+    ):
+        """And the positive case: two rounds on the context, two rounds drawn.
+
+        The seeded track name is replaced with one the shipped `tracks` table carries,
+        because the calendar resolves a round's country and grand prix name through it and
+        refuses a name it cannot find.
+        """
+        context = await resolve_context(bot, SERVER_ID, "Division 1")
+        context.rounds = [r for r in context.rounds if r.round_number in (1, 2)]
+        for entry in context.rounds:
+            entry.track_name = "Albert Park Circuit"
+
+        requests = await build_calendar_preview(bot, context)
+
+        assert len(requests) == 1
+        assert requests[0][1] == "calendar_template"
+
+    async def test_the_attendance_sheet_draws_from_the_context_not_the_database(
+        self, bot, league
+    ):
+        context = await resolve_context(bot, SERVER_ID, "Division 1", round_number=1)
+        seen = list(context.rounds)
+        context.rounds = [r for r in seen if r.round_number == 1]
+
+        requests = await build_attendance_preview(bot, context)
+
+        assert requests
+        # One heading per round of `context.rounds`, not per round of the division.
+        assert len(context.rounds) == 1
+
+    async def test_no_builder_re_queries_the_division_calendar(self):
+        """The only `get_division_rounds` call left is the one in `resolve_context`."""
+        import inspect
+
+        from services import image_preview_service
+
+        source = inspect.getsource(image_preview_service)
+        assert source.count("get_division_rounds(") == 1
+
+
+# ── Which season a preview draws (046 US1) ────────────────────────────────
+
+
+async def _seed_league(db_path, *, status: str, season_number: int = 1, name="Division 1"):
+    """The `league` fixture's shape, at a chosen season status."""
+    season_id = await _seed_season(db_path, season_number=season_number, status=status)
+    division_id = await _seed_division(db_path, season_id, name)
+    for number, fmt in ((1, "NORMAL"), (2, "SPRINT"), (3, "MYSTERY")):
+        await _seed_round(db_path, division_id, number, fmt=fmt)
+    red = await _seed_team(db_path, division_id, "Redline")
+    await _seed_team(db_path, division_id, "Reserve", seats=2, reserve=True)
+    await _seat_driver(db_path, season_id, division_id, red, 1, name="Alice Ardent")
+    await _seat_driver(db_path, season_id, division_id, red, 2, name="Bruno Bellini")
+    return SimpleNamespace(season_id=season_id, division_id=division_id)
+
+
+class TestWhichSeasonIsDrawn:
+    """FR-001 to FR-005. A season pending approval is drawn exactly as an approved one."""
+
+    async def test_a_season_pending_approval_is_drawn(self, bot, db_path):
+        await _seed_league(db_path, status="SETUP", season_number=1)
+
+        context = await resolve_context(bot, SERVER_ID, "Division 1")
+
+        assert context.season_number == 1
+        assert context.season_pending_approval is True
+        assert [r.round_number for r in context.rounds] == [1, 2, 3]
+
+    async def test_a_pending_season_carries_its_teams_and_seated_drivers(
+        self, bot, db_path
+    ):
+        """FR-002 — no substitution and no fabrication on account of status alone."""
+        await _seed_league(db_path, status="SETUP")
+
+        context = await resolve_context(bot, SERVER_ID, "Division 1")
+
+        assert sorted(d.display_name for d in context.drivers) == [
+            "Alice Ardent",
+            "Bruno Bellini",
+        ]
+        assert context.fabricated_drivers is False
+
+    async def test_an_approved_season_is_not_flagged_as_pending(self, bot, league):
+        context = await resolve_context(bot, SERVER_ID, "Division 1")
+
+        assert context.season_pending_approval is False
+
+    async def test_an_approved_season_outranks_a_later_pending_one(self, bot, db_path):
+        """A-002. The ACTIVE season's divisions are the ones offered and drawn."""
+        await _seed_league(db_path, status="ACTIVE", season_number=4, name="Running")
+        await _seed_league(db_path, status="SETUP", season_number=5, name="NextYear")
+
+        context = await resolve_context(bot, SERVER_ID, "Running")
+
+        assert context.season_number == 4
+        assert context.season_pending_approval is False
+
+        # And the pending season's division is not reachable while the approved one stands.
+        with pytest.raises(PreviewRefused) as excinfo:
+            await resolve_context(bot, SERVER_ID, "NextYear")
+        assert excinfo.value.reason == REASON_NO_DIVISION
+
+    @pytest.mark.parametrize("status", ["COMPLETED", "CANCELLED"])
+    async def test_a_finished_season_is_not_drawn(self, bot, db_path, status):
+        """FR-005 — a server holding only such seasons holds none for previewing, and
+        therefore draws a fabricated league numbered on from the one that finished."""
+        await _seed_league(db_path, status=status, season_number=2)
+
+        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="calendar")
+
+        assert context.fabricated_league is True
+        # And the number counts on from the season that finished.
+        assert context.season_number == 3
+
+
+class TestRefusalsStillFireOnAPendingSeason:
+    """FR-006. None of feature 045's six refusals is weakened by the season widening."""
+
+    async def test_an_unknown_division_is_refused(self, bot, db_path):
+        await _seed_league(db_path, status="SETUP")
+
+        with pytest.raises(PreviewRefused) as excinfo:
+            await resolve_context(bot, SERVER_ID, "Nope")
+        assert excinfo.value.reason == REASON_NO_DIVISION
+
+    async def test_an_absent_round_is_refused(self, bot, db_path):
+        await _seed_league(db_path, status="SETUP")
+
+        with pytest.raises(PreviewRefused) as excinfo:
+            await resolve_context(bot, SERVER_ID, "Division 1", round_number=99)
+        assert excinfo.value.reason == REASON_NO_ROUND
+
+    async def test_a_division_with_no_round_is_refused_for_the_calendar(
+        self, bot, db_path
+    ):
+        season_id = await _seed_season(db_path, status="SETUP")
+        await _seed_division(db_path, season_id, "Empty")
+
+        with pytest.raises(PreviewRefused) as excinfo:
+            await resolve_context(bot, SERVER_ID, "Empty", require_rounds=True)
+        assert excinfo.value.reason == REASON_NO_ROUNDS
+
+    async def test_a_division_with_only_the_reserve_team_is_refused(self, bot, db_path):
+        season_id = await _seed_season(db_path, status="SETUP")
+        division_id = await _seed_division(db_path, season_id, "Bare")
+        await _seed_round(db_path, division_id, 1)
+        await _seed_team(db_path, division_id, "Reserve", seats=2, reserve=True)
+
+        with pytest.raises(PreviewRefused) as excinfo:
+            await resolve_context(bot, SERVER_ID, "Bare", require_teams=True)
+        assert excinfo.value.reason == REASON_NO_TEAMS
+
+    async def test_a_forecast_asked_of_a_mystery_round_is_refused(self, bot, db_path):
+        await _seed_league(db_path, status="SETUP")
+
+        with pytest.raises(PreviewRefused) as excinfo:
+            await resolve_context(
+                bot, SERVER_ID, "Division 1", round_number=3, require_mystery=False
+            )
+        assert excinfo.value.reason == REASON_MYSTERY_ROUND
+
+    async def test_a_mystery_notice_asked_of_an_ordinary_round_is_refused(
+        self, bot, db_path
+    ):
+        await _seed_league(db_path, status="SETUP")
+
+        with pytest.raises(PreviewRefused) as excinfo:
+            await resolve_context(
+                bot, SERVER_ID, "Division 1", round_number=1, require_mystery=True
+            )
+        assert excinfo.value.reason == REASON_NOT_MYSTERY_ROUND
