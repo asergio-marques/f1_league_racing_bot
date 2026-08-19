@@ -33,7 +33,7 @@
 
 - Three decisions were settled with the user before drafting rather than left as markers, so the spec carries none:
   - **Parameters with no season** — the division name and round number become optional and are disregarded where no season exists (FR-021, FR-022).
-  - **A server bare of teams** — refused rather than fabricated over, so a lineup template is never judged against invented team names (FR-012).
+  - **A server bare of teams** — the five kinds that draw a team or a driver are refused rather than fabricated over, so a lineup template is never judged against invented team names; the six that draw neither still draw (FR-012). The user narrowed this from "refuse every kind" on 2026-08-19, after the first draft mis-stated the second group as five kinds rather than six — the check-in call draws no team or driver either, which the builders confirm.
   - **An empty division inside a season that exists** — still refused; fabrication reaches only a server with no season at all (FR-006, FR-007).
 - Two named identifiers survive validation deliberately, being data the reader must be able to locate rather than implementation choices: `server_configs.previous_season_number` in A-004, which records that the obvious-looking source of the season number is dead, and the SETUP / ACTIVE / COMPLETED / CANCELLED season statuses, which are the vocabulary the bot's own commands use.
 - Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`.

@@ -47,9 +47,10 @@ A league manager or maintainer has configured their teams, their templates and t
 4. **Given** a server that has never held a season, **When** the manager previews any kind, **Then** the picture carries season 1.
 5. **Given** the same server, **When** the manager previews the same kind twice, **Then** the two pictures differ in their division, calendar, round and driver names, the team names being the same on both.
 6. **Given** the same server, **When** the manager supplies a division name or a round number, **Then** the value is disregarded and the fabricated league is drawn as though nothing had been supplied.
-7. **Given** a server whose general configuration holds no team beyond the Reserve team, **When** the manager previews any kind, **Then** the command is refused for the missing teams.
-8. **Given** the same server with no season, **When** the manager previews the mystery notice, **Then** the fabricated round is a mystery round and the notice is drawn rather than refused.
-9. **Given** the same server with no season, **When** the manager previews any of the three forecast phases, **Then** the fabricated round is not a mystery round and the forecast is drawn rather than refused.
+7. **Given** a server with no season whose general configuration holds no team beyond the Reserve team, **When** the manager previews the lineup, the results, the standings, the attendance sheet or a verdict, **Then** the command is refused for the missing teams.
+8. **Given** the same server, **When** the manager previews the calendar, the check-in call or any of the four weather kinds, **Then** a picture is returned, those kinds drawing neither a team nor a driver.
+9. **Given** the same server with no season, **When** the manager previews the mystery notice, **Then** the fabricated round is a mystery round and the notice is drawn rather than refused.
+10. **Given** the same server with no season, **When** the manager previews any of the three forecast phases, **Then** the fabricated round is not a mystery round and the forecast is drawn rather than refused.
 
 ---
 
@@ -76,6 +77,7 @@ A maintainer running test mode previews an image and sees their mock drivers dra
 - A server holding an approved season and a season pending approval — the approved one is drawn, and the season pending approval is not previewable while it stands.
 - A server whose only season is COMPLETED or CANCELLED — treated as no season at all, and the fabricated league is drawn at one number higher than the highest number that server has committed.
 - A season pending approval that has just been re-snapshotted, wiping its team instances — its divisions hold no team, and the team-requiring kinds are refused for that, as they are for an approved season.
+- A wholly bare server — no season and no configured team — previewing the calendar or a weather kind: drawn, the fabricated league supplying a division, a calendar and a round, and the picture carrying no team because the kind draws none.
 - A server with no season whose configured teams number one — the fabricated league is drawn over that one team, and the grids are as short as that makes them.
 - A server with no season whose configured teams carry one seat each — every fabricated grid holds one driver per team.
 - A fabricated calendar drawn for the calendar preview — it carries rounds of more than one format, so the format markers are all judged in one picture.
@@ -109,7 +111,7 @@ A maintainer running test mode previews an image and sees their mock drivers dra
 - **FR-009**: Where the server holds no season under FR-001, a preview MUST draw a fabricated league rather than refuse.
 - **FR-010**: The fabricated league's season number MUST be one higher than the highest season number the server has already committed, and MUST be 1 where the server has committed none.
 - **FR-011**: The fabricated league's teams MUST be the teams of the server's general configuration, excluding the Reserve team, with each team carrying the seat count that configuration gives it.
-- **FR-012**: Every preview MUST be refused where the server holds no season and its general configuration holds no team beyond the Reserve team, the refusal naming the missing teams and distinguishing itself from the refusal FR-006 gives for a division holding none.
+- **FR-012**: Where the server holds no season and its general configuration holds no team beyond the Reserve team, a preview of a kind that draws a team or a driver — the lineup, the results, the standings, the attendance sheet and the verdict — MUST be refused, the refusal naming the missing teams and distinguishing itself from the refusal FR-006 gives for a division holding none. A preview of a kind that draws neither — the calendar, the check-in call and the four weather kinds — MUST be drawn.
 - **FR-013**: The fabricated league's division name, division tier, calendar, round formats, round number, round tracks, round schedule and driver names MUST all be randomised.
 - **FR-014**: The fabricated league MUST be randomised afresh on each invocation, so that two invocations of one kind differ in everything FR-013 randomises.
 - **FR-015**: The fabricated calendar MUST hold rounds of more than one format where it holds more than one round.
@@ -166,7 +168,8 @@ A maintainer running test mode previews an image and sees their mock drivers dra
 - **A-010**: A mock driver carries no nationality because test mode creates the profile without a signup record, and nationality is a signup field. FR-028 draws such a driver without a flag rather than inventing one, because a seated driver is drawn as they stand.
 - **A-011**: The division autocomplete offering nothing on a season-less server is acceptable because FR-021 makes the parameter optional. A manager on such a server supplies neither parameter.
 - **A-012**: The fabricated calendar's length, the fabricated division's tier and the fabricated round's schedule are randomised within the bounds the bot already accepts for a real season. No preview draws a league the bot could not have been configured to run.
-- **A-013**: FR-012 refuses **every** kind on a server with no season and no configured teams, including the five that draw no team and no driver — the calendar and the four weather kinds. The fabricated league is built once and whole, and either can be built or cannot; a server in this state is one `/team add` away from every preview working. This is deliberately wider than feature 045's FR-011, which refuses only the kinds that draw teams, because there the division exists and only part of it is missing.
+- **A-013**: FR-012 divides the eleven kinds by what each actually draws. Six draw neither a team nor a driver — the calendar, the check-in call and the four weather kinds — and are drawn on a server with no season and no configured team, the fabricated league supplying only a division, a calendar and a round. Five draw one or the other — the lineup, the results, the standings, the attendance sheet and the verdict — and are refused, there being no team to seat a fabricated driver in.
+- **A-014**: The verdict belongs with the refused five, though feature 045's FR-011 does not name it. There a division exists and 045 fabricates a driver into one of its seats; here there is no team and therefore no seat, so the verdict has nothing to draw its driver's name, badge and team from.
 
 ## Documentation impact
 
