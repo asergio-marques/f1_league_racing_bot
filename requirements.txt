@@ -7,3 +7,4 @@ lxml>=5.0
 fonttools>=4.50
 pytest>=7
 pytest-asyncio>=0.23
+coverage>=7
