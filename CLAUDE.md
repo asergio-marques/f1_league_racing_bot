@@ -99,3 +99,30 @@ repo. Tests here stub Discord and exercise the code beneath it.
 Tests that pin a date must pin "now" alongside it. Several services accept a `now` parameter for
 exactly this; a test that seeds a future date and lets the code read the wall clock passes today
 and fails silently months later.
+
+**CI enforces a clean pass and a coverage floor.** `.github/workflows/unit-test.yml` runs the
+suite under `coverage run` and fails the build if any test fails or errors, and separately if
+line coverage falls below that workflow's `MIN_COVERAGE_REQUIRED` value. Read the threshold from
+the workflow rather than quoting a number here — it moves independently of this file, and a
+number written here would go stale the moment someone changes it there. A change is not
+complete if it drops the suite below that floor or leaves a test failing or erroring. A skip is
+not itself a build failure, but it is a gap in what "the suite passes" actually verified — treat
+a new one as something to justify, not a convenient way to silence a broken test.
+
+**A test that needs Inkscape carries the `rasteriser` marker and does not run in CI.** Inkscape
+is a separate program, too heavy to install on a hosted runner for what it returns there, so
+`.github/workflows/unit-test.yml` deselects the marker with `-m "not rasteriser"`. The marker is
+the only mechanism: `tests/conftest.py` also skips marked tests, with a reason, on a local host
+that has no Inkscape. Do not write a bare `if not converter_available(): pytest.skip(...)` guard
+inside a test — mark it instead.
+
+Mark a test only when it genuinely rasterises — it inspects a PNG, asserts pixels, or asserts
+real output paths exist. A test that merely passes through the rasteriser check on its way to
+something else is **not** a rasteriser test: monkeypatch `converter_available` to `True` and keep
+it in CI, or it will silently stop testing what it claims the moment Inkscape is absent. The
+rasteriser check runs first in `render_for_posting`, so without the patch such a test gets a
+`RASTERISER` problem instead of the outcome it means to pin.
+
+**Run the marked tests by hand before reporting image-module work complete:**
+`pytest tests/ -q -m rasteriser` on a host with Inkscape. CI cannot cover them, so nothing else
+will catch a break. Verify their output as PNG, never as SVG in a browser.

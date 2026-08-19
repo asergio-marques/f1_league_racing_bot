@@ -22,10 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.image_config_service import ImageConfigService  # noqa: E402
-from services.image_render_service import (  # noqa: E402
-    ImageRenderService,
-    converter_available,
-)
+from services.image_render_service import ImageRenderService  # noqa: E402
 from services.image_preview_service import (  # noqa: E402
     build_attendance_preview,
     build_calendar_preview,
@@ -62,11 +59,9 @@ PACKAGED_TEAMS = (
 
 #: The rasteriser is a separate program no package declaration installs. Where it is absent
 #: the pipeline cannot be exercised at all, and skipping is the honest outcome — the render
-#: service refuses in exactly the same way, which is covered elsewhere.
-requires_rasteriser = pytest.mark.skipif(
-    not converter_available(use_cache=False),
-    reason="Inkscape is not installed on this host",
-)
+#: service refuses in exactly the same way, which is covered elsewhere. The marker also
+#: takes these out of CI, which does not install Inkscape; see tests/conftest.py.
+requires_rasteriser = pytest.mark.rasteriser
 
 
 def png_size(path) -> tuple[int, int]:

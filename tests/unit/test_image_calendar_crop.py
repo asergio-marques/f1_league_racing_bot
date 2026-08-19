@@ -19,7 +19,7 @@ from lxml import etree
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from services.image_calendar_service import build_fill_spec, resolve_drawing
-from services.image_render_service import converter_available, rasterise
+from services.image_render_service import rasterise
 from utils.svg_document import canvas_of
 from utils.svg_fill import fill
 
@@ -219,7 +219,7 @@ def test_removing_a_middle_member_does_not_look_like_a_gap():
     assert not result.unresolved, result.unresolved
 
 
-@pytest.mark.skipif(not converter_available(), reason="rasteriser not installed")
+@pytest.mark.rasteriser
 @pytest.mark.parametrize("held", [1, 3, TEMPLATE_ROUNDS])
 def test_rasterised_png_height_matches_the_crop_point(held, tmp_path):
     root, _ = _filled(held)
