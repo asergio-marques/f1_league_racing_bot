@@ -368,3 +368,46 @@ ASSET_CLASS_ASPECTS: dict[str, float] = {
 #: drew. 1% admits honest authoring and still catches a square slot given a 3:2
 #: flag, which is a 50% error. No plausible authoring mistake lands inside it.
 ASSET_ASPECT_TOLERANCE = 0.01
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# The `/images test` kinds (046)
+# ─────────────────────────────────────────────────────────────────────────
+
+#: One entry per `/images test` subcommand, describing what that kind needs and what it
+#: draws. It replaces the ad-hoc `require_rounds` / `require_teams` / `require_mystery`
+#: flags each call site passed at 045, so that three separate rules — which parameters a
+#: command requires, whether a bare server may draw it, and what format its round must
+#: carry — are read from one table rather than restated eleven times.
+#:
+#: ``draws_roster`` is the load-bearing column and is settled by reading each builder, not
+#: by reading a specification. Two entries mislead anyone who assumes otherwise:
+#:
+#:   * ``rsvp`` draws division, round, format, track, schedule and deadline, and touches
+#:     neither ``context.teams`` nor ``context.drivers`` — so it draws on a server that has
+#:     configured no team at all.
+#:   * ``verdict`` opens on ``context.drivers[0]`` and reads that driver's ``team_name``
+#:     for the badge — so it does not.
+#:
+#: ``format_demanded`` is ``None`` where the kind accepts any round, ``False`` where a
+#: mystery round must be refused, and ``True`` where anything but one must be. The same
+#: tri-state ``require_mystery`` already uses.
+PREVIEW_KINDS: dict[str, dict[str, object]] = {
+    "calendar":        {"needs_round": False, "draws_roster": False, "format_demanded": None},
+    "lineup":          {"needs_round": False, "draws_roster": True,  "format_demanded": None},
+    "results":         {"needs_round": True,  "draws_roster": True,  "format_demanded": None},
+    "standings":       {"needs_round": True,  "draws_roster": True,  "format_demanded": None},
+    "attendance":      {"needs_round": True,  "draws_roster": True,  "format_demanded": None},
+    "verdict":         {"needs_round": True,  "draws_roster": True,  "format_demanded": None},
+    "rsvp":            {"needs_round": True,  "draws_roster": False, "format_demanded": None},
+    "weather-p1":      {"needs_round": True,  "draws_roster": False, "format_demanded": False},
+    "weather-p2":      {"needs_round": True,  "draws_roster": False, "format_demanded": False},
+    "weather-p3":      {"needs_round": True,  "draws_roster": False, "format_demanded": False},
+    "weather-mystery": {"needs_round": True,  "draws_roster": False, "format_demanded": True},
+}
+
+#: The kinds a division's team list is required for. Derived rather than written out, so
+#: the two can never disagree.
+ROSTER_DRAWING_KINDS: frozenset[str] = frozenset(
+    kind for kind, spec in PREVIEW_KINDS.items() if spec["draws_roster"]
+)

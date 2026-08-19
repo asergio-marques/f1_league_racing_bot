@@ -122,10 +122,10 @@ class TestTheGroup:
 
 
 class TestDivisionAutocomplete:
-    async def test_it_offers_the_active_seasons_divisions(self, cog):
+    async def test_it_offers_the_drawn_seasons_divisions(self, cog):
         cog.bot = SimpleNamespace(
             season_service=SimpleNamespace(
-                get_active_season=_async(SimpleNamespace(id=7)),
+                get_previewable_season=_async(SimpleNamespace(id=7)),
                 get_divisions=_async(
                     [SimpleNamespace(name="Division 1"), SimpleNamespace(name="Division 2")]
                 ),
@@ -139,7 +139,7 @@ class TestDivisionAutocomplete:
     async def test_it_filters_by_what_has_been_typed(self, cog):
         cog.bot = SimpleNamespace(
             season_service=SimpleNamespace(
-                get_active_season=_async(SimpleNamespace(id=7)),
+                get_previewable_season=_async(SimpleNamespace(id=7)),
                 get_divisions=_async(
                     [SimpleNamespace(name="Premier"), SimpleNamespace(name="Academy")]
                 ),
@@ -152,7 +152,7 @@ class TestDivisionAutocomplete:
 
     async def test_it_offers_nothing_where_there_is_no_active_season(self, cog):
         cog.bot = SimpleNamespace(
-            season_service=SimpleNamespace(get_active_season=_async(None))
+            season_service=SimpleNamespace(get_previewable_season=_async(None))
         )
 
         assert await cog._division_autocomplete(_Interaction(), "") == []
@@ -162,7 +162,7 @@ class TestDivisionAutocomplete:
             raise RuntimeError("database is away")
 
         cog.bot = SimpleNamespace(
-            season_service=SimpleNamespace(get_active_season=_raise)
+            season_service=SimpleNamespace(get_previewable_season=_raise)
         )
 
         assert await cog._division_autocomplete(_Interaction(), "") == []
@@ -170,7 +170,7 @@ class TestDivisionAutocomplete:
     async def test_it_never_offers_more_than_discord_accepts(self, cog):
         cog.bot = SimpleNamespace(
             season_service=SimpleNamespace(
-                get_active_season=_async(SimpleNamespace(id=7)),
+                get_previewable_season=_async(SimpleNamespace(id=7)),
                 get_divisions=_async(
                     [SimpleNamespace(name=f"Division {n}") for n in range(40)]
                 ),
@@ -345,11 +345,10 @@ class TestTheElevenCommands:
             names = [p.name for p in command.parameters]
             assert names == self.EXPECTED[command.name], command.name
 
-    def test_every_parameter_is_mandatory(self):
-        """Both inputs are mandatory on every command that takes them (FR-003, FR-004)."""
-        for command in ImageCog.test.commands:
-            for parameter in command.parameters:
-                assert parameter.required, f"{command.name}.{parameter.name}"
+    # 045's `test_every_parameter_is_mandatory` is withdrawn at 046. Both inputs became
+    # optional so that a season-less server can draw with neither, and whether a value is
+    # *required* moved from the platform to resolution — see
+    # `TestBothParametersAreOptional` below, which asserts the inverse.
 
     def test_the_division_parameter_always_completes(self):
         for command in ImageCog.test.commands:
@@ -368,3 +367,223 @@ def _async(value):
         return value
 
     return _call
+
+
+# ── 046 US1: which season the reply names ─────────────────────────────────
+
+
+class TestTheReplyNamesTheSeason:
+    """FR-004. A manager can always tell which season was drawn, without opening the
+    picture — and is told plainly where that season is not yet approved."""
+
+    async def test_the_header_names_the_season_number(self, cog):
+        interaction = _Interaction()
+        await interaction.response.defer()
+
+        await cog._send_preview(
+            interaction,
+            title="Calendar",
+            context=_context(season_number=7),
+            outcomes=[("Calendar", "calendar_template", _outcome())],
+        )
+
+        assert "season 7" in interaction.followup.messages[0]
+
+    async def test_a_pending_season_is_called_out(self, cog):
+        interaction = _Interaction()
+        await interaction.response.defer()
+
+        await cog._send_preview(
+            interaction,
+            title="Calendar",
+            context=_context(season_number=2, season_pending_approval=True),
+            outcomes=[("Calendar", "calendar_template", _outcome())],
+        )
+
+        message = interaction.followup.messages[0]
+        assert "pending approval" in message
+        assert "/season approve" in message
+
+    async def test_an_approved_season_says_nothing_about_approval(self, cog):
+        interaction = _Interaction()
+        await interaction.response.defer()
+
+        await cog._send_preview(
+            interaction,
+            title="Calendar",
+            context=_context(season_number=2),
+            outcomes=[("Calendar", "calendar_template", _outcome())],
+        )
+
+        assert "pending approval" not in interaction.followup.messages[0]
+
+
+class TestAutocompleteFollowsTheDrawnSeason:
+    async def test_a_season_pending_approval_offers_its_divisions(self, cog):
+        """The lookup is the service's; the cog must simply ask the right question."""
+        cog.bot = SimpleNamespace(
+            season_service=SimpleNamespace(
+                get_previewable_season=_async(SimpleNamespace(id=9)),
+                get_divisions=_async([SimpleNamespace(name="Pending Division")]),
+            )
+        )
+
+        choices = await cog._division_autocomplete(_Interaction(), "")
+
+        assert [c.value for c in choices] == ["Pending Division"]
+
+    async def test_a_season_less_server_offers_nothing_and_does_not_raise(self, cog):
+        cog.bot = SimpleNamespace(
+            season_service=SimpleNamespace(
+                get_previewable_season=_async(None),
+                get_divisions=_async([]),
+            )
+        )
+
+        assert await cog._division_autocomplete(_Interaction(), "") == []
+
+
+# ── 046 US2: the command surface on a season-less server ──────────────────
+
+
+class TestBothParametersAreOptional:
+    """FR-021. Optionality is a platform relaxation; whether a value is *required* is
+    decided at resolution, by whether a season exists."""
+
+    def test_no_preview_command_declares_a_required_parameter(self):
+        for command in ImageCog.test.commands:
+            for parameter in command.parameters:
+                assert not parameter.required, f"{command.name}.{parameter.name}"
+
+    def test_every_round_scoped_command_still_offers_a_round(self):
+        from models.image_constants import PREVIEW_KINDS
+
+        for command in ImageCog.test.commands:
+            names = {p.name for p in command.parameters}
+            expected = {"division"}
+            if PREVIEW_KINDS[command.name]["needs_round"]:
+                expected.add("round")
+            assert names == expected, command.name
+
+
+class TestTheFabricatedLeagueBanner:
+    """FR-024. A manager cannot mistake an invented league for their own."""
+
+    async def test_it_says_the_league_is_invented(self, cog):
+        interaction = _Interaction()
+        await interaction.response.defer()
+
+        await cog._send_preview(
+            interaction,
+            title="Calendar",
+            context=_context(fabricated_league=True),
+            outcomes=[("Calendar", "calendar_template", _outcome())],
+        )
+
+        message = interaction.followup.messages[0]
+        assert "no season" in message
+        assert "invented" in message
+        assert "Nothing has been saved" in message
+
+    async def test_it_distinguishes_the_teams_as_the_servers_own(self, cog):
+        """The one part of a fabricated league that is not made up."""
+        interaction = _Interaction()
+        await interaction.response.defer()
+
+        await cog._send_preview(
+            interaction,
+            title="Lineup",
+            context=_context(fabricated_league=True),
+            outcomes=[("Lineup", "lineup_template", _outcome())],
+        )
+
+        assert "team names are your own" in interaction.followup.messages[0]
+
+    async def test_a_real_league_gets_no_banner(self, cog):
+        interaction = _Interaction()
+        await interaction.response.defer()
+
+        await cog._send_preview(
+            interaction,
+            title="Calendar",
+            context=_context(),
+            outcomes=[("Calendar", "calendar_template", _outcome())],
+        )
+
+        assert "invented" not in interaction.followup.messages[0]
+
+    async def test_the_seat_note_is_not_repeated_on_a_fabricated_league(self, cog):
+        """It would tell a manager to seat drivers in a division that does not exist."""
+        interaction = _Interaction()
+        await interaction.response.defer()
+
+        await cog._send_preview(
+            interaction,
+            title="Lineup",
+            context=_context(fabricated_league=True, fabricated_drivers=True),
+            outcomes=[("Lineup", "lineup_template", _outcome())],
+        )
+
+        assert "Seat your drivers" not in interaction.followup.messages[0]
+
+    async def test_a_real_division_with_empty_seats_still_gets_the_seat_note(self, cog):
+        interaction = _Interaction()
+        await interaction.response.defer()
+
+        await cog._send_preview(
+            interaction,
+            title="Lineup",
+            context=_context(fabricated_drivers=True),
+            outcomes=[("Lineup", "lineup_template", _outcome())],
+        )
+
+        assert "Seat your drivers" in interaction.followup.messages[0]
+
+
+# ── 046 US3: the nationality tally in the reply ───────────────────────────
+
+
+class TestTheNoNationalityTally:
+    """FR-028. Blank flags because the drivers record no nationality, not because the
+    flag directory is broken — and a maintainer must be able to tell which."""
+
+    async def test_the_tally_is_reported(self, cog):
+        interaction = _Interaction()
+        await interaction.response.defer()
+
+        await cog._send_preview(
+            interaction,
+            title="Lineup",
+            context=_context(drivers_without_nationality=4),
+            outcomes=[("Lineup", "lineup_template", _outcome())],
+        )
+
+        message = interaction.followup.messages[0]
+        assert "4 seated drivers record no nationality" in message
+        assert "test-mode driver" in message
+
+    async def test_one_driver_reads_as_singular(self, cog):
+        interaction = _Interaction()
+        await interaction.response.defer()
+
+        await cog._send_preview(
+            interaction,
+            title="Lineup",
+            context=_context(drivers_without_nationality=1),
+            outcomes=[("Lineup", "lineup_template", _outcome())],
+        )
+
+        assert "1 seated driver records no nationality" in interaction.followup.messages[0]
+
+    async def test_nothing_is_said_where_every_driver_records_one(self, cog):
+        interaction = _Interaction()
+        await interaction.response.defer()
+
+        await cog._send_preview(
+            interaction,
+            title="Lineup",
+            context=_context(),
+            outcomes=[("Lineup", "lineup_template", _outcome())],
+        )
+
+        assert "no nationality" not in interaction.followup.messages[0]

@@ -325,6 +325,40 @@ def _kind_for_layer(failed_layer: int | None) -> str:
     return PROBLEM_NOT_FOUND
 
 
+def _removed_field_ids(index, removed) -> set[str]:
+    """*removed*, plus every field name standing inside what it removes.
+
+    A removable group is named for the field it wraps and takes its entire subtree off the
+    graphic when the rules empty that field (Constitution XIV.2). Only the group's own id
+    reaches ``spec.remove``; its children keep ids of their own and would otherwise still
+    be demanded by the mandatory sweep — abandoning the render over a field that is no
+    longer drawn, which XIV.2 says explicitly "is not a failure".
+
+    Names are gathered the way :class:`FieldIndex` addresses them: every ``@id``, and an
+    ``inkscape:label`` only where the node is a layer. Sweeping in the labels Inkscape
+    writes on ordinary shapes would let an unrelated field escape the sweep.
+    """
+    from utils.svg_document import INKSCAPE_NS
+
+    label_attr = f"{{{INKSCAPE_NS}}}label"
+    groupmode_attr = f"{{{INKSCAPE_NS}}}groupmode"
+
+    gone: set[str] = set(removed)
+    for name in removed:
+        node = index.resolve(name)
+        if node is None:
+            continue
+        for element in node.iter():
+            element_id = element.get("id")
+            if element_id:
+                gone.add(element_id)
+            if element.get(groupmode_attr) == "layer":
+                label = element.get(label_attr)
+                if label:
+                    gone.add(label)
+    return gone
+
+
 def _verify_against_data(root, spec, image_type: str) -> Problem | None:
     """Check the template against the values it is about to receive (FR-010 … FR-014).
 
@@ -422,7 +456,14 @@ def _verify_against_data(root, spec, image_type: str) -> Problem | None:
     # XIV.3: a field taken off the canvas by a group removal or a vertical crop is not
     # unresolved. A division holding fewer members than its template declares draws none
     # of the surplus, and must not be asked for their values.
-    checkable -= set(getattr(spec, "off_canvas", set())) | set(spec.remove)
+    #
+    # `spec.remove` names the nodes removed, and a removed **group** takes its whole
+    # subtree with it (XIV.2) — but only the group's own id appears in that list. The
+    # children have to be gathered from the tree, or a mandatory field wrapped in a
+    # removed group is still demanded and the render is abandoned over a field that is no
+    # longer on the graphic.
+    checkable -= set(getattr(spec, "off_canvas", set()))
+    checkable -= _removed_field_ids(index, spec.remove)
     # A value the data determined to be empty is determined. An unoccupied lineup seat is
     # drawn with its name cleared because the template's layout is fixed, and that is the
     # graphic being correct rather than a value going missing (XIV.3).

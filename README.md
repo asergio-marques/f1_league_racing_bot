@@ -1475,7 +1475,7 @@ The same summary is appended to `/season review`, which additionally names each 
 #### `/images test` — Preview a kind against your own league
 *Access: Trusted admin*
 
-Eleven commands, one per kind of image. Each is drawn against a **division of your active season** — your rounds, your teams, your drivers, your circuits and your own artwork — and replies with the PNG, visible only to you.
+Eleven commands, one per kind of image. Each is drawn against **your own league** — your rounds, your teams, your drivers, your circuits and your own artwork — and replies with the PNG, visible only to you.
 
 | Command | Parameters |
 |---------|------------|
@@ -1491,7 +1491,22 @@ Eleven commands, one per kind of image. Each is drawn against a **division of yo
 | `/images test weather-mystery` | `division`, `round` |
 | `/images test verdict` | `division`, `round` |
 
-`division` completes as you type, offering the divisions of the active season. Both parameters are required wherever they appear.
+`division` completes as you type. Both parameters are optional, and whether you need them depends on what your server holds.
+
+**The previews work at every point in a league's life**, which is the point of them — you check your templates *before* committing to a season, not after.
+
+| What your server holds | What is drawn | The parameters |
+|---|---|---|
+| An **approved** season | That season | Required |
+| A season **pending approval**, and none approved | That season, drawn exactly as it will be once `/season approve` has run | Required |
+| Both | The approved one | Required |
+| **No season at all** | An invented league over your own configured teams | Ignored — omit them |
+
+A season that has been completed or cancelled is not previewable; a server holding only those counts as holding none.
+
+**When your server has no season**, the bot invents a league rather than refusing. Your **team names are your own**, taken from `/team add` — that matters, because a lineup template names its fields after your real teams and a preview over made-up names would tell you nothing. Everything else is made up: the division and its tier, the calendar, the circuits, the round drawn and the driver names, all differing every time you run it. The season number counts on from your last one. The reply says plainly that the league is invented, and nothing is ever saved.
+
+Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four `weather-*` — so they work on a server that has configured no teams at all. The other five need a roster and are refused until you have added teams.
 
 **What is real, and what is invented.** Everything a league configures is real: the division and its tier, the season number, the calendar, the teams, the seated drivers and their nationalities, and the artwork in the folders you set. What the bot invents is only what a round that has not been run cannot have — the finishing order, the forecast, the attendance points and the steward's verdict. A division with no seated driver at all has drivers invented for it as well, and the reply says so.
 
@@ -1501,7 +1516,9 @@ Eleven commands, one per kind of image. Each is drawn against a **division of yo
 
 | Refusal | Applies to |
 |---------|-----------|
-| No active season, or no division of that name | all eleven |
+| No division of that name in the season being drawn | all eleven |
+| A parameter was omitted, and your server has a season to resolve it against | all eleven |
+| Your server has no season **and** no configured team | `lineup`, `results`, `standings`, `attendance`, `verdict` |
 | The division holds no configured round | `calendar` |
 | The division holds no round of that number | the nine that take one |
 | The division holds no team beyond Reserve | `lineup`, `results`, `standings`, `attendance` |

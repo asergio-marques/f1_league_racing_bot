@@ -21,6 +21,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from db.database import get_connection
+from models.image_constants import PREVIEW_KINDS
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +31,10 @@ log = logging.getLogger(__name__)
 #: The reasons a preview refuses, in the order they are evaluated. A caller reads the
 #: reason; a league manager reads the message. Both come from one raise, so the two cannot
 #: drift apart across eleven commands.
+
+#: Withdrawn at 046 as a *refusal*. A server holding no season now draws a fabricated
+#: league instead, so nothing raises this any more; the name survives only because callers
+#: and tests still refer to it.
 REASON_NO_SEASON = "no_season"
 REASON_NO_DIVISION = "no_division"
 REASON_NO_ROUNDS = "no_rounds"
@@ -37,6 +42,14 @@ REASON_NO_ROUND = "no_round"
 REASON_NO_TEAMS = "no_teams"
 REASON_MYSTERY_ROUND = "mystery_round"
 REASON_NOT_MYSTERY_ROUND = "not_mystery_round"
+
+#: A season exists, so it must be resolved against, and a required parameter was omitted.
+REASON_MISSING_INPUT = "missing_input"
+
+#: No season *and* no configured team, for a kind that draws a roster. Deliberately
+#: distinct from REASON_NO_TEAMS: that one says a division holds no team, this one that the
+#: server has configured none at all, and a manager must be able to tell them apart.
+REASON_NO_SERVER_TEAMS = "no_server_teams"
 
 
 class PreviewRefused(Exception):
@@ -89,7 +102,13 @@ class DirectoryFault:
 
 @dataclass
 class PreviewContext:
-    """Everything the eleven previews resolve in common."""
+    """Everything the eleven previews resolve in common.
+
+    The context is deliberately **self-sufficient**: every datum a builder draws is on it,
+    and no builder reaches back to the database for something the context could carry.
+    That is what lets one context invented wholesale — a league with no row behind it at
+    all — flow through all eleven builders unchanged (046).
+    """
 
     server_id: int
     season_number: int
@@ -97,13 +116,28 @@ class PreviewContext:
     division_name: str
     division_tier: int
     round: object | None = None
+    #: The division's whole calendar, resolved once. Three builders used to re-query this
+    #: by ``division_id``; a fabricated league has no such row, and re-querying would have
+    #: drawn it an empty calendar rather than the one it invented.
+    rounds: list = field(default_factory=list)
     teams: list = field(default_factory=list)
     drivers: list[PreviewDriver] = field(default_factory=list)
     display_names: dict[str, str] = field(default_factory=dict)
     nationality_collected: bool = True
     asset_directories: dict[str, Path] = field(default_factory=dict)
     directory_faults: list[DirectoryFault] = field(default_factory=list)
+    #: Drivers invented into the empty seats of a **real** division (045).
     fabricated_drivers: bool = False
+    #: The whole league is invented, there being no season to draw (046). Never true at the
+    #: same time as ``season_pending_approval``: a league is fabricated precisely because
+    #: no season exists to be pending anything.
+    fabricated_league: bool = False
+    #: The season drawn is still awaiting ``/season approve``.
+    season_pending_approval: bool = False
+    #: Seated drivers drawn with no flag where the league collects nationality. A test-mode
+    #: mock driver records none, and a manager reading the reply should be told why the
+    #: flags are absent rather than left to guess.
+    drivers_without_nationality: int = 0
 
 
 # ── Fabricated drivers ────────────────────────────────────────────────────
@@ -161,13 +195,16 @@ def _fabricated_driver(index: int, team_name: str, seat_number: int, *, collecte
 async def resolve_context(
     bot,
     server_id: int,
-    division_name: str,
+    division_name: str | None = None,
     *,
     guild=None,
     round_number: int | None = None,
+    kind: str | None = None,
     require_rounds: bool = False,
     require_teams: bool = False,
     require_mystery: bool | None = None,
+    rng=None,
+    now=None,
 ) -> PreviewContext:
     """Resolve a league's own data for one preview, or refuse and say why.
 
@@ -175,16 +212,56 @@ async def resolve_context(
     division is never reported as a missing round and a wrong round number is never
     reported as a missing team list.
 
+    Where the server holds **no season at all**, there is nothing to resolve against and a
+    fabricated league is drawn instead (FR-009). The division name and round number are
+    disregarded there, and *kind* decides what the fabricated league must satisfy.
+
+    *kind* names the preview, and where it is given the three ``require_*`` flags are read
+    from ``PREVIEW_KINDS`` rather than passed. They remain for callers that predate it.
+
     *require_mystery* is ``None`` where the kind places no constraint on the round's
     format, ``False`` where a mystery round must be refused, and ``True`` where anything
     but a mystery round must be.
     """
-    season = await bot.season_service.get_active_season(server_id)
+    if kind is not None:
+        spec = PREVIEW_KINDS[kind]
+        require_rounds = kind == "calendar"
+        require_teams = bool(spec["draws_roster"])
+        require_mystery = spec["format_demanded"]
+
+    # The approved season where there is one, the season pending approval otherwise
+    # (FR-001). A season pending approval holds its divisions, rounds, teams, seats and
+    # driver assignments in the same tables and the same shape as an approved one, so
+    # widening the lookup is the whole of what drawing it takes.
+    season = await bot.season_service.get_previewable_season(server_id)
+
     if season is None:
+        # No season to resolve against, so the league is invented rather than the command
+        # refused (FR-009). Whatever division name or round number was supplied is
+        # disregarded: there is nothing for either to name (FR-022).
+        from services.image_preview_league import build_fabricated_context
+
+        return await build_fabricated_context(
+            bot, server_id, kind=kind or "calendar", rng=rng, now=now
+        )
+
+    pending_approval = str(getattr(season.status, "value", season.status)) == "SETUP"
+
+    # A season exists, so it must be resolved against and nothing is fabricated to stand in
+    # for configuration that is absent (FR-007, FR-008).
+    if not (division_name or "").strip():
         raise PreviewRefused(
-            REASON_NO_SEASON,
-            "⛔ This server has no active season, so there is no division to draw. "
-            "Set one up with `/season setup` first.",
+            REASON_MISSING_INPUT,
+            "⛔ This server has a season, so a preview must name which division to "
+            "draw. Supply the `division` option.",
+        )
+    if round_number is None and (
+        kind is not None and PREVIEW_KINDS[kind]["needs_round"]
+    ):
+        raise PreviewRefused(
+            REASON_MISSING_INPUT,
+            "⛔ This preview is drawn for one round, and this server has a season to "
+            "draw it from. Supply the `round` option.",
         )
 
     divisions = await bot.season_service.get_divisions(season.id)
@@ -206,9 +283,11 @@ async def resolve_context(
         division_id=division.id,
         division_name=division.name,
         division_tier=division.tier,
+        season_pending_approval=pending_approval,
     )
 
     rounds = await bot.season_service.get_division_rounds(division.id)
+    context.rounds = rounds
 
     if require_rounds and not rounds:
         raise PreviewRefused(
@@ -344,6 +423,17 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
     context.drivers, context.fabricated_drivers = _drivers_from_teams(
         teams, context.display_names, collected=context.nationality_collected
     )
+
+    # A seated driver with no nationality of their own is drawn without a flag, as a
+    # posting would draw them (FR-028). Counting them lets the reply say why the flags are
+    # missing — a test-mode mock driver records none, having no signup record, and a
+    # maintainer would otherwise read the blank flags as a broken asset directory.
+    if context.nationality_collected:
+        context.drivers_without_nationality = sum(
+            1
+            for driver in context.drivers
+            if not driver.fabricated and not driver.nationality
+        )
 
 
 def _drivers_from_teams(
@@ -521,7 +611,7 @@ async def build_calendar_preview(bot, context: PreviewContext):
     from services.image_calendar_service import build_fill_spec, resolve_drawing
 
     config = await bot.image_config_service.get_config(context.server_id)
-    rounds = await bot.season_service.get_division_rounds(context.division_id)
+    rounds = context.rounds
     tracks = await tracks_by_name(bot.db_path)
 
     drawing = resolve_drawing(
@@ -888,7 +978,7 @@ async def build_attendance_preview(bot, context: PreviewContext):
 
     names, _teams, flags, _role_of = _driver_maps(context)
     round_obj = context.round
-    rounds = await bot.season_service.get_division_rounds(context.division_id)
+    rounds = context.rounds
     tracks = await _tracks(bot)
 
     headings = []

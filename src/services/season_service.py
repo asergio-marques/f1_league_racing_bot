@@ -89,6 +89,51 @@ class SeasonService:
             return None
         return _row_to_season(row)
 
+    async def get_previewable_season(self, server_id: int) -> Season | None:
+        """Return the season an `/images test` preview draws, or None.
+
+        The approved season where there is one, and the season pending approval where
+        there is none approved. A COMPLETED or CANCELLED season is never previewable: a
+        preview is a check on what the league is running or about to run.
+
+        Deliberately **not** `get_setup_or_active_season`, which is `LIMIT 1` with no
+        `ORDER BY` — where a league builds next season while this one runs, both rows match
+        and which comes back is uncontracted. Here the precedence is the whole point, so it
+        is written into the query.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
+                "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
+                (server_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return _row_to_season(row)
+
+    async def get_previous_season_number(self, server_id: int) -> int:
+        """The highest season number *server_id* has already committed, or 0.
+
+        "Committed" means the number has been issued and cannot be re-used — every status
+        but SETUP. A season still in setup holds a provisional number and is excluded, so
+        that a league drafting its next season does not push the count forward twice.
+
+        Not `server_configs.previous_season_number`, which is written by nothing and reads
+        0 on every server whatever its history.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT MAX(season_number) AS highest FROM seasons "
+                "WHERE server_id = ? AND status != 'SETUP'",
+                (server_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None or row["highest"] is None:
+            return 0
+        return int(row["highest"])
+
     async def get_setup_season(self, server_id: int) -> Season | None:
         """Return the SETUP season for *server_id*, or None."""
         async with get_connection(self._db_path) as db:

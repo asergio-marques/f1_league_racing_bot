@@ -915,13 +915,18 @@ class ImageCog(commands.Cog):
     async def _division_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
-        """The divisions of the active season, which is what a preview can be drawn for.
+        """The divisions of whichever season a preview draws (FR-003).
 
-        A division of an archived season is deliberately absent: a preview is a check on
-        what the league is about to run.
+        The approved season where there is one, the season pending approval otherwise —
+        so a league can complete on its divisions before `/season approve` has been run.
+        A division of a completed or cancelled season is deliberately absent: a preview is
+        a check on what the league is running or about to run.
+
+        On a server holding no season this offers nothing, which is why the parameter is
+        optional there: such a server draws a fabricated league and needs no name.
         """
         try:
-            season = await self.bot.season_service.get_active_season(  # type: ignore[attr-defined]
+            season = await self.bot.season_service.get_previewable_season(  # type: ignore[attr-defined]
                 interaction.guild_id
             )
             if season is None:
@@ -942,18 +947,21 @@ class ImageCog(commands.Cog):
         interaction: discord.Interaction,
         *,
         title: str,
-        division: str,
+        kind: str,
+        division: str | None,
         build,
         round_number: int | None = None,
-        require_rounds: bool = False,
-        require_teams: bool = False,
-        require_mystery: bool | None = None,
     ) -> None:
         """The body every preview command shares.
 
         Guards, then resolves, then draws. The order matters: a fault of configuration is
         reported as one and never as a failure to render (FR-015), and the rasteriser is
         checked before anything is resolved because its absence defeats every kind alike.
+
+        *kind* names the preview, and the three conditions 045 passed as separate flags —
+        whether rounds are required, whether teams are, and what format the round must
+        carry — are read from `PREVIEW_KINDS` off it. One table, read in one place, rather
+        than three rules restated at eleven call sites.
         """
         from services.image_preview_service import PreviewRefused, resolve_context
         from services.image_render_service import (
@@ -979,9 +987,7 @@ class ImageCog(commands.Cog):
                 division,
                 guild=interaction.guild,
                 round_number=round_number,
-                require_rounds=require_rounds,
-                require_teams=require_teams,
-                require_mystery=require_mystery,
+                kind=kind,
             )
         except PreviewRefused as refusal:
             await interaction.followup.send(refusal.message, ephemeral=True)
@@ -1012,11 +1018,13 @@ class ImageCog(commands.Cog):
         name="calendar",
         description="Preview the calendar image for one of your divisions.",
     )
-    @app_commands.describe(division="The division whose calendar to draw.")
+    @app_commands.describe(
+        division="The division whose calendar to draw. Omit where this server has no season."
+    )
     @channel_guard
     @admin_only
     async def test_calendar(
-        self, interaction: discord.Interaction, division: str
+        self, interaction: discord.Interaction, division: str | None = None
     ) -> None:
         from services.image_preview_service import build_calendar_preview
 
@@ -1026,8 +1034,8 @@ class ImageCog(commands.Cog):
         await self._run_preview(
             interaction,
             title="Calendar",
+            kind="calendar",
             division=division,
-            require_rounds=True,
             build=_build,
         )
 
@@ -1035,11 +1043,13 @@ class ImageCog(commands.Cog):
         name="lineup",
         description="Preview the lineup image for one of your divisions.",
     )
-    @app_commands.describe(division="The division whose lineup to draw.")
+    @app_commands.describe(
+        division="The division whose lineup to draw. Omit where this server has no season."
+    )
     @channel_guard
     @admin_only
     async def test_lineup(
-        self, interaction: discord.Interaction, division: str
+        self, interaction: discord.Interaction, division: str | None = None
     ) -> None:
         from services.image_preview_service import build_lineup_preview
 
@@ -1049,8 +1059,8 @@ class ImageCog(commands.Cog):
         await self._run_preview(
             interaction,
             title="Lineup",
+            kind="lineup",
             division=division,
-            require_teams=True,
             build=_build,
         )
 
@@ -1059,12 +1069,16 @@ class ImageCog(commands.Cog):
         description="Preview the results image for one of your rounds.",
     )
     @app_commands.describe(
-        division="The division to draw for.", round="The round number to draw for."
+        division="The division to draw for. Omit where this server has no season.",
+        round="The round number to draw for. Omit where this server has no season.",
     )
     @channel_guard
     @admin_only
     async def test_results(
-        self, interaction: discord.Interaction, division: str, round: int
+        self,
+        interaction: discord.Interaction,
+        division: str | None = None,
+        round: int | None = None,
     ) -> None:
         from services.image_preview_service import build_results_preview
 
@@ -1074,9 +1088,9 @@ class ImageCog(commands.Cog):
         await self._run_preview(
             interaction,
             title="Results",
+            kind="results",
             division=division,
             round_number=round,
-            require_teams=True,
             build=_build,
         )
 
@@ -1085,12 +1099,16 @@ class ImageCog(commands.Cog):
         description="Preview the standings image for one of your rounds.",
     )
     @app_commands.describe(
-        division="The division to draw for.", round="The round number to draw for."
+        division="The division to draw for. Omit where this server has no season.",
+        round="The round number to draw for. Omit where this server has no season.",
     )
     @channel_guard
     @admin_only
     async def test_standings(
-        self, interaction: discord.Interaction, division: str, round: int
+        self,
+        interaction: discord.Interaction,
+        division: str | None = None,
+        round: int | None = None,
     ) -> None:
         from services.image_preview_service import build_standings_preview
 
@@ -1100,9 +1118,9 @@ class ImageCog(commands.Cog):
         await self._run_preview(
             interaction,
             title="Standings",
+            kind="standings",
             division=division,
             round_number=round,
-            require_teams=True,
             build=_build,
         )
 
@@ -1111,12 +1129,16 @@ class ImageCog(commands.Cog):
         description="Preview the attendance sheet image for one of your rounds.",
     )
     @app_commands.describe(
-        division="The division to draw for.", round="The round number to draw for."
+        division="The division to draw for. Omit where this server has no season.",
+        round="The round number to draw for. Omit where this server has no season.",
     )
     @channel_guard
     @admin_only
     async def test_attendance(
-        self, interaction: discord.Interaction, division: str, round: int
+        self,
+        interaction: discord.Interaction,
+        division: str | None = None,
+        round: int | None = None,
     ) -> None:
         from services.image_preview_service import build_attendance_preview
 
@@ -1126,9 +1148,9 @@ class ImageCog(commands.Cog):
         await self._run_preview(
             interaction,
             title="Attendance sheet",
+            kind="attendance",
             division=division,
             round_number=round,
-            require_teams=True,
             build=_build,
         )
 
@@ -1137,12 +1159,16 @@ class ImageCog(commands.Cog):
         description="Preview the check-in call image for one of your rounds.",
     )
     @app_commands.describe(
-        division="The division to draw for.", round="The round number to draw for."
+        division="The division to draw for. Omit where this server has no season.",
+        round="The round number to draw for. Omit where this server has no season.",
     )
     @channel_guard
     @admin_only
     async def test_rsvp(
-        self, interaction: discord.Interaction, division: str, round: int
+        self,
+        interaction: discord.Interaction,
+        division: str | None = None,
+        round: int | None = None,
     ) -> None:
         from services.image_preview_service import build_rsvp_preview
 
@@ -1152,6 +1178,7 @@ class ImageCog(commands.Cog):
         await self._run_preview(
             interaction,
             title="Check-in call",
+            kind="rsvp",
             division=division,
             round_number=round,
             build=_build,
@@ -1162,12 +1189,16 @@ class ImageCog(commands.Cog):
         description="Preview the verdict image for one of your rounds.",
     )
     @app_commands.describe(
-        division="The division to draw for.", round="The round number to draw for."
+        division="The division to draw for. Omit where this server has no season.",
+        round="The round number to draw for. Omit where this server has no season.",
     )
     @channel_guard
     @admin_only
     async def test_verdict(
-        self, interaction: discord.Interaction, division: str, round: int
+        self,
+        interaction: discord.Interaction,
+        division: str | None = None,
+        round: int | None = None,
     ) -> None:
         from services.image_preview_service import build_verdict_preview
 
@@ -1177,6 +1208,7 @@ class ImageCog(commands.Cog):
         await self._run_preview(
             interaction,
             title="Verdict",
+            kind="verdict",
             division=division,
             round_number=round,
             build=_build,
@@ -1187,12 +1219,16 @@ class ImageCog(commands.Cog):
         description="Preview the weather — phase 1 image for one of your rounds.",
     )
     @app_commands.describe(
-        division="The division to draw for.", round="The round number to draw for."
+        division="The division to draw for. Omit where this server has no season.",
+        round="The round number to draw for. Omit where this server has no season.",
     )
     @channel_guard
     @admin_only
     async def test_weather_p1(
-        self, interaction: discord.Interaction, division: str, round: int
+        self,
+        interaction: discord.Interaction,
+        division: str | None = None,
+        round: int | None = None,
     ) -> None:
         from services.image_preview_service import build_weather_preview
 
@@ -1202,9 +1238,9 @@ class ImageCog(commands.Cog):
         await self._run_preview(
             interaction,
             title="Weather — phase 1",
+            kind="weather-p1",
             division=division,
             round_number=round,
-            require_mystery=False,
             build=_build,
         )
 
@@ -1213,12 +1249,16 @@ class ImageCog(commands.Cog):
         description="Preview the weather — phase 2 image for one of your rounds.",
     )
     @app_commands.describe(
-        division="The division to draw for.", round="The round number to draw for."
+        division="The division to draw for. Omit where this server has no season.",
+        round="The round number to draw for. Omit where this server has no season.",
     )
     @channel_guard
     @admin_only
     async def test_weather_p2(
-        self, interaction: discord.Interaction, division: str, round: int
+        self,
+        interaction: discord.Interaction,
+        division: str | None = None,
+        round: int | None = None,
     ) -> None:
         from services.image_preview_service import build_weather_preview
 
@@ -1228,9 +1268,9 @@ class ImageCog(commands.Cog):
         await self._run_preview(
             interaction,
             title="Weather — phase 2",
+            kind="weather-p2",
             division=division,
             round_number=round,
-            require_mystery=False,
             build=_build,
         )
 
@@ -1239,12 +1279,16 @@ class ImageCog(commands.Cog):
         description="Preview the weather — phase 3 image for one of your rounds.",
     )
     @app_commands.describe(
-        division="The division to draw for.", round="The round number to draw for."
+        division="The division to draw for. Omit where this server has no season.",
+        round="The round number to draw for. Omit where this server has no season.",
     )
     @channel_guard
     @admin_only
     async def test_weather_p3(
-        self, interaction: discord.Interaction, division: str, round: int
+        self,
+        interaction: discord.Interaction,
+        division: str | None = None,
+        round: int | None = None,
     ) -> None:
         from services.image_preview_service import build_weather_preview
 
@@ -1254,9 +1298,9 @@ class ImageCog(commands.Cog):
         await self._run_preview(
             interaction,
             title="Weather — phase 3",
+            kind="weather-p3",
             division=division,
             round_number=round,
-            require_mystery=False,
             build=_build,
         )
 
@@ -1265,12 +1309,16 @@ class ImageCog(commands.Cog):
         description="Preview the mystery notice image for one of your rounds.",
     )
     @app_commands.describe(
-        division="The division to draw for.", round="The round number to draw for."
+        division="The division to draw for. Omit where this server has no season.",
+        round="The round number to draw for. Omit where this server has no season.",
     )
     @channel_guard
     @admin_only
     async def test_weather_mystery(
-        self, interaction: discord.Interaction, division: str, round: int
+        self,
+        interaction: discord.Interaction,
+        division: str | None = None,
+        round: int | None = None,
     ) -> None:
         from services.image_preview_service import build_weather_preview
 
@@ -1280,9 +1328,9 @@ class ImageCog(commands.Cog):
         await self._run_preview(
             interaction,
             title="Mystery notice",
+            kind="weather-mystery",
             division=division,
             round_number=round,
-            require_mystery=True,
             build=_build,
         )
 
@@ -1313,7 +1361,27 @@ class ImageCog(commands.Cog):
         header = f"**Preview — {title}** for `{context.division_name}`"
         if context.round is not None:
             header += f", round {context.round.round_number}"
+        # The season number is always named, so a manager can tell at a glance which
+        # season was drawn rather than inferring it from the picture (FR-004).
+        header += f" — season {context.season_number}"
         lines: list[str] = [header]
+
+        if getattr(context, "season_pending_approval", False):
+            lines.append(
+                "_This season is still pending approval. It is drawn exactly as it will "
+                "be once `/season approve` has run._"
+            )
+
+        # A manager must never mistake an invented league for their own (FR-024). Said
+        # before the pictures rather than after them, because it governs how every line
+        # below it should be read.
+        if getattr(context, "fabricated_league", False):
+            lines.append(
+                "⚠️ **This server has no season, so the league drawn here is invented.** "
+                "The team names are your own, taken from `/team add`; the division, the "
+                "calendar, the round, the circuits and the driver names are all made up, "
+                "and differ every time you run this. Nothing has been saved."
+            )
 
         all_notices = []
         for label, template_key, outcome in outcomes:
@@ -1330,12 +1398,33 @@ class ImageCog(commands.Cog):
             all_notices.extend(outcome.notices)
 
         # The drivers drawn are invented, and a manager must never mistake them for their
-        # own roster (FR-018).
-        if getattr(context, "fabricated_drivers", False):
+        # own roster (FR-018). Suppressed on a fabricated league, where the banner above
+        # has already said so of the whole thing and this would only repeat it — and would
+        # tell a manager to seat drivers in a division that does not exist.
+        if getattr(context, "fabricated_drivers", False) and not getattr(
+            context, "fabricated_league", False
+        ):
             lines.append("")
             lines.append(
                 "ℹ️ This division has no seated driver, so the names and nationalities "
                 "drawn are invented. Seat your drivers to preview your own."
+            )
+
+        # Flags absent because the drivers record no nationality, not because the artwork
+        # is missing (FR-028). Said plainly, so a maintainer previewing a test-mode roster
+        # does not go looking for a fault in their flag directory.
+        missing_nationality = getattr(context, "drivers_without_nationality", 0)
+        if missing_nationality:
+            subject = (
+                "1 seated driver records"
+                if missing_nationality == 1
+                else f"{missing_nationality} seated drivers record"
+            )
+            lines.append("")
+            lines.append(
+                f"ℹ️ {subject} no nationality, so they are drawn without a flag — as a "
+                f"real posting would draw them. A test-mode driver never records one, "
+                f"having no signup behind it."
             )
 
         # A directory the league configured that could not be resolved, distinguished from

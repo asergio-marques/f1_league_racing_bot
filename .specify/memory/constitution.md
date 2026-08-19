@@ -1,6 +1,45 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-19 — v5.0.0 → v5.0.1: PATCH — the test commands are subcommands, not parameter values]
+  Version change    : 5.0.0 → 5.0.1
+  Bump rationale    : PATCH. Two statements in the versioned entity inventory described the
+                      `/images test` family as a parameter carrying choice values. That stopped
+                      being true when 045 shipped on 2026-08-18, and v5.0.0 was last amended on
+                      2026-08-17 — the day before — so the inventory has been describing a command
+                      shape the bot no longer has. This corrects the wording and nothing else.
+
+                      No Core Principle is added, removed or redefined, and no entity is added or
+                      amended. Rule XIV is untouched. The project's own policy reserves MINOR for
+                      "addition of a new principle, section, or materially expanded guidance", so a
+                      `New Entities (v5.0.1)` block was deliberately **not** added: recording that
+                      046 adds no entity would be a new section, and the correction does not need
+                      one.
+
+  Modified sections :
+    - Data & State Management → New Entities (v4.8.0): "the `images test verdicts` value" becomes
+      "the `images test verdict` subcommand". Two corrections in one: the form (a value became a
+      subcommand at 045) and the name (045 named it `verdict`, singular, after the datum rather
+      than after the `verdicts` aspect).
+    - Data & State Management → New Entities (v4.7.0): "the four `images test weather-*` values"
+      becomes "the four `images test weather-*` subcommands".
+    - Both entries additionally record that 046 made the `division` and `round` parameters of
+      every test subcommand optional, since a season-less server resolves neither.
+    - Governance footer: version and Last Amended date.
+
+  Added sections    : None
+  Removed sections  : None
+
+  Not changed, and deliberately:
+    - Rule XIV.7's narrative at Principle XIV already said "the four `images test weather-*`
+      **commands**", and was correct as it stood.
+    - No template under `.specify/templates/` references the test command's shape, so none needed
+      updating. Checked: plan, spec, tasks, checklist, agent-file, constitution templates.
+
+  Follow-up TODOs   : None. This clears the amendment feature 045 identified as owed and did not
+                      raise; it was carried in 045's spec under "Documentation impact" and in
+                      046's plan under "Constitution Check".
+
 [2026-08-17 — v4.8.0 → v5.0.0: MAJOR — track imagery split in two; the flag class rekeyed by country]
   Version change    : 4.8.0 → 5.0.0
   Bump rationale    : MAJOR, and the first since v4.0.0. Two changes to Rule 13 are backward
@@ -5299,9 +5338,11 @@ here so that it is not re-derived.
   dependency the module was always specified to need — the means by which a text's width is measured
   (Rule 5) — and are read as they stand. Inkscape remains the one dependency no package declaration
   installs.
-- The `verdicts_template` slot, the `verdicts` aspect and its toggle, the `images test verdicts` value,
-  the flag directory and the team image directory are all part of the configuration surface delivered
-  at 035 and 036, and are read as they stand.
+- The `verdicts_template` slot, the `verdicts` aspect and its toggle, the `images test verdict`
+  subcommand, the flag directory and the team image directory are all part of the configuration
+  surface delivered at 035 and 036, and are read as they stand. The test command was a parameter
+  carrying choice values when this entry was written; 045 made each value a subcommand of its own,
+  and 046 made the `division` and `round` parameters of every one of them optional.
 - No asset class is added. The verdict draws a flag and a team image, both of classes already
   configured, and ships no file of its own: neither vocabulary is the module's, so Rule 13's
   closed-set clause does not arise.
@@ -5322,8 +5363,10 @@ here so that it is not re-derived.
   two sessions of at most four for the plain one. They are read as they stand and MUST NOT be restated
   in the image module, a second copy being a second thing to get wrong.
 - The six `weather_*_template` slots, the `weather` aspect and its toggle, the weather icon directory
-  and the four `images test weather-*` values are all part of the configuration surface delivered at
-  035 and 036, and are read as they stand.
+  and the four `images test weather-*` subcommands are all part of the configuration surface delivered
+  at 035 and 036, and are read as they stand. They were choice values of one test command when this
+  entry was written; 045 made each a subcommand of its own, and 046 made the `division` and `round`
+  parameters of every one of them optional.
 
 **Shipped assets.** `resources/weather/` gains the eight files of the module's own weather vocabulary —
 `sunny.svg`, `mixed.svg`, `rain.svg`, `clear.svg`, `light_cloud.svg`, `overcast.svg`, `wet.svg` and
@@ -5611,4 +5654,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 5.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-17
+**Version**: 5.0.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-19
