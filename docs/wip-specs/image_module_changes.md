@@ -24,13 +24,13 @@
 
 - The capacity of every collection of the module shall be fixed by the template. The kind of capacity fixed by the data, of which the teams of a division and the seats of a team were the only instances, is withdrawn.
 - Teams of the division in excess of the team blocks the template declares shall be a fatal error, naming the teams that would be dropped.
-- Seats of a team in excess of the seat slots the template declares within that team's block shall be a fatal error, naming the drivers that would be dropped.
+- Drivers occupying a team's seats in excess of the seat slots the template declares within that team's block shall be a fatal error, naming the drivers that would be dropped. A seat the team is configured with but no driver occupies shall not count towards this, omitting it dropping nobody.
 - Team blocks declared in excess of the teams of the division shall have `team_<x>_group` removed in its entirety, or every field bearing that ordinal removed one by one where the template declares no such group, and no error shall be reported.
-- Seat slots declared in excess of the seats of a team shall be treated as unoccupied seats are treated.
+- Seat slots declared in excess of the seats a team is configured with shall be removed silently, and no error shall be reported. A slot within the team's configured seats that no driver occupies shall instead be drawn unoccupied: a vacancy a league can see is not a surplus slot.
 - A member the data hold but leave empty is not an unused member, and shall be drawn empty rather than removed. A team of the division that has recruited nobody shall be drawn with every seat unoccupied; only an ordinal the division fields no team at shall be removed.
 - `team_<x>_group` belongs to a place in the layout and not to a team. The rule by which a league decided whether a team that had recruited nobody was drawn at all, by declaring or declining that team's own group, is withdrawn: a fielded team is always drawn.
 - A division fielding fewer teams than the template declares shall be drawn without error, as a division fielding fewer rounds than a calendar template declares is.
-- A collection standing inside a member of another and bounded by a configured value of that containing member, as the cars of a round are bounded by the seats configured for their team, is unaffected. There the members the template declares remain a ceiling and not a count.
+- Every collection standing inside a member of another and bounded by a configured value of that containing member shall behave alike, no graphic being excepted. The seats of a team on a lineup and the cars of a round on a constructors grid are the two instances, and one rule governs both: the members the template declares are a ceiling and not a count, over-declaration is never an error, and the fatal test is against the data actually drawn and never against the configured value itself.
 
 ## Uniformity of divisions
 

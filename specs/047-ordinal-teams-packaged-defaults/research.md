@@ -35,11 +35,11 @@ Giving the lineup a `rows` spec for its team blocks silently redirects both to t
 
 ## R3 — Where the two overflow checks live
 
-**Finding.** The lineup now has three collections that can overflow: teams, seats within a team, and reserve seats. The generic guard in `image_render_service` compares `spec.row_count` against `catalogue.capacity(root)` and reports in the words "rows" and "slots".
+**Finding.** The lineup now has three collections that can overflow: teams, drivers within a team's block, and reserve seats. (The seat check measures **drivers seated**, not configured seats — FR-018 unified this with the results grid's cars after the first draft of this document had them differing.) The generic guard in `image_render_service` compares `spec.row_count` against `catalogue.capacity(root)` and reports in the words "rows" and "slots".
 
 **Decision.** Teams go through the generic guard — `row_count` becomes the division's team count, matching the calendar's rounds. **Seats within a team** and reserve seats raise `LineupDataError` from `build_fill_spec`, as reserve overflow already does.
 
-**Rationale.** FR-012 requires the seat overflow to name *the drivers that would be dropped*, and FR-011 requires the team overflow to name *the teams*. The generic guard's message can name neither; it counts. The reserve path already solved this and its shape is reused rather than reinvented. Constitution XIV.9.2 requires a fault to name what is at fault.
+**Rationale.** FR-012 requires the driver overflow to name *the drivers that would be dropped*, and FR-011 requires the team overflow to name *the teams*. The generic guard's message can name neither; it counts. The reserve path already solved this and its shape is reused rather than reinvented. Constitution XIV.9.2 requires a fault to name what is at fault.
 
 **Alternatives considered.** *Route all three through the generic guard* — rejected: it would emit "there are 3 rows of data but the template provides 2 slots" for a dropped driver, which tells a manager nothing about which driver.
 

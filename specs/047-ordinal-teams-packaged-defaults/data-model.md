@@ -25,9 +25,9 @@ The team collection moves from `keyed=KeyedSpec(...)` to the same `rows=RowSpec(
 | Capacity | fixed by the data (`capacity_from_data=True`) | fixed by the template (`RowSpec.capacity=None`, derived from `root`) |
 | Member group | `team_red_bull_group`, mandatory-ish via binding | `team_<x>_group`, **optional** |
 | Nested seats | `NestedSpec(prefix="driver")`, count from configuration | same `NestedSpec`, count from the template, **per block** |
-| Divergence | fatal in both directions | overflow fatal one way; under-declaration removed silently |
+| Divergence | fatal in both directions | overflow fatal one way — measured against **drivers seated**, not configured seats; under-declaration removed silently |
 
-`NestedSpec.capacity_per_member` stays **`False`** for the lineup's seats. It is `True` only for the results grid's cars, which are a *ceiling* — see the post-design note in [plan.md](plan.md).
+`NestedSpec.capacity_per_member` is set **`True`** for the lineup's seats, as it already is for the results grid's cars. FR-018 makes the two one rule: declared slots are a ceiling, over-declaration is never an error, and the fatal test is against the drivers actually seated. See the post-design note in [plan.md](plan.md).
 
 ### Added — `FieldCatalogue.singleton_capacity(root)`
 
@@ -48,7 +48,7 @@ Returns the singleton's nested slot count (the reserve block's seats) explicitly
 
 `LineupDrawing.binding()` is removed. `LineupSeat` is unchanged.
 
-**Validation moves out of `resolve_drawing`.** The three `LineupDataError` raises that guard the *key* — empty normalisation, collision with `reserve`, collision with another team — no longer belong there: a name that normalises badly can no longer collide with a template field, only with another team's badge file. Team-name validity is `team_service.validate_team_name`'s business at the command that sets it (Principle IX), and `season review` reports what slipped through. What `resolve_drawing` gains instead is the **seat overflow** check, per block, naming the drivers that would be dropped.
+**Validation moves out of `resolve_drawing`.** The three `LineupDataError` raises that guard the *key* — empty normalisation, collision with `reserve`, collision with another team — no longer belong there: a name that normalises badly can no longer collide with a template field, only with another team's badge file. Team-name validity is `team_service.validate_team_name`'s business at the command that sets it (Principle IX), and `season review` reports what slipped through. What `resolve_drawing` gains instead is the **driver overflow** check, per block, naming the drivers that would be dropped. A configured but unoccupied seat never triggers it.
 
 ## 3. Asset resolution
 

@@ -47,7 +47,7 @@ Today this is impossible. The shipped `lineup_template.svg` names eleven invente
 
 A league runs a top division of ten two-seat teams and a lower division of six, fielding different teams entirely. Both draw a lineup from the same template file, the lower division's four spare blocks leaving silently.
 
-A league wanting a three-seat team must author a template declaring three slots at the block that team will stand at, the shipped file declaring two at every block. That is a template it authors once, not a restriction on how it composes its season.
+A league wanting to seat three drivers on one team must author a template declaring three slots at the block that team will stand at, the shipped file declaring two at every block. That is a template it authors once, not a restriction on how it composes its season.
 
 Today `season review` fails validation whenever the divisions of a season differ in their teams or their seat counts, wherever the image module is enabled and the `lineup` toggle is on. The restriction exists solely because a lineup template names its fields after teams, and falls away with that.
 
@@ -126,7 +126,8 @@ A manager adds a team named "2Fast Motorsport". It is accepted. The name no long
 - Seat slots are numbered per block, and each block's seat numbering must itself run continuously from 1.
 - A division fielding no team at all draws every block removed, the reserve block alone remaining. This is not an error.
 - A team is added to a division mid-season: it takes the next free position, so the ordinals already drawn do not move.
-- A three-seat team stands at ordinal 2 in one division and ordinal 5 in another. The template must declare three seat slots at both blocks, seat capacity being a property of the block and not of the team.
+- A team seating three drivers stands at ordinal 2 in one division and ordinal 5 in another. The template must declare three seat slots at both blocks, the ceiling being a property of the block and not of the team.
+- A team is configured with three seats but has filled only two, and the template declares two slots at its ordinal. This draws without error: nobody is dropped. The empty third seat is not shown, which is the one thing a league loses by declaring a block smaller than its teams are configured for.
 - A division holds a mix of signed-up drivers and drivers created by test mode. Both are drawn by their own names, and neither kind is drawn as an unoccupied seat.
 - A driver created by test mode carries no nationality, no signup record being made for one, and is drawn without a flag as a posting would draw them.
 - A league adds a team beyond the shipped template's eleventh block. Generation is fatal until it authors a template declaring a twelfth; nothing else can raise the ceiling.
@@ -155,13 +156,16 @@ A manager adds a team named "2Fast Motorsport". It is accepted. The name no long
 
 - **FR-010**: The capacity of every collection of the module MUST be fixed by the template. The kind of capacity fixed by the data — of which the teams of a division and the seats of a team were the only instances — MUST be withdrawn.
 - **FR-011**: Teams of the division in excess of the team blocks the template declares MUST be a fatal error, naming the teams that would be dropped. A division MAY therefore field any number of teams from zero up to the block count the template declares, and no number above it. Raising that ceiling MUST be possible by authoring a template that declares more blocks, and MUST require nothing else.
-- **FR-012**: Seats of a team in excess of the seat slots the template declares within that team's block MUST be a fatal error, naming the drivers that would be dropped.
+- **FR-012**: Drivers occupying a team's seats in excess of the seat slots the template declares within that team's block MUST be a fatal error, naming the drivers that would be dropped. A seat the team is configured with but no driver occupies MUST NOT count towards this: omitting it drops nobody.
 - **FR-013**: Team blocks declared in excess of the teams of the division MUST be removed — by `team_<x>_group` in its entirety, or field by field where the template declares no such group — and no error MUST be reported.
-- **FR-014**: Seat slots declared in excess of the seats of a team MUST be treated as unoccupied seats are treated.
+- **FR-014**: Seat slots declared in excess of the seats a team is configured with MUST be removed silently, and no error MUST be reported. A slot within the team's configured seats that no driver occupies MUST instead be drawn unoccupied — a vacancy the league can see is not a surplus slot.
 - **FR-015**: A team the division fields that has recruited nobody MUST be drawn with every seat unoccupied, and MUST NOT be removed. Only an ordinal the division fields no team at MUST be removed.
-- **FR-016**: A division fielding fewer teams than the template declares MUST be drawn without error, whatever the shortfall, down to and including a division fielding no team at all — which draws every team block removed and the reserve block alone.
-- **FR-017**: Seat capacity MUST be positional and not per-team: the ceiling on a team's seats is the slot count of the block at the ordinal that team stands at, in the division being drawn. A league whose teams differ in seat count MUST therefore declare, at each block, at least the largest seat count any team may reach at that ordinal in any division, the spare slots being removed under FR-014.
-- **FR-018**: A collection standing inside a member of another and bounded by a configured value of that containing member — as the cars of a round are bounded by the seats configured for their team — MUST be unaffected: there the members the template declares remain a ceiling and not a count.
+- **FR-016**: The shortfall FR-013 removes has no lower bound: a division fielding no team at all MUST be drawn without error, as every team block removed and the reserve block alone.
+- **FR-017**: The seat ceiling MUST be positional and not per-team: the ceiling on a team's drivers is the slot count of the block at the ordinal that team stands at, in the division being drawn. A league whose teams differ in size MUST therefore declare, at each block, at least the largest number of drivers any team may seat at that ordinal in any division, the spare slots being removed under FR-014.
+- **FR-018**: Every collection standing inside a member of another and bounded by a configured value of that containing member MUST behave identically, with no exception for any one graphic. The seats of a team on a lineup and the cars of a round on a constructors grid are the two instances, and one rule governs both:
+    - the members the template declares are a **ceiling** and not a count;
+    - over-declaration is never an error, the surplus being removed silently per containing member;
+    - the fatal test is against the **data actually drawn** — the drivers who occupy the seats, or who drove the cars — and never against the configured value itself.
 
 #### Uniformity of divisions
 
@@ -173,7 +177,7 @@ A manager adds a team named "2Fast Motorsport". It is accepted. The name no long
 - **FR-021**: At generation, the counts the template declares MUST be measured against the division, an excess on the side of the division being fatal.
 - **FR-022**: At season review, the same measurement MUST be made against every division of the season, an excess being a failure of validation naming the division and the team or seat at fault.
 - **FR-023**: The checks of FR-020 to FR-022 MUST be made whether or not the `lineup` toggle is on.
-- **FR-024**: No divergence of the lineup graphic MUST be reported as a warning: every field of it is verifiable against the template alone.
+- **FR-024**: Every divergence of the lineup graphic MUST be fatal or a failure of validation, and MUST NEVER be reported as a warning: every field of it is verifiable against the template alone.
 - **FR-025**: Across the module, a stand-in MUST stand in for how many members will be drawn and never for which: a calendar template is compared against a round count and a lineup template against a count of teams and of seats, neither against a list of names.
 
 #### The name of a team
@@ -202,7 +206,7 @@ A manager adds a team named "2Fast Motorsport". It is accepted. The name no long
 #### Two-tier fallback resolution
 
 - **FR-040**: Asset resolution MUST have exactly four outcomes: the datum's own file found in the configured directory; not found but the configured directory holds a fallback; not found and the configured directory holds no fallback but the packaged directory of the class does; not found and neither holds a fallback.
-- **FR-041**: The second and third outcomes MUST place the fallback upon the field and report the same non-fatal error, naming the field and the datum that had no file of its own. The fourth MUST be fatal and MUST abandon generation.
+- **FR-041**: The second and third outcomes MUST place the fallback upon the field and report the same **notice**, naming the field and the datum that had no file of its own. The fourth MUST be fatal and MUST abandon generation.
 - **FR-042**: The datum's own file MUST continue to be sought in the configured directory alone. The packaged directory MUST be consulted for a fallback only.
 - **FR-043**: Every statement in the specification that a directory "holds" or "holds no" fallback MUST be read as this two-tier check taken as a whole, and not as the configured directory alone.
 
@@ -242,7 +246,7 @@ A manager adds a team named "2Fast Motorsport". It is accepted. The name no long
 - **SC-004**: A league supplying badges for a subset of its teams draws every graphic that shows a badge, with a notice per unsupplied team and no abandoned render — with no file placed by the league in the fallback position.
 - **SC-005**: Every one of the four asset-resolution outcomes is exercised by a passing test, and no fifth outcome exists.
 - **SC-006**: Each of the seven graphics that draw a team badge is exercised by a passing test proving it draws a packaged-tier fallback and accepts a team name beginning with a digit — seven graphics, not one.
-- **SC-007**: A division fielding any number of teams from zero to the template's declared block count draws without error, and one team above it is refused with the offending teams named.
+- **SC-007**: A division fielding any number of teams from zero to the template's declared block count draws without error, and one team above it is refused with the offending teams named. The same holds for drivers within a block.
 - **SC-008**: Every packaged file — seven fallbacks, the closed-set files of the marker, weather and track classes, and the fifteen templates — is reachable at its `resources/defaults/` location, and no `images config` default names an old one.
 - **SC-009**: A team name beginning with a digit is accepted, and each of the four remaining rejection criteria still refuses the name it names.
 - **SC-010**: The shipped lineup template declares eleven team blocks of two seat slots each and a reserve block of six, and a division of eleven two-seat teams draws with every block filled and none removed.

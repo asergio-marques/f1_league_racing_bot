@@ -53,7 +53,7 @@ The mechanical part is a rename — `team_red_bull_name` → `team_1_name` — c
 | Moment | Checked | Severity |
 |---|---|---|
 | `images template lineup <file>` | Structure alone: `division_name`; ≥1 block, contiguous; ≥1 slot in each, contiguous; `team_<x>_name` and `team_<x>_driver_<y>_name` throughout; `reserve_group` with ≥1 slot and `reserve_driver_1_name` | Fatal — the command is rejected |
-| Generation | Division team count ≤ blocks; each team's seat count ≤ that block's slots | Fatal — generation abandoned, naming the teams or the drivers dropped |
+| Generation | Division team count ≤ blocks; each team's **seated drivers** ≤ that block's slots | Fatal — generation abandoned, naming the teams or the drivers dropped |
 | `season review` | The same counts, against **every** division | Failure of validation, naming the division and what is at fault |
 
 All three run **whether or not the `lineup` toggle is on**: they report a template that cannot draw the season, and never restrict how a league may compose one. No moment of this graphic compares against a stand-in, so **no divergence of it is ever a warning**.

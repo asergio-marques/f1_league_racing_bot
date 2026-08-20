@@ -33,7 +33,7 @@ Checked against **constitution v6.0.0**, amended 2026-08-20 specifically to admi
 |---|---|---|
 | **IX** — Team & Division Structural Integrity | "Team name validity" now normalises to a *filename*; the leading-letter rule is withdrawn. "Divisions MAY differ in composition" replaces the uniformity invariant | **PASS** — the feature implements exactly what v6.0.0 states |
 | **XIV.11** — Template ids | Ordinal-only discrimination; the keyed collection is withdrawn; a singleton keeps its reserved name | **PASS** — the lineup is the only keyed collection and this feature removes it |
-| **XIV.12** — Collection capacity | Two ways, not three; teams and seats pass to the template; the nested ceiling survives, re-anchored | **PASS** — `capacity_per_member` (the results grid's cars) is untouched, as FR-018 requires |
+| **XIV.12** — Collection capacity | Two ways, not three; teams pass to the template; the nested **ceiling** now covers the lineup's seats as well as the results grid's cars | **PASS** — FR-018 makes the two behave identically, which is what the rule already described |
 | **XIV.13** — Asset resolution | Four outcomes; packaged directory at `resources/defaults/<class>`; normalisation names a file and never a field | **PASS** |
 | **XIV.2** — Removable groups | `team_<x>_group` is a member group of the ordinary `<collection>_<x>_group` form | **PASS** |
 | **XIV.3** — Mandatory/optional | `team_<x>_name` and `team_<x>_driver_<y>_name` mandatory throughout declared blocks; `team_<x>_group` optional | **PASS** |
@@ -126,7 +126,11 @@ See [research.md](research.md). Eight decisions, of which three were not obvious
 
 Re-evaluated after Phase 1. Still **PASS**, with one observation the design surfaced and resolved rather than deferred:
 
-Rule XIV.12's nested **ceiling** (`capacity_per_member`) and the lineup's new per-block seat count are different things that look alike, and the design keeps them apart deliberately. The results grid's cars are a ceiling — over-declaration is correct and never reported. The lineup's seat slots are a template-fixed capacity — over-declaration is correct *and* under-declaration is fatal. Both are "a nested collection whose count varies by containing member", and conflating them would make either a template that cannot draw a three-seat team pass silently, or a constructors grid refuse a template that draws more cars than some team seats. `NestedSpec.capacity_per_member` already distinguishes them; the lineup's nest leaves it `False`.
+An earlier draft of this plan had the lineup's seats and the results grid's cars behaving differently — the grid a **ceiling**, the lineup a template-fixed capacity measured against a team's *configured* seats. FR-018 withdrew that split, and the plan is corrected rather than defended.
+
+Both are a nested collection bounded by a configured value of the member containing it, which is exactly what Rule XIV.12's ceiling paragraph already describes, and the rule's own words settle it: *"the fatal test is against the data actually drawn"*. So the lineup's seats set `NestedSpec.capacity_per_member = True` like the grid's cars, over-declaration is never an error in either, and a fatal error arises only where a driver who actually occupies a seat would vanish from the picture.
+
+The one behaviour this gives up is visible: a team configured with three seats but seating two draws without complaint on a two-slot template, and the empty third seat is not shown. A vacancy is only displayed where the block is large enough to hold it. That is a consequence worth knowing, not a defect.
 
 ## Complexity Tracking
 

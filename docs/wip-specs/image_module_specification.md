@@ -490,9 +490,9 @@ These hold for every image type of the module and are stated here rather than re
 ### Handling of mismatches between division and template
 - The capacity of the team collection, and of the seat collection within each team, is fixed by the template. Divergences are treated as follows:
     - teams of the division in excess of the team blocks the template declares are a fatal error, naming the teams that would be dropped;
-    - seats of a team in excess of the seat slots the template declares within that team's block are a fatal error, naming the drivers that would be dropped;
+    - drivers occupying a team's seats in excess of the seat slots the template declares within that team's block are a fatal error, naming the drivers that would be dropped, a seat configured but unoccupied not counting towards this;
     - team blocks declared in excess of the teams of the division shall have the "team_<x>_group" field removed in its entirety, or every field bearing that ordinal removed one by one where the template declares no such group, and no error shall be reported;
-    - seat slots declared in excess of the seats of a team shall be treated as unoccupied seats are treated.
+    - seat slots declared in excess of the seats a team is configured with shall be removed silently and no error reported, while a slot within those configured seats that no driver occupies shall be drawn unoccupied.
 - A division fielding fewer teams than the template declares is therefore drawn without error, as a division fielding fewer rounds than a calendar template declares is. It is the ordinary case of a league whose divisions differ in size, and not a fault of configuration.
 - The number of reserve drivers of a division, in contrast, varies as drivers are assigned and unassigned over a season and cannot be known when the template is authored. Divergences in the reserve block are treated as follows:
     - reserve drivers in excess of the slots the template declares are a fatal error, naming them;
