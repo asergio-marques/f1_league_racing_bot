@@ -1,6 +1,87 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-20 — v5.0.1 → v6.0.0: MAJOR — teams addressed by ordinal; capacity fixed by the template alone; the fallback gains a packaged tier]
+  Version change    : 5.0.1 → 6.0.0
+  Bump rationale    : MAJOR, on three independent counts, any one of which would carry it.
+
+                      Rule XIV.11 loses the **key** discriminator entirely. A member of a
+                      collection is discriminated by an ordinal and by nothing else, and the
+                      keyed collection — of which the lineup's team block was the only instance
+                      — is withdrawn. A lineup template authored to v5.0.1's XIV.11 is wrong
+                      under this version and cannot be rendered by it.
+
+                      Rule XIV.12 loses the **by the data** capacity. Three ways of fixing a
+                      capacity become two, and the teams of a division and the seats of a team —
+                      its only instances — pass to the template. A divergence that was fatal in
+                      both directions is now fatal in one: a template declaring more than the
+                      division fields is correct and removes the surplus in silence.
+
+                      Principle IX loses the uniform-divisions invariant outright, and redefines
+                      team-name validity: a name beginning with a digit is now admitted. A season
+                      refused under v5.0.1 may be valid under this version, which is why the
+                      redefinition is backward-incompatible in the permissive direction and still
+                      MAJOR — the rule it replaces no longer holds.
+
+                      Rule XIV.13 additionally gains a **fourth** resolution outcome and moves the
+                      packaged directories to `resources/defaults/`. The outcome table growing a
+                      row degrades nothing: every resolution that succeeded before succeeds
+                      identically, and only a render that would have been abandoned now survives.
+                      It is carried in this MAJOR rather than held back for a MINOR of its own,
+                      being one feature with the two changes above.
+
+  Modified sections :
+    - Principle IX → "Team name validity": the normalised form is now a **filename**, not an
+      identifier. The leading-letter requirement is withdrawn, with an explicit statement that a
+      digit-leading name is admitted and why. The rationale is re-anchored from XIV.11's key to
+      XIV.13's filename, and now cites every graphic that draws a badge rather than the lineup.
+    - Principle IX → "Uniform divisions where a lineup graphic is drawn" is **replaced** by
+      "Divisions MAY differ in composition", which states the permission and records the
+      withdrawal. It was the only invariant of Principle IX gated on a module aspect; no gated
+      invariant remains.
+    - Principle XIV, Rule 11: the ordinal/key alternative becomes ordinal alone; the singleton's
+      reserved name no longer speaks of keyed members; the two closing paragraphs on keyed
+      collections and on keys as XML identifiers are replaced by a statement that an ordinal is a
+      place in the layout, a record of the withdrawal and its cost, and the rule that a datum of
+      the league reaches the module as a filename and in no other way.
+    - Principle XIV, Rule 12: "exactly three ways" becomes "exactly two"; the by-the-data bullet is
+      removed and the teams and seats it governed are named under by-the-template; the by-the-data
+      divergence paragraph is replaced by a record of the withdrawal and by an elevated statement
+      that a member the data hold but leave empty is drawn and never removed; the nested-ceiling
+      paragraph is re-anchored, no longer being a species of a capacity that no longer exists.
+    - Principle XIV, Rule 13: normalisation no longer produces a template key, and two bullets
+      state that one rule serves every class and that the form names a file and never a field; the
+      packaged directory is defined; the outcome table goes from three rows to four; three bullets
+      state that the datum's own file is sought in the configured directory alone, that every other
+      mention of "holds a fallback" means the two-tier check, and what a league no longer needs to
+      supply; "no fourth outcome" becomes "no fifth".
+    - Principle XIV narrative: template storage moves to `resources/defaults/templates/`.
+    - Data & State Management → New Entities (v5.0.0), (v4.7.0), (v2.11.0): packaged paths
+      restated under `resources/defaults/`, the inventory otherwise unchanged. Corrected for the
+      same reason v5.0.1 corrected the test-command shape — an inventory naming a file that is not
+      there has stopped being an inventory.
+    - Governance footer: version and Last Amended date.
+
+  Added sections    : None. Every change is a removal, a redefinition or a restatement within an
+                      existing principle or rule.
+  Removed sections  : None as sections. Two rules are withdrawn within their principles: the keyed
+                      collection (XIV.11) and the by-the-data capacity (XIV.12).
+
+  Not changed, and deliberately:
+    - Sync Impact Report entries for earlier versions, and the `resources/...` paths inside them.
+      They record what was true when written and are history, not inventory.
+    - "Assets under `resources/` MUST be plain SVG" (Principle XIV) still holds as written:
+      `resources/` remains the root of everything shipped, and the sentence binds the tree.
+    - Rule XIV.11's ordinal-coincides-with-a-datum clause, and the ordinal-is-not-drawn clause. A
+      lineup's team ordinal does not coincide with a datum and is not drawn, which the existing
+      wording already covers without amendment.
+    - The singleton collection itself (XIV.11) and the reserve block it describes. The reserve team
+      remains a singleton, addressed by name, its seats fixed by the template.
+    - Rule XIV.13's per-field absent-datum declaration, the two track-imagery classes, and the
+      flag-keyed-by-country rules. None depends on a keyed collection.
+
+  Follow-up TODOs   : None. This clears dependency D-001 of `specs/047-ordinal-teams-packaged-defaults`,
+                      which named this amendment as a precondition of implementation.
 [2026-08-19 — v5.0.0 → v5.0.1: PATCH — the test commands are subcommands, not parameter values]
   Version change    : 5.0.0 → 5.0.1
   Bump rationale    : PATCH. Two statements in the versioned entity inventory described the
@@ -3082,10 +3163,10 @@ point:
   removable, renameable, or otherwise modified by any user command. Its seat count is
   unlimited. It MUST likewise exist in the **server's team configuration**, and MUST be created
   whenever that configuration is read or written and none is present.
-- **Team name validity**: A team name MUST normalise (Principle XIV.13) to an identifier that is
-  non-empty, begins with a letter, is unique within its scope — the server for the server's team
-  configuration, the division for the teams of a season — and is not `reserve`, which is reserved
-  for the Reserve team. `team add` and `team rename` MUST reject a name failing any of these with
+- **Team name validity**: A team name MUST normalise (Principle XIV.13) to a **filename** that is
+  non-empty, is unique within its scope — the server for the server's team configuration, the
+  division for the teams of a season — and is not `reserve`, which is reserved for the Reserve
+  team. `team add` and `team rename` MUST reject a name failing any of these with
   a clear diagnostic, and `season review` MUST fail validation of a season any team of which
   fails them, naming every offending team. Of the two names `team rename` takes, only the **new**
   one is validated: the current name identifies a team that already exists, and validating it
@@ -3093,10 +3174,15 @@ point:
   the name taken by `team remove`. Seasons already approved MUST NOT be re-validated against this
   rule, and no team may be renamed or removed by its introduction.
 
+  A name **beginning with a digit is admitted**. The requirement that it begin with a letter held
+  only while the normalised form had to serve as the `@id` of a node in an XML document, and is
+  withdrawn together with that use of it (Principle XIV.11).
+
   This constraint binds **whether or not the Image generation module is enabled**. The normalised
-  name is the key by which a lineup template addresses a team's block (Principle XIV.11), and a
-  name is cheapest to constrain at the one moment it is set; a league enabling the module later
-  would otherwise hold names it cannot clean up without losing that team's history.
+  name is the **filename** under which every graphic drawing a team badge seeks that team's image
+  (Principle XIV.13), and a name is cheapest to constrain at the one moment it is set; a league
+  enabling the module later would otherwise hold names it cannot clean up without losing that
+  team's history.
 - **Configurable teams**: The standard ten constructor teams (Alpine, Aston Martin, Ferrari,
   Haas, McLaren, Mercedes, Racing Bulls, Red Bull, Sauber, Williams) each carry exactly 2 seats
   by default. A server administrator MAY add, modify, or remove configurable teams from the
@@ -3104,14 +3190,13 @@ point:
   divisions of the current season ONLY during the `SETUP` lifecycle phase.
 - **Division isolation**: A team definition or seat assignment in Division A MUST NOT affect
   Division B. Team data is partitioned per division, per season.
-- **Uniform divisions where a lineup graphic is drawn**: where the Image generation module is
-  enabled and its `lineup` aspect is on, the divisions of a season MUST field the same teams and
-  the same number of seats in each, and `season review` MUST fail validation naming the divisions
-  that differ. One lineup template serves every division of a season, and a template addressing
-  teams by name (Principle XIV.11) cannot serve divisions fielding different ones. This invariant
-  alone is **gated** on the module, being a real restriction on how a league may run its season
-  that a league drawing no lineup has no reason to accept; division isolation above is unaffected,
-  the requirement being that the two divisions declare the same *set*, not that they share rows.
+- **Divisions MAY differ in composition**: the divisions of a season MAY field different teams,
+  and different numbers of seats in each. No image type places a requirement of uniformity upon a
+  season. A lineup template is authored against a **count** of teams and of seats and never
+  against a team list (Principle XIV.11), so one file serves divisions of unlike composition, a
+  block beyond the teams of the division being removed in silence. The former invariant requiring
+  the divisions of a season to field the same teams and the same seats — gated on the `lineup`
+  aspect — is **withdrawn**, the template convention that forced it having been withdrawn with it.
 - **Sequential tier ordering**: Before a season may be approved (transitioned from `SETUP` to
   `ACTIVE`), all configured divisions MUST have tier values that form a gapless sequence
   starting at 1 (e.g., 1, 2, 3 — not 1, 3). The bot MUST block season approval and return a
@@ -3657,7 +3742,7 @@ filled SVG to PNG. The following rules are non-negotiable:
 
 **1. Templates are data, not code.**
 
-Every image type MUST be backed by an SVG template file stored under `resources/templates/`.
+Every image type MUST be backed by an SVG template file stored under `resources/defaults/templates/`.
 Templates MUST NOT be generated, assembled, or emitted by application code. A template's
 declared `width` and `height` are authoritative: the renderer MUST read the canvas from the
 template root and MUST NOT assume a fixed canvas for any image type. Changing an image's
@@ -4321,13 +4406,11 @@ on both the author and the code:
   by the thing it repeats and is fixed by the image type's catalogue — `round_<x>_date` on a
   calendar, `session_<x>_slot_<y>` on a forecast. `row` is the collection name for a table whose
   members are the rows of a classification, and carries no privilege beyond that.
-- A member is discriminated by an **ordinal** or by a **key**, and the image type's catalogue
-  fixes which. The two are alternatives and MUST NOT be mixed within one collection.
-  - An **ordinal** is written plainly, **without padding**: `row_1_position`, `row_10_position`.
-    Numbering starts at 1 and MUST be contiguous; a gap is a fault of the template.
-  - A **key** is a datum of the league normalised by the rule of Rule 13 — `team_red_bull_name`,
-    `team_force_india_b_driver_1_name`. It carries no order, and the order in which keyed members
-    are drawn is decided by the template's layout alone.
+- A member is discriminated by an **ordinal**, and by nothing else. An ordinal is written
+  plainly, **without padding**: `row_1_position`, `row_10_position`. Numbering starts at 1 and
+  MUST be contiguous; a gap is a fault of the template. **No collection is discriminated by a
+  datum of the league**: a template MUST be authorable in ignorance of the teams, the drivers and
+  the tracks of any one league, and one file MUST serve every league alike.
 - Where an image type's ordinal **coincides with a datum** the member draws — a classification row
   whose ordinal is the finishing position placed upon it — the field carrying that datum is filled
   **from the ordinal**, and no reconciliation between the two is attempted. The order, and any
@@ -4341,8 +4424,8 @@ on both the author and the code:
   rows looks the same either way, and only the catalogue can say whether the first of them is *first*
   or merely at the top.
 - A collection MAY be a **singleton**: one member, named, bearing no discriminator at all
-  (`reserve_name`, `reserve_driver_<y>_name`). A singleton's name is reserved — no keyed member of
-  a sibling collection may normalise to it.
+  (`reserve_name`, `reserve_driver_<y>_name`). A singleton's name is reserved — no member of a
+  sibling collection may bear it, and no datum of the league may normalise to it (Principle IX).
 - Collections MAY nest, each level contributing its own name and discriminator in the order of
   containment (`row_<x>_round_<z>_driver_<w>`, `team_<x>_driver_<y>_flag`).
 - A removable group is the field's name followed by `_group` (Rule 2), which for a whole member
@@ -4355,31 +4438,34 @@ on both the author and the code:
   fields, a checker consults it, and a name a parser would find ambiguous is unambiguous to the one
   list both the fill pipeline and validity Layer 2 read.
 
-A keyed collection exists so that a member may be **hand-designed as itself**: a lineup's team
-block carries that team's own livery, which an ordinal cannot address because it does not say
-which team it is. The cost is that such a template is authored against one league's data rather
-than against a shape, and no file shipped with the bot can serve a league whose teams it does not
-know. An image type MUST NOT choose a key where an ordinal would serve.
+**An ordinal is a place in the layout and never a member in itself.** Which datum is drawn at a
+given ordinal is resolved from the data at the moment of generation and MUST be recorded in no
+template. The lineup's team block is the case this rule was hardest won on: a block's ordinal is
+the position the team holds in the division being drawn, the same ordinal MAY stand for a
+different team in another division and for a differently named team in another league, and
+nothing of the block save the name and the badge varies with the team.
 
-Because a key becomes an XML identifier, the datum it is taken from MUST be constrained at the
-command that sets it: its normalised form non-empty, beginning with a letter, unique within its
-scope, and not colliding with a reserved singleton name. Constraining the datum is the business of
-the module that owns it (Principle IX); discovering the collision at render time is not.
+The **keyed** collection — a member discriminated by a datum of the league normalised by the rule
+of Rule 13, of which `team_red_bull_name` was the shape and the lineup's team block the only
+instance — is **withdrawn**. It existed so that a member could be hand-designed as itself, and
+the cost was that such a template was authored against one league's data rather than against a
+shape: no file shipped with the bot could serve a league whose teams it did not know, and every
+division of a season was forced into the same composition to keep one file serving them all. That
+cost is not worth a livery.
+
+A datum of the league therefore reaches the image module as a **filename** and in no other way,
+and is bound by what a filename admits rather than by what the `@id` of a node in an XML document
+admits. Constraining that datum remains the business of the module that owns it (Principle IX).
 
 **12. Collection capacity is declared by the template; overflow is a problem.**
 
 Any image type drawing a list whose length varies by league MUST state in its catalogue **how that
-list's capacity is fixed**. A capacity is fixed in one of exactly three ways, and the catalogue names
+list's capacity is fixed**. A capacity is fixed in one of exactly two ways, and the catalogue names
 which for every collection it declares:
 
 - **By the template.** The member slots the template declares are the capacity, and the data are
-  measured against them. The rounds of a calendar, the rows of a classification and the seats of a
-  reserve team — which no configuration bounds — are of this kind.
-- **By the data.** A configured value fixes the capacity, and the template MUST declare exactly
-  those members. The teams of a division and the seats configured for a team are of this kind. A
-  capacity fixed by the data MUST be read from the configuration at the moment of each check and
-  MUST NOT be frozen into the catalogue as a number, a catalogue carrying the count of one
-  league's teams being wrong for the next.
+  measured against them. The rounds of a calendar, the rows of a classification, the **teams of a
+  division**, the **seats of a team** and the seats of a reserve team are all of this kind.
 - **By the template slot.** Where an aspect holds several slots (Rule 10) and each serves a **known
   subset** of the data, the shape that subset can demand is a **constant of the module** — of the game
   the league plays, not of the league — and the catalogue states per slot the least a template filling
@@ -4398,12 +4484,17 @@ Where the capacity is fixed **by the template**:
   refused with its change unapplied. The problem MUST report the data count, the declared
   capacity, and the template at fault.
 
-Where the capacity is fixed **by the data**, a divergence in **either** direction is a problem
-naming the member or the slot at fault. A member the data hold and the template does not declare,
-and a member the template declares and the data do not hold, are one fault seen from its two
-sides: both are declared and both are knowable, so neither may be quietly absorbed. A member the
-data hold but leave *empty* — a team that has recruited nobody, a seat nobody occupies — is not a
-divergence at all: it is drawn, its text emptied and its image fields removed per Rule 3.
+The **by the data** capacity — a configured value fixing the count, the template obliged to
+declare exactly those members, and a divergence in either direction fatal — is **withdrawn**. The
+teams of a division and the seats configured for a team were its only instances, and both are now
+fixed by the template. A capacity MUST NOT be fixed by a configured value at the top level of a
+collection; the nested ceiling below is the one place a configured value still bounds anything.
+
+**A member the data hold but leave empty is not an unused member.** A team that has recruited
+nobody, a seat nobody occupies, is **drawn** — its text emptied and its image fields removed per
+Rule 3 — and is never removed as a surplus slot is. Only a slot the data reach no member at all
+for is removed. The distinction is the whole of what separates *fewer data than slots* from *data
+that are themselves empty*, and an image type MUST NOT conflate them.
 
 Where the capacity is fixed **by the template slot**, the declaration is a **floor**:
 
@@ -4426,16 +4517,20 @@ the fatal test at generation, as they are for a capacity fixed by the template: 
 sessions than its template declares, or a session drawn more weather slots than the template declares
 for it, is a problem however the floor was satisfied.
 
-**A capacity fixed by the data MAY vary by containing member.** Where a collection nests inside a
-member and the configured value fixing its capacity belongs to *that member* — the cars of a round of
-a constructors grid, bounded by the seats configured for the team on the row — one template must
-serve every member, and no single declared count can be right for all of them. There the members the
-template declares are a **ceiling**, not a count: those beyond the containing member's configured
-value are removed silently, per member, and over-declaration is not a divergence. The fatal test is
-against the **data actually drawn** — the drivers who drove that team's cars in that round — exactly
-as it is for a capacity fixed by the template. The catalogue MUST say which of the two a nested
-collection is; a collection whose bound is the same for every member remains an ordinary
-data-fixed capacity, refused in both directions.
+**A nested collection MAY be bounded by a configured value of its containing member.** Where a
+collection nests inside a member and a configured value belonging to *that member* bounds it — the
+cars of a round of a constructors grid, bounded by the seats configured for the team on the row —
+one template must serve every member, and no single declared count can be right for all of them.
+There the members the template declares are a **ceiling**, not a count: those beyond the containing
+member's configured value are removed silently, per member, and over-declaration is not a
+divergence. The fatal test is against the **data actually drawn** — the drivers who drove that
+team's cars in that round — exactly as it is for an ordinary capacity fixed by the template.
+
+This is the sole survival of a configured value bounding a collection, and it is not a
+reintroduction of the withdrawn by-the-data capacity: the ceiling is never compared against the
+template in the other direction, and a template declaring more than any member can use is correct.
+The catalogue MUST say which of its nested collections are of this kind; one whose bound is the
+same for every member is an ordinary template-fixed capacity and is measured as one.
 
 **One capacity may govern several id families.** Where an ordinal is drawn both as chrome and upon
 every member of another collection — a round of a results grid standing as `round_<z>_group`, as
@@ -4483,38 +4578,54 @@ asset class. Resolution MUST be deterministic and documented:
   lowercase, decompose and strip diacritics, replace every run of characters that is neither a
   letter nor a digit with a single **underscore**, and drop leading and trailing underscores.
   `Red Bull Racing` resolves to `red_bull_racing.svg`; `São Paulo` to `sao_paulo.svg`.
-- This same normalisation produces the **key** of a keyed collection's member (Rule 11), so that
-  one datum yields one spelling wherever it is written: `Red Bull` names the field
-  `team_red_bull_name` and resolves the file `red_bull.svg`. A second normalisation rule would be
-  a second way for the id and the filename to disagree.
+- **One rule serves every class**: a team name, a country, a track, a tyre compound and a
+  condition of weather are all normalised by it. A second normalisation rule would be a second way
+  for two spellings of one datum to disagree.
+- The normalised form names a **file** and never a **field** of a template, every field of every
+  collection being addressed by an ordinal (Rule 11). It is therefore bound by what a filename
+  admits, and not by what the `@id` of a node in an XML document admits.
 - Each image type's catalogue MUST name the asset class for each of its image fields. A
   utility MUST NOT construct a path from anything but the configured directory and the slug.
 - Every asset directory MUST cover each datum of its class a league can present it with, or
-  hold a generic **fallback image** under the reserved name `fallback.svg` that covers those it
-  does not.
+  resolve to a generic **fallback image** under the reserved name `fallback.svg` that covers those
+  it does not, drawn under the two-tier resolution below.
+- The **packaged directory** of a class is the directory shipped with the module for it —
+  `resources/defaults/<class>` — and carries that class's own `fallback.svg`. It is distinct from
+  the directory a league has configured for the class, which a league is free to point elsewhere;
+  where a league has not moved it, the two are one and the same directory.
 - Where the data of a class are **not values a league supplies** but a **closed set the module
   itself defines** — the three directions of a change of standing position (`gained`, `lost`,
   `unchanged`); the three types of weather a session may be drawn (`sunny`, `mixed`, `rain`) and the
   five concrete weathers a slot may carry (`clear`, `light_cloud`, `overcast`, `wet`, `very_wet`) —
-  the **module** MUST ship a file for every one of them under `resources/`, beside
-  that class's `fallback.svg`. The obligation of the bullet above is discharged by the module rather
+  the **module** MUST ship a file for every one of them in the **packaged directory** of that
+  class, beside that class's `fallback.svg`. The obligation of the bullet above is discharged by the module rather
   than by the league, because the league has nothing to supply: it did not choose the vocabulary and
   cannot be incomplete against it. A league MAY still point the class at a directory of its own and
   is then bound exactly as any other league, its fallback covering what its own set omits.
 
   This is the rule `mystery.svg` already follows in the track class, generalised. It stands apart
-  from `resources/` holding no league-specific artwork: a direction marker is the module's own
+  from `resources/defaults/` holding no league-specific artwork: a direction marker is the module's own
   vocabulary drawn in the module's own terms, and shipping none of it would put the class's fallback
   on every row of every graphic — three identical arrows and a notice apiece, which is not a
   degradation a league can act on but a picture the module never had to draw wrong.
 
-Resolution has exactly **three** outcomes, and no others:
+Resolution has exactly **four** outcomes, and no others:
 
 | Outcome | Result |
 |---|---|
-| The normalised file is found | Placed upon the field |
-| Not found, the directory holds `fallback.svg` | Fallback placed upon the field; **notice** raised naming the field and the datum that had no file of its own |
-| Not found, no fallback | **Problem**. The render is abandoned |
+| The normalised file is found in the **configured** directory | Placed upon the field |
+| Not found, the **configured** directory holds `fallback.svg` | Fallback placed upon the field; **notice** raised naming the field and the datum that had no file of its own |
+| Not found, the configured directory holds none, the **packaged** directory of the class holds one | That fallback placed upon the field; the **same notice** raised |
+| Not found, and neither directory holds a fallback | **Problem**. The render is abandoned |
+
+- The datum's **own file** is sought in the **configured directory alone**. The packaged directory
+  is consulted for a **fallback** and for nothing else; a file of the datum's own name sitting in
+  the packaged directory MUST NOT be drawn for a league that did not supply it.
+- Wherever else this constitution speaks of a directory **holding**, or not holding, a fallback, it
+  means this two-tier check taken as a whole and not the configured directory alone.
+- A league whose configured directory carries no `fallback.svg` of its own therefore no longer
+  needs to place one there for the class to survive an incomplete asset set; the packaged fallback
+  answers a miss the configured directory cannot.
 
 - These outcomes hold whatever the receiving field's classification. A missing asset is never
   survived by emptying the field.
@@ -4587,14 +4698,15 @@ two places for a league's set to be incomplete.
 **`mystery.svg` is reserved in the flag directory as it is in the track directory.** A round of
 the mystery format conceals its track and thereby its country, and the datum `Mystery` fills its
 flag field by the ordinary rule of Rule 3's literal-value paragraph. The module MUST ship
-`resources/flags/mystery.svg` beside `resources/tracks/mystery.svg`. Without it, a concealed round
+`resources/defaults/flags/mystery.svg` beside `resources/defaults/tracks/mystery.svg`. Without it, a concealed round
 draws the flag fallback and raises a notice against a league that has done nothing wrong.
 
 **A miss is answered by the class's own fallback and never by the other class.** The three
 outcomes above hold per class: a flag that does not resolve draws `flags/fallback.svg`, a map that
 does not resolve draws `tracks/fallback.svg`, and neither is ever substituted for the other.
 Drawing a map where a flag was asked for would silently put imagery on a graphic that its league
-did not choose, and the table above admits no fourth outcome.
+did not choose, and the table above admits no fifth outcome. The packaged tier of a class answers
+only for **that** class.
 
 **Rationale**: the fallback is per asset *class*, not per template field, because the gap it
 answers belongs to the directory — a nationality with no flag drawn for it — and not to any one
@@ -4765,18 +4877,27 @@ tell a league something went less well than it might have. A league that switche
 already been told, by itself; reporting it back once per member on every render would bury the
 notices that mean something under the one notice that cannot.
 
-A collection is discriminated by an ordinal or by a key (Rule 11), and its capacity is fixed by
-the template or by the data (Rule 12). Both pairs answer the same question — how much of a graphic
-is a shape the bot knows, and how much is one league's particulars. A table of results is all
-shape: any ten drivers fill it. A lineup is not: its blocks are drawn in liveries, and a template
-that could not say *which* team a block belongs to could not be authored at all. Admitting the key
-and the data-fixed capacity is what lets one pipeline serve both, at the price of one honest
-statement — a keyed template belongs to the league that authored it.
+A collection is discriminated by an ordinal (Rule 11), and its capacity is fixed by the template
+(Rule 12). Both answer the same question, and now answer it the same way: **a graphic is a shape
+the bot knows, and never one league's particulars**. A table of results is all shape — any ten
+drivers fill it — and a lineup is now no different: its blocks are places, filled from whichever
+teams the division being drawn holds.
+
+This was not always so. A lineup's blocks were once keyed by team name so that each could be
+drawn in that team's own livery, and the teams of a division once fixed the capacity of the
+collection holding them. The price was a template authored against one league's data: no file
+shipped with the bot could draw a league whose teams it did not know, every league had to author
+its own lineup and re-author it on every rename, and the divisions of a season were forced into
+one composition to keep a single file serving them all. A livery is not worth that, and both the
+key and the data-fixed capacity are withdrawn. What distinguishes one block from another is now
+the name and the badge alone, resolved from the division at the moment of generation.
 
 Assets are governed separately (Rule 13), and uniformly. A league whose asset set does not cover
-every value it will present drops one `fallback.svg` into that directory and is done; a league
-that has supplied neither the asset nor a fallback has an incomplete set, and the module says so
-rather than drawing a card with a hole in it. One rule for every asset class, with no branch on
+every value it will present need supply nothing at all: the packaged directory of the class
+answers the miss with its own `fallback.svg`, and the league may still drop one of its own into
+its configured directory to override what is drawn. Only a league that has pointed a class at a
+directory of its own **and** stripped the packaged tier of a fallback has an incomplete set with
+no answer, and the module says so rather than drawing a card with a hole in it. One rule for every asset class, with no branch on
 the field receiving it, is the whole of what makes that predictable to a template author. The one
 declaration a catalogue may make against that rule — that an **absent** datum draws the fallback —
 is not a branch on the field's classification but a statement about the datum: some absences are a
@@ -5315,8 +5436,8 @@ is recorded here so that it is not re-derived as a schema one.
   `flag_directory` are part of the configuration surface delivered at 035 and are read as they
   stand. The change is which class a field draws from and which datum keys the flag, not what a
   league configures.
-- `resources/flags/mystery.svg` is a new packaged file under a reserved name, beside
-  `resources/tracks/mystery.svg` (v4.6.0). It ships no league-specific artwork and is bound by
+- `resources/defaults/flags/mystery.svg` is a new packaged file under a reserved name, beside
+  `resources/defaults/tracks/mystery.svg` (v4.6.0; relocated under `resources/defaults/` at v6.0.0). It ships no league-specific artwork and is bound by
   Rule 6 as any other asset.
 
 ### New Entities (v4.8.0)
@@ -5368,7 +5489,7 @@ here so that it is not re-derived.
   entry was written; 045 made each a subcommand of its own, and 046 made the `division` and `round`
   parameters of every one of them optional.
 
-**Shipped assets.** `resources/weather/` gains the eight files of the module's own weather vocabulary —
+**Shipped assets.** `resources/defaults/weather/` gains the eight files of the module's own weather vocabulary —
 `sunny.svg`, `mixed.svg`, `rain.svg`, `clear.svg`, `light_cloud.svg`, `overcast.svg`, `wet.svg` and
 `very_wet.svg` — beside the `fallback.svg` it already holds, per Rule 13's closed-set clause and the
 author's ruling. This is the second class the module ships complete, after the markers, and the
@@ -5467,7 +5588,7 @@ mechanics of the replacement are user-visible and are specified in
 - `server_id` (TEXT, PK)
 - `module_enabled` (BOOLEAN, default false)
 - `asset_root` (TEXT, nullable) — filesystem root for league-supplied assets; null means the
-  packaged defaults under `resources/` are used for every asset class.
+  packaged defaults under `resources/defaults/` are used for every asset class.
 
 **ImageAspectToggle** (per server, per output aspect — eight rows per server):
 - `server_id` (TEXT)
@@ -5654,4 +5775,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 5.0.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-19
+**Version**: 6.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-20
