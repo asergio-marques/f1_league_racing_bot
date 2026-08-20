@@ -148,80 +148,81 @@ A manager adds a team named "2Fast Motorsport". It is accepted. The name no long
 - **FR-005**: The reserve team MUST continue to be addressed as a singleton by `reserve_` fields, MUST NOT be addressed via any `team_<x>_` field, and MUST NOT occupy an ordinal.
 - **FR-006**: The team drawn in the block of ordinal `<x>` MUST be the team standing at position `<x>` in the team list of the division being drawn, the reserve team excepted, ordered as the division holds it.
 - **FR-007**: The correspondence between an ordinal and a team MUST be resolved afresh at each generation from the division, and MUST be recorded in no template.
-- **FR-008**: A team added to a division MUST take the next free position, so that the teams already drawn do not move.
+- **FR-008**: A team added to a division MUST take the next free position, so that the teams already drawn do not move. The order a division holds its teams in MUST therefore be the order they were added in, and MUST NOT depend on their names: an order sorted by name would move every team of later name when one is added, and would move a team when it is renamed.
+- **FR-009**: The lineup posting path, the `/images test` preview path and the team listing `season review` reads MUST agree on that order, so that the ordinal a team occupies on the graphic is the position it occupies in the text printed beside it.
 
 #### Capacity
 
-- **FR-009**: The capacity of every collection of the module MUST be fixed by the template. The kind of capacity fixed by the data — of which the teams of a division and the seats of a team were the only instances — MUST be withdrawn.
-- **FR-010**: Teams of the division in excess of the team blocks the template declares MUST be a fatal error, naming the teams that would be dropped. A division MAY therefore field any number of teams from zero up to the block count the template declares, and no number above it. Raising that ceiling MUST be possible by authoring a template that declares more blocks, and MUST require nothing else.
-- **FR-011**: Seats of a team in excess of the seat slots the template declares within that team's block MUST be a fatal error, naming the drivers that would be dropped.
-- **FR-012**: Team blocks declared in excess of the teams of the division MUST be removed — by `team_<x>_group` in its entirety, or field by field where the template declares no such group — and no error MUST be reported.
-- **FR-013**: Seat slots declared in excess of the seats of a team MUST be treated as unoccupied seats are treated.
-- **FR-014**: A team the division fields that has recruited nobody MUST be drawn with every seat unoccupied, and MUST NOT be removed. Only an ordinal the division fields no team at MUST be removed.
-- **FR-015**: A division fielding fewer teams than the template declares MUST be drawn without error, whatever the shortfall, down to and including a division fielding no team at all — which draws every team block removed and the reserve block alone.
-- **FR-016**: Seat capacity MUST be positional and not per-team: the ceiling on a team's seats is the slot count of the block at the ordinal that team stands at, in the division being drawn. A league whose teams differ in seat count MUST therefore declare, at each block, at least the largest seat count any team may reach at that ordinal in any division, the spare slots being removed under FR-013.
-- **FR-017**: A collection standing inside a member of another and bounded by a configured value of that containing member — as the cars of a round are bounded by the seats configured for their team — MUST be unaffected: there the members the template declares remain a ceiling and not a count.
+- **FR-010**: The capacity of every collection of the module MUST be fixed by the template. The kind of capacity fixed by the data — of which the teams of a division and the seats of a team were the only instances — MUST be withdrawn.
+- **FR-011**: Teams of the division in excess of the team blocks the template declares MUST be a fatal error, naming the teams that would be dropped. A division MAY therefore field any number of teams from zero up to the block count the template declares, and no number above it. Raising that ceiling MUST be possible by authoring a template that declares more blocks, and MUST require nothing else.
+- **FR-012**: Seats of a team in excess of the seat slots the template declares within that team's block MUST be a fatal error, naming the drivers that would be dropped.
+- **FR-013**: Team blocks declared in excess of the teams of the division MUST be removed — by `team_<x>_group` in its entirety, or field by field where the template declares no such group — and no error MUST be reported.
+- **FR-014**: Seat slots declared in excess of the seats of a team MUST be treated as unoccupied seats are treated.
+- **FR-015**: A team the division fields that has recruited nobody MUST be drawn with every seat unoccupied, and MUST NOT be removed. Only an ordinal the division fields no team at MUST be removed.
+- **FR-016**: A division fielding fewer teams than the template declares MUST be drawn without error, whatever the shortfall, down to and including a division fielding no team at all — which draws every team block removed and the reserve block alone.
+- **FR-017**: Seat capacity MUST be positional and not per-team: the ceiling on a team's seats is the slot count of the block at the ordinal that team stands at, in the division being drawn. A league whose teams differ in seat count MUST therefore declare, at each block, at least the largest seat count any team may reach at that ordinal in any division, the spare slots being removed under FR-014.
+- **FR-018**: A collection standing inside a member of another and bounded by a configured value of that containing member — as the cars of a round are bounded by the seats configured for their team — MUST be unaffected: there the members the template declares remain a ceiling and not a count.
 
 #### Uniformity of divisions
 
-- **FR-018**: The requirement that the divisions of a season field the same teams and the same number of seats in each, and its validation at season review, MUST be withdrawn.
+- **FR-019**: The requirement that the divisions of a season field the same teams and the same number of seats in each, and its validation at season review, MUST be withdrawn.
 
 #### Verification
 
-- **FR-019**: When a lineup template is configured, it MUST be verified that it declares `division_name`, at least one team block and at least one seat slot within it, each numbered continuously from 1; that the blocks declare `team_<x>_name` and `team_<x>_driver_<y>_name` throughout; and that it declares `reserve_group` with at least one reserve slot, of which the first declares `reserve_driver_1_name`. A mandatory field that is absent MUST be a fatal error rejecting the command.
-- **FR-020**: At generation, the counts the template declares MUST be measured against the division, an excess on the side of the division being fatal.
-- **FR-021**: At season review, the same measurement MUST be made against every division of the season, an excess being a failure of validation naming the division and the team or seat at fault.
-- **FR-022**: The checks of FR-019 to FR-021 MUST be made whether or not the `lineup` toggle is on.
-- **FR-023**: No divergence of the lineup graphic MUST be reported as a warning: every field of it is verifiable against the template alone.
-- **FR-024**: Across the module, a stand-in MUST stand in for how many members will be drawn and never for which: a calendar template is compared against a round count and a lineup template against a count of teams and of seats, neither against a list of names.
+- **FR-020**: When a lineup template is configured, it MUST be verified that it declares `division_name`, at least one team block and at least one seat slot within it, each numbered continuously from 1; that the blocks declare `team_<x>_name` and `team_<x>_driver_<y>_name` throughout; and that it declares `reserve_group` with at least one reserve slot, of which the first declares `reserve_driver_1_name`. A mandatory field that is absent MUST be a fatal error rejecting the command.
+- **FR-021**: At generation, the counts the template declares MUST be measured against the division, an excess on the side of the division being fatal.
+- **FR-022**: At season review, the same measurement MUST be made against every division of the season, an excess being a failure of validation naming the division and the team or seat at fault.
+- **FR-023**: The checks of FR-020 to FR-022 MUST be made whether or not the `lineup` toggle is on.
+- **FR-024**: No divergence of the lineup graphic MUST be reported as a warning: every field of it is verifiable against the template alone.
+- **FR-025**: Across the module, a stand-in MUST stand in for how many members will be drawn and never for which: a calendar template is compared against a round count and a lineup template against a count of teams and of seats, neither against a list of names.
 
 #### The name of a team
 
-- **FR-025**: The name of a team MUST reach the image module as a filename and in no other way.
-- **FR-026**: One rule of normalisation MUST serve every class of asset — a team name, a country, a track, a tyre compound and a condition of weather alike. The rule is: the datum trimmed of whitespace, stripped of diacritics, converted to lowercase, with every run of characters that is neither a letter nor a digit replaced by a single underscore, and any leading or trailing underscore removed. "Red Bull" becomes `red_bull`; "Force India (B)" becomes `force_india_b`.
-- **FR-027**: The normalised form MUST be bound by what a filename admits, and not by what the identifier of a node of an XML document admits.
-- **FR-028**: The image of a team MUST be searched for under a filename equal to the normalised form of that name, in every graphic that draws one: the lineup, the two results graphics, the two standings graphics, the attendance sheet and the verdict.
-- **FR-029**: `team add` and `team rename` MUST reject a name that is empty once trimmed, whose normalised form is empty, that normalises to the same value as another team of the same scope, or that normalises to `reserve`. The scope is the server for the server's team list, and the division for the teams of a season; two divisions of one season MAY each field a team normalising to the same value. Of the two names `team rename` takes, only the new one MUST be validated.
-- **FR-030**: The requirement that a team name begin with a letter MUST be withdrawn; a name beginning with a digit MUST be admitted.
-- **FR-031**: `season review` MUST fail validation where any team of any division, or of the server's team configuration, fails FR-029, naming every offending team. Seasons already approved MUST NOT be re-validated, and no team MUST be renamed or removed by the change.
-- **FR-032**: These constraints MUST hold whether or not the image module is enabled and whatever the `images config toggle` settings are.
+- **FR-026**: The name of a team MUST reach the image module as a filename and in no other way.
+- **FR-027**: One rule of normalisation MUST serve every class of asset — a team name, a country, a track, a tyre compound and a condition of weather alike. The rule is: the datum trimmed of whitespace, stripped of diacritics, converted to lowercase, with every run of characters that is neither a letter nor a digit replaced by a single underscore, and any leading or trailing underscore removed. "Red Bull" becomes `red_bull`; "Force India (B)" becomes `force_india_b`.
+- **FR-028**: The normalised form MUST be bound by what a filename admits, and not by what the identifier of a node of an XML document admits.
+- **FR-029**: The image of a team MUST be searched for under a filename equal to the normalised form of that name, in every graphic that draws one: the lineup, the two results graphics, the two standings graphics, the attendance sheet and the verdict.
+- **FR-030**: `team add` and `team rename` MUST reject a name that is empty once trimmed, whose normalised form is empty, that normalises to the same value as another team of the same scope, or that normalises to `reserve`. The scope is the server for the server's team list, and the division for the teams of a season; two divisions of one season MAY each field a team normalising to the same value. Of the two names `team rename` takes, only the new one MUST be validated.
+- **FR-031**: The requirement that a team name begin with a letter MUST be withdrawn; a name beginning with a digit MUST be admitted.
+- **FR-032**: `season review` MUST fail validation where any team of any division, or of the server's team configuration, fails FR-030, naming every offending team. Seasons already approved MUST NOT be re-validated, and no team MUST be renamed or removed by the change.
+- **FR-033**: These constraints MUST hold whether or not the image module is enabled and whatever the `images config toggle` settings are.
 
 #### What ships
 
-- **FR-033**: The shipped `lineup_template.svg` MUST be redrawn to address its teams by ordinal, and MUST carry no team name of any league, invented or real.
-- **FR-034**: The redrawn template MUST declare a `team_<x>_group` for each of its team blocks, so that a league sees the removable group in a working example.
-- **FR-035**: The redrawn template MUST keep the shape of the file it replaces: eleven team blocks of two seat slots each, beside the reserve block of six slots. Eleven blocks covers the ten default constructor teams with one spare.
+- **FR-034**: The shipped `lineup_template.svg` MUST be redrawn to address its teams by ordinal, and MUST carry no team name of any league, invented or real.
+- **FR-035**: The redrawn template MUST declare a `team_<x>_group` for each of its team blocks, so that a league sees the removable group in a working example.
+- **FR-036**: The redrawn template MUST keep the shape of the file it replaces: eleven team blocks of two seat slots each, beside the reserve block of six slots. Eleven blocks covers the ten default constructor teams with one spare.
 
 #### Packaged directory relocation
 
-- **FR-036**: The packaged directory of an asset class MUST move from `resources/<class>` to `resources/defaults/<class>`, for the seven asset classes — tracks, teams, flags, drivers, markers, weather, tyres — and for the template directory.
-- **FR-037**: The default value read by every `images config *-directory` command, and the default value of `images config template-directory`, MUST name the new location.
-- **FR-038**: Nothing shipped in a packaged directory MUST change in kind: each class's fallback, the closed-set files a class ships beside it (the marker directions, the weather icons, `mystery.svg`), and the fifteen templates all move unaltered.
+- **FR-037**: The packaged directory of an asset class MUST move from `resources/<class>` to `resources/defaults/<class>`, for the seven asset classes — tracks, teams, flags, drivers, markers, weather, tyres — and for the template directory.
+- **FR-038**: The default value read by every `images config *-directory` command, and the default value of `images config template-directory`, MUST name the new location.
+- **FR-039**: Nothing shipped in a packaged directory MUST change in kind: each class's fallback, the closed-set files a class ships beside it (the marker directions, the weather icons, `mystery.svg`), and the fifteen templates all move unaltered.
 
 #### Two-tier fallback resolution
 
-- **FR-039**: Asset resolution MUST have exactly four outcomes: the datum's own file found in the configured directory; not found but the configured directory holds a fallback; not found and the configured directory holds no fallback but the packaged directory of the class does; not found and neither holds a fallback.
-- **FR-040**: The second and third outcomes MUST place the fallback upon the field and report the same non-fatal error, naming the field and the datum that had no file of its own. The fourth MUST be fatal and MUST abandon generation.
-- **FR-041**: The datum's own file MUST continue to be sought in the configured directory alone. The packaged directory MUST be consulted for a fallback only.
-- **FR-042**: Every statement in the specification that a directory "holds" or "holds no" fallback MUST be read as this two-tier check taken as a whole, and not as the configured directory alone.
+- **FR-040**: Asset resolution MUST have exactly four outcomes: the datum's own file found in the configured directory; not found but the configured directory holds a fallback; not found and the configured directory holds no fallback but the packaged directory of the class does; not found and neither holds a fallback.
+- **FR-041**: The second and third outcomes MUST place the fallback upon the field and report the same non-fatal error, naming the field and the datum that had no file of its own. The fourth MUST be fatal and MUST abandon generation.
+- **FR-042**: The datum's own file MUST continue to be sought in the configured directory alone. The packaged directory MUST be consulted for a fallback only.
+- **FR-043**: Every statement in the specification that a directory "holds" or "holds no" fallback MUST be read as this two-tier check taken as a whole, and not as the configured directory alone.
 
 #### Coverage of the graphics that draw a team
 
-- **FR-043**: The two-tier resolution of FR-039 to FR-042 MUST apply to every asset class and every graphic of the module, and MUST NOT be particular to the team class or to the lineup.
-- **FR-044**: Each of the seven graphics that draw a team badge — the lineup, the two results graphics, the two standings graphics, the attendance sheet and the verdict — MUST be exercised by a test proving it draws a packaged-tier fallback for a team whose badge the configured directory does not hold, and accepts a team name beginning with a digit. Exercising the resolver alone MUST NOT be taken to satisfy this.
+- **FR-044**: The two-tier resolution of FR-040 to FR-043 MUST apply to every asset class and every graphic of the module, and MUST NOT be particular to the team class or to the lineup.
+- **FR-045**: Each of the seven graphics that draw a team badge — the lineup, the two results graphics, the two standings graphics, the attendance sheet and the verdict — MUST be exercised by a test proving it draws a packaged-tier fallback for a team whose badge the configured directory does not hold, and accepts a team name beginning with a digit. Exercising the resolver alone MUST NOT be taken to satisfy this.
 
 #### Test mode, and a season under review
 
-- **FR-045**: The lineup MUST read the same data in the same way whether test mode is set or not. Test mode determines what data the server holds, never how the correspondence of FR-006 is resolved nor how seats are filled.
-- **FR-046**: A driver created by test mode MUST be drawn by the mock name it was created with, at whatever ordinal its team stands at, in every graphic that draws a driver, and MUST NEVER be treated as an unoccupied seat.
-- **FR-047**: A division seated wholly with drivers created by test mode MUST count as a division that has seated drivers. FR-014's team that "has recruited nobody" MUST NOT be read to cover it, and no driver MUST be fabricated over it.
-- **FR-048**: A season pending approval MUST be drawn exactly as an approved season is — its divisions, teams, seats and seated drivers taken as they stand, the ordinal correspondence of FR-006 resolved from them — and nothing MUST be substituted or fabricated on account of its status alone.
-- **FR-049**: The lineup graphic attached to `season review` MUST be drawn wherever the season passes the checks of FR-019 to FR-021. Where an excess of teams or of seats makes the render fatal, the review MUST report that failure of validation and fall back to the textual lineup; it MUST NOT fail the command, and MUST NOT report the fault as a failure to render.
-- **FR-050**: A command of the `/images test` family MUST resolve its assets under the two-tier resolution exactly as a posting for that division would. The existing rule that such a command MUST NOT substitute the packaged directories for those the league configured MUST be read as FR-041 states it — the datum's own file is sought in the configured directory alone — and MUST NOT be read as withholding the packaged fallback tier from these commands.
+- **FR-046**: The lineup MUST read the same data in the same way whether test mode is set or not. Test mode determines what data the server holds, never how the correspondence of FR-006 is resolved nor how seats are filled.
+- **FR-047**: A driver created by test mode MUST be drawn by the mock name it was created with, at whatever ordinal its team stands at, in every graphic that draws a driver, and MUST NEVER be treated as an unoccupied seat.
+- **FR-048**: A division seated wholly with drivers created by test mode MUST count as a division that has seated drivers. FR-015's team that "has recruited nobody" MUST NOT be read to cover it, and no driver MUST be fabricated over it.
+- **FR-049**: A season pending approval MUST be drawn exactly as an approved season is — its divisions, teams, seats and seated drivers taken as they stand, the ordinal correspondence of FR-006 resolved from them — and nothing MUST be substituted or fabricated on account of its status alone.
+- **FR-050**: The lineup graphic attached to `season review` MUST be drawn wherever the season passes the checks of FR-020 to FR-022. Where an excess of teams or of seats makes the render fatal, the review MUST report that failure of validation and fall back to the textual lineup; it MUST NOT fail the command, and MUST NOT report the fault as a failure to render.
+- **FR-051**: A command of the `/images test` family MUST resolve its assets under the two-tier resolution exactly as a posting for that division would. The existing rule that such a command MUST NOT substitute the packaged directories for those the league configured MUST be read as FR-042 states it — the datum's own file is sought in the configured directory alone — and MUST NOT be read as withholding the packaged fallback tier from these commands.
 
 #### The invented-league preview
 
-- **FR-051**: `/images test` MUST continue to refuse a preview on a server that has configured no team at all, for the kinds that draw a team or a driver. The reason recorded in the code MUST no longer cite a lineup template naming its fields after real teams, that rationale being withdrawn with FR-001; the reason the specification already gives — that these draw a team or a driver and no seat exists to fabricate a driver into — MUST stand in its place.
+- **FR-052**: `/images test` MUST continue to refuse a preview on a server that has configured no team at all, for the kinds that draw a team or a driver. The reason recorded in the code MUST no longer cite a lineup template naming its fields after real teams, that rationale being withdrawn with FR-001; the reason the specification already gives — that these draw a team or a driver and no seat exists to fabricate a driver into — MUST stand in its place.
 
 ### Key Entities
 
@@ -252,9 +253,9 @@ A manager adds a team named "2Fast Motorsport". It is accepted. The name no long
 ## Assumptions
 
 - **A-001**: The bot is not in production, so no data migration is needed for a server holding a configured directory that names an old `resources/<class>` path. A league that has explicitly configured a directory keeps whatever it configured; only the *default* moves.
-- **A-002**: The order in which a division holds its teams is the order already used to list them; no new ordering column and no reordering command is introduced. Adding a team appends.
+- **A-002**: The insertion order of a division's teams is recoverable from data already stored, so FR-008 needs no new ordering column and no reordering command. Adding a team appends.
 - **A-003**: The non-fatal notice reported for a packaged-tier fallback is worded identically to the configured-tier one. A league is told the datum had no file of its own; which tier answered is not information it can act on.
-- **A-004**: The refusal of FR-051 is a behaviour the specification already states and already justifies on grounds this feature does not touch. Only the rationale carried in the code is stale, so this is a comment-and-message correction and not a change of behaviour.
+- **A-004**: The refusal of FR-052 is a behaviour the specification already states and already justifies on grounds this feature does not touch. Only the rationale carried in the code is stale, so this is a comment-and-message correction and not a change of behaviour.
 - **A-005**: `resources/README.md`, `README.md` and the how-to guides are updated for the new packaged paths as part of this work. Any repository-layout convention for where a league keeps its *own* directories is documentation, not a rule the module enforces.
 
 ## Out of Scope
