@@ -408,10 +408,10 @@ def test_field_without_a_bound_is_never_truncated():
 
 def test_image_fill_rewrites_href():
     root = _doc('<image id="track" xlink:href="placeholder.svg"/>')
-    result = fill(FillSpec(root=root, images={"track": "resources/tracks/monza.svg"}))
+    result = fill(FillSpec(root=root, images={"track": "resources/defaults/tracks/monza.svg"}))
 
     element = FieldIndex(root).resolve("track")
-    assert element.get("{http://www.w3.org/1999/xlink}href") == "resources/tracks/monza.svg"
+    assert element.get("{http://www.w3.org/1999/xlink}href") == "resources/defaults/tracks/monza.svg"
     assert result.unresolved == []
 
 
@@ -498,8 +498,18 @@ def test_absent_datum_draws_the_class_fallback_and_reports_nothing(tmp_path):
     assert href.endswith("fallback.svg")
 
 
-def test_absent_datum_removes_the_field_where_the_class_has_no_fallback(tmp_path):
-    """The declaration is inert without a fallback — and still not fatal, and still quiet."""
+def test_absent_datum_removes_the_field_where_the_class_has_no_fallback(
+    tmp_path, monkeypatch
+):
+    """The declaration is inert without a fallback — and still not fatal, and still quiet.
+
+    "Without a fallback" means **neither tier** since v6.0.0 (047 FR-043), so the packaged
+    directory is put out of view here. With it in view the packaged tyre fallback answers,
+    the field is drawn, and this branch is never reached.
+    """
+    import utils.paths as paths_module
+
+    monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path / "elsewhere", raising=False)
     root = _image_doc()
     result = fill(
         FillSpec(
@@ -663,3 +673,33 @@ def test_wrapped_field_naming_a_missing_rectangle_is_a_problem():
     result = fill(FillSpec(root=root, text={"justification": "Anything at all."}))
 
     assert any("nope" in problem for problem in result.unresolved)
+
+
+# ── The packaged tier reaches the fill pipeline (047 FR-044) ──────────────
+
+
+def test_the_fill_pipeline_passes_the_packaged_directory(tmp_path, monkeypatch):
+    """One call site serves every graphic, so wiring it here wires it everywhere."""
+    import utils.paths as paths_module
+    from utils.svg_fill import _packaged_directory
+
+    packaged = tmp_path / "resources" / "defaults" / "flags"
+    packaged.mkdir(parents=True)
+    monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path, raising=False)
+
+    assert _packaged_directory("flag") == packaged
+
+
+def test_an_unknown_asset_class_has_no_packaged_directory():
+    from utils.svg_fill import _packaged_directory
+
+    assert _packaged_directory("nonesuch") is None
+
+
+def test_a_packaged_directory_that_is_not_there_leaves_the_tier_empty(tmp_path, monkeypatch):
+    import utils.paths as paths_module
+    from utils.svg_fill import _packaged_directory
+
+    monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path, raising=False)
+
+    assert _packaged_directory("flag") is None

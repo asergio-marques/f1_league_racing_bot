@@ -67,9 +67,12 @@ later polish phase.
 - Inkscape is the SVG rasteriser. It is installed but its PATH entry is unreliable; the
   code probes the conventional install locations, and the `INKSCAPE` environment variable
   overrides.
-- `resources/` is **tracked** and holds what ships: the fifteen default templates and one
-  `fallback.svg` per asset directory. No league-specific artwork ships. See
-  [resources/README.md](resources/README.md).
+- `resources/` splits in two. `resources/defaults/` is **tracked** and holds what ships: the
+  fifteen default templates, one `fallback.svg` per asset directory, and the closed-set files
+  (marker directions, weather icons, `mystery.svg`). No league-specific artwork ships.
+  `resources/league/` is where a league puts its own — a folder per class, kept by `.gitkeep`
+  and otherwise **gitignored**, so an update to the bot cannot overwrite it and its contents
+  never reach a diff. See [resources/README.md](resources/README.md).
 - `poc/` is **gitignored scratch** — the proof of concept, plus the sample assets and the
   earlier template copies. Not a design input, and never something to port code from. The
   one exception is a *rule* it already encodes: `normalize()` in `poc/build_poc.py` calls

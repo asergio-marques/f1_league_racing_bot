@@ -92,3 +92,67 @@ def test_error_carries_both_given_and_resolved(root):
 def test_relative_to_root_renders_forward_slashed(root):
     resolved = resolve_within_project_root("resources/templates", root=root)
     assert relative_to_root(resolved, root=root) == "resources/templates"
+
+
+# ── What ships, and where (047 US4) ───────────────────────────────────────
+
+import sys as _sys  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))
+
+from models.image_constants import (  # noqa: E402
+    ASSET_CLASS_TO_COLUMN,
+    ASSET_DIRECTORIES,
+    TEMPLATE_COLUMNS,
+    packaged_directory_for,
+)
+
+PROJECT_ROOT = _Path(__file__).resolve().parents[2]
+
+
+def test_every_asset_class_defaults_under_resources_defaults():
+    """FR-037, FR-038: the packaged directory of every class moved."""
+    for column, (_command, default) in ASSET_DIRECTORIES.items():
+        assert default.startswith("resources/defaults/"), f"{column}: {default}"
+
+
+def test_every_packaged_asset_directory_exists_and_carries_a_fallback():
+    for asset_class in ASSET_CLASS_TO_COLUMN:
+        directory = PROJECT_ROOT / packaged_directory_for(asset_class)
+        assert directory.is_dir(), asset_class
+        assert (directory / "fallback.svg").is_file(), asset_class
+
+
+def test_packaged_directory_for_an_unknown_class_is_none():
+    assert packaged_directory_for("nonesuch") is None
+
+
+def test_the_fifteen_templates_ship_under_resources_defaults():
+    directory = PROJECT_ROOT / "resources" / "defaults" / "templates"
+    assert directory.is_dir()
+    for filename in TEMPLATE_COLUMNS.values():
+        assert (directory / filename).is_file(), filename
+
+
+def test_the_closed_set_files_ship_beside_their_fallback():
+    """FR-039: nothing shipped changes in kind, only where it sits."""
+    root = PROJECT_ROOT / "resources" / "defaults"
+
+    for name in ("gained.svg", "lost.svg", "unchanged.svg"):
+        assert (root / "markers" / name).is_file(), name
+
+    for name in (
+        "sunny.svg", "mixed.svg", "rain.svg",
+        "clear.svg", "light_cloud.svg", "overcast.svg", "wet.svg", "very_wet.svg",
+    ):
+        assert (root / "weather" / name).is_file(), name
+
+    assert (root / "tracks" / "mystery.svg").is_file()
+    assert (root / "flags" / "mystery.svg").is_file()
+
+
+def test_no_asset_directory_remains_at_the_old_top_level():
+    for name in ("tracks", "teams", "flags", "drivers", "markers", "weather", "tyres",
+                 "templates"):
+        assert not (PROJECT_ROOT / "resources" / name).exists(), name

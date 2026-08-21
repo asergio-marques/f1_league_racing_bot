@@ -41,7 +41,7 @@ SERVER_ID = 9494
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 TRACK = "Albert Park Circuit"
 
-#: The teams `resources/templates/lineup_template.svg` names. Every one must be fielded or
+#: The teams `resources/defaults/templates/lineup_template.svg` names. Every one must be fielded or
 #: the render refuses, naming the teams it could not find — which is the check working.
 PACKAGED_TEAMS = (
     "Apex Racing",

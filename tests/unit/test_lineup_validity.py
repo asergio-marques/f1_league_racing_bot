@@ -1,16 +1,17 @@
-"""Unit tests for the lineup's three verification moments — T034.
+"""Unit tests for the lineup's verification moments — 047.
 
-Constitution XIV.9 (v4.3.0): **stand-ins warn, the real data refuses.** The lineup is the
-first type to exercise both halves, and this file pins which half applies where.
+Constitution XIV.9: **stand-ins warn, the real data refuses.** The lineup used to exercise
+both halves, being the one type whose fields were named after a league's own teams. Since
+v6.0.0 it exercises neither: every field of it is verifiable against the **template alone**,
+so there is no moment at which it can only be compared with a stand-in, and no divergence of
+it is ever a warning (047 FR-024).
 
 Covers:
-  1. Layer 2 evaluates the lineup **binding-free** — a stand-in finding can never make a
-     template invalid everywhere.
-  2. The reserve block is team-independent, so it is checkable the moment a template is
-     named: a missing `reserve_group` is a rejection.
-  3. Reserve slot contiguity is a rejection at that same moment.
+  1. Layer 2 evaluates the lineup from the template, with no division in view.
+  2. Every mandatory field — team blocks included — is checkable the moment a template is
+     named: a missing `reserve_group`, `division_name` or `team_<x>_name` is a rejection.
+  3. Contiguity of both collections is a rejection at that same moment.
   4. The lineup reports genuine depth 2, not a skip.
-  5. `binding_from_teams` and `divergences` — one comparison, three severities.
 """
 from __future__ import annotations
 
@@ -24,7 +25,6 @@ from lxml import etree
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from models.image_catalogues import LINEUP_CATALOGUE, CapacityError
-from services.image_lineup_service import binding_from_teams, divergences
 from services.image_validity_service import (
     LAYER_CATALOGUE,
     CatalogueLayer,
@@ -45,38 +45,52 @@ def _root(*, reserve_group=True, reserve_slots=2, teams=None, division_name=True
 
     if division_name:
         node(root, "division_name")
-    for key, seats in (teams or {}).items():
-        node(root, f"team_{key}_name")
+    for ordinal, seats in enumerate(teams or [1], start=1):
+        node(root, f"team_{ordinal}_name")
         for seat in range(1, seats + 1):
-            node(root, f"team_{key}_driver_{seat}_name")
+            node(root, f"team_{ordinal}_driver_{seat}_name")
     container = node(root, "reserve_group", "g") if reserve_group else root
     for slot in range(1, reserve_slots + 1):
         node(container, f"reserve_driver_{slot}_name")
     return root
 
 
-# ── Layer 2 evaluates the lineup binding-free ─────────────────────────────
+# ── Layer 2 evaluates the lineup from the template alone ──────────────────
 
 
 def test_layer_two_applies_to_the_lineup():
     assert CatalogueLayer().applies_to("lineup_template")
 
 
-def test_binding_free_enumeration_never_asks_for_a_team_field():
-    """A stand-in finding may not make a template invalid everywhere (research R4)."""
-    ids = LINEUP_CATALOGUE.all_mandatory_ids(_root(teams={"red_bull": 2}))
-    assert not any(name.startswith("team_") for name in ids)
+def test_the_team_blocks_are_checkable_with_no_division_in_view():
+    """047 FR-024. The template says what it declares; no stand-in is needed."""
+    ids = LINEUP_CATALOGUE.all_mandatory_ids(_root(teams=[2]))
+
+    assert "team_1_name" in ids
+    assert "team_1_driver_1_name" in ids
+    assert "team_1_driver_2_name" in ids
 
 
-def test_a_template_declaring_no_team_field_at_all_is_still_valid_at_naming():
-    """The teams are unknowable with no division in view, so they are not required."""
-    root = _root(teams={})
-    missing = [
-        name
-        for name in LINEUP_CATALOGUE.all_mandatory_ids(root)
-        if root.find(f".//*[@id='{name}']") is None and root.get("id") != name
-    ]
-    assert missing == []
+def test_a_template_declaring_no_team_block_at_all_is_refused():
+    """FR-020: at least one block, and at least one slot within it."""
+    root = _root(teams=[])
+    # `teams=[]` still yields the default single block, so strip it explicitly.
+    for node in list(root):
+        if (node.get("id") or "").startswith("team_"):
+            root.remove(node)
+
+    with pytest.raises(CapacityError):
+        LINEUP_CATALOGUE.all_mandatory_ids(root)
+
+
+def test_a_gap_in_the_team_numbering_is_refused_at_naming_time():
+    root = _root(teams=[1])
+    for ordinal in (2, 4):
+        node = etree.SubElement(root, f"{{{SVG_NS}}}text")
+        node.set("id", f"team_{ordinal}_name")
+
+    with pytest.raises(CapacityError):
+        LINEUP_CATALOGUE.all_mandatory_ids(root)
 
 
 # ── What *is* checkable at naming time ────────────────────────────────────
@@ -130,40 +144,18 @@ def test_the_lineup_declares_depth_two_not_a_skip():
     assert CatalogueLayer().number == LAYER_CATALOGUE
     assert not LINEUP_CATALOGUE.is_empty
 
-
-# ── One comparison, three severities ──────────────────────────────────────
-
-
-def _teams(**seats):
-    return [NS(name=name, max_seats=count, is_reserve=False) for name, count in seats.items()] + [
-        NS(name="Reserve", max_seats=-1, is_reserve=True)
-    ]
+# ── One comparison, one severity (047 FR-024) ─────────────────────────────
 
 
-def test_binding_from_teams_excludes_the_reserve_team():
-    binding = binding_from_teams(_teams(Alpine=2, Ferrari=2))
-    assert binding.team_keys == ("alpine", "ferrari")
-    assert "reserve" not in binding.team_keys
+def test_the_lineup_is_measured_by_counts_and_never_by_names():
+    """FR-025: a stand-in stands for how *many* members are drawn, never for which.
 
+    The block count and the per-block slot count are the whole of what a division is
+    measured against, and both are read from the template. There is nothing a division
+    could be compared against approximately, so nothing to downgrade to a warning.
+    """
+    root = _root(teams=[2, 2, 2])
 
-def test_binding_from_teams_skips_an_unusable_name_rather_than_raising():
-    """The offending name is reported by the team-name check, not by this one."""
-    teams = [NS(name="!!!", max_seats=2, is_reserve=False), NS(name="Alpine", max_seats=2, is_reserve=False)]
-    assert binding_from_teams(teams).team_keys == ("alpine",)
-
-
-def test_the_same_comparison_serves_every_moment():
-    root = _root(teams={"alpine": 2})
-    agreeing = binding_from_teams(_teams(Alpine=2))
-    diverging = binding_from_teams(_teams(Alpine=2, Ferrari=2))
-
-    assert divergences(root, agreeing) == []
-    faults = divergences(root, diverging)
-    assert len(faults) == 1
-    assert "ferrari" in faults[0]
-
-
-def test_a_seat_count_divergence_is_found():
-    root = _root(teams={"alpine": 3})
-    faults = divergences(root, binding_from_teams(_teams(Alpine=2)))
-    assert any("alpine_driver_3_name" in f for f in faults)
+    assert LINEUP_CATALOGUE.capacity(root) == 3
+    assert LINEUP_CATALOGUE.rows.nested.declared_capacity("team_1", 
+        {e.get("id") for e in root.iter() if e.get("id")}) == 2

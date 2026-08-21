@@ -49,6 +49,10 @@ REASON_MISSING_INPUT = "missing_input"
 #: No season *and* no configured team, for a kind that draws a roster. Deliberately
 #: distinct from REASON_NO_TEAMS: that one says a division holds no team, this one that the
 #: server has configured none at all, and a manager must be able to tell them apart.
+#:
+#: These kinds draw a team or a driver and no seat exists to fabricate a driver into, which
+#: is the whole of the reason. It is **not** that a lineup template names its fields after
+#: real teams: that was true until v6.0.0 and is not why the refusal stands.
 REASON_NO_SERVER_TEAMS = "no_server_teams"
 
 
@@ -360,7 +364,7 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
         instances = await (
             await db.execute(
                 "SELECT id, name, max_seats, is_reserve FROM team_instances "
-                "WHERE division_id = ? ORDER BY is_reserve ASC, name ASC",
+                "WHERE division_id = ? ORDER BY is_reserve ASC, id ASC",
                 (context.division_id,),
             )
         ).fetchall()

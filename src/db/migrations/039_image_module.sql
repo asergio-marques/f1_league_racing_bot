@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS image_config (
     module_enabled                   INTEGER NOT NULL DEFAULT 0,
 
     -- Template location
-    template_directory               TEXT NOT NULL DEFAULT 'resources/templates',
+    template_directory               TEXT NOT NULL DEFAULT 'resources/defaults/templates',
     calendar_template                TEXT NOT NULL DEFAULT 'calendar_template.svg',
     lineup_template                  TEXT NOT NULL DEFAULT 'lineup_template.svg',
     results_qualifying_template      TEXT NOT NULL DEFAULT 'results_qualifying_template.svg',
@@ -30,13 +30,13 @@ CREATE TABLE IF NOT EXISTS image_config (
     verdicts_template                TEXT NOT NULL DEFAULT 'verdicts_template.svg',
 
     -- Asset location
-    track_image_directory            TEXT NOT NULL DEFAULT 'resources/tracks',
-    team_image_directory             TEXT NOT NULL DEFAULT 'resources/teams',
-    flag_directory                   TEXT NOT NULL DEFAULT 'resources/flags',
-    driver_image_directory           TEXT NOT NULL DEFAULT 'resources/drivers',
-    marker_directory                 TEXT NOT NULL DEFAULT 'resources/markers',
-    weather_icon_directory           TEXT NOT NULL DEFAULT 'resources/weather',
-    tyre_directory                   TEXT NOT NULL DEFAULT 'resources/tyres',
+    track_image_directory            TEXT NOT NULL DEFAULT 'resources/defaults/tracks',
+    team_image_directory             TEXT NOT NULL DEFAULT 'resources/defaults/teams',
+    flag_directory                   TEXT NOT NULL DEFAULT 'resources/defaults/flags',
+    driver_image_directory           TEXT NOT NULL DEFAULT 'resources/defaults/drivers',
+    marker_directory                 TEXT NOT NULL DEFAULT 'resources/defaults/markers',
+    weather_icon_directory           TEXT NOT NULL DEFAULT 'resources/defaults/weather',
+    tyre_directory                   TEXT NOT NULL DEFAULT 'resources/defaults/tyres',
 
     -- Presentation preferences
     time_zone                        TEXT NOT NULL DEFAULT 'UTC',

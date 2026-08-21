@@ -482,12 +482,12 @@ class TestAssetDirectories:
     async def test_a_league_pointing_a_class_elsewhere_is_followed(self, bot):
         """The configured value is read, not a hardcoded default.
 
-        The withdrawn command resolved `resources/flags` whatever the league had set. The
+        The withdrawn command resolved `resources/defaults/flags` whatever the league had set. The
         directory is pointed at another real folder inside the project root — a league
         cannot point outside it, which the containment test below covers.
         """
         await bot.image_config_service.set_field(
-            SERVER_ID, "flag_directory", "resources/teams"
+            SERVER_ID, "flag_directory", "resources/defaults/teams"
         )
 
         directories, faults = await resolve_asset_directories(bot, SERVER_ID)

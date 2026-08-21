@@ -29,7 +29,7 @@ SVG_NS = "http://www.w3.org/2000/svg"
 
 
 def _config(**columns):
-    values = {"flag_directory": "resources/flags", "team_image_directory": "resources/teams"}
+    values = {"flag_directory": "resources/defaults/flags", "team_image_directory": "resources/defaults/teams"}
     values.update(columns)
     return SimpleNamespace(**values)
 

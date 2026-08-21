@@ -865,7 +865,7 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
         # a preview must still resolve its assets — without a directory every round image
         # would report its asset class unconfigured and the preview would refuse to draw.
         try:
-            track_directory = resolve_within_project_root("resources/tracks")
+            track_directory = resolve_within_project_root("resources/defaults/tracks")
         except Exception:  # noqa: BLE001
             track_directory = None
 
@@ -887,9 +887,9 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
         # track directory here: a preview must still resolve its assets.
         directories: dict[str, object] = {}
         for asset_class, relative in (
-            ("team", "resources/teams"),
-            ("flag", "resources/flags"),
-            ("driver", "resources/drivers"),
+            ("team", "resources/defaults/teams"),
+            ("flag", "resources/defaults/flags"),
+            ("driver", "resources/defaults/drivers"),
         ):
             try:
                 directories[asset_class] = resolve_within_project_root(relative)
@@ -912,9 +912,9 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
 
         directories: dict[str, object] = {}
         for asset_class, relative in (
-            ("team", "resources/teams"),
-            ("flag", "resources/flags"),
-            ("tyre", "resources/tyres"),
+            ("team", "resources/defaults/teams"),
+            ("flag", "resources/defaults/flags"),
+            ("tyre", "resources/defaults/tyres"),
         ):
             try:
                 directories[asset_class] = resolve_within_project_root(relative)
@@ -944,10 +944,10 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
         # track directory here: a preview must still resolve its assets.
         directories: dict[str, object] = {}
         for asset_class, relative in (
-            ("team", "resources/teams"),
-            ("flag", "resources/flags"),
-            ("track", "resources/tracks"),
-            ("marker", "resources/markers"),
+            ("team", "resources/defaults/teams"),
+            ("flag", "resources/defaults/flags"),
+            ("track", "resources/defaults/tracks"),
+            ("marker", "resources/defaults/markers"),
         ):
             try:
                 directories[asset_class] = resolve_within_project_root(relative)
@@ -966,9 +966,9 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
 
         directories = {}
         for asset_class, relative in (
-            ("team", "resources/teams"),
-            ("flag", "resources/flags"),
-            ("track", "resources/tracks"),
+            ("team", "resources/defaults/teams"),
+            ("flag", "resources/defaults/flags"),
+            ("track", "resources/defaults/tracks"),
         ):
             try:
                 directories[asset_class] = resolve_within_project_root(relative)
@@ -987,7 +987,7 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
 
         directories = {}
         try:
-            directories["track"] = resolve_within_project_root("resources/tracks")
+            directories["track"] = resolve_within_project_root("resources/defaults/tracks")
         except Exception:  # noqa: BLE001
             pass
 
@@ -1003,8 +1003,8 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
 
         directories = {}
         for asset_class, relative in (
-            ("flag", "resources/flags"),
-            ("team", "resources/teams"),
+            ("flag", "resources/defaults/flags"),
+            ("team", "resources/defaults/teams"),
         ):
             try:
                 directories[asset_class] = resolve_within_project_root(relative)
@@ -1023,8 +1023,8 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
 
         directories = {}
         for asset_class, relative in (
-            ("track", "resources/tracks"),
-            ("weather", "resources/weather"),
+            ("track", "resources/defaults/tracks"),
+            ("weather", "resources/defaults/weather"),
         ):
             try:
                 directories[asset_class] = resolve_within_project_root(relative)

@@ -382,10 +382,6 @@ def _verify_against_data(root, spec, image_type: str) -> Problem | None:
     if catalogue.is_empty:
         return None
 
-    # The data a data-fixed collection is measured against (XIV.12, v4.3.0). None for
-    # every ordinal-discriminated type, which is every type but the lineup.
-    binding = getattr(spec, "binding", None)
-
     # 0. Count the template's members. Where the capacity is derived (the calendar), an
     #    uncountable collection — none declared, or a gap — is itself the problem, and
     #    must be reported before anything is compared against it.
@@ -411,22 +407,11 @@ def _verify_against_data(root, spec, image_type: str) -> Problem | None:
             template_key=image_type,
         )
 
-    # 1a. A data-fixed collection diverging from the template, in either direction
-    #     (XIV.12, v4.3.0). Reported before the mandatory sweep so that a team the
-    #     template does not declare is named as the divergence it is, rather than as a
-    #     list of absent ids.
-    divergences = catalogue.divergent_members(root, binding)
-    if divergences:
-        return Problem(
-            kind=PROBLEM_MISSING_MANDATORY_FIELD,
-            detail=(
-                "; ".join(divergences[:6])
-                + (f"; and {len(divergences) - 6} more" if len(divergences) > 6 else "")
-            ),
-            template_key=image_type,
-        )
-
-    mandatory = catalogue.all_mandatory_ids(root, binding)
+    # A both-directions divergence check stood here until v6.0.0, for a capacity fixed by
+    # the data. No collection is fixed that way any more: a template declaring more than
+    # the data hold is correct and its surplus is removed, and a template declaring fewer
+    # is caught by the capacity guard above.
+    mandatory = catalogue.all_mandatory_ids(root)
     if not mandatory:
         return None
 
@@ -452,7 +437,7 @@ def _verify_against_data(root, spec, image_type: str) -> Problem | None:
     #    geometry the crop reads, never text the render writes, so "its value could not
     #    be determined" cannot apply to it. Check 2 above still requires it to exist.
     supplied = set(spec.text) | set(spec.images) | set(spec.image_data)
-    checkable = mandatory - catalogue.valueless_ids(root, binding)
+    checkable = mandatory - catalogue.valueless_ids(root)
     # XIV.3: a field taken off the canvas by a group removal or a vertical crop is not
     # unresolved. A division holding fewer members than its template declares draws none
     # of the surplus, and must not be asked for their values.

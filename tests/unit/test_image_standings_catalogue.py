@@ -46,7 +46,7 @@ _SHARED_ROW_MANDATORY = (
 )
 
 _TEMPLATE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "resources", "templates"
+    os.path.dirname(__file__), "..", "..", "resources", "defaults", "templates"
 )
 
 

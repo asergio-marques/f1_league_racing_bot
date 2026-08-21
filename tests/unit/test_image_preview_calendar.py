@@ -179,7 +179,7 @@ class TestItUsesTheLeaguesOwnDirectories:
         """FR-035 — never the packaged directories the withdrawn command hardcoded."""
         await _seed(db_path, [(1, "NORMAL", TRACK_A)])
         await bot.image_config_service.set_field(
-            SERVER_ID, "flag_directory", "resources/teams"
+            SERVER_ID, "flag_directory", "resources/defaults/teams"
         )
 
         context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
@@ -193,7 +193,7 @@ class TestItUsesTheLeaguesOwnDirectories:
 
         await _seed(db_path, [(1, "NORMAL", TRACK_A)])
         await bot.image_config_service.set_field(
-            SERVER_ID, "flag_directory", "resources/teams"
+            SERVER_ID, "flag_directory", "resources/defaults/teams"
         )
         context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
         requests = await build_calendar_preview(bot, context)

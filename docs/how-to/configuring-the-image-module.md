@@ -6,7 +6,7 @@ This guide is the **order to do things in**, from a fresh install to a season ru
 
 - **[Image Module](../../README.md#image-module)** in the main README — every command in full, and **Templates: what the bot expects**, the rules for the drawing files themselves.
 - **[resources/README.md](../../resources/README.md)** — what comes with the bot, and how it finds your artwork.
-- **[resources/templates/README.md](../../resources/templates/README.md)** — the fifteen drawing files, one by one.
+- **[resources/defaults/templates/README.md](../../resources/defaults/templates/README.md)** — the fifteen drawing files, one by one.
 
 You do not need to read those first. Start here.
 
@@ -128,13 +128,13 @@ The bot looks in these folders unless you point it somewhere else. Two things ab
 
 | Command to move the folder | Starts as | Holds | Size to draw at |
 |---|---|---|---|
-| `/images config track-image-directory` | `resources/tracks` | Circuit maps — calendar and check-in only | 120 × 120 |
-| `/images config team-image-directory` | `resources/teams` | Team badges | 120 × 120 |
-| `/images config driver-image-directory` | `resources/drivers` | Driver photos | 120 × 120 |
-| `/images config flag-directory` | `resources/flags` | Country flags — drivers **and** rounds | 120 × 80 |
-| `/images config marker-directory` | `resources/markers` | Standings movement markers — up, down and unchanged | 64 × 64 |
-| `/images config weather-icon-directory` | `resources/weather` | Weather symbols | 64 × 64 |
-| `/images config tyre-directory` | `resources/tyres` | Tyre compounds | 64 × 64 |
+| `/images config track-image-directory` | `resources/defaults/tracks` | Circuit maps — calendar and check-in only | 120 × 120 |
+| `/images config team-image-directory` | `resources/defaults/teams` | Team badges | 120 × 120 |
+| `/images config driver-image-directory` | `resources/defaults/drivers` | Driver photos | 120 × 120 |
+| `/images config flag-directory` | `resources/defaults/flags` | Country flags — drivers **and** rounds | 120 × 80 |
+| `/images config marker-directory` | `resources/defaults/markers` | Standings movement markers — up, down and unchanged | 64 × 64 |
+| `/images config weather-icon-directory` | `resources/defaults/weather` | Weather symbols | 64 × 64 |
+| `/images config tyre-directory` | `resources/defaults/tyres` | Tyre compounds | 64 × 64 |
 
 ### Which pictures use which folder
 
@@ -171,18 +171,22 @@ Say your league has a team called **Red Bull** and you have its badge ready.
 1. **Save it as an SVG at 120 × 120.** Keep it simple — no gradients, no filters, no clipping. If the badge is not square, add see-through space around it to make it square. The bot never pads pictures for you, and a picture of the wrong shape gets stretched and smeared.
 2. **Do not put any words in the artwork.** Text inside a badge can come out in the wrong typeface on a different computer. Keep lettering as shapes, or leave it out.
 3. **Work out the filename**: `Red Bull` becomes `red_bull.svg`.
-4. **Copy it onto the bot's computer**, into the team badge folder (`resources/teams` unless you moved it). This is the by-hand step — there is no command for it.
+4. **Copy it onto the bot's computer**, into `resources/league/teams` — the folder that comes with the bot for your own artwork — and point the bot at it once with `/images config team-image-directory directory:resources/league/teams`. Do not put it in `resources/defaults/teams`: that folder is the bot's and is replaced when you update it. This is the by-hand step — there is no command for it.
 5. **Check it worked** by running the matching preview — `/images test lineup`, say — which draws with *your* folders and tells you every file it could not find. The log channel records the same thing for real posts.
 
 Every folder works the same way. Only the folder and the source of the name change.
 
 > **The previews use your artwork.** They look in the folders you configured, exactly as a real post does, and fall back to the grey placeholder only where a file is genuinely missing. The reply names each one it fell back on, and the file it was looking for, so a missing badge is something you can see and fix rather than guess at.
 
-### Always leave a `fallback.svg` in every folder
+### The stand-in picture, and where it comes from
 
-If the bot cannot find the right file, it uses the folder's `fallback.svg` — the plain grey placeholder — and notes in the log which one was missing.
+If the bot cannot find the right file, it uses a `fallback.svg` — the plain grey placeholder — and notes in the log which one was missing.
 
-**If there is no `fallback.svg` either, the bot gives up and posts nothing as a picture.** It will not post a card with a hole in it. That one spare file in each folder is what stops a half-finished set of artwork from stopping your pictures, which matters most at the start, when most of your artwork does not exist yet.
+**You do not have to supply one.** The bot looks in two places, in this order: the folder you configured, and then the folder the bot ships for that kind of picture. So a folder holding eight of your ten team badges still draws every picture — the two without a badge get the bot's placeholder, and the log names them. Put a `fallback.svg` in your own folder only when you would rather your placeholder was used than the bot's.
+
+The bot's folder is consulted for a **stand-in and nothing else**. A file sitting there under one of your teams' names is never drawn for you: you get what you supplied, or a placeholder, and never someone else's artwork by accident.
+
+**If neither folder has one, the bot gives up and posts nothing as a picture.** It will not post a card with a hole in it. Since a `fallback.svg` ships in every folder the bot brings, you reach this only by pointing a kind of picture at a folder of your own *and* deleting the bot's.
 
 Two filenames are spoken for: `fallback.svg`, and `mystery.svg` — the latter in **both** the track folder and the flag folder, used for a round whose track, and so whose country, is kept secret. All of them come with the bot. Replace the pictures if you like, but keep the names.
 
@@ -192,7 +196,7 @@ Two filenames are spoken for: `fallback.svg`, and `mystery.svg` — the latter i
 
 Fifteen of them, one per kind of picture, and they all come with the bot. You can leave every one alone to begin with and restyle them later.
 
-That folder starts as `resources/templates`, and `/images config template-directory` moves it — under the same rules as the artwork folders in step 4: it must sit inside the project folder, and one that does not exist is accepted with a warning rather than refused.
+That folder starts as `resources/defaults/templates`, and `/images config template-directory` moves it — under the same rules as the artwork folders in step 4: it must sit inside the project folder, and one that does not exist is accepted with a warning rather than refused.
 
 To use your own drawing file, put it in that folder and name it:
 
@@ -222,15 +226,19 @@ To use your own drawing file, put it in that folder and name it:
 
 Before you edit a drawing file, read **Templates: what the bot expects** in the [main README](../../README.md#image-module). That explains how the blanks are labelled so the bot can find them.
 
-> **The lineup drawing is the one you have to make yourself.** All the others number their rows, so the same file suits any league. The lineup labels its blanks with *your team names*, so that each team's block can be done in that team's own colours. The one that comes with the bot uses made-up teams, so using it as-is will be rejected when you try to approve a season — and the bot will tell you which of your teams it cannot draw.
+> **The lineup drawing works as it comes, like all the others.** It numbers its team blocks — block 1 draws whichever team is first in the division, block 2 the second, and so on — so the same file suits any league. The team's name and badge are the only things that change from block to block. The one that comes with the bot has room for eleven teams of two drivers each, plus six reserves.
 >
-> One more thing: while lineup pictures are switched on, **every division must field the same teams with the same number of seats**, because one drawing file serves them all. Switch the lineup off and that requirement goes away.
+> Teams appear **in the order you added them**. A team you add later takes the next free block, so nothing already on the picture moves; renaming a team does not move it either.
+>
+> **Your divisions can differ however you like** — different teams, different numbers of them, different numbers of seats. One drawing file serves them all, and season review no longer asks them to match. It only speaks up when a division has more teams, or a team more drivers, than your drawing has room for, and then it names them.
 
 > **Deciding how a round is pictured is a drawing-file job.** On the calendar and the check-in call, the flag blank and the circuit-map blank are separate and both optional: keep both, drop one, or drop both, and the calendar decides it round by round. The files that come with the bot keep both, so you can see each and delete what you do not want. The other pictures get the flag and have no map blank to give them — a drawing file that adds one is refused.
 
 > **A blank has to be the right shape for what goes in it.** Flag blanks are 3:2 and every other kind is square. The bot refuses a drawing file whose blank is the wrong shape, and tells you which blank, what shape it wanted and what it found — because it never stretches or pads a picture to fit, so a wrongly shaped blank would smear every flag you ever draw into it and no artwork of yours could put it right. The rule and the sizes are in [main README](../../README.md#image-module).
 
 > **The weather drawings have a minimum.** Phases 2 and 3 each have two versions — one for sprint weekends, one for everything else — because a sprint weekend has more sessions to show. If a file does not have room for enough sessions, the bot refuses it straight away and tells you how many it needs. Having room to spare is fine; the extra is simply hidden.
+
+> **You do not need a spare picture of your own.** When the bot cannot find the file for a particular team, circuit or flag, it uses a stand-in — yours if you put a `fallback.svg` in that folder, and otherwise the one that comes with the bot. So a folder holding eight of your ten team badges still draws every picture: the two without a badge get the stand-in, and the bot tells you which ones. Add a `fallback.svg` of your own only if you would rather your stand-in was used than ours.
 
 **Make room for your biggest season.** Where the drawing file sets the limit — table rows, calendar rounds, reserve seats — the bot will refuse to go past it rather than quietly leaving someone off. If your calendar drawing has room for 22 rounds, `/round add` will stop you at 23. Spare room costs nothing, as unused slots are hidden.
 
@@ -304,13 +312,12 @@ Worth running through just before `/season approve`.
 - [ ] Every output you want is switched on, and none shows ⚠️
 - [ ] The module behind each output is enabled — results, attendance or weather
 - [ ] Every division has the channel set for each output you switched on
-- [ ] The lineup drawing has every team on your current list, with the right number of seats
-- [ ] Every division fields the same teams, if lineup pictures are on
+- [ ] The lineup drawing has room for your largest division's teams, and enough seats in each block for your biggest team
 - [ ] Your calendar drawing has room for your longest division's rounds
 - [ ] Your attendance drawing has room for that many rounds too, and the check-in drawing has room for a sprint weekend's sessions
 - [ ] The time zone is the one your league actually races in
 - [ ] You have looked at each output with its `/images test` command — against a real division once you have a season, and against the invented league before then — and been happy with it
-- [ ] Your artwork is on the bot's computer, correctly named — and every folder still has its `fallback.svg`
+- [ ] Your artwork is on the bot's computer, correctly named
 - [ ] `/season review` reports nothing blocking
 
 ---
@@ -323,7 +330,7 @@ Worth running through just before `/season approve`.
 | Text in the wrong typeface, or breaking in odd places | The typeface the drawing file asks for is not installed on the bot's computer, so a different one was swapped in. Install it, or use one that is there |
 | A driver's name running over whatever is next to it | That blank has no width limit set on it. It is the only thing stopping a very long name from running off |
 | A label you wanted in capitals showing in mixed case | The bot cannot force capitals. Type the label in capitals in the drawing file |
-| No picture at all, and text posted instead | Something went badly wrong for that one picture — most often a missing piece of artwork in a folder with no `fallback.svg`. The log channel names it |
+| No picture at all, and text posted instead | Something went badly wrong for that one picture — most often a folder you pointed the bot at that has neither the artwork nor a `fallback.svg`, with the bot's own copy deleted too. The log channel names it |
 | One division posting text while the rest post pictures | The same thing, affecting only that division. The log channel says why |
 | The bot refusing to add a round or assign a driver | It would go past what your drawing file can show. Make the drawing bigger, or switch that output off |
 | Grey placeholders where your own artwork should be | Either the filename does not match, or it is in a folder the bot is not looking in. The log channel names what it could not find |

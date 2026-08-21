@@ -334,7 +334,7 @@ def test_every_shipped_template_passes_the_widened_check():
 
     from models.image_constants import TEMPLATE_COLUMNS
 
-    directory = Path(__file__).resolve().parents[2] / "resources" / "templates"
+    directory = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
     for key, filename in TEMPLATE_COLUMNS.items():
         path = directory / filename
         if not path.exists():

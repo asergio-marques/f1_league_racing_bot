@@ -6,10 +6,11 @@ moments a manager most wants them: while configuring templates and artwork befor
 exists at all, and on a bare server.
 
 This module invents the league instead. One part of it is not invented: the **teams** come
-from the server's own team list, because a lineup template names its fields after a
-league's real teams and a preview drawn over made-up team names would answer nothing. Every
-other part — the division, the calendar, the formats, the round, the drivers — is randomised
-per invocation.
+from the server's own team list. A lineup template no longer names its fields after a
+league's teams — that rationale went with the keyed template at v6.0.0 — but the names and
+the badges drawn on the graphic are still the league's own, and a preview drawn over made-up
+teams would show a manager nothing about the artwork they configured. Every other part — the
+division, the calendar, the formats, the round, the drivers — is randomised per invocation.
 
 The output is an ordinary :class:`PreviewContext`. That is the whole trick: every one of the
 eleven builders draws from the context, so a context invented here flows through all of them

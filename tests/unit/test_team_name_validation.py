@@ -35,18 +35,21 @@ def test_a_name_normalising_to_nothing_is_refused(name):
     assert "letter or digit" in problem
 
 
-# ── Rule 2: begins with a letter ──────────────────────────────────────────
+# ── Withdrawn: the name had to begin with a letter ────────────────────────
 
 
 @pytest.mark.parametrize("name", ["2 Fast", "9ers", "1000 Miles", "  7 Racing"])
-def test_a_name_not_beginning_with_a_letter_is_refused(name):
-    problem = validate_team_name(name)
-    assert problem is not None
-    assert "begin with a letter" in problem
+def test_a_name_beginning_with_a_digit_is_admitted(name):
+    """047 FR-031. The rule held only while the normalised form was an XML `@id`.
+
+    It names a **file** now — `2fast_motorsport.svg` — and a filename may begin with a
+    digit. Nothing else about the name is relaxed.
+    """
+    assert validate_team_name(name) is None
 
 
-def test_leading_punctuation_is_stripped_before_the_first_letter_is_judged():
-    """`(Alpha)` normalises to `alpha`, which begins with a letter and is fine."""
+def test_leading_punctuation_is_still_stripped():
+    """`(Alpha)` normalises to `alpha`. Unchanged by the relaxation above."""
     assert validate_team_name("(Alpha)") is None
 
 
@@ -144,3 +147,92 @@ def test_the_key_and_the_asset_filename_come_from_one_rule():
 
     assert normalise("Red Bull") == "red_bull"
     assert filename_for("Red Bull") == "red_bull.svg"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 047 FR-032 — the same criteria at `season review`
+#
+# `validate_team_name` is exercised above as a function. This section covers the
+# *review* path that applies it across a server's team list and every division of the
+# season under setup — the half that had no test, in a method sitting beside one this
+# feature rewrote.
+# ══════════════════════════════════════════════════════════════════════════
+
+import os as _os  # noqa: E402
+import sys as _sys  # noqa: E402
+from unittest.mock import MagicMock as _MagicMock  # noqa: E402
+
+_sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "..", "..", "src"))
+
+import aiosqlite  # noqa: E402
+
+from cogs.season_cog import SeasonCog  # noqa: E402
+
+
+async def _seed(path, server_teams, division_teams):
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            "CREATE TABLE default_teams (server_id INTEGER, name TEXT, is_reserve INTEGER)"
+        )
+        await db.execute("CREATE TABLE divisions (id INTEGER, season_id INTEGER, name TEXT, tier INTEGER)")
+        await db.execute(
+            "CREATE TABLE team_instances (division_id INTEGER, name TEXT, is_reserve INTEGER)"
+        )
+        for name in server_teams:
+            await db.execute(
+                "INSERT INTO default_teams VALUES (?, ?, 0)", (1, name)
+            )
+        await db.execute("INSERT INTO divisions VALUES (10, 1, 'Elite', 1)")
+        for name in division_teams:
+            await db.execute("INSERT INTO team_instances VALUES (10, ?, 0)", (name,))
+        await db.commit()
+
+
+async def _review_problems(tmp_path, server_teams, division_teams):
+    path = tmp_path / "review.db"
+    await _seed(path, server_teams, division_teams)
+    cog = _MagicMock(bot=_MagicMock(db_path=str(path)))
+    return await SeasonCog._team_name_problems(cog, server_id=1, season_id=1)
+
+
+@pytest.mark.asyncio
+async def test_season_review_passes_a_sound_team_list(tmp_path):
+    problems = await _review_problems(tmp_path, ["Red Bull", "Ferrari"], ["Haas"])
+
+    assert problems == []
+
+
+@pytest.mark.asyncio
+async def test_season_review_admits_a_name_beginning_with_a_digit(tmp_path):
+    """FR-031 reaching the review, not the command alone."""
+    problems = await _review_problems(tmp_path, ["2Fast Motorsport"], ["9ers"])
+
+    assert problems == []
+
+
+@pytest.mark.asyncio
+async def test_season_review_names_every_offending_team_not_just_the_first(tmp_path):
+    """A manager fixing them one review at a time is a manager the check is failing."""
+    problems = await _review_problems(tmp_path, ["!!!", "???"], ["Reserve!"])
+
+    assert len(problems) == 3
+    assert any("!!!" in p for p in problems)
+    assert any("???" in p for p in problems)
+    assert any("Reserve!" in p for p in problems)
+
+
+@pytest.mark.asyncio
+async def test_season_review_reports_the_scope_a_fault_was_found_in(tmp_path):
+    problems = await _review_problems(tmp_path, ["!!!"], ["???"])
+
+    assert any("the server's team list" in p for p in problems)
+    assert any("Elite" in p for p in problems)
+
+
+@pytest.mark.asyncio
+async def test_season_review_catches_two_teams_normalising_alike(tmp_path):
+    """No longer fatal at render (047), so the review is where it must be caught."""
+    problems = await _review_problems(tmp_path, [], ["Red Bull", "Red  Bull!"])
+
+    assert len(problems) == 1
+    assert "red_bull" in problems[0]

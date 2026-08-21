@@ -112,15 +112,27 @@ class FillSpec:
     #: was determined.
     empty_quietly: list[str] = field(default_factory=list)
 
-    #: The data a **data-fixed** collection's capacity is read from (Constitution XIV.12,
-    #: v4.3.0) — for the lineup, a ``LineupBinding`` naming the division's teams and their
-    #: seat counts. None means no division is in view, which is the correct state at the
-    #: moment a template is named and is *not* the same as an empty binding.
-    binding: object | None = None
-
     #: The image type's field catalogue, when known. Supplying it lets `fill` report a
     #: template field the data left unfilled; without it only unknown fields are caught.
     expected_fields: set[str] | None = None
+
+
+def _packaged_directory(asset_class: str) -> Path | None:
+    """The module's own directory for *asset_class*, as the second fallback tier.
+
+    Resolved against the project root, since the configured default is stored relative to
+    it. None where the class is unknown or the directory is not there — a missing packaged
+    directory simply leaves the tier empty and the miss falls through to fatal, which is
+    what a single-tier resolution would have done anyway.
+    """
+    import utils.paths as paths  # read as an attribute: tests patch PROJECT_ROOT
+    from models.image_constants import packaged_directory_for
+
+    relative = packaged_directory_for(asset_class)
+    if relative is None:
+        return None
+    directory = Path(paths.PROJECT_ROOT) / relative
+    return directory if directory.is_dir() else None
 
 
 def _mandatory_ids(spec: FillSpec) -> frozenset[str]:
@@ -136,8 +148,6 @@ def _mandatory_ids(spec: FillSpec) -> frozenset[str]:
     if catalogue is None:
         return frozenset()
     try:
-        return frozenset(catalogue.all_mandatory_ids(spec.root, spec.binding))
-    except TypeError:  # a catalogue predating the binding argument
         return frozenset(catalogue.all_mandatory_ids(spec.root))
     except Exception:  # noqa: BLE001 — an uncountable template is reported elsewhere
         return frozenset()
@@ -270,12 +280,16 @@ def fill(spec: FillSpec) -> FillResult:
 
     # ── 4b. Image fill by asset class and datum ───────────────────────────
     # The datum is resolved through the slug rule inside the class's configured
-    # directory (FR-042). Three outcomes, and the field's mandatory/optional
-    # classification bears on none of them:
+    # directory (FR-042). **Four** outcomes since v6.0.0, and the field's
+    # mandatory/optional classification bears on none of them:
     #
-    #   file found            → drawn
-    #   file absent, fallback → fallback drawn, notice raised
-    #   file absent, no fallback → fatal; the generation is abandoned
+    #   file found in the configured directory     → drawn
+    #   absent, configured directory has fallback  → fallback drawn, notice raised
+    #   absent, packaged directory has fallback    → fallback drawn, the same notice
+    #   absent, neither tier has one               → fatal; the generation is abandoned
+    #
+    # This is the module's **only** call to `resolve_asset`, which is what makes the
+    # packaged tier reach every asset class of every graphic at once (047 FR-044).
     for field_id, (asset_class, datum) in spec.image_data.items():
         element = index.resolve(field_id)
         if element is None:
@@ -323,7 +337,9 @@ def fill(spec: FillSpec) -> FillResult:
             )
         )
 
-        resolution = resolve_asset(Path(directory), datum)
+        resolution = resolve_asset(
+            Path(directory), datum, packaged=_packaged_directory(asset_class)
+        )
 
         if resolution.found:
             _set_href(target, str(resolution.path))

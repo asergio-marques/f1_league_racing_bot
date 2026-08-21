@@ -73,7 +73,7 @@ async def test_enable_creates_defaults(module_service, config_service):
 
     cfg = await config_service.get_config(SERVER_ID)
     assert cfg is not None
-    assert cfg.template_directory == "resources/templates"
+    assert cfg.template_directory == "resources/defaults/templates"
     assert cfg.fastest_lap_colour == "#A020F0"
 
     toggles = await config_service.get_toggles(SERVER_ID)
@@ -194,15 +194,16 @@ VALID_SVG = (
     b'<text id="round_1_race_name">R</text>'
     b'<text id="round_1_date">1 Jan</text>'
     b'<rect id="round_1_vertical_crop_point" x="0" y="675" width="1" height="1"/>'
+    b'<g id="team_1_group"><text id="team_1_name">T</text>'
+    b'<text id="team_1_driver_1_name">N</text></g>'
     b'<g id="reserve_group"><text id="reserve_driver_1_name">N</text></g>'
     b"</svg>"
 )
 
 
-#: A server team configuration for the lineup's sample (FR-029). RICH_TEMPLATE declares
-#: the matching `team_test_team_` fields: a lineup template is authored against a league's
-#: own teams, so the template and the team list must agree or the render is fatal by
-#: design (Constitution XIV.12, data-fixed capacity).
+#: A server team configuration for the lineup's sample. RICH_TEMPLATE declares one ordinal
+#: block, which draws whichever team stands first — the template no longer has to agree
+#: with a league's team *list*, only to declare at least as many blocks as it fields.
 SAMPLE_TEAMS = [
     SimpleNamespace(name="Test Team", max_seats=2, is_reserve=False),
     SimpleNamespace(name="Reserve", max_seats=0, is_reserve=True),
@@ -624,12 +625,14 @@ RICH_TEMPLATE = (
     '<text id="round_2_race_name">r</text>'
     '<text id="round_2_date">d</text>'
     '<rect id="round_2_vertical_crop_point" x="0" y="400" width="1" height="1"/>'
-    # The lineup has a ratified catalogue too (038). Its reserve block is a singleton and
-    # therefore team-independent, which is the part a template carries whatever a league's
-    # teams are; its keyed team fields are supplied per division and are not asserted here.
-    '<text id="team_test_team_name">t</text>'
-    '<text id="team_test_team_driver_1_name">n</text>'
-    '<text id="team_test_team_driver_2_name">n</text>'
+    # The lineup's fields are ordinal since v6.0.0, so one block serves whatever team the
+    # division puts at it. The block and the reserve are both carried whatever a league's
+    # teams are, there being nothing of a league in either.
+    '<g id="team_1_group">'
+    '<text id="team_1_name">t</text>'
+    '<text id="team_1_driver_1_name">n</text>'
+    '<text id="team_1_driver_2_name">n</text>'
+    "</g>"
     '<g id="reserve_group">'
     '<text id="reserve_driver_1_name">n</text>'
     '<text id="reserve_driver_2_name">n</text>'
@@ -681,7 +684,7 @@ async def test_render_without_season(
     # a flag on every row, and an asset class with neither its file nor a fallback is fatal
     # by design (XIV.13) — so the fallbacks a real deployment ships are recreated here.
     for folder in ("teams", "flags", "tyres", "drivers", "tracks", "weather", "markers"):
-        assets = template_dir / "resources" / folder
+        assets = template_dir / "resources" / "defaults" / folder
         assets.mkdir(parents=True, exist_ok=True)
         (assets / "fallback.svg").write_bytes(
             b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'
@@ -698,9 +701,9 @@ async def test_render_without_season(
             outcome = await service.render(
                 SERVER_ID,
                 template_key,
-                # The lineup's sample is keyed to the league's own teams, so unlike every
-                # other kind it needs the server's team configuration (FR-029). The cog
-                # fetches it; here it is supplied directly.
+                # The lineup's sample still needs the server's team configuration — a
+                # badge and a name are drawn from it — though no longer to match the
+                # template's fields. The cog fetches it; here it is supplied directly.
                 lambda root, k=template_key: build_spec(k, root, teams=SAMPLE_TEAMS),
                 output_dir=tmp_path / kind,
             )
@@ -1804,6 +1807,7 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     packaged = (
         Path(__file__).resolve().parents[2]
         / "resources"
+        / "defaults"
         / "templates"
         / "verdicts_template.svg"
     )
@@ -1815,7 +1819,7 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     # are out of reach. A league carrying a fallback in each class is the ordinary case and
     # is what the flag and the badge resolve through here (XIV.13).
     for asset_class in ("flags", "teams"):
-        directory = template_dir / "resources" / asset_class
+        directory = template_dir / "resources" / "defaults" / asset_class
         directory.mkdir(parents=True, exist_ok=True)
         (directory / "fallback.svg").write_bytes(
             b'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"/>'
