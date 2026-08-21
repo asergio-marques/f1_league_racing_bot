@@ -195,6 +195,98 @@ def test_validate_submission_block_success():
 
 
 # ---------------------------------------------------------------------------
+# validate_submission_block — cross-session team consistency (FR-065)
+# ---------------------------------------------------------------------------
+
+
+def test_validate_submission_block_rejects_a_reserve_recorded_for_a_different_team():
+    """A reserve who subbed for team 300 in another ACTIVE session may not sub for 400 here.
+
+    The seat-based check exempts a reserve entirely, since reserves legitimately sub for
+    different teams across different rounds — this closes the gap within one round.
+    """
+    lines = [
+        "1, <@500>, <@&400>, Soft, 1:23.456, N/A, N/A, N/A",
+        "2, <@200>, <@&300>, Soft, 1:24.000, +0:00.544, N/A, N/A",
+    ]
+    result = validate_submission_block(
+        lines,
+        session_type=SessionType.FEATURE_QUALIFYING,
+        division_driver_ids={500, 200},
+        team_role_ids={300, 400},
+        reserve_team_role_id=None,
+        driver_team_map={200: 300},
+        reserve_driver_ids={500},
+        other_active_assignments={500: (300, "FEATURE_RACE")},
+        amend_format=True,
+    )
+    assert isinstance(result, list)
+    assert all(isinstance(r, str) for r in result)
+    assert any("500" in e and "400" in e for e in result)
+
+
+def test_validate_submission_block_accepts_a_reserve_recorded_for_the_same_team():
+    lines = [
+        "1, <@500>, <@&300>, Soft, 1:23.456, N/A, N/A, N/A",
+        "2, <@200>, <@&400>, Soft, 1:24.000, +0:00.544, N/A, N/A",
+    ]
+    result = validate_submission_block(
+        lines,
+        session_type=SessionType.FEATURE_QUALIFYING,
+        division_driver_ids={500, 200},
+        team_role_ids={300, 400},
+        reserve_team_role_id=None,
+        driver_team_map={200: 400},
+        reserve_driver_ids={500},
+        other_active_assignments={500: (300, "FEATURE_RACE")},
+        amend_format=True,
+    )
+    assert isinstance(result, list)
+    assert all(isinstance(r, ParsedQualifyingRow) for r in result)
+
+
+def test_validate_submission_block_rejects_the_same_conflict_for_a_non_reserve_driver():
+    """The check applies uniformly — it is not a special case carved out for reserves."""
+    lines = [
+        "1, <@100>, <@&300>, Soft, 1:23.456, N/A, N/A, N/A",
+        "2, <@200>, <@&400>, Soft, 1:24.000, +0:00.544, N/A, N/A",
+    ]
+    result = validate_submission_block(
+        lines,
+        session_type=SessionType.FEATURE_QUALIFYING,
+        division_driver_ids={100, 200},
+        team_role_ids={300, 400},
+        reserve_team_role_id=None,
+        driver_team_map={100: 300, 200: 400},
+        other_active_assignments={100: (400, "FEATURE_RACE")},
+        amend_format=True,
+    )
+    assert isinstance(result, list)
+    assert all(isinstance(r, str) for r in result)
+    assert any("100" in e for e in result)
+
+
+def test_validate_submission_block_with_no_other_sessions_is_unaffected():
+    """A round with no other ACTIVE session yet raises nothing new (the common case)."""
+    lines = [
+        "1, <@100>, <@&300>, Soft, 1:23.456, N/A, N/A, N/A",
+        "2, <@200>, <@&400>, Soft, 1:24.000, +0:00.544, N/A, N/A",
+    ]
+    result = validate_submission_block(
+        lines,
+        session_type=SessionType.FEATURE_QUALIFYING,
+        division_driver_ids={100, 200},
+        team_role_ids={300, 400},
+        reserve_team_role_id=None,
+        driver_team_map={100: 300, 200: 400},
+        other_active_assignments={},
+        amend_format=True,
+    )
+    assert isinstance(result, list)
+    assert all(isinstance(r, ParsedQualifyingRow) for r in result)
+
+
+# ---------------------------------------------------------------------------
 # G2 — regex accepts sub-10-second values
 # ---------------------------------------------------------------------------
 
@@ -873,5 +965,112 @@ def test_race_ordering_dnf_dns_dsq_accepted():
     result = _make_race_block(lines)
     assert isinstance(result, list)
     assert all(isinstance(r, ParsedRaceRow) for r in result)
+
+
+# ---------------------------------------------------------------------------
+# other_active_team_assignments (FR-065)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_round(db) -> int:
+    await db.execute(
+        "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, log_channel_id) VALUES (1,10,20,30)"
+    )
+    cursor = await db.execute(
+        "INSERT INTO seasons (server_id, start_date, status, season_number) VALUES (1,'2026-01-01','ACTIVE',1)"
+    )
+    season_id = cursor.lastrowid
+    cursor = await db.execute(
+        "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id) VALUES (?,?,777,888)",
+        (season_id, "Main"),
+    )
+    division_id = cursor.lastrowid
+    cursor = await db.execute(
+        "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
+        (division_id,),
+    )
+    return cursor.lastrowid
+
+
+async def test_other_active_team_assignments_reads_other_active_sessions_only(tmp_path):
+    """Excludes the queried session type and any non-ACTIVE session (FR-065)."""
+    from db.database import get_connection, run_migrations
+    from services.result_submission_service import other_active_team_assignments
+
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+
+    async with get_connection(db_path) as db:
+        round_id = await _seed_round(db)
+        division_id = (
+            await (await db.execute("SELECT division_id FROM rounds WHERE id = ?", (round_id,))).fetchone()
+        )["division_id"]
+
+        # An ACTIVE qualifying session: driver 500 raced for team 300.
+        cursor = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'FEATURE_QUALIFYING', 'ACTIVE')",
+            (round_id, division_id),
+        )
+        qual_id = cursor.lastrowid
+        await db.execute(
+            "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
+            "team_role_id, finishing_position, outcome, tyre, best_lap, points_awarded) "
+            "VALUES (?, 500, 300, 1, 'CLASSIFIED', 'Soft', '1:23.456', 25)",
+            (qual_id,),
+        )
+
+        # A CANCELLED race session recording a different team — must not be read.
+        cursor = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'FEATURE_RACE', 'CANCELLED')",
+            (round_id, division_id),
+        )
+        cancelled_id = cursor.lastrowid
+        await db.execute(
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+            "team_role_id, finishing_position, outcome, base_time_ms, laps_behind, "
+            "ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms, "
+            "fastest_lap, fastest_lap_bonus, points_awarded) "
+            "VALUES (?, 500, 999, 1, 'CLASSIFIED', 3700000, NULL, 0, 0, 0, NULL, 0, 0)",
+            (cancelled_id,),
+        )
+        await db.commit()
+
+    result = await other_active_team_assignments(db_path, round_id, SessionType.FEATURE_RACE)
+    assert result == {500: (300, "FEATURE_QUALIFYING")}
+
+
+async def test_other_active_team_assignments_excludes_the_session_being_validated(tmp_path):
+    from db.database import get_connection, run_migrations
+    from services.result_submission_service import other_active_team_assignments
+
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+
+    async with get_connection(db_path) as db:
+        round_id = await _seed_round(db)
+        division_id = (
+            await (await db.execute("SELECT division_id FROM rounds WHERE id = ?", (round_id,))).fetchone()
+        )["division_id"]
+
+        cursor = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'FEATURE_QUALIFYING', 'ACTIVE')",
+            (round_id, division_id),
+        )
+        qual_id = cursor.lastrowid
+        await db.execute(
+            "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
+            "team_role_id, finishing_position, outcome, tyre, best_lap, points_awarded) "
+            "VALUES (?, 500, 300, 1, 'CLASSIFIED', 'Soft', '1:23.456', 25)",
+            (qual_id,),
+        )
+        await db.commit()
+
+    result = await other_active_team_assignments(
+        db_path, round_id, SessionType.FEATURE_QUALIFYING
+    )
+    assert result == {}
 
 

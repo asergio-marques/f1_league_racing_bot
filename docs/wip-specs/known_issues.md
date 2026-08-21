@@ -184,11 +184,18 @@ Found on 2026-08-18 while building the `/images test` previews. **All three were
 - `_nationality_collected` in `image_results_post.py`, and a second inline copy in `image_lineup_post.py`, read `SELECT nationality_required FROM signup_config`. No migration creates `signup_config`; the setting lives in `signup_module_settings`.
 - Both were wrapped in a bare `except Exception` returning `True`, so the missing table was swallowed on every render and the switch was never observed. A league that switched nationality collection off still got flags drawn on all four graphics that draw them.
 
-**The standings round-column grid was never implemented, so no standings graphic can render.**
-- `StandingsDrawing` carries a `rounds: list[RoundHeading]` field and `RoundHeading` in `image_standings_service.py` is docstringed "One column of the grid. **Filled in US3**". That US3 belongs to feature 040 and never landed: `resolve_drawing` takes no `rounds` argument, `build_fill_spec` projects no round column, and nothing anywhere assigns the field.
-- The packaged `standings_drivers_template.svg` declares a round column per round of a season. With nothing filling them, a render is abandoned with `no value could be determined for round_1_number, round_2_number, …`.
-- The classification itself is sound — positions, points, gaps and movement all resolve — so the fault is confined to the grid of per-round columns beside it.
-- Found on 2026-08-18 while building `/images test standings`, which is the first code ever to take the standings through a full render. The aspect has no posting path, so nothing else has exercised it. The preview reports the unresolvable fields by name rather than drawing a partial picture, which is XIV.4 behaving correctly; it is nonetheless a standings defect and not an image-test one.
+**Fixed — the standings round-column grid was never implemented, so no standings graphic could render.**
+- `StandingsDrawing` carried a `rounds: list[RoundHeading]` field and nothing ever assigned it: `resolve_drawing` took no `rounds` argument, `build_fill_spec` projected no round column, and the driver-cell and constructor-car resolution the wip-spec already specified had never been written.
+- The packaged `standings_drivers_template.svg` declares a round column per round of a season. With nothing filling them, a render was abandoned with `no value could be determined for round_1_number, round_2_number, …`; the constructors template failed earlier still, on a separate capacity bug below.
+- The classification itself was always sound — positions, points, gaps and movement all resolved — so the fault was confined to the grid of per-round columns beside it.
+- **Fixed** by extending `resolve_drawing` and `build_fill_spec` in `image_standings_service.py` to resolve and project the grid — round headings, a session cell per driver's row, and per-constructor car allocation — exactly as `docs/wip-specs/image_module_specification.md` § "Standings image generation" already specified. The cross-session team invariant that section's car-allocation rule depends on ("a driver is never placed on two cars, nor on the cars of two teams") is now genuinely enforced, by a new check in `result_submission_service.validate_submission_block`; before this fix it was an unenforced assumption.
+- **Why it shipped**: found on 2026-08-18 while building `/images test standings`, the first code ever to take the standings through a full render — the aspect had no posting path, so nothing else had exercised it.
+
+**Fixed — the constructors preview counted the reserve team as an extra constructor.**
+- `_team_role_ids` in `image_preview_service.py` built its role map from every team of the division, reserve included, and `build_standings_preview` used it unfiltered to build the constructors classification. A division of eleven real teams therefore drew twelve constructor rows against a template sized for eleven, and failed with `CAPACITY_EXCEEDED`.
+- The drivers side of the same preview already filtered the reserve out via `_racing_drivers`; the constructors side had no equivalent.
+- **Fixed** by a matching `_racing_teams` helper, used to build the constructors classification.
+- **Why it shipped**: no test exercised the constructors preview against a division carrying a reserve team.
 
 **Fixed — a rejected asset directory was reported as an unconfigured asset class.**
 - Every posting path resolved its directories inside `try: … except Exception: pass`, so a configured path that was rejected was omitted from the map and the reason discarded. `utils/svg_fill.py` then reported `image field X names asset class Y, which is not configured` and abandoned the render — telling a league it had never set a directory it had in fact set.

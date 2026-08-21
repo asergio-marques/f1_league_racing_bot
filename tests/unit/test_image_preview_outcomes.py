@@ -232,6 +232,56 @@ class TestStandingsPreview:
         assert requests
         assert context.round.round_number == 2
 
+    async def test_the_reserve_team_is_not_drawn_as_a_constructor(self, bot, league, db_path):
+        """The reserve stands in for an absent regular; it never becomes a constructor row.
+
+        Regression test: the reserve team used to be counted alongside the real teams,
+        overflowing a template sized for the division's real constructors alone.
+        """
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
+                "VALUES (?, 'Reserve', 1, 1)",
+                (league,),
+            )
+            await db.commit()
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        constructors_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_constructors_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_constructors_template.svg")
+        spec = constructors_spec_builder(root)
+
+        assert spec.row_count == 2
+
+    async def test_a_round_not_yet_run_is_empty_on_the_grid(self, bot, league):
+        """FR-022 — the calendar already holds the round, but nothing has run it yet."""
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=1, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        drivers_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_drivers_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_drivers_template.svg")
+        spec = drivers_spec_builder(root)
+
+        assert spec.text["round_1_number"] == "1"
+        assert "row_1_round_1_feature_race_result" in spec.text
+        assert "row_1_round_2_feature_race_result" in spec.empty_quietly
+
 
 # ── Attendance (T024) ─────────────────────────────────────────────────────
 

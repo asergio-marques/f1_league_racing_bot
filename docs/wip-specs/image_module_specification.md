@@ -794,7 +794,6 @@ These hold for every image type of the module and are stated here rather than re
 ### Test data
 - The "images test standings" command shall generate two images, one from the drivers template and one from the constructors template, both drawn for the division named and both labelled "Final Results".
 - The standings drawn shall be those standing after the round named, the grid holding the calendar the division actually configures, so that the rendering of a round yet to be run may be evaluated alongside those already run and the grid drawn at the width the league would see.
-    - The per-round columns of the grid are **not drawn at present**. The drawing carries a field for them and nothing fills it, the work having been deferred when the standings type was specified and never taken up. A standings command therefore reports the fields it cannot determine and draws no image, as a mandatory field that cannot be resolved requires. The classification beside them — positions, points, gaps and movement — resolves in full.
 - Results shall be fabricated for every round of that calendar up to and including the round named, and for none after it.
 - The entries fabricated shall be the drivers of the division named and the teams they are seated upon.
 - The entries of the drivers image shall include, insofar as the number of rows declared allows:

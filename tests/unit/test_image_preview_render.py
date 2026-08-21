@@ -225,17 +225,8 @@ KINDS = {
 }
 
 
-#: The standings template declares a round column per round of the season, and nothing has
-#: ever filled them: `StandingsDrawing.rounds` exists, `RoundHeading` is docstringed "Filled
-#: in US3", and neither `resolve_drawing` nor `build_fill_spec` takes or projects them. The
-#: grid is deferred work from feature 040, not something 045 introduced, so the standings
-#: preview reports those fields as unresolvable rather than drawing a partial picture.
-#: Recorded in `docs/wip-specs/known_issues.md`.
-UNIMPLEMENTED_GRID = {"standings"}
-
-
 @requires_rasteriser
-@pytest.mark.parametrize("kind", sorted(set(KINDS) - UNIMPLEMENTED_GRID))
+@pytest.mark.parametrize("kind", sorted(KINDS))
 async def test_every_preview_reaches_a_png(bot, league, kind, tmp_path):
     """Rule XIV.14 — the check is against the raster, never the SVG."""
     kwargs, build = KINDS[kind]
@@ -263,26 +254,23 @@ async def test_the_eleven_kinds_are_all_covered():
 
 
 @requires_rasteriser
-async def test_the_standings_preview_reports_the_unfilled_round_columns(
-    bot, league, tmp_path
-):
-    """The one kind that cannot reach a picture, and the honest reason why.
+async def test_the_standings_preview_draws_the_whole_grid(bot, league, tmp_path):
+    """Both championships, round columns included, reach a picture (FR-025, FR-026).
 
-    The drawing itself is correct — both championships resolve over the league's own drivers
-    and teams. What defeats the render is the template's round columns, which no code has
-    ever filled. A manager is told which fields could not be determined, which is the truth
-    and is actionable; a partial picture would be neither (XIV.4).
+    Regression coverage for the round grid: the templates declare a session cell per round
+    per row, and a car per round per row on the constructors graphic, and both must resolve
+    over the league's own calendar and drivers for either graphic to render at all.
     """
     context = await resolve_context(
         bot, SERVER_ID, "Premier", round_number=1, require_teams=True
     )
 
     requests = await build_standings_preview(bot, context)
-    assert len(requests) == 2, "both championships are still drawn"
+    assert len(requests) == 2, "both championships are drawn"
 
-    outcome = await bot.image_render_service.render(
-        SERVER_ID, requests[0][1], requests[0][2], output_dir=tmp_path
-    )
-
-    assert outcome.problem is not None
-    assert "round_1_number" in outcome.problem.detail
+    for label, template_key, spec_builder in requests:
+        outcome = await bot.image_render_service.render(
+            SERVER_ID, template_key, spec_builder, output_dir=tmp_path
+        )
+        assert outcome.problem is None, f"{label}: {outcome.problem}"
+        assert outcome.png_paths, f"{label} produced no file"

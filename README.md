@@ -1550,7 +1550,7 @@ Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four
 
 > **`lineup` is the one template you must author yourself**, and the preview is how you check it. Its fields are named after your teams, so it is drawn against your real team list and refused where you have none beyond Reserve. Where the division has teams but nobody seated, drivers are invented so the drawing can still be judged.
 
-> **`standings` cannot produce a picture yet, and will say so.** The drawing file carries a column per round of the season, and the code to fill those columns was never written — see the note under the standings toggle. Everything else in the drawing resolves; the preview reports the fields it could not fill rather than sending a half-drawn table.
+> **`standings` draws both championships as the whole season, not just the round named.** Every round the division holds gets a column — run or not — with a result cell per session, and, on the constructors picture, a car per driver who drove it. The classification named by `round` sits beside that grid.
 
 **Checking your work.** Look at the exported PNG, not the SVG in a browser. They disagree on precisely the things worth checking — flowed text, substituted fonts, and the crop. The `/images test` commands return the PNG.
 

@@ -182,6 +182,49 @@ def fabricate_race_rows(drivers, team_role_ids, points_map):
     return rows
 
 
+# ── Standings grid (FR-025, FR-026) ───────────────────────────────────────
+
+
+def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team_role_ids):
+    """Session results for every round already run, over the division's own drivers.
+
+    Reuses ``fabricate_qualifying_rows``/``fabricate_race_rows`` — the same builders the
+    results preview already calls — once per session per round, so the standings grid's
+    outcome data and the results preview's come from one code path. *round_formats* maps a
+    round's ordinal to its format string; a round absent from *run_ordinals* is simply not
+    represented in the result, which the grid reads as "not yet run".
+
+    The **results** module's own session vocabulary is used here (Sprint/Feature Qualifying
+    and Race), read through ``result_submission_service.get_sessions_for_format`` — not the
+    schedule's Short/Long/Full vocabulary ``sessions_for`` reads for the weather previews,
+    which answers a different question (how many weather slots a session carries).
+    """
+    from models.round import RoundFormat
+    from services.result_submission_service import get_sessions_for_format
+
+    out: dict[int, dict[str, list]] = {}
+    for ordinal in run_ordinals:
+        try:
+            round_format = RoundFormat(round_formats.get(ordinal, "NORMAL"))
+        except ValueError:
+            round_format = RoundFormat.NORMAL
+        session_map: dict[str, list] = {}
+        for session_type in get_sessions_for_format(round_format):
+            points_map = (
+                {1: 3, 2: 2, 3: 1}
+                if session_type.is_qualifying
+                else {n: max(0, 26 - 2 * (n - 1)) for n in range(1, 14)}
+            )
+            rows = (
+                fabricate_qualifying_rows(drivers, team_role_ids, points_map)
+                if session_type.is_qualifying
+                else fabricate_race_rows(drivers, team_role_ids, points_map)
+            )
+            session_map[session_type.value] = rows
+        out[ordinal] = session_map
+    return out
+
+
 # ── Attendance (FR-027) ───────────────────────────────────────────────────
 
 

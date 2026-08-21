@@ -258,7 +258,7 @@ The check-in call is the odd one out — it *adds* a picture rather than replaci
 
 **Standings is the other odd one out, and for a less happy reason: it does not post a picture yet.** No standings post is drawn today whatever the switch says, so the championship tables carry on as text. The switch records what you want and nothing more, and `/images config view` marks it as recorded but not yet in effect.
 
-> **`/images test standings` does not produce a picture either, and will tell you so.** The drawing file has a column for each round of the season, and the part of the bot that fills those columns was never finished. The preview reports which fields it could not fill rather than sending you a half-drawn table. Everything else about the standings drawing — positions, points, gaps — resolves correctly; it is only the per-round columns that are missing.
+> **`/images test standings` does produce a picture**, both championships, each carrying the whole season as a grid — every round the division holds, run or not, with a result cell per session and, on the constructors picture, a car per driver who drove. The classification beside the grid — positions, points, gaps — resolves the same way it always has.
 
 When you switch something on, the bot tells you if it would not work as things stand, and whether that output posts pictures yet.
 
