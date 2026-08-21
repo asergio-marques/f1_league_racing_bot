@@ -1,6 +1,52 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-21 — v6.0.0 → v6.1.0: MINOR — a closed-set class's packaged directory is searched for the datum's own file, not only its fallback, whether or not a league has moved the directory]
+  Version change    : 6.0.0 → 6.1.0
+  Bump rationale    : MINOR. Rule XIV.13's closed-set bullet previously closed with "A league MAY
+                      still point the class at a directory of its own and is then bound exactly as
+                      any other league, its fallback covering what its own set omits" — treating a
+                      closed-set class (marker, weather) exactly like an open-set one the instant a
+                      league customised its directory. That contradicts the rationale stated two
+                      sentences earlier in the same bullet: the league did not choose the closed-set
+                      vocabulary and cannot be incomplete against it, a fact that does not change
+                      because the league moved the directory. The sentence was an unreasoned
+                      inconsistency inside one rule, not a deliberate design point being reversed.
+
+                      The bullet now requires the packaged directory of a closed-set class to be
+                      searched for the datum's own file — not merely its `fallback.svg` — ahead of
+                      the packaged fallback, whether or not the league has pointed the class at a
+                      directory of its own. The outcome table (four rows) is unchanged; this
+                      refines the third row for closed-set classes alone and adds no fifth outcome.
+                      No open-set class (track, team, flag, driver, tyre) is affected, and the
+                      datum's own file in the packaged directory of an open-set class is still never
+                      drawn for a league that did not supply it.
+
+                      MINOR because this widens what a render can succeed with — a customised
+                      closed-set directory now draws the module's own correct icon in a case that
+                      previously drew a generic placeholder — and narrows no prior guarantee.
+                      Nothing that resolved before now fails, and nothing that drew a specific file
+                      before now draws a fallback.
+
+  Modified sections :
+    - Principle XIV, Rule 13: the closed-set bullet's closing sentence is replaced, and the
+      general "packaged directory is consulted for a fallback and for nothing else" bullet gains a
+      cross-reference naming the closed-set bullet as its sole exception.
+    - Governance footer: version and Last Amended date.
+
+  Added sections    : None.
+  Removed sections  : None.
+
+  Not changed, and deliberately:
+    - The four-outcome table itself, and the `mystery.svg` rule the closed-set bullet already
+      generalises from.
+    - Resolution for the five open-set classes, in every respect.
+
+  Follow-up TODOs   : None. `docs/wip-specs/image_module_specification.md`, `README.md`,
+                      `resources/README.md` and `docs/how-to/configuring-the-image-module.md` are
+                      brought into step by the same change, per the close-out discipline in
+                      CLAUDE.md — tracked as part of the change that requested this amendment, not
+                      as a constitution follow-up.
 [2026-08-20 — v5.0.1 → v6.0.0: MAJOR — teams addressed by ordinal; capacity fixed by the template alone; the fallback gains a packaged tier]
   Version change    : 5.0.1 → 6.0.0
   Bump rationale    : MAJOR, on three independent counts, any one of which would carry it.
@@ -4600,8 +4646,12 @@ asset class. Resolution MUST be deterministic and documented:
   the **module** MUST ship a file for every one of them in the **packaged directory** of that
   class, beside that class's `fallback.svg`. The obligation of the bullet above is discharged by the module rather
   than by the league, because the league has nothing to supply: it did not choose the vocabulary and
-  cannot be incomplete against it. A league MAY still point the class at a directory of its own and
-  is then bound exactly as any other league, its fallback covering what its own set omits.
+  cannot be incomplete against it. A league MAY still point the class at a directory of its own;
+  doing so does not make the vocabulary the league's, so a value missing from that directory MUST
+  still resolve to the packaged directory's own matching file, drawn in preference to the packaged
+  `fallback.svg`. This is the one respect in which the packaged directory of a closed-set class is
+  searched for the datum's own file and not merely for its fallback — see the exception carried in
+  the outcome rules below.
 
   This is the rule `mystery.svg` already follows in the track class, generalised. It stands apart
   from `resources/defaults/` holding no league-specific artwork: a direction marker is the module's own
@@ -4620,7 +4670,11 @@ Resolution has exactly **four** outcomes, and no others:
 
 - The datum's **own file** is sought in the **configured directory alone**. The packaged directory
   is consulted for a **fallback** and for nothing else; a file of the datum's own name sitting in
-  the packaged directory MUST NOT be drawn for a league that did not supply it.
+  the packaged directory MUST NOT be drawn for a league that did not supply it. This governs the
+  classes whose data are a league's own. The closed-set bullet above states the sole exception: for
+  a class whose data are a closed set the module itself defines, the packaged directory is searched
+  for the datum's own file, ahead of its `fallback.svg`, whether or not the league has pointed the
+  class at a directory of its own.
 - Wherever else this constitution speaks of a directory **holding**, or not holding, a fallback, it
   means this two-tier check taken as a whole and not the configured directory alone.
 - A league whose configured directory carries no `fallback.svg` of its own therefore no longer
@@ -5775,4 +5829,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 6.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-20
+**Version**: 6.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-21

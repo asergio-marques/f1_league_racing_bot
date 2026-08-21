@@ -1486,13 +1486,16 @@ def validate_submission_block(
     driver_team_map: dict[int, int],
     reserve_driver_ids: set[int] | None = None,
     amend_format: bool = False,
+    other_active_assignments: dict[int, tuple[int, str]] | None = None,
 ) -> list[ParsedQualifyingRow | ParsedRaceRow] | list[str]:
     """Validate all result lines for a session.
 
     Returns a list of parsed rows on success, or a list of error strings on failure.
     Checks: field formats; sequential positions from 1; drivers in division; valid team
     roles; each driver assigned to their own team (reserves may sub for any team);
-    max 2 drivers per team per session.
+    max 2 drivers per team per session; and, where *other_active_assignments* is given, that
+    no driver disagrees with another ACTIVE session of the same round about which team they
+    raced for.
     """
     if reserve_driver_ids is None:
         reserve_driver_ids = set()
@@ -1583,6 +1586,23 @@ def validate_submission_block(
                 f"submitted as <@&{row.team_role_id}> "
                 f"but is assigned to <@&{mapped_team}>."
             )
+
+    # A driver already recorded under a different team by another ACTIVE session of this
+    # round is rejected here too. The seat-based check above exempts a reserve, since a
+    # reserve may legitimately sub for any team across different rounds — this closes the
+    # gap it leaves within one round: a reserve (or anyone else) recorded for team A in one
+    # session and team B in another of the same round is never legitimate.
+    if other_active_assignments:
+        for row in parsed_rows:
+            existing = other_active_assignments.get(row.driver_user_id)
+            if existing is not None and existing[0] != row.team_role_id:
+                existing_team, existing_session = existing
+                existing_label = existing_session.replace("_", " ").title()
+                errors.append(
+                    f"Row {row.position}: driver <@{row.driver_user_id}> was recorded under "
+                    f"<@&{existing_team}> in {existing_label} of this round, but is "
+                    f"submitted here as <@&{row.team_role_id}>."
+                )
 
     # Max 2 drivers per team (counting reserve subs)
     team_driver_counts: dict[int, int] = {}
@@ -1851,6 +1871,41 @@ async def _build_division_validation_data(
                     reserve_driver_ids.add(uid)
 
     return division_driver_ids, team_role_ids, reserve_team_role_id, driver_team_map, reserve_driver_ids
+
+
+async def other_active_team_assignments(
+    db_path: str,
+    round_id: int,
+    exclude_session_type: SessionType,
+) -> dict[int, tuple[int, str]]:
+    """driver_user_id -> (team_role_id, session_type value) recorded by another ACTIVE
+    session of *round_id*.
+
+    Feeds the cross-session team check in ``validate_submission_block``: a driver's team
+    must agree across every session of one round, and this is what the second session's
+    validation reads to catch a disagreement the first session already recorded.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT sr.session_type, x.driver_user_id, x.team_role_id
+            FROM session_results sr
+            JOIN qualifying_session_results x ON x.session_result_id = sr.id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND sr.session_type != ?
+            UNION ALL
+            SELECT sr.session_type, x.driver_user_id, x.team_role_id
+            FROM session_results sr
+            JOIN race_session_results x ON x.session_result_id = sr.id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND sr.session_type != ?
+            """,
+            (round_id, exclude_session_type.value, round_id, exclude_session_type.value),
+        )
+        rows = await cursor.fetchall()
+
+    result: dict[int, tuple[int, str]] = {}
+    for row in rows:
+        result.setdefault(row["driver_user_id"], (row["team_role_id"], row["session_type"]))
+    return result
 
 
 def _make_slug(name: str) -> str:
@@ -2367,6 +2422,9 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             fl_override: int | None = None
             if not session_type.is_qualifying:
                 fl_override, lines = extract_fl_override(lines)
+            other_assignments = await other_active_team_assignments(
+                db_path, round_id, session_type
+            )
             result = validate_submission_block(
                 lines,
                 session_type,
@@ -2375,6 +2433,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 reserve_team_role_id,
                 driver_team_map,
                 reserve_driver_ids,
+                other_active_assignments=other_assignments,
             )
 
             if isinstance(result[0] if result else None, str):
@@ -2685,9 +2744,13 @@ async def _resubmit_collection_task(
             fl_override: int | None = None
             if not session_type.is_qualifying:
                 fl_override, lines = extract_fl_override(lines)
+            other_assignments = await other_active_team_assignments(
+                db_path, round_id, session_type
+            )
             result = validate_submission_block(
                 lines, session_type, division_driver_ids, team_role_ids,
                 reserve_team_role_id, driver_team_map, reserve_driver_ids,
+                other_active_assignments=other_assignments,
             )
 
             if isinstance(result[0] if result else None, str):

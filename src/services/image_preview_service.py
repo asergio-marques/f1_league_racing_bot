@@ -395,6 +395,7 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
                 SimpleNamespace(
                     name=instance["name"],
                     is_reserve=bool(instance["is_reserve"]),
+                    max_seats=instance["max_seats"],
                     seats=[
                         SimpleNamespace(
                             seat_number=row["seat_number"],
@@ -717,6 +718,16 @@ def _racing_drivers(context: PreviewContext) -> list[PreviewDriver]:
     return racing or list(context.drivers)
 
 
+def _racing_teams(context: PreviewContext) -> list:
+    """The teams a constructor classification is drawn over — every team but the reserve.
+
+    Mirrors :func:`_racing_drivers`: the reserve team stands in for an absent regular and is
+    not itself a constructor, so drawing it as one would overflow a template sized for the
+    division's real teams.
+    """
+    return [team for team in context.teams if not getattr(team, "is_reserve", False)]
+
+
 def _driver_maps(context: PreviewContext, drivers=None):
     """Names, teams and nationalities keyed as the drawings expect them."""
     drivers = list(context.drivers if drivers is None else drivers)
@@ -883,12 +894,16 @@ async def build_standings_preview(bot, context: PreviewContext):
 
     The grid holds the division's own calendar, so its width is the width a league would
     actually see — the case a fabricated calendar could never put a template through.
+    Session results for the rounds already run are fabricated over the division's own
+    drivers, through the same builders the results preview calls.
     """
     from types import SimpleNamespace
 
+    from services.image_preview_data import fabricate_standings_round_results
     from services.image_standings_service import (
         CONSTRUCTORS_TEMPLATE_KEY,
         DRIVERS_TEMPLATE_KEY,
+        RoundHeading,
         build_fill_spec,
         resolve_drawing,
     )
@@ -896,6 +911,49 @@ async def build_standings_preview(bot, context: PreviewContext):
     drivers = _racing_drivers(context)
     names, teams, flags, role_of = _driver_maps(context, drivers)
     round_obj = context.round
+    racing_teams = _racing_teams(context)
+    tracks = await _tracks(bot)
+
+    headings = []
+    round_formats: dict[int, str] = {}
+    for ordinal, entry in enumerate(
+        sorted(context.rounds, key=lambda r: r.round_number), start=1
+    ):
+        entry_format = _format_of(entry)
+        track_name = None if entry_format == "MYSTERY" else getattr(entry, "track_name", None)
+        record = tracks.get(track_name) if track_name else None
+        headings.append(
+            RoundHeading(
+                ordinal=ordinal,
+                number=str(entry.round_number),
+                track=track_name,
+                country=getattr(record, "country", None) if record else None,
+            )
+        )
+        round_formats[ordinal] = entry_format
+
+    # Only the rounds up to and including the one named have been run.
+    run_ordinals = [
+        heading.ordinal
+        for heading in headings
+        if int(heading.number) <= int(round_obj.round_number)
+    ]
+    round_session_results = fabricate_standings_round_results(
+        run_ordinals, round_formats, drivers, role_of
+    )
+
+    team_seat_assignments = {
+        role_of[team.name]: {
+            d.key: d.seat_number for d in drivers if d.team_name == team.name
+        }
+        for team in racing_teams
+        if team.name in role_of
+    }
+    team_seat_counts = {
+        role_of[team.name]: int(getattr(team, "max_seats", 0) or 0)
+        for team in racing_teams
+        if team.name in role_of
+    }
 
     driver_snapshots = [
         SimpleNamespace(
@@ -911,13 +969,14 @@ async def build_standings_preview(bot, context: PreviewContext):
 
     team_snapshots = [
         SimpleNamespace(
-            team_role_id=role_id,
+            team_role_id=role_of[team.name],
             standing_position=position,
             total_points=max(0, 200 - (position - 1) * 17),
             finish_counts={},
             first_finish_rounds={},
         )
-        for position, (name, role_id) in enumerate(role_of.items(), start=1)
+        for position, team in enumerate(racing_teams, start=1)
+        if team.name in role_of
     ]
 
     shared = dict(
@@ -928,6 +987,8 @@ async def build_standings_preview(bot, context: PreviewContext):
         season_number=context.season_number,
         race_name=_race_name(context),
         nationality_collected=context.nationality_collected,
+        rounds=headings,
+        round_session_results=round_session_results,
     )
 
     drivers_drawing = resolve_drawing(
@@ -942,9 +1003,12 @@ async def build_standings_preview(bot, context: PreviewContext):
     constructors_drawing = resolve_drawing(
         template_key=CONSTRUCTORS_TEMPLATE_KEY,
         snapshots=team_snapshots,
-        display_names={role_id: name for name, role_id in role_of.items()},
-        team_names={role_id: name for name, role_id in role_of.items()},
-        movements={role_id: None for role_id in role_of.values()},
+        display_names={role_of[t.name]: t.name for t in racing_teams if t.name in role_of},
+        team_names={role_of[t.name]: t.name for t in racing_teams if t.name in role_of},
+        movements={role_of[t.name]: None for t in racing_teams if t.name in role_of},
+        team_seat_assignments=team_seat_assignments,
+        team_seat_counts=team_seat_counts,
+        driver_display_names=names,
         **shared,
     )
 

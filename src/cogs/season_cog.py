@@ -3083,6 +3083,7 @@ class SeasonCog(commands.Cog):
         from services.result_submission_service import validate_submission_block
         from services.result_submission_service import extract_fl_override  # type: ignore[attr-defined]
         from services.result_submission_service import _build_division_validation_data  # type: ignore[attr-defined]
+        from services.result_submission_service import other_active_team_assignments
 
         driver_ids, team_role_ids, reserve_role_id, driver_team_map, reserve_driver_ids = await _build_division_validation_data(
             div.id, interaction.guild_id, interaction.client
@@ -3152,6 +3153,9 @@ class SeasonCog(commands.Cog):
             fl_amend_override: int | None = None
             if not chosen_session_type.is_qualifying:
                 fl_amend_override, lines_raw = extract_fl_override(lines_raw)
+            other_assignments = await other_active_team_assignments(
+                self.bot.db_path, rnd.id, chosen_session_type
+            )
             parsed = validate_submission_block(
                 lines_raw,
                 chosen_session_type,
@@ -3161,6 +3165,7 @@ class SeasonCog(commands.Cog):
                 driver_team_map,
                 reserve_driver_ids,
                 amend_format=True,
+                other_active_assignments=other_assignments,
             )
             try:
                 await msg.delete()

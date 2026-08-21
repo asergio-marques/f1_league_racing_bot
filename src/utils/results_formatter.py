@@ -453,6 +453,19 @@ def format_previous_position(position: int) -> str:
     return str(position)
 
 
+def format_grid_cell(row: QualifyingSessionResult | RaceSessionResult) -> str:
+    """One cell of a standings grid: a finishing position, or the recorded outcome literal.
+
+    Reads ``outcome`` and never ``finishing_position`` for a non-classified entry — a driver
+    dropped to the bottom by a disqualification carries "DSQ", never the position the drop
+    gave them. Shared with the image standings grid so the literal is rendered in one place
+    (Constitution XIV.7).
+    """
+    if row.outcome is OutcomeModifier.CLASSIFIED:
+        return str(row.finishing_position)
+    return row.outcome.value
+
+
 def driver_is_drawn(
     snapshot: DriverStandingsSnapshot,
     reserve_user_ids: set[int],

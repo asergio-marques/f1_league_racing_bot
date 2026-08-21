@@ -100,7 +100,7 @@ class AssetResolution:
 
 
 def resolve_asset(
-    directory: Path, datum: str, *, packaged: Path | None = None
+    directory: Path, datum: str, *, packaged: Path | None = None, closed_set: bool = False
 ) -> AssetResolution:
     """Find the file for *datum* in *directory*, or a fallback, or neither.
 
@@ -120,6 +120,14 @@ def resolve_asset(
     *packaged* is never drawn: a league that supplied no image must not be handed one it
     did not choose. Only ``fallback.svg`` is read from the packaged tier.
 
+    *closed_set* is the one exception (Constitution XIV.13, v6.1.0): for a class whose data
+    are a closed set the module itself defines — the league did not choose the vocabulary
+    and cannot be incomplete against it — path 3 first tries the datum's own file in
+    *packaged* before its ``fallback.svg``, so a customised directory missing an entry still
+    draws the module's own correct file rather than a generic placeholder. This is still
+    reported as ``FALLBACK`` with ``from_packaged=True``: it is still not what the league
+    supplied, only more specific than the generic placeholder would have been.
+
     Omitting *packaged* gives the single-tier behaviour that stood before v6.0.0.
     """
     slug = normalise(datum)
@@ -134,6 +142,13 @@ def resolve_asset(
         return AssetResolution(AssetOutcome.FALLBACK, fallback, slug)
 
     if packaged is not None:
+        if closed_set and slug:
+            packaged_exact = packaged / f"{slug}{ASSET_EXTENSION}"
+            if packaged_exact.is_file():
+                return AssetResolution(
+                    AssetOutcome.FALLBACK, packaged_exact, slug, from_packaged=True
+                )
+
         packaged_fallback = packaged / FALLBACK_ASSET_NAME
         if packaged_fallback.is_file():
             return AssetResolution(

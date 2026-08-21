@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from models.image_catalogues import CapacityError, catalogue_for
+from models.points_config import SessionType
 from utils import results_formatter
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
@@ -33,6 +34,7 @@ DRIVERS_TEMPLATE_KEY = "standings_drivers_template"
 CONSTRUCTORS_TEMPLATE_KEY = "standings_constructors_template"
 
 _ROW_PREFIX = "row"
+_ROUND_PREFIX = "round"
 
 #: The lifecycle labels, shared with the textual standings path (XIV.7).
 _STATUS_LABELS = {
@@ -52,12 +54,12 @@ class StandingsDataError(Exception):
 
 @dataclass(frozen=True)
 class RoundCells:
-    """The cells of one round on one row.
+    """The cells of one round on one row, part of the season grid.
 
-    Filled in US3 (the season grid). A cell's value is a finishing position or an outcome
-    literal; an **empty string** means the data determined it to be nothing — no session of
-    that type, a round unrun or cancelled, or a driver who took no part — and is emptied
-    quietly rather than dashed (XIV.3).
+    A cell's value is a finishing position or an outcome literal; an **empty string** means
+    the data determined it to be nothing — no session of that type, a round unrun or
+    cancelled, or a driver who took no part — and is emptied quietly rather than dashed
+    (XIV.3).
     """
 
     #: Session key → cell text, for a drivers row.
@@ -100,13 +102,13 @@ class StandingsEntry:
     #: first round of a division, or an entry the reference round does not hold. Absent
     #: entirely rather than partly filled, and not a failure (FR-017).
     movement: object | None = None
-    #: Round ordinal → its cells. Empty until US3.
+    #: Round ordinal → its cells. Empty on a template declaring no round.
     cells: dict[int, RoundCells] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class RoundHeading:
-    """One column of the grid. Filled in US3."""
+    """One column of the grid."""
 
     ordinal: int
     number: str
@@ -134,6 +136,12 @@ class StandingsDrawing:
     nationality_collected: bool = True
     entries: list[StandingsEntry] = field(default_factory=list)
     rounds: list[RoundHeading] = field(default_factory=list)
+    #: Constructors only: team name -> the team's currently configured seat count. A car
+    #: beyond it is removed silently regardless of whether a driver was allocated to it —
+    #: the ceiling `build_fill_spec` trims cars against is the team's own seats, never the
+    #: template's declared room, which only bounds the fatal case. Empty on the drivers
+    #: graphic.
+    team_seat_counts: dict[str, int] = field(default_factory=dict)
 
     @property
     def is_drivers(self) -> bool:
@@ -174,6 +182,11 @@ def resolve_drawing(
     season_number: str | int | None = None,
     race_name: str | None = None,
     nationality_collected: bool = True,
+    rounds: Sequence[RoundHeading] = (),
+    round_session_results: Mapping[int, Mapping[str, Sequence]] | None = None,
+    team_seat_assignments: Mapping[int, Mapping[int, int]] | None = None,
+    team_seat_counts: Mapping[int, int] | None = None,
+    driver_display_names: Mapping[int, str] | None = None,
 ) -> StandingsDrawing:
     """Resolve every value a standings graphic draws.
 
@@ -183,11 +196,24 @@ def resolve_drawing(
 
     *movements* comes from ``standings_service.derive_movement`` and is carried through
     untouched. Nothing here subtracts points or compares positions.
+
+    *rounds* is the division's calendar, headed for the grid. *round_session_results*
+    maps a round's ordinal to its session results, keyed by :class:`SessionType` value — a
+    round **absent** from the mapping is not yet run or was cancelled, and every cell of it
+    is emptied (FR-022); a session type present in the outer mapping's value but absent from
+    an entry means that round holds no session of that type. *team_seat_assignments* and
+    *team_seat_counts* (keyed by ``team_role_id``, matching *team_names*) are
+    constructors-only: the first feeds the car allocation of FR-026, the second the trim a
+    team's own seat count applies over the template's declared room. *driver_display_names*
+    names the drivers a constructors car draws — keyed by ``driver_user_id``, unlike
+    *display_names* itself, which on the constructors graphic names its rows (the teams) and
+    cannot also name the drivers inside their cars.
     """
     drivers = template_key == DRIVERS_TEMPLATE_KEY
     reserves = reserve_user_ids or set()
     nationality_map = nationalities or {}
     gap_map = gaps or {}
+    seat_assignments = team_seat_assignments or {}
 
     ordered = sorted(snapshots, key=lambda s: s.standing_position)
 
@@ -200,6 +226,17 @@ def resolve_drawing(
             continue
 
         key = _entry_key(snapshot, drivers=drivers)
+        cells = (
+            _driver_round_cells(key, rounds, round_session_results)
+            if drivers
+            else _constructor_round_cells(
+                key,
+                rounds,
+                round_session_results,
+                seat_assignments.get(key, {}),
+                driver_display_names or {},
+            )
+        )
         entries.append(
             StandingsEntry(
                 ordinal=len(entries) + 1,
@@ -210,8 +247,17 @@ def resolve_drawing(
                 nationality=nationality_map.get(key) if drivers else None,
                 gap_to_leader=gap_map.get(key),
                 movement=movements.get(key),
+                cells=cells,
             )
         )
+
+    # Named by team, since that is what a row carries — the drawing addresses a row by its
+    # ordinal, never by the role id resolve_drawing itself took the classification's keys from.
+    seat_counts_by_name = {
+        team_names[role_id]: count
+        for role_id, count in (team_seat_counts or {}).items()
+        if role_id in team_names
+    }
 
     return StandingsDrawing(
         template_key=template_key,
@@ -223,7 +269,116 @@ def resolve_drawing(
         race_name=race_name,
         nationality_collected=nationality_collected,
         entries=entries,
+        rounds=list(rounds),
+        team_seat_counts=seat_counts_by_name,
     )
+
+
+# ── 1a. The round grid ────────────────────────────────────────────────────
+
+#: Session type -> the suffix of the four cell fields the grid may carry (FR-023).
+_CELL_SUFFIX_BY_SESSION = {
+    SessionType.SPRINT_QUALIFYING: "sprint_qualifying_result",
+    SessionType.SPRINT_RACE: "sprint_race_result",
+    SessionType.FEATURE_QUALIFYING: "feature_qualifying_result",
+    SessionType.FEATURE_RACE: "feature_race_result",
+}
+
+
+def _session_cells(driver_key: int, session_map: Mapping[str, Sequence] | None) -> dict[str, str]:
+    """One driver's four session cells for one round (FR-023, FR-024).
+
+    Emptied — never dashed — in every case the data determines to be nothing: the round
+    holds no session of that type, or this driver holds no record in a session it does hold
+    (took no part).
+    """
+    cells: dict[str, str] = {}
+    for session_type, suffix in _CELL_SUFFIX_BY_SESSION.items():
+        rows = None if session_map is None else session_map.get(session_type.value)
+        if not rows:
+            cells[suffix] = ""
+            continue
+        row = next((r for r in rows if r.driver_user_id == driver_key), None)
+        cells[suffix] = "" if row is None else results_formatter.format_grid_cell(row)
+    return cells
+
+
+def _driver_round_cells(
+    driver_key: int,
+    rounds: Sequence[RoundHeading],
+    round_session_results: Mapping[int, Mapping[str, Sequence]] | None,
+) -> dict[int, RoundCells]:
+    """Every round's cells for one driver's row."""
+    results = round_session_results or {}
+    return {
+        heading.ordinal: RoundCells(sessions=_session_cells(driver_key, results.get(heading.ordinal)))
+        for heading in rounds
+    }
+
+
+def _drivers_for_team(team_role_id: int, session_map: Mapping[str, Sequence] | None) -> list[int]:
+    """The distinct drivers a team's session results record for one round, id-ascending."""
+    if not session_map:
+        return []
+    found: set[int] = set()
+    for rows in session_map.values():
+        for row in rows:
+            if row.team_role_id == team_role_id:
+                found.add(row.driver_user_id)
+    return sorted(found)
+
+
+def _allocate_cars(drivers_who_drove: Sequence[int], seat_map: Mapping[int, int]) -> dict[int, int]:
+    """Car ordinal -> driver, per FR-026.
+
+    A seated driver takes their own seat's ordinal. A driver who drove but holds no seat on
+    the team — a non-seated substitute — takes the lowest ordinal no seated driver occupies,
+    in driver-id order where more than one substitute needs placing (the rule does not fix
+    an order between them; ascending id keeps the result deterministic).
+    """
+    cars: dict[int, int] = {}
+    unseated: list[int] = []
+    for driver_key in drivers_who_drove:
+        seat = seat_map.get(driver_key)
+        if seat is not None:
+            cars[seat] = driver_key
+        else:
+            unseated.append(driver_key)
+
+    next_ordinal = 1
+    for driver_key in unseated:
+        while next_ordinal in cars:
+            next_ordinal += 1
+        cars[next_ordinal] = driver_key
+        next_ordinal += 1
+
+    return cars
+
+
+def _constructor_round_cells(
+    team_role_id: int,
+    rounds: Sequence[RoundHeading],
+    round_session_results: Mapping[int, Mapping[str, Sequence]] | None,
+    seat_map: Mapping[int, int],
+    driver_display_names: Mapping[int, str],
+) -> dict[int, RoundCells]:
+    """Every round's cells for one constructor's row — a car per driver who drove (FR-026)."""
+    results = round_session_results or {}
+    out: dict[int, RoundCells] = {}
+    for heading in rounds:
+        session_map = results.get(heading.ordinal)
+        drivers_who_drove = _drivers_for_team(team_role_id, session_map)
+        allocation = _allocate_cars(drivers_who_drove, seat_map)
+        out[heading.ordinal] = RoundCells(
+            cars={
+                ordinal: (
+                    driver_display_names.get(driver_key),
+                    _session_cells(driver_key, session_map),
+                )
+                for ordinal, driver_key in allocation.items()
+            }
+        )
+    return out
 
 
 # ── 2. Projection ─────────────────────────────────────────────────────────
@@ -235,6 +390,31 @@ def _row_fields_declared(declared, ordinal: int) -> list[str]:
     return sorted(
         name for name in declared if name == stem or name.startswith(f"{stem}_")
     )
+
+
+def _round_ids(declared, ordinal: int) -> list[str]:
+    """Every id bearing round *ordinal*, across every family it governs.
+
+    A round's ordinal stands as ``round_<z>_*`` at top level, as ``row_<x>_round_<z>_*`` on
+    a driver's row, and as ``row_<x>_round_<z>_driver_<w>_*`` on a constructor's car — the
+    substring match reaches all three without distinguishing them, since a car id is simply
+    a longer ``row_``-prefixed id carrying the same round marker. One capacity decision
+    removes them all (XIV.12) — containment cannot carry the cells, a cell belonging to its
+    row and its round both while a node of an SVG file has one parent (XIV.2).
+    """
+    round_stem = f"{_ROUND_PREFIX}_{ordinal}"
+    ids = {
+        name
+        for name in declared
+        if name == round_stem or name.startswith(f"{round_stem}_")
+    }
+    suffix = f"_{_ROUND_PREFIX}_{ordinal}"
+    ids.update(
+        name
+        for name in declared
+        if name.startswith(f"{_ROW_PREFIX}_") and (suffix in name)
+    )
+    return sorted(ids)
 
 
 def build_fill_spec(
@@ -254,10 +434,23 @@ def build_fill_spec(
 
     try:
         capacity = catalogue.capacity(root) or 0
+        round_capacity = catalogue.column_capacity(root) or 0
     except CapacityError as exc:
         raise StandingsDataError(str(exc)) from exc
 
     drawn = drawing.entries[:capacity]
+
+    # Rounds of the division in excess of those the template declares are fatal, naming them
+    # (FR-040). A template declaring **no** round at all is not overflowing: the grid is an
+    # optional unit and such a template draws the classification alone (XIV.3).
+    if round_capacity and len(drawing.rounds) > round_capacity:
+        dropped = ", ".join(heading.number for heading in drawing.rounds[round_capacity:])
+        raise StandingsDataError(
+            f"the division holds {len(drawing.rounds)} rounds but the template declares "
+            f"{round_capacity}. Enlarge the template, or rounds {dropped} would be "
+            f"silently dropped."
+        )
+    drawn_rounds = drawing.rounds[:round_capacity]
 
     text: dict[str, str] = {}
     empty: list[str] = []
@@ -334,6 +527,50 @@ def build_fill_spec(
             off_canvas=off_canvas,
         )
 
+        _project_grid_row(
+            entry,
+            stem,
+            drawn_rounds,
+            catalogue,
+            declared,
+            drivers=drawing.is_drivers,
+            team_seat_counts=drawing.team_seat_counts,
+            text=text,
+            empty_quietly=empty_quietly,
+            remove=remove,
+        )
+
+    # The round headings actually drawn — a column heading, so it draws the round's
+    # **country flag** and never a circuit map: no circuit outline survives this size
+    # (Constitution XIV.13, 044). The league's nationality-collection switch does not reach
+    # it — it stands for the round, not for a driver.
+    for heading in drawn_rounds:
+        stem = f"{_ROUND_PREFIX}_{heading.ordinal}"
+        put(f"{stem}_number", heading.number)
+        flag_id = f"{stem}_flag"
+        if flag_id in declared:
+            if heading.country:
+                image_data[flag_id] = ("flag", heading.country)
+            else:
+                remove.append(flag_id)
+
+    # Rounds of the division's calendar beyond those the template declares are trimmed
+    # silently, taking the heading and every row's cells of that round with them — one
+    # capacity decision reaching every family the round governs (XIV.12).
+    for ordinal in range(len(drawn_rounds) + 1, round_capacity + 1):
+        group_id = f"{_ROUND_PREFIX}_{ordinal}_group"
+        bearing = _round_ids(declared, ordinal)
+        off_canvas.update(bearing)
+        if group_id in declared:
+            remove.append(group_id)
+            remove.extend(
+                name
+                for name in bearing
+                if name.startswith(f"{_ROW_PREFIX}_") and name not in remove
+            )
+        else:
+            remove.extend(name for name in bearing if name not in remove)
+
     # Rows the template declares beyond the classification's entries. Each leaves by its
     # group, which this type makes mandatory, and every field it takes with it is off the
     # canvas and therefore not unresolved (XIV.3). No error is reported (FR-037).
@@ -364,6 +601,97 @@ def build_fill_spec(
     if asset_directories:
         spec.asset_directories = dict(asset_directories)
     return spec
+
+
+def _project_grid_row(
+    entry: StandingsEntry,
+    stem: str,
+    drawn_rounds: Sequence[RoundHeading],
+    catalogue,
+    declared,
+    *,
+    drivers: bool,
+    team_seat_counts: Mapping[str, int],
+    text: dict[str, str],
+    empty_quietly: list[str],
+    remove: list[str],
+) -> None:
+    """One row's cells across the rounds actually drawn.
+
+    The drivers grid fills a session cell per round. The constructors grid additionally
+    allocates each round's cars: a car beyond the row's team's own configured seats is
+    trimmed silently regardless of any driver a substitution allocated to it — the fill
+    ceiling is the team's seats, never the template's declared room, which bounds only the
+    fatal case of a driven car the template has nowhere to put at all (FR-041).
+    """
+    for heading in drawn_rounds:
+        cell = entry.cells.get(heading.ordinal)
+        round_stem = f"{stem}_{_ROUND_PREFIX}_{heading.ordinal}"
+
+        if drivers:
+            sessions = cell.sessions if cell else {}
+            for suffix in _CELL_SUFFIX_BY_SESSION.values():
+                field_id = f"{round_stem}_{suffix}"
+                if field_id not in declared:
+                    continue
+                value = sessions.get(suffix, "")
+                if value:
+                    text[field_id] = value
+                else:
+                    empty_quietly.append(field_id)
+            continue
+
+        car_nest = (
+            catalogue.rows.nested.nested
+            if catalogue.rows is not None and catalogue.rows.nested is not None
+            else None
+        )
+        car_capacity = car_nest.declared_capacity(round_stem, declared) if car_nest else 0
+        cars = cell.cars if cell else {}
+
+        overflow = [ordinal for ordinal in cars if ordinal > car_capacity]
+        if overflow:
+            raise StandingsDataError(
+                f"row {entry.ordinal}, round {heading.ordinal} records a driver in car "
+                f"{max(overflow)} but the template declares only {car_capacity} car "
+                f"{'slot' if car_capacity == 1 else 'slots'} there. Enlarge the template."
+            )
+
+        car_prefix = car_nest.prefix if car_nest else "driver"
+        seat_count = team_seat_counts.get(entry.team_name)
+        fill_ceiling = car_capacity if seat_count is None else min(car_capacity, seat_count)
+        for car_ordinal in range(1, car_capacity + 1):
+            car_stem = f"{round_stem}_{car_prefix}_{car_ordinal}"
+            allocated = cars.get(car_ordinal) if car_ordinal <= fill_ceiling else None
+            if allocated is None:
+                group_id = f"{car_stem}_group"
+                if group_id in declared:
+                    remove.append(group_id)
+                else:
+                    remove.extend(
+                        name
+                        for name in declared
+                        if (name == car_stem or name.startswith(f"{car_stem}_"))
+                        and name not in remove
+                    )
+                continue
+
+            name, sessions = allocated
+            name_id = f"{car_stem}_name"
+            if name_id in declared:
+                if name:
+                    text[name_id] = name
+                else:
+                    empty_quietly.append(name_id)
+            for suffix in _CELL_SUFFIX_BY_SESSION.values():
+                field_id = f"{car_stem}_{suffix}"
+                if field_id not in declared:
+                    continue
+                value = sessions.get(suffix, "")
+                if value:
+                    text[field_id] = value
+                else:
+                    empty_quietly.append(field_id)
 
 
 def _project_movement(

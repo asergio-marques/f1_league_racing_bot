@@ -6,8 +6,7 @@ Covers `resolve_drawing` for both championships:
   3. Names, through the person and team conventions.
   4. The drivers graphic drawing the team seating the driver **now** (FR-020).
   5. The three derived columns arriving finished — the utility does no arithmetic (XIV.7).
-
-The grid is US3's slice and is tested with it; these entries carry no cells.
+  6. The round grid: cell resolution and the constructors' car allocation.
 """
 from __future__ import annotations
 
@@ -18,10 +17,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from models.session_result import OutcomeModifier, QualifyingSessionResult, RaceSessionResult
 from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 from services.image_standings_service import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
+    RoundHeading,
     resolve_drawing,
 )
 from services.standings_service import MOVEMENT_GAINED, MOVEMENT_UNCHANGED, Movement
@@ -67,6 +68,54 @@ def _drivers_drawing(**overrides):
     )
     values.update(overrides)
     return resolve_drawing(**values)
+
+
+def _constructors_drawing(**overrides):
+    values = dict(
+        template_key=CONSTRUCTORS_TEMPLATE_KEY,
+        division_name="Division 1",
+        round_number=4,
+        result_status="FINAL",
+        snapshots=[_team(10, 1, 60)],
+        display_names={10: "Apex Racing"},
+        team_names={10: "Apex Racing"},
+        movements={10: None},
+    )
+    values.update(overrides)
+    return resolve_drawing(**values)
+
+
+def _qual(driver: int, team: int, position: int, *, outcome=OutcomeModifier.CLASSIFIED):
+    return QualifyingSessionResult(
+        id=0,
+        session_result_id=0,
+        driver_user_id=driver,
+        team_role_id=team,
+        finishing_position=position,
+        outcome=outcome,
+        tyre=None,
+        best_lap=None,
+        points_awarded=0,
+    )
+
+
+def _race(driver: int, team: int, position: int, *, outcome=OutcomeModifier.CLASSIFIED):
+    return RaceSessionResult(
+        id=0,
+        session_result_id=0,
+        driver_user_id=driver,
+        team_role_id=team,
+        finishing_position=position,
+        outcome=outcome,
+        base_time_ms=None,
+        laps_behind=None,
+        ingame_time_penalties_ms=0,
+        postrace_time_penalties_ms=0,
+        appeal_time_penalties_ms=0,
+        fastest_lap=None,
+        fastest_lap_bonus=0,
+        points_awarded=0,
+    )
 
 
 # ── 1. Headings and the lifecycle label ───────────────────────────────────
@@ -312,3 +361,112 @@ def test_with_the_toggle_on_the_two_still_agree():
         show_reserves=True,
     )
     assert [e.position for e in drawing.entries] == printed == ["1", "2"]
+
+
+# ── 7. The round grid ───────────────────────────────────────────────────────
+
+
+def test_a_classified_result_draws_its_finishing_position():
+    drawing = _drivers_drawing(
+        rounds=[RoundHeading(ordinal=1, number="1")],
+        round_session_results={1: {"FEATURE_RACE": [_race(1, 900, 3)]}},
+    )
+    assert drawing.entries[0].cells[1].sessions["feature_race_result"] == "3"
+
+
+@pytest.mark.parametrize("outcome", [OutcomeModifier.DNF, OutcomeModifier.DNS, OutcomeModifier.DSQ])
+def test_a_non_classified_result_draws_its_outcome_literal_not_its_position(outcome):
+    """A driver dropped by disqualification carries the literal, never the drop's position."""
+    drawing = _drivers_drawing(
+        rounds=[RoundHeading(ordinal=1, number="1")],
+        round_session_results={1: {"FEATURE_RACE": [_race(1, 900, 1, outcome=outcome)]}},
+    )
+    assert drawing.entries[0].cells[1].sessions["feature_race_result"] == outcome.value
+
+
+def test_a_round_not_yet_run_draws_every_cell_of_it_empty():
+    """FR-024: a round absent from round_session_results is not yet run, or was cancelled."""
+    drawing = _drivers_drawing(
+        rounds=[RoundHeading(ordinal=1, number="1")], round_session_results={}
+    )
+    cells = drawing.entries[0].cells[1].sessions
+    assert set(cells) == {
+        "sprint_qualifying_result",
+        "sprint_race_result",
+        "feature_qualifying_result",
+        "feature_race_result",
+    }
+    assert all(value == "" for value in cells.values())
+
+
+def test_a_round_the_division_holds_no_session_of_a_type_draws_that_cell_empty():
+    drawing = _drivers_drawing(
+        rounds=[RoundHeading(ordinal=1, number="1")],
+        round_session_results={1: {"FEATURE_RACE": [_race(1, 900, 1)]}},
+    )
+    cells = drawing.entries[0].cells[1].sessions
+    assert cells["feature_race_result"] == "1"
+    assert cells["sprint_race_result"] == ""
+    assert cells["sprint_qualifying_result"] == ""
+    assert cells["feature_qualifying_result"] == ""
+
+
+def test_a_driver_absent_from_a_session_the_round_holds_draws_that_cell_empty():
+    """The driver took no part — a determined absence, not a session the round lacks."""
+    drawing = _drivers_drawing(
+        round_number=4,
+        rounds=[RoundHeading(ordinal=1, number="1")],
+        round_session_results={1: {"FEATURE_RACE": [_race(2, 900, 1)]}},
+    )
+    assert drawing.entries[0].cells[1].sessions["feature_race_result"] == ""
+    assert drawing.entries[1].cells[1].sessions["feature_race_result"] == "1"
+
+
+def test_a_seated_driver_takes_their_seat_ordinal():
+    drawing = _constructors_drawing(
+        rounds=[RoundHeading(ordinal=1, number="1")],
+        round_session_results={1: {"FEATURE_RACE": [_race(501, 10, 1)]}},
+        team_seat_assignments={10: {501: 2}},
+        driver_display_names={501: "Verstappen"},
+    )
+    cars = drawing.entries[0].cells[1].cars
+    assert set(cars) == {2}
+    assert cars[2] == ("Verstappen", {
+        "sprint_qualifying_result": "",
+        "sprint_race_result": "",
+        "feature_qualifying_result": "",
+        "feature_race_result": "1",
+    })
+
+
+def test_a_seated_driver_who_did_not_drive_leaves_their_car_free():
+    drawing = _constructors_drawing(
+        rounds=[RoundHeading(ordinal=1, number="1")],
+        round_session_results={1: {}},
+        team_seat_assignments={10: {501: 1, 502: 2}},
+    )
+    assert drawing.entries[0].cells[1].cars == {}
+
+
+def test_a_non_seated_driver_takes_the_lowest_free_car():
+    """A reserve substituting mid-round, holding no seat of the team's own."""
+    drawing = _constructors_drawing(
+        rounds=[RoundHeading(ordinal=1, number="1")],
+        round_session_results={1: {"FEATURE_RACE": [_race(501, 10, 1), _race(999, 10, 2)]}},
+        team_seat_assignments={10: {501: 2}},
+        driver_display_names={501: "Verstappen", 999: "Reserve Driver"},
+    )
+    cars = drawing.entries[0].cells[1].cars
+    # Seat 2 is taken by its seated driver; the non-seated substitute takes car 1, the
+    # lowest ordinal no seated driver occupies.
+    assert cars[1][0] == "Reserve Driver"
+    assert cars[2][0] == "Verstappen"
+
+
+def test_a_car_nobody_drove_is_absent_from_the_cells():
+    drawing = _constructors_drawing(
+        rounds=[RoundHeading(ordinal=1, number="1")],
+        round_session_results={1: {"FEATURE_RACE": [_race(501, 10, 1)]}},
+        team_seat_assignments={10: {501: 1, 502: 2}},
+    )
+    assert set(drawing.entries[0].cells[1].cars) == {1}
