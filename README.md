@@ -1442,7 +1442,13 @@ Every directory is a path relative to the project root, and one that resolves ou
 | `weather-icon-directory` | `resources/defaults/weather` | Weather condition icons |
 | `tyre-directory` | `resources/defaults/tyres` | Tyre compound icons |
 
-**Everything the bot ships sits under `resources/defaults/`.** That directory is ours and is replaced when you update the bot; the rest of `resources/` is yours. Keep your own artwork out of `defaults/` and point the bot at wherever you put it.
+**Everything the bot ships sits under `resources/defaults/`, and `resources/league/` is where yours goes.** `defaults/` is replaced when you update the bot, so never edit it. `league/` ships empty with a folder per class — `resources/league/teams`, `resources/league/flags` and so on — and is listed in `.gitignore`, so your artwork never appears in a diff and an update can never overwrite it. Point a class at it and it is used:
+
+```
+/images config team-image-directory directory:resources/league/teams
+```
+
+Nothing obliges you to use `league/`; any path inside the project root is accepted. Mixing is the ordinary case — point `teams` at your own folder and leave `markers` and `weather` on the defaults, which ship complete. Note that git is **not** backing `league/` up: keep your source artwork somewhere of your own.
 
 **What is already there.** A clone ships the fifteen default templates and one `fallback.svg` in each of the seven asset directories — so the module draws every graphic from the first render, entirely out of placeholders. No circuit, team, driver, flag or tyre artwork ships: that is your league's to make, and you replace the placeholders a class at a time, seeing your own files appear as you go.
 

@@ -171,7 +171,7 @@ Say your league has a team called **Red Bull** and you have its badge ready.
 1. **Save it as an SVG at 120 × 120.** Keep it simple — no gradients, no filters, no clipping. If the badge is not square, add see-through space around it to make it square. The bot never pads pictures for you, and a picture of the wrong shape gets stretched and smeared.
 2. **Do not put any words in the artwork.** Text inside a badge can come out in the wrong typeface on a different computer. Keep lettering as shapes, or leave it out.
 3. **Work out the filename**: `Red Bull` becomes `red_bull.svg`.
-4. **Copy it onto the bot's computer**, into the team badge folder (`resources/defaults/teams` unless you moved it). This is the by-hand step — there is no command for it.
+4. **Copy it onto the bot's computer**, into `resources/league/teams` — the folder that comes with the bot for your own artwork — and point the bot at it once with `/images config team-image-directory directory:resources/league/teams`. Do not put it in `resources/defaults/teams`: that folder is the bot's and is replaced when you update it. This is the by-hand step — there is no command for it.
 5. **Check it worked** by running the matching preview — `/images test lineup`, say — which draws with *your* folders and tells you every file it could not find. The log channel records the same thing for real posts.
 
 Every folder works the same way. Only the folder and the source of the name change.

@@ -227,3 +227,10 @@ tools/data-generator/check-in-data/*_initial.txt
 tools/data-generator/check-in-data/*_changed.txt
 tools/data-generator/results-data/*_quali.txt
 tools/data-generator/results-data/*_race.txt
+
+# A league's own artwork and templates. The folders are kept so a clone has somewhere
+# obvious to put things; what goes in them is the league's and is never committed, so
+# pulling an update to the bot cannot conflict with it. See resources/README.md.
+resources/league/**
+!resources/league/**/
+!resources/league/**/.gitkeep

@@ -2,24 +2,50 @@
 
 What the image module reads from disk.
 
-**Everything the bot ships sits under `defaults/`.** That is the split this directory is
-arranged around: `resources/defaults/` is ours and is replaced wholesale when you update the
-bot, while the rest of `resources/` is yours to organise as you please. Keeping your own
-artwork out of `defaults/` is the point — put it anywhere else and point the bot at it.
+**Everything the bot ships sits under `defaults/`. Everything of yours goes under
+`league/`.** That is the split this directory is arranged around:
 
-Every path below is a **default** — each is configurable per server, and a league that keeps
-its files elsewhere points the bot at them with `/images config <directory>`.
+| | |
+|---|---|
+| `defaults/` | Ours. Replaced wholesale when you update the bot — do not edit it |
+| `league/` | Yours. One folder per class, ready to fill. Never committed, never touched by an update |
 
-| Directory | Default for | Aspect |
-|---|---|---|
-| `defaults/templates/` | `/images config template-directory` | declared by each template |
-| `defaults/tracks/` | `/images config track-image-directory` | 120 × 120 |
-| `defaults/teams/` | `/images config team-image-directory` | 120 × 120 |
-| `defaults/drivers/` | `/images config driver-image-directory` | 120 × 120 |
-| `defaults/flags/` | `/images config flag-directory` | 120 × 80 |
-| `defaults/markers/` | `/images config marker-directory` | 64 × 64 |
-| `defaults/weather/` | `/images config weather-icon-directory` | 64 × 64 |
-| `defaults/tyres/` | `/images config tyre-directory` | 64 × 64 |
+`league/` starts empty, with a folder per class mirroring `defaults/`. It exists so a clone
+has an obvious place to put things, and so an update to the bot can never overwrite them.
+
+The **Default** column is where the bot looks until you tell it otherwise; **Yours** is the
+folder waiting for your own files. Each is configurable per server with
+`/images config <directory>`, and any path inside the project root is accepted — `league/` is
+a convenience, not a requirement.
+
+| Class | Default | Yours | Set it with | Aspect |
+|---|---|---|---|---|
+| Templates | `defaults/templates/` | `league/templates/` | `/images config template-directory` | declared by each template |
+| Circuit maps | `defaults/tracks/` | `league/tracks/` | `/images config track-image-directory` | 120 × 120 |
+| Team badges | `defaults/teams/` | `league/teams/` | `/images config team-image-directory` | 120 × 120 |
+| Driver portraits | `defaults/drivers/` | `league/drivers/` | `/images config driver-image-directory` | 120 × 120 |
+| Country flags | `defaults/flags/` | `league/flags/` | `/images config flag-directory` | 120 × 80 |
+| Movement markers | `defaults/markers/` | `league/markers/` | `/images config marker-directory` | 64 × 64 |
+| Weather icons | `defaults/weather/` | `league/weather/` | `/images config weather-icon-directory` | 64 × 64 |
+| Tyre compounds | `defaults/tyres/` | `league/tyres/` | `/images config tyre-directory` | 64 × 64 |
+
+## Using `league/`
+
+**The bot does not look there on its own.** Dropping a file in is half the job; the class has
+to be pointed at the folder, once:
+
+```
+/images config team-image-directory directory:resources/league/teams
+```
+
+**Mixing is the ordinary case.** Point `teams` and `drivers` at your own folders and leave
+`markers` and `weather` on the defaults, which ship complete and are the module's own
+vocabulary rather than anything you chose.
+
+**Nothing in `league/` is committed.** It is listed in `.gitignore` — bar the `.gitkeep`
+markers that keep the folders in place — so your artwork never appears in a diff and pulling
+an update to the bot can never conflict with it. **That also means git is not backing it up:
+keep your source files somewhere of your own.**
 
 `defaults/tracks/` holds **circuit maps**, and only the calendar and check-in graphics draw from it.
 Every other graphic pictures a round with its country flag from `defaults/flags/`, which serves a
