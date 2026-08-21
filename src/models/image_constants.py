@@ -359,6 +359,13 @@ ASSET_CLASS_DIRECTORIES: dict[str, str] = {
     "tyre": "tyre_directory",
 }
 
+#: Asset classes whose data are a closed set the module itself defines, not values a league
+#: supplies (Constitution XIV.13). A league did not choose this vocabulary and cannot be
+#: incomplete against it, so the packaged directory of one of these classes is searched for
+#: the datum's own file — not only its `fallback.svg` — whether or not the league has pointed
+#: the class at a directory of its own. Every other class is never searched this way.
+CLOSED_SET_ASSET_CLASSES: frozenset[str] = frozenset({"marker", "weather"})
+
 #: The reserved filename standing in for a datum with no file of its own
 #: (Constitution XIV.13). One per asset directory; optional.
 FALLBACK_ASSET_NAME = "fallback.svg"

@@ -127,6 +127,14 @@ The packaged directory is consulted for a **fallback and nothing else**. A file 
 `defaults/teams/` under the same name as one of your teams is never drawn for you — only
 what you supplied, or a placeholder.
 
+**Markers and weather icons are the one exception**, for the reason given above: you never
+chose that vocabulary, so a value missing from a directory you point them at is not yours to
+be incomplete against. Where the directory holds neither the value's own file nor a fallback
+of your own, the bot draws the packaged directory's own icon for that value — `lost.svg`,
+`very_wet.svg`, whichever it is — in preference to the generic placeholder. This is the one
+respect in which the packaged directory is searched for a file under your value's own name
+and not only for a fallback.
+
 **When neither place holds a fallback, the graphic is not produced at all.** The bot will
 not quietly post a card with a hole in it. Since one ships in every packaged directory, you
 reach this only by pointing a class at a directory of your own *and* removing ours.

@@ -92,6 +92,20 @@
 
 ## Out of scope
 
-- Any change to how the datum's own file is sought. It is still sought in the configured directory alone, and only its absence triggers the fallback tiers.
+- Any change to how the datum's own file is sought in the configured directory. It is still sought there alone, and only its absence triggers the fallback tiers. (The packaged directory gains a datum-own-file search of its own for closed-set classes only — see "Closed-set packaged fallback" below, carried in a later change.)
 - Any change to the "images config *-directory" commands themselves, their validation, or the requirement that a configured directory resolve inside the project root.
 - Any repository-layout convention for where a league keeps the directories it configures (e.g. a "resources/leagues/" convention). That is a documentation and repository-organisation matter for README.md, resources/README.md and the how-to guides, not a rule the module enforces or the specification states.
+
+# Closed-set packaged fallback searches the datum's own file
+
+## The rule
+
+- For a class whose data are a closed set the module itself defines — the marker and weather classes — the packaged directory's search is no longer confined to its "fallback.svg". Where the configured directory holds neither the datum's own file nor a fallback of its own, the packaged directory of a closed-set class shall be searched for the datum's own file before its "fallback.svg" is drawn.
+- This holds whether or not the league has pointed the class at a directory of its own. A league did not choose the closed-set vocabulary and cannot be incomplete against it, so moving the directory does not change what a miss against it resolves to.
+- The four-outcome table of the two-tier resolution above is unchanged. This refines its third row ("the packaged directory of the class holds one") for the two closed-set classes alone, and adds no fifth outcome.
+- The five open-set classes — tracks, teams, flags, drivers, tyres — are unaffected in every respect: the datum's own file in their packaged directory is still never drawn for a league that did not supply it.
+
+## Out of scope
+
+- Any change to the marker and weather vocabularies themselves, or to which classes are closed sets. `mystery.svg` is unaffected: it is not a per-datum closed set and was never resolved through this mechanism.
+- Any change to the non-fatal error a league sees when a fallback of either kind is drawn. It is the same notice regardless of which tier, or which file within the packaged tier, answered the miss.

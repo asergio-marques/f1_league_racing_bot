@@ -18,6 +18,7 @@ from pathlib import Path
 from lxml import etree
 
 from models.image_constants import (
+    CLOSED_SET_ASSET_CLASSES,
     NOTICE_ASSET_FALLBACK_USED,
     NOTICE_CROP_POINT_OFF_CANVAS,
     NOTICE_FONT_SUBSTITUTED,
@@ -288,6 +289,13 @@ def fill(spec: FillSpec) -> FillResult:
     #   absent, packaged directory has fallback    → fallback drawn, the same notice
     #   absent, neither tier has one               → fatal; the generation is abandoned
     #
+    # For a **closed-set** class (marker, weather — CLOSED_SET_ASSET_CLASSES), the third
+    # row is itself refined (Constitution XIV.13, v6.1.0): the packaged directory is
+    # searched for the datum's own file before its `fallback.svg`, whether or not the
+    # league has pointed the class at a directory of its own, because the league never
+    # chose that vocabulary and cannot be incomplete against it. Still the same notice —
+    # only which file gets drawn differs.
+    #
     # This is the module's **only** call to `resolve_asset`, which is what makes the
     # packaged tier reach every asset class of every graphic at once (047 FR-044).
     for field_id, (asset_class, datum) in spec.image_data.items():
@@ -338,7 +346,10 @@ def fill(spec: FillSpec) -> FillResult:
         )
 
         resolution = resolve_asset(
-            Path(directory), datum, packaged=_packaged_directory(asset_class)
+            Path(directory),
+            datum,
+            packaged=_packaged_directory(asset_class),
+            closed_set=asset_class in CLOSED_SET_ASSET_CLASSES,
         )
 
         if resolution.found:

@@ -186,6 +186,12 @@ If the bot cannot find the right file, it uses a `fallback.svg` — the plain gr
 
 The bot's folder is consulted for a **stand-in and nothing else**. A file sitting there under one of your teams' names is never drawn for you: you get what you supplied, or a placeholder, and never someone else's artwork by accident.
 
+**The markers and the weather symbols are the one exception**, because you never chose that
+set of pictures in the first place — see "The seven folders" above. Point either folder at
+one of your own and a picture missing from it still draws the bot's own correct symbol for
+that value, not the grey placeholder: the bot's folder is searched for your missing value by
+name, and only then for its placeholder.
+
 **If neither folder has one, the bot gives up and posts nothing as a picture.** It will not post a card with a hole in it. Since a `fallback.svg` ships in every folder the bot brings, you reach this only by pointing a kind of picture at a folder of your own *and* deleting the bot's.
 
 Two filenames are spoken for: `fallback.svg`, and `mystery.svg` — the latter in **both** the track folder and the flag folder, used for a round whose track, and so whose country, is kept secret. All of them come with the bot. Replace the pictures if you like, but keep the names.
