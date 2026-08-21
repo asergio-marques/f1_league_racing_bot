@@ -92,7 +92,7 @@ async def build_drawing(bot, guild, division_id: int):
         instances = await (
             await db.execute(
                 "SELECT id, name, max_seats, is_reserve FROM team_instances "
-                "WHERE division_id = ? ORDER BY is_reserve ASC, name ASC",
+                "WHERE division_id = ? ORDER BY is_reserve ASC, id ASC",
                 (division_id,),
             )
         ).fetchall()

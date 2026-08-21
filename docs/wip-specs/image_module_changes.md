@@ -18,6 +18,7 @@
 - The team drawn in the block of ordinal `<x>` shall be the team standing at position `<x>` in the team list of the division being drawn, the reserve team excepted, that list being ordered as the division holds it.
 - The correspondence shall be held by the division, and shall be resolved afresh at each generation. It shall be recorded in no template.
 - A team added to a division shall take the next free position, so that the teams already drawn do not move.
+- The team list of a division shall be held in the order the teams were added to it, and in no order derived from their names. The lineup posting path, the `images test` preview path and the team listing of `season review` shall read that one order.
 - The same ordinal may stand for a different team in another division, and for a differently named team in another league.
 
 ## Capacity

@@ -177,15 +177,18 @@ class SeasonCog(commands.Cog):
         )
 
     async def _team_name_problems(self, server_id: int, season_id: int | None) -> list[str]:
-        """Every team whose name cannot become a lineup field identifier (FR-013).
+        """Every team whose name cannot become an asset filename (047 FR-032).
 
         Checks the server's team configuration and every division of the season under
         setup, naming **every** offending team rather than stopping at the first — a
         manager fixing them one review at a time is a manager the check is failing.
 
-        **Not gated on the image module** (FR-012). The normalised team name is what a
-        lineup template addresses a team's block by, and Principle IX governs it as a
-        structural invariant of teams rather than as an image-module concern.
+        **Not gated on the image module.** The normalised team name is the filename under
+        which every graphic that draws a badge seeks that team's image, and Principle IX
+        governs it as a structural invariant of teams rather than as an image-module
+        concern. It was once the *field identifier* a lineup template addressed the team's
+        block by; that rationale went with the keyed template at v6.0.0, and the rule
+        stands on the filename alone.
 
         Only a season in SETUP reaches here, so an already-approved season is never
         re-validated and no team is renamed or removed by this rule's introduction.
@@ -270,30 +273,31 @@ class SeasonCog(commands.Cog):
             log.error("season review: lineup image failed: %s", exc)
 
     async def _lineup_problems(self, server_id: int, season_id: int) -> list[str]:
-        """Every divergence between the lineup template and the season (FR-017, FR-018).
+        """Where the lineup template cannot draw a division of this season (047 FR-022).
 
-        Two checks, both **gated** on the images module being enabled and the `lineup`
-        aspect being on. Unlike the team-name rule (which binds unconditionally), these
-        restrict how a league may compose its season, and a league drawing no lineup
-        graphic has no reason to accept them.
+        One check, and it is a **count**. The template declares a number of team blocks and
+        a number of seat slots within each; a division fielding more teams than there are
+        blocks, or seating more drivers on a team than that block has slots, cannot be
+        drawn without dropping somebody. A division fielding *fewer* is the ordinary case
+        and is drawn with the surplus removed in silence.
 
-        1. The template against **every** division. Season review holds the data that will
-           actually be drawn, so a divergence here is a failure of validation and not a
-           warning (Constitution XIV.9, v4.3.0). It is the last moment at which a league
-           can correct it before the graphic is posted anywhere.
-        2. The divisions against **each other**. One template file serves every division
-           of a season and addresses teams by name, so divisions fielding different teams
-           or different seat counts are ones no single file can be authored for.
+        Two checks stood here until v6.0.0 and both are withdrawn with the keyed template:
+        the divisions measured against **each other** for uniformity, and the template
+        measured against each division's team *names*. A template names no team now, so a
+        season composed however a league likes is drawable, and nothing here restricts it.
+
+        **Not gated on the `lineup` toggle** (FR-023). This reports a template that cannot
+        draw the season, which is a fault whether or not that graphic is posted; it is not,
+        as the uniformity rule was, a restriction on how a season may be composed.
+
+        It *is* gated on the **module**. FR-023 names the toggle and says nothing of module
+        enablement, and a league that has not enabled image generation has no template to
+        measure — complaining about one would be noise about a feature it does not use.
 
         Never raises for its own reasons: a fault in this reader must not block a season.
         """
-        from types import SimpleNamespace
-
         try:
             if not await self.bot.module_service.is_images_enabled(server_id):
-                return []
-            toggles = await self.bot.image_config_service.get_toggles(server_id)  # type: ignore[attr-defined]
-            if not toggles.get("lineup"):
                 return []
 
             reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
@@ -303,34 +307,45 @@ class SeasonCog(commands.Cog):
                 # naming it twice would tell a manager nothing new.
                 return []
 
-            from services.image_lineup_service import binding_from_teams, divergences
-            from utils.svg_document import load_svg
+            from models.image_catalogues import catalogue_for
+            from utils.svg_document import FieldIndex, load_svg
 
             root = load_svg(report.resolved_path)
-            divisions = await self.bot.season_service.get_divisions(season_id)  # type: ignore[attr-defined]
+            catalogue = catalogue_for("lineup_template")
+            blocks = catalogue.capacity(root) or 0
+            nest = catalogue.rows.nested if catalogue.rows is not None else None
+            declared = FieldIndex(root).declared()
 
+            divisions = await self.bot.season_service.get_divisions(season_id)  # type: ignore[attr-defined]
             problems: list[str] = []
-            shapes: dict[str, tuple[str, dict[str, int]]] = {}
 
             for division in sorted(divisions, key=lambda d: d.tier):
                 entries = await self.bot.team_service.get_division_teams(division.id)  # type: ignore[attr-defined]
-                teams = [SimpleNamespace(**entry) for entry in entries]
-                binding = binding_from_teams(teams)
-                for fault in divergences(root, binding):
-                    problems.append(f"division **{division.name}**: {fault}")
+                teams = [e for e in entries if not e.get("is_reserve")]
 
-                signature = ",".join(
-                    f"{key}:{binding.seats_for(key)}" for key in sorted(binding.team_keys)
-                )
-                shapes.setdefault(signature, (division.name, dict(binding.seats)))
+                if len(teams) > blocks:
+                    dropped = ", ".join(f"**{t['name']}**" for t in teams[blocks:][:8])
+                    problems.append(
+                        f"division **{division.name}** fields {len(teams)} teams but the "
+                        f"lineup template declares {blocks} "
+                        f"{'block' if blocks == 1 else 'blocks'}; {dropped} would be dropped"
+                    )
+                    continue
 
-            if len(shapes) > 1:
-                named = ", ".join(f"**{name}**" for name, _ in shapes.values())
-                problems.append(
-                    f"the divisions of this season do not field the same teams and seat "
-                    f"counts ({named}). One lineup template serves every division and "
-                    f"addresses teams by name, so no single file can be authored for them."
-                )
+                if nest is None:
+                    continue
+                for ordinal, team in enumerate(teams, start=1):
+                    slots = nest.declared_capacity(f"team_{ordinal}", declared)
+                    seated = sum(
+                        1 for seat in team.get("seats", []) if seat.get("discord_user_id")
+                    )
+                    if seated > slots:
+                        problems.append(
+                            f"division **{division.name}**: **{team['name']}** seats "
+                            f"{seated} drivers but block {ordinal} of the lineup template "
+                            f"declares {slots} seat "
+                            f"{'slot' if slots == 1 else 'slots'}"
+                        )
             return problems
         except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
             log.error("season: lineup template check failed: %s", exc)

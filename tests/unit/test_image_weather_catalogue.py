@@ -350,7 +350,7 @@ def test_the_shipped_template_satisfies_its_catalogue(key):
     from models.image_constants import TEMPLATE_COLUMNS
 
     path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "resources", "templates",
+        os.path.dirname(__file__), "..", "..", "resources", "defaults", "templates",
         TEMPLATE_COLUMNS[key],
     )
     root = etree.parse(path).getroot()

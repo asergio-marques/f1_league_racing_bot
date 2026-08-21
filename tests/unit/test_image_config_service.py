@@ -51,7 +51,7 @@ async def test_create_with_defaults_sets_every_packaged_default(service):
     cfg = await service.create_with_defaults(1)
 
     assert cfg.module_enabled is False
-    assert cfg.template_directory == "resources/templates"
+    assert cfg.template_directory == "resources/defaults/templates"
     for column, default_filename in TEMPLATE_COLUMNS.items():
         assert getattr(cfg, column) == default_filename
     for column, (_cmd, default_dir) in ASSET_DIRECTORIES.items():
@@ -175,9 +175,14 @@ _VALID_CALENDAR_SVG = (
 #: A sound lineup template carries the whole-graphic mandatory field and the reserve
 #: block. Its *team* fields are keyed by a league's own teams, so a template checked with
 #: no division in view is not asked for them (research R4).
+#: A sound lineup template declares at least one **team block** as well as the reserve
+#: block since v6.0.0 (047 FR-020). It was checkable only down to the reserve while the
+#: team fields were named after a league's own teams and so unknowable at this moment.
 _VALID_LINEUP_SVG = (
     b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
     b'<text id="division_name">D</text>'
+    b'<g id="team_1_group"><text id="team_1_name">T</text>'
+    b'<text id="team_1_driver_1_name">N</text></g>'
     b'<g id="reserve_group"><text id="reserve_driver_1_name">N</text></g>'
     b"</svg>"
 )
@@ -384,13 +389,13 @@ def _make_config(template_directory="templates", **overrides) -> _ImageConfig:
         server_id=1,
         module_enabled=True,
         template_directory=template_directory,
-        track_image_directory="resources/tracks",
-        team_image_directory="resources/teams",
-        flag_directory="resources/flags",
-        driver_image_directory="resources/drivers",
-        marker_directory="resources/markers",
-        weather_icon_directory="resources/weather",
-        tyre_directory="resources/tyres",
+        track_image_directory="resources/defaults/tracks",
+        team_image_directory="resources/defaults/teams",
+        flag_directory="resources/defaults/flags",
+        driver_image_directory="resources/defaults/drivers",
+        marker_directory="resources/defaults/markers",
+        weather_icon_directory="resources/defaults/weather",
+        tyre_directory="resources/defaults/tyres",
         time_zone="UTC",
         time_format="24H",
         date_format="DDD_DD_MON_YYYY",

@@ -27,7 +27,7 @@ from utils.svg_document import FieldIndex, parse_svg_bytes  # noqa: E402
 KEY = "verdicts_template"
 
 TEMPLATE = (
-    Path(__file__).resolve().parents[2] / "resources" / "templates" / "verdicts_template.svg"
+    Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates" / "verdicts_template.svg"
 )
 
 EXPECTED_MANDATORY = {
@@ -94,7 +94,6 @@ def test_no_collection_of_any_kind_is_declared():
     catalogue = _catalogue()
     assert catalogue.rows is None
     assert catalogue.columns is None
-    assert catalogue.keyed is None
     assert catalogue.singleton is None
 
 

@@ -523,12 +523,12 @@ def test_the_shipped_template_fills_from_the_sample_with_no_unresolved_field(fil
     from utils.svg_fill import fill
 
     path = (
-        Path(__file__).resolve().parents[2] / "resources" / "templates" / filename
+        Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates" / filename
     )
     root = load_svg(path)
     spec = build_results_drawing(root, key, _teams())
     directories = {
-        name: Path(__file__).resolve().parents[2] / "resources" / folder
+        name: Path(__file__).resolve().parents[2] / "resources" / "defaults" / folder
         for name, folder in (("team", "teams"), ("flag", "flags"), ("tyre", "tyres"))
     }
     from services.image_results_service import build_fill_spec as project

@@ -159,13 +159,13 @@ PENDING_POSTING_ASPECTS: tuple[str, ...] = tuple(
 
 #: Config column -> (command name, default directory).
 ASSET_DIRECTORIES: dict[str, tuple[str, str]] = {
-    "track_image_directory": ("track-image-directory", "resources/tracks"),
-    "team_image_directory": ("team-image-directory", "resources/teams"),
-    "flag_directory": ("flag-directory", "resources/flags"),
-    "driver_image_directory": ("driver-image-directory", "resources/drivers"),
-    "marker_directory": ("marker-directory", "resources/markers"),
-    "weather_icon_directory": ("weather-icon-directory", "resources/weather"),
-    "tyre_directory": ("tyre-directory", "resources/tyres"),
+    "track_image_directory": ("track-image-directory", "resources/defaults/tracks"),
+    "team_image_directory": ("team-image-directory", "resources/defaults/teams"),
+    "flag_directory": ("flag-directory", "resources/defaults/flags"),
+    "driver_image_directory": ("driver-image-directory", "resources/defaults/drivers"),
+    "marker_directory": ("marker-directory", "resources/defaults/markers"),
+    "weather_icon_directory": ("weather-icon-directory", "resources/defaults/weather"),
+    "tyre_directory": ("tyre-directory", "resources/defaults/tyres"),
 }
 
 ASSET_LABELS: dict[str, str] = {
@@ -234,14 +234,47 @@ PENDING_POSTING_ASPECTS: tuple[str, ...] = tuple(
 
 #: Config column -> (command name, default directory).
 ASSET_DIRECTORIES: dict[str, tuple[str, str]] = {
-    "track_image_directory": ("track-image-directory", "resources/tracks"),
-    "team_image_directory": ("team-image-directory", "resources/teams"),
-    "flag_directory": ("flag-directory", "resources/flags"),
-    "driver_image_directory": ("driver-image-directory", "resources/drivers"),
-    "marker_directory": ("marker-directory", "resources/markers"),
-    "weather_icon_directory": ("weather-icon-directory", "resources/weather"),
-    "tyre_directory": ("tyre-directory", "resources/tyres"),
+    "track_image_directory": ("track-image-directory", "resources/defaults/tracks"),
+    "team_image_directory": ("team-image-directory", "resources/defaults/teams"),
+    "flag_directory": ("flag-directory", "resources/defaults/flags"),
+    "driver_image_directory": ("driver-image-directory", "resources/defaults/drivers"),
+    "marker_directory": ("marker-directory", "resources/defaults/markers"),
+    "weather_icon_directory": ("weather-icon-directory", "resources/defaults/weather"),
+    "tyre_directory": ("tyre-directory", "resources/defaults/tyres"),
 }
+
+#: Asset class -> the configuration column naming its directory. Kept beside
+#: :data:`ASSET_DIRECTORIES` so the packaged path and the default configured path are read
+#: from one table and cannot drift apart (047 FR-038).
+ASSET_CLASS_TO_COLUMN: dict[str, str] = {
+    "track": "track_image_directory",
+    "team": "team_image_directory",
+    "flag": "flag_directory",
+    "driver": "driver_image_directory",
+    "marker": "marker_directory",
+    "weather": "weather_icon_directory",
+    "tyre": "tyre_directory",
+}
+
+
+def packaged_directory_for(asset_class: str) -> str | None:
+    """The directory shipped with the module for *asset_class*, or None if unknown.
+
+    The **second tier** of asset resolution (Constitution XIV.13, 047 FR-040). Where a
+    league's configured directory holds neither the datum's file nor a ``fallback.svg``,
+    this directory is consulted for a fallback — and for a fallback only. The datum's own
+    file is never sought here: a league that did not supply an image must not silently be
+    given one that happens to ship under the same name.
+
+    Where a league has not moved a class's directory, this is the same path the default
+    names, and the two tiers collapse into one.
+    """
+    column = ASSET_CLASS_TO_COLUMN.get(asset_class)
+    if column is None:
+        return None
+    entry = ASSET_DIRECTORIES.get(column)
+    return entry[1] if entry else None
+
 
 ASSET_LABELS: dict[str, str] = {
     "track_image_directory": "Circuit images",

@@ -81,6 +81,11 @@ class AssetResolution:
     #: The slug that was looked for, so a notice can name what had no file of its own.
     slug: str = ""
 
+    #: True where a ``FALLBACK`` outcome came from the **packaged** tier rather than the
+    #: configured directory. Diagnostics and tests only: XIV.13 requires the two to report
+    #: the *same* notice, so no caller may branch on this to change what a league is told.
+    from_packaged: bool = False
+
     @property
     def found(self) -> bool:
         return self.outcome is AssetOutcome.FOUND
@@ -94,12 +99,28 @@ class AssetResolution:
         return self.outcome is AssetOutcome.MISSING
 
 
-def resolve_asset(directory: Path, datum: str) -> AssetResolution:
-    """Find the file for *datum* inside *directory*, or its fallback, or neither.
+def resolve_asset(
+    directory: Path, datum: str, *, packaged: Path | None = None
+) -> AssetResolution:
+    """Find the file for *datum* in *directory*, or a fallback, or neither.
 
     One computed name, one existence test — no globbing, no case-insensitive scan, no
     trying other extensions. Determinism is what lets a league reason about why an asset
     did or did not appear.
+
+    *packaged* is the directory shipped with the module for this asset class, and is the
+    **second fallback tier** (Constitution XIV.13, 047 FR-040). Four paths and no fifth:
+
+    1. the datum's own file in *directory*                     → ``FOUND``
+    2. no such file, but *directory* holds a fallback          → ``FALLBACK``
+    3. neither, but *packaged* holds a fallback                → ``FALLBACK``, packaged
+    4. neither tier holds a fallback                           → ``MISSING``
+
+    The datum's own file is sought in *directory* **alone**. A file of that name sitting in
+    *packaged* is never drawn: a league that supplied no image must not be handed one it
+    did not choose. Only ``fallback.svg`` is read from the packaged tier.
+
+    Omitting *packaged* gives the single-tier behaviour that stood before v6.0.0.
     """
     slug = normalise(datum)
 
@@ -112,9 +133,22 @@ def resolve_asset(directory: Path, datum: str) -> AssetResolution:
     if fallback.is_file():
         return AssetResolution(AssetOutcome.FALLBACK, fallback, slug)
 
+    if packaged is not None:
+        packaged_fallback = packaged / FALLBACK_ASSET_NAME
+        if packaged_fallback.is_file():
+            return AssetResolution(
+                AssetOutcome.FALLBACK, packaged_fallback, slug, from_packaged=True
+            )
+
     return AssetResolution(AssetOutcome.MISSING, None, slug)
 
 
-def has_fallback(directory: Path) -> bool:
-    """Whether this asset class can survive a datum it has no file for."""
-    return (directory / FALLBACK_ASSET_NAME).is_file()
+def has_fallback(directory: Path, *, packaged: Path | None = None) -> bool:
+    """Whether this asset class can survive a datum it has no file for.
+
+    Both tiers, taken as a whole (FR-043). A configured directory carrying no fallback of
+    its own is still tolerant where the packaged directory carries one.
+    """
+    if (directory / FALLBACK_ASSET_NAME).is_file():
+        return True
+    return packaged is not None and (packaged / FALLBACK_ASSET_NAME).is_file()

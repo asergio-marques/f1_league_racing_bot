@@ -1,13 +1,13 @@
 """Unit tests for lineup projection onto a template — T002, T015.
 
 Covers:
-  1. Keyed and nested ids built through `normalise`.
+  1. Ordinal and nested ids, the team name carried as a value and never as an id.
   2. An unoccupied seat: name emptied, flag and image removed.
   3. `reserve_group` removed whole when the division fields no reserve driver.
   4. Reserve slots beyond the division's drivers treated as unoccupied seats.
   5. Reserve drivers beyond the template's slots — fatal, naming them.
   6. Asset data carrying the right class for team, flag and portrait.
-  7. The binding attached to the FillSpec.
+  7. A block the division fields no team at, removed by group or field by field.
 """
 from __future__ import annotations
 
@@ -30,8 +30,13 @@ from services.image_lineup_service import (
 SVG_NS = "http://www.w3.org/2000/svg"
 
 
-def _template(teams: dict[str, int], reserve_slots: int = 4, *, reserve_group: bool = True):
-    """Two teams of two seats plus four reserve slots, by default (T002)."""
+def _template(teams, reserve_slots: int = 4, *, reserve_group: bool = True,
+              team_groups: bool = True):
+    """Ordinal team blocks plus four reserve slots, by default.
+
+    *teams* is a list of per-block seat counts — ``[2, 2]`` for two blocks of two — so a
+    template whose blocks differ in size can be built.
+    """
     root = etree.Element(f"{{{SVG_NS}}}svg")
     root.set("width", "800")
     root.set("height", "600")
@@ -44,13 +49,14 @@ def _template(teams: dict[str, int], reserve_slots: int = 4, *, reserve_group: b
     node(root, "division_name")
     node(root, "season_number")
     node(root, "division_tier")
-    for key, seats in teams.items():
-        node(root, f"team_{key}_name")
-        node(root, f"team_{key}_image", "image")
+    for ordinal, seats in enumerate(teams, start=1):
+        block = node(root, f"team_{ordinal}_group", "g") if team_groups else root
+        node(block, f"team_{ordinal}_name")
+        node(block, f"team_{ordinal}_image", "image")
         for seat in range(1, seats + 1):
-            node(root, f"team_{key}_driver_{seat}_name")
-            node(root, f"team_{key}_driver_{seat}_flag", "image")
-            node(root, f"team_{key}_driver_{seat}_image", "image")
+            node(block, f"team_{ordinal}_driver_{seat}_name")
+            node(block, f"team_{ordinal}_driver_{seat}_flag", "image")
+            node(block, f"team_{ordinal}_driver_{seat}_image", "image")
 
     container = node(root, "reserve_group", "g") if reserve_group else root
     node(container, "reserve_name")
@@ -80,7 +86,7 @@ def _team(name: str, seats, is_reserve: bool = False):
     return NS(name=name, is_reserve=is_reserve, seats=seats)
 
 
-TWO_TEAMS = {"red_bull": 2, "force_india_b": 2}
+TWO_TEAMS = [2, 2]
 
 
 def _drawing(reserve_seats=(), **kwargs):
@@ -97,19 +103,19 @@ def _drawing(reserve_seats=(), **kwargs):
     )
 
 
-# ── Keyed and nested ids ──────────────────────────────────────────────────
+# ── Ordinal and nested ids ────────────────────────────────────────────────
 
 
-def test_keyed_ids_are_built_through_normalise():
+def test_ordinal_ids_carry_the_team_name_as_a_value():
     spec = build_fill_spec(_drawing(), _template(TWO_TEAMS))
-    assert spec.text["team_red_bull_name"] == "Red Bull"
-    assert spec.text["team_force_india_b_name"] == "Force India (B)"
+    assert spec.text["team_1_name"] == "Red Bull"
+    assert spec.text["team_2_name"] == "Force India (B)"
 
 
 def test_nested_seat_ids_carry_the_driver_name():
     spec = build_fill_spec(_drawing(), _template(TWO_TEAMS))
-    assert spec.text["team_red_bull_driver_1_name"] == "Driver a"
-    assert spec.text["team_force_india_b_driver_2_name"] == "Driver d"
+    assert spec.text["team_1_driver_1_name"] == "Driver a"
+    assert spec.text["team_2_driver_2_name"] == "Driver d"
 
 
 def test_whole_graphic_fields_are_filled():
@@ -135,13 +141,13 @@ def test_an_unoccupied_seat_empties_its_name_and_removes_its_images():
         division_name="Elite",
         teams=[_team("Red Bull", [_seat(1, "a"), _seat(2)]), _team("Reserve", [], True)],
     )
-    spec = build_fill_spec(drawing, _template({"red_bull": 2}))
+    spec = build_fill_spec(drawing, _template([2]))
     # `empty_quietly`, not `empty`: the value is *determined* to be empty, so it raises no
     # notice and does not offend the mandatory classification (XIV.3).
-    assert "team_red_bull_driver_2_name" in spec.empty_quietly
-    assert "team_red_bull_driver_2_name" not in spec.empty
-    assert "team_red_bull_driver_2_flag" in spec.remove
-    assert "team_red_bull_driver_2_image" in spec.remove
+    assert "team_1_driver_2_name" in spec.empty_quietly
+    assert "team_1_driver_2_name" not in spec.empty
+    assert "team_1_driver_2_flag" in spec.remove
+    assert "team_1_driver_2_image" in spec.remove
 
 
 # ── The reserve block ─────────────────────────────────────────────────────
@@ -195,9 +201,9 @@ def test_asset_data_carries_the_right_class_for_each_field():
     spec = build_fill_spec(
         _drawing(reserve_seats=[_seat(1, "r1")]), _template(TWO_TEAMS)
     )
-    assert spec.image_data["team_red_bull_image"] == ("team", "Red Bull")
-    assert spec.image_data["team_red_bull_driver_1_flag"] == ("flag", "United Kingdom")
-    assert spec.image_data["team_red_bull_driver_1_image"] == ("driver", "a")
+    assert spec.image_data["team_1_image"] == ("team", "Red Bull")
+    assert spec.image_data["team_1_driver_1_flag"] == ("flag", "United Kingdom")
+    assert spec.image_data["team_1_driver_1_image"] == ("driver", "a")
     assert spec.image_data["reserve_image"] == ("team", "Reserve")
 
 
@@ -209,9 +215,9 @@ def test_a_driver_with_no_nationality_has_the_flag_field_removed():
             _team("Reserve", [], True),
         ],
     )
-    spec = build_fill_spec(drawing, _template({"red_bull": 1}))
-    assert "team_red_bull_driver_1_flag" in spec.remove
-    assert "team_red_bull_driver_1_flag" not in spec.image_data
+    spec = build_fill_spec(drawing, _template([1]))
+    assert "team_1_driver_1_flag" in spec.remove
+    assert "team_1_driver_1_flag" not in spec.image_data
 
 
 # ── Notice suppression ────────────────────────────────────────────────────
@@ -238,19 +244,55 @@ def test_flag_fields_are_suppressed_when_collection_is_switched_off():
         nationality_collected=False,
     )
     assert suppressed_flag_fields(drawing) == {
-        "team_red_bull_driver_1_flag",
+        "team_1_driver_1_flag",
         "reserve_driver_1_flag",
     }
 
 
-# ── The binding ───────────────────────────────────────────────────────────
+# ── Blocks the division fields no team at (047 FR-013) ────────────────────
 
 
-def test_the_fill_spec_carries_the_binding():
-    spec = build_fill_spec(_drawing(), _template(TWO_TEAMS))
-    assert spec.binding is not None
-    assert spec.binding.team_keys == ("red_bull", "force_india_b")
-    assert spec.binding.seats == {"red_bull": 2, "force_india_b": 2}
+def test_a_surplus_block_is_removed_by_its_group():
+    spec = build_fill_spec(_drawing(), _template([2, 2, 2, 2]))
+
+    assert "team_3_group" in spec.remove
+    assert "team_4_group" in spec.remove
+    assert "team_1_group" not in spec.remove
+
+
+def test_a_surplus_block_goes_field_by_field_where_no_group_is_declared():
+    """FR-004: the group is optional, and its absence is not a fault."""
+    spec = build_fill_spec(_drawing(), _template([2, 2, 2], team_groups=False))
+
+    assert "team_3_name" in spec.remove
+    assert "team_3_driver_1_name" in spec.remove
+    assert "team_3_driver_2_image" in spec.remove
+    assert "team_1_name" not in spec.remove
+
+
+def test_a_slot_beyond_the_team_s_configured_seats_is_removed():
+    """FR-014's first half. The seat does not exist, so it is not drawn empty."""
+    drawing = resolve_drawing(
+        division_name="Elite",
+        teams=[_team("Red Bull", [_seat(1, "a")]), _team("Reserve", [], True)],
+    )
+    spec = build_fill_spec(drawing, _template([3]))
+
+    assert "team_1_driver_2_name" in spec.remove
+    assert "team_1_driver_3_name" in spec.remove
+    assert "team_1_driver_2_name" not in spec.empty_quietly
+
+
+def test_a_configured_seat_nobody_occupies_is_drawn_empty():
+    """FR-014's second half. A vacancy a league can see is not a surplus slot."""
+    drawing = resolve_drawing(
+        division_name="Elite",
+        teams=[_team("Red Bull", [_seat(1, "a"), _seat(2)]), _team("Reserve", [], True)],
+    )
+    spec = build_fill_spec(drawing, _template([2]))
+
+    assert "team_1_driver_2_name" in spec.empty_quietly
+    assert "team_1_driver_2_name" not in spec.remove
 
 
 def test_the_image_type_is_the_lineup():

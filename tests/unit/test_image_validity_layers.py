@@ -46,6 +46,8 @@ VALID_SVG = (
     b'<text id="round_1_race_name">R</text>'
     b'<text id="round_1_date">1 Jan</text>'
     b'<rect id="round_1_vertical_crop_point" x="0" y="675" width="1" height="1"/>'
+    b'<g id="team_1_group"><text id="team_1_name">T</text>'
+    b'<text id="team_1_driver_1_name">N</text></g>'
     b'<g id="reserve_group"><text id="reserve_driver_1_name">N</text></g>'
     b"</svg>"
 )
@@ -294,13 +296,13 @@ def _config(template_directory: str, **overrides) -> ImageConfig:
         server_id=1,
         module_enabled=True,
         template_directory=template_directory,
-        track_image_directory="resources/tracks",
-        team_image_directory="resources/teams",
-        flag_directory="resources/flags",
-        driver_image_directory="resources/drivers",
-        marker_directory="resources/markers",
-        weather_icon_directory="resources/weather",
-        tyre_directory="resources/tyres",
+        track_image_directory="resources/defaults/tracks",
+        team_image_directory="resources/defaults/teams",
+        flag_directory="resources/defaults/flags",
+        driver_image_directory="resources/defaults/drivers",
+        marker_directory="resources/defaults/markers",
+        weather_icon_directory="resources/defaults/weather",
+        tyre_directory="resources/defaults/tyres",
         time_zone="UTC",
         time_format="24H",
         date_format="DDD_DD_MON_YYYY",

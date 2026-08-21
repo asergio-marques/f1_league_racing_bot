@@ -130,7 +130,7 @@ Each module then has its own configuration, which is not covered here. Start fro
 
 A team belongs to the **server**, not to a season, so you do this once and it carries forward. Every team needs a Discord role — that role is granted to a driver when you seat them and taken away when you do not.
 
-The rules for a team's **name** are stricter than you would expect, and they are checked the moment you set it. They are listed in full under [`/team add`](../../README.md#team-commands). The short version: a name has to start with a letter and has to stay distinct from every other team once punctuation and accents are stripped, so `Red Bull` and `Red  Bull!` cannot both exist.
+The rules for a team's **name** are checked the moment you set it, and are listed in full under [`/team add`](../../README.md#team-commands). The short version: a name has to stay distinct from every other team once punctuation and accents are stripped, so `Red Bull` and `Red  Bull!` cannot both exist — they would draw the same badge file. A name may start with a digit; `2 Fast` is fine.
 
 > **These rules apply whether or not you ever use pictures.** A name is only cheap to fix at the moment you set it, so the bot constrains it then, rather than leaving you stuck with a name you cannot correct without losing that team's history.
 

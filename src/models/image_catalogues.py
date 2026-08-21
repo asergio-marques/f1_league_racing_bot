@@ -471,90 +471,10 @@ class NestedSpec:
 
 
 @dataclass(frozen=True)
-class KeyedSpec:
-    """A collection whose members are discriminated by a **key** (XIV.11, v4.3.0).
-
-    The lineup's teams are the first of these: ``team_red_bull_name``, not
-    ``team_1_name``. A key exists so that a member may be hand-designed *as itself* — a
-    team's block carries that team's own livery, which an ordinal cannot address because
-    it does not say which team it is. The cost is that such a template is authored against
-    one league's data, and XIV.11 forbids choosing a key where an ordinal would serve.
-
-    The capacity is fixed **by the data** (XIV.12): the division decides the member set,
-    and the template must declare exactly those members — a divergence in *either*
-    direction is fatal, both sides being declared and knowable.
-    """
-
-    #: ``team``. Named for the thing it repeats.
-    prefix: str = "team"
-
-    fields: frozenset[str] = frozenset()
-    mandatory_fields: frozenset[str] = frozenset()
-
-    #: Field suffix → asset class.
-    assets: dict[str, str] = field(default_factory=dict)
-
-    #: The collection nested inside each member — a team's seats.
-    nested: NestedSpec | None = None
-
-    #: True where the division fixes the member set rather than the template.
-    capacity_from_data: bool = True
-
-    def member_id(self, key: str) -> str:
-        """``team_red_bull``."""
-        return f"{self.prefix}_{key}"
-
-    def field_id(self, key: str, suffix: str) -> str:
-        """``team_red_bull_name``."""
-        return f"{self.prefix}_{key}_{suffix}"
-
-    def group_id(self, key: str) -> str:
-        """``team_red_bull_group`` (XIV.2)."""
-        return f"{self.prefix}_{key}_group"
-
-    def declared_keys(self, declared: Iterable[str], known: Iterable[str] = ()) -> set[str]:
-        """The keys the template declares, read back out of its ids.
-
-        A key may itself hold underscores, so reading one back is ambiguous in principle:
-        ``team_red_bull_name`` is team ``red_bull`` with suffix ``name``, but a team
-        actually named "Red Bull Name" would declare ``team_red_bull_name_name``. The
-        ambiguity is resolved by matching *known* keys first — the binding supplies them
-        — and only parsing what is left over, which is exactly the divergent set this
-        method exists to find.
-        """
-        names = set(declared)
-        found: set[str] = set()
-
-        for key in known:
-            stem = f"{self.prefix}_{key}_"
-            if any(name.startswith(stem) for name in names):
-                found.add(key)
-                names = {name for name in names if not name.startswith(stem)}
-
-        suffixes = "|".join(sorted(map(re.escape, self.fields))) or "name"
-        simple = re.compile(rf"^{re.escape(self.prefix)}_(.+?)_(?:{suffixes})$")
-        nested = (
-            re.compile(
-                rf"^{re.escape(self.prefix)}_(.+?)_{re.escape(self.nested.prefix)}_\d+_.*$"
-            )
-            if self.nested is not None
-            else None
-        )
-
-        for name in names:
-            match = nested.match(name) if nested is not None else None
-            if match is None:
-                match = simple.match(name)
-            if match is not None:
-                found.add(match.group(1))
-        return found
-
-
-@dataclass(frozen=True)
 class SingletonSpec:
     """A collection of exactly one member, named, bearing no discriminator (XIV.11).
 
-    The lineup's reserve block. Its name is **reserved**: no keyed member of a sibling
+    The lineup's reserve block. Its name is **reserved**: no member of a sibling
     collection may normalise to it, which is why ``reserve`` is refused as a team name at
     the command that would set it (Principle IX).
 
@@ -593,44 +513,6 @@ class SingletonSpec:
         return self.nested.declared_capacity(self.name, declared)
 
 
-@dataclass(frozen=True)
-class LineupBinding:
-    """The division's shape, which is what makes a keyed catalogue answerable.
-
-    **Absence is meaningful.** ``binding=None`` means *no division is in view* — the
-    moment a template is named — and the catalogue answers with its team-independent ids
-    only. That is the correct answer for that moment, not a degraded one. An **empty**
-    binding means a division fielding no team at all, which is a different thing.
-    """
-
-    #: Normalised team names, in the order the division holds them. Excludes the reserve
-    #: team, which is a singleton and never addressed through ``team_<x>_`` fields.
-    team_keys: tuple[str, ...] = ()
-
-    #: Key → the seat count configured for that team.
-    seats: Mapping[str, int] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        if len(set(self.team_keys)) != len(self.team_keys):
-            raise ValueError(
-                "two teams of the division normalise to the same key; a binding cannot "
-                "be built from them"
-            )
-        if RESERVE_KEY in self.team_keys:
-            raise ValueError(
-                f"`{RESERVE_KEY}` is reserved for the reserve team and may not be a team key"
-            )
-        unknown = set(self.seats) - set(self.team_keys)
-        if unknown:
-            raise ValueError(
-                f"seat counts given for teams not in the binding: {sorted(unknown)}"
-            )
-
-    def seats_for(self, key: str) -> int:
-        return self.seats.get(key, 0)
-
-
-#: The singleton name the reserve block owns, and the team key no league may claim.
 RESERVE_KEY = "reserve"
 
 
@@ -660,9 +542,6 @@ class FieldCatalogue:
     #: ``rows.nested`` and this carries the chrome alone.
     columns: RowSpec | None = None
 
-    #: The key-discriminated collection this type draws, if any (XIV.11, v4.3.0).
-    keyed: KeyedSpec | None = None
-
     #: The single named member this type draws, if any (XIV.11, v4.3.0).
     singleton: SingletonSpec | None = None
 
@@ -678,7 +557,6 @@ class FieldCatalogue:
             and not self.optional
             and self.rows is None
             and self.columns is None
-            and self.keyed is None
             and self.singleton is None
         )
 
@@ -688,30 +566,19 @@ class FieldCatalogue:
 
         return set(FieldIndex(root).declared())
 
-    def all_mandatory_ids(self, root=None, binding=None) -> set[str]:
+    def all_mandatory_ids(self, root=None) -> set[str]:
         """Mandatory singular fields, plus every mandatory per-member field.
 
-        *root* is needed where a capacity is counted from the template. *binding* is
-        needed where a capacity is fixed by the data (XIV.12) — the lineup's teams and
-        seats. **With no binding the keyed collection contributes nothing**, which is the
-        correct answer at the two moments that hold no division, and is what
-        ``/images template <kind>`` and validity Layer 2 both read.
+        *root* is needed wherever a capacity is counted from the template, which since
+        v6.0.0 is everywhere: no collection of any type is fixed by the data, so the file
+        alone answers what a template must declare. The ``binding`` this once took was the
+        lineup's team list, and there is no longer anything for it to bind.
         """
         ids = set(self.mandatory)
         if self.rows is not None:
             ids |= self.rows.mandatory_field_ids(root)
         if self.columns is not None:
             ids |= self.columns.mandatory_field_ids(root)
-
-        if self.keyed is not None and binding is not None:
-            for key in binding.team_keys:
-                stem = self.keyed.member_id(key)
-                ids.update(
-                    self.keyed.field_id(key, suffix)
-                    for suffix in self.keyed.mandatory_fields
-                )
-                if self.keyed.nested is not None:
-                    ids |= self.keyed.nested.mandatory_ids(stem, binding.seats_for(key))
 
         if self.singleton is not None:
             ids.update(
@@ -729,22 +596,13 @@ class FieldCatalogue:
 
         return ids
 
-    def all_known_ids(self, root=None, binding=None) -> set[str]:
+    def all_known_ids(self, root=None) -> set[str]:
         """Every field name this type may address, mandatory or optional."""
         ids = set(self.mandatory) | set(self.optional)
         if self.rows is not None:
             ids |= self.rows.all_field_ids(root)
         if self.columns is not None:
             ids |= self.columns.all_field_ids(root)
-
-        if self.keyed is not None and binding is not None:
-            for key in binding.team_keys:
-                stem = self.keyed.member_id(key)
-                ids.update(
-                    self.keyed.field_id(key, suffix) for suffix in self.keyed.fields
-                )
-                if self.keyed.nested is not None:
-                    ids |= self.keyed.nested.all_ids(stem, binding.seats_for(key))
 
         if self.singleton is not None:
             ids.update(
@@ -756,83 +614,38 @@ class FieldCatalogue:
 
         return ids
 
-    def divergent_members(self, root, binding) -> list[str]:
-        """Where a **data-fixed** collection and the template disagree, in either direction.
-
-        A member the data hold and the template does not declare, and a member the
-        template declares and the data do not hold, are one fault seen from its two sides
-        (XIV.12, v4.3.0): both are declared and both are knowable, so neither may be
-        quietly absorbed. Returns one human-readable line per divergence, naming the team
-        or the seat — never a count.
-
-        Empty where this type declares no keyed collection, or where no binding is in
-        view. A stand-in caller may pass a binding it knows to be approximate; the
-        *severity* of what comes back is the caller's to decide (XIV.9).
-        """
-        if self.keyed is None or binding is None:
-            return []
-
-        declared = self._declared(root)
-        bound = set(binding.team_keys)
-        found = self.keyed.declared_keys(declared, known=bound)
-        problems: list[str] = []
-
-        for key in sorted(found - bound):
-            problems.append(
-                f"the template declares `{self.keyed.member_id(key)}` fields, but the "
-                f"division fields no team normalising to `{key}`"
-            )
-
-        for key in sorted(bound - found):
-            problems.append(
-                f"the division fields a team normalising to `{key}`, but the template "
-                f"declares no `{self.keyed.field_id(key, 'name')}`"
-            )
-
-        nested = self.keyed.nested
-        if nested is None:
-            return problems
-
-        for key in sorted(found & bound):
-            stem = self.keyed.member_id(key)
-            seats = binding.seats_for(key)
-            try:
-                drawn = nested.declared_capacity(stem, declared)
-            except CapacityError as exc:
-                problems.append(str(exc))
-                continue
-            for index in range(seats + 1, drawn + 1):
-                problems.append(
-                    f"the template declares `{nested.field_id(stem, index, 'name')}`, but "
-                    f"`{key}` is configured with {seats} "
-                    f"{'seat' if seats == 1 else 'seats'}"
-                )
-            for index in range(drawn + 1, seats + 1):
-                problems.append(
-                    f"`{key}` is configured with seat {index}, but the template declares "
-                    f"no `{nested.field_id(stem, index, 'name')}`"
-                )
-
-        return problems
-
     def capacity(self, root=None) -> int | None:
-        """The capacity of the collection whose slots the **template** fixes.
+        """The capacity of this type's **top-level** collection.
 
-        The calendar's rounds and a classification's rows; for the lineup, the reserve
-        seats — the one lineup collection a template bounds, a division's reserve
-        population varying over a season. The team and seat collections are fixed by the
-        data and are not capacities in this sense: they diverge rather than overflow.
+        The calendar's rounds, a classification's rows, a lineup's team blocks.
 
         None where this type draws no such list, and None where the count is derived but
         no *root* is supplied — unknown rather than nought.
+
+        **This is not the reserve block.** Until v6.0.0 the lineup declared no ``rows``
+        and this method fell through to :meth:`singleton_capacity`, which made it *look*
+        like the accessor for the reserve seats. Giving the team collection its ordinal
+        rows spec took that fall-through away. Read the reserve through
+        :meth:`singleton_capacity` and never through this (research R1 of 047).
         """
         if self.rows is not None:
             return self.rows.capacity_for(root)
-        if self.singleton is not None and self.singleton.nested is not None:
-            if root is None:
-                return None
-            return self.singleton.declared_capacity(self._declared(root))
         return None
+
+    def singleton_capacity(self, root=None) -> int | None:
+        """The slot count of the collection nested inside this type's singleton member.
+
+        The lineup's reserve seats, and nothing else at present. Counted from the template
+        alone: a division's reserve population varies over a season and cannot be known
+        when the file is drawn (XIV.12).
+
+        None where this type declares no such nest, and None where no *root* is supplied.
+        """
+        if self.singleton is None or self.singleton.nested is None:
+            return None
+        if root is None:
+            return None
+        return self.singleton.declared_capacity(self._declared(root))
 
     def column_capacity(self, root=None) -> int | None:
         """The capacity of the **second** top-level collection — a grid's columns.
@@ -849,7 +662,7 @@ class FieldCatalogue:
             return None
         return self.columns.capacity_for(root)
 
-    def valueless_ids(self, root=None, binding=None) -> set[str]:
+    def valueless_ids(self, root=None) -> set[str]:
         """Field names the template must declare but the render never fills.
 
         Two kinds. A calendar's ``vertical_crop_point`` is geometry the render *reads*.
@@ -865,13 +678,6 @@ class FieldCatalogue:
 
         if self.singleton is not None and "group" in self.singleton.mandatory_fields:
             ids.add(self.singleton.group_id())
-
-        if (
-            self.keyed is not None
-            and binding is not None
-            and "group" in self.keyed.mandatory_fields
-        ):
-            ids.update(self.keyed.group_id(key) for key in binding.team_keys)
 
         return ids
 
@@ -904,15 +710,11 @@ class FieldCatalogue:
             if found is not None:
                 return found
 
-        # The singleton is tried before the keyed collection: `reserve_driver_1_image` is
-        # unambiguous, while a keyed pattern would happily read `reserve` as a team key.
         if self.singleton is not None:
             found = self._singleton_asset(field_id)
             if found is not None:
                 return found
 
-        if self.keyed is not None:
-            return self._keyed_asset(field_id)
         return None
 
     @staticmethod
@@ -964,23 +766,6 @@ class FieldCatalogue:
                 return spec.assets.get(match.group(1))
         return None
 
-    def _keyed_asset(self, field_id: str) -> str | None:
-        spec = self.keyed
-        assert spec is not None
-        if spec.nested is not None and spec.nested.assets:
-            match = re.match(
-                rf"^{re.escape(spec.prefix)}_.+?_{re.escape(spec.nested.prefix)}_\d+_(.*)$",
-                field_id,
-            )
-            if match is not None:
-                return spec.nested.assets.get(match.group(1))
-        if spec.assets:
-            suffixes = "|".join(sorted(map(re.escape, spec.assets)))
-            match = re.match(rf"^{re.escape(spec.prefix)}_.+?_({suffixes})$", field_id)
-            if match is not None:
-                return spec.assets.get(match.group(1))
-        return None
-
 
 #: The calendar's catalogue — the first image type to be specified.
 #:
@@ -1023,14 +808,13 @@ CALENDAR_CATALOGUE = FieldCatalogue(
 )
 
 
-#: The lineup's catalogue — the second image type to be specified, and the first whose
-#: fields are named after the league's own data.
+#: The lineup's catalogue. It was once the one image type whose fields were named after a
+#: league's own data; since v6.0.0 it names none, and one shipped file serves every league.
 #:
-#: Three collections, each of a different shape, which is why v4.3.0 had to admit all
-#: three before this could be written:
+#: Two collections:
 #:
-#: * **teams** — keyed by the normalised team name, capacity fixed by the *division*;
-#: * **seats** — nested inside a team, capacity fixed by the team's configuration;
+#: * **teams** — an ordinal collection, capacity counted from the *template*, with the
+#:   **seats** nested inside each block as a ceiling bounded by that team's configuration;
 #: * **reserve** — a singleton with a mandatory group, its seats fixed by the *template*.
 #:
 #: The reserve team's display name ("Reserve") and the driver-name resolution chain are
@@ -1040,15 +824,28 @@ CALENDAR_CATALOGUE = FieldCatalogue(
 LINEUP_CATALOGUE = FieldCatalogue(
     mandatory=frozenset({"division_name"}),
     optional=frozenset({"season_number", "division_tier"}),
-    keyed=KeyedSpec(
+    # Ordinal since v6.0.0. The team collection was **keyed** by the normalised team name,
+    # which made this the one template of the module authored against a league's own data:
+    # no shipped file could draw a league whose teams it did not know, and every division
+    # of a season was forced into one composition to keep a single file serving them all.
+    # `team_<x>` is a place in the layout; which team fills it is resolved from the
+    # division at generation and recorded nowhere (XIV.11, 047 FR-001 and FR-006).
+    rows=RowSpec(
         prefix="team",
+        # Counted from the template, contiguous from 1. The division is measured against
+        # it, and a division fielding fewer blocks than the file declares is ordinary.
+        capacity=None,
         fields=frozenset({"name", "image", "group"}),
         mandatory_fields=frozenset({"name"}),
         assets={"image": "team"},
-        capacity_from_data=True,
         nested=NestedSpec(
             prefix="driver",
             capacity=None,
+            # A **ceiling**, exactly as the constructors grid's cars are (XIV.12, 047
+            # FR-018). Teams differ in size and one template draws every block, so slots
+            # beyond a team's configured seats are trimmed for that block alone and report
+            # nothing. The fatal test is against the drivers actually seated.
+            capacity_per_member=True,
             fields=frozenset({"name", "flag", "image", "group"}),
             mandatory_fields=frozenset({"name"}),
             assets={"flag": "flag", "image": "driver"},
@@ -1891,7 +1688,7 @@ def reserve_capacity_problem(root, would_hold: int) -> str | None:
     """
     catalogue = catalogue_for("lineup_template")
     try:
-        capacity = catalogue.capacity(root)
+        capacity = catalogue.singleton_capacity(root)
     except CapacityError as exc:
         return str(exc)
     if not capacity or would_hold <= capacity:
@@ -1950,11 +1747,12 @@ def declared_capacities() -> dict[str, int]:
     actually overflows it. Rounds are guarded on their own command instead
     (see ``round_capacity_problem`` below).
 
-    The **lineup** is excluded for the same reason and returns nothing here: it declares
-    ``rows=None``. Its team and seat collections are fixed by the data and diverge rather
-    than overflow (XIV.12), and its one template-fixed collection is the *reserve* seats,
-    which are guarded at driver assignment by ``reserve_capacity_problem`` below — a
-    count of reserve drivers, not of every seated driver.
+    The **lineup** is excluded twice over. Its ``rows`` capacity is *derived* from the
+    template rather than fixed in code, so the filter below drops it; and its rows count
+    **teams**, not drivers, so guarding a driver placement on it would refuse for the
+    wrong reason. Its reserve seats are guarded at driver assignment by
+    ``reserve_capacity_problem`` below — a count of reserve drivers, not of every seated
+    driver.
     """
     return {
         key: catalogue.rows.capacity

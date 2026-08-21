@@ -82,6 +82,23 @@ def flags(tmp_path):
     return directory
 
 
+@pytest.fixture()
+def no_packaged_tier(tmp_path, monkeypatch):
+    """Empty the packaged fallback tier, so path 4 can still be reached.
+
+    Since v6.0.0 the repository's own ``resources/defaults/<class>/fallback.svg`` answers
+    a miss the configured directory cannot (047 FR-040). A test that means to reach the
+    *fatal* outcome must therefore put the packaged tier out of view, or it will quietly
+    be testing the third path instead of the fourth.
+    """
+    import utils.paths as paths_module
+
+    empty = tmp_path / "no_project_root"
+    empty.mkdir()
+    monkeypatch.setattr(paths_module, "PROJECT_ROOT", empty, raising=False)
+    return empty
+
+
 def test_the_datum_s_own_file_is_used_when_present(flags):
     resolution = resolve_asset(flags, "British")
 
@@ -166,6 +183,111 @@ def test_has_fallback_reports_the_directory_s_tolerance(flags):
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# 047 — the second tier: the packaged directory answers a miss the configured
+#       directory cannot. Four paths, and no fifth.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.fixture()
+def packaged(tmp_path):
+    directory = tmp_path / "packaged"
+    directory.mkdir()
+    return directory
+
+
+def test_path_one_the_datum_s_own_file_in_the_configured_directory(flags, packaged):
+    (flags / "dutch.svg").write_bytes(SVG)
+    (packaged / FALLBACK_ASSET_NAME).write_bytes(SVG)
+
+    resolution = resolve_asset(flags, "Dutch", packaged=packaged)
+
+    assert resolution.found
+    assert resolution.path == flags / "dutch.svg"
+    assert resolution.from_packaged is False
+
+
+def test_path_two_the_configured_fallback_wins_over_the_packaged_one(flags, packaged):
+    (flags / FALLBACK_ASSET_NAME).write_bytes(SVG)
+    (packaged / FALLBACK_ASSET_NAME).write_bytes(SVG)
+
+    resolution = resolve_asset(flags, "Dutch", packaged=packaged)
+
+    assert resolution.used_fallback
+    assert resolution.path == flags / FALLBACK_ASSET_NAME
+    assert resolution.from_packaged is False
+
+
+def test_path_three_the_packaged_fallback_answers_where_the_configured_one_cannot(
+    flags, packaged
+):
+    """047 FR-040. A league need no longer place a fallback of its own."""
+    (packaged / FALLBACK_ASSET_NAME).write_bytes(SVG)
+
+    resolution = resolve_asset(flags, "Dutch", packaged=packaged)
+
+    assert resolution.used_fallback
+    assert resolution.path == packaged / FALLBACK_ASSET_NAME
+    assert resolution.from_packaged is True
+
+
+def test_path_four_neither_tier_holds_a_fallback(flags, packaged):
+    resolution = resolve_asset(flags, "Dutch", packaged=packaged)
+
+    assert resolution.missing
+    assert resolution.path is None
+
+
+def test_the_packaged_tier_supplies_a_fallback_and_never_the_datum_s_own_file(
+    flags, packaged
+):
+    """FR-042, and the negative that matters most.
+
+    A file of the datum's own name sitting in the packaged directory must **not** be drawn
+    for a league that did not supply it. Only `fallback.svg` is read from that tier.
+    """
+    (packaged / "dutch.svg").write_bytes(SVG)
+    (packaged / FALLBACK_ASSET_NAME).write_bytes(SVG)
+
+    resolution = resolve_asset(flags, "Dutch", packaged=packaged)
+
+    assert resolution.used_fallback
+    assert resolution.path == packaged / FALLBACK_ASSET_NAME
+    assert resolution.path != packaged / "dutch.svg"
+
+
+def test_omitting_the_packaged_tier_keeps_the_single_tier_behaviour(flags):
+    (flags / FALLBACK_ASSET_NAME).write_bytes(SVG)
+    assert resolve_asset(flags, "Dutch").used_fallback
+    assert resolve_asset(flags, "Dutch").from_packaged is False
+
+
+def test_the_two_fallback_paths_are_indistinguishable_to_a_caller(flags, packaged):
+    """FR-041: the same notice. Which tier answered is not something a league can act on."""
+    (packaged / FALLBACK_ASSET_NAME).write_bytes(SVG)
+    from_packaged_tier = resolve_asset(flags, "Dutch", packaged=packaged)
+
+    (flags / FALLBACK_ASSET_NAME).write_bytes(SVG)
+    from_configured_tier = resolve_asset(flags, "Dutch", packaged=packaged)
+
+    assert from_packaged_tier.outcome is from_configured_tier.outcome
+    assert from_packaged_tier.slug == from_configured_tier.slug
+
+
+def test_has_fallback_reads_both_tiers(flags, packaged):
+    """FR-043: every 'holds a fallback' means the two-tier check taken as a whole."""
+    assert not has_fallback(flags, packaged=packaged)
+    (packaged / FALLBACK_ASSET_NAME).write_bytes(SVG)
+    assert has_fallback(flags, packaged=packaged)
+
+
+def test_a_team_name_beginning_with_a_digit_resolves_to_a_valid_filename(flags):
+    """047 FR-031 seen from the asset side: a filename may begin with a digit."""
+    (flags / "2fast_motorsport.svg").write_bytes(SVG)
+
+    assert resolve_asset(flags, "2Fast Motorsport").found
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # T034 / T037 / T038 — resolution wired into the fill pipeline
 # ══════════════════════════════════════════════════════════════════════════
 
@@ -222,7 +344,7 @@ def test_a_fallback_is_drawn_and_names_the_datum_that_had_no_file(flags):
     assert "Portuguese" in notice.detail
 
 
-def test_a_mandatory_asset_with_no_file_and_no_fallback_is_fatal(flags):
+def test_a_mandatory_asset_with_no_file_and_no_fallback_is_fatal(flags, no_packaged_tier):
     """FR-044 — the graphic is meaningless without it."""
     result = render_with_assets(
         '<image id="row_1_flag"/>',
@@ -236,7 +358,7 @@ def test_a_mandatory_asset_with_no_file_and_no_fallback_is_fatal(flags):
     assert "Portuguese" in result.unresolved[0]
 
 
-def test_a_missing_asset_with_no_fallback_is_fatal_whatever_the_field(flags):
+def test_a_missing_asset_with_no_fallback_is_fatal_whatever_the_field(flags, no_packaged_tier):
     """Asset resolution does not consult mandatory/optional. Uniform, both ways."""
     for catalogue in (
         FieldCatalogue(mandatory=frozenset({"row_1_flag"})),
@@ -253,7 +375,7 @@ def test_a_missing_asset_with_no_fallback_is_fatal_whatever_the_field(flags):
         assert "fallback.svg" in result.unresolved[0]
 
 
-def test_the_fatal_miss_names_the_class_the_datum_and_both_files_looked_for(flags):
+def test_the_fatal_miss_names_the_class_the_datum_and_both_files_looked_for(flags, no_packaged_tier):
     result = render_with_assets(
         '<image id="row_1_flag"/>',
         image_data={"row_1_flag": ("flag", "Portuguese")},

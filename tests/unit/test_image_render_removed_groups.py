@@ -33,7 +33,7 @@ from services.image_render_service import (  # noqa: E402
 from utils.svg_document import FieldIndex  # noqa: E402
 
 LINEUP_TEMPLATE = os.path.join(
-    os.path.dirname(__file__), "..", "..", "resources", "templates", "lineup_template.svg"
+    os.path.dirname(__file__), "..", "..", "resources", "defaults", "templates", "lineup_template.svg"
 )
 
 #: The eleven teams the shipped lineup template names its fields after. A division whose

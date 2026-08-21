@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from models.image_catalogues import RESERVE_KEY, LineupBinding, catalogue_for
+from models.image_catalogues import RESERVE_KEY, catalogue_for
 from utils.asset_resolver import normalise
 from utils.country_data import country_for_nationality
 from utils.svg_document import FieldIndex
@@ -32,7 +32,7 @@ log = logging.getLogger(__name__)
 
 TEMPLATE_KEY = "lineup_template"
 
-#: The prefix of the keyed team collection and of the nested seat collection. Read from
+#: The prefix of the ordinal team collection and of the nested seat collection. Read from
 #: the catalogue rather than repeated, so the ids the fill builds and the ids validity
 #: checks cannot drift apart (Constitution XIV.10).
 _TEAM_PREFIX = "team"
@@ -69,9 +69,14 @@ class LineupSeat:
 
 @dataclass(frozen=True)
 class LineupTeam:
-    """One team of the division, with its seats in ascending seat number."""
+    """One team of the division, with its seats in ascending seat number.
 
-    key: str
+    The **ordinal** is the team's 1-based position in the division's team list, the
+    reserve excepted, and is a place in the layout rather than anything about the team
+    (XIV.11). It is 0 for the reserve, which is a singleton and occupies no ordinal.
+    """
+
+    ordinal: int
     display_name: str
     image_datum: str
     seats: list[LineupSeat] = field(default_factory=list)
@@ -80,6 +85,10 @@ class LineupTeam:
     @property
     def occupied_count(self) -> int:
         return sum(1 for seat in self.seats if seat.occupied)
+
+    @property
+    def occupied_seats(self) -> list[LineupSeat]:
+        return [seat for seat in self.seats if seat.occupied]
 
 
 @dataclass(frozen=True)
@@ -98,13 +107,6 @@ class LineupDrawing:
     #: False where the league has switched nationality collection off at its source. A
     #: lineup with no flags at all is then exactly what was configured, and raises nothing.
     nationality_collected: bool = True
-
-    def binding(self) -> LineupBinding:
-        """The division's shape, as the catalogue reads it (research R2)."""
-        return LineupBinding(
-            team_keys=tuple(team.key for team in self.teams),
-            seats={team.key: len(team.seats) for team in self.teams},
-        )
 
 
 # ── 1. Resolution ─────────────────────────────────────────────────────────
@@ -197,30 +199,17 @@ def resolve_drawing(
     names = dict(display_names or {})
     resolved: list[LineupTeam] = []
     reserve: LineupTeam | None = None
-    seen: dict[str, str] = {}
 
+    # The ordinal is the team's position in the division's list, counted over the
+    # non-reserve teams alone. Three checks stood here until v6.0.0 — a name normalising
+    # to nothing, to `reserve`, or to the same word as another team — because the
+    # normalised name *was* the template field. It names a file now and nothing else, so a
+    # bad name can no longer collide with a field. The names are constrained at the command
+    # that sets them and reported at `season review` (Principle IX); a render is not the
+    # place to discover it, and refusing the graphic would punish the wrong moment.
     for record in teams:
         display = (getattr(record, "name", "") or "").strip()
         is_reserve = bool(getattr(record, "is_reserve", False))
-        key = RESERVE_KEY if is_reserve else normalise(display)
-
-        if not is_reserve:
-            if not key:
-                raise LineupDataError(
-                    f"the team `{display}` normalises to an empty identifier, so no "
-                    f"template field can address it"
-                )
-            if key == RESERVE_KEY:
-                raise LineupDataError(
-                    f"the team `{display}` normalises to `{RESERVE_KEY}`, which is "
-                    f"reserved for the reserve team of the division"
-                )
-            if key in seen:
-                raise LineupDataError(
-                    f"the teams `{seen[key]}` and `{display}` both normalise to "
-                    f"`{key}`, so one template field would have to address both"
-                )
-            seen[key] = display
 
         seats = sorted(
             (
@@ -235,7 +224,7 @@ def resolve_drawing(
         )
 
         team = LineupTeam(
-            key=key,
+            ordinal=0 if is_reserve else len(resolved) + 1,
             display_name=display,
             image_datum=display,
             seats=seats,
@@ -268,11 +257,12 @@ def build_fill_spec(
 ) -> FillSpec:
     """Project *drawing* onto *root*, deciding what is filled, emptied and removed.
 
-    Raises :class:`LineupDataError` where the division's reserve drivers outnumber the
-    slots the template declares. That overflow is **not** routed through ``row_count`` as
-    the calendar's is: the generic message speaks of "rows" and "slots", and XIV.9.2
-    requires the fault to name what is at fault — here, the reserve drivers that would be
-    dropped.
+    Raises :class:`LineupDataError` on each of the three overflows this graphic can meet:
+    teams beyond the template's blocks, drivers beyond a block's seat slots, and reserve
+    drivers beyond the reserve block. None is routed through ``row_count`` as the
+    calendar's rounds are: the generic message speaks of "rows" and "slots", and XIV.9.2
+    requires a fault to name *what* is at fault — here the teams or the drivers that would
+    be dropped. ``row_count`` is still set, as a backstop behind the named checks.
     """
     catalogue = catalogue_for(TEMPLATE_KEY)
     index = FieldIndex(root)
@@ -322,22 +312,94 @@ def build_fill_spec(
     put("season_number", drawing.season_number or "")
     put("division_tier", drawing.division_tier or "")
 
-    def draw_seats(stem: str, seats: Sequence[LineupSeat]) -> None:
-        for seat in seats:
-            base = f"{stem}_{_SEAT_PREFIX}_{seat.seat_number}"
+    # ── The team blocks, addressed by ordinal ────────────────────────────
+    #
+    # The block count is the template's (XIV.12): a division fielding fewer teams than the
+    # file declares draws the surplus blocks away in silence, and one fielding more is
+    # fatal. The overflow is reported through `row_count` below, which names the teams.
+    blocks = catalogue.capacity(root) or 0
+    seats_nest = catalogue.rows.nested if catalogue.rows is not None else None
+
+    if len(drawing.teams) > blocks:
+        dropped = ", ".join(
+            f"`{team.display_name}`" for team in drawing.teams[blocks:][:8]
+        )
+        raise LineupDataError(
+            f"the division fields {len(drawing.teams)} teams but the template declares "
+            f"{blocks} team {'block' if blocks == 1 else 'blocks'}. {dropped} would be "
+            f"dropped. Enlarge the template."
+        )
+
+    def remove_block(ordinal: int) -> None:
+        """Take an ordinal the division fields no team at off the graphic (FR-013)."""
+        stem = f"{_TEAM_PREFIX}_{ordinal}"
+        group_id = f"{stem}_group"
+        if group_id in declared:
+            remove.append(group_id)
+        else:
+            remove.extend(
+                name
+                for name in declared
+                if name == stem or name.startswith(f"{stem}_")
+            )
+
+    by_ordinal = {team.ordinal: team for team in drawing.teams}
+
+    for ordinal in range(1, blocks + 1):
+        team = by_ordinal.get(ordinal)
+        if team is None:
+            remove_block(ordinal)
+            continue
+
+        stem = f"{_TEAM_PREFIX}_{ordinal}"
+        put(f"{stem}_name", team.display_name)
+        put_asset(f"{stem}_image", "team", team.image_datum)
+
+        slots = 0
+        if seats_nest is not None:
+            slots = seats_nest.declared_capacity(stem, declared)
+
+        # The seats are a **ceiling** (XIV.12, 047 FR-018), exactly as the constructors
+        # grid's cars are. A slot beyond what the team is configured with is removed and
+        # nothing is reported; a slot within them that nobody occupies is drawn empty, a
+        # vacancy being worth showing. Only a *driver* who would be dropped is fatal.
+        occupied = team.occupied_seats
+        if len(occupied) > slots:
+            dropped = ", ".join(f"`{seat.driver_name}`" for seat in occupied[slots:][:8])
+            raise LineupDataError(
+                f"`{team.display_name}` seats {len(occupied)} drivers but the template "
+                f"declares {slots} seat {'slot' if slots == 1 else 'slots'} at block "
+                f"{ordinal}. {dropped} would be dropped. Enlarge the template."
+            )
+
+        drawn = list(team.seats)
+        # Shed configured-but-empty seats, latest first, until the block can hold the rest.
+        while len(drawn) > slots:
+            for index in range(len(drawn) - 1, -1, -1):
+                if not drawn[index].occupied:
+                    del drawn[index]
+                    break
+            else:  # pragma: no cover — guarded by the overflow check above
+                break
+
+        for position in range(1, slots + 1):
+            seat = drawn[position - 1] if position <= len(drawn) else None
+            base = f"{stem}_{_SEAT_PREFIX}_{position}"
+            if seat is None:
+                # Declared beyond the team's configured seats: removed, not drawn empty.
+                remove.extend(
+                    name
+                    for name in declared
+                    if name == base or name.startswith(f"{base}_")
+                )
+                continue
             put_seat_name(f"{base}_name", seat.driver_name)
             put_asset(f"{base}_flag", "flag", seat.flag_datum)
             put_asset(f"{base}_image", "driver", seat.portrait_datum)
 
-    for team in drawing.teams:
-        stem = f"{_TEAM_PREFIX}_{team.key}"
-        put(f"{stem}_name", team.display_name)
-        put_asset(f"{stem}_image", "team", team.image_datum)
-        draw_seats(stem, team.seats)
-
     # The reserve block. Its slots are fixed by the template, so this is the one lineup
     # collection to which overflow applies.
-    reserve_slots = catalogue.capacity(root) or 0
+    reserve_slots = catalogue.singleton_capacity(root) or 0
     if drawing.reserve is None:
         # Removed in its entirety, taking every other `reserve_` field with it (FR-004).
         # Where the template declares no group, each field goes one by one.
@@ -386,45 +448,16 @@ def build_fill_spec(
         remove=remove,
         image_data=image_data,
         catalogue=catalogue,
-        binding=drawing.binding(),
     )
+    # The division's team count, measured against the block count by the generic capacity
+    # guard in `image_render_service` — the same route a calendar's rounds take.
+    spec.row_count = len(drawing.teams)
     if asset_directories:
         spec.asset_directories = dict(asset_directories)
     return spec
 
 
 # ── 3. Verification against a division, and against a stand-in ────────────
-
-
-def binding_from_teams(teams: Sequence) -> LineupBinding:
-    """A binding from records carrying ``name``, ``max_seats`` and ``is_reserve``.
-
-    Skips a team whose name normalises to nothing or to the reserved word rather than
-    raising: this feeds the *comparison* paths, where the offending name is reported by
-    the team-name check (Principle IX) and need not also break the template check.
-    """
-    keys: list[str] = []
-    seats: dict[str, int] = {}
-    for record in teams:
-        if getattr(record, "is_reserve", False):
-            continue
-        key = normalise(getattr(record, "name", "") or "")
-        if not key or key == RESERVE_KEY or key in seats:
-            continue
-        keys.append(key)
-        seats[key] = int(getattr(record, "max_seats", 0) or 0)
-    return LineupBinding(team_keys=tuple(keys), seats=seats)
-
-
-def divergences(root, binding: LineupBinding) -> list[str]:
-    """Where the template and *binding* disagree, each named (FR-019).
-
-    The **severity** of what comes back is the caller's to decide, and that is the whole
-    of Constitution XIV.9's stand-in rule: the same comparison rejects at generation,
-    fails a season's validation at review, and merely warns at the moment a template is
-    named — where the binding is a stand-in for a division that does not exist yet.
-    """
-    return catalogue_for(TEMPLATE_KEY).divergent_members(root, binding)
 
 
 def suppressed_flag_fields(drawing: LineupDrawing) -> set[str]:
@@ -440,9 +473,14 @@ def suppressed_flag_fields(drawing: LineupDrawing) -> set[str]:
 
     fields: set[str] = set()
     for team in drawing.teams:
-        for seat in team.seats:
+        # Positional, as the fill draws them. A block smaller than the team's configured
+        # seats sheds the *unoccupied* ones, so an occupied seat can sit at a lower
+        # position than its seat number — the enumeration below, and never the number.
+        for position, seat in enumerate(team.seats, start=1):
             if seat.occupied and seat.flag_datum is None:
-                fields.add(f"{_TEAM_PREFIX}_{team.key}_{_SEAT_PREFIX}_{seat.seat_number}_flag")
+                fields.add(
+                    f"{_TEAM_PREFIX}_{team.ordinal}_{_SEAT_PREFIX}_{position}_flag"
+                )
     if drawing.reserve is not None:
         occupied = [seat for seat in drawing.reserve.seats if seat.occupied]
         for position, seat in enumerate(occupied, start=1):

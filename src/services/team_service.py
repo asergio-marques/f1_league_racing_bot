@@ -11,24 +11,31 @@ log = logging.getLogger(__name__)
 
 _RESERVE_NAME = "Reserve"
 
-#: The normalised form the Reserve team owns. No configurable team may claim it, because a
-#: lineup template addresses the reserve block as `reserve_*` and a team normalising to the
-#: same word would collide with it (Constitution IX, XIV.11).
+#: The normalised form the Reserve team owns. No configurable team may claim it: the
+#: reserve is a singleton whose name is reserved, and a team normalising to the same word
+#: would seek the same badge file (Constitution IX, XIV.11).
 _RESERVE_KEY = "reserve"
 
 
 def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -> str | None:
-    """Why *name* cannot become a template field identifier, or None where it can.
+    """Why *name* cannot become an asset **filename**, or None where it can.
 
-    A lineup template addresses a team's block by the **normalised** team name
-    (Constitution XIV.11, v4.3.0), and that normalised form has to serve as the `@id` of a
-    node in an XML document. Constraining the datum is the business of the module that owns
-    it (Principle IX); discovering the collision at render time is not.
+    The normalised team name is the filename under which every graphic that draws a team
+    badge seeks that team's image (Constitution XIV.13) — the lineup, both results graphics,
+    both standings graphics, the attendance sheet and the verdict. Constraining the datum is
+    the business of the module that owns it (Principle IX); discovering the collision at
+    render time is not.
 
-    Four rules, and they bind **whether or not the image module is enabled**: a name is
-    cheapest to constrain at the one moment it is set, and a league enabling the module
-    later would otherwise hold names it could not correct without losing that team's
-    history.
+    **Three** rules since v6.0.0, and they bind **whether or not the image module is
+    enabled**: a name is cheapest to constrain at the one moment it is set, and a league
+    enabling the module later would otherwise hold names it could not correct without
+    losing that team's history.
+
+    A fourth rule stood here — that the normalised form begin with a **letter** — and is
+    withdrawn. It held only while that form had to serve as the `@id` of a node in an XML
+    document, which a template addressed a team's block by. Templates address teams by
+    ordinal now, the name reaches the module as a filename and in no other way, and a
+    filename may begin with a digit. "2Fast Motorsport" is admitted.
 
     *existing_keys* maps an already-taken normalised key to the name that holds it, within
     the scope being checked — the server for the server's team list, the division for the
@@ -43,14 +50,8 @@ def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -
     key = normalise(trimmed)
     if not key:
         return (
-            f'"{trimmed}" holds no letter or digit, so it cannot name a template field. '
+            f'"{trimmed}" holds no letter or digit, so it cannot name an image file. '
             f"Choose a name with at least one."
-        )
-
-    if not key[0].isalpha():
-        return (
-            f'"{trimmed}" does not begin with a letter. A team name becomes an XML '
-            f"identifier in a lineup template, which may not begin with a digit."
         )
 
     if key == _RESERVE_KEY:
@@ -62,8 +63,8 @@ def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -
     clash = (existing_keys or {}).get(key)
     if clash is not None:
         return (
-            f'"{trimmed}" and "{clash}" both reduce to "{key}", so one lineup template '
-            f"field would have to address both. Choose a more distinct name."
+            f'"{trimmed}" and "{clash}" both reduce to "{key}", so both would draw the '
+            f"same team image. Choose a more distinct name."
         )
 
     return None
@@ -487,12 +488,24 @@ class TeamService:
     # ------------------------------------------------------------------
 
     async def get_division_teams(self, division_id: int) -> list[dict]:
-        """Return team instances with their seats for a division, for review output."""
+        """Return team instances with their seats for a division, in **insertion** order.
+
+        Ordered by ``id``, not by name. A lineup graphic addresses a team by the ordinal of
+        its position in this list (XIV.11), and a team added must take the *next free*
+        position so that the teams already drawn do not move (047 FR-008). Sorted by name,
+        adding a team whose name sorts early would shift every later team to a new block,
+        and renaming one would move it — the coupling ordinal addressing exists to remove.
+
+        The lineup posting path and the ``/images test`` preview path order identically, so
+        the ordinal a team occupies on the graphic is its position in the text beside it
+        (FR-009). The **server's** default team list is a separate thing and stays sorted
+        by name: it is a configuration listing and no ordinal is read from it.
+        """
         async with get_connection(self._db_path) as db:
             instance_rows = await (
                 await db.execute(
                     "SELECT id, name, max_seats, is_reserve "
-                    "FROM team_instances WHERE division_id = ? ORDER BY is_reserve ASC, name ASC",
+                    "FROM team_instances WHERE division_id = ? ORDER BY is_reserve ASC, id ASC",
                     (division_id,),
                 )
             ).fetchall()

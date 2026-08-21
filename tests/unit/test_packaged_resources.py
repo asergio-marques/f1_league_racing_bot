@@ -25,7 +25,9 @@ from models.image_constants import (
 
 SVG_NS = "http://www.w3.org/2000/svg"
 ROOT = Path(__file__).resolve().parents[2]
-RESOURCES = ROOT / "resources"
+#: Everything the module ships now sits under ``resources/defaults/`` (047 FR-037),
+#: leaving ``resources/`` itself for a league's own directories.
+RESOURCES = ROOT / "resources" / "defaults"
 
 
 def _svg_aspect(path: Path) -> float:

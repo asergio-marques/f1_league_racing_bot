@@ -649,12 +649,13 @@ Adds the team to the server's default team list and saves its role mapping (gran
 | `name` | String | ✅ | Name of the new team (max 50 chars) |
 | `role` | Role | ✅ | Discord role to grant drivers placed into this team |
 
-**Naming.** A team name has to survive being turned into a lineup-template field name, so it is checked when you set it. The bot lowercases the name, strips accents, and replaces every run of anything that is not a letter or a digit with a single underscore — `Red Bull` becomes `red_bull`, `Force India (B)` becomes `force_india_b`. The name is rejected if that result:
+**Naming.** A team name has to survive being turned into an image **filename**, so it is checked when you set it. The bot lowercases the name, strips accents, and replaces every run of anything that is not a letter or a digit with a single underscore — `Red Bull` becomes `red_bull`, `Force India (B)` becomes `force_india_b`. That is the name of the badge file every graphic showing that team looks for. The name is rejected if that result:
 
 - is empty (a name of nothing but punctuation);
-- does not start with a letter (`2 Fast` is refused — a field name cannot begin with a digit);
-- matches another team in the same scope (`Red Bull` and `Red  Bull!` collide);
+- matches another team in the same scope (`Red Bull` and `Red  Bull!` collide — both would draw the same badge);
 - is `reserve`, which belongs to the Reserve team of every division.
+
+> **A name may begin with a digit.** `2 Fast` is accepted and draws `2_fast.svg`. Earlier versions refused it, because the name had to serve as an identifier inside the lineup template; it names a file now, and a filename may start with anything.
 
 > These checks apply whether or not the image module is enabled. A name is only cheap to fix at the moment you set it, and a league that turns the module on later would otherwise be stuck with names it cannot correct without losing that team's history.
 
@@ -1409,9 +1410,15 @@ These sit under `/images template` rather than `/images config` because Discord 
 
 **The file is checked before it is stored.** The command refuses, and your existing filename stays in force, if the name does not end in `.svg`, if no such file is in the configured directory, if it will not parse as SVG, or if it is missing a field the image needs. You are told which of those it was — a malformed file is described in plain terms ("a comment contains a double hyphen at line 12"), never as a parser error. Nothing is written unless every check passes, so a refused command cannot leave the bot pointed at a file it can't use.
 
-> **The lineup template is the one you must draw yourself.** Every other template addresses its rows by number, so a file that works for one league works for the next. A lineup names its fields after *your* teams — `team_red_bull_name`, `team_red_bull_driver_1_name` — so that each team's block can be designed in that team's own livery. The shipped `lineup_template.svg` demonstrates the convention with invented teams; naming it unchanged will be refused at `/season review`, which tells you which of your teams it does not draw. Write one against your own team list instead, and use `/images test lineup` to check it.
+> **The lineup template works out of the box, like every other.** It addresses its teams by **number** — `team_1_name`, `team_1_driver_1_name`, `team_2_name` — so one file serves any league. Block 1 draws whichever team stands first in the division, block 2 the second, and so on; the team's own name and badge are the whole of what distinguishes one block from another. The shipped `lineup_template.svg` declares eleven blocks of two seats and a reserve block of six, and names no team of anyone's league.
+>
+> A block may be wrapped in an optional `team_<x>_group`. Where you declare it, a block the division fields no team at leaves whole; where you do not, the bot removes that block's fields one at a time. The shipped file declares one per block, and puts the row's background inside it so a removed block leaves no empty stripe.
+>
+> **You may draw as many blocks as you like, numbered from 1 with no gaps.** A division fielding fewer teams than you drew blocks removes the surplus and says nothing. A division fielding **more** is refused, naming the teams that would have been dropped. The same holds for seats within a block: draw enough slots for the largest team that will ever stand at that position, and a team with fewer drivers simply leaves the spare slots empty.
+>
+> Because a team's ordinal is its position in the division, **teams are ordered as you added them** — a team added later takes the next free block, so nothing you have already drawn moves. Renaming a team does not move it either.
 
-> Because one lineup file serves every division, **the divisions of a season must field the same teams and the same seat counts** while the `lineup` aspect is on. `/season review` says so if they differ. Turn the aspect off and the requirement lifts.
+> **Divisions may differ however you like.** Different teams, different numbers of them, different seat counts — one lineup file serves them all, and `/season review` no longer asks a season to be uniform. It says something only when a division holds more teams, or a team more drivers, than your template has room for.
 
 > **The two results templates are not interchangeable.** They share every field but the columns of their rows: qualifying carries `row_<x>_best_lap`, `row_<x>_gap` and an optional `row_<x>_tyre`; race carries `row_<x>_time`, `row_<x>_fastest_lap` and `row_<x>_ingame_penalty`. Naming a race file in the qualifying slot is refused, and the bot says which field gave it away rather than listing everything the file is missing. Identifiers of your own — layer names, background shapes, anything the bot does not address — are ignored entirely, so you can build the file however suits you.
 >
@@ -1426,24 +1433,30 @@ Every directory is a path relative to the project root, and one that resolves ou
 
 | Subcommand | Default | Holds |
 |------------|---------|-------|
-| `template-directory` | `resources/templates` | The fifteen SVG templates |
-| `track-image-directory` | `resources/tracks` | Circuit maps — the calendar and check-in graphics only |
-| `team-image-directory` | `resources/teams` | Team logos, badges, cars |
-| `flag-directory` | `resources/flags` | Country flags, for drivers and for rounds alike |
-| `driver-image-directory` | `resources/drivers` | Driver portraits |
-| `marker-directory` | `resources/markers` | Standings position-change markers |
-| `weather-icon-directory` | `resources/weather` | Weather condition icons |
-| `tyre-directory` | `resources/tyres` | Tyre compound icons |
+| `template-directory` | `resources/defaults/templates` | The fifteen SVG templates |
+| `track-image-directory` | `resources/defaults/tracks` | Circuit maps — the calendar and check-in graphics only |
+| `team-image-directory` | `resources/defaults/teams` | Team logos, badges, cars |
+| `flag-directory` | `resources/defaults/flags` | Country flags, for drivers and for rounds alike |
+| `driver-image-directory` | `resources/defaults/drivers` | Driver portraits |
+| `marker-directory` | `resources/defaults/markers` | Standings position-change markers |
+| `weather-icon-directory` | `resources/defaults/weather` | Weather condition icons |
+| `tyre-directory` | `resources/defaults/tyres` | Tyre compound icons |
+
+**Everything the bot ships sits under `resources/defaults/`.** That directory is ours and is replaced when you update the bot; the rest of `resources/` is yours. Keep your own artwork out of `defaults/` and point the bot at wherever you put it.
 
 **What is already there.** A clone ships the fifteen default templates and one `fallback.svg` in each of the seven asset directories — so the module draws every graphic from the first render, entirely out of placeholders. No circuit, team, driver, flag or tyre artwork ships: that is your league's to make, and you replace the placeholders a class at a time, seeing your own files appear as you go.
 
-**Weather icons are the exception, and ship complete.** `resources/weather/` carries all eight the bot can ask for — `sunny`, `mixed` and `rain` for a session's type, and `clear`, `light_cloud`, `overcast`, `wet` and `very_wet` for a concrete weather — because you did not choose that vocabulary and cannot be incomplete against it. Every forecast therefore draws a correct icon out of the box. Replace them freely; keep the filenames. See [resources/README.md](resources/README.md) for the naming rule and the aspect each class expects.
+**You need not supply a `fallback.svg` of your own.** When a file for a specific value is not in the directory you configured, the bot looks for a fallback there first and then in `resources/defaults/<class>/`. Point the team badge directory at a folder holding eight of your ten badges and every graphic still draws — the two without a badge get the packaged placeholder and a notice naming them. Put a `fallback.svg` in your own folder only when you want your placeholder rather than ours. The packaged directory is consulted for a *fallback* and nothing else: a file there under one of your teams' names is never drawn for you.
+
+**Weather icons are the exception, and ship complete.** `resources/defaults/weather/` carries all eight the bot can ask for — `sunny`, `mixed` and `rain` for a session's type, and `clear`, `light_cloud`, `overcast`, `wet` and `very_wet` for a concrete weather — because you did not choose that vocabulary and cannot be incomplete against it. Every forecast therefore draws a correct icon out of the box. Replace them freely; keep the filenames. See [resources/README.md](resources/README.md) for the naming rule and the aspect each class expects.
 
 **A round is pictured two ways, and your template chooses.** A country flag and a circuit map are separate optional slots, so a template can draw either, both, or neither. The map is only offered on the **calendar** and the **check-in call**, where the round is the subject and there is room for an outline to read; on the standings, the attendance sheet and the weather forecasts a round is a column heading, at a size no circuit survives, so those draw the flag. Nothing here is a setting to flip — declare the slot you want in your template and the bot fills it. The calendar decides **per round**, so one round can carry both and the next just a flag.
 
 **Flags are named for countries, not nationalities.** One directory serves a driver's flag and a round's, and every file in it is named for a country: `united_kingdom.svg`, `brazil.svg`, `united_states_of_america.svg`. A driver who signed up as `British` draws `united_kingdom.svg` — the bot maps the nationality to its country for you. A round draws the flag of the country its circuit sits in, so Las Vegas, Miami and the Circuit of the Americas all draw the same `united_states_of_america.svg`: one file, three rounds, which is the intent and not a clash to work around. `Other`, recorded for a driver who gave no nationality, is not a country and keeps its own `other.svg`.
 
 > **Spell the country as the bot's track list spells it** — `United Kingdom`, not `Great Britain`; `United States of America`, not `United States`. That is what makes a driver's flag and a round's flag resolve the same file.
+
+> **Upgrading from a version before `resources/defaults/`?** If you never ran `/images config <directory>`, nothing to do — the defaults now point at the new location. If you *did* point a class somewhere of your own, that value is untouched and keeps working.
 
 > **Upgrading a league that already had flags named for nationalities?** Rename them to their countries — `british.svg` becomes `united_kingdom.svg`. A file under the old name is never looked for, so every driver would draw your `fallback.svg` instead.
 
@@ -1504,7 +1517,7 @@ Eleven commands, one per kind of image. Each is drawn against **your own league*
 
 A season that has been completed or cancelled is not previewable; a server holding only those counts as holding none.
 
-**When your server has no season**, the bot invents a league rather than refusing. Your **team names are your own**, taken from `/team add` — that matters, because a lineup template names its fields after your real teams and a preview over made-up names would tell you nothing. Everything else is made up: the division and its tier, the calendar, the circuits, the round drawn and the driver names, all differing every time you run it. The season number counts on from your last one. The reply says plainly that the league is invented, and nothing is ever saved.
+**When your server has no season**, the bot invents a league rather than refusing. Your **team names are your own**, taken from `/team add` — the names and badges on the picture are the artwork you configured, and a preview over made-up teams would show you nothing about it. Everything else is made up: the division and its tier, the calendar, the circuits, the round drawn and the driver names, all differing every time you run it. The season number counts on from your last one. The reply says plainly that the league is invented, and nothing is ever saved.
 
 Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four `weather-*` — so they work on a server that has configured no teams at all. The other five need a roster and are refused until you have added teams.
 

@@ -63,7 +63,7 @@ def _bot(tmp_path, *, images_on=True, aspect_on=True):
             date_format="DDD_DD_MON_YYYY",
             time_format="24H",
             time_zone="UTC",
-            track_image_directory="resources/tracks",
+            track_image_directory="resources/defaults/tracks",
         )
     )
     return bot

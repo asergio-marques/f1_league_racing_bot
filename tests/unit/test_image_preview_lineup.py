@@ -251,7 +251,7 @@ class TestItUsesTheLeaguesOwnDirectories:
 
         await _seed(db_path, seat_drivers=True)
         await bot.image_config_service.set_field(
-            SERVER_ID, "flag_directory", "resources/teams"
+            SERVER_ID, "flag_directory", "resources/defaults/teams"
         )
         context = await resolve_context(
             bot, SERVER_ID, "Premier", require_teams=True
