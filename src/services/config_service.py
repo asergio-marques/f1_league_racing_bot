@@ -21,7 +21,7 @@ class ConfigService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT server_id, interaction_role_id, interaction_channel_id, "
-                "       log_channel_id, test_mode_active, "
+                "       log_channel_id, test_mode_active, test_mode_nationality_required, "
                 "       weather_module_enabled, signup_module_enabled "
                 "FROM server_configs WHERE server_id = ?",
                 (server_id,),
@@ -36,6 +36,7 @@ class ConfigService:
             interaction_channel_id=row["interaction_channel_id"],
             log_channel_id=row["log_channel_id"],
             test_mode_active=bool(row["test_mode_active"]),
+            test_mode_nationality_required=bool(row["test_mode_nationality_required"]),
             weather_module_enabled=bool(row["weather_module_enabled"]),
             signup_module_enabled=bool(row["signup_module_enabled"]),
         )
@@ -47,9 +48,9 @@ class ConfigService:
                 """
                 INSERT INTO server_configs
                     (server_id, interaction_role_id, interaction_channel_id,
-                     log_channel_id, test_mode_active,
+                     log_channel_id, test_mode_active, test_mode_nationality_required,
                      weather_module_enabled, signup_module_enabled)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(server_id) DO UPDATE SET
                     interaction_role_id    = excluded.interaction_role_id,
                     interaction_channel_id = excluded.interaction_channel_id,
@@ -62,6 +63,10 @@ class ConfigService:
                     cfg.interaction_channel_id,
                     cfg.log_channel_id,
                     int(cfg.test_mode_active),
+                    # Left out of the DO UPDATE SET deliberately, as the module flags are:
+                    # only its own toggle writes it, so a save from a command that built a
+                    # ServerConfig without reading one first cannot silently reset it.
+                    int(cfg.test_mode_nationality_required),
                     int(cfg.weather_module_enabled),
                     int(cfg.signup_module_enabled),
                 ),

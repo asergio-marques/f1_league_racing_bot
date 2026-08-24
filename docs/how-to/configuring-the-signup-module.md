@@ -102,7 +102,7 @@ Three settings, each a toggle with no parameters. Run the command and it flips.
 | `/signup time-type` | Whether lap times are called Time Trial or Short Qualification | Time Trial |
 | `/signup time-image` | Whether a screenshot must be attached to each lap time | On |
 
-Turning nationality off removes that question from the wizard entirely. The time type is only a label — it changes what the questionnaire calls the lap times and nothing else, so pick whichever matches how you actually asked drivers to set them.
+Turning nationality off removes that question from the wizard entirely. While test mode is on, a separate switch stands in for this one wherever the pictures ask whether you collect nationality, so you can look at both without changing what your real signups ask — see [Testing with test mode](test-mode.md). The time type is only a label — it changes what the questionnaire calls the lap times and nothing else, so pick whichever matches how you actually asked drivers to set them.
 
 ```
 /signup config view

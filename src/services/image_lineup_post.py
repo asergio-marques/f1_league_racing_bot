@@ -101,9 +101,13 @@ async def build_drawing(bot, guild, division_id: int):
         for instance in instances:
             seats = await (
                 await db.execute(
+                    # A mock driver has no signup record to hold a nationality and carries
+                    # its own, read by the same branch on is_test_driver the name is.
                     "SELECT ts.seat_number, dp.discord_user_id, dp.is_test_driver, "
                     "       dp.test_display_name, sr.server_display_name, "
-                    "       sr.discord_username, sr.nationality "
+                    "       sr.discord_username, "
+                    "       CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality "
+                    "            ELSE sr.nationality END AS nationality "
                     "FROM team_seats ts "
                     "LEFT JOIN driver_season_assignments dsa "
                     "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
@@ -133,21 +137,15 @@ async def build_drawing(bot, guild, division_id: int):
                 )
             )
 
-        # The suppression switch (FR-009): a lineup with no flags at all is exactly what a
-        # league that switched nationality collection off configured, and raises nothing.
-        collected = True
-        try:
-            row = await (
-                await db.execute(
-                    "SELECT nationality_required FROM signup_module_settings "
-                    "WHERE server_id = ?",
-                    (division["server_id"],),
-                )
-            ).fetchone()
-            if row is not None:
-                collected = bool(row["nationality_required"])
-        except Exception:  # noqa: BLE001 — a league without the signup module collects
-            collected = True
+        server_id = division["server_id"]
+
+    # The suppression switch (FR-009): a lineup with no flags at all is exactly what a
+    # league that switched nationality collection off configured, and raises nothing. Read
+    # through the module's single reader rather than a copy of it — this path carried its
+    # own, and its own read the wrong table.
+    from services.image_results_post import _nationality_collected
+
+    collected = await _nationality_collected(bot.db_path, server_id)
 
     # The first link of the name chain is the account's display name on the server *at the
     # moment of generation*, which only the guild can answer (research R9).

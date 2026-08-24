@@ -11,6 +11,14 @@ The two faults were:
   existed, which raised ``OperationalError`` and made four image types unrenderable;
 * ``_nationality_collected`` reading a ``signup_config`` table that no migration creates,
   inside a bare ``except`` that returned True, so the suppression switch reached nothing.
+
+A fourth site, ``image_verdict_post._driver_nationality``, carried the same phantom join
+and was corrected in 2026-08 alongside test-driver nationality; it is covered here too,
+for the same reason — only a real query against a real schema catches it.
+
+The same tests now also pin where a **mock driver's** nationality comes from. It has no
+signup record, so it carries its own on ``driver_profiles.test_nationality``, and every
+site must prefer that over the NULL its join yields.
 """
 from __future__ import annotations
 
@@ -27,6 +35,8 @@ from db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 5150
 USER_ID = 9_100_000_000_000_001
+#: A synthetic id in the range test_roster_service hands out.
+TEST_USER_ID = 9_000_000_000_000_000_001
 
 
 @pytest.fixture
@@ -59,6 +69,18 @@ async def _seed_driver(db_path, *, name: str = "Ada Lovelace", nationality: str 
             "INSERT INTO signup_records (server_id, discord_user_id, server_display_name, "
             "discord_username, nationality) VALUES (?, ?, ?, ?, ?)",
             (SERVER_ID, str(USER_ID), name, "ada", nationality),
+        )
+        await db.commit()
+
+
+async def _seed_test_driver(db_path, *, name: str = "Mock Alpha", nationality=None):
+    """A mock driver as `/test-mode roster add` makes one: no signup record at all."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
+            "is_test_driver, test_display_name, test_nationality) "
+            "VALUES (?, ?, 'ASSIGNED', 1, ?, ?)",
+            (SERVER_ID, str(TEST_USER_ID), name, nationality),
         )
         await db.commit()
 
@@ -97,6 +119,38 @@ class TestSignupRecordsJoin:
         await _seed_driver(db_path, nationality=None)
 
         assert await _nationalities(bot, [USER_ID]) == {USER_ID: None}
+
+    async def test_nationalities_reads_a_mock_drivers_own(self, bot, db_path):
+        """A mock driver has no signup record; its nationality is on its profile."""
+        from services.image_results_post import _nationalities
+
+        await _seed_test_driver(db_path, nationality="Brazilian")
+
+        assert await _nationalities(bot, [TEST_USER_ID]) == {TEST_USER_ID: "Brazilian"}
+
+    async def test_nationalities_yields_none_for_a_mock_driver_given_none(
+        self, bot, db_path
+    ):
+        from services.image_results_post import _nationalities
+
+        await _seed_test_driver(db_path, nationality=None)
+
+        assert await _nationalities(bot, [TEST_USER_ID]) == {TEST_USER_ID: None}
+
+    async def test_the_verdict_lookup_reads_both_kinds_of_driver(self, db_path):
+        """The fourth site, which joined the phantom column until this was written."""
+        from services.image_verdict_post import _driver_nationality
+
+        await _seed_driver(db_path, nationality="Dutch")
+        await _seed_test_driver(db_path, nationality="Italian")
+
+        assert await _driver_nationality(db_path, SERVER_ID, USER_ID) == "Dutch"
+        assert await _driver_nationality(db_path, SERVER_ID, TEST_USER_ID) == "Italian"
+
+    async def test_the_verdict_lookup_yields_none_for_an_unknown_driver(self, db_path):
+        from services.image_verdict_post import _driver_nationality
+
+        assert await _driver_nationality(db_path, SERVER_ID, USER_ID) is None
 
     async def test_driver_names_reads_a_seeded_driver(self, bot, db_path):
         """The second corrected site, in the results path."""
@@ -158,7 +212,9 @@ class TestSignupRecordsJoin:
                 await db.execute(
                     "SELECT ts.seat_number, dp.discord_user_id, dp.is_test_driver, "
                     "       dp.test_display_name, sr.server_display_name, "
-                    "       sr.discord_username, sr.nationality "
+                    "       sr.discord_username, "
+                    "       CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality "
+                    "            ELSE sr.nationality END AS nationality "
                     "FROM team_seats ts "
                     "LEFT JOIN driver_season_assignments dsa "
                     "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
@@ -213,3 +269,73 @@ class TestNationalityCollected:
         from services.image_results_post import _nationality_collected
 
         assert await _nationality_collected(db_path, SERVER_ID) is True
+
+    async def test_an_unreadable_switch_collects(self, db_path):
+        """A broken reader is not a reason to fail a render."""
+        from services.image_results_post import _nationality_collected
+
+        assert await _nationality_collected("no/such/database.db", SERVER_ID) is True
+
+
+class TestTheTestModeSwitchStandsIn:
+    """While test mode is active, `/test-mode nationality` is the switch that governs.
+
+    A maintainer may then see the graphics of a server under test both with flags and
+    without them without disturbing the setting their real signups run on.
+    """
+
+    async def _set(self, db_path, *, test_mode: int, test_nationality: int, signup: int):
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE server_configs SET test_mode_active = ?, "
+                "test_mode_nationality_required = ? WHERE server_id = ?",
+                (test_mode, test_nationality, SERVER_ID),
+            )
+            await db.execute(
+                "INSERT INTO signup_module_settings (server_id, nationality_required, "
+                "time_type, time_image_required) VALUES (?, ?, 'TIME_TRIAL', 1)",
+                (SERVER_ID, signup),
+            )
+            await db.commit()
+
+    async def test_the_test_mode_switch_wins_while_test_mode_is_on(self, db_path):
+        from services.image_results_post import _nationality_collected
+
+        await self._set(db_path, test_mode=1, test_nationality=0, signup=1)
+
+        assert await _nationality_collected(db_path, SERVER_ID) is False
+
+    async def test_it_wins_in_the_other_direction_too(self, db_path):
+        from services.image_results_post import _nationality_collected
+
+        await self._set(db_path, test_mode=1, test_nationality=1, signup=0)
+
+        assert await _nationality_collected(db_path, SERVER_ID) is True
+
+    async def test_the_signup_switch_governs_outside_test_mode(self, db_path):
+        from services.image_results_post import _nationality_collected
+
+        await self._set(db_path, test_mode=0, test_nationality=0, signup=1)
+
+        assert await _nationality_collected(db_path, SERVER_ID) is True
+
+    async def test_the_switch_defaults_on_for_a_server_already_configured(self, db_path):
+        """Migration 042 fills the existing rows in place, so no wipe is needed."""
+        from services.image_results_post import _nationality_collected
+
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE server_configs SET test_mode_active = 1 WHERE server_id = ?",
+                (SERVER_ID,),
+            )
+            await db.commit()
+
+        assert await _nationality_collected(db_path, SERVER_ID) is True
+
+    async def test_the_preview_reads_it_through_the_same_reader(self, bot, db_path):
+        """The preview's copy is a shim, not a second implementation."""
+        from services.image_preview_service import _nationality_collected as preview_read
+
+        await self._set(db_path, test_mode=1, test_nationality=0, signup=1)
+
+        assert await preview_read(bot, SERVER_ID) is False

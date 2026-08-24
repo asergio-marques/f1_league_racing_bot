@@ -377,9 +377,14 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
                     # carries no driver_profile_id, so this is the join the table admits.
                     # The posting paths joined a phantom column until 2026-08-18 and could
                     # not render at all; they now join as this does.
+                    #
+                    # A mock driver has no signup record to hold a nationality and carries
+                    # its own, read by the same branch on is_test_driver the name is.
                     "SELECT ts.seat_number, dp.id AS profile_id, dp.discord_user_id, "
                     "       dp.is_test_driver, dp.test_display_name, "
-                    "       sr.server_display_name, sr.discord_username, sr.nationality "
+                    "       sr.server_display_name, sr.discord_username, "
+                    "       CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality "
+                    "            ELSE sr.nationality END AS nationality "
                     "FROM team_seats ts "
                     "LEFT JOIN driver_season_assignments dsa "
                     "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
@@ -431,8 +436,8 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
 
     # A seated driver with no nationality of their own is drawn without a flag, as a
     # posting would draw them (FR-028). Counting them lets the reply say why the flags are
-    # missing — a test-mode mock driver records none, having no signup record, and a
-    # maintainer would otherwise read the blank flags as a broken asset directory.
+    # missing — a mock driver records one only where `/test-mode roster add` was given one,
+    # and a maintainer would otherwise read the blank flags as a broken asset directory.
     if context.nationality_collected:
         context.drivers_without_nationality = sum(
             1
@@ -504,25 +509,15 @@ def _drivers_from_teams(
 async def _nationality_collected(bot, server_id: int) -> bool:
     """True where the league collects a driver's nationality at all.
 
-    Read from ``signup_module_settings``, which is where the setting lives. The posting
-    paths read a ``signup_config`` table that no migration creates until 2026-08-18, and
-    swallowed the failure, so the switch reached no graphic at all; they now read the same
-    table this does.
+    A preview reads the switch the posting paths read, and now through the very function
+    they read it with: the reader lives in ``image_results_post``, and this is the shim
+    that spares its callers here from holding a ``db_path``. Three copies of it once
+    existed and two read a ``signup_config`` table no migration creates, so the switch
+    reached no graphic at all until 2026-08-18.
     """
-    try:
-        async with get_connection(bot.db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT nationality_required FROM signup_module_settings "
-                    "WHERE server_id = ?",
-                    (server_id,),
-                )
-            ).fetchone()
-    except Exception:  # noqa: BLE001 — a league without the signup module collects
-        return True
-    if row is None:
-        return True
-    return bool(row["nationality_required"])
+    from services.image_results_post import _nationality_collected as read_switch
+
+    return await read_switch(bot.db_path, server_id)
 
 
 # ── Asset directories ─────────────────────────────────────────────────────

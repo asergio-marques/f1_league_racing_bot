@@ -19,6 +19,7 @@ from typing import TypedDict
 
 from db.database import get_connection
 from models.points_config import SessionType
+from utils.nationality_data import NATIONALITY_LOOKUP
 
 log = logging.getLogger(__name__)
 
@@ -50,9 +51,20 @@ class TestDriverInfo(TypedDict):
     discord_user_id: int
     display_name: str
     team_name: str
+    nationality: str | None
 
 
 # ─── Internal helpers ────────────────────────────────────────────────────────
+
+def _canonical_nationality(raw: str) -> str | None:
+    """Return the canonical Title-Case nationality for *raw*, or None if it is not one.
+
+    The same rule the signup wizard validates by (WizardService._validate_nationality):
+    a lowercase adjective or country name, or "other", looked up in NATIONALITY_LOOKUP.
+    A mock driver's nationality is stored in the form a real driver's is, so that the
+    country a flag is resolved from is derived from it in exactly the same way.
+    """
+    return NATIONALITY_LOOKUP.get(raw.strip().lower())
 
 async def _next_synthetic_id(db_path: str) -> int:
     """Return the next available synthetic driver ID."""
@@ -109,11 +121,25 @@ async def add_test_driver(
     team_name: str,
     division_name: str,
     db_path: str,
+    nationality: str | None = None,
 ) -> TestDriverInfo | str:
     """Create a fake driver profile and seat them in *team_name* in *division_name*.
 
+    *nationality* is optional and accepted in the form the signup wizard accepts it — a
+    nationality adjective, a country name, or "other" — and stored canonically. A mock
+    driver created without one records none, and is drawn without a flag.
+
     Returns a TestDriverInfo dict on success, or an error string on failure.
     """
+    canonical_nationality: str | None = None
+    if nationality is not None and nationality.strip():
+        canonical_nationality = _canonical_nationality(nationality)
+        if canonical_nationality is None:
+            return (
+                f"Invalid nationality '{nationality.strip()}'. Give a full nationality "
+                "(e.g. 'British') or country name (e.g. 'United Kingdom'), or 'other'."
+            )
+
     season_id = await _get_active_season_id(server_id, db_path)
     if season_id is None:
         return "No active or setup season found."
@@ -172,9 +198,10 @@ async def add_test_driver(
         try:
             profile_cursor = await db.execute(
                 "INSERT INTO driver_profiles "
-                "(server_id, discord_user_id, current_state, former_driver, is_test_driver, test_display_name) "
-                "VALUES (?, ?, 'ASSIGNED', 0, 1, ?)",
-                (server_id, uid_str, driver_name),
+                "(server_id, discord_user_id, current_state, former_driver, is_test_driver, "
+                " test_display_name, test_nationality) "
+                "VALUES (?, ?, 'ASSIGNED', 0, 1, ?, ?)",
+                (server_id, uid_str, driver_name, canonical_nationality),
             )
             profile_id: int = profile_cursor.lastrowid  # type: ignore[assignment]
         except Exception as exc:
@@ -202,6 +229,7 @@ async def add_test_driver(
         discord_user_id=synthetic_uid,
         display_name=driver_name,
         team_name=team_name,
+        nationality=canonical_nationality,
     )
 
 
@@ -228,6 +256,7 @@ async def list_test_drivers(
             SELECT dp.id          AS profile_id,
                    dp.discord_user_id,
                    dp.test_display_name,
+                   dp.test_nationality,
                    ti.name        AS team_name
             FROM driver_profiles dp
             JOIN team_seats ts     ON ts.driver_profile_id = dp.id
@@ -246,6 +275,7 @@ async def list_test_drivers(
             discord_user_id=int(r["discord_user_id"]),
             display_name=r["test_display_name"] or f"Driver {r['profile_id']}",
             team_name=r["team_name"],
+            nationality=r["test_nationality"] or None,
         )
         for r in rows
     ]

@@ -89,7 +89,7 @@ Prints every round of the active season with a status per phase, per division. U
 Real drivers are the awkward part of testing placement, results and attendance: they need accounts, they need to be in the server, and they need to press buttons. The `roster` subgroup replaces them with profiles the bot treats as real everywhere except that no Discord account backs them.
 
 ```
-/test-mode roster add driver_name:Test Alpha team_name:Red Bull division:Pro
+/test-mode roster add driver_name:Test Alpha team_name:Red Bull division:Pro nationality:British
 ```
 
 The team must already exist in that division and have a free seat — this goes through the same seating path a real placement does, so seat-count and team-existence failures surface here exactly as they would in production.
@@ -98,12 +98,26 @@ The response includes a **synthetic mention string** (`<@…>` with the fake pro
 
 | Command | Notes |
 |---|---|
-| `/test-mode roster add` | `driver_name`, `team_name`, `division` — all required |
+| `/test-mode roster add` | `driver_name`, `team_name`, `division` required; `nationality` optional |
 | `/test-mode roster remove` | Takes the synthetic `user_id`, not a name |
-| `/test-mode roster list` | Per division. The cheat sheet — reprints every mention string |
+| `/test-mode roster list` | Per division. The cheat sheet — reprints every mention string, with team and nationality |
 | `/test-mode roster clear` | Empties one division |
 
 Fake drivers show up in `/season review`'s lineup block with their display name beside the mention, which is the quickest way to confirm a division is fully seated.
+
+### Nationality
+
+A mock driver has no signup record, which is where a real driver's nationality lives, so it carries one of its own. `nationality` on `roster add` takes the forms the signup wizard takes — a nationality (`British`), a country name (`United Kingdom`), or `other` — and stores it in the same canonical form, so the flag resolves exactly as a real driver's does. Anything the bot does not recognise is refused and no driver is created; a two-letter code is not recognised.
+
+Leave the parameter out and the driver records none, which is a distinct state: it is drawn without a flag rather than given `other.svg`.
+
+```
+/test-mode nationality
+```
+
+flips whether a nationality may be recorded at all. It is **on** by default, as `/signup nationality` is, and it refuses to record one while it is off. Its wider effect is that while test mode is active it stands in for `/signup nationality` everywhere the images module asks whether the league collects nationality: switch it off and every graphic draws with no flags at all and reports nothing missing, which is what a league that never collected a nationality looks like. Your real signup setting is untouched either way, so both looks can be seen without disturbing it.
+
+Generating a roster by hand is tedious, and `tools/data-generator/test-roster/` writes the commands for you — a nationality on every one, drawn from the bot's own list. See [the generator's README](../../tools/data-generator/README.md).
 
 ### Attendance
 
@@ -139,7 +153,7 @@ Five things worth knowing when previewing against a test season:
 
 - **A test season still in SETUP draws.** It does not need approving first. It is drawn exactly as it will be once `/season approve` has run, and the reply says it is pending.
 - **A mock driver is drawn by its `roster add` name.** It is a seated driver, not an empty seat, so no names are invented over a division seated with them.
-- **A mock driver records no nationality**, having no signup behind it. Where the league collects nationality, such a driver draws **no flag**, exactly as a real posting would, and the reply counts how many were drawn that way. Blank flags here are not a broken flag directory.
+- **A mock driver draws the flag of the nationality `roster add` gave it**, and none where it was given none. Where the league collects nationality, a driver holding none draws **no flag**, exactly as a real posting would, and the reply counts how many were drawn that way. Blank flags on a roster built without nationalities are not a broken flag directory. `/test-mode nationality` off suppresses every flag instead, and reports nothing.
 - **A division with no seated driver still draws.** The bot invents drivers for the seats and says so. `roster add` is only needed when you want to see particular names, or to check a lineup drawing against your own team list.
 - **The round matters.** Nine of the eleven take a round number, and the round's format decides what is drawn — a sprint round draws four session results and a four-session forecast, a normal round two of each. Seed a round of each format if you want to see all of it.
 
@@ -151,7 +165,7 @@ Nothing a preview does is written back, so previewing at any point in the order 
 
 1. `/test-mode toggle` — before `/season approve`, so the points configurations get seeded.
 2. Build and approve a season as normal.
-3. `/test-mode roster add` until each division is seated. `/test-mode roster list` to collect the mention strings.
+3. `/test-mode roster add` until each division is seated — with a `nationality` on each if you mean to look at the graphics. `/test-mode roster list` to collect the mention strings.
 4. `/test-mode advance` repeatedly, checking each posted message as it appears.
 5. For attendance rounds, `/test-mode rsvp set-status` once the check-in has been advanced into existence.
 6. `/season complete` when `advance` reports nothing left.

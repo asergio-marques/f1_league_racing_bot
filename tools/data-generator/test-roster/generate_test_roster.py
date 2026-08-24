@@ -2,14 +2,15 @@
 """Random test-roster generator — emits /test-mode roster add commands.
 
 Driver nicknames are read from names.txt beside this script - extend that file rather
-than the code.
+than the code. Nationalities are not a file: they are imported from the bot itself, so
+that every one emitted is one the bot accepts (see load_nationalities).
 
 Interactively asks for the division names and the team names, invents a plausible
 roster across them, then writes:
 
   - commands.txt  (always, beside this script) — one ready-to-paste command per driver
   - roster.csv    (only with --record, in tools/data-generator/) — the ID / name / team /
-    division mapping, for the sibling generator scripts to consume
+    division / nationality mapping, for the sibling generator scripts to consume
   - teams.txt     (only with --record, in tools/data-generator/) — the team names alone,
     because a team whose seats both went empty has no row in the CSV to be found by
 
@@ -33,6 +34,7 @@ import sys
 
 SCRIPT_DIR = pathlib.Path(__file__).parent
 DATA_DIR = SCRIPT_DIR.parent
+SRC_DIR = SCRIPT_DIR.parent.parent.parent / "src"
 
 COMMANDS_PATH = SCRIPT_DIR / "commands.txt"
 NAMES_PATH = SCRIPT_DIR / "names.txt"
@@ -73,10 +75,14 @@ DEFAULT_TEAMS = [
 ]
 
 COMMAND_TEMPLATE = (
-    "/test-mode roster add driver_name:{name} team_name:{team} division:{division}"
+    "/test-mode roster add driver_name:{name} team_name:{team} division:{division} "
+    "nationality:{nationality}"
 )
 
-CSV_HEADERS = ["ID", "Driver name", "Team", "Division"]
+#: Appended, never inserted. The sibling generators read roster.csv by DictReader but then
+#: index each row positionally (row[0]..row[3]), so a column added anywhere but the end
+#: would break them silently.
+CSV_HEADERS = ["ID", "Driver name", "Team", "Division", "Nationality"]
 
 
 # ─── Name pool ───────────────────────────────────────────────────────────────
@@ -114,6 +120,32 @@ def load_names(path=NAMES_PATH):
         print(f"Note: {duplicates} duplicate name(s) in {path.name} ignored.")
 
     return names
+
+
+# ─── Nationality pool ────────────────────────────────────────────────────────
+
+def load_nationalities(src_dir=SRC_DIR):
+    """Return every nationality the bot accepts, sorted.
+
+    This one script imports from src/ where its siblings port the rule and say so. The
+    pool must be *exactly* what the bot validates against: a nationality it rejects makes
+    the whole command fail, and a hand-kept list beside names.txt would drift from
+    NATIONALITY_LOOKUP the first time a nationality was added there.
+
+    The canonical values are what is wanted, not the keys: the keys hold both adjectives
+    and country names, many mapping to one value, and it is the value the bot stores.
+    """
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+    try:
+        from utils.nationality_data import NATIONALITY_LOOKUP
+    except ImportError as error:
+        raise ValueError(
+            f"Could not import the bot's nationality list from {src_dir} ({error}). "
+            "This script must be run from a full checkout."
+        ) from error
+
+    return sorted(set(NATIONALITY_LOOKUP.values()))
 
 
 # ─── Input parsing ───────────────────────────────────────────────────────────
@@ -229,11 +261,16 @@ def plan_team_sizes(divisions, teams, rng):
     return sizes
 
 
-def build_roster(divisions, teams, rng, pool):
-    """Generate the full roster as a list of (driver_id, name, team, division) rows.
+def build_roster(divisions, teams, rng, pool, nationalities):
+    """Generate the roster as a list of (driver_id, name, team, division, nationality) rows.
 
     Team sizes are drawn for the whole run before any name is assigned, so an
     over-large run fails before anything is written rather than part-way through.
+
+    Names are drawn without replacement and nationalities with it. A driver name must be
+    unique — it is how a maintainer tells two mock drivers apart — but a grid on which two
+    drivers share a nationality is what a real one looks like, and no pool of nationalities
+    is large enough to fill a big grid uniquely anyway.
     """
     sizes = plan_team_sizes(divisions, teams, rng)
     total = sum(count for _, _, count in sizes)
@@ -251,15 +288,19 @@ def build_roster(divisions, teams, rng, pool):
     driver_id = FIRST_DRIVER_ID
     for division, team, count in sizes:
         for _ in range(count):
-            roster.append((driver_id, next(name_iter), team, division))
+            roster.append(
+                (driver_id, next(name_iter), team, division, rng.choice(nationalities))
+            )
             driver_id += 1
     return roster
 
 
 def format_command(row):
     """Render one roster row as its /test-mode roster add command."""
-    _, name, team, division = row
-    return COMMAND_TEMPLATE.format(name=name, team=team, division=division)
+    _, name, team, division, nationality = row
+    return COMMAND_TEMPLATE.format(
+        name=name, team=team, division=division, nationality=nationality
+    )
 
 
 # ─── Output ──────────────────────────────────────────────────────────────────
@@ -326,10 +367,11 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
 
-    # Load the pool up front, so a missing or empty names.txt fails before the
-    # questions rather than after them.
+    # Load both pools up front, so a missing names.txt or an unreachable src/ fails
+    # before the questions rather than after them.
     try:
         pool = load_names()
+        nationalities = load_nationalities()
     except ValueError as error:
         print(error)
         return 1
@@ -346,7 +388,7 @@ def main(argv=None):
     )
 
     try:
-        roster = build_roster(divisions, teams, random.Random(), pool)
+        roster = build_roster(divisions, teams, random.Random(), pool, nationalities)
     except ValueError as error:
         print(f"\n{error}")
         return 1

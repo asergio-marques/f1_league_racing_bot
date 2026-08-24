@@ -8,9 +8,11 @@ chain and is pinned as a rule rather than left to chance, because nothing else a
 What actually blocked test mode was that a test season commonly sits in SETUP, and that is
 covered by the season widening.
 
-And that a mock driver **records no nationality**, being created without a signup record.
-Such a driver is drawn without a flag, as a real posting would draw them, and the reply
-says so — otherwise a maintainer reads the blank flags as a broken flag directory.
+And the nationality of a mock driver. One created without a nationality records none and
+is drawn without a flag, as a real posting would draw them, and the reply says so —
+otherwise a maintainer reads the blank flags as a broken flag directory. One created with
+a nationality carries it in place of the signup record it has not got, and is drawn with a
+flag like anybody else.
 
 Discord is stubbed. Test drivers are created through `test_roster_service`, the same code
 `/test-mode roster add` calls, so the fixture cannot drift from what test mode really makes.
@@ -66,8 +68,14 @@ async def bot(db_path):
     )
 
 
-async def _seed_test_season(db_path, *, status: str = "SETUP"):
-    """A division of two teams, seated entirely with test-mode mock drivers."""
+async def _seed_test_season(
+    db_path, *, status: str = "SETUP", nationalities: tuple[str, ...] = ()
+):
+    """A division of two teams, seated entirely with test-mode mock drivers.
+
+    *nationalities* is cycled over the mock drivers where given, in the forms a maintainer
+    may type; where it is empty every mock driver is created without one.
+    """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "INSERT INTO seasons (server_id, start_date, status, season_number) "
@@ -114,7 +122,12 @@ async def _seed_test_season(db_path, *, status: str = "SETUP"):
     for index, name in enumerate(MOCK_NAMES):
         team = "Redline" if index < 2 else "Bluewave"
         result = await test_roster_service.add_test_driver(
-            SERVER_ID, name, team, "Division 1", db_path
+            SERVER_ID,
+            name,
+            team,
+            "Division 1",
+            db_path,
+            nationality=nationalities[index % len(nationalities)] if nationalities else None,
         )
         assert not isinstance(result, str), result
     return SimpleNamespace(season_id=season_id, division_id=division_id)
@@ -173,7 +186,7 @@ class TestMockDriversAreDrawnByTheirMockName:
 
 
 class TestTheNationalityTally:
-    """FR-028. A mock driver records no nationality, having no signup record."""
+    """FR-028. A mock driver records the nationality it was created with, or none."""
 
     async def test_mock_drivers_are_counted(self, bot, db_path):
         await _seed_test_season(db_path)
@@ -215,22 +228,56 @@ class TestTheNationalityTally:
         async with get_connection(db_path) as db:
             profile = await (
                 await db.execute(
-                    "SELECT discord_user_id FROM driver_profiles "
+                    "SELECT id FROM driver_profiles "
                     "WHERE server_id = ? AND is_test_driver = 1 LIMIT 1",
                     (SERVER_ID,),
                 )
             ).fetchone()
             await db.execute(
-                "INSERT INTO signup_records (server_id, discord_user_id, "
-                "server_display_name, discord_username, nationality) "
-                "VALUES (?, ?, 'Mock Alpha', 'mockalpha', 'British')",
-                (SERVER_ID, str(profile["discord_user_id"])),
+                "UPDATE driver_profiles SET test_nationality = 'British' WHERE id = ?",
+                (profile["id"],),
             )
             await db.commit()
 
         context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
 
         assert context.drivers_without_nationality == len(MOCK_NAMES) - 1
+
+    async def test_a_roster_created_with_nationalities_is_drawn_with_flags(
+        self, bot, db_path
+    ):
+        """The whole point of the column: a mock driver has a flag of its own."""
+        await _seed_test_season(db_path, nationalities=("british", "Dutch", "brazil"))
+
+        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+
+        assert context.drivers_without_nationality == 0
+        # Stored canonically, whatever form the roster command was given.
+        assert sorted(d.nationality for d in context.drivers) == [
+            "Brazilian",
+            "British",
+            "British",
+            "Dutch",
+        ]
+
+    async def test_the_test_mode_switch_stands_in_while_test_mode_is_on(
+        self, bot, db_path
+    ):
+        """Switching it off draws no flag at all, and says nothing about it (XIV.4)."""
+        await _seed_test_season(db_path, nationalities=("British",))
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE server_configs SET test_mode_active = 1, "
+                "test_mode_nationality_required = 0 WHERE server_id = ?",
+                (SERVER_ID,),
+            )
+            await db.commit()
+
+        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+
+        assert context.nationality_collected is False
+        assert context.drivers_without_nationality == 0
+        assert all(d.nationality is None for d in context.drivers)
 
 
 # ── T035: test mode changes what exists, never how it is read ─────────────

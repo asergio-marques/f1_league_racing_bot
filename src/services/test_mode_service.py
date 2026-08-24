@@ -1,9 +1,10 @@
 """test_mode_service — Test mode state management and phase queue.
 
-Provides three async functions consumed by TestModeCog:
-  - toggle_test_mode:        flip the test_mode_active flag in server_configs
-  - get_next_pending_phase:  find the earliest un-executed phase across all rounds
-  - build_review_summary:    format a full season/division/round status string
+Provides four async functions consumed by TestModeCog:
+  - toggle_test_mode:             flip the test_mode_active flag in server_configs
+  - toggle_test_mode_nationality: flip whether mock drivers carry a nationality
+  - get_next_pending_phase:       find the earliest un-executed phase across all rounds
+  - build_review_summary:         format a full season/division/round status string
 """
 
 from __future__ import annotations
@@ -61,6 +62,38 @@ async def toggle_test_mode(server_id: int, db_path: str) -> bool:
         log.error("toggle_test_mode: no server_config row for server_id=%s", server_id)
         return False
     return bool(row["test_mode_active"])
+
+
+async def toggle_test_mode_nationality(server_id: int, db_path: str) -> bool:
+    """Flip test_mode_nationality_required for *server_id* and return the NEW value.
+
+    The test-mode counterpart of the signup nationality switch: while test mode is active
+    it stands in for it, so the graphics of a server under test may be seen with flags and
+    without them without the real signup setting being touched.
+
+    Same atomic UPDATE as toggle_test_mode, for the same reason. Returns False if the
+    server has no config row (bot not initialised).
+    """
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE server_configs "
+            "SET test_mode_nationality_required = 1 - test_mode_nationality_required "
+            "WHERE server_id = ?",
+            (server_id,),
+        )
+        await db.commit()
+        cursor = await db.execute(
+            "SELECT test_mode_nationality_required FROM server_configs WHERE server_id = ?",
+            (server_id,),
+        )
+        row = await cursor.fetchone()
+
+    if row is None:
+        log.error(
+            "toggle_test_mode_nationality: no server_config row for server_id=%s", server_id
+        )
+        return False
+    return bool(row["test_mode_nationality_required"])
 
 
 # ---------------------------------------------------------------------------

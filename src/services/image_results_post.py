@@ -81,9 +81,27 @@ async def _nationality_collected(db_path: str, server_id: int) -> bool:
     Where it does not, a graphic with no flags is exactly what was configured and raises
     nothing (XIV.4's configured absence). Where it does, a driver who stated none is an
     ordinary emptied optional field and reports as one.
+
+    While test mode is active the test-mode switch stands in for the signup one, so a
+    maintainer may see the graphics of a server under test both with flags and without
+    them without disturbing the setting real signups run on.
+
+    This is the module's single reader of the switch. The lineup and the preview call it
+    rather than each carrying a copy: it read the wrong table in two of the three copies
+    until 2026-08-18, and one place to be wrong is enough.
     """
     try:
         async with get_connection(db_path) as db:
+            config = await (
+                await db.execute(
+                    "SELECT test_mode_active, test_mode_nationality_required "
+                    "FROM server_configs WHERE server_id = ?",
+                    (server_id,),
+                )
+            ).fetchone()
+            if config is not None and config["test_mode_active"]:
+                return bool(config["test_mode_nationality_required"])
+
             row = await (
                 await db.execute(
                     "SELECT nationality_required FROM signup_module_settings "
@@ -148,14 +166,20 @@ async def _driver_names(bot, guild, user_ids: list[int]) -> dict[int, str]:
 
 
 async def _nationalities(bot, user_ids: list[int]) -> dict[int, str | None]:
-    """Each driver's recorded nationality, or None where they stated none."""
+    """Each driver's recorded nationality, or None where they stated none.
+
+    A mock driver has no signup record to hold one, and carries its own instead — the
+    same branch on is_test_driver the name is resolved by.
+    """
     if not user_ids:
         return {}
     placeholders = ",".join("?" * len(user_ids))
     async with get_connection(bot.db_path) as db:
         rows = await (
             await db.execute(
-                f"SELECT dp.discord_user_id, sr.nationality "
+                f"SELECT dp.discord_user_id, "
+                f"       CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality "
+                f"            ELSE sr.nationality END AS nationality "
                 f"FROM driver_profiles dp "
                 f"LEFT JOIN signup_records sr "
                     f"       ON sr.server_id = dp.server_id "

@@ -180,6 +180,12 @@ Found on 2026-08-18 while building the `/images test` previews. **All three were
 - The query raised `sqlite3.OperationalError: no such column: sr.driver_profile_id` before any drawing was assembled, so every one of those four aspects fell back to its textual posting whatever a league configured.
 - **Why it shipped**: no test covered `build_drawing` for any of them. Every image suite exercises `resolve_drawing`, which is handed its rows and never issues a query. `tests/unit/test_image_post_signup_join.py` now runs the queries themselves against a migrated database.
 
+**Fixed — a fifth site kept the phantom `signup_records` join, so no verdict ever drew a driver flag.**
+- The fix above corrected three sites. `_driver_nationality` in `image_verdict_post.py` was a fourth, and was missed: it joined `signup_records sr` to `driver_profiles dp` `ON dp.id = sr.driver_profile_id`, the same column that has never existed.
+- Its bare `except Exception` returned `None`, which reads as "this driver stated no nationality" rather than as a fault, so the verdict graphic drew and simply never carried a flag. Nothing in the reply or the log distinguished that from a league whose drivers had genuinely given none.
+- **Why it outlived the others**: the earlier fix was driven by the renders that *failed*, and this one did not fail. It was found on 2026-08-24 while giving test-mode drivers a nationality, by reading every site that reads one.
+- **Fixed** by joining on `(server_id, discord_user_id)` as the other four sites do; `server_id` is now threaded in from `build_drawing`, which already held it. Covered in `tests/unit/test_image_post_signup_join.py`.
+
 **Fixed — the nationality suppression switch reached no graphic at all.**
 - `_nationality_collected` in `image_results_post.py`, and a second inline copy in `image_lineup_post.py`, read `SELECT nationality_required FROM signup_config`. No migration creates `signup_config`; the setting lives in `signup_module_settings`.
 - Both were wrapped in a bare `except Exception` returning `True`, so the missing table was swallowed on every render and the switch was never observed. A league that switched nationality collection off still got flags drawn on all four graphics that draw them.

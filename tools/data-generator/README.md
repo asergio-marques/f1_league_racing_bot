@@ -19,11 +19,16 @@ The roster generator is the first link in the chain, because everything else ref
 drivers. With `--record` it writes `roster.csv` in this directory:
 
 ```
-ID,Driver name,Team,Division
-9000000000000000001,Juggernaut,Red Bull,Division 1
-9000000000000000002,Deadbolt,Red Bull,Division 1
-9000000000000000003,Saltire,Ferrari,Division 1
+ID,Driver name,Team,Division,Nationality
+9000000000000000001,Juggernaut,Red Bull,Division 1,Brazilian
+9000000000000000002,Deadbolt,Red Bull,Division 1,Finnish
+9000000000000000003,Saltire,Ferrari,Division 1,British
 ```
+
+**A new column goes on the end.** The siblings read the file by column name but then flatten
+each row into a fixed four-field tuple they index by position, so a column appended after
+`Division` is ignored by them and a column inserted before it would break them silently.
+`Nationality` was added that way and any further column must be too.
 
 **A sibling script that needs driver identities reads this file rather than inventing its
 own.** A results generator picking finishing positions, an attendance generator choosing who
@@ -72,7 +77,7 @@ It asks two questions — the divisions, then the teams, each comma-separated �
 command per driver:
 
 ```
-/test-mode roster add driver_name:Juggernaut team_name:Red Bull division:Division 1
+/test-mode roster add driver_name:Juggernaut team_name:Red Bull division:Division 1 nationality:Brazilian
 ```
 
 The same lines go to `test-roster/commands.txt`. Paste them into a server with test mode
@@ -118,6 +123,21 @@ writing anything and tells you the count it needed, which is your cue to add mor
 
 A missing or empty `names.txt` stops the run before it asks you anything, so you are never
 part-way through a set of answers when it fails.
+
+**Every driver gets a nationality, and there is no file to keep for it.** The pool is
+imported from the bot's own `src/utils/nationality_data.py` — all 192 nationalities it
+accepts — because a nationality the bot rejects would make the whole command fail, and a
+list kept beside `names.txt` would drift from the bot's the first time one was added there.
+This is the one script in the family that imports from `src/` rather than porting the rule;
+it needs a full checkout to run, and says so if it cannot find one.
+
+Unlike names, nationalities are drawn **with** replacement: a grid on which two drivers share
+one is what a real grid looks like, and no pool would fill a large grid uniquely anyway. So
+nationalities never cap the size of a roster — only `names.txt` does.
+
+Test mode has a switch of its own for this. `/test-mode nationality` is on by default, and
+these commands are refused while it is off — see
+[Testing with test mode](../../docs/how-to/test-mode.md).
 
 **`--record`.** Without it, only `commands.txt` is written and this directory is untouched.
 With it, `roster.csv` and `teams.txt` are written too. If a `roster.csv` is already there you

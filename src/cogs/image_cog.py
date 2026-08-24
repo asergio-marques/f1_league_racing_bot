@@ -1365,8 +1365,8 @@ class ImageCog(commands.Cog):
             lines.append("")
             lines.append(
                 f"ℹ️ {subject} no nationality, so they are drawn without a flag — as a "
-                f"real posting would draw them. A test-mode driver never records one, "
-                f"having no signup behind it."
+                f"real posting would draw them. A test-mode driver records one only where "
+                f"`/test-mode roster add` was given one."
             )
 
         # A directory the league configured that could not be resolved, distinguished from
