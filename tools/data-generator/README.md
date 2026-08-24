@@ -135,6 +135,17 @@ Unlike names, nationalities are drawn **with** replacement: a grid on which two 
 one is what a real grid looks like, and no pool would fill a large grid uniquely anyway. So
 nationalities never cap the size of a roster — only `names.txt` does.
 
+**The draw is weighted, not uniform.** A flat draw over all 192 produced a grid that looked
+nothing like a league's — a single Briton among twenty drivers from countries that field no
+sim racers. The script sorts the pool into three tiers instead: eleven F1 heartlands and big
+online-racing nations (`NATIONALITY_TIER_1`), thirty-nine that are common without being
+everywhere (`NATIONALITY_TIER_2`), and everything else. Roughly 44% of a generated grid comes
+from the first tier, 42% from the second and 14% from the tail, so the grid reads like a
+league's while every nationality the bot accepts — `Other` included — stays reachable and the
+odd unlikely flag still gets exercised. Retune it by editing the two lists and the three
+`NATIONALITY_WEIGHT_*` numbers at the top of the script; a tier naming something the bot does
+not accept is reported and skipped rather than stopping the run.
+
 Test mode has a switch of its own for this. `/test-mode nationality` is on by default, and
 these commands are refused while it is off — see
 [Testing with test mode](../../docs/how-to/test-mode.md).

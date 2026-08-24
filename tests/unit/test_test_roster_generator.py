@@ -1,12 +1,14 @@
 """The roster generator's nationality output.
 
 `tools/` is not on the test path and the generator is a standalone script, so it is loaded
-by file. Only what this change added is covered: that every command it emits carries a
-nationality the bot would accept, and that the CSV column went on the **end**, where the
+by file. Covered here: that every command it emits carries a nationality the bot would
+accept, that the draw is weighted towards the nationalities a real grid is thick with
+without shutting the rest out, and that the CSV column went on the **end**, where the
 sibling generators that index roster.csv positionally cannot trip over it.
 
 Nothing here writes a file or asks a question — `build_roster` and `format_command` are
-pure, and the pools are loaded directly.
+pure, and the pools are loaded directly. Every draw is seeded, so the share each tier
+takes of a generated grid is a fixed number rather than a flaky one.
 """
 from __future__ import annotations
 
@@ -62,6 +64,78 @@ class TestTheNationalityPool:
     # The unreachable-src branch is not covered: this process already holds `src` on
     # sys.path, so the import cannot be made to fail without faking an isolation that
     # would test the fake rather than the script.
+
+
+class TestTheWeighting:
+    """Nationalities are drawn with weights, not uniformly."""
+
+    def test_every_weighted_nationality_is_one_the_bot_accepts(self, generator):
+        """Guards the tiers against drift from the bot's canonical values."""
+        pool = set(generator.load_nationalities())
+        named = set(generator.NATIONALITY_TIER_1) | set(generator.NATIONALITY_TIER_2)
+
+        assert named <= pool
+
+    def test_the_tiers_do_not_overlap(self, generator):
+        assert not set(generator.NATIONALITY_TIER_1) & set(generator.NATIONALITY_TIER_2)
+
+    def test_there_is_one_weight_per_nationality_in_order(self, generator):
+        nationalities = generator.load_nationalities()
+
+        weights = generator.build_nationality_weights(nationalities)
+
+        assert len(weights) == len(nationalities)
+
+    def test_the_tiers_rank_as_intended(self, generator):
+        nationalities = generator.load_nationalities()
+        weights = dict(zip(nationalities, generator.build_nationality_weights(nationalities)))
+
+        assert weights["British"] > weights["Japanese"] > weights["Bhutanese"]
+
+    def test_no_nationality_is_shut_out(self, generator):
+        """The long tail stays reachable — a zero weight would make it dead code."""
+        weights = generator.build_nationality_weights(generator.load_nationalities())
+
+        assert all(weight > 0 for weight in weights)
+
+    def test_a_tier_name_the_bot_rejects_is_reported_and_ignored(
+        self, generator, monkeypatch, capsys
+    ):
+        """A typo in the tiers is cosmetic; it must not stop a maintainer generating."""
+        monkeypatch.setattr(generator, "NATIONALITY_TIER_1", ["British", "Atlantean"])
+
+        weights = generator.build_nationality_weights(["British", "Bhutanese"])
+
+        assert weights[0] > weights[1]
+        assert "Atlantean" in capsys.readouterr().out
+
+
+class TestTheGeneratedGrid:
+    """What the weighting actually does to a roster, at a fixed seed."""
+
+    @pytest.fixture
+    def big_roster(self, generator):
+        return generator.build_roster(
+            ["Division 1", "Division 2", "Division 3"],
+            ["Alpine", "Aston Martin", "Audi", "Cadillac", "Ferrari", "Haas",
+             "McLaren", "Mercedes", "Red Bull", "VCARB", "Williams"],
+            random.Random(7),
+            generator.load_names(),
+            generator.load_nationalities(),
+        )
+
+    def test_the_common_nationalities_take_most_of_the_grid(self, big_roster, generator):
+        common = set(generator.NATIONALITY_TIER_1) | set(generator.NATIONALITY_TIER_2)
+
+        weighted = sum(1 for row in big_roster if row[4] in common)
+
+        assert weighted >= 0.7 * len(big_roster)
+
+    def test_the_long_tail_still_appears(self, big_roster, generator):
+        """Weighted, not restricted: an unlikely flag must still turn up."""
+        common = set(generator.NATIONALITY_TIER_1) | set(generator.NATIONALITY_TIER_2)
+
+        assert any(row[4] not in common for row in big_roster)
 
 
 class TestEveryDriverGetsOne:
