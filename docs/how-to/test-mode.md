@@ -119,7 +119,7 @@ flips whether a nationality may be recorded at all. It is **on** by default, as 
 
 > **A posting is blanked exactly as the preview is.** The switch is read before the driver's own value, so a mock driver holding a nationality loses its flag with everyone else's on a real posting, not only in `/images test`. The roster need not be rebuilt to see it.
 
-Generating a roster by hand is tedious, and `tools/data-generator/test-roster/` writes the commands for you — a nationality on every one, drawn from the bot's own list. See [the generator's README](../../tools/data-generator/README.md).
+Generating a roster by hand is tedious, and `tools/data-generator/test-roster/` writes the commands for you — a nationality on every one, drawn from the bot's own list and weighted towards the nationalities a real grid is thick with. See [the generator's README](../../tools/data-generator/README.md).
 
 ### Attendance
 

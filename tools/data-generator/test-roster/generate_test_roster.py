@@ -3,7 +3,9 @@
 
 Driver nicknames are read from names.txt beside this script - extend that file rather
 than the code. Nationalities are not a file: they are imported from the bot itself, so
-that every one emitted is one the bot accepts (see load_nationalities).
+that every one emitted is one the bot accepts (see load_nationalities), and drawn with
+weights that favour the nationalities a real sim-racing grid is thick with (see
+build_nationality_weights).
 
 Interactively asks for the division names and the team names, invents a plausible
 roster across them, then writes:
@@ -123,6 +125,67 @@ def load_names(path=NAMES_PATH):
 
 
 # ─── Nationality pool ────────────────────────────────────────────────────────
+
+# Nationalities are drawn with weights rather than uniformly. A flat draw over all 192
+# gave a grid that looked nothing like a league's: a single Briton among twenty drivers
+# from countries that field no sim racers at all. The tiers below tilt the draw towards
+# the nationalities that actually crowd an F1 or online-racing grid, while leaving every
+# other nationality reachable so the long tail still gets exercised.
+#
+# Names in a tier must be the bot's canonical values, as load_nationalities returns them.
+# One that is not is reported and ignored — see build_nationality_weights.
+
+#: The nationalities a sim-racing grid is thick with: the F1 heartlands and the largest
+#: online-racing populations.
+NATIONALITY_TIER_1 = [
+    "American", "Australian", "Belgian", "Brazilian", "British", "Dutch", "French",
+    "German", "Italian", "Portuguese", "Spanish",
+]
+
+#: Common without being everywhere: the rest of racing Europe, the countries that host a
+#: round or field a driver, and the big gaming markets beyond it.
+NATIONALITY_TIER_2 = [
+    "Argentine", "Austrian", "Canadian", "Chinese", "Colombian", "Croatian", "Czech",
+    "Danish", "Emirati", "Estonian", "Filipino", "Finnish", "Greek", "Hungarian",
+    "Indian", "Indonesian", "Irish", "Israeli", "Japanese", "Malaysian", "Mexican",
+    "Monegasque", "New Zealander", "Norwegian", "Polish", "Romanian", "Russian", "Saudi",
+    "Serbian", "Singaporean", "Slovak", "Slovenian", "South African", "South Korean",
+    "Swedish", "Swiss", "Thai", "Turkish", "Ukrainian",
+]
+
+#: Relative likelihoods. A single tier-1 nationality is forty times as likely as a single
+#: tail one and near four times as likely as a tier-2 one. Across the whole pool that puts
+#: roughly 44% of a grid in tier 1, 42% in tier 2 and 14% in the tail — the tail being
+#: some 140 nationalities strong, so the odd unlikely flag still turns up, "Other" among
+#: them.
+NATIONALITY_WEIGHT_TIER_1 = 40
+NATIONALITY_WEIGHT_TIER_2 = 11
+NATIONALITY_WEIGHT_TAIL = 1
+
+
+def build_nationality_weights(nationalities):
+    """Return a weight per entry of *nationalities*, in the order given.
+
+    A tier naming something the bot does not accept is a typo in the tiers above, not a
+    reason to stop: it is reported and the draw carries on without it, because the tool
+    is still perfectly usable and the alternative is a maintainer blocked from generating
+    a roster by a cosmetic mistake.
+    """
+    tiers = {}
+    for name in NATIONALITY_TIER_1:
+        tiers[name] = NATIONALITY_WEIGHT_TIER_1
+    for name in NATIONALITY_TIER_2:
+        tiers[name] = NATIONALITY_WEIGHT_TIER_2
+
+    unknown = sorted(set(tiers) - set(nationalities))
+    if unknown:
+        print(
+            "Note: the weighting names {}, which the bot does not accept - ignored, and "
+            "the rest of the pool is drawn as usual.".format(", ".join(unknown))
+        )
+
+    return [tiers.get(name, NATIONALITY_WEIGHT_TAIL) for name in nationalities]
+
 
 def load_nationalities(src_dir=SRC_DIR):
     """Return every nationality the bot accepts, sorted.
@@ -271,6 +334,10 @@ def build_roster(divisions, teams, rng, pool, nationalities):
     unique — it is how a maintainer tells two mock drivers apart — but a grid on which two
     drivers share a nationality is what a real one looks like, and no pool of nationalities
     is large enough to fill a big grid uniquely anyway.
+
+    Nationalities are also drawn with weights rather than uniformly, so the grid comes out
+    looking like a league's rather than like a draw from an atlas. See
+    build_nationality_weights.
     """
     sizes = plan_team_sizes(divisions, teams, rng)
     total = sum(count for _, _, count in sizes)
@@ -283,13 +350,16 @@ def build_roster(divisions, teams, rng, pool, nationalities):
         )
 
     name_iter = iter(rng.sample(pool, total))
+    nationality_iter = iter(
+        rng.choices(nationalities, weights=build_nationality_weights(nationalities), k=total)
+    )
 
     roster = []
     driver_id = FIRST_DRIVER_ID
     for division, team, count in sizes:
         for _ in range(count):
             roster.append(
-                (driver_id, next(name_iter), team, division, rng.choice(nationalities))
+                (driver_id, next(name_iter), team, division, next(nationality_iter))
             )
             driver_id += 1
     return roster
