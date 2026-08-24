@@ -248,7 +248,18 @@ The other six belong to modules. Set the ones whose module you turned on in step
 /season review
 ```
 
-The bot posts the whole configuration to the channel: which modules are on, the settings each of them holds, your points configurations, and then a block per division giving its role, its channels, its full calendar and its lineup.
+The bot posts the whole configuration to the channel, **as several messages rather than one**:
+
+1. The season, and which modules are on.
+2. Signup settings.
+3. Attendance settings.
+4. Points configurations.
+5. Weather deadlines.
+6. Image outputs — which of the eight are on, and what is wrong with any that are not.
+
+Then a block per division giving its role, its channels, its full calendar and its lineup.
+
+A module you have not switched on has no settings to show, so its message is simply not posted — six is the most you will see, not the number you should expect.
 
 Read it properly. It is the last look you get at the season as a whole before it goes live, and it names anything that will stop approval.
 

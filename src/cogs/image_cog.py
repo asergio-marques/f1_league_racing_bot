@@ -767,7 +767,9 @@ class ImageCog(commands.Cog):
         from services.image_validity_service import (
             ImageValidityService,
             plain_directory_reason,
+            plain_directory_remedy,
             plain_reason,
+            plain_remedy,
         )
 
         config = await self._config_service.get_config(server_id)
@@ -794,8 +796,11 @@ class ImageCog(commands.Cog):
             if report is not None and report.valid:
                 lines.append(f"  ✅ {TEMPLATE_LABELS[column]}: `{filename}`")
             else:
-                reason = plain_reason(report) if report else "this has not been checked"
-                lines.append(f"  ⚠️ {TEMPLATE_LABELS[column]}: `{filename}` — {reason}")
+                if report is None:
+                    detail = "this has not been checked"
+                else:
+                    detail = f"{plain_reason(report)}. {plain_remedy(report)}"
+                lines.append(f"  ⚠️ {TEMPLATE_LABELS[column]}: `{filename}` — {detail}")
 
         # Invariant 3: never overstate what was checked (FR-028b).
         lines += ["", f"  _{ImageValidityService.depth_summary(template_reports)}_", ""]
@@ -808,7 +813,7 @@ class ImageCog(commands.Cog):
             else:
                 lines.append(
                     f"  ⚠️ {ASSET_LABELS[column]}: `{value}` "
-                    f"— {plain_directory_reason(report)}"
+                    f"— {plain_directory_reason(report)}. {plain_directory_remedy(report)}"
                 )
 
         lines += [

@@ -253,10 +253,12 @@ Before you edit a drawing file, read **Templates: what the bot expects** in the 
 ## Step 6 — Choose which outputs become pictures
 
 ```
-/images config toggle <aspect>
+/images config toggle aspect:<which output>
 ```
 
-Eight switches — calendar, lineup, results, standings, attendance, check-in call, weather, verdicts. All start off. Each one swaps that output between a picture and the text the bot has always posted.
+Eight switches. `aspect` is a dropdown, so you pick rather than type; its eight entries are **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts** and **Verdicts** — the same names `/images config view` and `/season review` use for them. All start off. Each one swaps that output between a picture and the text the bot has always posted.
+
+It is a **toggle**, not an on/off setting: run it on something that is off and it comes on, run it again and it goes back to text.
 
 This comes last on purpose. Switching something on before its drawing file is big enough is what causes problems; by now everything is in place.
 
@@ -280,7 +282,11 @@ When you switch something on, the bot tells you if it would not work as things s
 
 Lists every setting and whether it is usable, and each of the eight outputs as ✅ on, ❌ off, or ⚠️ on but broken. Drawing files and artwork folders only ever show ✅ or ⚠️ — never ❌, since there is always something to fall back on. If something is broken it names the exact drawing file at fault — which weather phase, or which half of the results or standings pair.
 
-**Anything that is not ✅ tells you why, on the lines beneath it.** A ⚠️ says what is broken. A ❌ says the output is switched off and that the bot posts that thing as text instead — and then, if there is anything else standing in the way, lists it: a drawing at fault, a module the output draws its data from that is itself switched off, or the missing rasteriser. That list is exactly what you would see if you switched the output on, so nothing catches you out afterwards.
+**Anything that is not ✅ tells you why, on the lines beneath it — and what to do about it.** A ⚠️ says what is broken. A ❌ says the output is switched off, that the bot posts that thing as text instead, and hands you the `/images config toggle` command with the right choice already filled in — and then, if there is anything else standing in the way, lists it: a drawing at fault, a module the output draws its data from that is itself switched off, or the missing rasteriser. That list is exactly what you would see if you switched the output on, so nothing catches you out afterwards.
+
+**Each line names the command that fixes that line.** A broken drawing points at `/images template …` for *that* drawing — `weather-p3-sprint`, not "weather". A bad artwork folder points at the `/images config …-directory` command that sets it. A module that is switched off points at `/module enable module_name:…`. The rasteriser is the one thing no command of yours installs, so that line tells you to ask whoever runs the bot instead of sending you looking.
+
+> **"The drawing is missing something the bot has to fill in" — but what?** Run the `/images template …` command it names, on the file you already have. That reply is the one place that still names the exact field, because you are looking at that one drawing at the moment you can fix it.
 
 > **It is written for you.** Both this report and `/season review` say what is wrong in terms of your drawings and your folders — you will not find a field id, a file path or a layer number in either. The precise fault goes into the bot's log for whoever runs it. The one exception is naming a drawing file with an `/images template …` command: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
 

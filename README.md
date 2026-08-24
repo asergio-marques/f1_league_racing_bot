@@ -254,6 +254,8 @@ Deletes the round and renumbers remaining rounds by date.
 
 No parameters. Displays the pending season configuration with **Approve** and **Go Back to Edit** buttons.
 
+The report arrives as **one message per subsection**, in this order: the season and its enabled modules; signup; attendance; points configurations; weather; image outputs. A subsection with nothing in it — a module you have not enabled — is not posted at all. The per-division blocks follow, as before. Each subsection is split further if it alone is too long for one Discord message, because an over-long message is refused whole rather than truncated.
+
 #### `/season approve` — Commit the configuration
 *Access: Trusted admin*
 
@@ -1347,9 +1349,11 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `aspect` | Choice | ✅ | `calendar`, `lineup`, `results`, `standings`, `attendance`, `rsvp`, `weather`, or `verdicts` |
+| `aspect` | Choice | ✅ | **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts**, or **Verdicts** |
 
-Flips that aspect between a generated image and the text the bot has always posted. All eight start disabled.
+Flips that aspect between a generated image and the text the bot has always posted. All eight start disabled. It is a **toggle**: run it on an aspect that is off and it comes on, run it again and it goes back to text.
+
+The choice names above are exactly the names `/images config view` and `/season review` print for the eight aspects, so a `❌` row in either report can hand you the command with the choice already named.
 
 > **Seven of the eight aspects post live. `standings` is the exception** — it is configured,
 > validated and previewable with `/images test standings`, but no posting path reads its toggle yet, and
@@ -1501,7 +1505,9 @@ Placing your own files is the operator's job; the bot resolves the paths and rep
 
 No parameters. Lists every setting with a validity status, and each aspect as ✅ enabled, ❌ disabled, or ⚠️ enabled but invalid. An invalid report names the individual template at fault — which weather phase and variant, or which half of a results or standings pair — never just the group.
 
-**Every aspect that is not ✅ says why, underneath itself.** A ⚠️ names what is broken. A ❌ says the aspect is switched off and that the posting is made as text instead, and then lists what would need fixing first if you switched it on — a template at fault, a source module that is itself switched off, or a missing rasteriser. What the ❌ promises is the same check the ⚠️ would report, so switching an aspect on never springs a surprise on you.
+**Every aspect that is not ✅ says why, underneath itself — and what to do about it.** A ⚠️ names what is broken. A ❌ says the aspect is switched off, that the posting is made as text instead, and gives you `/images config toggle aspect:…` with the right choice already named; it then lists what would need fixing first if you switched it on — a template at fault, a source module that is itself switched off, or a missing rasteriser. What the ❌ promises is the same check the ⚠️ would report, so switching an aspect on never springs a surprise on you.
+
+**Every fault names the command that fixes it.** A broken drawing names `/images template …` for *that* drawing, not for its group. A bad artwork folder names the `/images config …-directory` command that sets it. A source module that is off names `/module enable module_name:…`. The one exception is a missing rasteriser: no command of yours installs it, so the line says to ask whoever runs the bot rather than sending you after a command that will not help.
 
 > **Written for you, not for a developer.** Both this report and `/season review` say what is wrong in terms of your drawings and your folders — no field ids, no file paths, no layer numbers. The exact fault goes to the bot's log, where whoever runs the bot can read it. Naming a template file with an `/images template …` command is the exception: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
 

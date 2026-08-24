@@ -35,11 +35,15 @@ from services.image_validity_service import (  # noqa: E402
     PLAIN_MISSING_FIELD,
     PLAIN_NOT_A_DRAWING,
     PLAIN_NOT_A_FOLDER,
+    PLAIN_REMEDY_ASK_OPERATOR,
     PLAIN_UNBOUNDED_FIELD,
     check_all_templates,
     evaluate_all_templates,
     plain_directory_reason,
+    plain_directory_remedy,
     plain_reason,
+    plain_remedy,
+    plain_template_line,
 )
 
 VALID_SVG = (
@@ -204,8 +208,118 @@ def test_the_problem_a_league_reads_carries_the_plain_sentence(tmp_path):
     calendar = [p for p in problems if p.template_key == "calendar_template"]
 
     assert len(calendar) == 1
-    assert calendar[0].detail == PLAIN_FILE_MISSING
-    _assert_plain(calendar[0].detail)
+    assert calendar[0].detail.startswith(PLAIN_FILE_MISSING)
+    _assert_actionable(calendar[0].detail)
+
+
+# ── And what to do about it ───────────────────────────────────────────────
+#
+# A report that names a fault and no remedy leaves a manager knowing the state and not
+# the way out of it. That was the first thing asked after this section began explaining
+# itself, which is the evidence that the explanation alone was not enough.
+
+#: A backtick-quoted slash command. Deliberately loose about what follows the slash —
+#: the point is that the manager is handed something they can type, not that this test
+#: re-specifies Discord's command grammar.
+_COMMAND = re.compile(r"`/[a-z][^`]*`")
+
+
+def _assert_actionable(line: str) -> None:
+    """A line either names a command a manager can run, or says none will do."""
+    assert not _FIELD_ID.search(line), f"field id in {line!r}"
+    assert not _PATH.search(line), f"path in {line!r}"
+    assert _COMMAND.search(line) or PLAIN_REMEDY_ASK_OPERATOR in line, (
+        f"no remedy in {line!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "reason, failed_layer, expected_command",
+    [
+        ("template directory not found: C:\\bot", LAYER_RESOLUTION, "/images config template-directory"),
+        ("file not found: C:\\bot\\calendar.svg", LAYER_RESOLUTION, "/images template calendar"),
+        ("not a valid svg file: mismatched tag", LAYER_RESOLUTION, "/images template calendar"),
+        ("missing field `round_1_number`", LAYER_CATALOGUE, "/images template calendar"),
+        ("wrapped field `x` has no `line-height`", LAYER_BOUNDS, "/images template calendar"),
+    ],
+)
+def test_each_fault_names_the_command_that_addresses_it(reason, failed_layer, expected_command):
+    remedy = plain_remedy(_report(reason, failed_layer=failed_layer))
+
+    assert expected_command in remedy
+    _assert_actionable(remedy)
+
+
+def test_the_remedy_names_the_subcommand_of_the_template_at_fault():
+    """Six weather templates, six different subcommands. Naming the group would not do."""
+    from models.image_constants import TEMPLATE_COMMAND_NAMES
+
+    for key, command in TEMPLATE_COMMAND_NAMES.items():
+        report = ValidityReport(
+            template_key=key,
+            resolved_path=None,
+            valid=False,
+            depth_checked=0,
+            failed_layer=LAYER_RESOLUTION,
+            reason="file not found: C:\\bot\\x.svg",
+        )
+        assert f"`/images template {command}`" in plain_remedy(report)
+
+
+def test_each_asset_folder_names_its_own_setting_command():
+    from models.image_constants import ASSET_DIRECTORIES
+
+    for column, (command, _default) in ASSET_DIRECTORIES.items():
+        report = DirectoryReport(column, None, False, "directory not found: C:\\bot\\x")
+        remedy = plain_directory_remedy(report)
+
+        assert f"`/images config {command}`" in remedy
+        _assert_actionable(remedy)
+
+
+def test_every_template_fault_carries_a_remedy(tmp_path):
+    """Walk the real failures, so a fault added later cannot arrive without one."""
+    directory = tmp_path / "templates"
+    directory.mkdir()
+    for filename in TEMPLATE_COLUMNS.values():
+        (directory / filename).write_bytes(VALID_SVG)
+    (directory / TEMPLATE_COLUMNS["calendar_template"]).unlink()
+    (directory / TEMPLATE_COLUMNS["lineup_template"]).write_bytes(b"not markup at all")
+    (directory / TEMPLATE_COLUMNS["rsvp_template"]).write_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+    )
+
+    reports = evaluate_all_templates(_config("templates"), root=tmp_path)
+    failures = [r for r in reports.values() if not r.valid]
+
+    assert failures, "the fixture must actually produce failures"
+    for report in failures:
+        _assert_actionable(plain_template_line(report))
+
+
+def test_the_rasteriser_is_the_one_fault_no_command_of_theirs_mends(tmp_path):
+    """Naming a command a manager cannot run would be worse than naming none."""
+    from services.image_validity_service import (
+        PLAIN_NO_RASTERISER,
+        build_aspect_statuses,
+    )
+
+    directory = tmp_path / "templates"
+    directory.mkdir()
+    for filename in TEMPLATE_COLUMNS.values():
+        (directory / filename).write_bytes(VALID_SVG)
+
+    reports = evaluate_all_templates(_config("templates"), root=tmp_path)
+    statuses = build_aspect_statuses(
+        {"calendar": True}, reports, converter_available=False
+    )
+    line = next(
+        r for r in statuses[0].blocking_reasons if PLAIN_NO_RASTERISER in r
+    )
+
+    assert PLAIN_REMEDY_ASK_OPERATOR in line
+    assert "`/" not in line
+    _assert_actionable(line)
 
 
 # ── The detail still exists, in the log ───────────────────────────────────

@@ -176,8 +176,8 @@ Out of the box, the check-in call is an embed and the attendance sheet is a list
 
 ```
 /module enable images
-/images config toggle attendance
-/images config toggle rsvp
+/images config toggle aspect:Attendance sheet
+/images config toggle aspect:Check-in call
 ```
 
 `attendance` **replaces** the sheet's list with a drawn table — flags, team badges, and a column per round showing what each round cost. `rsvp` **adds** a graphic to the check-in call naming the round, its sessions, its date and the moment check-in closes; everything else about the call is unchanged, including the roster and the three buttons.

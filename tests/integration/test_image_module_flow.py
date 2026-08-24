@@ -818,6 +818,7 @@ async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
     from models.image_module import STATE_ENABLED_INVALID
     from services.image_validity_service import (
         PLAIN_NO_RASTERISER,
+        PLAIN_REMEDY_ASK_OPERATOR,
         ImageValidityService,
     )
 
@@ -832,7 +833,10 @@ async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
     statuses = {s.aspect: s for s in await validity.aspect_statuses(SERVER_ID)}
 
     assert statuses["calendar"].state == STATE_ENABLED_INVALID
-    assert PLAIN_NO_RASTERISER in statuses["calendar"].blocking_reasons
+    line = next(
+        r for r in statuses["calendar"].blocking_reasons if PLAIN_NO_RASTERISER in r
+    )
+    assert PLAIN_REMEDY_ASK_OPERATOR in line
 
 
 async def test_multi_variant_kinds_cover_two_templates():

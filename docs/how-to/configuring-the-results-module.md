@@ -150,9 +150,9 @@ Out of the box, everything this module posts is a text table. The image module t
 
 ```
 /module enable images
-/images config toggle results
-/images config toggle standings
-/images config toggle verdicts
+/images config toggle aspect:Session results
+/images config toggle aspect:Standings
+/images config toggle aspect:Verdicts
 ```
 
 `results` replaces each session's classification and `verdicts` replaces the stewarding announcements. Follow [Setting up the image module](configuring-the-image-module.md) for the order — the drawing files, the flags and the badges. Results and standings each need **two** drawing files, one per kind of table, and either half can be broken on its own.

@@ -233,3 +233,48 @@ def test_season_review_posts_the_image_in_addition_to_the_text():
     text_at = source.index("join(lineup_lines)")
     image_at = source.index("_post_review_lineup_image")
     assert text_at < image_at, "the textual lineup must still be sent"
+
+
+def test_season_review_sends_one_message_per_subsection():
+    """The review outgrew a single Discord message and is split by subject.
+
+    Six subsections, in the order a manager reads them. `_chunk_message` stays beneath
+    them because the image subsection can pass 2000 characters on its own, and an
+    over-long send loses the whole message rather than its tail.
+    """
+    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+    block = source[source.index("Send one message per subsection"):]
+
+    order = [
+        "header_lines",
+        "signup_lines",
+        "attendance_lines",
+        "points_lines",
+        "weather_lines",
+        "image_lines",
+    ]
+    positions = [block.index(name) for name in order]
+    assert positions == sorted(positions), "the subsections must be sent in order"
+
+    assert "_chunk_message" in block, "each subsection must still be chunked"
+    assert "if not body:" in block, "an empty subsection must not be sent"
+
+
+def test_season_review_subsections_do_not_share_a_list():
+    """Each subsection collects into its own list, or the split is only cosmetic."""
+    import re
+
+    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+
+    for marker, expected in [
+        ("**Signup Config**", "signup_lines"),
+        ("**Attendance Config**", "attendance_lines"),
+        ("**Weather Config**", "weather_lines"),
+        ("**Points Configs:** " + chr(34), "points_lines"),
+        ("_build_image_review_section", "image_lines"),
+    ]:
+        before = source[: source.index(marker)]
+        collected_into = re.findall("([A-Za-z_]+_lines)", before)[-1]
+        assert collected_into == expected, (
+            f"{marker} is collected into {collected_into}, not {expected}"
+        )

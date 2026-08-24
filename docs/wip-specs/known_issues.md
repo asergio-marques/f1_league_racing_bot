@@ -302,6 +302,11 @@ Found on 2026-08-18 while auditing the how-to guides against the implementation.
 - `test_test_mode_suppresses_delete_keeps_row` and `test_delete_forecast_message_skips_in_test_mode` both assert that deletion **does** happen in test mode, and their docstrings say so.
 - The names are left over from the removed test-mode guard. They pass, so nothing fails, but a reader scanning test names is told the opposite of what the suite checks.
 
+**The documents write slash-command parameters two different ways.**
+- `/module enable images` appears throughout the README and the how-to guides, where the command's parameter is `module_name`; `/images config toggle` was written the same way until 2026-08-24, when its guide entries were corrected to `aspect:` because the choice *names* ("Session results", "Check-in call") differ from the internal values a reader would otherwise guess at.
+- The bot's own remedy lines name the parameter in full — `/images config toggle aspect:Standings`, `/module enable module_name:results` — so that a manager can use what they read. The documents and the bot therefore disagree in form for `/module enable`.
+- Noticed because a manager reading `/season review` could not find the command that switches an image output on. Correcting `/module enable` across every occurrence is a sweep of its own; it was deliberately not begun here rather than leaving three lines inconsistent with forty.
+
 **Six tables are defined twice in `src/models/image_constants.py`.**
 - A whole block is repeated verbatim: roughly lines 108-179 appear again at roughly lines 183-244. `ASPECT_SOURCE_MODULE`, `ASPECT_LABELS`, `LIVE_POSTING_ASPECTS`, `PENDING_POSTING_ASPECTS`, `ASSET_DIRECTORIES` and `ASSET_LABELS` are each defined twice, with identical contents. The second definition wins at import; the first is dead.
 - Found while repathing the eight defaults to `resources/defaults/` for feature 047, which had to edit both copies of `ASSET_DIRECTORIES` to keep them agreeing. The wider duplication was noticed on 2026-08-24. They agree today, and nothing reads the first copy — but two tables one edit apart from disagreeing is a trap, and the next reader has no way to tell which is authoritative.
