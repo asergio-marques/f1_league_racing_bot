@@ -126,7 +126,7 @@ def load_names(path=NAMES_PATH):
 
 # ─── Nationality pool ────────────────────────────────────────────────────────
 
-# Nationalities are drawn with weights rather than uniformly. A flat draw over all 192
+# Nationalities are drawn with weights rather than uniformly. A flat draw over all 195
 # gave a grid that looked nothing like a league's: a single Briton among twenty drivers
 # from countries that field no sim racers at all. The tiers below tilt the draw towards
 # the nationalities that actually crowd an F1 or online-racing grid, while leaving every
@@ -156,7 +156,7 @@ NATIONALITY_TIER_2 = [
 #: Relative likelihoods. A single tier-1 nationality is forty times as likely as a single
 #: tail one and near four times as likely as a tier-2 one. Across the whole pool that puts
 #: roughly 44% of a grid in tier 1, 42% in tier 2 and 14% in the tail — the tail being
-#: some 140 nationalities strong, so the odd unlikely flag still turns up, "Other" among
+#: some 145 nationalities strong, so the odd unlikely flag still turns up, "Other" among
 #: them.
 NATIONALITY_WEIGHT_TIER_1 = 40
 NATIONALITY_WEIGHT_TIER_2 = 11

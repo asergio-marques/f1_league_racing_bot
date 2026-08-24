@@ -65,11 +65,19 @@ def country_for_nationality(nationality: str | None) -> str | None:
 #: country and gains none -- it is carried through unchanged so that such a driver
 #: resolves ``other.svg`` exactly as before the class was rekeyed.
 #:
-#: Two entries inherit a conflation from ``NATIONALITY_LOOKUP`` rather than
-#: introducing one: ``Dominican`` covers both Dominica and the Dominican Republic,
-#: and ``Congolese`` both Congolese states. The source data gives each pair one
-#: adjective, so one country name is chosen here and the ambiguity is left where it
-#: was found.
+#: This map now covers all 193 UN member states. Three of them share an English
+#: demonym with a sibling country and would otherwise collide on one adjective:
+#: ``Dominican`` (Dominica / Dominican Republic), ``Congolese`` (Congo / the
+#: Democratic Republic of the Congo), and ``Guinean`` (Guinea / Guinea-Bissau).
+#: Each pair's bare adjective still resolves to the country it always has --
+#: ``Dominican`` to the Dominican Republic, ``Congolese`` to Congo, ``Guinean`` to
+#: Guinea -- and the second country of each pair gains its own canonical adjective
+#: (``Dominican (Dominica)``, ``Congolese (Kinshasa)``, ``Bissau-Guinean``) rather
+#: than being silently drawn with the wrong flag.
+#:
+#: Taiwan is carried over even though it is not a UN member: removing an
+#: already-supported nationality is a separate decision from adding the ones that
+#: were missing, and nobody has asked for it.
 NATIONALITY_COUNTRIES: dict[str, str] = {
     "Afghan":             "Afghanistan",
     "Albanian":           "Albania",
@@ -93,6 +101,7 @@ NATIONALITY_COUNTRIES: dict[str, str] = {
     "Belizean":           "Belize",
     "Beninese":           "Benin",
     "Bhutanese":          "Bhutan",
+    "Bissau-Guinean":     "Guinea-Bissau",
     "Bolivian":           "Bolivia",
     "Bosnian":            "Bosnia and Herzegovina",
     "Botswanan":          "Botswana",
@@ -114,6 +123,7 @@ NATIONALITY_COUNTRIES: dict[str, str] = {
     "Colombian":          "Colombia",
     "Comorian":           "Comoros",
     "Congolese":          "Congo",
+    "Congolese (Kinshasa)": "Democratic Republic of the Congo",
     "Costa Rican":        "Costa Rica",
     "Croatian":           "Croatia",
     "Cuban":              "Cuba",
@@ -122,6 +132,7 @@ NATIONALITY_COUNTRIES: dict[str, str] = {
     "Danish":             "Denmark",
     "Djiboutian":         "Djibouti",
     "Dominican":          "Dominican Republic",
+    "Dominican (Dominica)": "Dominica",
     "Dutch":              "Netherlands",
     "Ecuadorian":         "Ecuador",
     "Egyptian":           "Egypt",
