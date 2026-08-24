@@ -128,7 +128,7 @@ Out of the box, forecasts are text. With the image module on and the weather out
 
 ```
 /module enable images
-/images config toggle weather
+/images config toggle aspect:Weather forecasts
 ```
 
 There are **six** weather drawing files, not three: one per phase, a sprint version of phases 2 and 3 — because a sprint weekend has four sessions to show rather than two — and one for the mystery-round notice. The bot picks by the round's format and nothing else.

@@ -30,6 +30,7 @@ from models.image_catalogues import (
     sibling_fields_declared,
 )
 from models.image_constants import (
+    ASPECT_LABELS,
     ASPECT_SOURCE_MODULE,
     ASPECT_TEMPLATES,
     ASPECTS,
@@ -37,6 +38,7 @@ from models.image_constants import (
     ASSET_CLASS_ASPECTS,
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
+    TEMPLATE_COMMAND_NAMES,
     TEMPLATE_LABELS,
 )
 from models.image_module import (
@@ -613,10 +615,11 @@ def check_all_templates(
             continue
         problems.append(
             Problem(
-                # `detail` is what a league reads, so it is the plain sentence. `kind`
-                # is unchanged, and the engineering text is in the log.
+                # `detail` is what a league reads, so it is the plain sentence and the
+                # command that addresses it. `kind` is unchanged, and the engineering
+                # text is in the log.
                 kind=_problem_kind_for(report),
-                detail=plain_reason(report),
+                detail=f"{plain_reason(report)}. {plain_remedy(report)}",
                 template_key=template_key,
             )
         )
@@ -687,6 +690,65 @@ def plain_directory_reason(report: DirectoryReport) -> str:
     if "cannot be empty" in reason:
         return PLAIN_FOLDER_UNSET
     return PLAIN_FOLDER_OUTSIDE
+
+
+# ── What to do about it ───────────────────────────────────────────────────
+#
+# A report that says what is wrong and stops there leaves a manager exactly where they
+# started: they can see the fault and not the way out of it. Every fault this module
+# reports therefore names the command that addresses it, or says plainly that no command
+# of theirs will.
+
+#: Said of the rasteriser, which no league command installs. Naming a command a manager
+#: cannot run would be worse than naming none.
+PLAIN_REMEDY_ASK_OPERATOR = (
+    "Ask whoever runs the bot to install it — no command of yours can."
+)
+
+
+def plain_remedy(report: ValidityReport) -> str:
+    """The command that addresses this template's fault, as a whole sentence.
+
+    Where the fault is inside the drawing rather than in what was configured, the remedy
+    is to name the same file again: `/images template …` answers with the precise reason,
+    which is the one surface that still does.
+    """
+    reason = (report.reason or "").lower()
+    if "template directory" in reason:
+        return "Point the bot at the right folder with `/images config template-directory`."
+
+    command = TEMPLATE_COMMAND_NAMES.get(report.template_key, report.template_key)
+    naming = f"`/images template {command}`"
+
+    if report.failed_layer == LAYER_BOUNDS:
+        return f"Run {naming} on the same file and the reply names the text box at fault."
+    if "outside the project root" in reason:
+        return f"The file has to sit inside the bot's own folder. Name one there with {naming}."
+
+    kind = _problem_kind_for(report)
+    if kind == PROBLEM_NOT_SVG:
+        return f"Save it again as a plain SVG, or name a different file with {naming}."
+    if kind == PROBLEM_MISSING_MANDATORY_FIELD:
+        return f"Run {naming} on the same file and the reply names what is missing."
+    if kind == PROBLEM_NOT_FOUND:
+        return f"Put the file in that folder, or name a different one with {naming}."
+    return f"Run {naming} on the same file and the reply says what is wrong."
+
+
+def plain_directory_remedy(report: DirectoryReport) -> str:
+    """The one command that sets this asset folder."""
+    command = ASSET_DIRECTORIES[report.directory_key][0]
+    return f"Point the bot at the right folder with `/images config {command}`."
+
+
+def plain_template_line(report: ValidityReport) -> str:
+    """The whole of what a league is told about one unusable template.
+
+    Its own label, what is wrong with it, and what to do — in that order, on one line, so
+    a manager scanning eight aspects reads a row rather than a paragraph.
+    """
+    label = TEMPLATE_LABELS.get(report.template_key, report.template_key)
+    return f"{label}: {plain_reason(report)}. {plain_remedy(report)}"
 
 
 def evaluate_all_templates(
@@ -822,7 +884,7 @@ def build_aspect_statuses(
             # The lead-in is said once rather than prefixed onto each problem: weather
             # alone can carry six, and six repetitions of the same five words is what a
             # manager stops reading.
-            reasons = [PLAIN_ASPECT_OFF]
+            reasons = [plain_aspect_off(aspect)]
             if problems:
                 reasons.append(PLAIN_WOULD_NEED_FIXING)
                 reasons += problems
@@ -844,7 +906,7 @@ def build_aspect_statuses(
 
 
 #: What "off" means to a league: the posting still happens, in text rather than as a
-#: picture. The same words `/images toggle` uses when an aspect is switched off.
+#: picture. The same words `/images config toggle` uses when an aspect is switched off.
 PLAIN_ASPECT_OFF = "switched off — this is posted as text, not as a picture"
 
 #: Said once above the problems that await, so a manager who is about to switch an aspect
@@ -858,8 +920,23 @@ PLAIN_NO_RASTERISER = (
 )
 
 
+def plain_aspect_off(aspect: str) -> str:
+    """Why the cross, and the one command that removes it.
+
+    The aspect is named by the label the report already prints, which is also the name of
+    its choice in the toggle's dropdown, so a manager can copy what they read.
+    """
+    return (
+        f"{PLAIN_ASPECT_OFF}. "
+        f"Switch it on with `/images config toggle aspect:{ASPECT_LABELS[aspect]}`"
+    )
+
+
 def _plain_module_off(module: str) -> str:
-    return f"the {module} module is switched off, so there'd be nothing to draw"
+    return (
+        f"the {module} module is switched off, so there'd be nothing to draw. "
+        f"Switch it on with `/module enable module_name:{module}`"
+    )
 
 
 def _aspect_problems(
@@ -872,11 +949,11 @@ def _aspect_problems(
 
     Read by both branches of :func:`build_aspect_statuses`, so a disabled aspect can
     never name a different set from the one it would actually meet on being enabled.
+    Each problem carries its own remedy: they are addressed by different commands, and a
+    manager reading six lines needs to know which of them applies to which.
     """
     problems = [
-        f"{TEMPLATE_LABELS[report.template_key]}: {plain_reason(report)}"
-        for report in reports
-        if not report.valid
+        plain_template_line(report) for report in reports if not report.valid
     ]
 
     source_module = ASPECT_SOURCE_MODULE[aspect]
@@ -884,7 +961,7 @@ def _aspect_problems(
         problems.append(_plain_module_off(source_module))
 
     if not converter_available:
-        problems.append(PLAIN_NO_RASTERISER)
+        problems.append(f"{PLAIN_NO_RASTERISER}. {PLAIN_REMEDY_ASK_OPERATOR}")
 
     return problems
 

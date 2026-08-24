@@ -38,6 +38,7 @@ import services.track_service as track_service
 from services.season_service import SeasonImmutableError
 from utils.channel_guard import channel_guard, admin_only
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
+from utils.output_router import _chunk_message
 
 log = logging.getLogger(__name__)
 
@@ -583,7 +584,11 @@ class SeasonCog(commands.Cog):
             CONVERTER_NAME,
             converter_available,
         )
-        from services.image_validity_service import ImageValidityService, plain_reason
+        from services.image_validity_service import (
+            ImageValidityService,
+            plain_reason,
+            plain_remedy,
+        )
 
         lines: list[str] = ["**Image output**"]
 
@@ -622,7 +627,10 @@ class SeasonCog(commands.Cog):
             for report in reports.values():
                 if not report.valid:
                     label = _LABELS.get(report.template_key, report.template_key)
-                    lines.append(f"      • **{label}**: {plain_reason(report)}")
+                    lines.append(
+                        f"      • **{label}**: {plain_reason(report)}. "
+                        f"{plain_remedy(report)}"
+                    )
 
         lines.append(f"  _{ImageValidityService.depth_summary(reports)}_")
         lines.append("")
@@ -646,10 +654,20 @@ class SeasonCog(commands.Cog):
         await interaction.response.defer(ephemeral=False)
 
         season_num = f" (Season #{cfg.season_number} — F1 {cfg.game_edition})" if cfg.season_number > 0 else (f" (F1 {cfg.game_edition})" if cfg.game_edition > 0 else "")
+        # The review is sent as one message per subsection rather than as one block.
+        # It outgrew Discord's 2000-character limit once every not-OK image output began
+        # stating its cause and its remedy, and an over-long send loses the whole review
+        # rather than its tail. Splitting by subject also means a manager can scroll back
+        # to the part they are working on instead of hunting through one wall of text.
         header_lines = [
             f"**Season Review{season_num}**",
             "",
         ]
+        signup_lines: list[str] = []
+        attendance_lines: list[str] = []
+        points_lines: list[str] = []
+        weather_lines: list[str] = []
+        image_lines: list[str] = []
 
         view = _ApproveView(self)
 
@@ -692,22 +710,22 @@ class SeasonCog(commands.Cog):
             # aspect section from the same AspectStatus list `/images config view`
             # uses, so the two surfaces cannot drift.
             if images_on:
-                header_lines += await self._build_image_review_section(interaction.guild_id)
-                header_lines += await self._calendar_capacity_warning(
+                image_lines += await self._build_image_review_section(interaction.guild_id)
+                image_lines += await self._calendar_capacity_warning(
                     interaction.guild_id, cfg.season_id
                 )
-                header_lines += await self._attendance_capacity_warning(
+                image_lines += await self._attendance_capacity_warning(
                     interaction.guild_id, cfg.season_id
                 )
                 lineup_problems = await self._lineup_problems(
                     interaction.guild_id, cfg.season_id
                 )
                 if lineup_problems:
-                    header_lines.append(
+                    image_lines.append(
                         "❌ **Lineup template** — these block approval:"
                     )
-                    header_lines += [f"  • {problem}" for problem in lineup_problems]
-                    header_lines.append("")
+                    image_lines += [f"  • {problem}" for problem in lineup_problems]
+                    image_lines.append("")
 
             # ── Team names (038, FR-013) ──────────────────────────────
             # Outside the `images_on` branch deliberately: a team name must address a
@@ -727,7 +745,7 @@ class SeasonCog(commands.Cog):
             if weather_on:
                 from services.weather_config_service import get_weather_pipeline_config as _gwpc
                 _wcfg = await _gwpc(self.bot.db_path, interaction.guild_id)  # type: ignore[attr-defined]
-                header_lines += [
+                weather_lines += [
                     "**Weather Config**",
                     f"  • Phase 1 deadline: {_wcfg.phase_1_days} day(s) before race",
                     f"  • Phase 2 deadline: {_wcfg.phase_2_days} day(s) before race",
@@ -747,7 +765,7 @@ class SeasonCog(commands.Cog):
                 _time_img = "Required" if _s_settings.time_image_required else "Not required"
                 _nationality = "Required" if _s_settings.nationality_required else "Not required"
                 _slot_labels = [s.display_label for s in _s_slots] if _s_slots else ["*(none configured)*"]
-                header_lines += [
+                signup_lines += [
                     "**Signup Config**",
                     f"  • Channel: {_signup_ch}",
                     f"  • Base role: {_signup_br}",
@@ -772,7 +790,7 @@ class SeasonCog(commands.Cog):
                         if att_cfg.rsvp_last_notice_hours
                         else "*(disabled)*"
                     )
-                    header_lines += [
+                    attendance_lines += [
                         "**Attendance Config**",
                         f"  • RSVP notice: {att_cfg.rsvp_notice_days} day(s) before race",
                         f"  • Last notice: {ln_last}",
@@ -788,19 +806,19 @@ class SeasonCog(commands.Cog):
             # ── Points configs (names only) ───────────────────────────
             config_names = await season_points_service.get_season_config_names(self.bot.db_path, cfg.season_id)  # type: ignore[attr-defined]
             if config_names:
-                header_lines.append("**Points Configs:** " + ", ".join(config_names))
+                points_lines.append("**Points Configs:** " + ", ".join(config_names))
             elif results_on:
                 server_config_tm = await self.bot.config_service.get_server_config(interaction.guild_id)  # type: ignore[attr-defined]
                 if server_config_tm is not None and server_config_tm.test_mode_active:
-                    header_lines.append(
+                    points_lines.append(
                         "**Points Configs:** *(none attached)* "
                         "\u26a0\ufe0f Test mode active \u2014 Standard & Half Points will be auto-seeded on approval."
                     )
                 else:
-                    header_lines.append("**Points Configs:** *(none attached)*")
+                    points_lines.append("**Points Configs:** *(none attached)*")
             else:
-                header_lines.append("**Points Configs:** *(none attached)*")
-            header_lines.append("")
+                points_lines.append("**Points Configs:** *(none attached)*")
+            points_lines.append("")
 
             # Pre-fetch role configs so we can warn about teams missing a role
             teams_with_roles = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
@@ -815,8 +833,29 @@ class SeasonCog(commands.Cog):
                 )
                 header_lines.append("")
 
-            # ── Send header block ───────────────────────────────────
-            await interaction.followup.send("\n".join(header_lines), ephemeral=False)
+            # ── Send one message per subsection ─────────────────────
+            #
+            # In the order a manager reads them: the season and what is switched on,
+            # then each module's own configuration, then the image outputs. A subsection
+            # holding nothing is not sent at all — a module that is off has no
+            # configuration to review, and an empty heading is only noise.
+            #
+            # Still chunked underneath. The image subsection alone can carry eight
+            # outputs, each with its cause and its remedy, and pass the 2000-character
+            # limit on its own; an over-long send loses the message, not merely its tail.
+            for section in (
+                header_lines,
+                signup_lines,
+                attendance_lines,
+                points_lines,
+                weather_lines,
+                image_lines,
+            ):
+                body = "\n".join(section).strip()
+                if not body:
+                    continue
+                for chunk in _chunk_message(body):
+                    await interaction.followup.send(chunk, ephemeral=False)
 
             # ── Per-division blocks (4 messages each) ────────────────
             db_divisions = await self.bot.season_service.get_divisions_with_results_config(cfg.season_id)

@@ -814,13 +814,17 @@ def test_disabled_aspect_reports_disabled_even_when_templates_are_broken(tmp_pat
     from services.image_validity_service import PLAIN_ASPECT_OFF, PLAIN_WOULD_NEED_FIXING
 
     assert len(calendar.disabled_reasons) == 3
-    assert calendar.disabled_reasons[0] == PLAIN_ASPECT_OFF
+    assert calendar.disabled_reasons[0].startswith(PLAIN_ASPECT_OFF)
     assert calendar.disabled_reasons[1] == PLAIN_WOULD_NEED_FIXING
     assert TEMPLATE_LABELS["calendar_template"] in calendar.disabled_reasons[2]
 
+    # Every line says what to do about itself, not merely what is wrong.
+    assert "/images config toggle aspect:Calendar" in calendar.disabled_reasons[0]
+    assert "/images template calendar" in calendar.disabled_reasons[2]
+
 
 def test_disabled_aspect_with_sound_templates_names_only_the_toggle(tmp_path, templates):
-    """Nothing awaits it, so the row says only why it is off."""
+    """Nothing awaits it, so the row says why it is off and how to switch it on."""
     from services.image_validity_service import (
         PLAIN_ASPECT_OFF,
         build_aspect_statuses,
@@ -829,8 +833,26 @@ def test_disabled_aspect_with_sound_templates_names_only_the_toggle(tmp_path, te
 
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
     statuses = {s.aspect: s for s in build_aspect_statuses({"calendar": False}, reports)}
+    reasons = statuses["calendar"].disabled_reasons
 
-    assert statuses["calendar"].disabled_reasons == [PLAIN_ASPECT_OFF]
+    assert len(reasons) == 1
+    assert reasons[0].startswith(PLAIN_ASPECT_OFF)
+    assert "`/images config toggle aspect:Calendar`" in reasons[0]
+
+
+def test_the_toggle_remedy_names_a_choice_the_command_actually_offers():
+    """The remedy is copied by a manager, so the aspect name has to be a real choice.
+
+    `ASPECT_LABELS` is both what the report prints and what the dropdown shows. If the
+    two ever part company the remedy silently starts naming something that cannot be
+    picked, and nothing else in the suite would notice.
+    """
+    from cogs.image_cog import ImageCog
+    from models.image_constants import ASPECT_LABELS
+
+    choices = ImageCog.config_toggle.parameters[0].choices
+
+    assert {c.value: c.name for c in choices} == ASPECT_LABELS
 
 
 def test_disabled_aspect_names_its_switched_off_source_module(tmp_path, templates):
@@ -847,7 +869,12 @@ def test_disabled_aspect_names_its_switched_off_source_module(tmp_path, template
     reasons = statuses["standings"].disabled_reasons
 
     assert len(reasons) == 3
-    assert reasons[2] == "the results module is switched off, so there'd be nothing to draw"
+    assert reasons[2].startswith(
+        "the results module is switched off, so there'd be nothing to draw"
+    )
+    # The module is switched on elsewhere, so the remedy names that command and not the
+    # image toggle the row above already named.
+    assert "`/module enable module_name:results`" in reasons[2]
 
 
 def test_reasons_are_the_blocking_ones_while_an_aspect_is_enabled(tmp_path, templates):
@@ -896,6 +923,7 @@ def test_enabled_aspect_with_valid_templates_reports_enabled(tmp_path, templates
 def test_absent_converter_makes_every_enabled_aspect_invalid(tmp_path, templates):
     from services.image_validity_service import (
         PLAIN_NO_RASTERISER,
+        PLAIN_REMEDY_ASK_OPERATOR,
         build_aspect_statuses,
         evaluate_all_templates,
     )
@@ -907,8 +935,12 @@ def test_absent_converter_makes_every_enabled_aspect_invalid(tmp_path, templates
 
     assert all(s.state == STATE_ENABLED_INVALID for s in statuses)
     # Named by what it does, not by what it is called: a league manager can act on the
-    # one and not on the other.
-    assert all(PLAIN_NO_RASTERISER in s.blocking_reasons for s in statuses)
+    # one and not on the other. And this is the one fault no command of theirs mends, so
+    # the line says so rather than sending them looking for one.
+    for status in statuses:
+        line = next(r for r in status.blocking_reasons if PLAIN_NO_RASTERISER in r)
+        assert PLAIN_REMEDY_ASK_OPERATOR in line
+        assert "/images" not in line
 
 
 def test_all_eight_aspects_are_always_reported(tmp_path, templates):

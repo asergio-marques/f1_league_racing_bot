@@ -287,8 +287,12 @@ def test_season_review_names_the_verdicts_template_individually(tmp_path, templa
     # The line a league reads names this template and no other, and says why in their
     # own words. Which field is missing is the operator's business, and is logged.
     assert "Verdicts" in describe(mine[0])
-    assert mine[0].detail == PLAIN_MISSING_FIELD
+    assert mine[0].detail.startswith(PLAIN_MISSING_FIELD)
     assert mine[0].kind == PROBLEM_MISSING_MANDATORY_FIELD
+
+    # And says what to do: naming the same file again is the surface that still gives
+    # the precise reason, so that is where the manager is sent.
+    assert "`/images template verdicts`" in mine[0].detail
 
     reports = evaluate_all_templates(_config(), root=tmp_path)
     assert "penalty" in reports[KEY].reason

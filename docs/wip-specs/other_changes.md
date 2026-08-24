@@ -58,3 +58,10 @@
     - <NEW COMMAND> A new "division amend" command shall be made available to league managers that will intake the name of the division to be changed (mandatory), a string standing for the new name of the division (optional), an integer standing for the tier (optional), and a role standing for the division role (optional). This command will fail if neither of the optional parameters are chosen.
         - This command allows the correction of division parameters during season setup exclusively.
 - <NEW COMMAND> A "track list" command will be made available to league managers, which will display the IDs and names of all tracks available.
+
+# The shape of the season review
+
+- The "season review" command posts its report as one message per subsection, and not as one message carrying them all. The subsections are, in this order: the season and the modules enabled upon it; the signup configuration; the attendance configuration; the points configurations; the weather configuration; and the image outputs. The blocks describing each division follow them, as they always have.
+- A subsection holding nothing shall not be posted. A module that is switched off has no configuration to review, and a heading standing over nothing is noise in a report a manager is asked to read properly.
+- Each subsection shall further be divided across as many messages as its own length requires. A message too long is refused whole, so a report that outgrows the limit is lost rather than truncated.
+- The validations that belong to the season rather than to a module — the team names that cannot become lineup fields, and the reserve team holding no role — are posted with the first subsection, whatever modules are enabled.
