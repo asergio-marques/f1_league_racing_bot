@@ -794,15 +794,93 @@ def test_evaluation_stops_at_the_first_failing_layer(tmp_path, templates):
 
 
 def test_disabled_aspect_reports_disabled_even_when_templates_are_broken(tmp_path, templates):
+    from models.image_constants import TEMPLATE_LABELS
     from models.image_module import STATE_DISABLED
     from services.image_validity_service import build_aspect_statuses, evaluate_all_templates
 
     (templates / "calendar_template.svg").unlink()
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
     statuses = {s.aspect: s for s in build_aspect_statuses({"calendar": False}, reports)}
+    calendar = statuses["calendar"]
 
-    assert statuses["calendar"].state == STATE_DISABLED
-    assert statuses["calendar"].blocking_reasons == []
+    assert calendar.state == STATE_DISABLED
+
+    # `blocking_reasons` is what stops an *enabled* aspect, and `/images toggle` reads it
+    # on that meaning alone. A disabled aspect explains itself through its own list.
+    assert calendar.blocking_reasons == []
+
+    # The cross says why it is off, then what the manager would meet on switching it on —
+    # naming the individual template, never the group (FR-032).
+    from services.image_validity_service import PLAIN_ASPECT_OFF, PLAIN_WOULD_NEED_FIXING
+
+    assert len(calendar.disabled_reasons) == 3
+    assert calendar.disabled_reasons[0] == PLAIN_ASPECT_OFF
+    assert calendar.disabled_reasons[1] == PLAIN_WOULD_NEED_FIXING
+    assert TEMPLATE_LABELS["calendar_template"] in calendar.disabled_reasons[2]
+
+
+def test_disabled_aspect_with_sound_templates_names_only_the_toggle(tmp_path, templates):
+    """Nothing awaits it, so the row says only why it is off."""
+    from services.image_validity_service import (
+        PLAIN_ASPECT_OFF,
+        build_aspect_statuses,
+        evaluate_all_templates,
+    )
+
+    reports = evaluate_all_templates(_config("templates"), root=tmp_path)
+    statuses = {s.aspect: s for s in build_aspect_statuses({"calendar": False}, reports)}
+
+    assert statuses["calendar"].disabled_reasons == [PLAIN_ASPECT_OFF]
+
+
+def test_disabled_aspect_names_its_switched_off_source_module(tmp_path, templates):
+    """Standings is drawn from the results module, so its absence is what awaits."""
+    from services.image_validity_service import build_aspect_statuses, evaluate_all_templates
+
+    reports = evaluate_all_templates(_config("templates"), root=tmp_path)
+    statuses = {
+        s.aspect: s
+        for s in build_aspect_statuses(
+            {"standings": False}, reports, disabled_source_modules={"results"}
+        )
+    }
+    reasons = statuses["standings"].disabled_reasons
+
+    assert len(reasons) == 3
+    assert reasons[2] == "the results module is switched off, so there'd be nothing to draw"
+
+
+def test_reasons_are_the_blocking_ones_while_an_aspect_is_enabled(tmp_path, templates):
+    """The enabled path is untouched: what a report prints is what it always printed."""
+    from services.image_validity_service import build_aspect_statuses, evaluate_all_templates
+
+    (templates / "calendar_template.svg").unlink()
+    reports = evaluate_all_templates(_config("templates"), root=tmp_path)
+    statuses = {s.aspect: s for s in build_aspect_statuses({"calendar": True}, reports)}
+    calendar = statuses["calendar"]
+
+    assert calendar.state == STATE_ENABLED_INVALID
+    assert calendar.disabled_reasons == []
+    assert calendar.reasons == calendar.blocking_reasons != []
+
+
+def test_a_disabled_row_promises_exactly_what_the_enabled_row_reports(tmp_path, templates):
+    """One helper feeds both branches, so the promise cannot outlive the fault."""
+    from services.image_validity_service import (
+        PLAIN_WOULD_NEED_FIXING,
+        build_aspect_statuses,
+        evaluate_all_templates,
+    )
+
+    (templates / "calendar_template.svg").unlink()
+    reports = evaluate_all_templates(_config("templates"), root=tmp_path)
+
+    off = {s.aspect: s for s in build_aspect_statuses({"calendar": False}, reports)}
+    on = {s.aspect: s for s in build_aspect_statuses({"calendar": True}, reports)}
+
+    reasons = off["calendar"].disabled_reasons
+    promised = reasons[reasons.index(PLAIN_WOULD_NEED_FIXING) + 1 :]
+    assert promised == on["calendar"].blocking_reasons
 
 
 def test_enabled_aspect_with_valid_templates_reports_enabled(tmp_path, templates):
@@ -816,7 +894,11 @@ def test_enabled_aspect_with_valid_templates_reports_enabled(tmp_path, templates
 
 
 def test_absent_converter_makes_every_enabled_aspect_invalid(tmp_path, templates):
-    from services.image_validity_service import build_aspect_statuses, evaluate_all_templates
+    from services.image_validity_service import (
+        PLAIN_NO_RASTERISER,
+        build_aspect_statuses,
+        evaluate_all_templates,
+    )
 
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
     statuses = build_aspect_statuses(
@@ -824,9 +906,9 @@ def test_absent_converter_makes_every_enabled_aspect_invalid(tmp_path, templates
     )
 
     assert all(s.state == STATE_ENABLED_INVALID for s in statuses)
-    assert all(
-        any("converter" in r.lower() for r in s.blocking_reasons) for s in statuses
-    )
+    # Named by what it does, not by what it is called: a league manager can act on the
+    # one and not on the other.
+    assert all(PLAIN_NO_RASTERISER in s.blocking_reasons for s in statuses)
 
 
 def test_all_eight_aspects_are_always_reported(tmp_path, templates):

@@ -302,10 +302,11 @@ Found on 2026-08-18 while auditing the how-to guides against the implementation.
 - `test_test_mode_suppresses_delete_keeps_row` and `test_delete_forecast_message_skips_in_test_mode` both assert that deletion **does** happen in test mode, and their docstrings say so.
 - The names are left over from the removed test-mode guard. They pass, so nothing fails, but a reader scanning test names is told the opposite of what the suite checks.
 
-**`ASSET_DIRECTORIES` is defined twice in `src/models/image_constants.py`.**
-- The table appears in full at roughly line 161 and again at roughly line 236, with identical contents. The second definition wins at import; the first is dead.
-- Found while repathing the eight defaults to `resources/defaults/` for feature 047, which had to edit both to keep them agreeing. They agree today, and nothing reads the first — but two tables one edit apart from disagreeing is a trap, and the next reader has no way to tell which is authoritative.
+**Six tables are defined twice in `src/models/image_constants.py`.**
+- A whole block is repeated verbatim: roughly lines 108-179 appear again at roughly lines 183-244. `ASPECT_SOURCE_MODULE`, `ASPECT_LABELS`, `LIVE_POSTING_ASPECTS`, `PENDING_POSTING_ASPECTS`, `ASSET_DIRECTORIES` and `ASSET_LABELS` are each defined twice, with identical contents. The second definition wins at import; the first is dead.
+- Found while repathing the eight defaults to `resources/defaults/` for feature 047, which had to edit both copies of `ASSET_DIRECTORIES` to keep them agreeing. The wider duplication was noticed on 2026-08-24. They agree today, and nothing reads the first copy — but two tables one edit apart from disagreeing is a trap, and the next reader has no way to tell which is authoritative.
 - `packaged_directory_for` added by 047 reads the winning table, so the packaged tier and the configured default cannot drift; the duplication is still worth removing.
+- `ASPECT_SOURCE_MODULE` is read by `build_aspect_statuses`, so a stale first copy would misreport which module an aspect draws its data from.
 
 ## Behaviour worth knowing rather than fixing
 
