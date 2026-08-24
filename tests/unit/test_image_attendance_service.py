@@ -348,6 +348,22 @@ def test_nationality_switched_off_at_its_source_reports_nothing():
     assert spec.empty == []
 
 
+def test_the_switch_beats_a_nationality_the_driver_already_stated():
+    """The switch is read before the value, so no driver keeps a flag the others lost."""
+    drawing = resolve_drawing(
+        division_name="D",
+        round_number=1,
+        records=_records((1, 4, {}, False)),
+        display_names={1: "A"},
+        nationalities={1: "British"},
+        nationality_collected=False,
+    )
+    spec = build_fill_spec(drawing, _sheet_svg(rows=1))
+    assert "row_1_driver_flag" not in spec.image_data
+    assert "row_1_driver_flag" in spec.remove
+    assert spec.empty == []
+
+
 # ── The grid ──────────────────────────────────────────────────────────────
 
 

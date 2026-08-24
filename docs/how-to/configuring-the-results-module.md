@@ -157,11 +157,13 @@ Out of the box, everything this module posts is a text table. The image module t
 
 `results` replaces each session's classification and `verdicts` replaces the stewarding announcements. Follow [Setting up the image module](configuring-the-image-module.md) for the order — the drawing files, the flags and the badges. Results and standings each need **two** drawing files, one per kind of table, and either half can be broken on its own.
 
-> **`standings` records your choice but does not act on it yet.** No standings post is drawn today, whatever the toggle says — the championship tables are still posted as text. `/images config view` marks it as recorded but not yet in effect. `/images test standings` will not show you one either: the drawing file has a column per round of the season, and the code to fill those columns was never written, so the preview reports the fields it cannot fill instead of sending a half-drawn table. Set the toggle if you want to; nothing changes until both the posting path and that grid exist.
+> **`standings` posts two pictures where the text posts one message.** The driver standings go first and the constructor standings after, each with its heading and lifecycle label as message text and its table attached. They are redrawn and replaced on every occasion the textual standings were reposted before. Either championship can fail on its own: the one that failed is posted as text, that section by itself, and the one that drew is left alone — so you never read the same table twice.
 
 > **A picture never delays or changes a result.** Scoring, standings, penalties and verdicts all happen exactly as they would with the module off; the drawing is made afterwards, and a drawing that fails falls back to the text table with the reason in the log channel.
 
-> **A drawing file with fewer rows than your division needs falls back to text.** Unlike the attendance sheet, nothing refuses a driver over it — the bot would rather post the full table as text than a picture quietly missing the last two drivers. Check the row count against your biggest division and your longest calendar.
+> **A results drawing file with fewer rows than your division needs falls back to text.** Nothing refuses a driver over it — the bot would rather post the full table as text than a picture quietly missing the last two drivers. Check the row count against your biggest division and your longest calendar.
+
+> **The standings drawing files are the exception: they refuse.** Like the attendance sheet, the driver standings file is counted before a driver is seated, and `/team assign` is turned away if the division would outgrow it — with the assignment unapplied, so nothing is half-done. The constructor standings file cannot be outgrown by seating a driver, so it is checked at `/season review` instead, alongside the round columns of both files against your longest calendar. Each file is named separately in what you are told; they are two drawings and only one of them may be the one to enlarge.
 
 ---
 

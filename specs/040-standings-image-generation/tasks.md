@@ -115,17 +115,17 @@ complete.**
 
 ### Tests for User Story 2
 
-- [ ] T032 [P] [US2] Extend `tests/unit/test_results_post_service.py`: the image branch taken when the toggle is on and skipped when off; a cancelled round posting nothing whatever the toggle says (FR-050); and the standings replaced in the division's standings channel and there alone
-- [ ] T033 [US2] Add posting-order coverage to `tests/unit/test_results_post_service.py`: each replacement produced before its old message is deleted, both ids persisted on the top-ranked driver's row, and a failed render leaving the previously posted message in place (same file as T032 — sequential)
-- [ ] T034 [P] [US2] Add `tests/unit/test_image_standings_post.py` covering the per-championship failure matrix of [contracts/standings-posting.md](./contracts/standings-posting.md) — including one championship falling back to text carrying **its section alone** while the other posts as a graphic (FR-052)
+- [X] T032 [P] [US2] Extend `tests/unit/test_results_post_service.py`: the image branch taken when the toggle is on and skipped when off; a cancelled round posting nothing whatever the toggle says (FR-050); and the standings replaced in the division's standings channel and there alone
+- [X] T033 [US2] Add posting-order coverage to `tests/unit/test_results_post_service.py`: each replacement produced before its old message is deleted, both ids persisted on the top-ranked driver's row, and a failed render leaving the previously posted message in place (same file as T032 — sequential)
+- [X] T034 [P] [US2] Add `tests/unit/test_image_standings_post.py` covering the per-championship failure matrix of [contracts/standings-posting.md](./contracts/standings-posting.md) — including one championship falling back to text carrying **its section alone** while the other posts as a graphic (FR-052)
 
 ### Implementation for User Story 2
 
-- [ ] T035 [US2] Add `src/services/image_standings_post.py` with `standings_enabled`, `render_png` and `try_post`, following the shape of `src/services/image_results_post.py`: render first, post the replacement, delete the previous message only once the replacement exists, then persist its id
-- [ ] T036 [US2] Resolve the `flag`, `team`, `track` and `marker` directories from the server's image config inside `render_png` in `src/services/image_standings_post.py`, and call `bot.image_render_service.render_for_posting` with the posting origin
-- [ ] T037 [US2] Implement the two-graphic posting in `src/services/image_standings_post.py`: drivers first and constructors second, each carrying its heading and lifecycle label as message text and its graphic as an attachment, and each answering for itself so one failure never prevents the other (FR-046, FR-052)
-- [ ] T038 [US2] Hook the image branch into `post_standings` in `src/services/results_post_service.py`, before the textual send — the single funnel all five call sites reach, so FR-049's seven redraw occasions are covered by one branch (R7)
-- [ ] T039 [US2] Route a Discord-side posting failure to enqueue the **textual** standings for retry rather than the image, in `src/services/image_standings_post.py` (FR-056), and let one division's failure never touch another's (FR-055)
+- [X] T035 [US2] Add `src/services/image_standings_post.py` with `standings_enabled`, `render_png` and `try_post`, following the shape of `src/services/image_results_post.py`: render first, post the replacement, delete the previous message only once the replacement exists, then persist its id
+- [X] T036 [US2] Resolve the `flag`, `team`, `track` and `marker` directories from the server's image config inside `render_png` in `src/services/image_standings_post.py`, and call `bot.image_render_service.render_for_posting` with the posting origin
+- [X] T037 [US2] Implement the two-graphic posting in `src/services/image_standings_post.py`: drivers first and constructors second, each carrying its heading and lifecycle label as message text and its graphic as an attachment, and each answering for itself so one failure never prevents the other (FR-046, FR-052)
+- [X] T038 [US2] Hook the image branch into `post_standings` in `src/services/results_post_service.py`, before the textual send — the single funnel all five call sites reach, so FR-049's seven redraw occasions are covered by one branch (R7)
+- [X] T039 [US2] Route a Discord-side posting failure to enqueue the **textual** standings for retry rather than the image, in `src/services/image_standings_post.py` (FR-056), and let one division's failure never touch another's (FR-055)
 
 **Checkpoint**: a league can switch the aspect on and read both championships as graphics through a full round, each falling back on its own.
 
@@ -139,19 +139,19 @@ complete.**
 
 ### Tests for User Story 3
 
-- [ ] T040 [P] [US3] Extend `tests/unit/test_image_standings_service.py` with cell resolution: a finishing position, the three outcome literals, a driver dropped by disqualification carrying `DSQ` and not the position the drop gave them, and the four emptying cases of FR-024
-- [ ] T041 [P] [US3] Extend `tests/unit/test_image_standings_fill.py` with the grid: excess rounds removing the heading group, every row's cell group and every car group from one decision (FR-039); the same by field where no group is declared; and cars beyond a row's team's seats trimmed for that row alone (FR-041)
-- [ ] T042 [US3] Add car-allocation coverage to `tests/unit/test_image_standings_service.py`: a seated driver on their seat's ordinal, a seated driver who drove nothing leaving that car free, a non-seated driver taking the lowest free car, and a car nobody drove having its group removed (same file as T040 — sequential)
-- [ ] T043 [P] [US3] Extend `tests/unit/test_result_submission_service.py` with the cross-session team check: a reserve recorded for team A in one session and team B in another of the same round rejected on the second submission, and the same reserve under team A throughout accepted (FR-065)
+- [X] T040 [P] [US3] Extend `tests/unit/test_image_standings_service.py` with cell resolution: a finishing position, the three outcome literals, a driver dropped by disqualification carrying `DSQ` and not the position the drop gave them, and the four emptying cases of FR-024
+- [X] T041 [P] [US3] Extend `tests/unit/test_image_standings_fill.py` with the grid: excess rounds removing the heading group, every row's cell group and every car group from one decision (FR-039); the same by field where no group is declared; and cars beyond a row's team's seats trimmed for that row alone (FR-041)
+- [X] T042 [US3] Add car-allocation coverage to `tests/unit/test_image_standings_service.py`: a seated driver on their seat's ordinal, a seated driver who drove nothing leaving that car free, a non-seated driver taking the lowest free car, and a car nobody drove having its group removed (same file as T040 — sequential)
+- [X] T043 [P] [US3] Extend `tests/unit/test_result_submission_service.py` with the cross-session team check: a reserve recorded for team A in one session and team B in another of the same round rejected on the second submission, and the same reserve under team A throughout accepted (FR-065)
 
 ### Implementation for User Story 3
 
-- [ ] T044 [US3] Extend `resolve_drawing` in `src/services/image_standings_service.py` to resolve the drivers grid: every round the division holds whether run or not, a cell per session carrying the recorded position or outcome literal, and an empty string for each of FR-024's four determined-empty cases
-- [ ] T045 [US3] Implement the constructors car allocation in `src/services/image_standings_service.py` per FR-026 — drivers found by the team role their session result records, seated drivers on their seat ordinal, non-seated drivers on the lowest free car — treating "one driver, one team per round" as an invariant guaranteed by T047 and **not** re-adjudicating it
-- [ ] T046 [US3] Extend `build_fill_spec` in `src/services/image_standings_service.py` to project the grid: the round heading fields, the per-row cell groups, the per-car groups, and the removal of all three families from one capacity decision on a round ordinal (R2)
-- [ ] T047 [US3] Add the cross-session team check to `_validate` in `src/services/result_submission_service.py`: a submission recording a driver under a team role different from the one another ACTIVE session of the same round already records is rejected, naming the driver, the team already recorded and the conflicting session. Forward-only — no backfill, the bot not being in production (FR-065, R9)
-- [ ] T048 [US3] Extend `build_standings_drawing` in `src/services/image_sample_data.py` to fabricate a calendar as long as the template declares, standing after all but two rounds — or after the first where fewer than three are declared, and none where the template declares no round — with at least one run round of the sprint format and one of the normal format (FR-057, FR-058, FR-059)
-- [ ] T049 [US3] Verify both grid PNGs against [quickstart.md](./quickstart.md) § 3 (grid rows) and § 4, as rasterised images
+- [X] T044 [US3] Extend `resolve_drawing` in `src/services/image_standings_service.py` to resolve the drivers grid: every round the division holds whether run or not, a cell per session carrying the recorded position or outcome literal, and an empty string for each of FR-024's four determined-empty cases
+- [X] T045 [US3] Implement the constructors car allocation in `src/services/image_standings_service.py` per FR-026 — drivers found by the team role their session result records, seated drivers on their seat ordinal, non-seated drivers on the lowest free car — treating "one driver, one team per round" as an invariant guaranteed by T047 and **not** re-adjudicating it
+- [X] T046 [US3] Extend `build_fill_spec` in `src/services/image_standings_service.py` to project the grid: the round heading fields, the per-row cell groups, the per-car groups, and the removal of all three families from one capacity decision on a round ordinal (R2)
+- [X] T047 [US3] Add the cross-session team check to `_validate` in `src/services/result_submission_service.py`: a submission recording a driver under a team role different from the one another ACTIVE session of the same round already records is rejected, naming the driver, the team already recorded and the conflicting session. Forward-only — no backfill, the bot not being in production (FR-065, R9)
+- [X] T048 [US3] Extend `build_standings_drawing` in `src/services/image_sample_data.py` to fabricate a calendar as long as the template declares, standing after all but two rounds — or after the first where fewer than three are declared, and none where the template declares no round — with at least one run round of the sprint format and one of the normal format (FR-057, FR-058, FR-059)
+- [X] T049 [US3] Verify both grid PNGs against [quickstart.md](./quickstart.md) § 3 (grid rows) and § 4, as rasterised images
 
 **Checkpoint**: a league can draw its whole season on one graphic, and the constructors grid rests on an invariant the data guarantee.
 
@@ -165,16 +165,16 @@ complete.**
 
 ### Tests for User Story 4
 
-- [ ] T050 [P] [US4] Extend `tests/unit/test_image_validity_service.py` with the standings structural checks of FR-035 — ≥1 row contiguous from 1 with every mandatory row field, rounds contiguous each carrying its number, cars contiguous — each refusing at all three moments (XIV.9)
-- [ ] T051 [US4] Add sibling-field coverage to `tests/unit/test_image_validity_service.py`: a constructors row field in the drivers template refused as the wrong file for that slot, and an id belonging to neither catalogue ignored (FR-007) (same file as T050 — sequential)
-- [ ] T052 [P] [US4] Add row-ceiling coverage to `tests/unit/test_placement_service.py`: a driver assignment that would carry a division past the drivers template's rows refused with the assignment unapplied, and a team assignment likewise against the constructors template (FR-044)
+- [X] T050 [P] [US4] Extend `tests/unit/test_image_validity_service.py` with the standings structural checks of FR-035 — ≥1 row contiguous from 1 with every mandatory row field, rounds contiguous each carrying its number, cars contiguous — each refusing at all three moments (XIV.9)
+- [X] T051 [US4] Add sibling-field coverage to `tests/unit/test_image_validity_service.py`: a constructors row field in the drivers template refused as the wrong file for that slot, and an id belonging to neither catalogue ignored (FR-007) (same file as T050 — sequential)
+- [X] T052 [P] [US4] Add row-ceiling coverage to `tests/unit/test_placement_service.py`: a driver assignment that would carry a division past the drivers template's rows refused with the assignment unapplied, and a team assignment likewise against the constructors template (FR-044)
 
 ### Implementation for User Story 4
 
-- [ ] T053 [US4] Extend `CatalogueLayer` in `src/services/image_validity_service.py` with the standings structural checks, reading the same catalogue object the fill pipeline reads (XIV.10) and naming the individual template at fault (XIV.9, specific attribution)
-- [ ] T054 [US4] Report the drivers and constructors templates separately at `/season review` and `/images config view`, never as one pair, in `src/cogs/season_cog.py` and `src/cogs/image_cog.py` (FR-045)
-- [ ] T055 [US4] Add the row-ceiling check at season review in `src/cogs/season_cog.py`: a division that would place more drivers in its classification than the drivers template has rows fails validation naming the division, and approval is refused while it stands (FR-043)
-- [ ] T056 [US4] Add the assignment refusal to `src/services/placement_service.py` for both championships, rejecting the command with its change unapplied and naming the template and the counts (FR-044)
+- [X] T053 [US4] Extend `CatalogueLayer` in `src/services/image_validity_service.py` with the standings structural checks, reading the same catalogue object the fill pipeline reads (XIV.10) and naming the individual template at fault (XIV.9, specific attribution)
+- [X] T054 [US4] Report the drivers and constructors templates separately at `/season review` and `/images config view`, never as one pair, in `src/cogs/season_cog.py` and `src/cogs/image_cog.py` (FR-045)
+- [X] T055 [US4] Add the row-ceiling check at season review in `src/cogs/season_cog.py`: a division that would place more drivers in its classification than the drivers template has rows fails validation naming the division, and approval is refused while it stands (FR-043)
+- [X] T056 [US4] Add the assignment refusal to `src/services/placement_service.py` for both championships, rejecting the command with its change unapplied and naming the template and the counts (FR-044)
 - [ ] T057 [US4] Verify [quickstart.md](./quickstart.md) §§ 5–6 — every fault refused at configuration with its own reason, and the two ceiling refusals
 
 **Checkpoint**: a league is told its templates cannot hold its season before the season runs.
@@ -189,13 +189,13 @@ complete.**
 
 ### Tests for User Story 5
 
-- [ ] T058 [P] [US5] Extend `tests/unit/test_image_standings_post.py`: notices routed to the logging channel with season, division, round and championship in the detail (FR-053), and never to the standings channel
-- [ ] T059 [P] [US5] Add nationality coverage to `tests/unit/test_image_standings_service.py`: an absent nationality removing the flag with a non-fatal error, a nationality with no file drawing the fallback with a notice, and nationality collection switched off at source drawing no flags anywhere and reporting **nothing** (FR-028)
+- [X] T058 [P] [US5] Extend `tests/unit/test_image_standings_post.py`: notices routed to the logging channel with season, division, round and championship in the detail (FR-053), and never to the standings channel
+- [X] T059 [P] [US5] Add nationality coverage to `tests/unit/test_image_standings_service.py`: an absent nationality removing the flag with a non-fatal error, a nationality with no file drawing the fallback with a notice, and nationality collection switched off at source drawing no flags anywhere and reporting **nothing** (FR-028)
 
 ### Implementation for User Story 5
 
-- [ ] T060 [US5] Implement notice reporting in `src/services/image_standings_post.py` reusing `image_results_post.report_notices`, naming the season, the division, the round and the championship, and additionally reporting alongside a triggering command's output (FR-053)
-- [ ] T061 [US5] Honour the configured-absence suppression for nationality in `src/services/image_standings_service.py`: where `signup nationality toggle` is off at its source, the flags are absent by configuration and no notice is raised (FR-028, XIV.4)
+- [X] T060 [US5] Implement notice reporting in `src/services/image_standings_post.py` reusing `image_results_post.report_notices`, naming the season, the division, the round and the championship, and additionally reporting alongside a triggering command's output (FR-053)
+- [X] T061 [US5] Honour the configured-absence suppression for nationality in `src/services/image_standings_service.py`: where `signup nationality toggle` is off at its source, the flags are absent by configuration and no notice is raised (FR-028, XIV.4)
 - [ ] T062 [US5] Verify [quickstart.md](./quickstart.md) § 9 — all three nationality states, with every notice in the logging channel and none in the standings channel
 
 **Checkpoint**: safe to run unattended.
@@ -204,10 +204,10 @@ complete.**
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T063 Run `pytest tests/ -q` and compare against the T001 baseline; every delta is accounted for, and the textual standings output is unchanged (T018)
-- [ ] T064 [P] Confirm no subtraction, comparison or sign decision over points or positions exists anywhere in `src/services/image_standings_service.py` — the utility receives the finished movement record and does not make it (Constitution XIV.7, [contracts/derived-columns.md](./contracts/derived-columns.md))
-- [ ] T065 [P] Update `README.md` for what a league can now see: the `standings` toggle drawing both championships as images, the two template commands, the optional season grid, and the row ceiling refusing an overflowing assignment
-- [ ] T066 Add `gained.svg`, `lost.svg` and `unchanged.svg` to the shipped reserved filenames in `README.md` and `resources/README.md`, beside `tracks/mystery.svg` — deferred from the v4.5.0 amendment until the files existed (FR-033) (shares `README.md` with T065 — sequential)
+- [X] T063 Run `pytest tests/ -q` and compare against the T001 baseline; every delta is accounted for, and the textual standings output is unchanged (T018)
+- [X] T064 [P] Confirm no subtraction, comparison or sign decision over points or positions exists anywhere in `src/services/image_standings_service.py` — the utility receives the finished movement record and does not make it (Constitution XIV.7, [contracts/derived-columns.md](./contracts/derived-columns.md))
+- [X] T065 [P] Update `README.md` for what a league can now see: the `standings` toggle drawing both championships as images, the two template commands, the optional season grid, and the row ceiling refusing an overflowing assignment
+- [X] T066 Add `gained.svg`, `lost.svg` and `unchanged.svg` to the shipped reserved filenames in `README.md` and `resources/README.md`, beside `tracks/mystery.svg` — deferred from the v4.5.0 amendment until the files existed (FR-033) (shares `README.md` with T065 — sequential)
 - [ ] T067 Verify every graphic of [quickstart.md](./quickstart.md) §§ 3–9 as a rasterised PNG, including the overflow cases naming what would have been dropped
 - [ ] T068 Invoke the `close-out` skill, which is **mandatory before reporting this work complete**: it reconciles `docs/wip-specs/image_module_specification.md` and `README.md` against what was built and against every decision taken in conversation
 

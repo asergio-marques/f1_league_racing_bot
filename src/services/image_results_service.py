@@ -404,12 +404,15 @@ def build_fill_spec(
         # off at its source has configured a graphic with no flags, and that raises nothing.
         flag_id = f"{stem}_driver_flag"
         if flag_id in declared:
-            if entry.nationality:
-                image_data[flag_id] = ("flag", country_for_nationality(entry.nationality))
-            elif drawing.nationality_collected:
-                empty.append(flag_id)
-            else:
+            # The switch is read **first**: a driver who stated a nationality before the
+            # league turned collection off still holds one, and testing the value first
+            # would draw their flag alone among a table of blanks.
+            if not drawing.nationality_collected:
                 empty_quietly.append(flag_id)
+            elif entry.nationality:
+                image_data[flag_id] = ("flag", country_for_nationality(entry.nationality))
+            else:
+                empty.append(flag_id)
 
         if drawing.is_qualifying:
             put(f"{stem}_best_lap", entry.best_lap)

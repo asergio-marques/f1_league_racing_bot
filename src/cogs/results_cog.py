@@ -1197,7 +1197,9 @@ class ResultsCog(commands.Cog):
             return
 
         from services.results_post_service import repost_standings_for_division
-        status = await repost_standings_for_division(self.bot.db_path, div.id, interaction.guild)
+        status = await repost_standings_for_division(
+            self.bot.db_path, div.id, interaction.guild, bot=self.bot
+        )
 
         if status == "ok":
             await interaction.followup.send(

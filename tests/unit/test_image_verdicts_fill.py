@@ -195,6 +195,18 @@ def test_a_league_that_collects_no_nationality_removes_the_flag_quietly():
     assert suppressed_flag_fields(drawing) == {"driver_flag"}
 
 
+def test_the_switch_beats_a_nationality_the_driver_already_stated():
+    """The switch is read before the value, so no driver keeps a flag the others lost."""
+    from services.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
+
+    drawing = _penalty(driver_nationality="British", nationality_collected=False)
+    spec = build_fill_spec(drawing, _root())
+
+    assert "driver_flag" not in spec.image_data
+    assert "driver_flag" in spec.remove
+    assert suppressed_flag_fields(drawing) == {"driver_flag"}
+
+
 def test_a_driver_who_stated_none_removes_the_flag_loudly():
     from services.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
 

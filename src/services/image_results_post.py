@@ -295,7 +295,7 @@ async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
             ("flag", "flag_directory"),
             ("tyre", "tyre_directory"),
         ),
-        image_type=template_key,
+        image_type=drawing.template_key,
     )
 
     return await bot.image_render_service.render_for_posting(

@@ -34,6 +34,11 @@ from models.image_module import PostingOrigin
 
 log = logging.getLogger(__name__)
 
+#: The one template this aspect draws. Named here rather than inline because the render
+#: body labels its directory resolution with it as well as passing it to the renderer, and
+#: the two must not be able to drift.
+LINEUP_TEMPLATE_KEY = "lineup_template"
+
 #: The image flow does not apply — the caller falls through to its textual body.
 NOT_APPLICABLE = "NOT_APPLICABLE"
 #: The graphic was produced and posted; the caller does nothing further.
@@ -65,7 +70,7 @@ async def lineup_enabled(bot, server_id: int) -> bool:
         if not toggles.get("lineup"):
             return False
         reports = await bot.image_validity_service.template_reports(server_id)
-        report = reports.get("lineup_template")
+        report = reports.get(LINEUP_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
         log.error("lineup: enablement check failed for server %s: %s", server_id, exc)
@@ -192,7 +197,7 @@ async def render_png(bot, server_id: int, guild, division_id: int, origin: Posti
 
     return await bot.image_render_service.render_for_posting(
         server_id,
-        "lineup_template",
+        LINEUP_TEMPLATE_KEY,
         spec_builder_with_faults(
             build_fill_spec, drawing, directories, directory_faults
         ),

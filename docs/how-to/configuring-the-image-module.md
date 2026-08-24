@@ -264,11 +264,13 @@ This comes last on purpose. Switching something on before its drawing file is bi
 
 The check-in call is the odd one out — it *adds* a picture rather than replacing anything. The message, the roster and the buttons all stay exactly as they were.
 
-**Standings is the other odd one out, and for a less happy reason: it does not post a picture yet.** No standings post is drawn today whatever the switch says, so the championship tables carry on as text. The switch records what you want and nothing more, and `/images config view` marks it as recorded but not yet in effect.
+**Standings is the other odd one out: it posts two pictures where the text posts one message.** The driver standings go first and the constructor standings after, each carrying its heading and lifecycle label as message text and its table as an attachment. Both are drawn again and replaced on every occasion the standings were reposted before — a round first posted as provisional, a penalty or appeal phase closed, an amendment approved, a points change recalculating a round, and `/results standings sync`.
 
-> **`/images test standings` does produce a picture**, both championships, each carrying the whole season as a grid — every round the division holds, run or not, with a result cell per session and, on the constructors picture, a car per driver who drove. The classification beside the grid — positions, points, gaps — resolves the same way it always has.
+> **Both pictures carry the whole season as a grid** — every round the division holds, run or not, with a result cell per session and, on the constructors picture, a car per driver who drove. The classification beside the grid — positions, points, gaps — resolves the same way it always has. `/images test standings` shows you exactly this.
 
-When you switch something on, the bot tells you if it would not work as things stand, and whether that output posts pictures yet.
+> **Either championship can fail on its own.** The one that failed is posted as text — that section by itself, not the whole table — and the one that drew is left alone, so you never read the same championship twice in one round.
+
+When you switch something on, the bot tells you if it would not work as things stand.
 
 > **If a picture fails, only that picture fails.** The division falls back to its usual text post and the log channel explains why; other divisions still get their pictures. Nothing is ever held up waiting for a picture — results, penalties, forecasts and standings all happen exactly as they would with the module off, and the picture is drawn afterwards.
 
@@ -311,6 +313,8 @@ One command per kind, sent only to you. The calendar and the lineup take a divis
 Several kinds send more than one picture: the results send one per session of that round's format — two for a normal round, four for a sprint — the standings send both championships, and the verdict sends one per kind of penalty, because how long text wraps is the only thing worth judging by eye there.
 
 **When a preview refuses**, it names the reason: no division of that name, no round of that number, no team beyond Reserve, or a forecast asked of a mystery round (use `weather-mystery` for those, and only for those).
+
+**A cancelled division still previews.** It is offered in the division list and draws like any other, deliberately — a preview posts nothing where a driver can see it, so a division you have withdrawn is a perfectly good one to check a drawing against, and often the most convenient.
 
 `/season review` shows the same summary and names anything that would stop the season. **`/season approve` refuses to run** while something is broken — review is where you spot it, approval is where it stops you.
 
