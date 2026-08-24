@@ -427,7 +427,9 @@ Enabling it seeds the **Standard** and **Half Points** points configurations ont
 
 No parameters. Flips whether a fake driver may be given a nationality. On by default, as `/signup nationality` is.
 
-While test mode is on, this switch — not `/signup nationality` — is the one the images module reads when it asks whether your league collects nationality at all. Turning it off draws every graphic with no flags and says nothing about the missing ones, exactly as a league that never collected a nationality would be drawn. Your real signup setting is left alone, so you can see both looks without disturbing it.
+While test mode is on, this switch — not `/signup nationality` — is the one the images module reads when it asks whether your league collects nationality at all. Turning it off refuses any new nationality and makes `/images test` draw every graphic with no flags, saying nothing about the missing ones, exactly as a league that never collected a nationality would be drawn. Your real signup setting is left alone, so you can see both looks without disturbing it.
+
+> **A real posting is not yet suppressed the same way.** A fake driver already holding a nationality still draws its flag when a graphic is genuinely posted, even with the switch off — only the preview blanks it. See [known issues](docs/wip-specs/known_issues.md).
 
 #### `/test-mode advance` — Execute the next pending event
 *Access: Trusted admin · Requires test mode active*

@@ -115,7 +115,9 @@ Leave the parameter out and the driver records none, which is a distinct state: 
 /test-mode nationality
 ```
 
-flips whether a nationality may be recorded at all. It is **on** by default, as `/signup nationality` is, and it refuses to record one while it is off. Its wider effect is that while test mode is active it stands in for `/signup nationality` everywhere the images module asks whether the league collects nationality: switch it off and every graphic draws with no flags at all and reports nothing missing, which is what a league that never collected a nationality looks like. Your real signup setting is untouched either way, so both looks can be seen without disturbing it.
+flips whether a nationality may be recorded at all. It is **on** by default, as `/signup nationality` is, and it refuses to record one while it is off. Its wider effect is that while test mode is active it stands in for `/signup nationality` everywhere the images module asks whether the league collects nationality: switch it off and `/images test` draws every graphic with no flags at all and reports nothing missing, which is what a league that never collected a nationality looks like. Your real signup setting is untouched either way, so both looks can be seen without disturbing it.
+
+> **Only the preview blanks a flag already recorded.** A mock driver holding a nationality still draws its flag on a real posting with the switch off — the suppression reaches the value only in `/images test`. That divergence is recorded in [known issues](../wip-specs/known_issues.md). Clear the roster and rebuild it without nationalities to see a posting drawn without flags.
 
 Generating a roster by hand is tedious, and `tools/data-generator/test-roster/` writes the commands for you — a nationality on every one, drawn from the bot's own list. See [the generator's README](../../tools/data-generator/README.md).
 
@@ -153,7 +155,7 @@ Five things worth knowing when previewing against a test season:
 
 - **A test season still in SETUP draws.** It does not need approving first. It is drawn exactly as it will be once `/season approve` has run, and the reply says it is pending.
 - **A mock driver is drawn by its `roster add` name.** It is a seated driver, not an empty seat, so no names are invented over a division seated with them.
-- **A mock driver draws the flag of the nationality `roster add` gave it**, and none where it was given none. Where the league collects nationality, a driver holding none draws **no flag**, exactly as a real posting would, and the reply counts how many were drawn that way. Blank flags on a roster built without nationalities are not a broken flag directory. `/test-mode nationality` off suppresses every flag instead, and reports nothing.
+- **A mock driver draws the flag of the nationality `roster add` gave it**, and none where it was given none. Where the league collects nationality, a driver holding none draws **no flag**, exactly as a real posting would, and the reply counts how many were drawn that way. Blank flags on a roster built without nationalities are not a broken flag directory. With `/test-mode nationality` off, a preview draws no flag for anybody and reports nothing.
 - **A division with no seated driver still draws.** The bot invents drivers for the seats and says so. `roster add` is only needed when you want to see particular names, or to check a lineup drawing against your own team list.
 - **The round matters.** Nine of the eleven take a round number, and the round's format decides what is drawn — a sprint round draws four session results and a four-session forecast, a normal round two of each. Seed a round of each format if you want to see all of it.
 
