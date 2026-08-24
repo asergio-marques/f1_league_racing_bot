@@ -1489,6 +1489,8 @@ Nothing obliges you to use `league/`; any path inside the project root is accept
 
 > **Upgrading a league that already had flags named for nationalities?** Rename them to their countries — `british.svg` becomes `united_kingdom.svg`. A file under the old name is never looked for, so every driver would draw your `fallback.svg` instead.
 
+> **Guinea-Bissau, the Democratic Republic of the Congo and Dominica now have their own flag.** Until now `Guinean`, `Congolese` and `Dominican` each covered two countries in English, and could only ever resolve one of them — Guinea, Congo and the Dominican Republic. A driver from the other country of each pair now has a distinct nationality of their own — `Bissau-Guinean`, `Congolese (Kinshasa)` and `Dominican (Dominica)` — resolving `guinea_bissau.svg`, `democratic_republic_of_the_congo.svg` and `dominica.svg`. The bare adjectives still resolve exactly as before.
+
 Placing your own files is the operator's job; the bot resolves the paths and reports what it finds.
 
 #### `/images config` — Presentation

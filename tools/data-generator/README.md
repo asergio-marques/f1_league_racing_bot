@@ -125,7 +125,7 @@ A missing or empty `names.txt` stops the run before it asks you anything, so you
 part-way through a set of answers when it fails.
 
 **Every driver gets a nationality, and there is no file to keep for it.** The pool is
-imported from the bot's own `src/utils/nationality_data.py` — all 192 nationalities it
+imported from the bot's own `src/utils/nationality_data.py` — all 195 nationalities it
 accepts — because a nationality the bot rejects would make the whole command fail, and a
 list kept beside `names.txt` would drift from the bot's the first time one was added there.
 This is the one script in the family that imports from `src/` rather than porting the rule;
@@ -135,7 +135,7 @@ Unlike names, nationalities are drawn **with** replacement: a grid on which two 
 one is what a real grid looks like, and no pool would fill a large grid uniquely anyway. So
 nationalities never cap the size of a roster — only `names.txt` does.
 
-**The draw is weighted, not uniform.** A flat draw over all 192 produced a grid that looked
+**The draw is weighted, not uniform.** A flat draw over all 195 produced a grid that looked
 nothing like a league's — a single Briton among twenty drivers from countries that field no
 sim racers. The script sorts the pool into three tiers instead: eleven F1 heartlands and big
 online-racing nations (`NATIONALITY_TIER_1`), thirty-nine that are common without being
