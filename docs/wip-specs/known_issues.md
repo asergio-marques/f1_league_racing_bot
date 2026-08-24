@@ -231,6 +231,18 @@ Found on 2026-08-18 while building the `/images test` previews. **All three were
 - **Fixed** by `image_type=drawing.template_key` in the results module — which also keeps the qualifying and race templates distinguishable, as `image_weather_post.py` already did — and by defining `LINEUP_TEMPLATE_KEY` at module scope in the lineup module, the other two references to the literal now reading it.
 - **Why it shipped**: every test in `test_image_results_post.py` and its lineup equivalent monkeypatches `render_png` before exercising the posting around it, so no test had ever executed either body. `tests/unit/test_image_post_render_entry_points.py` now runs all six render entry points unpatched, asserts the `image_type` each labels itself with, and refuses a render body that resolves directories without naming one. Found on 2026-08-24 while planning the standings posting path.
 
+**The verdict graphic names a real driver by their raw Discord user id.**
+- Found on 2026-08-24 while verifying that every image aspect is wired and that test-mode drivers draw correctly.
+- `_graphic_name` in `src/services/verdict_announcement_service.py:32` calls `resolve_driver_name(discord_user_id=..., display_name=display_name)`, and all three of its call sites pass the driver's **`test_display_name`** into `display_name` — `:368` for a penalty, `:475` for an appeal correction, `:573` for an autosack or autoreserve. A real driver has no `test_display_name`, so the value is `None`, all four name links are empty, and the chain ends where it is meant to end only for a driver the league has no name for at all: at `str(discord_user_id)`.
+- What a league sees: every verdict graphic posted for a real driver draws `123456789012345678` where the driver's name belongs — in the driver field, and again inside the justification wherever the announcement text mentions them. A **mock** driver draws correctly, which is why a test-mode pass over the aspect does not reveal it.
+- The three other links the chain exists for — the account's display name on the server, the signup display name, the Discord username — are never consulted on this path. `image_results_post._driver_names` is the reader every other aspect uses, and it consults all of them; the verdict path does not call it.
+- `/images test verdict` is unaffected and draws the right name: `image_preview_service.py:1134` passes `driver_name=driver.display_name` from the resolved preview roster. The preview and the posting therefore disagree, which is the shape of fault the preview exists to catch.
+
+**A verdict graphic draws every mention in a steward's free text as the penalised driver.**
+- `build_drawing` in `src/services/image_verdict_post.py:202` installs `def _name_for(_user_id): return driver_name` as the resolver `resolve_mentions` calls, discarding the user id it is handed.
+- What a league sees: a justification reading "contact with `<@222>` at turn 3" is drawn as "contact with **Ada Lovelace** at turn 3", naming the sanctioned driver as the person they hit. The textual fallback carries the real mention and is correct.
+- Found on 2026-08-24, alongside the entry above.
+
 ## Core setup and access
 
 Found on 2026-08-17 while writing the core configuration how-to guide.
@@ -256,6 +268,11 @@ Found on 2026-08-18 while auditing the how-to guides against the implementation.
 **`get_pending_advance_jobs` documents a phase number it cannot return.**
 - Its docstring at `src/services/scheduler_service.py:609` lists `0=mystery notice`, but `_PHASE_PREFIX_MAP` at `:619` has no mystery prefix and a mystery round's notice is scheduled under `weather_p1`. Phase 0 arises only on the database path in `test_mode_service`.
 - Harmless in effect — a mystery round comes back as phase 1 and `run_phase1` resolves the format and posts the notice — but the docstring is a third comment in this area describing behaviour the code does not have.
+
+**A test-mode roster bypasses the three template capacity guards.**
+- Found on 2026-08-24 while verifying that test-mode drivers draw correctly.
+- `_guard_reserve_capacity`, `_guard_sheet_capacity` and `_guard_standings_capacity` (`src/services/placement_service.py:395`, `:444` and `:494`) are called from the assignment path at `:566-574`. `add_test_driver` in `src/services/test_roster_service.py` writes `driver_profiles`, `team_seats` and `driver_season_assignments` directly and never goes through it, so none of the three runs.
+- What a maintainer sees: a mock roster larger than the lineup, attendance or driver-standings template declares is accepted in silence, and the overflow surfaces later as a `CAPACITY_EXCEEDED` fallback at the first posting — which is the moment XIV.12 exists to move the rejection away from.
 
 ## Season lifecycle
 
