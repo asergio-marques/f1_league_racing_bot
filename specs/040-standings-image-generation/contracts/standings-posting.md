@@ -7,7 +7,13 @@ contract states how the two shapes reconcile, and what a failure of one does to 
 
 `results_post_service.post_standings` is the single entry point — five call sites route through it,
 covering all seven occasions FR-049 enumerates. The image branch lives **inside** it, as the results
-branch lives inside `post_session_results`. No call site changes.
+branch lives inside `post_session_results`.
+
+**Correction, on building it:** the original claim that no call site changes was wrong. `post_standings`
+had no `bot` parameter, and two of its five callers — `repost_standings_for_division` and
+`repost_subsequent_standings` — had none either, so `bot` is threaded through all of them and on from
+`results_cog` and `result_submission_service`. No call site changes its *behaviour*, which is what the
+choke point was for; each merely passes on what the branch needs.
 
 ## The split
 

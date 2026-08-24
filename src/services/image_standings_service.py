@@ -509,12 +509,16 @@ def build_fill_spec(
         # all, and that is a legitimate outcome raising nothing (XIV.4).
         flag_id = f"{stem}_driver_flag"
         if drawing.is_drivers and flag_id in declared:
-            if entry.nationality:
-                image_data[flag_id] = ("flag", country_for_nationality(entry.nationality))
-            elif drawing.nationality_collected:
-                empty.append(flag_id)
-            else:
+            # The switch is read **first**. A driver who stated a nationality before the
+            # league turned collection off still holds one, and testing the value first
+            # would draw their flag while their team-mates went without — the graphic
+            # disagreeing with itself, and with the preview, which blanks all of them.
+            if not drawing.nationality_collected:
                 empty_quietly.append(flag_id)
+            elif entry.nationality:
+                image_data[flag_id] = ("flag", country_for_nationality(entry.nationality))
+            else:
+                empty.append(flag_id)
 
         _project_movement(
             entry,

@@ -249,6 +249,26 @@ def test_flag_fields_are_suppressed_when_collection_is_switched_off():
     }
 
 
+def test_the_switch_beats_a_nationality_the_driver_already_stated():
+    """The switch is read before the value, so no driver keeps a flag the others lost."""
+    drawing = resolve_drawing(
+        division_name="Elite",
+        teams=[
+            _team(
+                "Red Bull",
+                [_seat(1, "a", nationality="British"), _seat(2, "b", nationality=None)],
+            )
+        ],
+        nationality_collected=False,
+    )
+
+    assert [seat.flag_datum for seat in drawing.teams[0].seats] == [None, None]
+    assert suppressed_flag_fields(drawing) == {
+        "team_1_driver_1_flag",
+        "team_1_driver_2_flag",
+    }
+
+
 # ── Blocks the division fields no team at (047 FR-013) ────────────────────
 
 

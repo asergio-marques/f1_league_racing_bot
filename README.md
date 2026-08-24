@@ -431,7 +431,7 @@ No parameters. Flips whether a fake driver may be given a nationality. On by def
 
 While test mode is on, this switch — not `/signup nationality` — is the one the images module reads when it asks whether your league collects nationality at all. Turning it off refuses any new nationality and makes `/images test` draw every graphic with no flags, saying nothing about the missing ones, exactly as a league that never collected a nationality would be drawn. Your real signup setting is left alone, so you can see both looks without disturbing it.
 
-> **A real posting is not yet suppressed the same way.** A fake driver already holding a nationality still draws its flag when a graphic is genuinely posted, even with the switch off — only the preview blanks it. See [known issues](docs/wip-specs/known_issues.md).
+A real posting is suppressed the same way: the switch is read before the driver's own value, so a driver who stated a nationality before you turned collection off loses their flag along with everyone else. A preview and a posting of the same division draw the same thing.
 
 #### `/test-mode advance` — Execute the next pending event
 *Access: Trusted admin · Requires test mode active*
@@ -1355,9 +1355,12 @@ Flips that aspect between a generated image and the text the bot has always post
 
 The choice names above are exactly the names `/images config view` and `/season review` print for the eight aspects, so a `❌` row in either report can hand you the command with the choice already named.
 
-> **Seven of the eight aspects post live. `standings` is the exception** — it is configured,
-> validated and previewable with `/images test standings`, but no posting path reads its toggle yet, and
-> the toggle tells you so when you enable it.
+> **All eight aspects post live.** Enabling one changes what the bot posts from its next posting onwards.
+>
+> **`standings` posts two messages where the text posts one** — the driver standings first, the
+> constructor standings after, each carrying its heading and lifecycle label as message text and its
+> table as an attachment. Either championship can fail on its own, in which case that one alone is
+> posted as text and the other keeps its picture.
 >
 > With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
 >
@@ -1469,6 +1472,8 @@ Every directory is a path relative to the project root, and one that resolves ou
 Nothing obliges you to use `league/`; any path inside the project root is accepted. Mixing is the ordinary case — point `teams` at your own folder and leave `markers` and `weather` on the defaults, which ship complete. Note that git is **not** backing `league/` up: keep your source artwork somewhere of your own.
 
 **What is already there.** A clone ships the fifteen default templates and one `fallback.svg` in each of the seven asset directories — so the module draws every graphic from the first render, entirely out of placeholders. No circuit, team, driver, flag or tyre artwork ships: that is your league's to make, and you replace the placeholders a class at a time, seeing your own files appear as you go.
+
+**Five filenames are reserved** besides `fallback.svg`, and are the bot's rather than your league's: `tracks/mystery.svg` and `flags/mystery.svg`, drawn for a round whose circuit is concealed until it is run, and `markers/gained.svg`, `markers/lost.svg` and `markers/unchanged.svg`, the three directions a standing position can move on the standings pictures. Replace the artwork freely; keep the names, or the bot will not find them.
 
 **You need not supply a `fallback.svg` of your own.** When a file for a specific value is not in the directory you configured, the bot looks for a fallback there first and then in `resources/defaults/<class>/`. Point the team badge directory at a folder holding eight of your ten badges and every graphic still draws — the two without a badge get the packaged placeholder and a notice naming them. Put a `fallback.svg` in your own folder only when you want your placeholder rather than ours. The packaged directory is consulted for a *fallback* and nothing else: a file there under one of your teams' names is never drawn for you. Markers and weather icons are the one exception — see below.
 

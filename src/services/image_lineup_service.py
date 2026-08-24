@@ -170,7 +170,12 @@ def _seat_of(
         # Resolved from the *datum*; the file is found, fallen back on, or fatal, by the
         # ordinary rule of Constitution XIV.13. The datum is the driver's **country**,
         # not their nationality: one flag directory serves a driver and a round alike.
-        flag_datum=country_for_nationality(nationality),
+        #
+        # The switch is read **first**. A driver who stated a nationality before the league
+        # turned collection off still holds one, and drawing from the value alone would put
+        # their flag on the lineup beside team-mates who had none — the graphic disagreeing
+        # with itself, and with the preview, which blanks every driver alike.
+        flag_datum=country_for_nationality(nationality) if nationality_collected else None,
         portrait_datum=key,
         occupied=True,
         flag_missing=not has_nationality and nationality_collected,

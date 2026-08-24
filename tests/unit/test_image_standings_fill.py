@@ -340,6 +340,27 @@ def test_nationality_switched_off_at_source_reports_nothing():
     assert "row_1_driver_flag" not in spec.empty
 
 
+def test_the_switch_beats_a_nationality_the_driver_already_stated():
+    """The switch is read before the value, so no driver keeps a flag the others lost.
+
+    A league that turns collection off does not thereby erase what its drivers stated
+    earlier. Testing the value first drew a flag for every driver who had answered before
+    the switch and none for anyone since — one table disagreeing with itself, and with the
+    preview, which blanks them all.
+    """
+    spec = build_fill_spec(
+        _drawing(
+            [_entry(1, nationality="british"), _entry(2, nationality=None)],
+            nationality_collected=False,
+        ),
+        _template(2),
+    )
+    for ordinal in (1, 2):
+        assert f"row_{ordinal}_driver_flag" not in spec.image_data
+        assert f"row_{ordinal}_driver_flag" in spec.empty_quietly
+        assert f"row_{ordinal}_driver_flag" not in spec.empty
+
+
 def test_the_constructors_graphic_fills_no_flag_and_no_driver_name():
     spec = build_fill_spec(
         _drawing(

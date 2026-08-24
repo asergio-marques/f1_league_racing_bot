@@ -532,6 +532,15 @@ class SeasonCog(commands.Cog):
                                 f"text. Enlarge the template to draw it."
                             )
 
+            # The standings, against the season's largest division and its calendar. Both
+            # championships are reported apart, never as one pair (FR-045): they are two
+            # files, and a manager told "the standings template" would not know which to
+            # enlarge.
+            if await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
+                server_id, "standings"
+            ):
+                lines += await self._standings_capacity_lines(season_id, reports)
+
             # The call's session list, against the season's largest round.
             if await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
                 server_id, "rsvp"
@@ -569,6 +578,87 @@ class SeasonCog(commands.Cog):
         except Exception as exc:  # noqa: BLE001 — a review must never fail on this
             log.error("season review: attendance capacity check failed: %s", exc)
             return []
+
+    async def _standings_capacity_lines(self, season_id: int, reports) -> list[str]:
+        """What the two standings templates could not draw for this season (FR-043).
+
+        Three ceilings, each reported in its own terms and against its own file: the drivers
+        template's rows against the largest division's classification, the constructors
+        template's rows against its team count, and each template's round columns against the
+        longest calendar — the grid draws every round the division holds, run or not.
+
+        The drivers **row** ceiling is also guarded at a driver assignment, which is the
+        earlier moment XIV.12 asks for. This is the season-wide view of the same rule, and
+        the only place the constructors ceiling can be caught at all: seating a driver adds
+        no team.
+        """
+        from models.image_catalogues import CapacityError, catalogue_for
+        from models.image_constants import TEMPLATE_LABELS
+        from services.image_standings_service import (
+            CONSTRUCTORS_TEMPLATE_KEY,
+            DRIVERS_TEMPLATE_KEY,
+        )
+        from utils.svg_document import load_svg
+
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            cursor = await db.execute(
+                "SELECT d.name AS name, "
+                "       (SELECT COUNT(*) FROM driver_season_assignments dsa "
+                "         WHERE dsa.division_id = d.id) AS drivers, "
+                "       (SELECT COUNT(*) FROM team_instances ti "
+                "         WHERE ti.division_id = d.id AND ti.is_reserve = 0) AS teams, "
+                "       (SELECT COUNT(*) FROM rounds r WHERE r.division_id = d.id) AS rounds "
+                "FROM divisions d WHERE d.season_id = ?",
+                (season_id,),
+            )
+            divisions = await cursor.fetchall()
+
+        if not divisions:
+            return []
+
+        lines: list[str] = []
+        for template_key, column in (
+            (DRIVERS_TEMPLATE_KEY, "drivers"),
+            (CONSTRUCTORS_TEMPLATE_KEY, "teams"),
+        ):
+            report = reports.get(template_key)
+            if report is None or not report.valid or not report.resolved_path:
+                continue
+            catalogue = catalogue_for(template_key)
+            label = TEMPLATE_LABELS.get(template_key, template_key)
+
+            # Read through the same two counters ``build_fill_spec`` reads, so what the
+            # review promises and what the render does cannot disagree (XIV.10).
+            try:
+                root = load_svg(report.resolved_path)
+                declared_rows = catalogue.capacity(root) or 0
+                declared_rounds = catalogue.column_capacity(root) or 0
+            except CapacityError:
+                continue  # an uncountable template is Layer 2's to report, not this
+
+            worst = max(divisions, key=lambda d: d[column] or 0)
+            held = worst[column] or 0
+            if declared_rows and held > declared_rows:
+                lines.append(
+                    f"  ⚠️ **{label}** draws {declared_rows} row(s); `{worst['name']}` "
+                    f"holds {held}. That division's standings cannot be drawn as an image "
+                    f"and will be posted as text. Enlarge the template to draw it."
+                )
+
+            # Nought round columns means the template draws no season grid, which is a
+            # legitimate choice (XIV.3) and never a divergence.
+            if declared_rounds:
+                longest = max(divisions, key=lambda d: d["rounds"] or 0)
+                rounds_held = longest["rounds"] or 0
+                if rounds_held > declared_rounds:
+                    lines.append(
+                        f"  ⚠️ **{label}** draws {declared_rounds} round column(s); "
+                        f"`{longest['name']}` holds {rounds_held}. That division's "
+                        f"standings cannot be drawn as an image and will be posted as "
+                        f"text. Enlarge the template to draw it."
+                    )
+
+        return lines
 
     async def _build_image_review_section(self, server_id: int) -> list[str]:
         """The image module's addendum to `/season review` (FR-033).

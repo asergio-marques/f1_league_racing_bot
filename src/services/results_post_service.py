@@ -426,8 +426,26 @@ async def post_standings(
     guild: discord.Guild,
     show_reserves: bool,
     label: str,
+    *,
+    bot=None,
 ) -> None:
-    """Format and post (or edit-in-place) the driver and team standings."""
+    """Format and post (or edit-in-place) the driver and team standings.
+
+    **The image path is a guard clause in front of an untouched body** (040). Where the
+    images module is enabled, the `standings` aspect is on and a template is valid,
+    ``image_standings_post.try_post`` produces the two PNGs, posts each under the heading
+    and the lifecycle label, replaces the previous messages and persists their ids. The
+    textual message below is then composed of whichever championships did *not* draw — one
+    section, or neither, or both.
+
+    Where the image flow does not run at all — no bot in scope, the module off, the aspect
+    off, neither template valid — everything below runs exactly as it did before 040, byte
+    for byte. The graphic is an alternative output beside the text, not a reform of it
+    (Constitution XIV.7).
+
+    This function is the single funnel all seven reposting occasions reach over its five
+    call sites, which is why the hook is here and not at any of them.
+    """
     # Determine reserve user IDs from the DB (is_reserve team instances)
     reserve_user_ids: set[int] = await _get_reserve_user_ids(db_path, division_id)
 
@@ -443,13 +461,69 @@ async def post_standings(
     season_prefix = f"Season {season_number} " if season_number is not None else ""
     primary_session_label = await _get_primary_session_label(db_path, round_id)
     heading = f"**{season_prefix}{division_name} Round {round_number} — {primary_session_label}**"
+
+    sections_by_championship = {
+        STANDINGS_DRIVERS: driver_text,
+        STANDINGS_CONSTRUCTORS: team_text,
+    }
+    championships = [STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS]
+
+    # ── The image path (040) ──────────────────────────────────────────────
+    if bot is not None and not await _round_is_cancelled(db_path, round_id):
+        try:
+            from services.image_standings_post import try_post
+
+            outcome = await try_post(
+                bot,
+                guild,
+                standings_channel,
+                db_path=db_path,
+                division_id=division_id,
+                round_id=round_id,
+                round_number=round_number,
+                heading=heading,
+                label=label,
+                driver_snapshots=driver_snapshots,
+                team_snapshots=team_snapshots,
+                reserve_user_ids=reserve_user_ids,
+                show_reserves=show_reserves,
+                result_status=await _get_result_status(db_path, round_id),
+                division_name=division_name,
+                division_tier=await _get_division_tier(db_path, division_id),
+                season_number=season_number,
+                race_name=track_name,
+            )
+        except Exception:  # noqa: BLE001 — a graphic never gates the standings
+            log.exception(
+                "post_standings: the image path failed for round %s; "
+                "the textual standings stand",
+                round_id,
+            )
+        else:
+            if outcome.rejects:
+                # A commanded posting that would not draw posts nothing at all (XIV.7).
+                return
+            if outcome.applicable:
+                championships = outcome.fallback_championships
+                if not championships:
+                    return
+                return await _post_standings_sections(
+                    db_path,
+                    division_id,
+                    round_id,
+                    standings_channel,
+                    driver_snapshots,
+                    heading=heading,
+                    label=label,
+                    sections={
+                        name: sections_by_championship[name] for name in championships
+                    },
+                )
+
     content = compose_standings_message(
         heading,
         label,
-        [
-            standings_section(STANDINGS_DRIVERS, driver_text),
-            standings_section(STANDINGS_CONSTRUCTORS, team_text),
-        ],
+        [standings_section(name, sections_by_championship[name]) for name in championships],
     )
 
     # Look for existing standings message (stored in the top-ranked driver snapshot)
@@ -472,19 +546,106 @@ async def post_standings(
     if sent_msg is None:
         sent_msg = await _send_chunked(standings_channel, content)
 
-    # Persist the message ID on the top-ranked driver snapshot
+    # Persist the message ID on the top-ranked driver snapshot. One message carries both
+    # championships here, so the constructor column is left null — which is exactly what
+    # distinguishes a textual posting from an image one when the next posting reads them.
     if driver_snapshots:
-        top_driver = min(driver_snapshots, key=lambda s: s.standing_position)
-        async with get_connection(db_path) as db:
-            await db.execute(
-                """
-                UPDATE driver_standings_snapshots
-                SET standings_message_id = ?
-                WHERE round_id = ? AND division_id = ? AND driver_user_id = ?
-                """,
-                (sent_msg.id, round_id, division_id, top_driver.driver_user_id),
+        await _set_standings_message_id(
+            db_path, division_id, round_id, sent_msg.id, STANDINGS_DRIVERS
+        )
+
+
+async def _clear_standings_messages(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    channel: discord.TextChannel | None,
+) -> None:
+    """Delete both championships' standings messages and forget their ids.
+
+    The textual flow posts one message and leaves the constructor column null; the image
+    flow posts two and fills both. A caller clearing only the drivers column would strand
+    whatever the constructors column still names — the next posting would neither replace
+    it nor delete it, and the league would read a stale constructors table beside a current
+    one indefinitely.
+    """
+    for championship in (STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS):
+        existing_id = await _get_standings_message_id(
+            db_path, division_id, round_id, championship
+        )
+        if existing_id is None:
+            continue
+        if channel is not None:
+            await _delete_with_continuations(
+                channel, existing_id, label="standings message"
             )
-            await db.commit()
+        await _set_standings_message_id(
+            db_path, division_id, round_id, None, championship
+        )
+
+
+async def _round_is_cancelled(db_path: str, round_id: int) -> bool:
+    """True where the round is recorded as cancelled.
+
+    Its standings are not posted as graphics, the `standings` toggle notwithstanding
+    (FR-050). The textual path's own behaviour for a cancelled round is untouched — this
+    only decides whether the image branch is entered.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT status FROM rounds WHERE id = ?", (round_id,)
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return False
+    try:
+        return (row["status"] or "").upper() == "CANCELLED"
+    except (IndexError, KeyError, TypeError):
+        return False
+
+
+async def _post_standings_sections(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    standings_channel: discord.TextChannel,
+    driver_snapshots: list[DriverStandingsSnapshot],
+    *,
+    heading: str,
+    label: str,
+    sections: dict[str, str],
+) -> None:
+    """Post a textual section for each championship whose graphic did not draw.
+
+    One message per championship rather than one carrying both, so that the message ids
+    stay one-to-one with the championships and a surviving graphic is never accompanied by
+    a text table repeating what it already drew (FR-052).
+
+    **Produce before destroying** (FR-048): the replacement is sent before the message it
+    replaces is deleted, so the channel is never without that championship's standings.
+    """
+    if not sections:
+        return
+
+    for championship, body in sections.items():
+        content = compose_standings_message(
+            heading, label, [standings_section(championship, body)]
+        )
+        previous_id = await _get_standings_message_id(
+            db_path, division_id, round_id, championship
+        )
+
+        sent_msg = await _send_chunked(standings_channel, content)
+
+        if previous_id is not None:
+            await _delete_with_continuations(
+                standings_channel, previous_id, label="standings message"
+            )
+
+        if driver_snapshots:
+            await _set_standings_message_id(
+                db_path, division_id, round_id, sent_msg.id, championship
+            )
 
 
 #: Championship → the column naming the message that carries it. Both live on the row of the
@@ -777,7 +938,7 @@ async def repost_round_results(
             show_reserves = await _get_show_reserves(db_path, division_id)
             await post_standings(
                 db_path, division_id, round_id, round_number, track_name, sc,
-                driver_snaps, team_snaps, guild, show_reserves, label
+                driver_snaps, team_snaps, guild, show_reserves, label, bot=bot,
             )
 
 
@@ -913,6 +1074,8 @@ async def repost_standings_for_division(
     db_path: str,
     division_id: int,
     guild: discord.Guild,
+    *,
+    bot=None,
 ) -> str:
     """Delete and repost standings messages for *every* round in the division that
     has had results posted.
@@ -961,19 +1124,9 @@ async def repost_standings_for_division(
         track_name: str = row["track_name"] or "Unknown"
         rsd_label: str = _label_from_status(row["result_status"] or "PROVISIONAL")
 
-        # Delete the existing standings message(s) for this round (if any)
-        existing_msg_id = await _get_standings_message_id(db_path, division_id, round_id)
-        if existing_msg_id is not None:
-            await _delete_with_continuations(
-                sc, existing_msg_id, label="standings message"
-            )
-            async with get_connection(db_path) as db:
-                await db.execute(
-                    "UPDATE driver_standings_snapshots SET standings_message_id = NULL "
-                    "WHERE round_id = ? AND division_id = ?",
-                    (round_id, division_id),
-                )
-                await db.commit()
+        # Delete the existing standings message(s) for this round (if any), both
+        # championships, whichever flow posted them.
+        await _clear_standings_messages(db_path, division_id, round_id, sc)
 
         driver_snaps = await standings_service.compute_driver_standings(
             db_path, division_id, round_id
@@ -983,7 +1136,7 @@ async def repost_standings_for_division(
         )
         await post_standings(
             db_path, division_id, round_id, round_number, track_name, sc,
-            driver_snaps, team_snaps, guild, show_reserves, rsd_label,
+            driver_snaps, team_snaps, guild, show_reserves, rsd_label, bot=bot,
         )
 
     return "ok"
@@ -1093,20 +1246,8 @@ async def delete_and_repost_final_results(
     if standings_ch_id:
         sc = guild.get_channel(standings_ch_id)
         if sc is not None:
-            old_standings_msg_id = await _get_standings_message_id(db_path, division_id, round_id)
-            if old_standings_msg_id is not None:
-                await _delete_with_continuations(
-                    sc, old_standings_msg_id, label="interim standings message"
-                )
-
-                # Clear obsolete standings_message_id from all snapshots for this round
-                async with get_connection(db_path) as db:
-                    await db.execute(
-                        "UPDATE driver_standings_snapshots SET standings_message_id = NULL "
-                        "WHERE round_id = ? AND division_id = ?",
-                        (round_id, division_id),
-                    )
-                    await db.commit()
+            # Both championships' interim messages go, whichever flow posted them.
+            await _clear_standings_messages(db_path, division_id, round_id, sc)
 
             driver_snaps = await standings_service.compute_driver_standings(
                 db_path, division_id, round_id
@@ -1116,7 +1257,7 @@ async def delete_and_repost_final_results(
             )
             await post_standings(
                 db_path, division_id, round_id, round_number, track_name,
-                sc, driver_snaps, team_snaps, guild, show_reserves, label,
+                sc, driver_snaps, team_snaps, guild, show_reserves, label, bot=bot,
             )
 
 
@@ -1125,6 +1266,8 @@ async def repost_subsequent_standings(
     division_id: int,
     from_round_id: int,
     guild: discord.Guild,
+    *,
+    bot=None,
 ) -> None:
     """Cascade-recompute standings and repost Discord standings messages for all
     rounds *after* *from_round_id* in the division that have an existing
@@ -1164,27 +1307,23 @@ async def repost_subsequent_standings(
         if not standings_ch_id:
             continue
 
-        existing_msg_id = await _get_standings_message_id(db_path, division_id, rnd_id)
-        if existing_msg_id is None:
+        # "Has this round been posted?" is answered by *either* championship holding a
+        # message, not by the drivers column alone: the image flow can leave the two in
+        # different states, and a round whose constructors graphic stands would otherwise
+        # never be recomputed.
+        posted = [
+            await _get_standings_message_id(db_path, division_id, rnd_id, championship)
+            for championship in (STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS)
+        ]
+        if not any(msg_id is not None for msg_id in posted):
             continue  # No standings message posted for this round — skip
 
         sc = guild.get_channel(standings_ch_id)
         if sc is None:
             continue
 
-        # Delete old standings message(s)
-        await _delete_with_continuations(
-            sc, existing_msg_id, label="standings message"
-        )
-
-        # Clear obsolete standings_message_id
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "UPDATE driver_standings_snapshots SET standings_message_id = NULL "
-                "WHERE round_id = ? AND division_id = ?",
-                (rnd_id, division_id),
-            )
-            await db.commit()
+        # Delete old standings message(s) for both championships and forget their ids
+        await _clear_standings_messages(db_path, division_id, rnd_id, sc)
 
         # Repost fresh standings
         driver_snaps = await standings_service.compute_driver_standings(
@@ -1195,7 +1334,7 @@ async def repost_subsequent_standings(
         )
         await post_standings(
             db_path, division_id, rnd_id, rnd_number, rnd_track,
-            sc, driver_snaps, team_snaps, guild, show_reserves, rnd_label,
+            sc, driver_snaps, team_snaps, guild, show_reserves, rnd_label, bot=bot,
         )
 
 

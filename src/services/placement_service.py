@@ -491,6 +491,60 @@ class PlacementService:
                 f"the sheet would silently drop a driver."
             )
 
+    async def _guard_standings_capacity(self, server_id: int, division_id: int) -> None:
+        """Refuse a placement that would outgrow the driver standings template (FR-044).
+
+        The standings draw every driver of the division's classification, and their rows are
+        counted from the file rather than declared as a number — so this reads the configured
+        template exactly as the reserve and sheet guards do, and for the same reason: XIV.12
+        rejects overflow at the earliest moment it can be detected, with the change unapplied.
+
+        The **constructors** ceiling is not checked here. Seating a driver adds no team, so no
+        driver assignment can breach it; it is checked at ``/season review``, which is where a
+        division's team count is settled.
+
+        Never raises for its own reasons: a fault in this check must not block a placement,
+        only a genuine over-capacity may.
+        """
+        bot = self._bot
+        if bot is None:
+            return
+        try:
+            from models.image_catalogues import row_capacity_problem
+            from services.image_standings_post import standings_enabled
+            from services.image_standings_service import DRIVERS_TEMPLATE_KEY
+            from utils.svg_document import load_svg
+
+            if not await standings_enabled(bot, server_id, DRIVERS_TEMPLATE_KEY):
+                return
+
+            reports = await bot.image_validity_service.template_reports(server_id)
+            report = reports.get(DRIVERS_TEMPLATE_KEY)
+            if report is None or not report.valid or report.resolved_path is None:
+                return
+
+            async with get_connection(self._db_path) as db:
+                row = await (
+                    await db.execute(
+                        "SELECT COUNT(*) AS seated FROM driver_season_assignments "
+                        "WHERE division_id = ?",
+                        (division_id,),
+                    )
+                ).fetchone()
+            seated = (row["seated"] if row else 0) or 0
+            problem = row_capacity_problem(
+                DRIVERS_TEMPLATE_KEY, load_svg(report.resolved_path), seated + 1
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.error("standings capacity guard could not run: %s", exc)
+            return
+
+        if problem is not None:
+            raise ValueError(
+                f"{problem}. The driver was **not** assigned. Enlarge the template, or "
+                f"the standings would silently drop a driver."
+            )
+
     async def _guard_image_capacity(
         self, server_id: int, division_id: int, season_id: int
     ) -> None:
@@ -514,6 +568,10 @@ class PlacementService:
         # The attendance sheet's rows are likewise counted from the template rather than
         # declared as a number, so they are invisible to ``declared_capacities()`` below.
         await self._guard_sheet_capacity(server_id, division_id)
+
+        # And so are the driver standings' — both standings catalogues declare
+        # ``capacity=None`` and derive their rows from the file.
+        await self._guard_standings_capacity(server_id, division_id)
 
         capacities = declared_capacities()
         if not capacities:

@@ -335,7 +335,7 @@ async def enter_penalty_state(
                     await results_post_service.post_standings(
                         db_path, division_id, round_id, round_number, track_name,
                         sc, driver_snaps, team_snaps, guild, show_reserves,
-                        label=_standings_label,
+                        label=_standings_label, bot=bot,
                     )
             async with get_connection(db_path) as db:
                 await db.execute(
@@ -478,7 +478,9 @@ async def finalize_penalty_review(
             db_path, round_id, division_id, guild,
             label="Post-Race Penalty Results", bot=interaction.client,
         )
-        await _rps.repost_subsequent_standings(db_path, division_id, round_id, guild)
+        await _rps.repost_subsequent_standings(
+            db_path, division_id, round_id, guild, bot=interaction.client,
+        )
 
     # Set result_status = 'POST_RACE_PENALTY'
     async with get_connection(db_path) as db:
@@ -704,7 +706,9 @@ async def finalize_appeals_review(
             db_path, round_id, division_id, guild,
             label="Final Results", bot=interaction.client,
         )
-        await _rps.repost_subsequent_standings(db_path, division_id, round_id, guild)
+        await _rps.repost_subsequent_standings(
+            db_path, division_id, round_id, guild, bot=interaction.client,
+        )
 
     # Set result_status = 'FINAL'
     async with get_connection(db_path) as db:
@@ -1057,7 +1061,7 @@ async def amend_session_result(
             label="Final Results", bot=bot,
         )
         await results_post_service.repost_subsequent_standings(
-            db_path, division_id, round_id, guild
+            db_path, division_id, round_id, guild, bot=bot,
         )
     else:
         await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)

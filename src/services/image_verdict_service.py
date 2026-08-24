@@ -161,8 +161,11 @@ def suppressed_flag_fields(drawing: VerdictDrawing) -> set[str]:
     notices that mean something. A league that *does* collect nationality and holds none
     for this driver has an ordinary emptied optional field, and is told.
     """
-    if drawing.nationality_collected or drawing.driver_nationality:
+    if drawing.nationality_collected:
         return set()
+    # Every driver's flag goes when the switch is off, including one who stated a
+    # nationality before it was turned off — so every one of those removals is configured,
+    # and none of them is reported.
     return {"driver_flag"}
 
 
@@ -232,7 +235,10 @@ def build_fill_spec(
     # The driver, and the flag that identifies them.
     place("driver_name", drawing.driver_name)
     if "driver_flag" in declared:
-        if drawing.driver_nationality:
+        # The switch is read **first**. A driver who stated a nationality before the league
+        # turned collection off still holds one, and drawing from the value alone would put
+        # a flag on their verdict and none on the next driver's.
+        if drawing.nationality_collected and drawing.driver_nationality:
             image_data["driver_flag"] = ("flag", country_for_nationality(drawing.driver_nationality))
         else:
             remove.append("driver_flag")

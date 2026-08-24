@@ -302,6 +302,19 @@ def test_nationality_switched_off_at_its_source_raises_nothing():
     assert "row_1_driver_flag" not in spec.empty
 
 
+def test_the_switch_beats_a_nationality_the_driver_already_stated():
+    """The switch is read before the value, so no driver keeps a flag the others lost."""
+    root = _template(1, _QUALIFYING_ROW)
+    drawing = _drawing(
+        QUALIFYING_TEMPLATE_KEY,
+        [_entry(1, nationality="British")],
+        nationality_collected=False,
+    )
+    spec = build_fill_spec(drawing, root)
+    assert "row_1_driver_flag" not in spec.image_data
+    assert "row_1_driver_flag" in spec.empty_quietly
+
+
 def test_a_tyre_is_always_offered_to_the_resolver():
     """An absent compound draws the class fallback, which the catalogue declares."""
     root = _template(1, _QUALIFYING_ROW)

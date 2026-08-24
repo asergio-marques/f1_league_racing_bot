@@ -355,12 +355,16 @@ def build_fill_spec(
         # is a legitimate outcome raising nothing (XIV.4).
         flag_id = f"{stem}_driver_flag"
         if flag_id in declared:
-            if entry.nationality:
+            # The switch is read **first**: a driver who stated a nationality before the
+            # league turned collection off still holds one, and testing the value first
+            # would draw their flag alone among a sheet of blanks.
+            if not drawing.nationality_collected:
+                remove.append(flag_id)
+            elif entry.nationality:
                 image_data[flag_id] = ("flag", country_for_nationality(entry.nationality))
             else:
                 remove.append(flag_id)
-                if drawing.nationality_collected:
-                    empty.append(flag_id)
+                empty.append(flag_id)
 
         # The cells of the rounds actually drawn. Zero is empty (see ``cell_text``).
         for heading in drawn_rounds:
