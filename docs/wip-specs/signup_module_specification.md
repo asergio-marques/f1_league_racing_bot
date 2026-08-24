@@ -90,6 +90,12 @@ Bot initialization flow, right now, accounts only for the weather forecast funct
 
 ## Signup module configuration
 - A "signup nationality" command shall be made available which will toggle on and off whether a driver's nationality is requested during the signups. By default, the nationality will be requested.
+- A "test-mode nationality" command shall be made available which will toggle on and off whether a driver created by test mode may carry a nationality. By default, the nationality shall be permitted, this being the default of the "signup nationality" command it parallels. It shall be available only while test mode is active.
+    - While test mode is active, this switch and not "signup nationality" shall govern wherever the image module reads whether the league collects a nationality at all. The "signup nationality" setting shall not be altered by it.
+    - A driver created by test mode holds no signup record, and the nationality of such a driver shall be recorded upon the driver profile itself, in the canonical form a signup record holds it in.
+    - The "test-mode roster add" command shall accept an optional nationality, in the forms the signup wizard accepts one — a nationality adjective, a country name, or "other" — and shall reject a value the wizard would reject, creating no driver. A driver created without one shall record none, which is distinct from recording "Other".
+    - The command shall reject a nationality given while the "test-mode nationality" switch is off, creating no driver. A driver may still be created without one.
+    - The "test-mode roster list" command shall display the nationality of each driver it lists, and shall mark a driver recording none.
 - A "signup time-type" command shall be made available which toggles between two options: "Time Trial" or "Short Qualification". The option chosen will be recorded for use in the signup wizard. By default, the "Time Trial" option is active.
 - A "signup time-image" command shall be made available which will toggle on and off whether an image is required to be posted so that a signup time is accepted. The option chosen will be recorded for use in the signup wizard. By default, the time image will be necessary.
 - A "signup config view" command shall display the configured channel, both roles, whether signups are open, and all three settings above. It shall be the only signup command that remains available while the module is disabled.

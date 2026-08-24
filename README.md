@@ -422,6 +422,15 @@ No parameters. Flips test mode on/off; state persists across bot restarts.
 
 Enabling it seeds the **Standard** and **Half Points** points configurations onto the current season if none are attached. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**.
 
+#### `/test-mode nationality` — Toggle nationality for fake drivers
+*Access: Trusted admin · Requires test mode active*
+
+No parameters. Flips whether a fake driver may be given a nationality. On by default, as `/signup nationality` is.
+
+While test mode is on, this switch — not `/signup nationality` — is the one the images module reads when it asks whether your league collects nationality at all. Turning it off refuses any new nationality and makes `/images test` draw every graphic with no flags, saying nothing about the missing ones, exactly as a league that never collected a nationality would be drawn. Your real signup setting is left alone, so you can see both looks without disturbing it.
+
+> **A real posting is not yet suppressed the same way.** A fake driver already holding a nationality still draws its flag when a graphic is genuinely posted, even with the switch off — only the preview blanks it. See [known issues](docs/wip-specs/known_issues.md).
+
 #### `/test-mode advance` — Execute the next pending event
 *Access: Trusted admin · Requires test mode active*
 
@@ -454,6 +463,9 @@ Creates a synthetic driver profile occupying a real seat, so a division can be f
 | `driver_name` | String | ✅ | Display name for the fake driver |
 | `team_name` | String | ✅ | Team to seat them in (must exist in the division) |
 | `division` | String | ✅ | Division name |
+| `nationality` | String | ❌ | A nationality (`British`), a country name (`United Kingdom`), or `other` — the same forms the signup wizard accepts |
+
+A fake driver has no signup record behind it, so the nationality is recorded on the driver itself. Give one and the driver draws a flag like anybody else; leave it out and the driver is drawn without one. The value is refused if it is not a nationality the bot knows, and refused outright while `/test-mode nationality` is off.
 
 #### `/test-mode roster remove` — Remove one fake driver
 *Access: Trusted admin · Requires test mode active*
@@ -469,7 +481,7 @@ Creates a synthetic driver profile occupying a real seat, so a division can be f
 |-----------|------|----------|-------------|
 | `division` | String | ✅ | Division name |
 
-Prints each fake driver with their synthetic user ID — the cheat sheet for result submission.
+Prints each fake driver with their synthetic user ID, their team and their nationality — the cheat sheet for result submission. A driver recorded with no nationality shows a dash.
 
 #### `/test-mode roster clear` — Remove every fake driver from a division
 *Access: Trusted admin · Requires test mode active*
@@ -757,7 +769,9 @@ No parameters. Displays the current signup module configuration as an embed.
 #### `/signup nationality` — Toggle nationality requirement
 *Access: Trusted admin*
 
-No parameters. Toggles whether drivers must provide their nationality during signup.
+No parameters. Toggles whether drivers must provide their nationality during signup. On by default.
+
+While test mode is active, `/test-mode nationality` stands in for this setting everywhere the images module reads it, so testing the no-flags look leaves your real signups alone.
 
 #### `/signup time-type` — Toggle the time type setting
 *Access: Trusted admin*
@@ -1458,7 +1472,7 @@ Nothing obliges you to use `league/`; any path inside the project root is accept
 
 **A round is pictured two ways, and your template chooses.** A country flag and a circuit map are separate optional slots, so a template can draw either, both, or neither. The map is only offered on the **calendar** and the **check-in call**, where the round is the subject and there is room for an outline to read; on the standings, the attendance sheet and the weather forecasts a round is a column heading, at a size no circuit survives, so those draw the flag. Nothing here is a setting to flip — declare the slot you want in your template and the bot fills it. The calendar decides **per round**, so one round can carry both and the next just a flag.
 
-**Flags are named for countries, not nationalities.** One directory serves a driver's flag and a round's, and every file in it is named for a country: `united_kingdom.svg`, `brazil.svg`, `united_states_of_america.svg`. A driver who signed up as `British` draws `united_kingdom.svg` — the bot maps the nationality to its country for you. A round draws the flag of the country its circuit sits in, so Las Vegas, Miami and the Circuit of the Americas all draw the same `united_states_of_america.svg`: one file, three rounds, which is the intent and not a clash to work around. `Other`, recorded for a driver who gave no nationality, is not a country and keeps its own `other.svg`.
+**Flags are named for countries, not nationalities.** One directory serves a driver's flag and a round's, and every file in it is named for a country: `united_kingdom.svg`, `brazil.svg`, `united_states_of_america.svg`. A driver who signed up as `British` draws `united_kingdom.svg` — the bot maps the nationality to its country for you. A round draws the flag of the country its circuit sits in, so Las Vegas, Miami and the Circuit of the Americas all draw the same `united_states_of_america.svg`: one file, three rounds, which is the intent and not a clash to work around. `Other`, recorded for a driver who answered the question with `other`, is not a country and keeps its own `other.svg`. A driver with no nationality recorded at all is different again: they are drawn without a flag rather than given `other.svg`. Fake drivers created by `/test-mode roster add` draw their flag from the nationality that command was given, so a test roster exercises this directory as a real league does.
 
 > **Spell the country as the bot's track list spells it** — `United Kingdom`, not `Great Britain`; `United States of America`, not `United States`. That is what makes a driver's flag and a round's flag resolve the same file.
 

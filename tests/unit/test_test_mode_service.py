@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from db.database import get_connection, run_migrations
 from services.test_mode_service import (
     toggle_test_mode,
+    toggle_test_mode_nationality,
     get_next_pending_phase,
     build_review_summary,
 )
@@ -124,6 +125,72 @@ async def test_toggle_missing_config_returns_false() -> None:
         await run_migrations(db_path)  # no seed — no server_config row
         result = await toggle_test_mode(999, db_path)
         assert result is False
+    finally:
+        os.unlink(db_path)
+
+
+# ---------------------------------------------------------------------------
+# toggle_test_mode_nationality
+# ---------------------------------------------------------------------------
+
+async def test_nationality_toggle_starts_on() -> None:
+    """Migration 042 defaults it on, as the signup setting it parallels defaults on."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        await _seed(db_path, [])
+        async with get_connection(db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT test_mode_nationality_required FROM server_configs "
+                    "WHERE server_id = 1"
+                )
+            ).fetchone()
+        assert row["test_mode_nationality_required"] == 1
+    finally:
+        os.unlink(db_path)
+
+
+async def test_nationality_toggle_disables_then_enables() -> None:
+    """First toggle flips 1 → 0, the second back again."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        await _seed(db_path, [])
+        assert await toggle_test_mode_nationality(1, db_path) is False
+        assert await toggle_test_mode_nationality(1, db_path) is True
+    finally:
+        os.unlink(db_path)
+
+
+async def test_nationality_toggle_leaves_test_mode_itself_alone() -> None:
+    """Two switches, not one: flipping nationality must not disturb test mode."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        await _seed(db_path, [])
+        await toggle_test_mode(1, db_path)  # enable test mode
+        await toggle_test_mode_nationality(1, db_path)
+        async with get_connection(db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT test_mode_active FROM server_configs WHERE server_id = 1"
+                )
+            ).fetchone()
+        assert row["test_mode_active"] == 1
+    finally:
+        os.unlink(db_path)
+
+
+async def test_nationality_toggle_missing_config_returns_false() -> None:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)  # no seed — no server_config row
+        assert await toggle_test_mode_nationality(999, db_path) is False
     finally:
         os.unlink(db_path)
 

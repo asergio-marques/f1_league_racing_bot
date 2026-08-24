@@ -93,7 +93,7 @@ Turn a missing module on with `/module enable <name>`. Set each channel per divi
 
 **Two bits of data worth sorting early**, because they show up on several pictures:
 
-- **Driver nationalities**, which is where the little flags come from. The bot turns a nationality into a **country** and looks the flag up under that, so `British` draws `united_kingdom.svg`. A driver who never gave one is recorded as "Other" and gets the "Other" flag.
+- **Driver nationalities**, which is where the little flags come from. The bot turns a nationality into a **country** and looks the flag up under that, so `British` draws `united_kingdom.svg`. A driver who answered the question with `other` gets the "Other" flag; a driver with no nationality recorded at all is drawn without a flag instead, and the picture is not faulty for it. Fake drivers made with `/test-mode roster add` carry a nationality of their own where you give the command one, so a test roster exercises the flags as a real league does — see [Testing with test mode](test-mode.md).
 - **Your team list**, which the lineup picture is built around entirely. See the warning in step 5.
 
 ---
@@ -159,7 +159,7 @@ So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`
 |---|---|
 | Circuit maps | The track's **name** — not its short track ID |
 | Team badges | The team's name |
-| Country flags | The **country** — `united_kingdom.svg`. Never the nationality: `british.svg` is not looked for. A driver who gave none needs `other.svg` |
+| Country flags | The **country** — `united_kingdom.svg`. Never the nationality: `british.svg` is not looked for. A driver who answered `other` needs `other.svg`; one with nothing recorded draws no flag and needs no file |
 | Driver photos | The driver's **Discord user ID number**, so their photo does not vanish when they change their nickname |
 | Arrows and weather | Fixed names the bot already uses — these come complete, just replace the pictures |
 | Tyre compounds | The compound name — `soft.svg` |

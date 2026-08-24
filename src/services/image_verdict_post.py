@@ -102,24 +102,39 @@ async def _round_context(db_path: str, round_id: int) -> dict:
     }
 
 
-async def _driver_nationality(db_path: str, discord_user_id: int) -> str | None:
-    """The nationality recorded at signup — the datum a flag is resolved from."""
+async def _driver_nationality(
+    db_path: str, server_id: int, discord_user_id: int
+) -> str | None:
+    """The nationality recorded for the driver — the datum a flag is resolved from.
+
+    ``signup_records`` is keyed by (server_id, discord_user_id) and carries no
+    driver_profile_id. This joined that phantom column, so the query raised on every
+    verdict and the ``except`` returned None: no verdict graphic had ever drawn a driver
+    flag. It now joins as the other posting paths join.
+
+    A mock driver has no signup record to hold a nationality and carries its own, read by
+    the same branch on is_test_driver the name is.
+    """
     try:
         async with get_connection(db_path) as db:
             cursor = await db.execute(
                 """
-                SELECT sr.nationality
-                FROM signup_records sr
-                JOIN driver_profiles dp ON dp.id = sr.driver_profile_id
-                WHERE CAST(dp.discord_user_id AS INTEGER) = ?
-                ORDER BY sr.id DESC LIMIT 1
+                SELECT CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality
+                            ELSE sr.nationality END AS nationality
+                FROM driver_profiles dp
+                LEFT JOIN signup_records sr
+                       ON sr.server_id = dp.server_id
+                      AND sr.discord_user_id = CAST(dp.discord_user_id AS TEXT)
+                WHERE dp.server_id = ?
+                  AND CAST(dp.discord_user_id AS INTEGER) = ?
+                ORDER BY dp.id DESC LIMIT 1
                 """,
-                (discord_user_id,),
+                (server_id, discord_user_id),
             )
             row = await cursor.fetchone()
     except Exception:  # noqa: BLE001
         return None
-    return row["nationality"] if row else None
+    return (row["nationality"] or None) if row else None
 
 
 async def team_name_for_entry(
@@ -173,7 +188,7 @@ async def build_drawing(
     from services.image_verdict_service import resolve_mentions
 
     context = await _round_context(db_path, round_id)
-    nationality = await _driver_nationality(db_path, driver_discord_id)
+    nationality = await _driver_nationality(db_path, server_id, driver_discord_id)
 
     # Whether the league collects nationality at all. A league that switched it off draws no
     # flag and is told nothing (XIV.4's configured absence); one that collects it and holds

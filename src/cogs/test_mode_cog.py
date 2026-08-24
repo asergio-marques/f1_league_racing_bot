@@ -1,14 +1,18 @@
 """TestModeCog — /test-mode command group.
 
-Provides three subcommands for system-level testing without waiting for
-the real APScheduler triggers:
+Provides subcommands for system-level testing without waiting for the real
+APScheduler triggers:
 
-  /test-mode toggle  — enable or disable test mode (state persists)
-  /test-mode advance — immediately execute the next pending phase
-  /test-mode review  — show season/round/phase status summary (ephemeral)
+  /test-mode toggle            — enable or disable test mode (state persists)
+  /test-mode nationality       — toggle whether mock drivers carry a nationality
+  /test-mode advance           — immediately execute the next pending phase
+  /test-mode review            — show season/round/phase status summary (ephemeral)
+  /test-mode set-former-driver — set or clear a driver's former-driver flag
+  /test-mode roster …          — manage the fake driver roster of a division
+  /test-mode rsvp …            — set the RSVP status of fake drivers
 
 All commands are gated by @channel_guard (interaction role + channel).
-advance and review additionally require test mode to be active.
+Every command but toggle additionally requires test mode to be active.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from discord.ext import commands
 
 from services.test_mode_service import (
     toggle_test_mode,
+    toggle_test_mode_nationality,
     get_next_pending_phase,
     build_review_summary,
 )
@@ -123,6 +128,53 @@ class TestModeCog(commands.Cog):
                 f"  test_mode: disabled"
                 + (f"\n  removed_fake_drivers: {removed}" if removed else ""),
             )
+
+    # ------------------------------------------------------------------
+    # /test-mode nationality
+    # ------------------------------------------------------------------
+
+    @test_mode.command(
+        name="nationality",
+        description="Toggle whether mock drivers carry a nationality.",
+    )
+    @channel_guard
+    @admin_only
+    async def nationality(self, interaction: discord.Interaction) -> None:
+        """The test-mode counterpart of /signup nationality.
+
+        While test mode is active this switch stands in for the signup one everywhere the
+        image module asks whether the league collects nationality, so the graphics of a
+        server under test may be seen with flags and without them without the setting real
+        signups run on being touched.
+        """
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ This command is only available when test mode is enabled.",
+                ephemeral=True,
+            )
+            return
+
+        new_state = await toggle_test_mode_nationality(
+            interaction.guild_id,
+            self.bot.db_path,  # type: ignore[attr-defined]
+        )
+        note = (
+            "Mock drivers may be given one with `/test-mode roster add`."
+            if new_state
+            else "Mock drivers already holding one keep it, and graphics draw no flag at all."
+        )
+        await interaction.response.send_message(
+            f"✅ Test-mode nationality: **{'ON' if new_state else 'OFF'}**.\n{note}",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            interaction.guild_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode nationality | Success\n"
+            f"  test_mode_nationality: {'enabled' if new_state else 'disabled'}",
+        )
 
     # ------------------------------------------------------------------
     # /test-mode advance
@@ -518,6 +570,7 @@ class TestModeCog(commands.Cog):
         driver_name="Display name for the fake driver.",
         team_name="Team to assign the driver to (must exist in the division).",
         division="Name of the division.",
+        nationality="Optional. A nationality (e.g. British), a country name (e.g. United Kingdom), or 'other'.",
     )
     @channel_guard
     @admin_only
@@ -527,6 +580,7 @@ class TestModeCog(commands.Cog):
         driver_name: str,
         team_name: str,
         division: str,
+        nationality: str | None = None,
     ) -> None:
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
             interaction.guild_id
@@ -534,6 +588,16 @@ class TestModeCog(commands.Cog):
         if config is None or not config.test_mode_active:
             await interaction.response.send_message(
                 "⛔ This command is only available when test mode is enabled.",
+                ephemeral=True,
+            )
+            return
+
+        # A nationality cannot be recorded while the switch is off, as the signup wizard
+        # drops the question entirely rather than collecting an answer it will not keep.
+        if nationality is not None and not config.test_mode_nationality_required:
+            await interaction.response.send_message(
+                "⛔ Nationality is switched off for test mode, so one cannot be recorded. "
+                "Turn it on with `/test-mode nationality`, or leave the parameter out.",
                 ephemeral=True,
             )
             return
@@ -546,6 +610,7 @@ class TestModeCog(commands.Cog):
             team_name=team_name,
             division_name=division,
             db_path=self.bot.db_path,  # type: ignore[attr-defined]
+            nationality=nationality,
         )
 
         if isinstance(result, str):
@@ -553,8 +618,12 @@ class TestModeCog(commands.Cog):
             return
 
         mention_str = f"<@{result['discord_user_id']}>"
+        nationality_line = (
+            f"Nationality: **{result['nationality']}**\n" if result["nationality"] else ""
+        )
         await interaction.response.send_message(
             f"✅ Added fake driver **{result['display_name']}** to **{result['team_name']}**.\n"
+            f"{nationality_line}"
             f"Mention string (copy-paste into results): `{mention_str}`",
             ephemeral=True,
         )
@@ -563,7 +632,8 @@ class TestModeCog(commands.Cog):
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster add | Success\n"
             f"  driver: {result['display_name']}\n"
             f"  team: {result['team_name']}\n"
-            f"  division: {division}",
+            f"  division: {division}\n"
+            f"  nationality: {result['nationality'] or '(none)'}",
         )
 
     # /test-mode roster remove --------------------------------------------
@@ -668,11 +738,14 @@ class TestModeCog(commands.Cog):
             return
 
         lines = [f"**Fake Driver Roster — {division}**\n"]
-        lines.append(f"{'Name':<20} {'Mention':<30} Team")
-        lines.append("-" * 65)
+        lines.append(f"{'Name':<20} {'Mention':<30} {'Team':<20} Nationality")
+        lines.append("-" * 86)
         for driver in result:
             mention = f"<@{driver['discord_user_id']}>"
-            lines.append(f"{driver['display_name']:<20} {mention:<30} {driver['team_name']}")
+            lines.append(
+                f"{driver['display_name']:<20} {mention:<30} "
+                f"{driver['team_name']:<20} {driver['nationality'] or '—'}"
+            )
         lines.append(
             "\nCopy mention strings above when submitting results in the format:\n"
             "`Position, <@user_id>, <@&role_id>, ...`"
