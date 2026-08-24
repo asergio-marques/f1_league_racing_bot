@@ -268,7 +268,13 @@ def test_the_bounds_check_reads_no_data_so_it_refuses_at_configuration(tmp_path,
 
 
 def test_season_review_names_the_verdicts_template_individually(tmp_path, templates):
-    from services.image_validity_service import check_all_templates
+    from models.image_module import PROBLEM_MISSING_MANDATORY_FIELD
+    from services.image_validity_service import (
+        PLAIN_MISSING_FIELD,
+        check_all_templates,
+        describe,
+        evaluate_all_templates,
+    )
 
     (tmp_path / "templates" / FILENAME).write_bytes(_svg(b"").replace(
         b'<text id="penalty">5 seconds added</text>', b""
@@ -277,4 +283,12 @@ def test_season_review_names_the_verdicts_template_individually(tmp_path, templa
 
     mine = [problem for problem in problems if problem.template_key == KEY]
     assert len(mine) == 1
-    assert "penalty" in mine[0].detail
+
+    # The line a league reads names this template and no other, and says why in their
+    # own words. Which field is missing is the operator's business, and is logged.
+    assert "Verdicts" in describe(mine[0])
+    assert mine[0].detail == PLAIN_MISSING_FIELD
+    assert mine[0].kind == PROBLEM_MISSING_MANDATORY_FIELD
+
+    reports = evaluate_all_templates(_config(), root=tmp_path)
+    assert "penalty" in reports[KEY].reason

@@ -189,6 +189,20 @@ class AspectStatus:
     template_reports: list[ValidityReport] = field(default_factory=list)
     blocking_reasons: list[str] = field(default_factory=list)
 
+    #: Why a DISABLED aspect is off, and what it would meet were it switched on. Kept
+    #: apart from ``blocking_reasons``: those are what stop an *enabled* aspect
+    #: rendering, and `/images toggle` reads them on that meaning alone.
+    disabled_reasons: list[str] = field(default_factory=list)
+
+    @property
+    def reasons(self) -> list[str]:
+        """Every line a report prints beneath this aspect, whatever its state.
+
+        Both surfaces render this rather than either list, so a state that explains
+        itself in one of them explains itself in the other.
+        """
+        return self.blocking_reasons + self.disabled_reasons
+
 
 @dataclass
 class FillResult:

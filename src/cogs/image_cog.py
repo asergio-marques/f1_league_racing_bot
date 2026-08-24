@@ -764,7 +764,11 @@ class ImageCog(commands.Cog):
             converter_absent_message,
             converter_available,
         )
-        from services.image_validity_service import ImageValidityService
+        from services.image_validity_service import (
+            ImageValidityService,
+            plain_directory_reason,
+            plain_reason,
+        )
 
         config = await self._config_service.get_config(server_id)
         if config is None:
@@ -790,7 +794,7 @@ class ImageCog(commands.Cog):
             if report is not None and report.valid:
                 lines.append(f"  ✅ {TEMPLATE_LABELS[column]}: `{filename}`")
             else:
-                reason = report.reason if report else "not checked"
+                reason = plain_reason(report) if report else "this has not been checked"
                 lines.append(f"  ⚠️ {TEMPLATE_LABELS[column]}: `{filename}` — {reason}")
 
         # Invariant 3: never overstate what was checked (FR-028b).
@@ -802,7 +806,10 @@ class ImageCog(commands.Cog):
             if report.valid:
                 lines.append(f"  ✅ {ASSET_LABELS[column]}: `{value}`")
             else:
-                lines.append(f"  ⚠️ {ASSET_LABELS[column]}: `{value}` — {report.reason}")
+                lines.append(
+                    f"  ⚠️ {ASSET_LABELS[column]}: `{value}` "
+                    f"— {plain_directory_reason(report)}"
+                )
 
         lines += [
             "",
@@ -825,7 +832,7 @@ class ImageCog(commands.Cog):
         for status in statuses:
             icon = _STATE_ICONS.get(status.state, _INVALID_ICON)
             lines.append(f"  {icon} {ASPECT_LABELS[status.aspect]}")
-            for reason in status.blocking_reasons:
+            for reason in status.reasons:
                 lines.append(f"      ↳ {reason}")
 
         # Named individually rather than as a blanket claim over all eight, and gone

@@ -583,7 +583,7 @@ class SeasonCog(commands.Cog):
             CONVERTER_NAME,
             converter_available,
         )
-        from services.image_validity_service import ImageValidityService
+        from services.image_validity_service import ImageValidityService, plain_reason
 
         lines: list[str] = ["**Image output**"]
 
@@ -604,7 +604,7 @@ class SeasonCog(commands.Cog):
         for status in statuses:
             icon = icons.get(status.state, "⚠️")
             lines.append(f"  {icon} {ASPECT_LABELS[status.aspect]}")
-            for reason in status.blocking_reasons:
+            for reason in status.reasons:
                 lines.append(f"      ↳ {reason}")
 
         invalid = [r for r in reports.values() if not r.valid]
@@ -622,7 +622,7 @@ class SeasonCog(commands.Cog):
             for report in reports.values():
                 if not report.valid:
                     label = _LABELS.get(report.template_key, report.template_key)
-                    lines.append(f"      • **{label}**: {report.reason}")
+                    lines.append(f"      • **{label}**: {plain_reason(report)}")
 
         lines.append(f"  _{ImageValidityService.depth_summary(reports)}_")
         lines.append("")

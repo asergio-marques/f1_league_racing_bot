@@ -575,6 +575,10 @@ def check_template(
     if report.valid:
         return None
 
+    # Deliberately the precise reason, not `plain_reason`. This is the answer to a
+    # manager naming a file: they are looking at that one template, in the moment they
+    # can fix it, and "which field" or "which path" is what they need. The season review
+    # and `/images config view` survey fifteen at once and speak plainly instead.
     return Problem(
         kind=_problem_kind_for(report),
         detail=report.reason or f"{label} is not usable.",
@@ -609,8 +613,10 @@ def check_all_templates(
             continue
         problems.append(
             Problem(
+                # `detail` is what a league reads, so it is the plain sentence. `kind`
+                # is unchanged, and the engineering text is in the log.
                 kind=_problem_kind_for(report),
-                detail=report.reason or "not usable.",
+                detail=plain_reason(report),
                 template_key=template_key,
             )
         )
@@ -621,6 +627,66 @@ def describe(problem: Problem) -> str:
     """One line naming the individual template and its own reason (FR-008)."""
     label = TEMPLATE_LABELS.get(problem.template_key or "", problem.template_key or "")
     return f"**{label}**: {problem.detail}" if label else problem.detail
+
+
+#: What a league is told when a drawing cannot be used. Their words, not ours: no field
+#: id, no layer number, no path, no jargon. The exact fault is written to the log
+#: instead, so a manager reads a sentence they can act on and an operator still has the
+#: detail to work from.
+PLAIN_DIRECTORY_MISSING = "the folder your drawings live in can't be found"
+PLAIN_UNBOUNDED_FIELD = (
+    "one of its text boxes has no size set, so the bot can't fit text into it"
+)
+PLAIN_NOT_A_DRAWING = "this file isn't a drawing the bot can read"
+PLAIN_MISSING_FIELD = "the drawing is missing something the bot has to fill in"
+PLAIN_FILE_MISSING = "the drawing file can't be found where the bot was told to look"
+PLAIN_FILE_OUTSIDE = "this file is outside the bot's own folder, so it can't be read"
+PLAIN_UNUSABLE = "this drawing can't be used"
+
+
+def plain_reason(report: ValidityReport) -> str:
+    """The sentence a league manager reads when a template is not usable.
+
+    Returns the sentence alone. Every caller already prefixes the template's label, and
+    naming the individual template (FR-032) is therefore their job rather than this one's.
+
+    The bounds layer is tested before :func:`_problem_kind_for`, which has no branch of
+    its own for it and would otherwise report an unbounded text box as a missing file.
+    """
+    reason = (report.reason or "").lower()
+    if "template directory" in reason:
+        return PLAIN_DIRECTORY_MISSING
+    if report.failed_layer == LAYER_BOUNDS:
+        return PLAIN_UNBOUNDED_FIELD
+    if "outside the project root" in reason:
+        return PLAIN_FILE_OUTSIDE
+
+    kind = _problem_kind_for(report)
+    if kind == PROBLEM_NOT_SVG:
+        return PLAIN_NOT_A_DRAWING
+    if kind == PROBLEM_MISSING_MANDATORY_FIELD:
+        return PLAIN_MISSING_FIELD
+    if kind == PROBLEM_NOT_FOUND:
+        return PLAIN_FILE_MISSING
+    return PLAIN_UNUSABLE
+
+
+PLAIN_FOLDER_MISSING = "this folder can't be found"
+PLAIN_NOT_A_FOLDER = "this is a file, not a folder"
+PLAIN_FOLDER_OUTSIDE = "this folder is outside the bot's own folder, so it won't be read"
+PLAIN_FOLDER_UNSET = "no folder has been set for this"
+
+
+def plain_directory_reason(report: DirectoryReport) -> str:
+    """The same courtesy for the seven asset folders (FR-029)."""
+    reason = (report.reason or "").lower()
+    if "not a directory" in reason:
+        return PLAIN_NOT_A_FOLDER
+    if "directory not found" in reason:
+        return PLAIN_FOLDER_MISSING
+    if "cannot be empty" in reason:
+        return PLAIN_FOLDER_UNSET
+    return PLAIN_FOLDER_OUTSIDE
 
 
 def evaluate_all_templates(
@@ -654,6 +720,24 @@ def evaluate_all_templates(
                 TemplateContext(config=config, template_key=template_key, root=root),
                 layers=layers,
             )
+
+    # The precise fault is written here and nowhere else. A league is shown
+    # `plain_reason` — a sentence they can act on, with no field id, layer number or
+    # path in it — so the engineering text has to survive somewhere, and this is where.
+    # One shared directory fault is logged once, not fifteen times, for the same reason
+    # the reports themselves share it.
+    if directory_problem is not None:
+        log.info("image validity: no template is usable: %s", directory_problem)
+    else:
+        for report in reports.values():
+            if not report.valid:
+                log.info(
+                    "image validity: %s invalid at layer %s: %s",
+                    report.template_key,
+                    LAYER_NAMES.get(report.failed_layer or 0, report.failed_layer),
+                    report.reason,
+                )
+
     return reports
 
 
@@ -661,7 +745,9 @@ def _template_directory_problem(config: ImageConfig, root: Path | None) -> str |
     try:
         directory = resolve_within_project_root(config.template_directory, root=root)
     except (PathContainmentError, ValueError) as exc:
-        return str(exc)
+        # Named, so a reader of the log — and :func:`plain_reason` — can tell a bad
+        # template directory from a bad individual template file.
+        return f"template directory: {exc}"
     if not directory.exists():
         return f"template directory not found: {directory}"
     if not directory.is_dir():
@@ -691,6 +777,15 @@ def evaluate_directories(
             )
         else:
             reports[column] = DirectoryReport(column, resolved, True)
+
+    for report in reports.values():
+        if not report.valid:
+            log.info(
+                "image validity: asset folder %s unusable: %s",
+                report.directory_key,
+                report.reason,
+            )
+
     return reports
 
 
@@ -704,8 +799,13 @@ def build_aspect_statuses(
     """Roll the per-template reports up into the three states of FR-031.
 
     An aspect is ENABLED_INVALID when its toggle is on **and** any of: a backing template
-    is invalid, its source module is disabled, or the rasteriser is absent. Every blocking
-    reason names the individual template or the specific module — never the group.
+    is invalid, its source module is disabled, or the rasteriser is absent. Every reason
+    names the individual template or the specific module — never the group.
+
+    A disabled aspect explains itself too. A red cross and a name told a manager nothing:
+    they could see neither why the aspect was off nor what it would run into were they to
+    switch it on, though both were already known here. The two are computed from one
+    helper, so what the disabled row promises is exactly what the enabled row would say.
     """
     disabled_modules = disabled_source_modules or set()
     statuses: list[AspectStatus] = []
@@ -714,38 +814,79 @@ def build_aspect_statuses(
         keys = ASPECT_TEMPLATES[aspect]
         reports = [template_reports[key] for key in keys if key in template_reports]
         enabled = toggles.get(aspect, False)
+        problems = _aspect_problems(
+            aspect, reports, disabled_modules, converter_available
+        )
 
         if not enabled:
-            statuses.append(AspectStatus(aspect, STATE_DISABLED, reports))
-            continue
-
-        blocking: list[str] = []
-
-        for report in reports:
-            if not report.valid:
-                blocking.append(
-                    f"{TEMPLATE_LABELS[report.template_key]}: {report.reason}"
-                )
-
-        source_module = ASPECT_SOURCE_MODULE[aspect]
-        if source_module and source_module in disabled_modules:
-            blocking.append(
-                f"the {source_module} module is disabled, so this aspect produces nothing"
+            # The lead-in is said once rather than prefixed onto each problem: weather
+            # alone can carry six, and six repetitions of the same five words is what a
+            # manager stops reading.
+            reasons = [PLAIN_ASPECT_OFF]
+            if problems:
+                reasons.append(PLAIN_WOULD_NEED_FIXING)
+                reasons += problems
+            statuses.append(
+                AspectStatus(aspect, STATE_DISABLED, reports, disabled_reasons=reasons)
             )
-
-        if not converter_available:
-            blocking.append("the SVG-to-PNG converter is not installed on this host")
+            continue
 
         statuses.append(
             AspectStatus(
                 aspect,
-                STATE_ENABLED_INVALID if blocking else STATE_ENABLED,
+                STATE_ENABLED_INVALID if problems else STATE_ENABLED,
                 reports,
-                blocking,
+                problems,
             )
         )
 
     return statuses
+
+
+#: What "off" means to a league: the posting still happens, in text rather than as a
+#: picture. The same words `/images toggle` uses when an aspect is switched off.
+PLAIN_ASPECT_OFF = "switched off — this is posted as text, not as a picture"
+
+#: Said once above the problems that await, so a manager who is about to switch an aspect
+#: on learns of them here rather than after the season is approved.
+PLAIN_WOULD_NEED_FIXING = "switch it on and these would need fixing first:"
+
+#: The rasteriser by what it does, not by its name. A manager reading this has no way to
+#: act on "Inkscape" or "SVG-to-PNG converter"; the operator line elsewhere names it.
+PLAIN_NO_RASTERISER = (
+    "the program the bot uses to turn drawings into pictures isn't installed"
+)
+
+
+def _plain_module_off(module: str) -> str:
+    return f"the {module} module is switched off, so there'd be nothing to draw"
+
+
+def _aspect_problems(
+    aspect: str,
+    reports: list[ValidityReport],
+    disabled_modules: set[str],
+    converter_available: bool,
+) -> list[str]:
+    """Everything standing between this aspect and a picture, in a league's own words.
+
+    Read by both branches of :func:`build_aspect_statuses`, so a disabled aspect can
+    never name a different set from the one it would actually meet on being enabled.
+    """
+    problems = [
+        f"{TEMPLATE_LABELS[report.template_key]}: {plain_reason(report)}"
+        for report in reports
+        if not report.valid
+    ]
+
+    source_module = ASPECT_SOURCE_MODULE[aspect]
+    if source_module and source_module in disabled_modules:
+        problems.append(_plain_module_off(source_module))
+
+    if not converter_available:
+        problems.append(PLAIN_NO_RASTERISER)
+
+    return problems
 
 
 class ImageValidityService:

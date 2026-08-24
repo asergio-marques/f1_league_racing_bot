@@ -280,6 +280,10 @@ When you switch something on, the bot tells you if it would not work as things s
 
 Lists every setting and whether it is usable, and each of the eight outputs as ✅ on, ❌ off, or ⚠️ on but broken. Drawing files and artwork folders only ever show ✅ or ⚠️ — never ❌, since there is always something to fall back on. If something is broken it names the exact drawing file at fault — which weather phase, or which half of the results or standings pair.
 
+**Anything that is not ✅ tells you why, on the lines beneath it.** A ⚠️ says what is broken. A ❌ says the output is switched off and that the bot posts that thing as text instead — and then, if there is anything else standing in the way, lists it: a drawing at fault, a module the output draws its data from that is itself switched off, or the missing rasteriser. That list is exactly what you would see if you switched the output on, so nothing catches you out afterwards.
+
+> **It is written for you.** Both this report and `/season review` say what is wrong in terms of your drawings and your folders — you will not find a field id, a file path or a layer number in either. The precise fault goes into the bot's log for whoever runs it. The one exception is naming a drawing file with an `/images template …` command: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
+
 ```
 /images test calendar        division:<name>
 /images test lineup          division:<name>

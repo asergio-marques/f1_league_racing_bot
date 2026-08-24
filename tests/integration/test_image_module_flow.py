@@ -503,6 +503,16 @@ async def test_season_review_and_config_view_agree(
     assert aspect_lines(view_lines) == aspect_lines(review_lines)
     assert any("phase 3" in ln.lower() and "sprint" in ln.lower() for ln in review_lines)
 
+    # Every ❌ explains itself. A red cross and an aspect name told a manager nothing
+    # about why the aspect was off, and this is the report they read before approving.
+    rows = aspect_lines(review_lines)
+    crosses = [i for i, line in enumerate(rows) if line.startswith("❌")]
+    assert crosses, "the fixture must leave some aspect switched off"
+    for index in crosses:
+        assert rows[index + 1 : index + 2] and rows[index + 1].startswith("↳"), (
+            f"{rows[index]!r} is reported not-OK with no explanation beneath it"
+        )
+
 
 # ── Which aspects actually post ───────────────────────────────────────────
 #
@@ -806,7 +816,10 @@ async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
 ):
     import services.image_render_service as render_module
     from models.image_module import STATE_ENABLED_INVALID
-    from services.image_validity_service import ImageValidityService
+    from services.image_validity_service import (
+        PLAIN_NO_RASTERISER,
+        ImageValidityService,
+    )
 
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     monkeypatch.setattr(render_module, "converter_available", lambda **_: False)
@@ -819,7 +832,7 @@ async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
     statuses = {s.aspect: s for s in await validity.aspect_statuses(SERVER_ID)}
 
     assert statuses["calendar"].state == STATE_ENABLED_INVALID
-    assert any("converter" in r.lower() for r in statuses["calendar"].blocking_reasons)
+    assert PLAIN_NO_RASTERISER in statuses["calendar"].blocking_reasons
 
 
 async def test_multi_variant_kinds_cover_two_templates():
@@ -1461,12 +1474,16 @@ async def test_two_broken_templates_are_named_individually(config_service, confi
 
     lines = await _problem_lines(config_service, configured)
 
+    from services.image_validity_service import PLAIN_FILE_MISSING, PLAIN_NOT_A_DRAWING
+
     assert len(lines) == 2
     joined = " | ".join(lines)
     assert "Lineup" in joined
     assert "Check-in call" in joined          # the rsvp template's label
-    assert "file not found" in joined
-    assert "double hyphen" in joined
+    # The two faults stay distinguishable once said plainly: one file is absent, the
+    # other is present but is not a drawing.
+    assert PLAIN_FILE_MISSING in joined
+    assert PLAIN_NOT_A_DRAWING in joined
     # Distinct reasons, not one blanket line repeated.
     assert lines[0] != lines[1]
 
@@ -1507,12 +1524,16 @@ async def test_missing_template_directory_reports_once_not_fifteen_times(
     config_service, configured
 ):
     """Existing 035 behaviour, retained: one shared reason, still one report each."""
+    from services.image_validity_service import PLAIN_DIRECTORY_MISSING
+
     await config_service.set_field(SERVER_ID, "template_directory", "no_such_dir")
 
     lines = await _problem_lines(config_service, configured)
 
     assert len(lines) == len(TEMPLATE_COLUMNS)
-    assert all("template directory not found" in line for line in lines)
+    assert all(PLAIN_DIRECTORY_MISSING in line for line in lines)
+    # The folder is the fault, not the fifteen files, and the line says so.
+    assert not any("can't be found where the bot was told to look" in line for line in lines)
 
 
 # ══════════════════════════════════════════════════════════════════════════
