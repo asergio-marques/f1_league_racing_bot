@@ -478,11 +478,16 @@ class SingletonSpec:
     collection may normalise to it, which is why ``reserve`` is refused as a team name at
     the command that would set it (Principle IX).
 
-    Its ``_group`` is **mandatory** — the first mandatory group in the module (XIV.2,
-    v4.3.0). Every division holds a reserve team, so a template omitting the block would
-    always omit a team the division fields; but many divisions field no reserve driver, so
-    the block leaves whole when there is nothing to put in it. Declaring it is obligatory;
-    drawing it is not.
+    Its ``_group`` is **optional**, and the block with it. Every division holds a reserve
+    team, but not every league wants one on its lineup sheet: declaring the block is how a
+    template asks for it to be drawn, and a template declaring no slots draws no reserves
+    and reports nothing. Where the block *is* declared it still leaves whole when the
+    division fields nobody to put in it.
+
+    The cost of letting a template omit the block on purpose is that one omitting it by
+    mistake loses its reserves in silence. That is the trade accepted here: the block was
+    mandatory until this rule so that the mistake could be caught, and the price of
+    catching it was refusing the deliberate case outright.
     """
 
     #: ``reserve``.
@@ -588,11 +593,15 @@ class FieldCatalogue:
             # The reserve block's own seats are counted from the template, so they are
             # checkable with no division in view — which is what makes the singleton the
             # part of a lineup that a naming command can reject on (research R4).
+            #
+            # Counted, and no longer floored at one: a template declaring no slots
+            # declares no reserve block, and demanding `reserve_driver_1_name` of it would
+            # refuse the very file a league authors when it wants no reserves drawn. What
+            # a naming command still rejects on is a block half-declared — a gap in the
+            # numbering, or a slot declared without its name.
             if self.singleton.nested is not None and root is not None:
                 count = self.singleton.declared_capacity(self._declared(root))
-                ids |= self.singleton.nested.mandatory_ids(
-                    self.singleton.name, max(count, 1)
-                )
+                ids |= self.singleton.nested.mandatory_ids(self.singleton.name, count)
 
         return ids
 
@@ -854,9 +863,10 @@ LINEUP_CATALOGUE = FieldCatalogue(
     singleton=SingletonSpec(
         name=RESERVE_KEY,
         fields=frozenset({"name", "image", "group"}),
-        # The group, not the name: every division holds a reserve team, so the template
-        # must declare the block; but the block's *name* is chrome the author may omit.
-        mandatory_fields=frozenset({"group"}),
+        # Nothing is mandatory: a lineup template need not declare the reserve block at
+        # all, and one that declares no slots simply draws no reserves. Where the block is
+        # declared, its *name* remains chrome the author may omit.
+        mandatory_fields=frozenset(),
         assets={"image": "team"},
         nested=NestedSpec(
             prefix="driver",

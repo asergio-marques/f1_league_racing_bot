@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="1200" height="1272" viewBox="0 0 1200 1272" font-family="Inter, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="1200" height="1324" viewBox="0 0 1200 1324" font-family="Inter, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif">
 
   <!-- ===================================================================
        Division lineup template
@@ -18,18 +18,24 @@
        decision taken here: it is what buys each team a block that may be
        hand-designed in that team's own livery.
 
-       Eleven teams of two seats, and a reserve block of six slots. The seats
+       Eleven teams of two seats, and a reserve block of ten slots. The seats
        are what the division configures; the slots are not. The reserve team
        is configured with unlimited seats, so how many a template declares is
-       a guess about how many stand-ins a league carries at once, and drivers
-       in excess of them are omitted with a non-fatal error rather than
-       refused.
+       a guess about how many stand-ins a league carries at once, and a
+       division fielding more reserves than there are slots is refused.
+
+       Ten is this file's guess and not a limit: a league authoring its own
+       may declare as many slots as it likes, numbered contiguously from 1.
+       It may equally declare none at all — a template that omits the reserve
+       block draws no reserves, and says nothing about it.
 
        A row is one line per team, not one per driver: the two seats read
        across, so a team is taken in at once and the pair of drivers is read
        as the pair it is. The reserve block breaks that shape on purpose,
-       running six slots across a single band, because the reserve team has no
-       seats to pair, only however many drivers are unseated this week.
+       running its slots across bands of six rather than in paired rows,
+       because the reserve team has no seats to pair, only however many
+       drivers are unseated this week. Ten slots fill the first band and
+       begin a second beneath it.
 
        Every seat carries a portrait on a plate. The plate is static chrome
        and the portrait a field laid over it, so a driver whose league
@@ -51,7 +57,7 @@
        at 15 px, about thirty-four characters of DejaVu, and a reserve slot
        gives it 140 px at 12 px, about twenty-three. A Discord display name is
        of no length anyone controls; these are the widest a 1200 px canvas
-       affords across two seats and six slots.
+       affords across two seats and six slots to a band.
 
        Mandatory : division_name,
                    team_<x>_name, team_<x>_driver_<y>_name,
@@ -83,7 +89,7 @@
     </style>
   </defs>
 
-  <rect x="0" y="0" width="1200" height="1272" fill="#0B0D10"/>
+  <rect x="0" y="0" width="1200" height="1324" fill="#0B0D10"/>
 
   <!--  heading band (identical across the image module's templates)  -->
   <!--  Each of the two heading values carries its own group, so that a template
@@ -299,8 +305,24 @@
     <image id="reserve_driver_6_image" inkscape:label="reserve_driver_6_image" x="968" y="1152" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
     <image id="reserve_driver_6_flag" inkscape:label="reserve_driver_6_flag" x="1012" y="1158" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="reserve_driver_6_name" inkscape:label="reserve_driver_6_name" class="rname" x="1012" y="1186">Driver Name</text>
+    <rect x="48" y="1204" width="36" height="36" rx="4" fill="#1E232B" stroke="#2E343D" stroke-width="1"/>
+    <image id="reserve_driver_7_image" inkscape:label="reserve_driver_7_image" x="48" y="1204" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
+    <image id="reserve_driver_7_flag" inkscape:label="reserve_driver_7_flag" x="92" y="1210" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
+    <text id="reserve_driver_7_name" inkscape:label="reserve_driver_7_name" class="rname" x="92" y="1238">Driver Name</text>
+    <rect x="232" y="1204" width="36" height="36" rx="4" fill="#1E232B" stroke="#2E343D" stroke-width="1"/>
+    <image id="reserve_driver_8_image" inkscape:label="reserve_driver_8_image" x="232" y="1204" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
+    <image id="reserve_driver_8_flag" inkscape:label="reserve_driver_8_flag" x="276" y="1210" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
+    <text id="reserve_driver_8_name" inkscape:label="reserve_driver_8_name" class="rname" x="276" y="1238">Driver Name</text>
+    <rect x="416" y="1204" width="36" height="36" rx="4" fill="#1E232B" stroke="#2E343D" stroke-width="1"/>
+    <image id="reserve_driver_9_image" inkscape:label="reserve_driver_9_image" x="416" y="1204" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
+    <image id="reserve_driver_9_flag" inkscape:label="reserve_driver_9_flag" x="460" y="1210" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
+    <text id="reserve_driver_9_name" inkscape:label="reserve_driver_9_name" class="rname" x="460" y="1238">Driver Name</text>
+    <rect x="600" y="1204" width="36" height="36" rx="4" fill="#1E232B" stroke="#2E343D" stroke-width="1"/>
+    <image id="reserve_driver_10_image" inkscape:label="reserve_driver_10_image" x="600" y="1204" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
+    <image id="reserve_driver_10_flag" inkscape:label="reserve_driver_10_flag" x="644" y="1210" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
+    <text id="reserve_driver_10_name" inkscape:label="reserve_driver_10_name" class="rname" x="644" y="1238">Driver Name</text>
   </g>
 
-  <text class="foot" x="48" y="1240">LEAGUE RACING BOT   ·   DIVISION LINEUP</text>
+  <text class="foot" x="48" y="1292">LEAGUE RACING BOT   ·   DIVISION LINEUP</text>
 
 </svg>

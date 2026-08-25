@@ -187,6 +187,50 @@ def test_reserve_drivers_beyond_the_slots_are_fatal_and_name_them():
     assert "Driver r3" in message
 
 
+def test_a_template_declaring_no_reserve_slots_draws_no_reserves():
+    """A league that does not want reserves on its sheet declares none, and is not refused.
+
+    Zero slots is not overflow: the block leaves whole, exactly as it does for a division
+    fielding nobody, and nothing is reported. The template said so on purpose.
+    """
+    reserve = [_seat(n, f"r{n}") for n in range(1, 4)]
+
+    spec = build_fill_spec(
+        _drawing(reserve_seats=reserve), _template(TWO_TEAMS, reserve_slots=0)
+    )
+
+    assert "reserve_group" in spec.remove
+    assert not any(name.startswith("reserve_driver_") for name in spec.text)
+    # The rest of the lineup is drawn as it always was.
+    assert spec.text["team_1_name"] == "Red Bull"
+
+
+def test_a_template_with_no_reserve_slots_and_no_group_removes_the_fields_one_by_one():
+    reserve = [_seat(1, "r1")]
+
+    spec = build_fill_spec(
+        _drawing(reserve_seats=reserve),
+        _template(TWO_TEAMS, reserve_slots=0, reserve_group=False),
+    )
+
+    assert "reserve_name" in spec.remove
+    assert "reserve_image" in spec.remove
+    assert not any(name.startswith("reserve_driver_") for name in spec.text)
+
+
+def test_a_custom_template_may_declare_more_reserve_slots_than_the_shipped_file():
+    """Ten bounds the shipped file, not the module: the count is read off the template."""
+    reserve = [_seat(n, f"r{n}") for n in range(1, 15)]
+
+    spec = build_fill_spec(
+        _drawing(reserve_seats=reserve), _template(TWO_TEAMS, reserve_slots=14)
+    )
+
+    for slot in range(1, 15):
+        assert spec.text[f"reserve_driver_{slot}_name"] == f"Driver r{slot}"
+    assert "reserve_group" not in spec.remove
+
+
 def test_reserve_drivers_are_drawn_by_seat_order_not_joining_order():
     reserve = [_seat(3, "late"), _seat(1, "early")]
     spec = build_fill_spec(_drawing(reserve_seats=reserve), _template(TWO_TEAMS))
