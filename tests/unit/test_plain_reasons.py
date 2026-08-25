@@ -269,7 +269,7 @@ def test_the_remedy_names_the_subcommand_of_the_template_at_fault():
 def test_each_asset_folder_names_its_own_setting_command():
     from models.image_constants import ASSET_DIRECTORIES
 
-    for column, (command, _default) in ASSET_DIRECTORIES.items():
+    for column, (command, _default, _packaged) in ASSET_DIRECTORIES.items():
         report = DirectoryReport(column, None, False, "directory not found: C:\\bot\\x")
         remedy = plain_directory_remedy(report)
 

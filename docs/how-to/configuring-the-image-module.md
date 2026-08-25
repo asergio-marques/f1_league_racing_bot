@@ -119,22 +119,25 @@ The default date style includes the day of the week, which is usually the bit pe
 
 ## Step 4 — Put in your own artwork
 
-There are seven folders of artwork. Each starts with a plain grey placeholder, and you replace them a folder at a time. Four arrive with more than that: the markers and the weather symbols come complete, and the track and flag folders each carry a `mystery.svg` as well.
+There are seven folders of artwork, and **the bot is already looking in all of them.** They sit under `resources/league/` on the bot's computer, they start empty, and copying a correctly named file into one is the whole job — there is no command to run afterwards.
 
-The bot looks in these folders unless you point it somewhere else. Two things about moving one:
+Anything you have not supplied is drawn from what the bot ships, so every picture works from the very first post. Most of what you get that way is a plain grey placeholder; the markers, the weather symbols and two reserved flags are the bot's own proper artwork, because you never chose those and are not expected to draw them.
 
-- **The folder has to sit inside the bot's own project folder.** Anything outside it is refused outright and your existing setting is left alone, so artwork on a separate drive will not work — copy it in instead.
-- **A folder that does not exist is accepted anyway.** The bot stores the path and warns you that nothing is there yet, rather than refusing. That is the opposite of how the drawing-file commands behave, so read the reply.
+| Folder to put your files in | Holds | Size to draw at |
+|---|---|---|
+| `resources/league/tracks` | Circuit maps — calendar and check-in only | 120 × 120 |
+| `resources/league/teams` | Team badges | 120 × 120 |
+| `resources/league/drivers` | Driver photos | 120 × 120 |
+| `resources/league/flags` | Country flags — drivers **and** rounds | 120 × 80 |
+| `resources/league/markers` | Standings movement markers — up, down and unchanged | 64 × 64 |
+| `resources/league/weather` | Weather symbols | 64 × 64 |
+| `resources/league/tyres` | Tyre compounds | 64 × 64 |
 
-| Command to move the folder | Starts as | Holds | Size to draw at |
-|---|---|---|---|
-| `/images config track-image-directory` | `resources/defaults/tracks` | Circuit maps — calendar and check-in only | 120 × 120 |
-| `/images config team-image-directory` | `resources/defaults/teams` | Team badges | 120 × 120 |
-| `/images config driver-image-directory` | `resources/defaults/drivers` | Driver photos | 120 × 120 |
-| `/images config flag-directory` | `resources/defaults/flags` | Country flags — drivers **and** rounds | 120 × 80 |
-| `/images config marker-directory` | `resources/defaults/markers` | Standings movement markers — up, down and unchanged | 64 × 64 |
-| `/images config weather-icon-directory` | `resources/defaults/weather` | Weather symbols | 64 × 64 |
-| `/images config tyre-directory` | `resources/defaults/tyres` | Tyre compounds | 64 × 64 |
+**`resources/league/` is yours and the bot never touches it.** Updating the bot cannot overwrite what is in it. That also means nothing is backing it up — keep your original artwork somewhere of your own.
+
+**Never put your files in `resources/defaults/`.** That folder is the bot's, and updating the bot replaces it wholesale, taking anything you put there with it.
+
+**If you want your artwork somewhere else entirely**, there is a command per folder — `/images config track-image-directory`, `/images config team-image-directory`, and so on for all seven. Most leagues never need one. Two things if you do use them: the folder has to sit inside the bot's own project folder, and anything outside it is refused with your existing setting left alone; and a folder that does not exist yet is accepted anyway, with a warning, because files put there later are picked up on their own.
 
 ### Which pictures use which folder
 
@@ -173,7 +176,7 @@ Say your league has a team called **Red Bull** and you have its badge ready.
 1. **Save it as an SVG at 120 × 120.** Keep it simple — no gradients, no filters, no clipping. If the badge is not square, add see-through space around it to make it square. The bot never pads pictures for you, and a picture of the wrong shape gets stretched and smeared.
 2. **Do not put any words in the artwork.** Text inside a badge can come out in the wrong typeface on a different computer. Keep lettering as shapes, or leave it out.
 3. **Work out the filename**: `Red Bull` becomes `red_bull.svg`.
-4. **Copy it onto the bot's computer**, into `resources/league/teams` — the folder that comes with the bot for your own artwork — and point the bot at it once with `/images config team-image-directory directory:resources/league/teams`. Do not put it in `resources/defaults/teams`: that folder is the bot's and is replaced when you update it. This is the by-hand step — there is no command for it.
+4. **Copy it onto the bot's computer**, into `resources/league/teams`. That is the whole of it — the bot is already looking there, and there is no command to run. Do not put it in `resources/defaults/teams`: that folder is the bot's and is replaced when you update it. This is the by-hand step — there is no command for it.
 5. **Check it worked** by running the matching preview — `/images test lineup`, say — which draws with *your* folders and tells you every file it could not find. The log channel records the same thing for real posts.
 
 Every folder works the same way. Only the folder and the source of the name change.
@@ -188,15 +191,24 @@ If the bot cannot find the right file, it uses a `fallback.svg` — the plain gr
 
 The bot's folder is consulted for a **stand-in and nothing else**. A file sitting there under one of your teams' names is never drawn for you: you get what you supplied, or a placeholder, and never someone else's artwork by accident.
 
-**The markers and the weather symbols are the one exception**, because you never chose that
-set of pictures in the first place — see "The seven folders" above. Point either folder at
-one of your own and a picture missing from it still draws the bot's own correct symbol for
-that value, not the grey placeholder: the bot's folder is searched for your missing value by
-name, and only then for its placeholder.
+**What the bot named, the bot supplies** — the one exception, because you never chose those
+pictures in the first place. Where one of them is missing from your folder the bot draws its
+**own correct picture** for that value, not the grey placeholder: its folder is searched for
+your missing value by name, and only then for a placeholder. Two kinds of thing qualify:
+
+- **the markers and the weather symbols**, every one of them, since every value those two can
+  ever be asked for is the bot's own;
+- **two reserved filenames** — `mystery.svg` and `other.svg` — inside folders that are
+  otherwise yours: a round whose circuit is kept secret, and a driver who chose no
+  nationality in particular.
+
+Your own file always wins where you supply one; this only ever fills a gap. It does **not**
+extend to the rest of those folders — a country you have not drawn a flag for still gets the
+grey placeholder, because that flag is yours to supply.
 
 **If neither folder has one, the bot gives up and posts nothing as a picture.** It will not post a card with a hole in it. Since a `fallback.svg` ships in every folder the bot brings, you reach this only by pointing a kind of picture at a folder of your own *and* deleting the bot's.
 
-Two filenames are spoken for: `fallback.svg`, and `mystery.svg` — the latter in **both** the track folder and the flag folder, used for a round whose track, and so whose country, is kept secret. All of them come with the bot. Replace the pictures if you like, but keep the names.
+Three filenames are spoken for: `fallback.svg`; `mystery.svg`, in **both** the track folder and the flag folder, used for a round whose track — and so whose country — is kept secret; and `other.svg`, in the flag folder, for a driver who chose no nationality in particular. All of them come with the bot. Replace the pictures if you like, but keep the names.
 
 ---
 
@@ -204,7 +216,14 @@ Two filenames are spoken for: `fallback.svg`, and `mystery.svg` — the latter i
 
 Fifteen of them, one per kind of picture, and they all come with the bot. You can leave every one alone to begin with and restyle them later.
 
-That folder starts as `resources/defaults/templates`, and `/images config template-directory` moves it — under the same rules as the artwork folders in step 4: it must sit inside the project folder, and one that does not exist is accepted with a warning rather than refused.
+That folder is `resources/defaults/templates`, and `/images config template-directory` moves it. **It does not behave like the artwork folders in step 4, and the order matters:**
+
+1. Put **all fifteen** drawing files in your new folder first.
+2. *Then* run `/images config template-directory`.
+
+The command checks every one of the fifteen before it stores anything, exactly as `/season review` does. If any is missing or unusable it **refuses** the change, tells you which ones and why, and leaves your existing folder in force. An empty artwork folder is harmless — the bot falls back to what it ships — but there is nothing behind a missing drawing file, so a half-filled folder would stop every picture being produced at all. That is why this one is checked and the other seven are not.
+
+It must still sit inside the bot's own project folder.
 
 To use your own drawing file, put it in that folder and name it:
 

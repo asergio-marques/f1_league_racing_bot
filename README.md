@@ -1454,32 +1454,37 @@ These sit under `/images template` rather than `/images config` because Discord 
 
 Every directory is a path relative to the project root, and one that resolves outside it is rejected.
 
+**`template-directory` is checked before it is stored; the other seven are not.** Name a folder for your templates and the bot looks for all fifteen of them in it and checks each one, exactly as `/season review` does. If any is missing or unusable the command is **refused**, naming each one and why, and your existing folder stays in force — so put your templates in place first, then point the bot at the folder. The seven artwork directories are accepted whether or not anything is in them yet, because a missing picture falls back to what the bot ships and files added later are picked up with no further command. A missing *template* has nothing behind it, so it would stop every graphic being produced at all.
+
 | Subcommand | Default | Holds |
 |------------|---------|-------|
 | `template-directory` | `resources/defaults/templates` | The fifteen SVG templates |
-| `track-image-directory` | `resources/defaults/tracks` | Circuit maps — the calendar and check-in graphics only |
-| `team-image-directory` | `resources/defaults/teams` | Team logos, badges, cars |
-| `flag-directory` | `resources/defaults/flags` | Country flags, for drivers and for rounds alike |
-| `driver-image-directory` | `resources/defaults/drivers` | Driver portraits |
-| `marker-directory` | `resources/defaults/markers` | Standings position-change markers |
-| `weather-icon-directory` | `resources/defaults/weather` | Weather condition icons |
-| `tyre-directory` | `resources/defaults/tyres` | Tyre compound icons |
+| `track-image-directory` | `resources/league/tracks` | Circuit maps — the calendar and check-in graphics only |
+| `team-image-directory` | `resources/league/teams` | Team logos, badges, cars |
+| `flag-directory` | `resources/league/flags` | Country flags, for drivers and for rounds alike |
+| `driver-image-directory` | `resources/league/drivers` | Driver portraits |
+| `marker-directory` | `resources/league/markers` | Standings position-change markers |
+| `weather-icon-directory` | `resources/league/weather` | Weather condition icons |
+| `tyre-directory` | `resources/league/tyres` | Tyre compound icons |
 
-**Everything the bot ships sits under `resources/defaults/`, and `resources/league/` is where yours goes.** `defaults/` is replaced when you update the bot, so never edit it. `league/` ships empty with a folder per class — `resources/league/teams`, `resources/league/flags` and so on — and is listed in `.gitignore`, so your artwork never appears in a diff and an update can never overwrite it. Point a class at it and it is used:
+**Your artwork goes in `resources/league/`, and the seven asset directories already point there.** Drop a file in and it is drawn — there is nothing to configure. `league/` ships with a folder per class (`resources/league/teams`, `resources/league/flags` and so on) and is listed in `.gitignore`, so your artwork never appears in a diff and an update to the bot can never overwrite it. Note that git is therefore **not** backing it up: keep your source artwork somewhere of your own.
 
-```
-/images config team-image-directory directory:resources/league/teams
-```
+**Everything the bot ships sits under `resources/defaults/`, and you never edit it.** It is replaced wholesale when you update the bot. You do not point anything at it and you do not copy anything out of it: it is the second place the bot looks, automatically, whenever your own folder has nothing for a value.
 
-Nothing obliges you to use `league/`; any path inside the project root is accepted. Mixing is the ordinary case — point `teams` at your own folder and leave `markers` and `weather` on the defaults, which ship complete. Note that git is **not** backing `league/` up: keep your source artwork somewhere of your own.
+The subcommands in the table above exist for the league that wants its files somewhere else entirely — any path inside the project root is accepted. Most leagues never need to run one.
 
-**What is already there.** A clone ships the fifteen default templates and one `fallback.svg` in each of the seven asset directories — so the module draws every graphic from the first render, entirely out of placeholders. No circuit, team, driver, flag or tyre artwork ships: that is your league's to make, and you replace the placeholders a class at a time, seeing your own files appear as you go.
+**What is already there.** A clone ships the fifteen default templates and one `fallback.svg` per asset class — so the module draws every graphic from the first render, entirely out of placeholders, before you have made anything. No circuit, team, driver or tyre artwork ships: that is your league's to make, and you replace the placeholders a class at a time, seeing your own files appear as you go.
 
-**Five filenames are reserved** besides `fallback.svg`, and are the bot's rather than your league's: `tracks/mystery.svg` and `flags/mystery.svg`, drawn for a round whose circuit is concealed until it is run, and `markers/gained.svg`, `markers/lost.svg` and `markers/unchanged.svg`, the three directions a standing position can move on the standings pictures. Replace the artwork freely; keep the names, or the bot will not find them.
+**Six filenames are reserved** besides `fallback.svg`, and are the bot's rather than your league's: `tracks/mystery.svg` and `flags/mystery.svg`, drawn for a round whose circuit is concealed until it is run; `flags/other.svg`, drawn for a driver who chose no nationality in particular; and `markers/gained.svg`, `markers/lost.svg` and `markers/unchanged.svg`, the three directions a standing position can move. Replace the artwork freely; keep the names, or the bot will not find them.
 
-**You need not supply a `fallback.svg` of your own.** When a file for a specific value is not in the directory you configured, the bot looks for a fallback there first and then in `resources/defaults/<class>/`. Point the team badge directory at a folder holding eight of your ten badges and every graphic still draws — the two without a badge get the packaged placeholder and a notice naming them. Put a `fallback.svg` in your own folder only when you want your placeholder rather than ours. The packaged directory is consulted for a *fallback* and nothing else: a file there under one of your teams' names is never drawn for you. Markers and weather icons are the one exception — see below.
+**You need not supply a `fallback.svg` of your own.** When a file for a specific value is not in your folder, the bot looks for a fallback there first and then in `resources/defaults/<class>/`. Put eight of your ten team badges in `resources/league/teams` and every graphic still draws — the two without a badge get the packaged placeholder and a notice naming them. Put a `fallback.svg` in your own folder only when you want your placeholder rather than ours. The packaged directory is consulted for a *fallback* and nothing else: a file there under one of your teams' names is never drawn for you. What the bot itself named is the one exception — see below.
 
-**Markers and weather icons are the exception, and both ship complete.** `resources/defaults/markers/` carries all three directions a standing can move — `gained`, `lost` and `unchanged` — and `resources/defaults/weather/` carries all eight the bot can ask for — `sunny`, `mixed` and `rain` for a session's type, and `clear`, `light_cloud`, `overcast`, `wet` and `very_wet` for a concrete weather — because you did not choose either vocabulary and cannot be incomplete against it. Every marker and every forecast therefore draws a correct icon out of the box. Point either directory at a folder of your own and this still holds: a value missing from your folder draws the packaged directory's own icon for it, not a generic placeholder — the one respect in which the packaged directory is searched for a file under your value's own name rather than only for a fallback. Replace them freely; keep the filenames. See [resources/README.md](resources/README.md) for the naming rule and the aspect each class expects.
+**What the bot named, the bot supplies.** Some of the values a picture draws are not yours at all: you never chose them and cannot be incomplete against them. Where your folder has no file for one, the bot draws **its own correct image** for that value rather than a generic placeholder — the one respect in which the packaged directory is searched under your value's own name rather than only for a fallback. Two kinds of value qualify:
+
+- **Whole classes.** `resources/defaults/markers/` carries all three directions a standing can move — `gained`, `lost`, `unchanged` — and `resources/defaults/weather/` carries all eight the bot can ask for: `sunny`, `mixed` and `rain` for a session's type, and `clear`, `light_cloud`, `overcast`, `wet` and `very_wet` for a concrete weather. Every marker and every forecast therefore draws a correct icon out of the box, whatever is or is not in your folder.
+- **Two reserved names inside classes that are otherwise yours.** `mystery`, for a round whose circuit is concealed, and `other`, for a driver who chose no nationality in particular. Your flag folder is full of countries you chose; these two are not among them.
+
+Your own file always wins where you supply one — this only ever fills a gap. Country flags, circuit maps, team badges, portraits and tyres are **not** covered by any of this: they are yours, and a missing one draws the placeholder. Replace the reserved artwork freely; keep the filenames. See [resources/README.md](resources/README.md) for the naming rule and the aspect each class expects.
 
 **A round is pictured two ways, and your template chooses.** A country flag and a circuit map are separate optional slots, so a template can draw either, both, or neither. The map is only offered on the **calendar** and the **check-in call**, where the round is the subject and there is room for an outline to read; on the standings, the attendance sheet and the weather forecasts a round is a column heading, at a size no circuit survives, so those draw the flag. Nothing here is a setting to flip — declare the slot you want in your template and the bot fills it. The calendar decides **per round**, so one round can carry both and the next just a flag.
 
@@ -1487,7 +1492,7 @@ Nothing obliges you to use `league/`; any path inside the project root is accept
 
 > **Spell the country as the bot's track list spells it** — `United Kingdom`, not `Great Britain`; `United States of America`, not `United States`. That is what makes a driver's flag and a round's flag resolve the same file.
 
-> **Upgrading from a version before `resources/defaults/`?** If you never ran `/images config <directory>`, nothing to do — the defaults now point at the new location. If you *did* point a class somewhere of your own, that value is untouched and keeps working.
+> **Upgrading?** The seven asset directories now default to `resources/league/<class>` rather than `resources/defaults/<class>`. **Nothing on an existing server changes**: whatever each class is set to today is left exactly as it stands, whether you chose it or it was the old default. The new default applies to servers set up from here on. To adopt it, move your artwork into `resources/league/<class>` and set the class back with `/images config <class>-directory` — or carry on as you are, which keeps working.
 
 > **Upgrading a league that already had flags named for nationalities?** Rename them to their countries — `british.svg` becomes `united_kingdom.svg`. A file under the old name is never looked for, so every driver would draw your `fallback.svg` instead.
 
@@ -1576,6 +1581,10 @@ Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four
 | The division holds no team beyond Reserve | `lineup`, `results`, `standings`, `attendance` |
 | The round is a mystery round | `weather-p1`, `weather-p2`, `weather-p3` |
 | The round is **not** a mystery round | `weather-mystery` |
+
+**What the preview tells you it had to make do with.** A picture the bot could still draw, but not exactly as your templates and artwork asked, comes back with a **notices** block beneath it — a font it had to substitute, a text it had to shorten, a value it had no picture for. The notices are grouped by kind and repetitions are counted rather than listed, so twenty drivers all missing the same marker read as one line and not twenty. The same block is written to your log channel, and the reply links to it so you can go back to it later.
+
+> `/images test` is the only place these appear in a reply. A real posting writes them to the **log channel only** — never to the channel your drivers are reading — so a picture that fell back to a placeholder never announces it to the league.
 
 **How many pictures.** `results` returns one per session of that round's format — two for a normal or endurance round, four for a sprint. `standings` returns both championships. `verdict` returns one per sanction, because how a steward's prose wraps is the only thing about that graphic worth judging by eye and one picture cannot show it. Every other kind returns one.
 

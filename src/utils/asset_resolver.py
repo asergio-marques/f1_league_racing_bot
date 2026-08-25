@@ -98,6 +98,19 @@ class AssetResolution:
     def missing(self) -> bool:
         return self.outcome is AssetOutcome.MISSING
 
+    @property
+    def drew_own_file(self) -> bool:
+        """Whether the file drawn is the datum's *own*, from whichever tier supplied it.
+
+        Always true of ``FOUND``. True of ``FALLBACK`` only on a closed-set hit in the
+        packaged tier, where the module drew its own correct file for the datum — nothing
+        was substituted, and a caller must not describe that as a placeholder standing in
+        for missing artwork.
+        """
+        if self.path is None or not self.slug:
+            return False
+        return self.path.name == f"{self.slug}{ASSET_EXTENSION}"
+
 
 def resolve_asset(
     directory: Path, datum: str, *, packaged: Path | None = None, closed_set: bool = False
@@ -120,13 +133,19 @@ def resolve_asset(
     *packaged* is never drawn: a league that supplied no image must not be handed one it
     did not choose. Only ``fallback.svg`` is read from the packaged tier.
 
-    *closed_set* is the one exception (Constitution XIV.13, v6.1.0): for a class whose data
-    are a closed set the module itself defines — the league did not choose the vocabulary
-    and cannot be incomplete against it — path 3 first tries the datum's own file in
-    *packaged* before its ``fallback.svg``, so a customised directory missing an entry still
-    draws the module's own correct file rather than a generic placeholder. This is still
-    reported as ``FALLBACK`` with ``from_packaged=True``: it is still not what the league
-    supplied, only more specific than the generic placeholder would have been.
+    *closed_set* is the one exception (Constitution XIV.13, v6.1.0): where the datum is the
+    module's **own vocabulary** rather than a value the league chose — the league did not
+    choose it and cannot be incomplete against it — path 3 first tries the datum's own file
+    in *packaged* before its ``fallback.svg``, so a customised directory missing an entry
+    still draws the module's own correct file rather than a generic placeholder. This is
+    still reported as ``FALLBACK`` with ``from_packaged=True``: it is still not what the
+    league supplied, only more specific than the generic placeholder would have been. Such
+    a hit answers True to :attr:`AssetResolution.drew_own_file`, which is how a caller tells
+    it apart from a placeholder when saying what happened.
+
+    Whether a datum qualifies is not this module's decision: it is asked of
+    ``is_closed_set_datum`` by the caller, because a whole class can qualify (marker,
+    weather) or an individual reserved slug can (``mystery``, ``other``).
 
     Omitting *packaged* gives the single-tier behaviour that stood before v6.0.0.
     """

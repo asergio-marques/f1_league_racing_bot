@@ -457,12 +457,16 @@ async def report(bot, server_id: int, what: str, detail: str) -> None:
 
 
 async def report_notices(bot, server_id: int, what: str, notices) -> None:
-    """Report every non-fatal degradation, naming the session it pertains to."""
+    """Report every non-fatal degradation, naming the session it pertains to.
+
+    `what` reaches the log as the block's subject. It used to be accepted and dropped,
+    which left a reader of a busy log unable to tell which session a notice came from.
+    """
     if not notices:
         return
     try:
         from services.image_render_service import ImageRenderService
 
-        await ImageRenderService.report_notices(bot, server_id, notices)
+        await ImageRenderService.report_notices(bot, server_id, notices, subject=what)
     except Exception as exc:  # noqa: BLE001
         log.error("results: could not report notices: %s", exc)

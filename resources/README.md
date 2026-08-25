@@ -10,37 +10,42 @@ What the image module reads from disk.
 | `defaults/` | Ours. Replaced wholesale when you update the bot — do not edit it |
 | `league/` | Yours. One folder per class, ready to fill. Never committed, never touched by an update |
 
-`league/` starts empty, with a folder per class mirroring `defaults/`. It exists so a clone
-has an obvious place to put things, and so an update to the bot can never overwrite them.
+`league/` starts empty, with a folder per class mirroring `defaults/`, and **the bot already
+looks there.** Every asset class points at its `league/` folder out of the box; `defaults/` is
+the second place the bot looks, automatically, whenever your folder has nothing for a value.
 
-The **Default** column is where the bot looks until you tell it otherwise; **Yours** is the
-folder waiting for your own files. Each is configurable per server with
-`/images config <directory>`, and any path inside the project root is accepted — `league/` is
-a convenience, not a requirement.
+The **Looks in** column is where the bot searches unless you tell it otherwise. Each is
+configurable per server with `/images config <directory>`, and any path inside the project
+root is accepted — but most leagues never need to run one.
 
-| Class | Default | Yours | Set it with | Aspect |
+| Class | Looks in | Falls back to | Set it with | Aspect |
 |---|---|---|---|---|
-| Templates | `defaults/templates/` | `league/templates/` | `/images config template-directory` | declared by each template |
-| Circuit maps | `defaults/tracks/` | `league/tracks/` | `/images config track-image-directory` | 120 × 120 |
-| Team badges | `defaults/teams/` | `league/teams/` | `/images config team-image-directory` | 120 × 120 |
-| Driver portraits | `defaults/drivers/` | `league/drivers/` | `/images config driver-image-directory` | 120 × 120 |
-| Country flags | `defaults/flags/` | `league/flags/` | `/images config flag-directory` | 120 × 80 |
-| Movement markers | `defaults/markers/` | `league/markers/` | `/images config marker-directory` | 64 × 64 |
-| Weather icons | `defaults/weather/` | `league/weather/` | `/images config weather-icon-directory` | 64 × 64 |
-| Tyre compounds | `defaults/tyres/` | `league/tyres/` | `/images config tyre-directory` | 64 × 64 |
+| Templates | `defaults/templates/` | — nothing | `/images config template-directory` | declared by each template |
+| Circuit maps | `league/tracks/` | `defaults/tracks/` | `/images config track-image-directory` | 120 × 120 |
+| Team badges | `league/teams/` | `defaults/teams/` | `/images config team-image-directory` | 120 × 120 |
+| Driver portraits | `league/drivers/` | `defaults/drivers/` | `/images config driver-image-directory` | 120 × 120 |
+| Country flags | `league/flags/` | `defaults/flags/` | `/images config flag-directory` | 120 × 80 |
+| Movement markers | `league/markers/` | `defaults/markers/` | `/images config marker-directory` | 64 × 64 |
+| Weather icons | `league/weather/` | `defaults/weather/` | `/images config weather-icon-directory` | 64 × 64 |
+| Tyre compounds | `league/tyres/` | `defaults/tyres/` | `/images config tyre-directory` | 64 × 64 |
+
+**Templates are the exception in the table.** They have nothing to fall back to — the folder
+you configure is the only place a template is searched — so their folder is still
+`defaults/templates/`, and `/images config template-directory` **refuses** a folder that does
+not hold all fifteen, valid. Put the files in place first, then point the bot at it.
 
 ## Using `league/`
 
-**The bot does not look there on its own.** Dropping a file in is half the job; the class has
-to be pointed at the folder, once:
+**Drop a file in and it is drawn.** There is nothing to configure:
 
 ```
-/images config team-image-directory directory:resources/league/teams
+resources/league/teams/red_bull_racing.svg
 ```
 
-**Mixing is the ordinary case.** Point `teams` and `drivers` at your own folders and leave
-`markers` and `weather` on the defaults, which ship complete and are the module's own
-vocabulary rather than anything you chose.
+**Mixing is the ordinary case, and it is now the default.** Fill `teams` and `drivers` with
+your own artwork and leave `markers` and `weather` empty — they ship complete under
+`defaults/` and are the module's own vocabulary rather than anything you chose, so the bot
+draws its own icons for them until you supply better.
 
 **Nothing in `league/` is committed.** It is listed in `.gitignore` — bar the `.gitkeep`
 markers that keep the folders in place — so your artwork never appears in a diff and pulling
@@ -65,6 +70,7 @@ classes need not match each other, and flags and maps deliberately do not.
 - one `fallback.svg` in each asset directory;
 - `defaults/tracks/mystery.svg` and `defaults/flags/mystery.svg`, drawn for a round whose
   track — and with it its country — is concealed until it is run;
+- `defaults/flags/other.svg`, drawn for a driver who stated no nationality in particular;
 - `defaults/markers/gained.svg`, `lost.svg` and `unchanged.svg`, the three directions
   a standing position can move;
 - the eight `defaults/weather/` icons — `sunny.svg`, `mixed.svg` and `rain.svg` for the type of
@@ -78,13 +84,17 @@ language rather than inherit one.
 **Why the markers and the weather icons are different.** Those two sets are not a league's
 values at all — they are the bot's own vocabulary, fixed and closed, and no league chose
 them. A league cannot have an incomplete set of something it did not define, so the module
-ships every file rather than leaving each directory to fall back on every render. Replace
+ships every file rather than leaving each directory to fall back on every render. The same
+reasoning covers two individual filenames inside classes that are otherwise a league's own —
+`mystery` and `other` — which the bot also named and therefore also supplies. Replace any of
 them freely; keep the filenames, the aspect and the no-text rule below.
 
-So a fresh clone draws every graphic, and draws each of them entirely out of fallbacks. That
-is the intended starting point: the module works from the first render, and a league
-replaces the placeholders class by class as it makes its own artwork, seeing its own files
-appear as it goes.
+So a fresh clone draws every graphic before a league has made anything at all. The markers,
+the weather icons and the two reserved flags are the bot's own artwork, drawn properly; the
+circuits, teams, drivers, countries and tyres are placeholders, those being a league's to
+supply. That is the intended starting point: the module works from the first render, and a
+league fills `league/` class by class as it makes its own artwork, seeing its own files
+appear as it goes with nothing to configure.
 
 The templates are a starting point in the same sense. Restyle them, replace them, or point
 the bot at your own with `/images template <kind>` — the contract they satisfy is the only
@@ -106,8 +116,9 @@ Discord user ID, so a portrait does not go missing when a driver changes their n
 draws `united_kingdom.svg` from the flag directory — the bot maps the nationality to its country first — and a
 round draws the flag of the country its circuit sits in, so every circuit in one country
 shares one file. Spell the country as the bot's track list spells it: `United Kingdom`, not
-`Great Britain`; `United States of America`, not `United States`. `Other`, recorded for a
-driver who gave no nationality, is not a country and keeps `other.svg`.
+`Great Britain`; `United States of America`, not `United States`. `Other`, recorded for a driver who
+chose no nationality in particular, is not a country and keeps `other.svg`, which the bot
+ships.
 
 ## `fallback.svg`
 
@@ -127,13 +138,23 @@ The packaged directory is consulted for a **fallback and nothing else**. A file 
 `defaults/teams/` under the same name as one of your teams is never drawn for you — only
 what you supplied, or a placeholder.
 
-**Markers and weather icons are the one exception**, for the reason given above: you never
-chose that vocabulary, so a value missing from a directory you point them at is not yours to
-be incomplete against. Where the directory holds neither the value's own file nor a fallback
-of your own, the bot draws the packaged directory's own icon for that value — `lost.svg`,
-`very_wet.svg`, whichever it is — in preference to the generic placeholder. This is the one
-respect in which the packaged directory is searched for a file under your value's own name
-and not only for a fallback.
+**What the bot named, the bot supplies** — the one exception, for the reason given above.
+Where a value is the bot's own vocabulary rather than one you chose, and your folder holds
+neither its file nor a fallback of your own, the bot draws its **own correct image** for that
+value — `lost.svg`, `very_wet.svg`, `mystery.svg`, `other.svg`, whichever it is — in
+preference to the generic placeholder. This is the one respect in which the packaged
+directory is searched for a file under your value's own name and not only for a fallback.
+
+Two kinds of value qualify, which is one rule at two sizes rather than two rules:
+
+- **whole classes** — every marker and every weather icon, since every value those two can
+  ever be asked for is the bot's;
+- **two reserved filenames** — `mystery` and `other` — inside the flag and circuit-map
+  classes, whose other values are the countries and circuits you chose.
+
+**Your own file always wins**, and this only ever fills a gap. It does not extend to the rest
+of those classes: a country you have not drawn a flag for gets the placeholder, because that
+country is yours to supply and not ours to guess at.
 
 **When neither place holds a fallback, the graphic is not produced at all.** The bot will
 not quietly post a card with a hole in it. Since one ships in every packaged directory, you
@@ -158,7 +179,8 @@ where the grand prix name belongs — a Mystery round appears like any other rou
 such, and never leaves a hole.
 
 It is a reserved name in the same way `fallback.svg` is, in **both** directories: replace the
-artwork freely, but keep the filename, the aspect, and the no-text rule above.
+artwork freely, but keep the filename, the aspect, and the no-text rule above. `other.svg`, in
+the flag directory, is reserved on exactly the same terms.
 
 ## Authoring your own assets
 

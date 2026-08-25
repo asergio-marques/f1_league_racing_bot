@@ -48,7 +48,9 @@ class OutputRouter:
             channel_id, content, server_id=server_id, fallback_label="forecast"
         )
 
-    async def post_log(self, server_id: int, content: str) -> None:
+    async def post_log(
+        self, server_id: int, content: str
+    ) -> "Optional[discord.Message]":
         """Post *content* to the server's calculation log channel.
 
         Mention syntax (<@id>, <@&id>) is wrapped in backticks so Discord
@@ -56,17 +58,28 @@ class OutputRouter:
         Channel links (<#id>) are left as-is so they remain clickable.
         A separator line is appended for readability.
         On failure, attempts to surface an alert to the interaction channel.
+
+        Returns the ``discord.Message`` on success, or ``None`` on failure — as
+        :meth:`post_forecast` already does. A caller that wants to point a reader at what
+        it just logged can take ``jump_url`` from it; every other caller ignores it.
+
+        The **first** message is returned where the content had to be split across
+        Discord's limit, because a link is meant to land a reader at the top of the block
+        rather than at its tail. This is the one respect in which it differs from
+        :meth:`post_forecast`, which returns the last because its callers store the id to
+        edit the message later.
         """
         content = _MENTION_RE.sub(r"`\1`", content)
         content = content + "\n" + "\u2015" * 36
         config = await self._bot.config_service.get_server_config(server_id)
         if config is None:
             log.error("post_log: no server config found for server_id=%s", server_id)
-            return
+            return None
 
         channel_id = config.log_channel_id
         msg = await self._send(
-            channel_id, content, server_id=server_id, fallback_label="log"
+            channel_id, content, server_id=server_id, fallback_label="log",
+            return_first=True,
         )
 
         if msg is None:
@@ -79,6 +92,8 @@ class OutputRouter:
                 fallback_label="interaction (last resort)",
             )
 
+        return msg
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -90,12 +105,18 @@ class OutputRouter:
         *,
         server_id: int = 0,
         fallback_label: str = "unknown",
+        return_first: bool = False,
     ) -> "Optional[discord.Message]":
         """Attempt to send *content* to *channel_id*.
 
         Returns the last ``discord.Message`` sent on success, ``None`` on failure.
         Never raises. On HTTP/Forbidden failure, enqueues for retry when
         retry_db_path is configured and server_id > 0.
+
+        *return_first* returns the **first** message instead, for a caller linking a
+        reader to the start of what it wrote. It defaults to False because the forecast
+        callers store the returned id to edit that message later, and returning a
+        different one would repoint those edits.
         """
         channel = self._bot.get_channel(channel_id)
         if channel is None:
@@ -117,10 +138,13 @@ class OutputRouter:
 
         try:
             # Discord messages have a 2000-char limit; chunk if needed
+            first_msg: Optional[discord.Message] = None
             last_msg: Optional[discord.Message] = None
             for chunk in _chunk_message(content):
                 last_msg = await channel.send(chunk, allowed_mentions=discord.AllowedMentions.none())
-            return last_msg
+                if first_msg is None:
+                    first_msg = last_msg
+            return first_msg if return_first else last_msg
         except discord.Forbidden as exc:
             log.error(
                 "_send: missing permissions for %s channel id=%s: %s",

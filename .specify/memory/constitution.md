@@ -1,6 +1,83 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-25 — v6.1.0 → v6.2.0: MINOR — the closed-set clause is stated of a datum rather than of a class; the packaged directory is never the configured default; a notice may not claim a fallback where the module's own file was drawn]
+  Version change    : 6.1.0 → 6.2.0
+  Bump rationale    : MINOR, on three counts, none of which narrows a prior guarantee.
+
+                      (1) Rule XIV.13's closed-set clause was stated of a **class** whose data are a
+                      closed set the module defines, which reached `marker` and `weather` and
+                      nothing else. `mystery.svg` sat outside it by accident of shape rather than
+                      of principle: it is as much the module's own vocabulary as `lost.svg` is, but
+                      it lives in the flag and track classes, whose other data are the countries and
+                      circuits a league named. The clause is now stated of a **datum**, qualifying
+                      in either of two ways — the class settles it where every datum the class can
+                      be handed is the module's; the datum settles it where the module reserves a
+                      filename inside a class that is otherwise the league's. `mystery` and `other`
+                      are the two reserved filenames. The four-outcome table is untouched and gains
+                      no fifth outcome.
+
+                      The generalisation carries an explicit prohibition, which is what makes it
+                      safe: a class whose data are values a league named MUST NOT be declared
+                      closed-set as a whole, however many reserved filenames it carries. Without it
+                      the obvious simplification — "the flag class is closed" — would hand a league
+                      the module's file for a country it had simply not drawn yet. That no country
+                      flag ships today makes the mistake invisible rather than harmless.
+
+                      (2) The same rule asserted that the packaged directory and the configured
+                      directory "are one and the same directory" where a league has not moved the
+                      class. That is now false and is corrected: the seven asset classes default to
+                      `resources/league/<class>`, the gitignored folder a league fills with its own
+                      artwork and which an update cannot overwrite, while the packaged directory
+                      remains `resources/defaults/<class>`. The two tiers are therefore always
+                      distinct, and a league drops a file in and has it drawn without issuing a
+                      command. The template directory is excepted in the rule itself: it has no
+                      packaged tier, so pointing it at an empty folder would leave nothing to draw.
+
+                      (3) The outcome table's requirement of the **same notice** on either fallback
+                      tier stands, and is explicitly preserved as to the notice's kind. Its wording
+                      is now constrained: where the packaged tier supplied the datum's own file
+                      under the closed-set clause, nothing was substituted, and the notice may not
+                      say a fallback was drawn.
+
+                      MINOR rather than MAJOR because nothing that resolved before now fails, and
+                      nothing that drew a specific file before now draws a fallback. The default
+                      change binds newly created configurations alone; a server already configured
+                      keeps the value it holds, whether it chose that value or inherited it.
+
+                      MINOR rather than PATCH because (1) widens what a render can succeed with and
+                      adds a prohibition that did not exist, and Rule XIV.4 gains a new obligation
+                      as to how notices are reported.
+
+  Modified sections :
+    - Principle XIV, Rule 13: the closed-set bullet is restated of a datum and gains the two
+      granularities and the prohibition on declaring a league's-own class closed; the packaged
+      directory bullet loses its "one and the same directory" clause and gains the league-folder
+      default and the template-directory exception; the outcome rules' cross-reference follows the
+      restatement, and gains a bullet governing the notice's wording on a packaged exact hit.
+    - Principle XIV, Rule 4: "Where each is reported" is unchanged and gains a companion, "How they
+      are reported" — one grouped message per generation, repetitions counted, the subject named,
+      and a link from a commanding command's output to the logged message.
+    - Governance footer: version and Last Amended date.
+
+  Added sections    : None. Rule XIV.4 gains a paragraph within an existing rule.
+  Removed sections  : None.
+
+  Not changed, and deliberately:
+    - The four-outcome table, in either its rows or their order.
+    - Resolution for every datum that is a league's own value, in every respect — including the
+      countries of the flag class and the circuits of the track class, which the generalisation
+      reaches only at the two reserved filenames.
+    - Rule XIV.4's "Where each is reported": the log always, a commanding command's output
+      additionally, never a channel the drivers read.
+    - `resources/defaults/` continues to hold no league-specific artwork. `other.svg` is the
+      module's own vocabulary, as `mystery.svg` and the direction markers already were.
+
+  Follow-up TODOs   : None. `docs/wip-specs/image_module_specification.md`,
+                      `docs/wip-specs/image_module_changes.md`, `README.md`, `resources/README.md`
+                      and `docs/how-to/configuring-the-image-module.md` are brought into step by the
+                      same change, per the close-out discipline in CLAUDE.md — tracked as part of
+                      the change that requested this amendment, not as a constitution follow-up.
 [2026-08-21 — v6.0.0 → v6.1.0: MINOR — a closed-set class's packaged directory is searched for the datum's own file, not only its fallback, whether or not a league has moved the directory]
   Version change    : 6.0.0 → 6.1.0
   Bump rationale    : MINOR. Rule XIV.13's closed-set bullet previously closed with "A league MAY
@@ -4000,6 +4077,17 @@ which is an ordinary emptied optional field and raises its notice.
 the generation. No problem and no notice may ever be reported in a channel the drivers of the
 league read.
 
+**How they are reported.** The notices of one generation MUST be reported in one message and not
+in one message apiece, grouped by kind, with notices identical to one another counted rather than
+repeated. A generation degrades in the same manner as many times as it draws the field that
+degrades, and a line for each buries the one notice that differs among those that do not. A notice
+standing alone MUST name the field it was met upon; one repeated names how many times it was met in
+place of the fields. The message MUST name what was being drawn, the kind of template alone not
+distinguishing one posting from another in a log holding many. Where a command triggered the
+generation, its output MUST carry a link to that logged message, which is therefore written before
+the output is composed; a log channel that cannot be written to costs the link and nothing else.
+This governs presentation only: the record kept of the notices holds one entry for each.
+
 **Rejection at the earliest moment.** A problem traceable to something a user configured or
 commanded MUST reject that input wherever the module is in a position to detect it: a command
 naming a template that carries one is rejected and the configuration left as it stood; a season
@@ -4637,23 +4725,45 @@ asset class. Resolution MUST be deterministic and documented:
   it does not, drawn under the two-tier resolution below.
 - The **packaged directory** of a class is the directory shipped with the module for it —
   `resources/defaults/<class>` — and carries that class's own `fallback.svg`. It is distinct from
-  the directory a league has configured for the class, which a league is free to point elsewhere;
-  where a league has not moved it, the two are one and the same directory.
-- Where the data of a class are **not values a league supplies** but a **closed set the module
-  itself defines** — the three directions of a change of standing position (`gained`, `lost`,
-  `unchanged`); the three types of weather a session may be drawn (`sunny`, `mixed`, `rain`) and the
-  five concrete weathers a slot may carry (`clear`, `light_cloud`, `overcast`, `wet`, `very_wet`) —
-  the **module** MUST ship a file for every one of them in the **packaged directory** of that
-  class, beside that class's `fallback.svg`. The obligation of the bullet above is discharged by the module rather
-  than by the league, because the league has nothing to supply: it did not choose the vocabulary and
-  cannot be incomplete against it. A league MAY still point the class at a directory of its own;
-  doing so does not make the vocabulary the league's, so a value missing from that directory MUST
-  still resolve to the packaged directory's own matching file, drawn in preference to the packaged
-  `fallback.svg`. This is the one respect in which the packaged directory of a closed-set class is
-  searched for the datum's own file and not merely for its fallback — see the exception carried in
-  the outcome rules below.
+  the directory a league has configured for the class, which a league is free to point elsewhere.
+  The two MUST NOT be the same directory. The configured directory of each of the seven asset
+  classes defaults to `resources/league/<class>` — the folder a league fills with its own artwork,
+  which an update to the bot MUST NOT overwrite — so the two tiers stand apart whether or not a
+  league has configured anything, and a league that places a file there has it drawn without
+  issuing any command. The template directory is not of this kind and does not default thus: it has
+  no packaged tier, a template being sought in the configured directory alone.
+- Where a datum is **not a value a league supplies** but part of a **closed set the module itself
+  defines**, the **module** MUST ship a file for it in the **packaged directory** of its class,
+  beside that class's `fallback.svg`. The obligation of the bullet above is discharged by the module
+  rather than by the league, because the league has nothing to supply: it did not choose the
+  vocabulary and cannot be incomplete against it. A league MAY still point the class at a directory
+  of its own; doing so does not make the vocabulary the league's, so such a datum missing from that
+  directory MUST still resolve to the packaged directory's own matching file, drawn in preference to
+  the packaged `fallback.svg`. This is the one respect in which the packaged directory is searched
+  for the datum's own file and not merely for its fallback — see the exception carried in the
+  outcome rules below.
 
-  This is the rule `mystery.svg` already follows in the track class, generalised. It stands apart
+  A datum qualifies in **either of two ways**, which are one rule at two granularities and not two
+  rules. What qualifies a datum is that it is the module's own vocabulary; the granularity follows
+  from the class it sits in:
+
+  - **The class settles it**, where every datum the class can be handed is the module's own: the
+    three directions of a change of standing position (`gained`, `lost`, `unchanged`), and the three
+    types of weather a session may be drawn (`sunny`, `mixed`, `rain`) together with the five
+    concrete weathers a slot may carry (`clear`, `light_cloud`, `overcast`, `wet`, `very_wet`).
+  - **The datum settles it**, where the class's other data are the league's own but the module
+    reserves a filename within it: `mystery`, for a round concealed until it is run, and `other`,
+    for a driver who stated no nationality in particular. Both are reserved in the flag class, and
+    `mystery` in the track class besides.
+
+  A class whose data are values a league named — the countries of the flag class, the circuits of
+  the track class, and likewise team, driver and tyre — MUST NOT be declared closed-set as a whole,
+  however many reserved filenames it carries. A league supplying most of its country flags would
+  otherwise be handed the module's file for the remainder, under a name the league chose and for
+  artwork it did not; that a file happens not to ship under such a name today is an accident of what
+  is packaged and not a rule that can be relied upon.
+
+  This is the rule `mystery.svg` already followed in the track class, generalised. It stands apart
   from `resources/defaults/` holding no league-specific artwork: a direction marker is the module's own
   vocabulary drawn in the module's own terms, and shipping none of it would put the class's fallback
   on every row of every graphic — three identical arrows and a notice apiece, which is not a
@@ -4670,11 +4780,17 @@ Resolution has exactly **four** outcomes, and no others:
 
 - The datum's **own file** is sought in the **configured directory alone**. The packaged directory
   is consulted for a **fallback** and for nothing else; a file of the datum's own name sitting in
-  the packaged directory MUST NOT be drawn for a league that did not supply it. This governs the
-  classes whose data are a league's own. The closed-set bullet above states the sole exception: for
-  a class whose data are a closed set the module itself defines, the packaged directory is searched
-  for the datum's own file, ahead of its `fallback.svg`, whether or not the league has pointed the
-  class at a directory of its own.
+  the packaged directory MUST NOT be drawn for a league that did not supply it. This governs every
+  datum that is a league's own value. The closed-set bullet above states the sole exception: for a
+  datum that is the module's own vocabulary — whether because its whole class is, or because it is
+  a reserved filename within a class that is not — the packaged directory is searched for the
+  datum's own file, ahead of its `fallback.svg`, whether or not the league has pointed the class at
+  a directory of its own.
+- Where that exception applies and the packaged directory supplied the datum's **own file**, the
+  notice raised MUST NOT state that a fallback was drawn. Its **kind** is unchanged, the row above
+  requiring the same notice on either tier; its wording MUST say that the module's own file was
+  drawn, nothing having been substituted. A league told otherwise would go looking for artwork it
+  was never expected to supply.
 - Wherever else this constitution speaks of a directory **holding**, or not holding, a fallback, it
   means this two-tier check taken as a whole and not the configured directory alone.
 - A league whose configured directory carries no `fallback.svg` of its own therefore no longer
@@ -5829,4 +5945,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 6.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-21
+**Version**: 6.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-25
