@@ -456,3 +456,57 @@ async def test_no_channel_configured_posts_nothing_and_deletes_nothing(sheet_db)
     await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert journal == []
+
+
+# ── The sheet graphic does not outlive its posting attempt ────────────────
+
+
+def _sheet_artifact(tmp_path):
+    directory = tmp_path / "f1bot_render_attendance"
+    directory.mkdir()
+    png = directory / "attendance_template.png"
+    png.write_bytes(b"\x89PNG")
+    return png
+
+
+def _real_attachment(png):
+    """A `discord.File` over *png*, as `_sheet_attachment` builds for real."""
+    import discord
+
+    async def _attachment(*_args, **_kwargs):
+        return discord.File(str(png), filename="attendance.png")
+
+    return _attachment
+
+
+@pytest.mark.asyncio
+async def test_the_sheet_graphic_is_gone_once_it_has_posted(
+    sheet_db, monkeypatch, tmp_path
+):
+    png = _sheet_artifact(tmp_path)
+    monkeypatch.setattr(attendance_service, "_sheet_attachment", _real_attachment(png))
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert channel.sent_file is not None, "the sheet still posts as a graphic"
+    assert not png.exists()
+    assert not png.parent.exists()
+
+
+@pytest.mark.asyncio
+async def test_the_sheet_graphic_is_gone_when_the_send_fails(
+    sheet_db, monkeypatch, tmp_path
+):
+    """The textual sheet is enqueued for retry; the picture never is (XIV.8, FR-060)."""
+    png = _sheet_artifact(tmp_path)
+    monkeypatch.setattr(attendance_service, "_sheet_attachment", _real_attachment(png))
+    await _config(sheet_db, prior="4242")
+    channel = _FakeChannel([], send_fails=True)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert not png.exists(), "a failed upload must not strand the sheet"

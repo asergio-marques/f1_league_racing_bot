@@ -502,18 +502,21 @@ async def _post_one(
             await report(bot, server_id, what, decision.problem.detail)
         return ChampionshipOutcome(action=FELL_BACK, notices=decision.notices)
 
+    from services.image_render_service import discard_attachment
+
     png = decision.png_paths[0]
+    attachment = discord.File(str(png), filename=_ATTACHMENT_NAMES[championship])
     try:
-        message = await channel.send(
-            f"{heading}\n{label}",
-            file=discord.File(str(png), filename=_ATTACHMENT_NAMES[championship]),
-        )
+        message = await channel.send(f"{heading}\n{label}", file=attachment)
     except discord.HTTPException as exc:
         # A Discord failure rather than a generation one. The graphic was produced; it is
         # the delivery that was not, so it is the **textual** standings the caller posts
         # and, if need be, enqueues for retry (FR-056).
         log.error("standings: could not post the %s graphic: %s", championship, exc)
         return ChampionshipOutcome(action=FELL_BACK, notices=decision.notices)
+    finally:
+        # Through the attachment, so the handle is closed before the file is removed.
+        discard_attachment(attachment)
 
     previous_id = await _get_standings_message_id(
         db_path, division_id, round_id, championship
@@ -532,11 +535,12 @@ async def _post_one(
     if decision.notices:
         await report_notices(bot, server_id, what, decision.notices)
 
+    # No ``png_path``: the file was discarded the moment the send returned, and handing
+    # back a path to something deleted is worse than handing back nothing.
     return ChampionshipOutcome(
         action=POSTED,
         message_id=message.id,
         notices=decision.notices,
-        png_path=png,
     )
 
 

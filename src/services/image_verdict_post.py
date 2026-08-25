@@ -278,6 +278,26 @@ async def render_verdict(
     return VerdictRender(png=decision.png_paths[0], notices=decision.notices)
 
 
+def discard(render, attachment=None) -> None:
+    """Delete the verdict graphic once its announcement has been attempted.
+
+    The companion to :func:`render_verdict`, and here rather than in the caller because a
+    source module reaches the image module through its own posting façade and never
+    through the render service — the boundary
+    ``test_no_source_module_posting_path_imports_the_render_service`` exists to hold.
+
+    *attachment* is given where one was built, so that its handle is closed before the
+    file is removed rather than trusting the send to have closed it. The path is swept
+    afterwards regardless, for the case where the render succeeded and the attachment was
+    never built.
+    """
+    from services.image_render_service import discard_attachment, discard_render
+
+    if attachment is not None:
+        discard_attachment(attachment)
+    discard_render(getattr(render, "png", None))
+
+
 def describe(
     *,
     division_name: str,

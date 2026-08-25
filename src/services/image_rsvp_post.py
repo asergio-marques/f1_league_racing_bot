@@ -148,6 +148,19 @@ async def try_attach(
         return None
 
 
+def discard_attachment(attachment) -> None:
+    """Close the check-in graphic and delete the file behind it.
+
+    The companion to :func:`try_attach`, and here rather than in the caller because a
+    source module reaches the image module through its own posting façade and never
+    through the render service — the boundary
+    ``test_no_source_module_posting_path_imports_the_render_service`` exists to hold.
+    """
+    from services.image_render_service import discard_attachment as _discard
+
+    _discard(attachment)
+
+
 async def _report(bot, server_id: int, what: str, detail: str) -> None:
     from services.image_results_post import report
 

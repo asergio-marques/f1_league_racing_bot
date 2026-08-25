@@ -1529,9 +1529,17 @@ class ImageCog(commands.Cog):
             lines.append(heading)
             lines += grouped_notice_lines(all_notices)
 
-        await interaction.followup.send(
-            "\n".join(lines)[:1900], files=files, ephemeral=True
-        )
+        # A preview puts nothing in a league's channel, but it renders through the same
+        # pipeline and leaves the same files behind. An evening of template-checking would
+        # otherwise litter the host exactly as a season of posting does.
+        from services.image_render_service import discard_attachment
+
+        try:
+            await interaction.followup.send(
+                "\n".join(lines)[:1900], files=files, ephemeral=True
+            )
+        finally:
+            discard_attachment(*files)
 
 
 def _chunk(content: str, limit: int = 1900) -> list[str]:

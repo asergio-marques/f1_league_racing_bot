@@ -418,3 +418,60 @@ def test_an_attendance_pardon_reaches_no_verdict_announcement_and_so_no_graphic(
     for block in source.split("post_autosanction_announcement(")[1:]:
         preceding = source.split(block)[0][-600:] if block else ""
         assert "pardon" not in preceding.lower().split("async def")[-1]
+
+
+# ── The verdict graphic does not outlive its announcement ─────────────────
+
+
+def _render_artifact(tmp_path):
+    directory = tmp_path / "f1bot_render_verdict"
+    directory.mkdir()
+    png = directory / "verdicts_template.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    return png
+
+
+@pytest.mark.asyncio
+async def test_the_graphic_is_gone_once_the_verdict_has_posted(
+    channel, stub_image_path, monkeypatch, tmp_path
+):
+    from services import image_verdict_post
+    from services.image_verdict_post import VerdictRender
+
+    png = _render_artifact(tmp_path)
+
+    async def _render(_bot, _server_id, drawing, **_kwargs):
+        return VerdictRender(png=png, notices=[], problem=None)
+
+    monkeypatch.setattr(image_verdict_post, "render_verdict", _render)
+
+    await _send(channel)
+
+    assert channel.sent, "the verdict still posts"
+    assert not png.exists()
+    assert not png.parent.exists()
+
+
+@pytest.mark.asyncio
+async def test_the_graphic_is_gone_when_the_send_fails(
+    channel, stub_image_path, monkeypatch, tmp_path
+):
+    """The announcement raising must not leave the picture behind."""
+    from services import image_verdict_post
+    from services.image_verdict_post import VerdictRender
+
+    png = _render_artifact(tmp_path)
+
+    async def _render(_bot, _server_id, drawing, **_kwargs):
+        return VerdictRender(png=png, notices=[], problem=None)
+
+    async def _send_boom(content=None, *, file=None, **_kwargs):
+        raise RuntimeError("the channel is gone")
+
+    monkeypatch.setattr(image_verdict_post, "render_verdict", _render)
+    monkeypatch.setattr(channel, "send", _send_boom)
+
+    with pytest.raises(RuntimeError):
+        await _send(channel)
+
+    assert not png.exists()

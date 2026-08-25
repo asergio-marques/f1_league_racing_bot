@@ -663,3 +663,90 @@ async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path)
 
     bot.output_router.post_log.assert_awaited()
     assert len(sent) == 1 and "file" not in sent[0][1]
+
+
+# ── The rendered file does not outlive the posting attempt ────────────────
+#
+# Both outcomes, because they are the whole point: a transport failure re-posts the
+# textual table and never the picture, so a kept file would be a file nothing reads.
+
+
+def _render_artifact(tmp_path, name="results_race_template.png"):
+    """A PNG sitting where `render` puts one, so the ownership guard recognises it."""
+    directory = tmp_path / "f1bot_render_results"
+    directory.mkdir()
+    png = directory / name
+    png.write_bytes(b"\x89PNG")
+    return png
+
+
+async def test_the_rendered_file_is_gone_once_the_graphic_has_posted(tmp_path):
+    from services import image_results_post
+    from services.results_post_service import post_session_results
+
+    db_path, session_result = await _seeded(tmp_path)
+    png = _render_artifact(tmp_path)
+
+    with patch.object(
+        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
+    ), patch.object(
+        image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
+    ):
+        await post_session_results(
+            db_path=db_path,
+            session_result=session_result,
+            driver_rows=[],
+            points_map={},
+            results_channel=_channel([]),
+            guild=_guild(),
+            round_number=5,
+            track_name="Monaco",
+            label="Final Results",
+            bot=_bot(db_path),
+        )
+
+    assert not png.exists()
+    assert not png.parent.exists()
+
+
+async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
+    """The textual table goes to the retry queue; the picture goes nowhere at all."""
+    import discord
+
+    from services import image_results_post
+    from services.results_post_service import post_session_results
+
+    db_path, session_result = await _seeded(tmp_path)
+    png = _render_artifact(tmp_path)
+
+    channel = AsyncMock()
+    sent: list = []
+
+    async def send(content=None, **kwargs):
+        if "file" in kwargs:
+            raise discord.HTTPException(MagicMock(status=500), "upload failed")
+        sent.append((content, kwargs))
+        return MagicMock(id=4242)
+
+    channel.send = send
+
+    with patch.object(
+        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
+    ), patch.object(
+        image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
+    ):
+        await post_session_results(
+            db_path=db_path,
+            session_result=session_result,
+            driver_rows=[],
+            points_map={},
+            results_channel=channel,
+            guild=_guild(),
+            round_number=5,
+            track_name="Monaco",
+            label="Final Results",
+            bot=_bot(db_path),
+        )
+
+    assert not png.exists(), "a failed upload must not strand the picture"
+    assert sent, "the textual table still posts"

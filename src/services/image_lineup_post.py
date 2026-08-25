@@ -271,12 +271,20 @@ async def try_post(
             await _report(bot, server_id, row["name"], decision.problem.detail)
         return LineupPostOutcome()
 
+    from services.image_render_service import discard_attachment
+
     png = decision.png_paths[0]
+    attachment = discord.File(str(png), filename="lineup.png")
     try:
-        message = await channel.send(file=discord.File(str(png), filename="lineup.png"))
+        message = await channel.send(file=attachment)
     except discord.HTTPException as exc:
         log.error("lineup: could not post image for division %s: %s", division_id, exc)
         return LineupPostOutcome()
+    finally:
+        # The picture has served its purpose either way: posted, or replaced by the
+        # textual body the caller falls back to. Nothing reads it again. Discarded through
+        # the attachment so the handle is closed before the file is removed.
+        discard_attachment(attachment)
 
     # Only now is the previous message removed. This is the whole of FR-025: the channel
     # never holds nothing, and a failed rebuild leaves the league its existing lineup.
@@ -313,8 +321,11 @@ async def try_post(
         )
         await db.commit()
 
+    # No ``png_path``: the file was discarded the moment the send returned. Only
+    # ``render_for_command`` still hands one back, because its two cog callers post it
+    # themselves and discard it themselves.
     return LineupPostOutcome(
-        action=POSTED, notices=decision.notices, png_path=png
+        action=POSTED, notices=decision.notices
     )
 
 

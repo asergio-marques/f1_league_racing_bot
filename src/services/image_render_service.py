@@ -234,6 +234,73 @@ def reset_converter_cache() -> None:
     _cache = None
 
 
+# ── The life of a rendered file ───────────────────────────────────────────
+
+#: Names the per-render directory, and is the whole of how a render is recognised as the
+#: bot's own afterwards. Every render gets its own directory under it so that the PNG can
+#: keep the plain ``{image_type}.png`` name a league sees on an attachment.
+_RENDER_DIR_PREFIX = "f1bot_render_"
+
+
+def _is_render_artifact(path: Path) -> bool:
+    """Is *path* a PNG this module rendered?
+
+    The guard the discards are built on, and the reason they are safe to call on anything.
+    A league's own artwork, a signup CSV, a template — none of them sit inside a directory
+    named for a render, so none of them can be deleted by a mistaken call.
+    """
+    try:
+        return path.parent.name.startswith(_RENDER_DIR_PREFIX)
+    except (AttributeError, OSError):  # pragma: no cover - a path that cannot be read
+        return False
+
+
+def discard_render(*paths: Path | None) -> None:
+    """Delete rendered PNGs and the directories holding them.
+
+    Called once a posting attempt is over, **whatever its outcome**. A rendered file is
+    read only between ``rasterise`` returning and the send completing; after that nothing
+    will ever look at it again, because a transport failure re-posts the textual body and
+    never the picture (XIV.8).
+
+    Tolerant throughout. Tidying up is not the posting, and a failure to tidy up must
+    never reach a league or abort a caller mid-flow.
+    """
+    for path in paths:
+        if path is None or not _is_render_artifact(path):
+            continue
+        try:
+            path.unlink(missing_ok=True)
+            path.parent.rmdir()
+        except OSError as exc:
+            # A directory holding something else, or a file another process still has
+            # open. Neither is worth a word to anyone but a maintainer reading the log.
+            log.debug("discard_render: could not remove %s: %s", path, exc)
+
+
+def discard_attachment(*files) -> None:
+    """Close each ``discord.File`` and delete the render behind it.
+
+    Three posting helpers hand a ``discord.File`` across a module boundary and keep no
+    path — the check-in call, the forecast and the attendance sheet. Recovering the path
+    from the file object lets them keep their contracts rather than each growing a second
+    return value for the sake of cleanup.
+
+    A file wrapping a buffer rather than a path — the unassigned-drivers CSV is one — has
+    no name to recover and is closed and left alone.
+    """
+    for file in files:
+        if file is None:
+            continue
+        try:
+            file.close()
+        except Exception as exc:  # noqa: BLE001 - closing must not break a posting
+            log.debug("discard_attachment: could not close a file: %s", exc)
+        name = getattr(getattr(file, "fp", None), "name", None)
+        if isinstance(name, (str, os.PathLike)):
+            discard_render(Path(name))
+
+
 # ── Rasterisation ─────────────────────────────────────────────────────────
 
 #: Discord's attachment ceiling for a non-boosted server. The canvas is declared by the
@@ -261,7 +328,6 @@ def rasterise(svg: bytes, destination: Path, canvas: tuple[int, int]) -> Path:
 
     width, height = canvas
     source = destination.with_suffix(".svg")
-    source.write_bytes(svg)
 
     command = [
         executable,
@@ -273,6 +339,11 @@ def rasterise(svg: bytes, destination: Path, canvas: tuple[int, int]) -> Path:
     ]
 
     try:
+        # Inside the try, so that a write failing part way through — a full disk, a tmpfs
+        # with no room left — still reaches the unlink below rather than leaving half an
+        # SVG behind.
+        source.write_bytes(svg)
+
         completed = subprocess.run(  # noqa: S603 - executable is discovered, not user input
             command,
             capture_output=True,
@@ -288,8 +359,13 @@ def rasterise(svg: bytes, destination: Path, canvas: tuple[int, int]) -> Path:
     finally:
         source.unlink(missing_ok=True)
 
+    # Each failure below is raised *after* a file may already exist, so each one clears up
+    # after itself. The oversize case is the largest single file the bot can produce, and
+    # is refused rather than uploaded — leaving it on the host would strand 25 MB, and
+    # strand it again on every render that repeats the fault.
     if completed.returncode != 0:
         detail = (completed.stderr or b"").decode("utf-8", "replace").strip()
+        discard_render(destination)
         raise RasterisationError(
             f"{CONVERTER_NAME} exited {completed.returncode}"
             + (f": {detail.splitlines()[-1]}" if detail else "")
@@ -300,6 +376,7 @@ def rasterise(svg: bytes, destination: Path, canvas: tuple[int, int]) -> Path:
 
     size = destination.stat().st_size
     if size > MAX_ATTACHMENT_BYTES:
+        discard_render(destination)
         raise RasterisationError(
             f"the rendered image is {size / 1024 / 1024:.1f} MB, above Discord's "
             f"{MAX_ATTACHMENT_BYTES // 1024 // 1024} MB attachment limit."
@@ -624,7 +701,7 @@ class ImageRenderService:
                 notices=result.notices,
             )
 
-        directory = output_dir or Path(tempfile.mkdtemp(prefix="f1bot_render_"))
+        directory = output_dir or Path(tempfile.mkdtemp(prefix=_RENDER_DIR_PREFIX))
         directory.mkdir(parents=True, exist_ok=True)
         destination = directory / f"{image_type}.png"
 

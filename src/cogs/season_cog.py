@@ -255,21 +255,28 @@ class SeasonCog(commands.Cog):
             import discord as _discord
 
             from services.image_lineup_post import lineup_enabled, render_for_command
+            from services.image_render_service import discard_attachment, discard_render
 
             if not await lineup_enabled(self.bot, interaction.guild_id):
                 return
             outcome = await render_for_command(
                 self.bot, interaction.guild, division.id
             )
-            if outcome.png_path is not None:
-                await interaction.followup.send(
-                    file=_discord.File(
-                        str(outcome.png_path), filename=f"lineup_{division.id}.png"
-                    ),
-                    ephemeral=False,
+            attachment = (
+                _discord.File(
+                    str(outcome.png_path), filename=f"lineup_{division.id}.png"
                 )
-            elif outcome.message:
-                await interaction.followup.send(outcome.message, ephemeral=True)
+                if outcome.png_path is not None
+                else None
+            )
+            try:
+                if attachment is not None:
+                    await interaction.followup.send(file=attachment, ephemeral=False)
+                elif outcome.message:
+                    await interaction.followup.send(outcome.message, ephemeral=True)
+            finally:
+                discard_attachment(attachment)
+                discard_render(outcome.png_path)
         except Exception as exc:  # noqa: BLE001 — never break a review on this
             log.error("season review: lineup image failed: %s", exc)
 
