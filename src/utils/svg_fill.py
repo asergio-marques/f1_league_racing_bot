@@ -18,16 +18,16 @@ from pathlib import Path
 from lxml import etree
 
 from models.image_constants import (
-    CLOSED_SET_ASSET_CLASSES,
     NOTICE_ASSET_FALLBACK_USED,
     NOTICE_CROP_POINT_OFF_CANVAS,
     NOTICE_FONT_SUBSTITUTED,
     NOTICE_INLINE_SIZE_TRUNCATED,
     NOTICE_OPTIONAL_FIELD_EMPTIED,
     NOTICE_WRAP_TRUNCATED,
+    is_closed_set_datum,
 )
 from models.image_module import FillResult, RenderNotice
-from utils.asset_resolver import resolve_asset
+from utils.asset_resolver import ASSET_EXTENSION, normalise, resolve_asset
 from utils.font_metrics import ResolvedFont, measure, resolve_family
 from utils.svg_document import (
     SVG_NS,
@@ -289,12 +289,15 @@ def fill(spec: FillSpec) -> FillResult:
     #   absent, packaged directory has fallback    → fallback drawn, the same notice
     #   absent, neither tier has one               → fatal; the generation is abandoned
     #
-    # For a **closed-set** class (marker, weather — CLOSED_SET_ASSET_CLASSES), the third
-    # row is itself refined (Constitution XIV.13, v6.1.0): the packaged directory is
-    # searched for the datum's own file before its `fallback.svg`, whether or not the
-    # league has pointed the class at a directory of its own, because the league never
-    # chose that vocabulary and cannot be incomplete against it. Still the same notice —
-    # only which file gets drawn differs.
+    # For a datum that is the module's **own vocabulary** rather than a value the league
+    # chose, the third row is itself refined (Constitution XIV.13, v6.1.0): the packaged
+    # directory is searched for the datum's own file before its `fallback.svg`, whether or
+    # not the league has pointed the class at a directory of its own, because the league
+    # never chose that vocabulary and cannot be incomplete against it. `is_closed_set_datum`
+    # is the single question asked — a whole class qualifies where every datum it can be
+    # handed is the module's (marker, weather), and an individual slug qualifies where the
+    # class is otherwise the league's own (`mystery`, `other` in flag and track). Still the
+    # same notice kind — only which file gets drawn, and what the notice says, differ.
     #
     # This is the module's **only** call to `resolve_asset`, which is what makes the
     # packaged tier reach every asset class of every graphic at once (047 FR-044).
@@ -349,7 +352,7 @@ def fill(spec: FillSpec) -> FillResult:
             Path(directory),
             datum,
             packaged=_packaged_directory(asset_class),
-            closed_set=asset_class in CLOSED_SET_ASSET_CLASSES,
+            closed_set=is_closed_set_datum(asset_class, normalise(datum)),
         )
 
         if resolution.found:
@@ -361,14 +364,27 @@ def fill(spec: FillSpec) -> FillResult:
             _set_href(target, str(resolution.path))
             consumed.add(field_id)
             if not depicts_absence:
+                # What was actually drawn, not what the tier was called. A closed-set hit
+                # in the packaged directory drew the module's **own correct file** for the
+                # datum — calling that "the fallback was drawn" would send a manager
+                # looking for artwork they were never expected to supply. The notice kind
+                # stays the same on both tiers, which is what XIV.13 requires; only the
+                # sentence differs.
+                detail = (
+                    f"the configured `{asset_class}` directory has no image for "
+                    f"“{datum}”; the bot's own "
+                    f"`{resolution.slug}{ASSET_EXTENSION}` was drawn instead."
+                    if resolution.drew_own_file
+                    else (
+                        f"no `{asset_class}` image is supplied for “{datum}”; the "
+                        f"directory's fallback was drawn instead."
+                    )
+                )
                 notices.append(
                     RenderNotice(
                         image_type=spec.image_type,
                         notice_kind=NOTICE_ASSET_FALLBACK_USED,
-                        detail=(
-                            f"no `{asset_class}` image is supplied for “{datum}”; the "
-                            f"directory's fallback was drawn instead."
-                        ),
+                        detail=detail,
                         field_id=field_id,
                     )
                 )

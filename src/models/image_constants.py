@@ -160,15 +160,36 @@ PENDING_POSTING_ASPECTS: tuple[str, ...] = tuple(
 
 # ── Asset directories ─────────────────────────────────────────────────────
 
-#: Config column -> (command name, default directory).
-ASSET_DIRECTORIES: dict[str, tuple[str, str]] = {
-    "track_image_directory": ("track-image-directory", "resources/defaults/tracks"),
-    "team_image_directory": ("team-image-directory", "resources/defaults/teams"),
-    "flag_directory": ("flag-directory", "resources/defaults/flags"),
-    "driver_image_directory": ("driver-image-directory", "resources/defaults/drivers"),
-    "marker_directory": ("marker-directory", "resources/defaults/markers"),
-    "weather_icon_directory": ("weather-icon-directory", "resources/defaults/weather"),
-    "tyre_directory": ("tyre-directory", "resources/defaults/tyres"),
+#: Config column -> (command name, default directory, packaged directory).
+#:
+#: The default is where a league's *own* artwork goes and is where the class looks first;
+#: the packaged directory is what ships with the bot and is the second fallback tier. They
+#: are deliberately different paths: `resources/league/` is gitignored and survives an
+#: update, so a league drops a file in and it is drawn with no configuration command at
+#: all, while `resources/defaults/` is replaced wholesale by an update and answers every
+#: miss. Both are read from this one table so they cannot drift apart (047 FR-038).
+ASSET_DIRECTORIES: dict[str, tuple[str, str, str]] = {
+    "track_image_directory": (
+        "track-image-directory", "resources/league/tracks", "resources/defaults/tracks",
+    ),
+    "team_image_directory": (
+        "team-image-directory", "resources/league/teams", "resources/defaults/teams",
+    ),
+    "flag_directory": (
+        "flag-directory", "resources/league/flags", "resources/defaults/flags",
+    ),
+    "driver_image_directory": (
+        "driver-image-directory", "resources/league/drivers", "resources/defaults/drivers",
+    ),
+    "marker_directory": (
+        "marker-directory", "resources/league/markers", "resources/defaults/markers",
+    ),
+    "weather_icon_directory": (
+        "weather-icon-directory", "resources/league/weather", "resources/defaults/weather",
+    ),
+    "tyre_directory": (
+        "tyre-directory", "resources/league/tyres", "resources/defaults/tyres",
+    ),
 }
 
 #: Asset class -> the configuration column naming its directory. Kept beside
@@ -194,14 +215,18 @@ def packaged_directory_for(asset_class: str) -> str | None:
     file is never sought here: a league that did not supply an image must not silently be
     given one that happens to ship under the same name.
 
-    Where a league has not moved a class's directory, this is the same path the default
-    names, and the two tiers collapse into one.
+    This is **never** the path the default configured directory names. The default points
+    at ``resources/league/``, which a league fills with its own artwork and which an update
+    to the bot cannot overwrite; this points at ``resources/defaults/``, which the bot ships
+    and an update replaces wholesale. The two tiers are therefore always distinct, and it is
+    the packaged tier that makes a fresh clone draw every graphic before a league has
+    supplied anything at all.
     """
     column = ASSET_CLASS_TO_COLUMN.get(asset_class)
     if column is None:
         return None
     entry = ASSET_DIRECTORIES.get(column)
-    return entry[1] if entry else None
+    return entry[2] if entry else None
 
 
 ASSET_LABELS: dict[str, str] = {
@@ -294,6 +319,33 @@ ASSET_CLASS_DIRECTORIES: dict[str, str] = {
 #: the class at a directory of its own. Every other class is never searched this way.
 CLOSED_SET_ASSET_CLASSES: frozenset[str] = frozenset({"marker", "weather"})
 
+#: Slugs that are the module's own vocabulary wherever they appear, in a class whose data
+#: are otherwise the league's own. `mystery` stands for a round concealed until it is run
+#: and `other` for a driver who stated no nationality in particular. Neither is a country,
+#: a circuit, a team or anything else a league named.
+CLOSED_SET_ASSET_DATA: frozenset[str] = frozenset({"mystery", "other"})
+
+
+def is_closed_set_datum(asset_class: str, slug: str) -> bool:
+    """Whether this datum is the module's own vocabulary rather than a league's value.
+
+    The single question Constitution XIV.13 asks before searching the packaged directory
+    for a datum's own file, rather than only for its `fallback.svg`. A league did not
+    choose this vocabulary and cannot be incomplete against it, so a directory of its own
+    that is missing one of these draws the bot's own correct file in preference to a
+    generic placeholder.
+
+    It has two ways of being true because the classes differ in kind, not because there
+    are two rules. `marker` and `weather` are closed all the way down -- every datum they
+    can be handed comes from the module -- so the class settles it, and naming the class
+    is also what keeps those two vocabularies from being restated here where they would
+    drift from the services that define them. `flag` and `track` name countries and
+    circuits a league chose, and reserve two names within that, so there the datum settles
+    it: asserting the whole class would hand a league our file for a country it simply had
+    not drawn yet.
+    """
+    return asset_class in CLOSED_SET_ASSET_CLASSES or slug in CLOSED_SET_ASSET_DATA
+
 #: The reserved filename standing in for a datum with no file of its own
 #: (Constitution XIV.13). One per asset directory; optional.
 FALLBACK_ASSET_NAME = "fallback.svg"
@@ -302,6 +354,12 @@ FALLBACK_ASSET_NAME = "fallback.svg"
 #: country -- is concealed until it is run (Constitution XIV.13). Reserved in the
 #: track image directory and the flag directory alike.
 MYSTERY_ASSET_NAME = "mystery.svg"
+
+#: The reserved filename standing in for a driver who stated no nationality in particular
+#: (Constitution XIV.13). Reserved in the flag directory. `Other` is a *value* a driver
+#: chose, not an absence: a driver recording no nationality at all is drawn with no flag
+#: field, where one recording `Other` is drawn with this.
+OTHER_ASSET_NAME = "other.svg"
 
 #: Asset class -> the aspect ratio (width / height) every slot of that class must
 #: declare, on every template of every image type (Constitution XIV.6).

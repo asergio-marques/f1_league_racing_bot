@@ -587,3 +587,110 @@ class TestTheNoNationalityTally:
         )
 
         assert "no nationality" not in interaction.followup.messages[0]
+
+
+# ── The notice block, and its link back to the log ────────────────────────
+
+
+class TestTheNoticeBlock:
+    """`/images test` is the **only** surface that shows notices in a reply.
+
+    Every posting path logs them and says nothing to the channel, because a notice is for
+    whoever is configuring the module, not for the drivers reading the post. A preview is
+    the one moment someone asked to be told.
+    """
+
+    @staticmethod
+    def _notice(detail, field_id=None, kind="ASSET_FALLBACK_USED"):
+        from models.image_module import RenderNotice
+
+        return RenderNotice(
+            image_type="standings_drivers",
+            notice_kind=kind,
+            detail=detail,
+            field_id=field_id,
+        )
+
+    @staticmethod
+    def _bot(*, jump_url="http://discord/x/1", fail=False):
+        posted = []
+
+        async def _post_log(server_id, content):
+            if fail:
+                raise RuntimeError("no permission to write to the log channel")
+            posted.append(content)
+            return SimpleNamespace(jump_url=jump_url)
+
+        bot = SimpleNamespace(output_router=SimpleNamespace(post_log=_post_log))
+        bot.posted = posted
+        return bot
+
+    async def _run(self, cog, notices):
+        interaction = _Interaction()
+        await cog._send_preview(
+            interaction,
+            title="Standings",
+            context=_context(),
+            outcomes=[
+                ("Standings", "standings_drivers_template", _outcome(notices=notices))
+            ],
+        )
+        return interaction.followup.messages[0]
+
+    async def test_the_reply_links_to_the_logged_block(self, cog):
+        cog.bot = self._bot()
+
+        reply = await self._run(cog, [self._notice("a flag fell back", "row_1_flag")])
+
+        assert "http://discord/x/1" in reply
+
+    async def test_the_notices_are_logged_as_well_as_shown(self, cog):
+        cog.bot = self._bot()
+
+        await self._run(cog, [self._notice("a flag fell back", "row_1_flag")])
+
+        assert len(cog.bot.posted) == 1
+        assert "a flag fell back" in cog.bot.posted[0]
+
+    async def test_a_log_failure_costs_the_link_and_nothing_else(self, cog):
+        """A log-channel problem must never cost the preview, which is what was asked for."""
+        cog.bot = self._bot(fail=True)
+
+        reply = await self._run(cog, [self._notice("a flag fell back", "row_1_flag")])
+
+        assert "Notices" in reply
+        assert "a flag fell back" in reply
+        assert "http" not in reply
+
+    async def test_twenty_identical_notices_are_counted_rather_than_listed(self, cog):
+        cog.bot = self._bot()
+        notices = [
+            self._notice("no `marker` image for “gained”", f"row_{i}_marker")
+            for i in range(20)
+        ]
+
+        reply = await self._run(cog, notices)
+
+        assert "×20" in reply
+        assert reply.count("no `marker` image") == 1
+
+    async def test_the_reply_survives_a_render_that_degraded_heavily(self, cog):
+        """Grouping is what keeps a busy render's notices inside Discord's limit, rather
+        than being cut off mid-list by the 1900-character trim."""
+        cog.bot = self._bot()
+        notices = [
+            self._notice(f"no `team` image for “Team {i}”", f"row_{i}_team")
+            for i in range(40)
+        ]
+
+        reply = await self._run(cog, notices)
+
+        assert len(reply) <= 1900
+
+    async def test_a_clean_render_says_nothing_about_notices(self, cog):
+        cog.bot = self._bot()
+
+        reply = await self._run(cog, [])
+
+        assert "Notices" not in reply
+        assert cog.bot.posted == []

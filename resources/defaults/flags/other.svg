@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80" viewBox="0 0 120 80">
+  <!-- Drawn for a driver who stated no nationality in particular, recorded as the
+       nationality "Other" and resolved by the ordinary slug rule (Constitution XIV.13),
+       exactly as mystery.svg is. "Other" is a value, not an absence: a driver who chose
+       it is drawn with this flag, where a driver with no nationality recorded at all is
+       drawn with no flag field at all.
+       Same 3:2 aspect as this directory's other assets; plain SVG with no clipPath,
+       gradient or filter, and never padded by the generator (XIV.6).
+       Carries no text: text in an asset font-substitutes and would rasterise differently
+       from one machine to the next, so the earth is drawn purely as shapes.
+       Every parallel is a true chord of the disc and every landmass sits well inside it,
+       so no clipPath is needed and nothing can spill past the globe when rasterised.
+       The grid is deliberately sparse: at the 120x80 a flag slot actually draws, a denser
+       one reads as noise and swallows the landmasses. -->
+  <rect width="120" height="80" fill="#ffffff"/>
+
+  <!-- The globe: centred at (60,40), radius 28, inset from the 3:2 bounds on every side. -->
+  <circle cx="60" cy="40" r="28" fill="#2f6fb2"/>
+
+  <!-- Landmasses, flat fills, drawn well inside the disc. -->
+  <path d="M41 27 L50 24 L57 28 L55 34 L50 37 L52 42 L56 45 L57 52 L53 61 L49 57 L48 48 L44 43 L41 35 Z"
+        fill="#4a9a52"/>
+  <path d="M63 24 L74 22 L80 27 L76 32 L70 33 L72 38 L78 40 L76 48 L70 57 L65 50 L66 41 L62 34 Z"
+        fill="#4a9a52"/>
+
+  <!-- Parallels: chords of the circle, so each ends exactly on the outline. -->
+  <g stroke="#ffffff" stroke-width="1" fill="none">
+    <line x1="32" y1="40" x2="88" y2="40"/>
+    <line x1="35.75" y1="26" x2="84.25" y2="26"/>
+    <line x1="35.75" y1="54" x2="84.25" y2="54"/>
+  </g>
+
+  <!-- Meridians: an ellipse sharing the disc's height, so it lies wholly inside it. -->
+  <g stroke="#ffffff" stroke-width="1" fill="none">
+    <line x1="60" y1="12" x2="60" y2="68"/>
+    <ellipse cx="60" cy="40" rx="14" ry="28"/>
+  </g>
+
+  <circle cx="60" cy="40" r="28" fill="none" stroke="#ffffff" stroke-width="1.5"/>
+  <rect x="0.75" y="0.75" width="118.5" height="78.5" fill="none" stroke="#c9c9d0" stroke-width="1.5"/>
+</svg>

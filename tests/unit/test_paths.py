@@ -111,10 +111,27 @@ from models.image_constants import (  # noqa: E402
 PROJECT_ROOT = _Path(__file__).resolve().parents[2]
 
 
-def test_every_asset_class_defaults_under_resources_defaults():
-    """FR-037, FR-038: the packaged directory of every class moved."""
-    for column, (_command, default) in ASSET_DIRECTORIES.items():
-        assert default.startswith("resources/defaults/"), f"{column}: {default}"
+def test_every_asset_class_defaults_to_the_league_folder():
+    """The default is where a league's own artwork goes, and it is looked at first.
+
+    A league drops a file into `resources/league/<class>/` and it is drawn, with no
+    configuration command at all. That folder is gitignored and survives an update, which
+    is exactly why the default points there rather than at what the bot ships.
+    """
+    for column, (_command, default, _packaged) in ASSET_DIRECTORIES.items():
+        assert default.startswith("resources/league/"), f"{column}: {default}"
+        assert (PROJECT_ROOT / default).is_dir(), f"{column}: {default} is not on disk"
+
+
+def test_the_packaged_directory_is_never_the_default_one():
+    """The two tiers are always distinct, which is what makes the second tier a tier.
+
+    Were they the same path again, a miss in a league's own folder would fall through to
+    that same folder and the packaged artwork would never be reached.
+    """
+    for column, (_command, default, packaged) in ASSET_DIRECTORIES.items():
+        assert packaged.startswith("resources/defaults/"), f"{column}: {packaged}"
+        assert packaged != default, column
 
 
 def test_every_packaged_asset_directory_exists_and_carries_a_fallback():
@@ -122,6 +139,19 @@ def test_every_packaged_asset_directory_exists_and_carries_a_fallback():
         directory = PROJECT_ROOT / packaged_directory_for(asset_class)
         assert directory.is_dir(), asset_class
         assert (directory / "fallback.svg").is_file(), asset_class
+
+
+def test_the_reserved_flag_assets_ship():
+    """`mystery` and `other` are the module's own vocabulary, so the module supplies them.
+
+    A league cannot be incomplete against a name it did not choose, so neither may be left
+    to the league to draw -- and both are resolved from the packaged tier by their own
+    name, which needs the file to actually be there.
+    """
+    flags = PROJECT_ROOT / packaged_directory_for("flag")
+    assert (flags / "mystery.svg").is_file()
+    assert (flags / "other.svg").is_file()
+    assert (PROJECT_ROOT / packaged_directory_for("track") / "mystery.svg").is_file()
 
 
 def test_packaged_directory_for_an_unknown_class_is_none():

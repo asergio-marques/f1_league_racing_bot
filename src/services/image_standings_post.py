@@ -674,14 +674,18 @@ async def report(bot, server_id: int, what: str, detail: str) -> None:
 
 
 async def report_notices(bot, server_id: int, what: str, notices) -> None:
-    """Report every non-fatal degradation, naming the championship it pertains to."""
+    """Report every non-fatal degradation, in one grouped block like every other path.
+
+    This used to post one Discord message per notice, which a twenty-driver championship
+    turned into twenty. `ImageRenderService.report_notices` writes a single grouped block,
+    and routing through it is also what stops this one path drifting from the format every
+    other posting path uses.
+    """
     if not notices:
         return
     try:
-        for notice in notices:
-            await bot.output_router.post_log(
-                server_id,
-                f"ℹ️ Standings image — {what}: {notice.detail}",
-            )
+        from services.image_render_service import ImageRenderService
+
+        await ImageRenderService.report_notices(bot, server_id, notices, subject=what)
     except Exception as exc:  # noqa: BLE001
         log.error("standings: could not report notices: %s", exc)

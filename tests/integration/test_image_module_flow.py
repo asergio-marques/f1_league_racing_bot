@@ -1107,7 +1107,7 @@ async def test_asset_directory_independence(module_service, config_service, tmp_
     await _enable(module_service, config_service)
 
     # Give every asset directory a real folder.
-    for column, (_cmd, default) in ASSET_DIRECTORIES.items():
+    for column, (_cmd, default, _packaged) in ASSET_DIRECTORIES.items():
         (tmp_path / default).mkdir(parents=True, exist_ok=True)
 
     config = await config_service.get_config(SERVER_ID)

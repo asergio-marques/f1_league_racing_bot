@@ -149,12 +149,17 @@ class ImageCog(commands.Cog):
 
         # Report the effect immediately, so the administrator does not need a second
         # command to learn whether the new location resolves.
+        #
+        # An artwork folder that is empty, or not there yet, is not an error: every class
+        # falls back to what the bot ships, so the graphics keep being produced and files
+        # dropped in later are picked up with no further command. That is precisely what
+        # the template directory cannot do, which is why it no longer shares this body.
         if resolved.is_dir():
             verdict = "✅ Resolves."
         elif resolved.exists():
             verdict = "⚠️ That path exists but is not a directory."
         else:
-            verdict = "⚠️ Nothing is there yet — templates placed later will be picked up."
+            verdict = "⚠️ Nothing is there yet — files placed there later will be picked up."
 
         await self._reply(
             interaction,
@@ -256,10 +261,124 @@ class ImageCog(commands.Cog):
     async def config_template_directory(
         self, interaction: discord.Interaction, directory: str
     ) -> None:
+        await self._set_template_directory(interaction, directory)
+
+    async def _set_template_directory(
+        self, interaction: discord.Interaction, directory: str
+    ) -> None:
+        """Validate, **then** store (FR-005) — as the fifteen filename commands do.
+
+        This is the one directory with no packaged second tier. Every asset class falls
+        back to what the bot ships, so an empty artwork folder still draws; the template
+        directory is the only place templates are searched, so a folder that does not hold
+        all fifteen, valid, is a configuration that cannot produce a single graphic.
+
+        Refusing it here refuses it at the one moment the manager is present, holding the
+        files, and able to fix it — rather than letting it surface as a render failure at
+        the next scheduled post, when nobody is looking.
+        """
+        from services.image_validity_service import check_all_templates
+        from utils.paths import resolve_within_project_root
+
         if not await self._guard_module_enabled(interaction):
             return
-        await self._set_directory(
-            interaction, "template_directory", directory, "Template directory"
+
+        label = "Template directory"
+
+        try:
+            resolved = resolve_within_project_root(directory)
+        except PathContainmentError as exc:
+            await self._reply(
+                interaction,
+                f"❌ {exc}\nDirectories must sit inside the project root. "
+                f"The stored value is unchanged.",
+            )
+            return
+        except ValueError as exc:
+            await self._reply(interaction, f"❌ {exc}")
+            return
+
+        stored = relative_to_root(resolved)
+
+        # Fifteen SVG parses will not reliably finish inside Discord's three seconds.
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+
+        proposed = await self._config_service.candidate_config(
+            interaction.guild_id, "template_directory", stored
+        )
+        if proposed is None:
+            await self._reject_directory(
+                interaction, label, "this server has no image configuration to amend."
+            )
+            return
+
+        # The FR-007 survey, which also backs `/season review` and `/season approve`, so
+        # the three surfaces cannot disagree about whether a template is usable.
+        problems = check_all_templates(proposed)
+        if problems:
+            await self._reject_directory(
+                interaction,
+                label,
+                f"`{stored}` does not hold every template the bot needs.",
+                problems=problems,
+                searched=resolved,
+            )
+            return
+
+        await self._config_service.set_field(
+            interaction.guild_id, "template_directory", stored
+        )
+        await self._reply(
+            interaction,
+            f"✅ **{label}** set to `{stored}`.\n"
+            f"✅ All fifteen templates are present and valid.\nSearched: `{resolved}`",
+        )
+        await self._log(interaction, f"{label} = {stored}")
+
+    async def _reject_directory(
+        self,
+        interaction: discord.Interaction,
+        label: str,
+        reason: str,
+        *,
+        problems: list | None = None,
+        searched=None,
+    ) -> None:
+        """Refuse a directory change, naming every fault and leaving the config alone.
+
+        Logged like an accepted change: a refused configuration is as much a part of the
+        audit trail as a stored one (Principle V).
+        """
+        from services.image_validity_service import describe
+
+        lines = [
+            f"❌ **{label}** was **not** changed — {reason}",
+            "The previously configured folder is still in force.",
+        ]
+
+        if problems:
+            lines.append("")
+            # Capped: a folder holding no templates at all fails fifteen times, and the
+            # first few name the problem as well as all of them would.
+            shown = problems[:6]
+            for problem in shown:
+                lines.append(f"  ↳ {describe(problem)}")
+            if len(problems) > len(shown):
+                lines.append(
+                    f"  ↳ …and {len(problems) - len(shown)} more. "
+                    f"Use `/images config view` for the full list."
+                )
+
+        if searched is not None:
+            lines.append("")
+            lines.append(f"Searched: `{searched}`")
+
+        await self._reply(interaction, "\n".join(lines)[:1900])
+        await self._log(
+            interaction,
+            f"{label} REJECTED — {reason}"
+            + (f" ({len(problems)} template(s) unusable)" if problems else ""),
         )
 
     # ── The fifteen template filename commands ────────────────────────────
@@ -1392,15 +1511,23 @@ class ImageCog(commands.Cog):
                 )
 
         if all_notices:
-            lines.append("")
-            lines.append("**Notices** — the render survived these:")
-            for notice in all_notices:
-                where = f" `{notice.field_id}`" if notice.field_id else ""
-                lines.append(f"  ⚠️ [{notice.notice_kind}]{where} {notice.detail}")
+            # Logged first, so the reply can point at what was written. A log-channel
+            # failure returns None and simply costs the link — it must never cost the
+            # preview, which is the thing actually asked for.
+            from services.image_render_service import grouped_notice_lines
 
-            await ImageRenderService.report_notices(
+            logged = await ImageRenderService.report_notices(
                 self.bot, interaction.guild_id, all_notices
             )
+
+            heading = "⚠️ **Notices** — the render survived these:"
+            jump_url = getattr(logged, "jump_url", None)
+            if jump_url:
+                heading += f" ([see them in the log]({jump_url}))"
+
+            lines.append("")
+            lines.append(heading)
+            lines += grouped_notice_lines(all_notices)
 
         await interaction.followup.send(
             "\n".join(lines)[:1900], files=files, ephemeral=True

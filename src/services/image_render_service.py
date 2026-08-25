@@ -469,6 +469,47 @@ def _verify_against_data(root, spec, image_type: str) -> Problem | None:
     return None
 
 
+def grouped_notice_lines(notices: list[RenderNotice]) -> list[str]:
+    """Notices grouped by kind, identical culprits counted rather than repeated.
+
+    A render degrades the same way many times over — twenty drivers in a standings image
+    whose markers all come from one directory produce twenty identical notices — and a
+    line apiece buries the one notice that differs among nineteen that do not.
+
+    Returned without a heading so the log block and a command's own reply can each supply
+    their own, and still be grouped identically. The audit trail is unaffected: `_persist`
+    writes one row per notice regardless. This is presentation, and only presentation.
+    """
+    by_kind: dict[str, dict[tuple[str, str], list[str]]] = {}
+    order: list[str] = []
+    for notice in notices:
+        kind = notice.notice_kind
+        if kind not in by_kind:
+            by_kind[kind] = {}
+            order.append(kind)
+        # The field id is not part of the key: it is the only thing that differs between
+        # twenty otherwise identical marker notices, so keying on it would defeat the
+        # grouping entirely. The ids are kept aside rather than discarded — a notice that
+        # stands alone still names its field, which is what XIV.4 requires of it.
+        key = (notice.image_type, notice.detail)
+        by_kind[kind].setdefault(key, []).append(notice.field_id or "")
+
+    lines: list[str] = []
+    for kind in order:
+        culprits = by_kind[kind]
+        total = sum(len(ids) for ids in culprits.values())
+        lines.append(f"  [{kind}] ×{total}" if total > 1 else f"  [{kind}]")
+        for (image_type, detail), field_ids in culprits.items():
+            # One occurrence names where it happened; many name how many times, because
+            # a list of twenty ids is not something a manager reads or acts on.
+            if len(field_ids) == 1:
+                where = f" / `{field_ids[0]}`" if field_ids[0] else ""
+                lines.append(f"    • {image_type}{where} — {detail}")
+            else:
+                lines.append(f"    • {image_type} — {detail} (×{len(field_ids)})")
+    return lines
+
+
 class ImageRenderService:
     """Fill a template and rasterise it, reporting problems and notices separately."""
 
@@ -634,32 +675,45 @@ class ImageRenderService:
             await db.commit()
 
     @staticmethod
-    def format_notices(notices: list[RenderNotice]) -> str:
-        """The notice block, shared by the log channel and a command's own reply."""
-        lines = ["Image render notices:"]
-        lines += [
-            f"  • [{notice.notice_kind}] {notice.image_type}"
-            + (f" / `{notice.field_id}`" if notice.field_id else "")
-            + f" — {notice.detail}"
-            for notice in notices
-        ]
-        return "\n".join(lines)
+    def format_notices(notices: list[RenderNotice], *, subject: str | None = None) -> str:
+        """The notice block, shared by the log channel and a command's own reply.
+
+        Grouped by kind, and identical culprits counted rather than repeated — see
+        :func:`grouped_notice_lines`.
+
+        *subject* names what was being drawn, as the posting paths know it: "drivers
+        standings — Season 3", "Race — Portugal". The image type alone names the template,
+        which is not the same thing as naming the championship or the session a reader is
+        looking for in a log of many.
+        """
+        heading = "Image render notices:"
+        if subject:
+            heading = f"Image render notices — {subject}:"
+        return "\n".join([heading, *grouped_notice_lines(notices)])
 
     @staticmethod
-    async def report_notices(bot, server_id: int, notices: list[RenderNotice]) -> None:
+    async def report_notices(
+        bot, server_id: int, notices: list[RenderNotice], *, subject: str | None = None
+    ):
         """Surface notices to the calculation log channel (Principle V, FR-031).
 
-        The log always. A command's own output additionally, which is the caller's job —
-        it holds the interaction. Never a channel drivers read (FR-032).
+        The log always, in **one** message. A command's own output additionally, which is
+        the caller's job — it holds the interaction. Never a channel drivers read (FR-032).
+
+        Returns the posted ``discord.Message``, or None where nothing was posted or the
+        write failed, so a caller can link a reader to what was just logged. A log-channel
+        failure must never break the render that produced these, which is why it is
+        swallowed here and reported as None rather than raised.
         """
         if not notices:
-            return
+            return None
         try:
-            await bot.output_router.post_log(
-                server_id, ImageRenderService.format_notices(notices)
+            return await bot.output_router.post_log(
+                server_id, ImageRenderService.format_notices(notices, subject=subject)
             )
         except Exception as exc:  # noqa: BLE001
             log.error("report_notices: log write failed: %s", exc)
+            return None
 
     # ── Posting: the commanded / uncommanded split (Constitution XIV.7) ────
 
