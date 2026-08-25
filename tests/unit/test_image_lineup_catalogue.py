@@ -146,10 +146,15 @@ def test_a_template_declining_the_team_group_is_still_valid():
     assert "team_1_group" not in mandatory
 
 
-def test_the_reserve_group_remains_mandatory():
+def test_the_reserve_group_is_optional_like_every_other():
+    """The block became optional so a league may author a sheet without reserves.
+
+    It was the module's one mandatory group until then; nothing about the reserve block
+    is demanded now, and a template declaring none of it is valid.
+    """
     root = _template(blocks=1, seats=1)
 
-    assert "reserve_group" in LINEUP_CATALOGUE.all_mandatory_ids(root)
+    assert "reserve_group" not in LINEUP_CATALOGUE.all_mandatory_ids(root)
 
 
 # ── 4. Contiguity ─────────────────────────────────────────────────────────
@@ -302,8 +307,13 @@ def test_the_shipped_template_declares_eleven_blocks_of_two_seats():
         assert nest.declared_capacity(f"team_{block}", declared) == 2, block
 
 
-def test_the_shipped_template_declares_six_reserve_slots():
-    assert LINEUP_CATALOGUE.singleton_capacity(_shipped_root()) == 6
+def test_the_shipped_template_declares_ten_reserve_slots():
+    """Ten is the shipped guess at how many stand-ins a league carries at once.
+
+    It bounds this file and nothing else: a league authoring its own may declare any
+    number, or none at all.
+    """
+    assert LINEUP_CATALOGUE.singleton_capacity(_shipped_root()) == 10
 
 
 def test_the_shipped_template_declares_a_group_for_every_block():

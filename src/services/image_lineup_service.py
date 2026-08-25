@@ -405,9 +405,13 @@ def build_fill_spec(
     # The reserve block. Its slots are fixed by the template, so this is the one lineup
     # collection to which overflow applies.
     reserve_slots = catalogue.singleton_capacity(root) or 0
-    if drawing.reserve is None:
+    if drawing.reserve is None or reserve_slots == 0:
         # Removed in its entirety, taking every other `reserve_` field with it (FR-004).
         # Where the template declares no group, each field goes one by one.
+        #
+        # Two ways in. The division fields no reserve driver, or the template declares no
+        # reserve slot — a league that does not want reserves on its sheet. The second is
+        # not overflow and is not reported: the template said so on purpose.
         group_id = f"{RESERVE_KEY}_group"
         if group_id in declared:
             remove.append(group_id)

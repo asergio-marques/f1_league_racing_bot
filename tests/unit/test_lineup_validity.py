@@ -96,17 +96,35 @@ def test_a_gap_in_the_team_numbering_is_refused_at_naming_time():
 # ── What *is* checkable at naming time ────────────────────────────────────
 
 
-def test_a_missing_reserve_group_is_found_at_naming_time():
-    """The reserve block is a singleton, so it depends on no team (research R4)."""
-    ids = LINEUP_CATALOGUE.all_mandatory_ids(_root(reserve_group=False))
-    assert "reserve_group" in ids
+def test_a_template_may_omit_the_reserve_block_entirely():
+    """Declaring the block is how a template asks for reserves to be drawn.
+
+    Nothing about the block is mandatory. A league that does not want reserves on its
+    lineup sheet declares no slots and no group, and naming the file is not refused for
+    it — the inversion of the rule that held until the block became optional.
+    """
+    ids = LINEUP_CATALOGUE.all_mandatory_ids(_root(reserve_group=False, reserve_slots=0))
+
+    assert "reserve_group" not in ids
+    assert "reserve_driver_1_name" not in ids
+    # The rest of the lineup is demanded exactly as before.
+    assert "division_name" in ids
+    assert "team_1_name" in ids
+
+
+def test_the_group_is_not_demanded_of_a_template_that_declares_slots_without_it():
+    """The group is chrome, not a contract: slots may be declared loose."""
+    assert "reserve_group" not in LINEUP_CATALOGUE.all_mandatory_ids(
+        _root(reserve_group=False)
+    )
 
 
 def test_a_missing_division_name_is_found_at_naming_time():
     assert "division_name" in LINEUP_CATALOGUE.all_mandatory_ids(_root())
 
 
-def test_the_first_reserve_slot_is_required_at_naming_time():
+def test_the_first_reserve_slot_is_required_of_a_template_that_declares_slots():
+    """Declaring the block half-way is still a fault, even though omitting it is not."""
     assert "reserve_driver_1_name" in LINEUP_CATALOGUE.all_mandatory_ids(_root())
 
 

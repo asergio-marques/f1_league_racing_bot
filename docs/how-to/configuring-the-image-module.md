@@ -234,7 +234,9 @@ To use your own drawing file, put it in that folder and name it:
 
 Before you edit a drawing file, read **Templates: what the bot expects** in the [main README](../../README.md#image-module). That explains how the blanks are labelled so the bot can find them.
 
-> **The lineup drawing works as it comes, like all the others.** It numbers its team blocks — block 1 draws whichever team is first in the division, block 2 the second, and so on — so the same file suits any league. The team's name and badge are the only things that change from block to block. The one that comes with the bot has room for eleven teams of two drivers each, plus six reserves.
+> **The lineup drawing works as it comes, like all the others.** It numbers its team blocks — block 1 draws whichever team is first in the division, block 2 the second, and so on — so the same file suits any league. The team's name and badge are the only things that change from block to block. The one that comes with the bot has room for eleven teams of two drivers each, plus ten reserves.
+>
+> **If your league does not put reserves on its lineup, draw none.** A drawing file with no reserve block at all is perfectly good: the picture then never shows reserves, however many your division is carrying, and the bot does not complain — leaving the block out is how you say you do not want it. Ten is only what the shipped file guesses; draw more if your league carries more. What you cannot do is draw *some* and then carry more reserves than you drew room for, which is refused like any other overflow.
 >
 > Teams appear **in the order you added them**. A team you add later takes the next free block, so nothing already on the picture moves; renaming a team does not move it either.
 >
@@ -248,7 +250,7 @@ Before you edit a drawing file, read **Templates: what the bot expects** in the 
 
 > **You do not need a spare picture of your own.** When the bot cannot find the file for a particular team, circuit or flag, it uses a stand-in — yours if you put a `fallback.svg` in that folder, and otherwise the one that comes with the bot. So a folder holding eight of your ten team badges still draws every picture: the two without a badge get the stand-in, and the bot tells you which ones. Add a `fallback.svg` of your own only if you would rather your stand-in was used than ours.
 
-**Make room for your biggest season.** Where the drawing file sets the limit — table rows, calendar rounds, reserve seats — the bot will refuse to go past it rather than quietly leaving someone off. If your calendar drawing has room for 22 rounds, `/round add` will stop you at 23. Spare room costs nothing, as unused slots are hidden.
+**Make room for your biggest season.** Where the drawing file sets the limit — table rows, calendar rounds, reserve seats — the bot will refuse to go past it rather than quietly leaving someone off. The one exception is a reserve block you left out altogether, which is a decision rather than a limit and is honoured in silence. If your calendar drawing has room for 22 rounds, `/round add` will stop you at 23. Spare room costs nothing, as unused slots are hidden.
 
 ---
 

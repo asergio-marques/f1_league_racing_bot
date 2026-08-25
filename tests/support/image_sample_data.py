@@ -162,7 +162,7 @@ def build_lineup_drawing(root, teams):
         )
 
     try:
-        reserve_slots = catalogue_for("lineup_template").capacity(root) or 0
+        reserve_slots = catalogue_for("lineup_template").singleton_capacity(root) or 0
     except CapacityError as exc:
         raise LineupDataError(str(exc)) from exc
 

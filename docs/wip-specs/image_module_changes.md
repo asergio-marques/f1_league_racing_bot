@@ -109,3 +109,30 @@
 
 - Any change to the marker and weather vocabularies themselves, or to which classes are closed sets. `mystery.svg` is unaffected: it is not a per-datum closed set and was never resolved through this mechanism.
 - Any change to the non-fatal error a league sees when a fallback of either kind is drawn. It is the same notice regardless of which tier, or which file within the packaged tier, answered the miss.
+
+# An optional reserve block, and ten slots in the shipped lineup
+
+## The rule
+
+- Nothing of the reserve block shall be mandatory. A lineup template declaring no `reserve_group` and no `reserve_driver_<y>_` field shall be valid, and naming it shall not be refused on that account.
+- This supersedes the contrast drawn under "Addressing" above, which held `team_<x>_group` optional *where `reserve_group` is mandatory*. Both are optional now. That record stands as what the ordinal-addressing increment settled; it is no longer the rule in force.
+- A template declaring no reserve slot shall draw no reserves, whatever number the division fields, and shall report neither error nor warning. Declaring the block is how a template asks for reserves to be drawn, and omitting it is an instruction rather than an oversight.
+- Where a template declares one reserve slot or more, reserve drivers in excess of them shall remain a fatal error, naming the drivers that would be dropped. Overflow is unchanged.
+- The count of reserve slots shall continue to be fixed by the template alone and read from the file at each generation. No number is fixed in the module.
+
+## What ships
+
+- The shipped `lineup_template.svg` shall declare ten reserve slots, running six across a first band and four across a second beneath it, on a canvas of 1200 × 1324.
+- Ten is a guess at how many stand-ins a league carries at once and bounds that file alone. A league authoring its own may declare any number, or none.
+
+## Ruled out
+
+- **Truncating overflow with a notice**, so that reserves beyond the slots are omitted and reported rather than refusing the render. This is the "reported omission" relaxation of Rule 12 drafted and rejected at constitution v4.0.0 → v4.1.0, and it stays rejected: overflow means one thing, more data than the template has slots for, and is fatal wherever it occurs.
+- **Growing the canvas at render time** to fit reserves beyond the slots, by cloning a slot and repeating it. Rewriting the root's height is already possible and the rasteriser follows it; cloning is not. Rule 1 reserves layout to the template, Rule 2 closes the list of fill operations against an insert, and on a template the module has not seen only the three ids of a slot are addressable — the chrome around a slot, the axis the slots run along, and which elements below the block should move, stay or stretch when the canvas grows are all invisible to it. Inference of that geometry would work only against the file the module ships, which is the one file that can simply be edited instead.
+- Where growth is wanted later, the route is a growth unit the **template** declares — a repeatable slot group, a pitch, and a group holding what must slide down — so that the module repeats geometry the author drew rather than inventing any. `reserve_driver_<y>_group` already exists in the catalogue as an optional field and is the handle such a design would build on.
+
+## Out of scope
+
+- Any change to how reserve drivers are ordered within the block. They are placed in ascending order of seat number, as before.
+- Any change to the reserve team itself, which every division still holds, which no command removes, and which is still configured with unlimited seats. What changed is whether a template must draw it.
+- The capacity guard at assignment time, which refuses a placement into **any** team once the division's seated reserves reach the template's slot count. That is a defect and is recorded in `known_issues.md`, not corrected here.
