@@ -131,6 +131,16 @@ Note that pinning `requirements.txt` does **not** settle this. A Debian or Raspb
 that installs from apt imports out of `/usr/lib/python3/dist-packages`, which pip never writes
 to, so the pins govern CI and a virtualenv and nothing else.
 
+**The schema is built once, not once per test.** `tests/conftest.py` substitutes
+`run_migrations` with a version that raises the schema a single time and copies the finished
+file thereafter. Keep calling `run_migrations` in fixtures exactly as before — the
+substitution is transparent, and falls back to migrating in earnest whenever the target
+already holds data, or the set of migration files differs from the one a template was built
+from. Do not sidestep it by opening a connection and running the SQL yourself: that
+reintroduces the cost it exists to remove. Applying every migration and committing after each
+runs to some forty flushes per database, which Linux absorbs and Windows does not — it is
+what took the `windows-latest` job from three minutes to over an hour.
+
 **A test that needs Inkscape carries the `rasteriser` marker and does not run in CI.** Inkscape
 is a separate program, too heavy to install on a hosted runner for what it returns there, so
 both jobs in `.github/workflows/unit-test.yml` deselect the marker with `-m "not rasteriser"`
