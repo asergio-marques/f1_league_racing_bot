@@ -217,6 +217,15 @@ These hold for every image type of the module and are stated here rather than re
 - The width and the height a template declares are the width and the height at which it is drawn, and the conversion to PNG shall honour them. No canvas is assumed of any template.
 - The vertical crop of the calendar graphic is the sole exception, and is defined in that section.
 
+### The rendered file
+- A graphic is drawn to a file on the machine running the bot, in a directory of its own beneath that machine's temporary directory.
+- The file exists for the posting attempt and no longer. It shall be removed once that attempt is over, whether the posting succeeded, failed at the transport, or was abandoned before it was sent. Its directory shall be removed with it.
+- A transport failure enqueues the textual output and never the graphic, so no rendered file has a reader after its posting attempt ends. Nothing shall retain a path to one.
+- A rasterisation refused after the file was written — a converter exiting in error, or a graphic above the attachment ceiling — shall remove what it wrote before reporting the fault.
+- The intermediate SVG shall be removed as soon as the conversion has been attempted, whatever its outcome.
+- The preview commands draw through the same pipeline and are bound by the same rule.
+- No background sweep is provided. A file surviving a run that ended abnormally is left to the host's own housekeeping of its temporary directory.
+
 ### Fonts
 - A template shall either embed the font it names or be authored against the font the machine running the bot resolves its font declaration to. A font a template names and the machine does not carry is substituted by the converter, and the graphic is drawn in a face of another width.
 - The substitution of a font is non-fatal and shall be reported, naming the field and the font.
