@@ -353,6 +353,7 @@ These hold for every image type of the module and are stated here rather than re
 
 ### Validity of a template file
 - A file that cannot be parsed shall be reported as an invalid SVG file, naming the file and what was found to be at fault, and never as the raw error of the parser. A run of two hyphens within a comment is the readiest way to produce one.
+- A file that cannot be read shall be reported as unreadable, and never as a file that does not parse; the two are distinct faults. A directory bearing a template's name is the readiest way to produce one, and shall be judged unreadable by its own nature and not by what the parser makes of it.
 - The "text-transform" property is not honoured by the converter. A text is drawn in the casing it carries, and a fixed label a template wants in capitals is typed in capitals.
 
 ### The test commands

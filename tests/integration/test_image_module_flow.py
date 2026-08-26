@@ -737,7 +737,7 @@ async def test_wrapped_text_lands_inside_its_box_in_the_rasterised_png(tmp_path)
     from utils.svg_document import parse_svg_bytes
     from utils.svg_fill import FillSpec, fill
 
-    PIL = pytest.importorskip("PIL.Image")
+    from PIL import Image  # noqa: PLC0415
 
     template = (
         '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">'
@@ -754,7 +754,7 @@ async def test_wrapped_text_lands_inside_its_box_in_the_rasterised_png(tmp_path)
     )
     png = rasterise(result.svg, tmp_path / "wrap.png", result.canvas)
 
-    image = PIL.open(png).convert("L")
+    image = Image.open(png).convert("L")
     width, height = image.size
 
     def ink_in(top: int, bottom: int) -> int:

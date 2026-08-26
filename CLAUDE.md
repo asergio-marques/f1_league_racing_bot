@@ -104,17 +104,47 @@ exactly this; a test that seeds a future date and lets the code read the wall cl
 and fails silently months later.
 
 **CI enforces a clean pass and a coverage floor.** `.github/workflows/unit-test.yml` runs the
-suite under `coverage run` and fails the build if any test fails or errors, and separately if
-line coverage falls below that workflow's `MIN_COVERAGE_REQUIRED` value. Read the threshold from
-the workflow rather than quoting a number here — it moves independently of this file, and a
-number written here would go stale the moment someone changes it there. A change is not
-complete if it drops the suite below that floor or leaves a test failing or erroring. A skip is
+suite on `ubuntu-latest` under `coverage run` and fails the build if any test fails or errors,
+and separately if line coverage falls below that workflow's `MIN_COVERAGE_REQUIRED` value. A
+second job runs the same suite on `windows-latest` and gates on failures only — the coverage
+floor is one number, and two jobs measuring the same lines would only drift against it. Read
+the threshold from the workflow rather than quoting a number here — it moves independently of
+this file, and a number written here would go stale the moment someone changes it there. A
+change is not complete if it drops the suite below that floor or leaves a test failing or
+erroring. A skip is
 not itself a build failure, but it is a gap in what "the suite passes" actually verified — treat
 a new one as something to justify, not a convenient way to silence a broken test.
 
+**A test must not depend on what the host happens to carry.** The suite runs on three
+materially different environments — a Windows development machine, CI's runners, and the
+Raspberry Pi 4 the bot runs on — and they differ in library versions, installed fonts and
+which libxml2 lxml was linked against. A test that asserts on whatever the host hands it
+passes wherever its author sat and fails everywhere else, silently, until someone runs it
+elsewhere. So: never assert on the first item an index yields — choose deterministically with
+`sorted()`, never dict insertion or `rglob` order — and where the host's own resources are
+genuinely the subject, pick one that actually has the property under test and `pytest.skip`
+with a reason when none does. Making the tests host-agnostic is the remedy; bending CI to
+resemble one host is not (decided 2026-08-26, after twenty-seven tests failed on the Pi alone
+and nowhere else).
+
+Note that pinning `requirements.txt` does **not** settle this. A Debian or Raspberry Pi host
+that installs from apt imports out of `/usr/lib/python3/dist-packages`, which pip never writes
+to, so the pins govern CI and a virtualenv and nothing else.
+
+**The schema is built once, not once per test.** `tests/conftest.py` substitutes
+`run_migrations` with a version that raises the schema a single time and copies the finished
+file thereafter. Keep calling `run_migrations` in fixtures exactly as before — the
+substitution is transparent, and falls back to migrating in earnest whenever the target
+already holds data, or the set of migration files differs from the one a template was built
+from. Do not sidestep it by opening a connection and running the SQL yourself: that
+reintroduces the cost it exists to remove. Applying every migration and committing after each
+runs to some forty flushes per database, which Linux absorbs and Windows does not — it is
+what took the `windows-latest` job from three minutes to over an hour.
+
 **A test that needs Inkscape carries the `rasteriser` marker and does not run in CI.** Inkscape
 is a separate program, too heavy to install on a hosted runner for what it returns there, so
-`.github/workflows/unit-test.yml` deselects the marker with `-m "not rasteriser"`. The marker is
+both jobs in `.github/workflows/unit-test.yml` deselect the marker with `-m "not rasteriser"`
+(the Windows runner has no Inkscape either). The marker is
 the only mechanism: `tests/conftest.py` also skips marked tests, with a reason, on a local host
 that has no Inkscape. Do not write a bare `if not converter_available(): pytest.skip(...)` guard
 inside a test — mark it instead.

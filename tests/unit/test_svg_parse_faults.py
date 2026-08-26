@@ -116,6 +116,44 @@ def test_a_directory_named_as_a_template_reports_a_read_failure(tmp_path: Path):
     assert_no_raw_parser_text(message)
 
 
+def test_a_directory_is_named_unreadable_without_consulting_the_parser(tmp_path: Path, monkeypatch):
+    """The fault must not depend on which libxml2 lxml was linked against.
+
+    libxml2 2.9 opens a directory, reads nothing and reports "Document is empty", which
+    would have `load_svg` name it malformed XML; newer builds raise an I/O error. Reaching
+    the verdict before `etree.parse` is what keeps the two hosts saying the same thing, so
+    the test pins that the parser is never consulted rather than pinning the message twice.
+    """
+    from utils import svg_document  # noqa: PLC0415
+
+    directory = tmp_path / "calendar.svg"
+    directory.mkdir()
+
+    def fail(*args, **kwargs):
+        raise AssertionError("etree.parse was called for a directory")
+
+    monkeypatch.setattr(svg_document.etree, "parse", fail)
+
+    with pytest.raises(SvgParseError) as caught:
+        load_svg(directory)
+
+    assert "could not be read" in str(caught.value)
+
+
+def test_a_path_given_as_a_str_is_accepted(tmp_path: Path):
+    """Several callers hold `resolved_path` as a str, so `load_svg` must take one."""
+    path = tmp_path / "good.svg"
+    path.write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>')
+
+    assert load_svg(str(path)) is not None
+
+    directory = tmp_path / "calendar.svg"
+    directory.mkdir()
+    with pytest.raises(SvgParseError) as caught:
+        load_svg(str(directory))
+    assert "could not be read" in str(caught.value)
+
+
 def test_a_sound_template_parses(tmp_path: Path):
     path = tmp_path / "good.svg"
     path.write_text(
