@@ -384,3 +384,104 @@ class TestTeamReserveRole:
         args, kwargs = interaction.response.send_message.call_args
         content = args[0] if args else kwargs["content"]
         assert "cleared" in content
+
+
+# ---------------------------------------------------------------------------
+# /team lineup — the batch abandons its pictures on a rejection
+#
+# The one leak no per-send cleanup would catch: a division rejected part way through
+# returns immediately, and every picture drawn for the divisions before it is never sent.
+# There is no sweeper behind this, so the `finally` around the batch is the only thing
+# that removes them.
+# ---------------------------------------------------------------------------
+
+class TestTeamLineupDiscardsItsPictures:
+    @staticmethod
+    def _artifact(tmp_path, div_id):
+        directory = tmp_path / f"f1bot_render_lineup{div_id}"
+        directory.mkdir()
+        png = directory / "lineup_template.png"
+        png.write_bytes(b"\x89PNG")
+        return png
+
+    @staticmethod
+    def _division(div_id, tier):
+        division = MagicMock()
+        division.id = div_id
+        division.tier = tier
+        division.name = f"Division {tier}"
+        return division
+
+    def _cog_and_bot(self, divisions):
+        from cogs.team_cog import TeamCog
+
+        bot = _make_bot()
+        bot.season_service.get_active_season = AsyncMock(return_value=_make_season())
+        bot.season_service.get_divisions = AsyncMock(return_value=divisions)
+        return TeamCog(bot), bot
+
+    async def test_a_rejection_part_way_through_leaves_no_picture_behind(
+        self, tmp_path, monkeypatch
+    ):
+        from services import image_lineup_post
+
+        divisions = [self._division(1, 1), self._division(2, 2)]
+        drawn = self._artifact(tmp_path, 1)
+        cog, _bot = self._cog_and_bot(divisions)
+
+        outcomes = iter(
+            [
+                MagicMock(action="POSTED", png_path=drawn, notices=[], message=None),
+                MagicMock(
+                    action="REJECTED", png_path=None, notices=[],
+                    message="❌ the template is at fault",
+                ),
+            ]
+        )
+
+        monkeypatch.setattr(
+            image_lineup_post, "lineup_enabled", AsyncMock(return_value=True)
+        )
+        monkeypatch.setattr(
+            image_lineup_post,
+            "render_for_command",
+            AsyncMock(side_effect=lambda *a, **k: next(outcomes)),
+        )
+
+        interaction = _make_interaction()
+        await _unwrap(cog.team_lineup)(cog, interaction, division=None, public=False)
+
+        assert not drawn.exists(), (
+            "a picture drawn before the rejection was abandoned and never removed"
+        )
+        assert not drawn.parent.exists()
+
+    async def test_the_pictures_are_gone_once_the_batch_has_posted(
+        self, tmp_path, monkeypatch
+    ):
+        from services import image_lineup_post
+
+        divisions = [self._division(1, 1), self._division(2, 2)]
+        pngs = [self._artifact(tmp_path, 1), self._artifact(tmp_path, 2)]
+        cog, _bot = self._cog_and_bot(divisions)
+        handed = iter(pngs)
+
+        monkeypatch.setattr(
+            image_lineup_post, "lineup_enabled", AsyncMock(return_value=True)
+        )
+        monkeypatch.setattr(
+            image_lineup_post,
+            "render_for_command",
+            AsyncMock(
+                side_effect=lambda *a, **k: MagicMock(
+                    action="POSTED", png_path=next(handed), notices=[], message=None
+                )
+            ),
+        )
+
+        interaction = _make_interaction()
+        await _unwrap(cog.team_lineup)(cog, interaction, division=None, public=False)
+
+        interaction.followup.send.assert_awaited()
+        for png in pngs:
+            assert not png.exists()

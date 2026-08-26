@@ -250,10 +250,11 @@ async def _send_verdict(
     if render is not None and render.draws:
         import discord as _discord
 
-        await target_channel.send(
-            f"<@{driver_discord_id}>",
-            file=_discord.File(str(render.png)),
-        )
+        attachment = _discord.File(str(render.png))
+        try:
+            await target_channel.send(f"<@{driver_discord_id}>", file=attachment)
+        finally:
+            image_verdict_post.discard(render, attachment)
         return
 
     content = _build_announcement_message(

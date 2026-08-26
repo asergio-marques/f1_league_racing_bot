@@ -323,36 +323,45 @@ class TeamCog(commands.Cog):
         from services.image_lineup_post import lineup_enabled, render_for_command
 
         if await lineup_enabled(self.bot, interaction.guild_id):
+            from services.image_render_service import discard_attachment
+
             files: list[discord.File] = []
             notices: list = []
-            for div in all_divisions:
-                outcome = await render_for_command(self.bot, interaction.guild, div.id)
-                if outcome.action == "REJECTED":
+            # One `finally` around the whole batch, because a rejection part way through
+            # abandons every picture drawn before it — the divisions already rendered are
+            # never sent, and without this their files would be the one leak no posting
+            # path accounts for.
+            try:
+                for div in all_divisions:
+                    outcome = await render_for_command(self.bot, interaction.guild, div.id)
+                    if outcome.action == "REJECTED":
+                        await interaction.followup.send(
+                            f"{outcome.message}\n_Lineup for **{div.name}** was not drawn._",
+                            ephemeral=True,
+                        )
+                        return
+                    if outcome.png_path is not None:
+                        files.append(
+                            discord.File(
+                                str(outcome.png_path), filename=f"lineup_{div.id}.png"
+                            )
+                        )
+                    notices.extend(outcome.notices)
+
+                if files:
+                    text = "\n".join(f"**{div.name}**" for div in all_divisions)
+                    if notices:
+                        from services.image_render_service import ImageRenderService
+
+                        await ImageRenderService.report_notices(
+                            self.bot, interaction.guild_id, notices
+                        )
                     await interaction.followup.send(
-                        f"{outcome.message}\n_Lineup for **{div.name}** was not drawn._",
-                        ephemeral=True,
+                        text, files=files, ephemeral=not public
                     )
                     return
-                if outcome.png_path is not None:
-                    files.append(
-                        discord.File(
-                            str(outcome.png_path), filename=f"lineup_{div.id}.png"
-                        )
-                    )
-                notices.extend(outcome.notices)
-
-            if files:
-                text = "\n".join(f"**{div.name}**" for div in all_divisions)
-                if notices:
-                    from services.image_render_service import ImageRenderService
-
-                    await ImageRenderService.report_notices(
-                        self.bot, interaction.guild_id, notices
-                    )
-                await interaction.followup.send(
-                    text, files=files, ephemeral=not public
-                )
-                return
+            finally:
+                discard_attachment(*files)
 
         lines: list[str] = []
         for div in all_divisions:

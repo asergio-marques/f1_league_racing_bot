@@ -1003,6 +1003,12 @@ async def post_attendance_sheet(
         except Exception:  # noqa: BLE001 — the queue must never mask the original failure
             log.exception("post_attendance_sheet: could not enqueue the textual sheet")
         return
+    finally:
+        # Posted or not, the picture has done all it will ever do: the retry queue carries
+        # the textual sheet and never the image, so nothing reads this file again.
+        from services.image_render_service import discard_attachment
+
+        discard_attachment(attachment)
 
     # Persist the replacement's id before removing what it replaces, so that a failed
     # deletion leaves the config pointing at the message that actually exists.

@@ -1114,3 +1114,52 @@ async def test_a_textual_fallback_is_posted_before_the_message_it_replaces_is_de
     assert (
         await _get_standings_message_id(db_path, division_id, round_id, "drivers") == 9999
     )
+
+
+# ── The rendered files do not outlive the posting attempt ─────────────────
+
+
+def _render_artifact(tmp_path, name):
+    """A PNG sitting where `render` puts one, so the ownership guard recognises it."""
+    directory = tmp_path / f"f1bot_render_{name}"
+    directory.mkdir()
+    png = directory / f"{name}.png"
+    png.write_bytes(b"\x89PNG")
+    return png
+
+
+async def test_both_championship_files_are_gone_once_they_have_posted(tmp_path):
+    """Two renders per round, and neither is read again after its own send."""
+    pngs = [_render_artifact(tmp_path, "standings_drivers_template"),
+            _render_artifact(tmp_path, "standings_constructors_template")]
+    handed = iter(pngs)
+
+    render = AsyncMock(side_effect=lambda *a, **k: _decision(png=next(handed)))
+
+    await _try_post(_bot(), _channel([]), render)
+
+    for png in pngs:
+        assert not png.exists(), f"{png.name} outlived its posting"
+        assert not png.parent.exists()
+
+
+async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
+    """The textual standings fall back; the picture is not kept for a retry (FR-056)."""
+    import discord
+
+    pngs = [_render_artifact(tmp_path, "standings_drivers_template"),
+            _render_artifact(tmp_path, "standings_constructors_template")]
+    handed = iter(pngs)
+    channel = AsyncMock()
+
+    async def send(content=None, **kwargs):
+        raise discord.HTTPException(MagicMock(status=500), "upload failed")
+
+    channel.send = send
+
+    await _try_post(
+        _bot(), channel, AsyncMock(side_effect=lambda *a, **k: _decision(png=next(handed)))
+    )
+
+    for png in pngs:
+        assert not png.exists(), "a failed upload must not strand the picture"

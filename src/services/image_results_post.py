@@ -401,17 +401,22 @@ async def try_post(
             )
         return ResultsPostOutcome()
 
+    from services.image_render_service import discard_attachment
+
     png = decision.png_paths[0]
+    # Discarded through the attachment rather than the path: the file object holds the
+    # handle open, and closing it here rather than trusting the send to have done it keeps
+    # the cleanup independent of how far the send got.
+    attachment = discord.File(str(png), filename="results.png")
     try:
-        message = await channel.send(
-            f"{heading}\n{label}",
-            file=discord.File(str(png), filename="results.png"),
-        )
+        message = await channel.send(f"{heading}\n{label}", file=attachment)
     except discord.HTTPException as exc:
         log.error("results: could not post image for session %s: %s", session_result.id, exc)
         # A Discord failure rather than a generation one: the caller falls through and the
         # **textual** table is what gets posted and, if need be, enqueued for retry.
         return ResultsPostOutcome()
+    finally:
+        discard_attachment(attachment)
 
     # Only now is the previous message removed. The channel never holds nothing, and a
     # failed rebuild leaves the league the results it had.
@@ -434,8 +439,10 @@ async def try_post(
             bot, server_id, f"{session_label} — {drawing.session_name}", decision.notices
         )
 
+    # No ``png_path``: the file was discarded the moment the send returned, and handing
+    # back a path to something deleted is worse than handing back nothing.
     return ResultsPostOutcome(
-        action=POSTED, message_id=message.id, notices=decision.notices, png_path=png
+        action=POSTED, message_id=message.id, notices=decision.notices
     )
 
 

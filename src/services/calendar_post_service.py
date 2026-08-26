@@ -175,9 +175,16 @@ async def replace_calendar_message(
     import discord
 
     if image_path is not None:
-        posted = await channel.send(
-            content, file=discord.File(str(image_path), filename="calendar.png")
-        )
+        # Closed here, where the attachment is, so the file's handle is released before
+        # the caller's `finally` removes it. The caller still discards the path, which is
+        # what covers a picture that never reached a send at all.
+        from services.image_render_service import discard_attachment
+
+        attachment = discord.File(str(image_path), filename="calendar.png")
+        try:
+            posted = await channel.send(content, file=attachment)
+        finally:
+            discard_attachment(attachment)
     else:
         posted = await channel.send(content)
 
@@ -227,62 +234,70 @@ async def post_division_calendar(
         result.problem = "no calendar channel is configured for this division"
         return result
 
+    from services.image_render_service import discard_render
+
     content = calendar_heading(division.name)
     image_path: Path | None = None
 
-    if await image_calendar_wanted(bot, server_id):
+    # Everything from the render to the post sits inside one `finally`, so the picture is
+    # removed whichever way this ends — posted, refused to a commanded caller, or lost to
+    # a Discord fault that sends the textual calendar to the retry queue instead.
+    try:
+        if await image_calendar_wanted(bot, server_id):
+            try:
+                outcome = await render_calendar_image(
+                    bot, server_id, division, rounds, tracks, season_number=season_number
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.exception("calendar: render raised for division %s", division.id)
+                outcome = None
+                result.problem = str(exc)
+            else:
+                result.notices = [n.detail for n in (outcome.notices or [])]
+                if outcome.problem is not None:
+                    result.problem = outcome.problem.detail
+                elif outcome.png_paths:
+                    image_path = outcome.png_paths[0]
+
+            if result.problem is not None and commanded:
+                # Commanded: reject, post nothing, delete nothing.
+                return result
+
+        if image_path is None:
+            # Either the league conveys its calendar as text, or a graphic was wanted and
+            # could not be made and this posting is not one a user commanded.
+            content = textual_calendar(division.name, rounds)
+
         try:
-            outcome = await render_calendar_image(
-                bot, server_id, division, rounds, tracks, season_number=season_number
+            message_id = await replace_calendar_message(
+                bot,
+                channel,
+                division.id,
+                content=content,
+                image_path=image_path,
+                previous_message_id=getattr(division, "calendar_message_id", None),
             )
         except Exception as exc:  # noqa: BLE001
-            log.exception("calendar: render raised for division %s", division.id)
-            outcome = None
-            result.problem = str(exc)
-        else:
-            result.notices = [n.detail for n in (outcome.notices or [])]
-            if outcome.problem is not None:
-                result.problem = outcome.problem.detail
-            elif outcome.png_paths:
-                image_path = outcome.png_paths[0]
+            log.exception("calendar: posting failed for division %s", division.id)
+            # A Discord fault rather than a generation fault: the *textual* calendar is
+            # what is enqueued for retry (FR-020).
+            from services import retry_service
 
-        if result.problem is not None and commanded:
-            # Commanded: reject, post nothing, delete nothing.
+            try:
+                await retry_service.enqueue(
+                    bot.db_path,
+                    server_id,
+                    division.calendar_channel_id,
+                    textual_calendar(division.name, rounds),
+                    f"calendar post failed: {exc}",
+                )
+            except Exception:  # noqa: BLE001
+                log.exception("calendar: could not enqueue the retry")
+            result.problem = result.problem or str(exc)
             return result
 
-    if image_path is None:
-        # Either the league conveys its calendar as text, or a graphic was wanted and
-        # could not be made and this posting is not one a user commanded.
-        content = textual_calendar(division.name, rounds)
-
-    try:
-        message_id = await replace_calendar_message(
-            bot,
-            channel,
-            division.id,
-            content=content,
-            image_path=image_path,
-            previous_message_id=getattr(division, "calendar_message_id", None),
-        )
-    except Exception as exc:  # noqa: BLE001
-        log.exception("calendar: posting failed for division %s", division.id)
-        # A Discord fault rather than a generation fault: the *textual* calendar is what
-        # is enqueued for retry (FR-020).
-        from services import retry_service
-
-        try:
-            await retry_service.enqueue(
-                bot.db_path,
-                server_id,
-                division.calendar_channel_id,
-                textual_calendar(division.name, rounds),
-                f"calendar post failed: {exc}",
-            )
-        except Exception:  # noqa: BLE001
-            log.exception("calendar: could not enqueue the retry")
-        result.problem = result.problem or str(exc)
+        result.message_id = message_id
+        result.posted_as_image = image_path is not None
         return result
-
-    result.message_id = message_id
-    result.posted_as_image = image_path is not None
-    return result
+    finally:
+        discard_render(image_path)

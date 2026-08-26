@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -573,3 +574,118 @@ class TestPostPhaseMessageChain:
         assert "test_mode" not in source, (
             "the image flow must not grow a test-mode rule the textual flow does not have"
         )
+
+
+# ---------------------------------------------------------------------------
+# The forecast graphic does not outlive its posting attempt
+#
+# Two of the three exits from the graphic branch abandon the picture *before* any send,
+# and those are the paths nothing else would catch: there is no sweeper behind this, so a
+# `finally` that did not cover them would leak on every unreachable channel.
+# ---------------------------------------------------------------------------
+
+class TestTheForecastGraphicIsDiscarded:
+
+    @staticmethod
+    def _artifact(tmp_path):
+        directory = Path(str(tmp_path)) / "f1bot_render_weather"
+        directory.mkdir(exist_ok=True)
+        png = directory / "weather_p2_template.png"
+        png.write_bytes(b"\x89PNG")
+        return png
+
+    @staticmethod
+    def _attachment(png):
+        import discord
+
+        return discord.File(str(png), filename="weather_2.png")
+
+    @pytest.mark.asyncio
+    async def test_it_is_gone_once_the_forecast_has_posted(self, tmp_path):
+        from services.forecast_cleanup_service import post_phase_message
+
+        db_path = await _make_db(str(tmp_path))
+        await _seed_base(db_path)
+        png = self._artifact(tmp_path)
+
+        bot = _make_bot(db_path)
+        bot.get_channel.return_value.send = AsyncMock(return_value=_make_mock_message(222))
+
+        await post_phase_message(
+            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            phase_number=2, text="phase 2 forecast",
+            attachment=self._attachment(png), attachment_text="<@&1>",
+        )
+
+        assert not png.exists()
+
+    @pytest.mark.asyncio
+    async def test_it_is_gone_when_the_send_fails(self, tmp_path):
+        """The textual forecast goes to the retry queue; the picture goes nowhere."""
+        import discord
+
+        from services.forecast_cleanup_service import post_phase_message
+
+        db_path = await _make_db(str(tmp_path))
+        await _seed_base(db_path)
+        png = self._artifact(tmp_path)
+
+        bot = _make_bot(db_path)
+        bot.get_channel.return_value.send = AsyncMock(
+            side_effect=discord.HTTPException(MagicMock(status=500), "upload failed")
+        )
+
+        await post_phase_message(
+            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            phase_number=2, text="phase 2 forecast",
+            attachment=self._attachment(png), attachment_text="<@&1>",
+        )
+
+        assert not png.exists()
+
+    @pytest.mark.asyncio
+    async def test_it_is_gone_when_the_channel_cannot_be_fetched(self, tmp_path):
+        """An abandonment path: the picture is built, and no send is ever attempted."""
+        import discord
+
+        from services.forecast_cleanup_service import post_phase_message
+
+        db_path = await _make_db(str(tmp_path))
+        await _seed_base(db_path)
+        png = self._artifact(tmp_path)
+
+        bot = _make_bot(db_path)
+        bot.get_channel.return_value = None
+        bot.fetch_channel = AsyncMock(
+            side_effect=discord.NotFound(MagicMock(status=404), "no such channel")
+        )
+
+        result = await post_phase_message(
+            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            phase_number=2, text="phase 2 forecast",
+            attachment=self._attachment(png), attachment_text="<@&1>",
+        )
+
+        assert result is None
+        assert not png.exists(), "a picture abandoned before its send must still be removed"
+
+    @pytest.mark.asyncio
+    async def test_it_is_gone_when_the_channel_is_not_a_text_channel(self, tmp_path):
+        """The second abandonment path, and the same requirement."""
+        from services.forecast_cleanup_service import post_phase_message
+
+        db_path = await _make_db(str(tmp_path))
+        await _seed_base(db_path)
+        png = self._artifact(tmp_path)
+
+        bot = _make_bot(db_path)
+        bot.get_channel.return_value = MagicMock()  # not specced as a TextChannel
+
+        result = await post_phase_message(
+            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            phase_number=2, text="phase 2 forecast",
+            attachment=self._attachment(png), attachment_text="<@&1>",
+        )
+
+        assert result is None
+        assert not png.exists(), "a picture abandoned before its send must still be removed"

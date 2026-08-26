@@ -694,3 +694,54 @@ class TestTheNoticeBlock:
 
         assert "Notices" not in reply
         assert cog.bot.posted == []
+
+
+# ── A preview leaves nothing on the host either ───────────────────────────
+#
+# `/images test` puts nothing in a league's channel, but it renders through the same
+# pipeline. An evening of template-checking would otherwise litter the host exactly as a
+# season of posting does.
+
+
+class TestThePreviewDiscardsItsPictures:
+    @staticmethod
+    def _artifact(tmp_path, name="calendar_template"):
+        directory = tmp_path / f"f1bot_render_{name}"
+        directory.mkdir()
+        png = directory / f"{name}.png"
+        png.write_bytes(b"\x89PNG")
+        return png
+
+    async def test_the_pictures_are_gone_once_the_preview_has_replied(self, cog, tmp_path):
+        png = self._artifact(tmp_path)
+        interaction = _Interaction()
+
+        await cog._send_preview(
+            interaction,
+            title="Calendar",
+            context=_context(),
+            outcomes=[("Calendar", "calendar_template", _outcome(png_paths=[png]))],
+        )
+
+        assert len(interaction.followup.files) == 1, "the preview still attaches them"
+        assert not png.exists()
+        assert not png.parent.exists()
+
+    async def test_the_pictures_are_gone_when_the_reply_fails(self, cog, tmp_path):
+        png = self._artifact(tmp_path)
+        interaction = _Interaction()
+
+        async def _boom(*_args, **_kwargs):
+            raise RuntimeError("the interaction expired")
+
+        interaction.followup.send = _boom
+
+        with pytest.raises(RuntimeError):
+            await cog._send_preview(
+                interaction,
+                title="Calendar",
+                context=_context(),
+                outcomes=[("Calendar", "calendar_template", _outcome(png_paths=[png]))],
+            )
+
+        assert not png.exists()

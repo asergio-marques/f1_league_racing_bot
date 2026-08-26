@@ -298,46 +298,54 @@ async def post_phase_message(
             _Div(), text, server_id=server_id
         )
     else:
-        channel = bot.get_channel(channel_id)
-        if channel is None:
-            try:
-                channel = await bot.fetch_channel(channel_id)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-                log.error(
-                    "post_phase_message: cannot fetch forecast channel id=%s: %s",
-                    channel_id, exc,
-                )
-                return None
-        if not isinstance(channel, discord.TextChannel):
-            log.error("post_phase_message: channel id=%s is not a TextChannel", channel_id)
-            return None
+        # One `finally` around the whole graphic branch. Two of its three exits abandon the
+        # picture *before* the send — an unfetchable channel and one that is not a text
+        # channel — and those are the paths a per-send cleanup would miss.
+        from services.image_render_service import discard_attachment
 
         try:
-            msg = await channel.send(
-                attachment_text,
-                file=attachment,
-                allowed_mentions=discord.AllowedMentions.all(),
-            )
-        except discord.HTTPException as exc:
-            log.warning(
-                "post_phase_message: failed to post phase %s for division %s: %s",
-                phase_number, division_id, exc,
-            )
-            try:
-                from services import retry_service
+            channel = bot.get_channel(channel_id)
+            if channel is None:
+                try:
+                    channel = await bot.fetch_channel(channel_id)
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                    log.error(
+                        "post_phase_message: cannot fetch forecast channel id=%s: %s",
+                        channel_id, exc,
+                    )
+                    return None
+            if not isinstance(channel, discord.TextChannel):
+                log.error("post_phase_message: channel id=%s is not a TextChannel", channel_id)
+                return None
 
-                await retry_service.enqueue(
-                    db_path,
-                    server_id=server_id,
-                    channel_id=channel_id,
-                    content=text,
-                    failure_reason=(
-                        f"weather phase {phase_number} for division {division_id}: {exc}"
-                    ),
+            try:
+                msg = await channel.send(
+                    attachment_text,
+                    file=attachment,
+                    allowed_mentions=discord.AllowedMentions.all(),
                 )
-            except Exception:  # noqa: BLE001 — the queue must never mask the original failure
-                log.exception("post_phase_message: could not enqueue the textual forecast")
-            return None
+            except discord.HTTPException as exc:
+                log.warning(
+                    "post_phase_message: failed to post phase %s for division %s: %s",
+                    phase_number, division_id, exc,
+                )
+                try:
+                    from services import retry_service
+
+                    await retry_service.enqueue(
+                        db_path,
+                        server_id=server_id,
+                        channel_id=channel_id,
+                        content=text,
+                        failure_reason=(
+                            f"weather phase {phase_number} for division {division_id}: {exc}"
+                        ),
+                    )
+                except Exception:  # noqa: BLE001 — the queue must never mask the original failure
+                    log.exception("post_phase_message: could not enqueue the textual forecast")
+                return None
+        finally:
+            discard_attachment(attachment)
 
     if msg is None:
         # Nothing was posted, so nothing may be destroyed.

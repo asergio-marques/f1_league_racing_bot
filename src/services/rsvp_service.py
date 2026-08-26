@@ -527,6 +527,13 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
             reason=f"the call could not be posted: {exc}",
         )
         return
+    finally:
+        # The check-in graphic is drawn once and never redrawn — the button callbacks and
+        # the deadline job never reach the image module — so once this send is over the
+        # file has no further reader.
+        from services.image_rsvp_post import discard_attachment
+
+        discard_attachment(attachment)
 
     # Bulk-insert DRA rows
     if all_driver_profile_ids:
