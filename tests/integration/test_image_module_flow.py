@@ -1660,7 +1660,7 @@ async def test_an_internal_problem_tells_the_user_nothing_to_act_on(
 @pytest.mark.asyncio
 @pytest.mark.rasteriser
 async def test_a_clean_render_posts_the_image(
-    db_path, module_service, config_service, template_dir, monkeypatch
+    db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
 ):
     from tests.support.image_sample_data import build_spec
 
@@ -1669,11 +1669,15 @@ async def test_a_clean_render_posts_the_image(
     await config_service.set_field(SERVER_ID, "template_directory", "templates")
 
     service = _render_service(db_path, config_service, module_service)
+    # `output_dir` so the render lands under pytest's own directory. Without it this test
+    # is a caller that never posts and so never discards, and it litters the host's
+    # temporary directory on every run.
     decision = await service.render_for_posting(
         SERVER_ID,
         "calendar_template",
         lambda root: build_spec("calendar_template", root),
         posting_origin=PostingOrigin.SCHEDULED,
+        output_dir=tmp_path,
     )
 
     assert decision.action == POST_IMAGE
