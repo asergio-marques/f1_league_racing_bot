@@ -149,16 +149,53 @@ def test_unknown_glyphs_do_not_raise(index):
 # ══════════════════════════════════════════════════════════════════════════
 
 
+def _is_monospace(path) -> bool:
+    """Whether *path* is a fixed-pitch face.
+
+    Asked of the font rather than of its name: "Liberation Mono" is easy to spot, "Courier"
+    and "Consolas" are not, and a family is free to call itself anything.
+    """
+    from fontTools.ttLib import TTFont  # noqa: PLC0415
+
+    try:
+        font = TTFont(path, fontNumber=0, lazy=True)
+    except Exception:  # noqa: BLE001
+        return False
+    try:
+        if bool(getattr(font["post"], "isFixedPitch", 0)):
+            return True
+        # PANOSE bProportion 9 is "monospaced" for the Latin text family.
+        return int(getattr(font["OS/2"].panose, "bProportion", 0)) == 9
+    except Exception:  # noqa: BLE001
+        return False
+    finally:
+        try:
+            font.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _a_family_with_two_weights():
-    """A family this host carries at both a regular and a bold weight, or None."""
+    """A proportional family this host carries at both a regular and a bold weight, or None.
+
+    Two things this must not do. It must not pick a **monospace** family: bold and regular
+    faces of one share their advance widths by definition, so "bold measures wider" is false
+    there and says nothing about the code under test. And it must not depend on the order
+    `face_index()` happens to be built in, which follows `rglob` and so the filesystem — a
+    host whose first two-weight family is Liberation Mono would fail where another passes,
+    which is precisely how this went unnoticed until it ran on a Raspberry Pi.
+    """
     from utils.font_metrics import face_index  # noqa: PLC0415
 
-    for (family, italic), faces in face_index().items():
+    for (family, italic), faces in sorted(face_index().items()):
         if italic:
             continue
         weights = {weight for weight, _width, _path in faces}
-        if any(w < 600 for w in weights) and any(w >= 600 for w in weights):
-            return family
+        if not (any(w < 600 for w in weights) and any(w >= 600 for w in weights)):
+            continue
+        if any(_is_monospace(path) for _weight, _width, path in faces):
+            continue
+        return family
     return None
 
 
@@ -180,7 +217,7 @@ def test_the_regular_face_chosen_is_the_nearest_to_400_not_the_first_alphabetica
     """DejaVuSans-ExtraLight sorts before DejaVuSans and is materially narrower."""
     from utils.font_metrics import face_index  # noqa: PLC0415
 
-    for (family, italic), faces in face_index().items():
+    for (family, italic), faces in sorted(face_index().items()):
         if italic or len(faces) < 2:
             continue
         normal = [face for face in faces if face[0] < 600 and face[1] == 5]

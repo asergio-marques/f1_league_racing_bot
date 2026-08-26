@@ -12,7 +12,7 @@ Made using GitHub Copilot Spec Kit and Claude as an experiment.
 
 ## Prerequisites
 
-- Python 3.8 or higher (3.12+ recommended)
+- Python 3.10 or higher (3.13 recommended — it is what CI runs)
 - A Discord Bot Token ([Discord Developer Portal](https://discord.com/developers/applications))
 
 ---
@@ -24,8 +24,16 @@ Made using GitHub Copilot Spec Kit and Claude as an experiment.
 ```bash
 git clone <repository-url>
 cd f1_league_weather_randomizer_bot
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+Install into the virtualenv, not system-wide. `requirements.txt` pins exact versions, and a
+virtualenv is what makes those pins apply. On Debian and Raspberry Pi OS especially, a
+system-wide install leaves the interpreter importing apt's own copies from
+`/usr/lib/python3/dist-packages` — which pip never writes to — so the bot runs against
+whatever the distribution ships rather than against what was tested.
 
 ### 2. Configure environment
 

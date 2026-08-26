@@ -93,19 +93,33 @@ def _name_parse_fault(exc: etree.XMLSyntaxError) -> str:
     return f"the file is not well-formed XML{where}"
 
 
-def load_svg(path: Path) -> etree._Element:
+def load_svg(path: Path | str) -> etree._Element:
     """Parse *path* and return its root element.
 
     Raises :class:`SvgParseError` for anything that is not well-formed SVG. A missing
     file is the caller's to detect — the validity layer distinguishes "not found" from
     "does not parse", and conflating them here would lose that distinction.
+
+    A `str` is accepted as readily as a `Path`; several callers hold the template path as
+    one and the annotation used to say otherwise.
     """
+    # A directory is named as unreadable here rather than left to lxml, because which
+    # fault lxml reports for one depends on the libxml2 it was linked against. libxml2
+    # 2.9 (what Debian's `python3-lxml` uses) opens the directory, reads nothing, and
+    # raises XMLSyntaxError "Document is empty" — so the OSError branch below never runs
+    # and a directory gets reported as malformed XML instead. Newer libxml2, including
+    # the copy bundled in pip's manylinux wheels, raises an I/O error as expected. Deciding
+    # it here keeps the fault the same on every host.
+    if Path(path).is_dir():
+        log.debug("SVG could not be read: %s is a directory", path)
+        raise SvgParseError("the file could not be read")
+
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False, huge_tree=False)
     try:
         tree = etree.parse(str(path), parser)
     except etree.XMLSyntaxError as exc:
         raise SvgParseError(_name_parse_fault(exc)) from exc
-    except OSError as exc:  # unreadable, a directory, a permission problem
+    except OSError as exc:  # unreadable, a permission problem
         log.debug("SVG could not be read: %s", exc)
         raise SvgParseError("the file could not be read") from exc
 

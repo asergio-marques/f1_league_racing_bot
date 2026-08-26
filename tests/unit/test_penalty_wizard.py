@@ -6,6 +6,18 @@ Covers:
 - AppealsReviewView button custom_ids and state=None safety
 - _AppealsConfirmClearView existence and button styles
 - _pen_label helper
+
+Every test that constructs a Modal or a View is ``async def``, and must stay that way.
+discord.py 2.5.0 builds a View's ``__stopped`` future in ``View.__init__`` with a bare
+``asyncio.get_running_loop()``, so constructing one without a live loop raises
+``RuntimeError: no running event loop``. 2.6 onwards wraps that call in ``try/except`` and
+falls back to ``None``, which is why these pass as plain ``def`` against a recent discord.py
+and fail against an older one — a host installing the library from Debian's apt packages
+rather than from ``requirements.txt`` gets 2.5.0 and sees all of them fail at once.
+
+``pytest.ini`` sets ``asyncio_mode = auto``, so an ``async def`` body runs inside a live loop
+and satisfies every discord.py 2.x. Pinning the dependency would not do this: the pin governs
+what pip installs, not what a system-packaged interpreter imports.
 """
 from __future__ import annotations
 
@@ -107,51 +119,51 @@ class TestAddPenaltyModal:
             use_appeals_staging=use_appeals_staging,
         )
 
-    def test_driver_input_exists(self):
+    async def test_driver_input_exists(self):
         modal = self._make_modal()
         assert hasattr(modal, "driver_input")
         assert isinstance(modal.driver_input, discord.ui.TextInput)
 
-    def test_penalty_input_exists(self):
+    async def test_penalty_input_exists(self):
         modal = self._make_modal()
         assert hasattr(modal, "penalty_input")
         assert isinstance(modal.penalty_input, discord.ui.TextInput)
 
-    def test_description_input_exists(self):
+    async def test_description_input_exists(self):
         modal = self._make_modal()
         assert hasattr(modal, "description_input")
         assert isinstance(modal.description_input, discord.ui.TextInput)
 
-    def test_justification_input_exists(self):
+    async def test_justification_input_exists(self):
         modal = self._make_modal()
         assert hasattr(modal, "justification_input")
         assert isinstance(modal.justification_input, discord.ui.TextInput)
 
-    def test_description_input_required(self):
+    async def test_description_input_required(self):
         modal = self._make_modal()
         assert modal.description_input.required is True
 
-    def test_justification_input_required(self):
+    async def test_justification_input_required(self):
         modal = self._make_modal()
         assert modal.justification_input.required is True
 
-    def test_description_input_max_length(self):
+    async def test_description_input_max_length(self):
         modal = self._make_modal()
         assert modal.description_input.max_length == 200
 
-    def test_justification_input_max_length(self):
+    async def test_justification_input_max_length(self):
         modal = self._make_modal()
         assert modal.justification_input.max_length == 200
 
-    def test_title_normal_mode(self):
+    async def test_title_normal_mode(self):
         modal = self._make_modal(use_appeals_staging=False)
         assert "Add Penalty" in modal.title
 
-    def test_title_appeals_mode(self):
+    async def test_title_appeals_mode(self):
         modal = self._make_modal(use_appeals_staging=True)
         assert "Add Correction" in modal.title
 
-    def test_session_label_in_title(self):
+    async def test_session_label_in_title(self):
         modal = self._make_modal()
         assert "Feature Race" in modal.title
 
@@ -161,21 +173,21 @@ class TestAddPenaltyModal:
 # ---------------------------------------------------------------------------
 
 class TestPenaltyReviewViewStateless:
-    def test_no_state_does_not_raise(self):
+    async def test_no_state_does_not_raise(self):
         view = PenaltyReviewView(state=None)
         assert view.state is None
 
-    def test_has_add_button(self):
+    async def test_has_add_button(self):
         view = PenaltyReviewView(state=None)
         cids = {item.custom_id for item in view.children if isinstance(item, discord.ui.Button)}
         assert _CID_ADD in cids
 
-    def test_has_confirm_button(self):
+    async def test_has_confirm_button(self):
         view = PenaltyReviewView(state=None)
         cids = {item.custom_id for item in view.children if isinstance(item, discord.ui.Button)}
         assert _CID_CONFIRM in cids
 
-    def test_has_approve_button(self):
+    async def test_has_approve_button(self):
         view = PenaltyReviewView(state=None)
         cids = {item.custom_id for item in view.children if isinstance(item, discord.ui.Button)}
         assert _CID_APPROVE in cids
@@ -186,7 +198,7 @@ class TestPenaltyReviewViewStateless:
 # ---------------------------------------------------------------------------
 
 class TestAppealsReviewView:
-    def test_no_state_does_not_raise(self):
+    async def test_no_state_does_not_raise(self):
         """Global restart registration must not raise with state=None."""
         view = AppealsReviewView(state=None)
         assert view.state is None
@@ -198,19 +210,19 @@ class TestAppealsReviewView:
             if isinstance(item, discord.ui.Button) and item.custom_id
         }
 
-    def test_has_ar_add_button(self):
+    async def test_has_ar_add_button(self):
         view = AppealsReviewView(state=None)
         assert _CID_AR_ADD in self._button_cids(view)
 
-    def test_has_ar_confirm_button(self):
+    async def test_has_ar_confirm_button(self):
         view = AppealsReviewView(state=None)
         assert _CID_AR_CONFIRM in self._button_cids(view)
 
-    def test_has_ar_approve_button(self):
+    async def test_has_ar_approve_button(self):
         view = AppealsReviewView(state=None)
         assert _CID_AR_APPROVE in self._button_cids(view)
 
-    def test_with_state_empty_staged_approve_disabled(self):
+    async def test_with_state_empty_staged_approve_disabled(self):
         state = PenaltyReviewState(
             round_id=1,
             division_id=2,
@@ -226,7 +238,7 @@ class TestAppealsReviewView:
         )
         assert approve_btn.disabled is True
 
-    def test_with_state_has_staged_approve_enabled(self):
+    async def test_with_state_has_staged_approve_enabled(self):
         state = PenaltyReviewState(
             round_id=1,
             division_id=2,
@@ -250,7 +262,7 @@ class TestAppealsReviewView:
         )
         assert approve_btn.disabled is False
 
-    def test_dynamic_remove_buttons_added_per_entry(self):
+    async def test_dynamic_remove_buttons_added_per_entry(self):
         state = PenaltyReviewState(
             round_id=1,
             division_id=2,
@@ -274,7 +286,7 @@ class TestAppealsReviewView:
         ]
         assert len(remove_btns) == 2
 
-    def test_timeout_is_none(self):
+    async def test_timeout_is_none(self):
         """Persistent views must have timeout=None."""
         view = AppealsReviewView(state=None)
         assert view.timeout is None
@@ -285,11 +297,11 @@ class TestAppealsReviewView:
 # ---------------------------------------------------------------------------
 
 class TestApprovalView:
-    def test_no_state_does_not_raise(self):
+    async def test_no_state_does_not_raise(self):
         view = ApprovalView(state=None)
         assert view.state is None
 
-    def test_timeout_is_none(self):
+    async def test_timeout_is_none(self):
         view = ApprovalView(state=None)
         assert view.timeout is None
 

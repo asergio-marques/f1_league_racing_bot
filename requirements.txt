@@ -1,10 +1,30 @@
-discord.py>=2.0
-apscheduler>=3.10
-aiosqlite>=0.19
-sqlalchemy
-python-dotenv
-lxml>=5.0
-fonttools>=4.50
-pytest>=7
-pytest-asyncio>=0.23
-coverage>=7
+# Pinned exactly so CI, the Windows development machine and a fresh checkout all install
+# the same thing. Bump deliberately, in a commit of its own, and run `pytest tests/ -q`
+# on every host before keeping the bump.
+#
+# These pins do NOT govern a Debian or Raspberry Pi host that installs the libraries from
+# apt instead: those land in /usr/lib/python3/dist-packages, which pip never writes to, so
+# the interpreter imports whatever the distribution ships no matter what this file says.
+# Raspberry Pi OS as of 2026-08 carries discord.py 2.5.0, and lxml 5.4.0 linked against
+# system libxml2 2.9.14 — both older than the pins below, and both behave differently.
+# Install into a virtualenv to be governed by this file (see README, Setup). The tests are
+# written not to depend on which of the two you get; that is deliberate and worth keeping.
+
+discord.py==2.7.1
+apscheduler==3.11.3
+aiosqlite==0.22.1
+sqlalchemy==2.0.52
+python-dotenv==1.2.3
+lxml==6.1.2
+fonttools==4.63.0
+
+# Test and coverage tooling — CI installs from this same file.
+pytest==9.1.1
+pytest-asyncio==1.4.0
+coverage==7.15.4
+
+# Pillow backs the one test that inspects the rasterised PNG pixel by pixel, which is the
+# only guard against Inkscape collapsing flowed text. That test is `rasteriser`-marked, so
+# CI never runs it and nothing but a hand-run would catch a break — it is pinned here rather
+# than left optional so a fresh virtualenv cannot silently skip it.
+pillow==12.3.0
