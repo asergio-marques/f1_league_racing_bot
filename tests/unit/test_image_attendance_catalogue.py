@@ -61,6 +61,9 @@ def test_the_sheets_top_level_fields_are_exactly_the_wip_specs():
         "autoreserve_limit",
         "autosack_group",
         "autosack_limit",
+        # The band beneath the rows, carried up when the sheet is cropped to the drivers
+        # it actually holds (XIV.2, v7.1.0).
+        "footer_group",
     }
 
 
@@ -75,8 +78,13 @@ def test_the_sheets_row_fields_are_exactly_the_wip_specs():
         "team_image",
         "points",
         "sanction",
+        # Where the canvas is cut when this row is the last the data fill. Optional: a
+        # template declaring none renders at full height, as every one did before v7.1.0.
+        "vertical_crop_point",
     }
     assert rows.mandatory_fields == {"group", "driver_name", "points"}
+    assert "vertical_crop_point" not in rows.mandatory_fields
+    assert "vertical_crop_point" in rows.valueless_fields
     assert rows.assets == {"driver_flag": "flag", "team_image": "team"}
 
 

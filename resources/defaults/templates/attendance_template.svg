@@ -55,7 +55,8 @@
                    row_<x>_driver_flag, row_<x>_team_name,
                    row_<x>_team_image, row_<x>_sanction,
                    round_<z>_group, round_<z>_flag,
-                   row_<x>_round_<z>_points
+                   row_<x>_round_<z>_points,
+                   footer_group, row_<x>_vertical_crop_point
        Declined  : none &#183; every field of the attendance sheet catalogue is
                    declared
        =================================================================== -->
@@ -137,6 +138,7 @@
 
   <!-- ================= rows ================= -->
   <g id="row_1_group" inkscape:label="row_1_group">
+      <rect id="row_1_vertical_crop_point" inkscape:label="row_1_vertical_crop_point" x="0" y="412" width="1" height="0" fill="none"/>
     <image id="row_1_driver_flag" inkscape:label="row_1_driver_flag" x="48" y="340" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_1_driver_name" inkscape:label="row_1_driver_name" class="dname" x="76" y="350">Driver Name</text>
     <image id="row_1_team_image" inkscape:label="row_1_team_image" x="76" y="354" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -157,6 +159,7 @@
     <text id="row_1_sanction" inkscape:label="row_1_sanction" class="sanc" x="992" y="357">Reached point limit</text>
   </g>
   <g id="row_2_group" inkscape:label="row_2_group">
+      <rect id="row_2_vertical_crop_point" inkscape:label="row_2_vertical_crop_point" x="0" y="444" width="1" height="0" fill="none"/>
     <image id="row_2_driver_flag" inkscape:label="row_2_driver_flag" x="48" y="372" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_2_driver_name" inkscape:label="row_2_driver_name" class="dname" x="76" y="382">Driver Name</text>
     <image id="row_2_team_image" inkscape:label="row_2_team_image" x="76" y="386" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -177,6 +180,7 @@
     <text id="row_2_sanction" inkscape:label="row_2_sanction" class="sanc" x="992" y="389">Reached point limit</text>
   </g>
   <g id="row_3_group" inkscape:label="row_3_group">
+      <rect id="row_3_vertical_crop_point" inkscape:label="row_3_vertical_crop_point" x="0" y="476" width="1" height="0" fill="none"/>
     <image id="row_3_driver_flag" inkscape:label="row_3_driver_flag" x="48" y="404" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_3_driver_name" inkscape:label="row_3_driver_name" class="dname" x="76" y="414">Driver Name</text>
     <image id="row_3_team_image" inkscape:label="row_3_team_image" x="76" y="418" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -197,6 +201,7 @@
     <text id="row_3_sanction" inkscape:label="row_3_sanction" class="sanc" x="992" y="421">Reached point limit</text>
   </g>
   <g id="row_4_group" inkscape:label="row_4_group">
+      <rect id="row_4_vertical_crop_point" inkscape:label="row_4_vertical_crop_point" x="0" y="508" width="1" height="0" fill="none"/>
     <image id="row_4_driver_flag" inkscape:label="row_4_driver_flag" x="48" y="436" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_4_driver_name" inkscape:label="row_4_driver_name" class="dname" x="76" y="446">Driver Name</text>
     <image id="row_4_team_image" inkscape:label="row_4_team_image" x="76" y="450" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -217,6 +222,7 @@
     <text id="row_4_sanction" inkscape:label="row_4_sanction" class="sanc" x="992" y="453">Reached point limit</text>
   </g>
   <g id="row_5_group" inkscape:label="row_5_group">
+      <rect id="row_5_vertical_crop_point" inkscape:label="row_5_vertical_crop_point" x="0" y="540" width="1" height="0" fill="none"/>
     <image id="row_5_driver_flag" inkscape:label="row_5_driver_flag" x="48" y="468" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_5_driver_name" inkscape:label="row_5_driver_name" class="dname" x="76" y="478">Driver Name</text>
     <image id="row_5_team_image" inkscape:label="row_5_team_image" x="76" y="482" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -237,6 +243,7 @@
     <text id="row_5_sanction" inkscape:label="row_5_sanction" class="sanc" x="992" y="485">Reached point limit</text>
   </g>
   <g id="row_6_group" inkscape:label="row_6_group">
+      <rect id="row_6_vertical_crop_point" inkscape:label="row_6_vertical_crop_point" x="0" y="572" width="1" height="0" fill="none"/>
     <image id="row_6_driver_flag" inkscape:label="row_6_driver_flag" x="48" y="500" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_6_driver_name" inkscape:label="row_6_driver_name" class="dname" x="76" y="510">Driver Name</text>
     <image id="row_6_team_image" inkscape:label="row_6_team_image" x="76" y="514" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -257,6 +264,7 @@
     <text id="row_6_sanction" inkscape:label="row_6_sanction" class="sanc" x="992" y="517">Reached point limit</text>
   </g>
   <g id="row_7_group" inkscape:label="row_7_group">
+      <rect id="row_7_vertical_crop_point" inkscape:label="row_7_vertical_crop_point" x="0" y="604" width="1" height="0" fill="none"/>
     <image id="row_7_driver_flag" inkscape:label="row_7_driver_flag" x="48" y="532" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_7_driver_name" inkscape:label="row_7_driver_name" class="dname" x="76" y="542">Driver Name</text>
     <image id="row_7_team_image" inkscape:label="row_7_team_image" x="76" y="546" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -277,6 +285,7 @@
     <text id="row_7_sanction" inkscape:label="row_7_sanction" class="sanc" x="992" y="549">Reached point limit</text>
   </g>
   <g id="row_8_group" inkscape:label="row_8_group">
+      <rect id="row_8_vertical_crop_point" inkscape:label="row_8_vertical_crop_point" x="0" y="636" width="1" height="0" fill="none"/>
     <image id="row_8_driver_flag" inkscape:label="row_8_driver_flag" x="48" y="564" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_8_driver_name" inkscape:label="row_8_driver_name" class="dname" x="76" y="574">Driver Name</text>
     <image id="row_8_team_image" inkscape:label="row_8_team_image" x="76" y="578" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -297,6 +306,7 @@
     <text id="row_8_sanction" inkscape:label="row_8_sanction" class="sanc" x="992" y="581">Reached point limit</text>
   </g>
   <g id="row_9_group" inkscape:label="row_9_group">
+      <rect id="row_9_vertical_crop_point" inkscape:label="row_9_vertical_crop_point" x="0" y="668" width="1" height="0" fill="none"/>
     <image id="row_9_driver_flag" inkscape:label="row_9_driver_flag" x="48" y="596" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_9_driver_name" inkscape:label="row_9_driver_name" class="dname" x="76" y="606">Driver Name</text>
     <image id="row_9_team_image" inkscape:label="row_9_team_image" x="76" y="610" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -317,6 +327,7 @@
     <text id="row_9_sanction" inkscape:label="row_9_sanction" class="sanc" x="992" y="613">Reached point limit</text>
   </g>
   <g id="row_10_group" inkscape:label="row_10_group">
+      <rect id="row_10_vertical_crop_point" inkscape:label="row_10_vertical_crop_point" x="0" y="700" width="1" height="0" fill="none"/>
     <image id="row_10_driver_flag" inkscape:label="row_10_driver_flag" x="48" y="628" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_10_driver_name" inkscape:label="row_10_driver_name" class="dname" x="76" y="638">Driver Name</text>
     <image id="row_10_team_image" inkscape:label="row_10_team_image" x="76" y="642" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -337,6 +348,7 @@
     <text id="row_10_sanction" inkscape:label="row_10_sanction" class="sanc" x="992" y="645">Reached point limit</text>
   </g>
   <g id="row_11_group" inkscape:label="row_11_group">
+      <rect id="row_11_vertical_crop_point" inkscape:label="row_11_vertical_crop_point" x="0" y="732" width="1" height="0" fill="none"/>
     <image id="row_11_driver_flag" inkscape:label="row_11_driver_flag" x="48" y="660" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_11_driver_name" inkscape:label="row_11_driver_name" class="dname" x="76" y="670">Driver Name</text>
     <image id="row_11_team_image" inkscape:label="row_11_team_image" x="76" y="674" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -357,6 +369,7 @@
     <text id="row_11_sanction" inkscape:label="row_11_sanction" class="sanc" x="992" y="677">Reached point limit</text>
   </g>
   <g id="row_12_group" inkscape:label="row_12_group">
+      <rect id="row_12_vertical_crop_point" inkscape:label="row_12_vertical_crop_point" x="0" y="764" width="1" height="0" fill="none"/>
     <image id="row_12_driver_flag" inkscape:label="row_12_driver_flag" x="48" y="692" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_12_driver_name" inkscape:label="row_12_driver_name" class="dname" x="76" y="702">Driver Name</text>
     <image id="row_12_team_image" inkscape:label="row_12_team_image" x="76" y="706" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -377,6 +390,7 @@
     <text id="row_12_sanction" inkscape:label="row_12_sanction" class="sanc" x="992" y="709">Reached point limit</text>
   </g>
   <g id="row_13_group" inkscape:label="row_13_group">
+      <rect id="row_13_vertical_crop_point" inkscape:label="row_13_vertical_crop_point" x="0" y="796" width="1" height="0" fill="none"/>
     <image id="row_13_driver_flag" inkscape:label="row_13_driver_flag" x="48" y="724" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_13_driver_name" inkscape:label="row_13_driver_name" class="dname" x="76" y="734">Driver Name</text>
     <image id="row_13_team_image" inkscape:label="row_13_team_image" x="76" y="738" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -397,6 +411,7 @@
     <text id="row_13_sanction" inkscape:label="row_13_sanction" class="sanc" x="992" y="741">Reached point limit</text>
   </g>
   <g id="row_14_group" inkscape:label="row_14_group">
+      <rect id="row_14_vertical_crop_point" inkscape:label="row_14_vertical_crop_point" x="0" y="828" width="1" height="0" fill="none"/>
     <image id="row_14_driver_flag" inkscape:label="row_14_driver_flag" x="48" y="756" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_14_driver_name" inkscape:label="row_14_driver_name" class="dname" x="76" y="766">Driver Name</text>
     <image id="row_14_team_image" inkscape:label="row_14_team_image" x="76" y="770" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -417,6 +432,7 @@
     <text id="row_14_sanction" inkscape:label="row_14_sanction" class="sanc" x="992" y="773">Reached point limit</text>
   </g>
   <g id="row_15_group" inkscape:label="row_15_group">
+      <rect id="row_15_vertical_crop_point" inkscape:label="row_15_vertical_crop_point" x="0" y="860" width="1" height="0" fill="none"/>
     <image id="row_15_driver_flag" inkscape:label="row_15_driver_flag" x="48" y="788" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_15_driver_name" inkscape:label="row_15_driver_name" class="dname" x="76" y="798">Driver Name</text>
     <image id="row_15_team_image" inkscape:label="row_15_team_image" x="76" y="802" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -437,6 +453,7 @@
     <text id="row_15_sanction" inkscape:label="row_15_sanction" class="sanc" x="992" y="805">Reached point limit</text>
   </g>
   <g id="row_16_group" inkscape:label="row_16_group">
+      <rect id="row_16_vertical_crop_point" inkscape:label="row_16_vertical_crop_point" x="0" y="892" width="1" height="0" fill="none"/>
     <image id="row_16_driver_flag" inkscape:label="row_16_driver_flag" x="48" y="820" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_16_driver_name" inkscape:label="row_16_driver_name" class="dname" x="76" y="830">Driver Name</text>
     <image id="row_16_team_image" inkscape:label="row_16_team_image" x="76" y="834" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -457,6 +474,7 @@
     <text id="row_16_sanction" inkscape:label="row_16_sanction" class="sanc" x="992" y="837">Reached point limit</text>
   </g>
   <g id="row_17_group" inkscape:label="row_17_group">
+      <rect id="row_17_vertical_crop_point" inkscape:label="row_17_vertical_crop_point" x="0" y="924" width="1" height="0" fill="none"/>
     <image id="row_17_driver_flag" inkscape:label="row_17_driver_flag" x="48" y="852" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_17_driver_name" inkscape:label="row_17_driver_name" class="dname" x="76" y="862">Driver Name</text>
     <image id="row_17_team_image" inkscape:label="row_17_team_image" x="76" y="866" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -477,6 +495,7 @@
     <text id="row_17_sanction" inkscape:label="row_17_sanction" class="sanc" x="992" y="869">Reached point limit</text>
   </g>
   <g id="row_18_group" inkscape:label="row_18_group">
+      <rect id="row_18_vertical_crop_point" inkscape:label="row_18_vertical_crop_point" x="0" y="956" width="1" height="0" fill="none"/>
     <image id="row_18_driver_flag" inkscape:label="row_18_driver_flag" x="48" y="884" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_18_driver_name" inkscape:label="row_18_driver_name" class="dname" x="76" y="894">Driver Name</text>
     <image id="row_18_team_image" inkscape:label="row_18_team_image" x="76" y="898" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -497,6 +516,7 @@
     <text id="row_18_sanction" inkscape:label="row_18_sanction" class="sanc" x="992" y="901">Reached point limit</text>
   </g>
   <g id="row_19_group" inkscape:label="row_19_group">
+      <rect id="row_19_vertical_crop_point" inkscape:label="row_19_vertical_crop_point" x="0" y="988" width="1" height="0" fill="none"/>
     <image id="row_19_driver_flag" inkscape:label="row_19_driver_flag" x="48" y="916" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_19_driver_name" inkscape:label="row_19_driver_name" class="dname" x="76" y="926">Driver Name</text>
     <image id="row_19_team_image" inkscape:label="row_19_team_image" x="76" y="930" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -517,6 +537,7 @@
     <text id="row_19_sanction" inkscape:label="row_19_sanction" class="sanc" x="992" y="933">Reached point limit</text>
   </g>
   <g id="row_20_group" inkscape:label="row_20_group">
+      <rect id="row_20_vertical_crop_point" inkscape:label="row_20_vertical_crop_point" x="0" y="1020" width="1" height="0" fill="none"/>
     <image id="row_20_driver_flag" inkscape:label="row_20_driver_flag" x="48" y="948" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_20_driver_name" inkscape:label="row_20_driver_name" class="dname" x="76" y="958">Driver Name</text>
     <image id="row_20_team_image" inkscape:label="row_20_team_image" x="76" y="962" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -537,6 +558,7 @@
     <text id="row_20_sanction" inkscape:label="row_20_sanction" class="sanc" x="992" y="965">Reached point limit</text>
   </g>
   <g id="row_21_group" inkscape:label="row_21_group">
+      <rect id="row_21_vertical_crop_point" inkscape:label="row_21_vertical_crop_point" x="0" y="1052" width="1" height="0" fill="none"/>
     <image id="row_21_driver_flag" inkscape:label="row_21_driver_flag" x="48" y="980" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_21_driver_name" inkscape:label="row_21_driver_name" class="dname" x="76" y="990">Driver Name</text>
     <image id="row_21_team_image" inkscape:label="row_21_team_image" x="76" y="994" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -557,6 +579,7 @@
     <text id="row_21_sanction" inkscape:label="row_21_sanction" class="sanc" x="992" y="997">Reached point limit</text>
   </g>
   <g id="row_22_group" inkscape:label="row_22_group">
+      <rect id="row_22_vertical_crop_point" inkscape:label="row_22_vertical_crop_point" x="0" y="1084" width="1" height="0" fill="none"/>
     <image id="row_22_driver_flag" inkscape:label="row_22_driver_flag" x="48" y="1012" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_22_driver_name" inkscape:label="row_22_driver_name" class="dname" x="76" y="1022">Driver Name</text>
     <image id="row_22_team_image" inkscape:label="row_22_team_image" x="76" y="1026" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -577,6 +600,7 @@
     <text id="row_22_sanction" inkscape:label="row_22_sanction" class="sanc" x="992" y="1029">Reached point limit</text>
   </g>
   <g id="row_23_group" inkscape:label="row_23_group">
+      <rect id="row_23_vertical_crop_point" inkscape:label="row_23_vertical_crop_point" x="0" y="1116" width="1" height="0" fill="none"/>
     <image id="row_23_driver_flag" inkscape:label="row_23_driver_flag" x="48" y="1044" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_23_driver_name" inkscape:label="row_23_driver_name" class="dname" x="76" y="1054">Driver Name</text>
     <image id="row_23_team_image" inkscape:label="row_23_team_image" x="76" y="1058" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -597,6 +621,7 @@
     <text id="row_23_sanction" inkscape:label="row_23_sanction" class="sanc" x="992" y="1061">Reached point limit</text>
   </g>
   <g id="row_24_group" inkscape:label="row_24_group">
+      <rect id="row_24_vertical_crop_point" inkscape:label="row_24_vertical_crop_point" x="0" y="1148" width="1" height="0" fill="none"/>
     <image id="row_24_driver_flag" inkscape:label="row_24_driver_flag" x="48" y="1076" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_24_driver_name" inkscape:label="row_24_driver_name" class="dname" x="76" y="1086">Driver Name</text>
     <image id="row_24_team_image" inkscape:label="row_24_team_image" x="76" y="1090" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -617,6 +642,7 @@
     <text id="row_24_sanction" inkscape:label="row_24_sanction" class="sanc" x="992" y="1093">Reached point limit</text>
   </g>
   <g id="row_25_group" inkscape:label="row_25_group">
+      <rect id="row_25_vertical_crop_point" inkscape:label="row_25_vertical_crop_point" x="0" y="1180" width="1" height="0" fill="none"/>
     <image id="row_25_driver_flag" inkscape:label="row_25_driver_flag" x="48" y="1108" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_25_driver_name" inkscape:label="row_25_driver_name" class="dname" x="76" y="1118">Driver Name</text>
     <image id="row_25_team_image" inkscape:label="row_25_team_image" x="76" y="1122" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -637,6 +663,7 @@
     <text id="row_25_sanction" inkscape:label="row_25_sanction" class="sanc" x="992" y="1125">Reached point limit</text>
   </g>
   <g id="row_26_group" inkscape:label="row_26_group">
+      <rect id="row_26_vertical_crop_point" inkscape:label="row_26_vertical_crop_point" x="0" y="1212" width="1" height="0" fill="none"/>
     <image id="row_26_driver_flag" inkscape:label="row_26_driver_flag" x="48" y="1140" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_26_driver_name" inkscape:label="row_26_driver_name" class="dname" x="76" y="1150">Driver Name</text>
     <image id="row_26_team_image" inkscape:label="row_26_team_image" x="76" y="1154" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -657,6 +684,7 @@
     <text id="row_26_sanction" inkscape:label="row_26_sanction" class="sanc" x="992" y="1157">Reached point limit</text>
   </g>
   <g id="row_27_group" inkscape:label="row_27_group">
+      <rect id="row_27_vertical_crop_point" inkscape:label="row_27_vertical_crop_point" x="0" y="1244" width="1" height="0" fill="none"/>
     <image id="row_27_driver_flag" inkscape:label="row_27_driver_flag" x="48" y="1172" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_27_driver_name" inkscape:label="row_27_driver_name" class="dname" x="76" y="1182">Driver Name</text>
     <image id="row_27_team_image" inkscape:label="row_27_team_image" x="76" y="1186" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -677,6 +705,7 @@
     <text id="row_27_sanction" inkscape:label="row_27_sanction" class="sanc" x="992" y="1189">Reached point limit</text>
   </g>
   <g id="row_28_group" inkscape:label="row_28_group">
+      <rect id="row_28_vertical_crop_point" inkscape:label="row_28_vertical_crop_point" x="0" y="1276" width="1" height="0" fill="none"/>
     <image id="row_28_driver_flag" inkscape:label="row_28_driver_flag" x="48" y="1204" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_28_driver_name" inkscape:label="row_28_driver_name" class="dname" x="76" y="1214">Driver Name</text>
     <image id="row_28_team_image" inkscape:label="row_28_team_image" x="76" y="1218" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -697,6 +726,7 @@
     <text id="row_28_sanction" inkscape:label="row_28_sanction" class="sanc" x="992" y="1221">Reached point limit</text>
   </g>
   <g id="row_29_group" inkscape:label="row_29_group">
+      <rect id="row_29_vertical_crop_point" inkscape:label="row_29_vertical_crop_point" x="0" y="1308" width="1" height="0" fill="none"/>
     <image id="row_29_driver_flag" inkscape:label="row_29_driver_flag" x="48" y="1236" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_29_driver_name" inkscape:label="row_29_driver_name" class="dname" x="76" y="1246">Driver Name</text>
     <image id="row_29_team_image" inkscape:label="row_29_team_image" x="76" y="1250" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -717,6 +747,7 @@
     <text id="row_29_sanction" inkscape:label="row_29_sanction" class="sanc" x="992" y="1253">Reached point limit</text>
   </g>
   <g id="row_30_group" inkscape:label="row_30_group">
+      <rect id="row_30_vertical_crop_point" inkscape:label="row_30_vertical_crop_point" x="0" y="1340" width="1" height="0" fill="none"/>
     <image id="row_30_driver_flag" inkscape:label="row_30_driver_flag" x="48" y="1268" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_30_driver_name" inkscape:label="row_30_driver_name" class="dname" x="76" y="1278">Driver Name</text>
     <image id="row_30_team_image" inkscape:label="row_30_team_image" x="76" y="1282" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -737,6 +768,7 @@
     <text id="row_30_sanction" inkscape:label="row_30_sanction" class="sanc" x="992" y="1285">Reached point limit</text>
   </g>
   <g id="row_31_group" inkscape:label="row_31_group">
+      <rect id="row_31_vertical_crop_point" inkscape:label="row_31_vertical_crop_point" x="0" y="1372" width="1" height="0" fill="none"/>
     <image id="row_31_driver_flag" inkscape:label="row_31_driver_flag" x="48" y="1300" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_31_driver_name" inkscape:label="row_31_driver_name" class="dname" x="76" y="1310">Driver Name</text>
     <image id="row_31_team_image" inkscape:label="row_31_team_image" x="76" y="1314" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -757,6 +789,7 @@
     <text id="row_31_sanction" inkscape:label="row_31_sanction" class="sanc" x="992" y="1317">Reached point limit</text>
   </g>
   <g id="row_32_group" inkscape:label="row_32_group">
+      <rect id="row_32_vertical_crop_point" inkscape:label="row_32_vertical_crop_point" x="0" y="1404" width="1" height="0" fill="none"/>
     <image id="row_32_driver_flag" inkscape:label="row_32_driver_flag" x="48" y="1332" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_32_driver_name" inkscape:label="row_32_driver_name" class="dname" x="76" y="1342">Driver Name</text>
     <image id="row_32_team_image" inkscape:label="row_32_team_image" x="76" y="1346" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -777,6 +810,7 @@
     <text id="row_32_sanction" inkscape:label="row_32_sanction" class="sanc" x="992" y="1349">Reached point limit</text>
   </g>
   <g id="row_33_group" inkscape:label="row_33_group">
+      <rect id="row_33_vertical_crop_point" inkscape:label="row_33_vertical_crop_point" x="0" y="1436" width="1" height="0" fill="none"/>
     <image id="row_33_driver_flag" inkscape:label="row_33_driver_flag" x="48" y="1364" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_33_driver_name" inkscape:label="row_33_driver_name" class="dname" x="76" y="1374">Driver Name</text>
     <image id="row_33_team_image" inkscape:label="row_33_team_image" x="76" y="1378" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -797,6 +831,7 @@
     <text id="row_33_sanction" inkscape:label="row_33_sanction" class="sanc" x="992" y="1381">Reached point limit</text>
   </g>
   <g id="row_34_group" inkscape:label="row_34_group">
+      <rect id="row_34_vertical_crop_point" inkscape:label="row_34_vertical_crop_point" x="0" y="1468" width="1" height="0" fill="none"/>
     <image id="row_34_driver_flag" inkscape:label="row_34_driver_flag" x="48" y="1396" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_34_driver_name" inkscape:label="row_34_driver_name" class="dname" x="76" y="1406">Driver Name</text>
     <image id="row_34_team_image" inkscape:label="row_34_team_image" x="76" y="1410" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -817,6 +852,7 @@
     <text id="row_34_sanction" inkscape:label="row_34_sanction" class="sanc" x="992" y="1413">Reached point limit</text>
   </g>
   <g id="row_35_group" inkscape:label="row_35_group">
+      <rect id="row_35_vertical_crop_point" inkscape:label="row_35_vertical_crop_point" x="0" y="1500" width="1" height="0" fill="none"/>
     <image id="row_35_driver_flag" inkscape:label="row_35_driver_flag" x="48" y="1428" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_35_driver_name" inkscape:label="row_35_driver_name" class="dname" x="76" y="1438">Driver Name</text>
     <image id="row_35_team_image" inkscape:label="row_35_team_image" x="76" y="1442" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -837,6 +873,7 @@
     <text id="row_35_sanction" inkscape:label="row_35_sanction" class="sanc" x="992" y="1445">Reached point limit</text>
   </g>
   <g id="row_36_group" inkscape:label="row_36_group">
+      <rect id="row_36_vertical_crop_point" inkscape:label="row_36_vertical_crop_point" x="0" y="1532" width="1" height="0" fill="none"/>
     <image id="row_36_driver_flag" inkscape:label="row_36_driver_flag" x="48" y="1460" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_36_driver_name" inkscape:label="row_36_driver_name" class="dname" x="76" y="1470">Driver Name</text>
     <image id="row_36_team_image" inkscape:label="row_36_team_image" x="76" y="1474" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -857,6 +894,7 @@
     <text id="row_36_sanction" inkscape:label="row_36_sanction" class="sanc" x="992" y="1477">Reached point limit</text>
   </g>
   <g id="row_37_group" inkscape:label="row_37_group">
+      <rect id="row_37_vertical_crop_point" inkscape:label="row_37_vertical_crop_point" x="0" y="1564" width="1" height="0" fill="none"/>
     <image id="row_37_driver_flag" inkscape:label="row_37_driver_flag" x="48" y="1492" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_37_driver_name" inkscape:label="row_37_driver_name" class="dname" x="76" y="1502">Driver Name</text>
     <image id="row_37_team_image" inkscape:label="row_37_team_image" x="76" y="1506" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -877,6 +915,7 @@
     <text id="row_37_sanction" inkscape:label="row_37_sanction" class="sanc" x="992" y="1509">Reached point limit</text>
   </g>
   <g id="row_38_group" inkscape:label="row_38_group">
+      <rect id="row_38_vertical_crop_point" inkscape:label="row_38_vertical_crop_point" x="0" y="1596" width="1" height="0" fill="none"/>
     <image id="row_38_driver_flag" inkscape:label="row_38_driver_flag" x="48" y="1524" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_38_driver_name" inkscape:label="row_38_driver_name" class="dname" x="76" y="1534">Driver Name</text>
     <image id="row_38_team_image" inkscape:label="row_38_team_image" x="76" y="1538" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -897,6 +936,7 @@
     <text id="row_38_sanction" inkscape:label="row_38_sanction" class="sanc" x="992" y="1541">Reached point limit</text>
   </g>
   <g id="row_39_group" inkscape:label="row_39_group">
+      <rect id="row_39_vertical_crop_point" inkscape:label="row_39_vertical_crop_point" x="0" y="1628" width="1" height="0" fill="none"/>
     <image id="row_39_driver_flag" inkscape:label="row_39_driver_flag" x="48" y="1556" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_39_driver_name" inkscape:label="row_39_driver_name" class="dname" x="76" y="1566">Driver Name</text>
     <image id="row_39_team_image" inkscape:label="row_39_team_image" x="76" y="1570" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -917,6 +957,7 @@
     <text id="row_39_sanction" inkscape:label="row_39_sanction" class="sanc" x="992" y="1573">Reached point limit</text>
   </g>
   <g id="row_40_group" inkscape:label="row_40_group">
+      <rect id="row_40_vertical_crop_point" inkscape:label="row_40_vertical_crop_point" x="0" y="1660" width="1" height="0" fill="none"/>
     <image id="row_40_driver_flag" inkscape:label="row_40_driver_flag" x="48" y="1588" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_40_driver_name" inkscape:label="row_40_driver_name" class="dname" x="76" y="1598">Driver Name</text>
     <image id="row_40_team_image" inkscape:label="row_40_team_image" x="76" y="1602" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -937,6 +978,7 @@
     <text id="row_40_sanction" inkscape:label="row_40_sanction" class="sanc" x="992" y="1605">Reached point limit</text>
   </g>
   <g id="row_41_group" inkscape:label="row_41_group">
+      <rect id="row_41_vertical_crop_point" inkscape:label="row_41_vertical_crop_point" x="0" y="1692" width="1" height="0" fill="none"/>
     <image id="row_41_driver_flag" inkscape:label="row_41_driver_flag" x="48" y="1620" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_41_driver_name" inkscape:label="row_41_driver_name" class="dname" x="76" y="1630">Driver Name</text>
     <image id="row_41_team_image" inkscape:label="row_41_team_image" x="76" y="1634" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -957,6 +999,7 @@
     <text id="row_41_sanction" inkscape:label="row_41_sanction" class="sanc" x="992" y="1637">Reached point limit</text>
   </g>
   <g id="row_42_group" inkscape:label="row_42_group">
+      <rect id="row_42_vertical_crop_point" inkscape:label="row_42_vertical_crop_point" x="0" y="1724" width="1" height="0" fill="none"/>
     <image id="row_42_driver_flag" inkscape:label="row_42_driver_flag" x="48" y="1652" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_42_driver_name" inkscape:label="row_42_driver_name" class="dname" x="76" y="1662">Driver Name</text>
     <image id="row_42_team_image" inkscape:label="row_42_team_image" x="76" y="1666" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -977,6 +1020,7 @@
     <text id="row_42_sanction" inkscape:label="row_42_sanction" class="sanc" x="992" y="1669">Reached point limit</text>
   </g>
   <g id="row_43_group" inkscape:label="row_43_group">
+      <rect id="row_43_vertical_crop_point" inkscape:label="row_43_vertical_crop_point" x="0" y="1756" width="1" height="0" fill="none"/>
     <image id="row_43_driver_flag" inkscape:label="row_43_driver_flag" x="48" y="1684" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_43_driver_name" inkscape:label="row_43_driver_name" class="dname" x="76" y="1694">Driver Name</text>
     <image id="row_43_team_image" inkscape:label="row_43_team_image" x="76" y="1698" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -997,6 +1041,7 @@
     <text id="row_43_sanction" inkscape:label="row_43_sanction" class="sanc" x="992" y="1701">Reached point limit</text>
   </g>
   <g id="row_44_group" inkscape:label="row_44_group">
+      <rect id="row_44_vertical_crop_point" inkscape:label="row_44_vertical_crop_point" x="0" y="1788" width="1" height="0" fill="none"/>
     <image id="row_44_driver_flag" inkscape:label="row_44_driver_flag" x="48" y="1716" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_44_driver_name" inkscape:label="row_44_driver_name" class="dname" x="76" y="1726">Driver Name</text>
     <image id="row_44_team_image" inkscape:label="row_44_team_image" x="76" y="1730" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -1017,6 +1062,7 @@
     <text id="row_44_sanction" inkscape:label="row_44_sanction" class="sanc" x="992" y="1733">Reached point limit</text>
   </g>
   <g id="row_45_group" inkscape:label="row_45_group">
+      <rect id="row_45_vertical_crop_point" inkscape:label="row_45_vertical_crop_point" x="0" y="1820" width="1" height="0" fill="none"/>
     <image id="row_45_driver_flag" inkscape:label="row_45_driver_flag" x="48" y="1748" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_45_driver_name" inkscape:label="row_45_driver_name" class="dname" x="76" y="1758">Driver Name</text>
     <image id="row_45_team_image" inkscape:label="row_45_team_image" x="76" y="1762" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -1037,6 +1083,7 @@
     <text id="row_45_sanction" inkscape:label="row_45_sanction" class="sanc" x="992" y="1765">Reached point limit</text>
   </g>
   <g id="row_46_group" inkscape:label="row_46_group">
+      <rect id="row_46_vertical_crop_point" inkscape:label="row_46_vertical_crop_point" x="0" y="1852" width="1" height="0" fill="none"/>
     <image id="row_46_driver_flag" inkscape:label="row_46_driver_flag" x="48" y="1780" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_46_driver_name" inkscape:label="row_46_driver_name" class="dname" x="76" y="1790">Driver Name</text>
     <image id="row_46_team_image" inkscape:label="row_46_team_image" x="76" y="1794" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -1057,6 +1104,7 @@
     <text id="row_46_sanction" inkscape:label="row_46_sanction" class="sanc" x="992" y="1797">Reached point limit</text>
   </g>
   <g id="row_47_group" inkscape:label="row_47_group">
+      <rect id="row_47_vertical_crop_point" inkscape:label="row_47_vertical_crop_point" x="0" y="1884" width="1" height="0" fill="none"/>
     <image id="row_47_driver_flag" inkscape:label="row_47_driver_flag" x="48" y="1812" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_47_driver_name" inkscape:label="row_47_driver_name" class="dname" x="76" y="1822">Driver Name</text>
     <image id="row_47_team_image" inkscape:label="row_47_team_image" x="76" y="1826" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -1077,6 +1125,7 @@
     <text id="row_47_sanction" inkscape:label="row_47_sanction" class="sanc" x="992" y="1829">Reached point limit</text>
   </g>
   <g id="row_48_group" inkscape:label="row_48_group">
+      <rect id="row_48_vertical_crop_point" inkscape:label="row_48_vertical_crop_point" x="0" y="1916" width="1" height="0" fill="none"/>
     <image id="row_48_driver_flag" inkscape:label="row_48_driver_flag" x="48" y="1844" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_48_driver_name" inkscape:label="row_48_driver_name" class="dname" x="76" y="1854">Driver Name</text>
     <image id="row_48_team_image" inkscape:label="row_48_team_image" x="76" y="1858" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -1097,6 +1146,7 @@
     <text id="row_48_sanction" inkscape:label="row_48_sanction" class="sanc" x="992" y="1861">Reached point limit</text>
   </g>
   <g id="row_49_group" inkscape:label="row_49_group">
+      <rect id="row_49_vertical_crop_point" inkscape:label="row_49_vertical_crop_point" x="0" y="1948" width="1" height="0" fill="none"/>
     <image id="row_49_driver_flag" inkscape:label="row_49_driver_flag" x="48" y="1876" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_49_driver_name" inkscape:label="row_49_driver_name" class="dname" x="76" y="1886">Driver Name</text>
     <image id="row_49_team_image" inkscape:label="row_49_team_image" x="76" y="1890" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -1117,6 +1167,7 @@
     <text id="row_49_sanction" inkscape:label="row_49_sanction" class="sanc" x="992" y="1893">Reached point limit</text>
   </g>
   <g id="row_50_group" inkscape:label="row_50_group">
+      <rect id="row_50_vertical_crop_point" inkscape:label="row_50_vertical_crop_point" x="0" y="1980" width="1" height="0" fill="none"/>
     <image id="row_50_driver_flag" inkscape:label="row_50_driver_flag" x="48" y="1908" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_50_driver_name" inkscape:label="row_50_driver_name" class="dname" x="76" y="1918">Driver Name</text>
     <image id="row_50_team_image" inkscape:label="row_50_team_image" x="76" y="1922" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>
@@ -1200,7 +1251,9 @@
   </g>
 
   <!--  footer  -->
-  <line x1="48" y1="1942" x2="1152" y2="1942" stroke="#262B33" stroke-width="1"/>
-  <text class="foot" x="48" y="1968">ATTENDANCE RECORD</text>
-  <text class="foot" x="1152" y="1968" text-anchor="end">POINTS ACCRUED PER ROUND</text>
+  <g id="footer_group" inkscape:label="footer_group">
+    <line x1="48" y1="1942" x2="1152" y2="1942" stroke="#262B33" stroke-width="1"/>
+    <text class="foot" x="48" y="1968">ATTENDANCE RECORD</text>
+    <text class="foot" x="1152" y="1968" text-anchor="end">POINTS ACCRUED PER ROUND</text>
+  </g>
 </svg>

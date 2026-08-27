@@ -106,10 +106,11 @@ def test_the_row_group_is_mandatory_and_valueless():
         assert "group" in catalogue.rows.valueless_fields
 
 
-def test_the_driver_flag_is_the_only_optional_row_field_they_share():
+def test_the_two_optional_row_fields_they_share():
+    """The flag, and the crop point that shortens the canvas to the entries drawn."""
     shared = RESULTS_QUALIFYING_CATALOGUE.rows.fields & RESULTS_RACE_CATALOGUE.rows.fields
     optional = shared - RESULTS_QUALIFYING_CATALOGUE.rows.mandatory_fields
-    assert optional == frozenset({"driver_flag"})
+    assert optional == frozenset({"driver_flag", "vertical_crop_point"})
 
 
 def test_asset_classes_resolve_per_row_field():

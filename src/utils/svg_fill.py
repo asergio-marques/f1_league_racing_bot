@@ -2,6 +2,9 @@
 
     Text fill | Image fill | Recolour | Group removal | Vertical crop | Text fit
 
+The crop carries a declared footer group up with it, so a graphic drawn shorter than its
+template keeps the band beneath its rows (XIV.2, v7.1.0).
+
 ``fill()`` **raises nothing** for a data disagreement — it reports, and the caller
 decides. That is what lets a caller distinguish a render that failed from one that
 merely degraded (XIV.4).
@@ -53,6 +56,10 @@ _MIN_SIZE = 1.0
 
 _SHAPE_INSIDE_RE = re.compile(r"url\(\s*#([^)\s]+)\s*\)")
 
+#: Below this the crop removes nothing worth moving a footer for, and the same half-pixel
+#: the off-canvas notice already tolerates (FR-026).
+_CROP_EPSILON = 0.5
+
 
 @dataclass
 class FillSpec:
@@ -72,6 +79,15 @@ class FillSpec:
     #: expected to stand at the declared canvas height, so only then can it be off it
     #: (FR-026). A division drawn shorter than its template crops higher by design.
     crop_is_final: bool = False
+
+    #: The band of static chrome standing **beneath** the repeating collection — a caption
+    #: naming the graphic, a legend — which the crop carries up with it rather than cutting
+    #: off (Constitution XIV.2, v7.1.0).
+    #:
+    #: Named rather than found: a crop that guessed which nodes were "the footer" from
+    #: their y would carry up whatever happened to sit low on the canvas, and a template
+    #: author would have no way to say otherwise.
+    footer: str | None = None
 
     #: Fields whose value could not be determined. Each is emptied, or its `_group`
     #: removed where the template declares one (FR-013, FR-023).
@@ -241,6 +257,20 @@ def fill(spec: FillSpec) -> FillResult:
                             ),
                         )
                     )
+                # The footer rides up **before** the canvas is rewritten, by exactly
+                # the height the crop is about to remove. A template that declares none
+                # is cropped as it always was, and a full-size division moves nothing:
+                # its crop point stands at the canvas height and the delta is nought.
+                if spec.footer is not None and declared_height is not None:
+                    delta = declared_height - crop_y
+                    node = index.resolve(spec.footer)
+                    if node is None:
+                        unresolved.append(
+                            f"unknown footer group `{spec.footer}` "
+                            f"(template declares no such id)"
+                        )
+                    elif delta > _CROP_EPSILON:
+                        _translate_y(node, -delta)
                 _crop_to(root, crop_y)
 
     canvas = canvas_of(root)
@@ -750,6 +780,20 @@ def _element_y(element: etree._Element) -> float | None:
 def _is_below(element: etree._Element, crop_y: float) -> bool:
     y = _element_y(element)
     return y is not None and y >= crop_y
+
+
+def _translate_y(element: etree._Element, offset: float) -> None:
+    """Move *element* and its subtree by *offset* along y.
+
+    Prepended to whatever transform the element already carries, never replacing it: a
+    footer band authored in a graphical editor commonly sits inside a group the editor gave
+    a transform of its own, and discarding that would move the band sideways as well as up.
+    Prepending also puts this translation **outside** the element's own coordinate system,
+    so the offset is in the canvas's units whatever the element scales by.
+    """
+    existing = (element.get("transform") or "").strip()
+    shift = f"translate(0,{offset:g})"
+    element.set("transform", f"{shift} {existing}".strip())
 
 
 def _crop_to(root: etree._Element, crop_y: float) -> None:

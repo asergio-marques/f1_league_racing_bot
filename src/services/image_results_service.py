@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from models.image_catalogues import CapacityError, catalogue_for
+from models.image_catalogues import CapacityError, catalogue_for, row_crop_fields
 from models.points_config import SessionType
 from utils.results_formatter import (
     NOT_APPLICABLE,
@@ -443,6 +443,12 @@ def build_fill_spec(
             put("fastest_lap_time", drawing.fastest_lap.lap_time)
         elif "fastest_lap_group" in declared:
             remove.append("fastest_lap_group")
+            # The legend saying a lap is marked by colour is untrue of a session that
+            # conferred no bonus, so it leaves with the plate. It carries a group of its
+            # own rather than sitting inside the plate's, because it is drawn in the
+            # footer band the crop carries up and a node cannot be in two groups.
+            if "fastest_lap_legend_group" in declared:
+                remove.append("fastest_lap_legend_group")
             off_canvas.update(
                 name
                 for name in declared
@@ -479,6 +485,10 @@ def build_fill_spec(
         row_count=drawing.entry_count,
         image_data=image_data,
         catalogue=catalogue,
+        # Shorten the canvas to the rows this division actually fills, carrying the
+        # caption band beneath them up with it (XIV.2, v7.1.0). A template declaring no
+        # crop point is drawn at its full height, exactly as before.
+        **row_crop_fields(declared, drawn=len(drawn), capacity=capacity),
     )
     if asset_directories:
         spec.asset_directories = dict(asset_directories)
