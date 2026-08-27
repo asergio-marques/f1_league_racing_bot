@@ -10,7 +10,7 @@ drivers.
 
 Three sets of documents carry this project's knowledge and all of them go stale silently:
 
-- `docs/wip-specs/*.md` — **the source of truth for rules.** What the bot shall do.
+- `docs/wip-specs/*.md` — **the source of truth for rules.** What the bot shall do, end to end and at a functional level.
 - `README.md` — **what a league sees.** Commands, behaviour, authoring conventions.
 - `docs/how-to/*.md` — **the order to do a job in.** One guide per module, plus the core bot.
 
@@ -22,6 +22,15 @@ owning module's how-to guide when it alters a job a manager does or the order of
 Decisions made in chat are the ones that go missing. When the user answers a question, that
 answer is a project rule from that moment, and the chat log is not where it lives.
 
+**But only *functional* decisions reach a wip-spec** (decided 2026-08-27). An engineering
+decision — a journal mode, a timeout, how connections are handled, where a file lives — is
+not functional specification however deliberately it was taken, and **must not** become a new
+wip-spec to house it. Its home is the docstring of the module or function it governs, next to
+the code it constrains, where it cannot drift; pin the trade-off with a named test where the
+decision is one a later reader might otherwise tune away. If a decision seems to have no
+documentation home, that is the answer — not a reason to invent a spec. A wip-spec is owed
+only where a league would experience the change.
+
 The `close-out` skill holds the detail: house style for each document, where a rule belongs,
 and the checks to run — including the `pytest tests/ -q` run. Read it rather than guessing.
 
@@ -29,7 +38,7 @@ and the checks to run — including the `pytest tests/ -q` run. Read it rather t
 
 | Path | Status |
 |---|---|
-| `docs/wip-specs/` | **Source for rules, but known stale.** Hand-written. Edit it when building shows it is wrong. As of 2026-08-17 several are heavily outdated: **where a wip-spec and the implementation disagree, the implementation wins.** Verify against `src/` before quoting one, and correct the document rather than the code. |
+| `docs/wip-specs/` | **Source for rules, but known stale.** Hand-written. **End-to-end, high-level functional specification only** — what the bot does, as a league experiences it. Edit it when building shows it is wrong. As of 2026-08-17 several are heavily outdated: **where a wip-spec and the implementation disagree, the implementation wins.** Verify against `src/` before quoting one, and correct the document rather than the code. |
 | `README.md` | **Source.** User-facing. |
 | `docs/how-to/` | **Becoming the source for behaviour.** Task-ordered guides for a league manager. A guide owns the *order* of a job. **A module's guide covers that module only:** core setup is named as a prerequisite and linked, never explained, and findings about core behaviour belong in the core guide or the README, not in it. |
 | `docs/how-to/test-mode.md` | **Derived, hand-written.** For maintainers, not leagues — how test mode substitutes for a live season. Technical register, not strictly a `how-to/` guide, but placed in the same directory for ease. |

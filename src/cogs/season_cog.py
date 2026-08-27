@@ -30,12 +30,13 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from db.database import get_connection
+from db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
 from models.division import Division
 from models.round import RoundFormat
 from services import season_points_service
 import services.track_service as track_service
 from services.season_service import SeasonImmutableError
+from utils.autocomplete import bounded_autocomplete
 from utils.channel_guard import channel_guard, admin_only
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from utils.output_router import _chunk_message
@@ -2532,14 +2533,26 @@ class SeasonCog(commands.Cog):
             f"  scheduled_at: {sched.isoformat()} UTC",
         )
 
-    @round_add.autocomplete("track")
-    async def round_add_track_autocomplete(
+    @bounded_autocomplete()
+    async def _track_autocomplete(
         self,
         interaction: discord.Interaction,
         current: str,
     ) -> list[app_commands.Choice[str]]:
+        """The circuits, offered to both `/round add` and `/round amend`.
+
+        One callback registered against both parameters \u2014 it was two byte-identical copies,
+        which is one more place for the two to drift apart than is useful. Registered
+        imperatively below, the way the `/images test` division autocomplete already is.
+
+        The shorter lock wait matters here: an autocomplete has three seconds and cannot be
+        deferred, so giving up early and offering nothing beats answering into an expired
+        interaction token.
+        """
         results: list[app_commands.Choice[str]] = []
-        async with get_connection(self.bot.db_path) as _tdb:
+        async with get_connection(
+            self.bot.db_path, timeout=AUTOCOMPLETE_TIMEOUT_SECONDS
+        ) as _tdb:
             _tracks = await track_service.get_all_tracks(_tdb)
         for r in _tracks:
             label = f"{r['id']:02d} \u2013 {r['name']}"
@@ -2766,20 +2779,10 @@ class SeasonCog(commands.Cog):
         )
         await interaction.response.send_message("\n".join(summary_lines), view=view, ephemeral=True)
 
-    @round_amend.autocomplete("track")
-    async def round_amend_track_autocomplete(
-        self,
-        interaction: discord.Interaction,
-        current: str,
-    ) -> list[app_commands.Choice[str]]:
-        results: list[app_commands.Choice[str]] = []
-        async with get_connection(self.bot.db_path) as _tdb:
-            _tracks = await track_service.get_all_tracks(_tdb)
-        for r in _tracks:
-            label = f"{r['id']:02d} \u2013 {r['name']}"
-            if current.lower() in label.lower():
-                results.append(app_commands.Choice(name=label, value=r["name"]))
-        return results[:25]
+    # One callback, both parameters. Registered here rather than by decorator because
+    # `round_amend` is only defined further up the class body than `_track_autocomplete`.
+    round_add.autocomplete("track")(_track_autocomplete)
+    round_amend.autocomplete("track")(_track_autocomplete)
 
     @round.command(
         name="delete",

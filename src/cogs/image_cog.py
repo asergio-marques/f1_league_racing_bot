@@ -10,11 +10,15 @@ is disabled (FR-005).
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
+from zoneinfo import available_timezones
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
+from utils.autocomplete import bounded_autocomplete
 from models.image_constants import (
     ASPECT_LABELS,
     ASPECTS,
@@ -30,6 +34,30 @@ from utils.channel_guard import admin_only, channel_guard, server_admin_only
 from utils.paths import PathContainmentError, relative_to_root
 
 log = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _zone_names() -> tuple[tuple[str, str], ...]:
+    """Every IANA zone paired with its case-folded form, sorted, built once.
+
+    `available_timezones()` walks the whole `TZPATH` tree — some 600 entries under
+    `/usr/share/zoneinfo` — and CPython does not cache it. The autocomplete it feeds runs on
+    *every keystroke*, and this was measured at 325 ms cold on the Raspberry Pi the bot runs
+    on: a third of Discord's three-second budget spent on a command that never touches the
+    database. Folding the case here too saves lowercasing ~600 strings per keystroke.
+
+    Memoised for the life of the process, in the same spirit as the font index in
+    `utils/font_metrics.py`. This is not the caching layer the constitution cautions about
+    at "Performance & Storage Considerations" — that concerns league data at scale, whereas
+    the zone list is a static enumeration shipped by the operating system.
+    """
+    return tuple(sorted((zone, zone.casefold()) for zone in available_timezones()))
+
+
+def clear_zone_cache() -> None:
+    """Drop the memoised zone list. For tests, mirroring `font_metrics.clear_cache`."""
+    _zone_names.cache_clear()
+
 
 _STATE_ICONS = {
     STATE_ENABLED: "✅",
@@ -784,6 +812,7 @@ class ImageCog(commands.Cog):
         await self._log(interaction, f"Time zone = {candidate}")
 
     @config_time_zone.autocomplete("zone")
+    @bounded_autocomplete()
     async def _time_zone_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
@@ -791,12 +820,13 @@ class ImageCog(commands.Cog):
 
         There are several hundred — far past what a static choice list holds — which is
         why this is a free-text parameter with completion rather than `@choices`.
-        """
-        from zoneinfo import available_timezones
 
-        needle = (current or "").strip().lower()
-        zones = sorted(available_timezones())
-        matches = [z for z in zones if needle in z.lower()] if needle else zones
+        The list itself comes from `_zone_names`, which builds it once; see there for why.
+        """
+        needle = (current or "").strip().casefold()
+        matches = [
+            zone for zone, folded in _zone_names() if not needle or needle in folded
+        ]
         return [app_commands.Choice(name=z, value=z) for z in matches[:25]]
 
     @config.command(
@@ -985,6 +1015,7 @@ class ImageCog(commands.Cog):
         parent=images,
     )
 
+    @bounded_autocomplete()
     async def _division_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
@@ -999,12 +1030,13 @@ class ImageCog(commands.Cog):
         optional there: such a server draws a fabricated league and needs no name.
         """
         try:
-            season = await self.bot.season_service.get_previewable_season(  # type: ignore[attr-defined]
-                interaction.guild_id
+            # One connection rather than two: the season lookup and the division list share
+            # it, which halves the connect/PRAGMA/close cost on a path racing Discord's
+            # three-second budget. The shorter lock wait means a contended database gives up
+            # in time to answer rather than answering into an expired token.
+            divisions = await self.bot.season_service.get_previewable_divisions(  # type: ignore[attr-defined]
+                interaction.guild_id, timeout=AUTOCOMPLETE_TIMEOUT_SECONDS
             )
-            if season is None:
-                return []
-            divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
         except Exception:  # noqa: BLE001 — an autocomplete never breaks the command
             return []
 

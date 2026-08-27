@@ -1,14 +1,24 @@
 """SchedulerService — APScheduler wrapper for phase job management.
 
-Uses SQLAlchemyJobStore backed by the same SQLite file so jobs survive restarts.
-Jobs that missed their fire time are executed immediately (APScheduler default with
-past DateTrigger + replace_existing=True).
+Uses SQLAlchemyJobStore backed by **its own** SQLite file, separate from the league
+database, so jobs survive restarts. Jobs that missed their fire time are executed
+immediately (APScheduler default with past DateTrigger + replace_existing=True).
+
+The separation is deliberate and is not tidiness. `SQLAlchemyJobStore` is synchronous, and
+it is attached to an `AsyncIOScheduler`, so every job it adds, updates or removes writes to
+SQLite **on the event-loop thread** — blocking every other coroutine for the duration,
+including the HTTP send that answers a Discord interaction. Pointed at the league database
+that also carries hundreds of `aiosqlite` readers, those writes contended with the very
+traffic they were stalling. Given its own file the contention is gone, and the remaining
+stall is one small write to an uncontended database.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import re
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Callable
 
@@ -25,6 +35,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _GRACE_SECONDS = 300  # 5-minute misfire grace period
+
 
 # Regex that matches the ``_s{S}_d{D}_r{R}`` suffix appended to every round-
 # scoped job ID. Used to extract the event-type prefix for dispatch.
@@ -220,12 +231,51 @@ async def _rsvp_deadline_job(round_id: int) -> None:
     await cb(round_id)
 
 
+def default_jobstore_path(db_path: str) -> str:
+    """Where the job store lives when nothing names it: `scheduler.db` beside *db_path*.
+
+    Derived from the league database rather than fixed, so a relative `DB_PATH=bot.db`
+    keeps working and an absolute one puts the pair together.
+    """
+    return os.path.join(os.path.dirname(os.path.abspath(db_path)), "scheduler.db")
+
+
+def prepare_jobstore(jobstore_path: str) -> None:
+    """Put the job store into WAL before SQLAlchemy opens it.
+
+    `run_migrations` puts the *league* database into WAL; nothing reaches this file, because
+    APScheduler brings its own SQLAlchemy connections. Without this the job store would keep
+    the default rollback journal, which on this host's SD card costs ~11 ms a commit against
+    ~6 ms — and those milliseconds are spent on the event-loop thread, which is the whole
+    reason the job store was moved out in the first place.
+
+    `journal_mode` persists in the file header, so this runs once at startup and every later
+    SQLAlchemy connection inherits it. `synchronous` is left at FULL here for the same
+    reason it is on the league database: a scheduled job lost to a power cut is worse than a
+    slower commit. A file that will not take WAL is not fatal.
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(jobstore_path)), exist_ok=True)
+    conn = sqlite3.connect(jobstore_path)
+    try:
+        mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+        mode = str(mode[0]).lower() if mode else "unknown"
+        if mode != "wal":
+            log.warning(
+                "Could not enable WAL on the job store — it reports journal_mode=%s.", mode
+            )
+    finally:
+        conn.close()
+
+
 class SchedulerService:
-    def __init__(self, db_path: str) -> None:
+    def __init__(self, db_path: str, jobstore_path: str | None = None) -> None:
         self._db_path = db_path
-        jobstore_url = f"sqlite:///{db_path}"
+        self._jobstore_path = jobstore_path or default_jobstore_path(db_path)
+        prepare_jobstore(self._jobstore_path)
+        jobstore_url = f"sqlite:///{self._jobstore_path}"
+        jobstore = SQLAlchemyJobStore(url=jobstore_url)
         self._scheduler = AsyncIOScheduler(
-            jobstores={"default": SQLAlchemyJobStore(url=jobstore_url)},
+            jobstores={"default": jobstore},
             job_defaults={"misfire_grace_time": _GRACE_SECONDS},
             timezone="UTC",
         )
@@ -313,12 +363,21 @@ class SchedulerService:
         """
         self._rsvp_deadline_callback = callback
 
+    @property
+    def jobstore_path(self) -> str:
+        """The file the job store lives in, which is never the league database."""
+        return self._jobstore_path
+
     def start(self) -> None:
         global _GLOBAL_SERVICE
         _GLOBAL_SERVICE = self
         if not self._scheduler.running:
             self._scheduler.start()
-            log.info("APScheduler started with SQLAlchemyJobStore at %s", self._db_path)
+            log.info(
+                "APScheduler started with SQLAlchemyJobStore at %s (league data: %s)",
+                self._jobstore_path,
+                self._db_path,
+            )
 
     def shutdown(self, wait: bool = True) -> None:
         if self._scheduler.running:
