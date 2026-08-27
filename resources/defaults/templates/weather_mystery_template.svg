@@ -20,7 +20,7 @@
   <defs>
     <style>
       .eyebrow  { font-size:15px;  fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
-      .title    { font-size:34px;  fill:#F2F5F8; font-weight:700 }
+      .title    { font-size:34px;  fill:#F2F5F8; font-weight:700; inline-size:860px; max-lines:1 }
       .roundlbl { font-size:17px;  fill:#8A94A3; letter-spacing:.20em; font-weight:600 }
       .roundnum { font-size:17px;  fill:#E8113C; letter-spacing:.20em; font-weight:700 }
       .myst     { font-size:64px;  fill:#F2F5F8; font-weight:700; letter-spacing:.01em }

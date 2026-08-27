@@ -873,7 +873,7 @@ async def test_render_raises_notices_without_failing(
     assert outcome.problem is None
     assert outcome.png_paths
     kinds = {n.notice_kind for n in outcome.notices}
-    assert "INLINE_SIZE_TRUNCATED" in kinds or "WRAP_TRUNCATED" in kinds
+    assert "FIELD_REDUCED" in kinds
 
     # Notices are persisted for the audit trail (Principle V, XIV.4).
     async with get_connection(db_path) as db:

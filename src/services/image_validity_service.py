@@ -378,20 +378,23 @@ class CatalogueLayer:
 
 
 class BoundsLayer:
-    """Layer 3 — every wrapped field the template declares can actually be laid out.
+    """Layer 3 — every bounded field the template declares can actually be laid out.
 
-    A field is *wrapped* where it carries ``shape-inside`` naming a rectangle. Three defects
-    make one unlayable, and all three are read off the **template alone** — no division, no
-    round, no classification (Constitution XIV.5, v4.8.0):
+    A field is *bounded* where it declares a box: a ``shape-inside`` naming a rectangle, or a
+    ``max-lines`` giving a budget in CSS. The defects that make one unlayable are read off the
+    **template alone** — no division, no round, no classification (Constitution XIV.5, v7.0.0):
 
+    * a ``max-lines`` that is not a positive whole number, which is no budget at all;
     * the ``shape-inside`` names a rectangle the template does not declare;
-    * no ``line-height`` resolves upon the field, so the lines its box admits cannot be
-      counted — and no default may be substituted, a leading silently deciding how much of a
-      league's prose is drawn;
-    * the rectangle declares no usable width and height, so there is no room to lay out in.
+    * no ``line-height`` resolves upon a field that needs one, so the leading between its lines
+      cannot be worked out — and no default may be substituted, a leading silently deciding how
+      much of a league's prose is drawn;
+    * no usable width to wrap against. Height joins it only where the field declares no
+      ``max-lines``, since a declared budget stands in for the height that would otherwise fix
+      it.
 
     Being structural, each is complete at every one of XIV.9's three moments and refuses at
-    each with that moment's severity. The same three are enforced again in the fill pipeline,
+    each with that moment's severity. The same defects are enforced again in the fill pipeline,
     which is where a template configured before this layer existed is still caught; this layer
     is what moves the telling forward to the moment the file is named.
 
@@ -408,9 +411,11 @@ class BoundsLayer:
     def check(self, ctx: TemplateContext) -> LayerResult:
         from utils.svg_document import computed_style, length, stylesheet
         from utils.svg_fill import (
+            _MAX_LINES_INVALID,
             _descend,
             _font_size,
             _line_height_ratio,
+            _max_lines,
             _shape_inside_id,
         )
 
@@ -444,8 +449,34 @@ class BoundsLayer:
                 continue
 
             style = computed_style(target, rules)
+
+            budget = _max_lines(style)
+            if budget == _MAX_LINES_INVALID:
+                return LayerResult(
+                    False,
+                    f"field `{field_id}` declares a `max-lines` of "
+                    f"`{style.get('max-lines', '').strip()}`, which is not a positive whole "
+                    f"number of lines",
+                )
+
             shape_id = _shape_inside_id(style)
             if shape_id is None:
+                # A box declared in CSS needs a width to wrap against and a leading to space
+                # its lines by; a single-line field needs neither and is bounded already.
+                if budget is not None and budget > 1:
+                    if length(style.get("inline-size")) is None:
+                        return LayerResult(
+                            False,
+                            f"field `{field_id}` declares a `max-lines` of {budget} but no "
+                            f"`inline-size` giving the width to wrap it against",
+                        )
+                    if _line_height_ratio(style, _font_size(style)) is None:
+                        return LayerResult(
+                            False,
+                            f"field `{field_id}` declares a `max-lines` of {budget} but has "
+                            f"no `line-height` resolving upon it, so the leading between its "
+                            f"lines cannot be worked out",
+                        )
                 continue
 
             rect = index.resolve(shape_id)
@@ -460,14 +491,23 @@ class BoundsLayer:
                 return LayerResult(
                     False,
                     f"wrapped field `{field_id}` has no `line-height` resolving upon it, "
-                    f"so the number of lines its box admits cannot be worked out",
+                    f"so the leading between its lines cannot be worked out",
                 )
 
-            if length(rect.get("width")) is None or length(rect.get("height")) is None:
+            if length(rect.get("width")) is None:
                 return LayerResult(
                     False,
                     f"wrapped field `{field_id}` names shape-inside `{shape_id}`, "
-                    f"which declares no usable width and height to lay the text out in",
+                    f"which declares no usable width to lay the text out in",
+                )
+
+            # Height fixes the budget only where the field declares no `max-lines` of its own.
+            if budget is None and length(rect.get("height")) is None:
+                return LayerResult(
+                    False,
+                    f"wrapped field `{field_id}` names shape-inside `{shape_id}`, "
+                    f"which declares no usable height, and declares no `max-lines` to "
+                    f"stand in for it",
                 )
 
         return LayerResult(True)

@@ -1484,6 +1484,25 @@ These sit under `/images template` rather than `/images config` because Discord 
 
 **The file is checked before it is stored.** The command refuses, and your existing filename stays in force, if the name does not end in `.svg`, if no such file is in the configured directory, if it will not parse as SVG, or if it is missing a field the image needs. You are told which of those it was — a malformed file is described in plain terms ("a comment contains a double hyphen at line 12"), never as a parser error. Nothing is written unless every check passes, so a refused command cannot leave the bot pointed at a file it can't use.
 
+> **A blank declares the room it has, and nothing is ever cut to fit it.** Two properties on the text
+> element say it: `inline-size` is how wide the blank may be, and `max-lines` how many lines it may
+> take. Leave `max-lines` out and the blank takes one line. A value too long is broken at word
+> boundaries up to that budget, then set in a smaller size until it fits — it is never trimmed and
+> never ends in an ellipsis, because a circuit shortened to "Autodromo Enzo e Dino Ferra…" names no
+> circuit and tells you nothing about which of your data or your drawing was at fault. Where a field
+> has to drop below half the size your file asks for, the log channel names it.
+>
+> Lines are centred on the `y` you drew the blank at, so one that fits on a single line sits exactly
+> where you put it — you can give an existing blank a width without moving anything else. Two things
+> to watch when allowing a second line: the blank also needs a `line-height` (the bot refuses the file
+> rather than guessing one), and **you must leave the vertical room yourself**, because the bot
+> measures a blank against its own width and knows nothing of what you drew above or below it.
+>
+> A blank with no `inline-size` at all is unbounded: the bot has nothing to fit it to, and a long
+> value will run across whatever stands beside it. Prose blanks — a steward's description and
+> justification — work differently and are described in
+> [resources/defaults/templates/README.md](resources/defaults/templates/README.md).
+
 > **The lineup template works out of the box, like every other.** It addresses its teams by **number** — `team_1_name`, `team_1_driver_1_name`, `team_2_name` — so one file serves any league. Block 1 draws whichever team stands first in the division, block 2 the second, and so on; the team's own name and badge are the whole of what distinguishes one block from another. The shipped `lineup_template.svg` declares eleven blocks of two seats and a reserve block of ten, and names no team of anyone's league.
 >
 > **The reserve block is optional.** Ten slots is the shipped file's guess at how many stand-ins a league carries at once, not a limit: draw as many as you like, numbered from 1 with no gaps. Draw **none at all** — omit `reserve_group` and every `reserve_driver_<y>_` field — and the lineup simply never shows reserves, however many the division is carrying. That is a way of saying you do not want them on the sheet, so the bot says nothing about it. Declare one slot or more, though, and a division with more reserves than you drew slots for is refused, naming the drivers that would have been dropped.

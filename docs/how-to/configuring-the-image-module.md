@@ -4,7 +4,7 @@ Normally the bot posts things as text. Turn the image module on and it posts pic
 
 This guide is the **order to do things in**, from a fresh install to a season running on pictures. It sends you to the reference for the fine print:
 
-- **[Image Module](../../README.md#image-module)** in the main README — every command in full, and **Templates: what the bot expects**, the rules for the drawing files themselves.
+- **[Image Module](../../README.md#image-module)** in the main README — every command in full, and under **`/images template <kind>`**, the rules for the drawing files themselves.
 - **[resources/README.md](../../resources/README.md)** — what comes with the bot, and how it finds your artwork.
 - **[resources/defaults/templates/README.md](../../resources/defaults/templates/README.md)** — the fifteen drawing files, one by one.
 
@@ -251,7 +251,7 @@ To use your own drawing file, put it in that folder and name it:
 
 **The bot checks the file before it accepts it.** If the name does not end in `.svg`, if the file is not in that folder, if it is damaged, or if it is missing something the picture needs, the command says no and keeps your old file. It tells you which of those it was. You cannot break things by naming the wrong file — the bot simply refuses it.
 
-Before you edit a drawing file, read **Templates: what the bot expects** in the [main README](../../README.md#image-module). That explains how the blanks are labelled so the bot can find them.
+Before you edit a drawing file, read the **`/images template <kind>`** section of the [main README](../../README.md#images-template-kind--name-the-svg-file-backing-each-image). That explains how the blanks are labelled so the bot can find them, and how a blank declares the room it has.
 
 > **The lineup drawing works as it comes, like all the others.** It numbers its team blocks — block 1 draws whichever team is first in the division, block 2 the second, and so on — so the same file suits any league. The team's name and badge are the only things that change from block to block. The one that comes with the bot has room for eleven teams of two drivers each, plus ten reserves.
 >
@@ -371,7 +371,8 @@ Worth running through just before `/season approve`.
 |---|---|
 | A broken-image symbol where a picture should be | The drawing file points at a picture using a plain file path instead of a proper link. Most drawing programs get this right; hand-edited files often do not |
 | Text in the wrong typeface, or breaking in odd places | The typeface the drawing file asks for is not installed on the bot's computer, so a different one was swapped in. Install it, or use one that is there |
-| A driver's name running over whatever is next to it | That blank has no width limit set on it. It is the only thing stopping a very long name from running off |
+| Any value running over whatever is next to it | That blank has no width set on it, so the bot has nothing to fit it to. A blank that declares its width is set smaller until it fits instead |
+| A value sitting on top of what is *below* it | That blank is allowed two lines but was not left the room for a second one. Either give it that room in the drawing, or allow it one line only |
 | A label you wanted in capitals showing in mixed case | The bot cannot force capitals. Type the label in capitals in the drawing file |
 | No picture at all, and text posted instead | Something went badly wrong for that one picture — most often a folder you pointed the bot at that has neither the artwork nor a `fallback.svg`, with the bot's own copy deleted too. The log channel names it |
 | One division posting text while the rest post pictures | The same thing, affecting only that division. The log channel says why |
@@ -381,4 +382,11 @@ Worth running through just before `/season approve`.
 | A preview refusing outright | It names why: unknown division, no such round, no team beyond Reserve, or a forecast asked of a mystery round |
 | Nothing posted at all, and nothing in the log | Usually the channel for that output is not set, or the module behind it is off. Check step 2 |
 
-Smaller problems — a swapped typeface, a shortened name, a placeholder used — are reported with the picture and written to the log channel. They never appear in a channel your drivers read.
+Smaller problems — a swapped typeface, a field set very small to fit, a placeholder used — are reported with the picture and written to the log channel. They never appear in a channel your drivers read.
+
+**Nothing on a picture is ever cut short.** A value too long for the room the drawing gives it is
+wrapped, if the field allows a second line, and then set in a smaller size until it fits. It is
+never trimmed and never ends in an ellipsis: a circuit shortened to "Autodromo Enzo e Dino Ferra…"
+names no circuit, and you could not tell whether your data or your drawing was at fault. You are
+told instead — a field that had to drop below half the size the drawing asks for is named in the
+log channel, which is your cue to shorten the value or give the field more room.
