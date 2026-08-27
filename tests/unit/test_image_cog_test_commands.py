@@ -6,8 +6,10 @@ no gateway, no server, no running bot.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,6 +18,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.image_cog import ImageCog  # noqa: E402
+from db.database import AUTOCOMPLETE_TIMEOUT_SECONDS  # noqa: E402
 
 
 # ── Stubs ─────────────────────────────────────────────────────────────────
@@ -122,11 +125,18 @@ class TestTheGroup:
 
 
 class TestDivisionAutocomplete:
+    """The season lookup and the division list now share one connection.
+
+    `get_previewable_divisions` replaced the `get_previewable_season` +
+    `get_divisions` pair on this path: two connections on a callback with three seconds to
+    answer Discord was twice the exposure it needed. The pair still exists and is still used
+    elsewhere; only the autocomplete changed.
+    """
+
     async def test_it_offers_the_drawn_seasons_divisions(self, cog):
         cog.bot = SimpleNamespace(
             season_service=SimpleNamespace(
-                get_previewable_season=_async(SimpleNamespace(id=7)),
-                get_divisions=_async(
+                get_previewable_divisions=_async(
                     [SimpleNamespace(name="Division 1"), SimpleNamespace(name="Division 2")]
                 ),
             )
@@ -139,8 +149,7 @@ class TestDivisionAutocomplete:
     async def test_it_filters_by_what_has_been_typed(self, cog):
         cog.bot = SimpleNamespace(
             season_service=SimpleNamespace(
-                get_previewable_season=_async(SimpleNamespace(id=7)),
-                get_divisions=_async(
+                get_previewable_divisions=_async(
                     [SimpleNamespace(name="Premier"), SimpleNamespace(name="Academy")]
                 ),
             )
@@ -151,8 +160,9 @@ class TestDivisionAutocomplete:
         assert [c.value for c in choices] == ["Academy"]
 
     async def test_it_offers_nothing_where_there_is_no_active_season(self, cog):
+        """No previewable season is an empty list from the service, not an error."""
         cog.bot = SimpleNamespace(
-            season_service=SimpleNamespace(get_previewable_season=_async(None))
+            season_service=SimpleNamespace(get_previewable_divisions=_async([]))
         )
 
         assert await cog._division_autocomplete(_Interaction(), "") == []
@@ -162,7 +172,7 @@ class TestDivisionAutocomplete:
             raise RuntimeError("database is away")
 
         cog.bot = SimpleNamespace(
-            season_service=SimpleNamespace(get_previewable_season=_raise)
+            season_service=SimpleNamespace(get_previewable_divisions=_raise)
         )
 
         assert await cog._division_autocomplete(_Interaction(), "") == []
@@ -170,14 +180,54 @@ class TestDivisionAutocomplete:
     async def test_it_never_offers_more_than_discord_accepts(self, cog):
         cog.bot = SimpleNamespace(
             season_service=SimpleNamespace(
-                get_previewable_season=_async(SimpleNamespace(id=7)),
-                get_divisions=_async(
+                get_previewable_divisions=_async(
                     [SimpleNamespace(name=f"Division {n}") for n in range(40)]
                 ),
             )
         )
 
         assert len(await cog._division_autocomplete(_Interaction(), "")) == 25
+
+    async def test_it_asks_for_a_lock_wait_short_enough_to_answer_in_time(self, cog):
+        """The point of the change: give up inside the budget rather than answer late.
+
+        Waiting the ordinary five seconds for a contended database would overshoot
+        Discord's three-second autocomplete budget outright, and the answer would land on
+        an interaction token that had already expired.
+        """
+        seen = {}
+
+        async def _capture(server_id, *, timeout=None):
+            seen["server_id"] = server_id
+            seen["timeout"] = timeout
+            return []
+
+        cog.bot = SimpleNamespace(
+            season_service=SimpleNamespace(get_previewable_divisions=_capture)
+        )
+
+        await cog._division_autocomplete(_Interaction(guild_id=99), "")
+
+        assert seen["server_id"] == 99
+        assert seen["timeout"] == AUTOCOMPLETE_TIMEOUT_SECONDS
+
+    async def test_an_autocomplete_that_hangs_offers_nothing(self, cog):
+        """Overrunning the deadline must not become a late answer into a dead token."""
+
+        async def _hang(*args, **kwargs):
+            await asyncio.sleep(30)
+            return [SimpleNamespace(name="too late")]
+
+        cog.bot = SimpleNamespace(
+            season_service=SimpleNamespace(get_previewable_divisions=_hang)
+        )
+
+        started = time.perf_counter()
+        result = await cog._division_autocomplete(_Interaction(), "")
+        elapsed = time.perf_counter() - started
+
+        assert result == []
+        assert elapsed < 3.0, f"took {elapsed:.2f}s — past Discord's budget"
 
 
 # ── T013: the shared reply ────────────────────────────────────────────────
@@ -420,11 +470,17 @@ class TestTheReplyNamesTheSeason:
 
 class TestAutocompleteFollowsTheDrawnSeason:
     async def test_a_season_pending_approval_offers_its_divisions(self, cog):
-        """The lookup is the service's; the cog must simply ask the right question."""
+        """The lookup is the service's; the cog must simply ask the right question.
+
+        Which season counts as previewable — approved first, pending approval otherwise —
+        is decided inside `get_previewable_divisions`, and is covered against a real
+        database in `tests/unit/test_season_previewable_lookup.py`.
+        """
         cog.bot = SimpleNamespace(
             season_service=SimpleNamespace(
-                get_previewable_season=_async(SimpleNamespace(id=9)),
-                get_divisions=_async([SimpleNamespace(name="Pending Division")]),
+                get_previewable_divisions=_async(
+                    [SimpleNamespace(name="Pending Division")]
+                ),
             )
         )
 
@@ -434,10 +490,7 @@ class TestAutocompleteFollowsTheDrawnSeason:
 
     async def test_a_season_less_server_offers_nothing_and_does_not_raise(self, cog):
         cog.bot = SimpleNamespace(
-            season_service=SimpleNamespace(
-                get_previewable_season=_async(None),
-                get_divisions=_async([]),
-            )
+            season_service=SimpleNamespace(get_previewable_divisions=_async([]))
         )
 
         assert await cog._division_autocomplete(_Interaction(), "") == []

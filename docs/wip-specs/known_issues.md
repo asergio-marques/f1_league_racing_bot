@@ -318,6 +318,41 @@ Found on 2026-08-18 while auditing the how-to guides against the implementation.
 - The function and its seven-days-after-the-last-round scheduling logic are therefore unreachable in production, while `tests/unit/test_season_end_service.py` covers them in six tests that pass. The suite reports coverage for a path that cannot run, which is the opposite of what coverage is read for.
 - This one has already misled documentation: the README described automatic completion until 2026-08-17.
 
+## Database contention
+
+Found on 2026-08-26 while tracing a sporadic `404 Unknown interaction` from the `/images test lineup` autocomplete. The two causes of that fault were fixed in the same change — WAL and an explicit busy timeout in `src/db/database.py`, and moving APScheduler's job store to its own file — and what remains below was turned up alongside them and left alone.
+
+**P2 — Four write transactions hold the database's write lock for the length of a whole command.**
+- `replace_setup_season_snapshot` opens a connection at `src/services/season_service.py:245` and does not commit until `:489`, 245 lines later; `placement_service.py:641`→`:791`; `reset_service.py:52`→`:180`, which chains eleven `DELETE` statements; and `standings_service.py:403`→`:472`, which loops `INSERT OR REPLACE` per driver and per team inside the one transaction.
+- Under WAL these no longer block *readers*, which is what made the autocomplete fail. They still block each other, and each other's writers.
+- What a league sees: two managers running season-shaping commands at the same moment queue behind one another, and on the Raspberry Pi's SD card the wait is seconds rather than milliseconds. Nothing fails and nothing is lost — the second command simply takes longer than it looks like it should.
+
+**P2 — Two paths await a Discord API call while holding an open database connection.**
+- `src/services/penalty_wizard.py:597-660` sends at `:605` and `:615` inside the connection block; `src/cogs/attendance_cog.py:439-465` sends at `:447` inside its own.
+- The transaction therefore stays open for as long as Discord takes to answer, which is unbounded — a rate-limited send can hold it for many seconds.
+- What a league sees: nothing directly, but it lengthens the window in which the write lock is held, and so makes the P2 above bite more often than the code alone suggests.
+
+**P3 — `reset_service` calls the scheduler from inside an open database connection.**
+- `src/services/reset_service.py:82` calls `scheduler_service.cancel_round(rid)` from within the connection block opened at `:52`.
+- Before the job store was split out this was a synchronous SQLAlchemy write to the *same file* the open `aiosqlite` connection was holding, on the event-loop thread. The split removed the self-contention; the nesting itself is still there.
+
+**P4 — Every database access opens a fresh connection.**
+- 439 `async with get_connection(...)` sites across 50 files, with no pooling and no shared handle: each pays a connect, a `PRAGMA foreign_keys`, a `PRAGMA journal_mode` and a close. Services store the path, never a connection.
+- Invisible at this scale, and the constitution's Performance & Storage Considerations explicitly accept it. Recorded because it doubles the cost of anything on a latency-sensitive path, which is why the preview autocomplete was given a single-connection lookup of its own rather than calling two.
+
+## Interaction handling
+
+Found on 2026-08-26, alongside the autocomplete investigation above.
+
+**P3 — There is no application-command error handler anywhere.**
+- `src/bot.py` builds a stock `commands.Bot`, so `bot.tree` keeps discord.py's default `CommandTree.on_error`, which logs a traceback and does nothing else. Nothing in the repository defines `on_error` or `on_app_command_error`.
+- What a league sees: any unhandled failure in a slash command surfaces as Discord's own "The application did not respond", with no indication of what went wrong or what to do about it. The traceback reaches the host's log and nowhere else.
+- Note that an *autocomplete* failure cannot be reached this way even if a handler existed: `CommandTree._call` catches it, logs it and returns before the `on_error` dispatch. That is why `src/utils/log_filters.py` exists and works on the library's logger instead.
+
+**P4 — `tools/gen_season_cog.py` holds a stale copy of the circuit autocomplete.**
+- The generator writes `src/cogs/season_cog.py` from a `CONTENT` string, and its copy at `:758` reads a hard-coded `TRACK_IDS` dict where the shipped cog reads the `tracks` table. The generator has one commit; `season_cog.py` has moved on many, and is now four times its length.
+- Nothing invokes the tool, so nothing is wrong today. Running it would silently revert the circuit autocomplete to a hard-coded list and undo the single shared callback the two round commands now use. `src/cogs/season_cog.py` is the source of truth.
+
 ## Data model
 
 **P4 — `save_server_config` silently discards two of the fields it is given.**
@@ -362,6 +397,11 @@ Found on 2026-08-18 while auditing the how-to guides against the implementation.
 - The trap it laid was demonstrated immediately: adding `standings` to `LIVE_POSTING_ASPECTS` would have been a two-line edit whose first line did nothing at all.
 - **Fixed** by deleting the dead first block, having diffed the two copies byte for byte.
 
+**P4 — Three tests create a database in the repository root and leave it there.**
+- Found on 2026-08-26 while checking that a change to the connection helper left no files behind.
+- `tests/unit/test_image_attendance_shared_values.py:169` and `tests/unit/test_image_attendance_notices.py:191, :197` pass the literal string `"no-such.db"` as a database path to stand for one that does not exist. `aiosqlite.connect` **creates** a missing file rather than refusing, so each run leaves an empty `no-such.db` in whatever directory pytest was started from — the repository root, in practice.
+- Harmless and invisible: it is empty, and `.gitignore`'s `*.db` keeps it out of `git status`. It is recorded because the tests read as though they were exercising an absent database, and they are not — the file exists by the time the code under test opens it, so what they actually cover is an *empty* one. A `tmp_path` that is genuinely never created would test the intended thing and leave nothing behind.
+
 ## Behaviour worth knowing rather than fixing
 
 These are deliberate, or at least consistent, but are surprising enough to be mistaken for defects.
@@ -372,4 +412,4 @@ These are deliberate, or at least consistent, but are surprising enough to be mi
 - **A division created by `/division duplicate` does not inherit the source division's forecast channel.** Nothing warns at the time; it surfaces later as a season that refuses to approve.
 - **Cancelling a round does not delete forecasts already posted for it.** The division is told no further forecast will follow, but the standing forecast remains.
 - **Disabling the weather module clears nothing** beyond cancelling scheduled jobs — channels, deadlines, recorded phase results and posted messages all survive. This differs from the general rule stated for `/module disable`.
-- **`/images test` offers a cancelled division, and is meant to** (decided 2026-08-24; logged as a defect until then). `SeasonService.get_divisions` (`src/services/season_service.py:766`) does not filter on `status`, so the `/images test` division autocomplete and `image_preview_service.resolve_context` both accept a division withdrawn by `/division cancel`. A preview is a configuration tool rather than a posting: it draws against whatever data the division holds and puts nothing in a channel a driver reads. Withdrawing a division is no reason to stop a manager checking a template against it. Other readers of `get_divisions` filter for themselves (`season_service.py:520` keeps `status != 'CANCELLED'`) because they post; the preview path does not, and should not acquire a filter.
+- **`/images test` offers a cancelled division, and is meant to** (decided 2026-08-24; logged as a defect until then). Neither `SeasonService.get_divisions` nor `SeasonService.get_previewable_divisions` filters on `status`, so the `/images test` division autocomplete and `image_preview_service.resolve_context` both accept a division withdrawn by `/division cancel`. A preview is a configuration tool rather than a posting: it draws against whatever data the division holds and puts nothing in a channel a driver reads. Withdrawing a division is no reason to stop a manager checking a template against it. Other readers of `get_divisions` filter for themselves (keeping `status != 'CANCELLED'`) because they post; the preview path does not, and should not acquire a filter. Note the autocomplete moved to `get_previewable_divisions` on 2026-08-26 — a single-connection lookup replacing the `get_previewable_season` + `get_divisions` pair — which deliberately carries the same absence of a status filter, so the rule above is unchanged.

@@ -159,3 +159,95 @@ class TestPreviousSeasonNumber:
         await _seed(db_path, "COMPLETED", 9, server_id=OTHER_SERVER)
 
         assert await service.get_previous_season_number(SERVER_ID) == 0
+
+
+# ── get_previewable_divisions ─────────────────────────────────────────────
+
+
+async def _seed_division(db_path, season_id: int, name: str, tier: int) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, tier, status, mention_role_id) "
+            "VALUES (?, ?, ?, 'ACTIVE', ?)",
+            (season_id, name, tier, 1000 + tier),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+class TestPreviewableDivisions:
+    """One connection doing what `get_previewable_season` + `get_divisions` did in two.
+
+    The autocomplete this feeds has three seconds and cannot be deferred, so halving the
+    connect/PRAGMA/close cost is the point. The precedence rules are the same ones
+    `TestPreviewableSeason` above pins; these tests check the pairing, not restate them.
+    """
+
+    async def test_no_season_at_all_offers_nothing(self, service):
+        """Empty rather than an error — a season-less server draws a fabricated league."""
+        assert await service.get_previewable_divisions(SERVER_ID) == []
+
+    async def test_it_returns_the_active_seasons_divisions(self, service, db_path):
+        season_id = await _seed(db_path, "ACTIVE", 3)
+        await _seed_division(db_path, season_id, "Premier", 1)
+        await _seed_division(db_path, season_id, "Academy", 2)
+
+        divisions = await service.get_previewable_divisions(SERVER_ID)
+
+        assert [d.name for d in divisions] == ["Premier", "Academy"]
+
+    async def test_an_approved_season_wins_over_one_pending_approval(self, service, db_path):
+        """The same precedence `get_previewable_season` applies, through the joined query."""
+        pending = await _seed(db_path, "SETUP", 4)
+        active = await _seed(db_path, "ACTIVE", 3)
+        await _seed_division(db_path, pending, "Next Season Division", 1)
+        await _seed_division(db_path, active, "Running Division", 1)
+
+        divisions = await service.get_previewable_divisions(SERVER_ID)
+
+        assert [d.name for d in divisions] == ["Running Division"]
+
+    async def test_a_season_pending_approval_is_used_when_none_is_approved(
+        self, service, db_path
+    ):
+        pending = await _seed(db_path, "SETUP", 1)
+        await _seed_division(db_path, pending, "Pending Division", 1)
+
+        divisions = await service.get_previewable_divisions(SERVER_ID)
+
+        assert [d.name for d in divisions] == ["Pending Division"]
+
+    async def test_a_completed_season_is_not_previewable(self, service, db_path):
+        done = await _seed(db_path, "COMPLETED", 2)
+        await _seed_division(db_path, done, "Last Season", 1)
+
+        assert await service.get_previewable_divisions(SERVER_ID) == []
+
+    async def test_another_servers_divisions_are_not_offered(self, service, db_path):
+        theirs = await _seed(db_path, "ACTIVE", 1, server_id=OTHER_SERVER)
+        await _seed_division(db_path, theirs, "Their Division", 1)
+
+        assert await service.get_previewable_divisions(SERVER_ID) == []
+
+    async def test_it_matches_the_pair_it_replaced(self, service, db_path):
+        """The guard against the combined query drifting from the two it stands in for."""
+        season_id = await _seed(db_path, "ACTIVE", 3)
+        await _seed_division(db_path, season_id, "Premier", 1)
+        await _seed_division(db_path, season_id, "Academy", 2)
+
+        season = await service.get_previewable_season(SERVER_ID)
+        separately = await service.get_divisions(season.id)
+        combined = await service.get_previewable_divisions(SERVER_ID)
+
+        assert [d.name for d in combined] == [d.name for d in separately]
+        assert [d.id for d in combined] == [d.id for d in separately]
+        assert [d.tier for d in combined] == [d.tier for d in separately]
+
+    async def test_a_shorter_lock_wait_can_be_asked_for(self, service, db_path):
+        """The autocomplete path passes one; it must be accepted and still work."""
+        season_id = await _seed(db_path, "ACTIVE", 3)
+        await _seed_division(db_path, season_id, "Premier", 1)
+
+        divisions = await service.get_previewable_divisions(SERVER_ID, timeout=1.0)
+
+        assert [d.name for d in divisions] == ["Premier"]

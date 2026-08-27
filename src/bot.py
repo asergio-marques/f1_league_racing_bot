@@ -8,15 +8,23 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from utils.log_filters import install_late_autocomplete_filter
+
 load_dotenv()
 
 TOKEN: str = os.environ["BOT_TOKEN"]
 DB_PATH: str = os.getenv("DB_PATH", "bot.db")
+#: The scheduler's job store, kept apart from the league database on purpose — see the
+#: module docstring in `services/scheduler_service.py`. Empty means "beside DB_PATH".
+SCHEDULER_DB_PATH: str = os.getenv("SCHEDULER_DB_PATH", "")
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+# A late autocomplete is a race with Discord's three-second budget, not a fault in this
+# code, and discord.py logs it as an ERROR with a full traceback. Downgrade just that one.
+install_late_autocomplete_filter()
 log = logging.getLogger(__name__)
 
 
@@ -49,7 +57,9 @@ async def main() -> None:
     bot.config_service = ConfigService(DB_PATH)      # type: ignore[attr-defined]
     bot.season_service = SeasonService(DB_PATH)      # type: ignore[attr-defined]
     bot.amendment_service = AmendmentService(DB_PATH)  # type: ignore[attr-defined]
-    bot.scheduler_service = SchedulerService(DB_PATH)  # type: ignore[attr-defined]
+    bot.scheduler_service = SchedulerService(  # type: ignore[attr-defined]
+        DB_PATH, SCHEDULER_DB_PATH or None
+    )
     bot.output_router = OutputRouter(bot, retry_db_path=DB_PATH)  # type: ignore[attr-defined]
     bot.driver_service = DriverService(DB_PATH)      # type: ignore[attr-defined]
     bot.team_service = TeamService(DB_PATH)          # type: ignore[attr-defined]

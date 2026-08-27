@@ -64,6 +64,11 @@ db.sqlite3-journal
 # Bot-specific
 bot.db
 *.db
+# WAL leaves these beside every database. `*.db` does not match them — the suffix comes
+# after the extension — so they need naming in their own right or they surface in git status.
+*.db-wal
+*.db-shm
+*.db-journal
 
 # Flask stuff:
 instance/

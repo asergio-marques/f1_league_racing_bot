@@ -808,6 +808,48 @@ class SeasonService:
             tier=tier,
         )
 
+    async def get_previewable_divisions(
+        self, server_id: int, *, timeout: float | None = None
+    ) -> list[Division]:
+        """The divisions of the season an `/images test` preview draws, in one connection.
+
+        Exactly `get_previewable_season` followed by `get_divisions`, which is what the
+        preview autocomplete used to call in turn — two `aiosqlite.connect` opens, two
+        `PRAGMA foreign_keys`, two closes, on a path with three seconds to answer Discord in.
+        Doing both on one connection halves that, and the second query is only reached when
+        the first found a season.
+
+        Empty where the server holds no previewable season, which is the same answer the
+        pair gave and is why the preview's division parameter is optional.
+
+        *timeout* is passed to the connection as its lock wait; pass
+        `AUTOCOMPLETE_TIMEOUT_SECONDS` on the autocomplete path so a contended database
+        gives up well inside Discord's budget rather than answering into a dead token.
+
+        Both original methods are left untouched and still used elsewhere; this is an
+        addition, not a replacement.
+        """
+        async with get_connection(self._db_path, timeout=timeout) as db:
+            cursor = await db.execute(
+                "SELECT id FROM seasons "
+                "WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
+                "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
+                (server_id,),
+            )
+            season_row = await cursor.fetchone()
+            if season_row is None:
+                return []
+
+            cursor = await db.execute(
+                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier, "
+                "lineup_channel_id, calendar_channel_id, lineup_message_id, "
+                "calendar_message_id "
+                "FROM divisions WHERE season_id = ? ORDER BY tier",
+                (season_row[0],),
+            )
+            rows = await cursor.fetchall()
+        return [_row_to_division(r) for r in rows]
+
     async def get_divisions(self, season_id: int) -> list[Division]:
         """Return all divisions for *season_id*."""
         async with get_connection(self._db_path) as db:

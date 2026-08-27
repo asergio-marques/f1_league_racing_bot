@@ -46,7 +46,11 @@ Edit `.env`:
 ```
 BOT_TOKEN=your_discord_bot_token_here
 DB_PATH=bot.db
+SCHEDULER_DB_PATH=
 ```
+
+`SCHEDULER_DB_PATH` names the scheduler's job store. Leave it empty and the bot puts
+`scheduler.db` beside `DB_PATH`, which is what most installations want.
 
 ### 3. Run the bot
 
@@ -54,7 +58,48 @@ DB_PATH=bot.db
 python src/bot.py
 ```
 
-On first run the bot will create `bot.db` and apply all schema migrations automatically.
+On first run the bot creates **two** database files and applies all schema migrations
+automatically:
+
+| File | Holds |
+|---|---|
+| `bot.db` | Every league record — seasons, divisions, rounds, drivers, teams, results. |
+| `scheduler.db` | Pending scheduled work: weather phases, RSVP notices, result submissions. |
+
+They are separate on purpose. The scheduler writes synchronously, so sharing a file with the
+league data made those writes stall everything else the bot was doing.
+
+### Backing up
+
+Both files matter. `bot.db` alone is **not** a complete backup: restoring it without
+`scheduler.db` leaves a season whose pending weather phases, RSVP notices and result
+submissions will never fire, and only re-running `/season approve` rebuilds them.
+
+The databases run in WAL mode, which means recent changes may sit in a `bot.db-wal` file
+beside the database. **Copying `bot.db` on its own while the bot is running can therefore
+miss them.** Either of these is safe:
+
+```bash
+# With the bot running — the online backup API, one archive per database
+sqlite3 bot.db ".backup backup-bot.db"
+sqlite3 scheduler.db ".backup backup-scheduler.db"
+```
+
+```bash
+# With the bot stopped — copy each database together with its -wal and -shm files
+cp bot.db bot.db-wal bot.db-shm  /your/backup/location/   # -wal/-shm may not exist
+```
+
+Back both up in the same run, so the pair comes from one moment. Each `.backup` archive is
+self-contained and can be restored by copying it back into place under the original name.
+
+> **Upgrading from a version before the split.** The scheduler used to keep its jobs inside
+> `bot.db`. On the first start after upgrading it begins with an empty `scheduler.db`, and
+> the old jobs are **not** carried across — a season already under way therefore loses its
+> pending weather phases, RSVP notices and result submissions. Run `/season approve` again
+> for each affected division to rebuild them. Upgrade between seasons and there is nothing
+> to do. The abandoned `apscheduler_jobs` table is left inside `bot.db`, unread; drop it or
+> leave it as you prefer.
 
 ---
 
@@ -1744,7 +1789,8 @@ src/
   db/                  Database connection + migrations
   services/            Business logic (season, phases, scheduler, amendments)
   cogs/                Discord slash commands
-  utils/               Math formulas, message builders, channel guard, output router
+  utils/               Math formulas, message builders, channel guard, output router,
+                       autocomplete bounds, logging filters
 tests/
   unit/                Pure-function tests (math_utils)
   integration/         Database migration and query tests
