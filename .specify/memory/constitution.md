@@ -1,6 +1,68 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-27 — v6.2.0 → v6.3.0: MINOR — the 3-second budget is stated of autocomplete, which cannot defer and must therefore answer empty rather than late]
+  Version change    : 6.2.0 → 6.3.0
+  Bump rationale    : MINOR. The acknowledgement rule named a remedy that does not exist on one
+                      of the two paths it governs, and the gap was reached in production rather
+                      than in theory.
+
+                      "The bot MUST acknowledge any command within 3 seconds; long-running
+                      operations MUST use Discord's deferred response mechanism" is sound for a
+                      command. An **autocomplete** interaction carries the same three-second
+                      budget, but Discord provides no deferral for one: there is no
+                      `interaction.response.defer()` equivalent on that path. A reader following
+                      the rule literally would reach for the escape hatch and find none.
+
+                      This was not hypothetical. On 2026-08-25 an `/images test lineup`
+                      autocomplete failed with `404 Unknown interaction` (error code 10062) after
+                      a contended database delayed its reply past the budget. The traceback lay
+                      entirely inside discord.py — the callback had built its choices correctly
+                      and simply answered too late, into a token that had already expired.
+
+                      MINOR rather than PATCH: this is not a wording correction. It places a new
+                      obligation on a path the constitution did not previously govern — an
+                      autocomplete MUST bound its own runtime, MUST prefer an empty answer to a
+                      late one, and MUST NOT propagate its failure into the command it serves.
+                      The project's own policy reserves MINOR for "materially expanded guidance",
+                      which this is.
+
+                      MINOR rather than MAJOR: no existing guarantee is narrowed or withdrawn.
+                      The command-path rule is untouched, and nothing that satisfied v6.2.0 fails
+                      under v6.3.0.
+
+  Modified sections :
+    - Bot Behavior Standards: a new bullet follows the 3-second acknowledgement rule, stating the
+      budget of autocomplete, recording that no deferral exists there, and requiring latency to be
+      removed at source instead. Carries three obligations: bound the runtime, answer empty rather
+      than late, never break the parent command.
+    - Governance footer: version and Last Amended date.
+
+  Added sections    : None
+  Removed sections  : None
+
+  Not changed, and deliberately:
+    - The 3-second command rule itself, which was correct as it stood. The amendment sits beside
+      it rather than rewriting it.
+    - Data & State Management's durability requirement. The same change adopted WAL journalling
+      on both databases and deliberately kept `synchronous=FULL`, declining the faster
+      `synchronous=NORMAL` because it leaves a window in which a power cut loses the most recent
+      commits. That decision is strictly more conservative than the rule requires, so the rule
+      needs no amendment.
+    - Performance & Storage Considerations' "no additional caching layer is required at the
+      current scale". The change memoises the operating system's IANA time-zone list — static
+      data owned by the host, not league data — and deliberately declined to cache the 28
+      circuits, which are database rows. The clause governs league data at scale and is not
+      engaged. A clarification distinguishing the two was considered and judged unnecessary.
+    - No template under `.specify/templates/` mentions the 3-second rule, deferral or
+      autocomplete, so none needed updating. Checked: plan, spec, tasks, checklist, agent-file,
+      constitution templates.
+
+  Follow-up TODOs   : None. The implementing change is already in the tree and satisfies the new
+                      rule: `src/utils/autocomplete.py` bounds every autocomplete and returns no
+                      choices on overrun, and `src/utils/log_filters.py` records the unavoidable
+                      residual race as a warning rather than an error.
+
 [2026-08-25 — v6.1.0 → v6.2.0: MINOR — the closed-set clause is stated of a datum rather than of a class; the packaged directory is never the configured default; a notice may not claim a fallback where the module's own file was drawn]
   Version change    : 6.1.0 → 6.2.0
   Bump rationale    : MINOR, on three counts, none of which narrows a prior guarantee.
@@ -5253,6 +5315,13 @@ hyphenated command MUST be migrated to the subcommand-group form (e.g. `/season 
   Weather generation results MUST be posted publicly per Principle VII.
 - The bot MUST acknowledge any command within 3 seconds; long-running operations MUST use
   Discord's deferred response mechanism to avoid timeout failures.
+- **Autocomplete carries the same 3-second budget and has no deferral.** Discord offers no
+  equivalent of a deferred response for an autocomplete interaction, so the remedy named
+  above does not exist on that path: its latency MUST be removed at source rather than
+  deferred around. An autocomplete callback MUST bound its own runtime, and MUST answer with
+  no choices rather than answer late. Answering late reaches an interaction token that has
+  already expired, which the league sees as a failed command; answering empty costs a
+  keystroke. An autocomplete MUST NOT propagate a failure into the command it serves.
 - Error messages MUST identify the specific problem and suggest a corrective action. Generic
   "something went wrong" messages are not acceptable.
 - The bot MUST validate all inputs before executing any command; invalid inputs MUST be
@@ -5945,4 +6014,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 6.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-25
+**Version**: 6.3.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-27
