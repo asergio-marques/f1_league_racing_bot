@@ -1,6 +1,102 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-27 — v6.3.0 → v7.0.0: MAJOR — text is never cut; a field declares a box and a line budget, and is reduced until it fits; lines are centred in their box]
+  Version change    : 6.3.0 → 7.0.0
+  Bump rationale    : MAJOR. An operation is removed from a closed list and a mandatory behaviour
+                      is withdrawn outright, so an implementation conforming to v6.3.0 violates
+                      this version.
+
+                      The fill-operations table is introduced by "The module MUST support exactly
+                      these fill operations, and no others". **Truncate** is struck from it. That
+                      is a removal from a closed enumeration, which the project's own policy
+                      reserves MAJOR for, and it is not softened by anything added beside it.
+
+                      Rule 5 loses the cut and the ellipsis entirely. v6.3.0 *required* overflow to
+                      be "cut at a word boundary, ended with an ellipsis"; this version forbids it.
+                      A module that truncates is now wrong where before it was obliged to, and the
+                      two rules cannot both be satisfied. The precedent is v5.0.1 → v6.0.0, which
+                      took MAJOR on the same reasoning when Rule XIV.11 lost the key discriminator.
+
+                      Two clauses of the wrapping contract are superseded rather than deleted: the
+                      line count derived from the rectangle's height, and its recomputation at the
+                      reduced leading, both now yield to a declared `max-lines` and both still
+                      govern a field that declares none.
+
+                      What prompted it: circuit names (Imola), country names (USA), grand prix
+                      names (US GP) and date-times were overrunning their room and overlapping
+                      neighbouring fields on the calendar, RSVP and weather graphics. The cause was
+                      that those fields declared no bound at all, and the remedy the constitution
+                      offered — an `inline-size` that cuts — draws "Autodromo Enzo e Dino Ferra…",
+                      which names no circuit. The league's own words are now reduced instead, never
+                      cut.
+
+  Modified sections :
+    - Principle XIV, fill-operations table: the **Truncate** and **Text wrap** rows are replaced by
+      a single **Text fit** row, targeting a `<text>` carrying a declared box and stating that
+      nothing is ever cut. The table therefore falls from six operations to **five**: wrapping and
+      reducing are no longer separable, since a field is wrapped to its budget and reduced until it
+      meets it by one and the same rule. The module docstring of `src/utils/svg_fill.py` enumerates
+      the same operations under a different grouping — it counts the vertical crop and separates
+      group removal — and so stays at six, needing only "Text wrap" renamed to "Text fit".
+    - Principle XIV, Rule 5 — retitled in substance though not in name. The opening two paragraphs
+      become a definition of the **box**, declarable in CSS (`inline-size` for width, `max-lines` ×
+      `line-height` for height, centred on the field's declared `y`) or by `shape-inside` as
+      before, with the rectangle winning where both are declared. `max-lines` is introduced as the
+      line budget, with the prior height-derived rule retained for fields declaring none.
+    - Principle XIV, Rule 5 — "The wrapping contract" becomes "The fitting contract". The
+      within-itself word break is promoted from the withdrawn first paragraph to a bullet of its
+      own. The floor bullet is split in two: one stating that the text is never cut, one stating
+      that half the declared size raises a notice but **stops nothing**, with a one-pixel hard stop
+      against a box of no usable width. A bullet requiring vertical centring is added, naming
+      `shape-inside` prose as the top-aligned exception. A rationale paragraph, "Why the cut was
+      withdrawn", closes the contract.
+    - Principle XIV, Rule 5 — the three structural defects: the second is restated of any field
+      needing a `line-height` rather than of a wrapped one; the third narrows from "no usable width
+      and height" to **no usable width**, height having ceased to fix the budget, and gains a
+      `max-lines` that is not a positive whole number.
+    - Principle XIV, Rule 5 — "The module places no ceiling on free text" loses "and the cut", the
+      reduction now being the whole of the answer, and asks the league for a rectangle its longest
+      prose fits **at a size worth reading**.
+    - Governance footer: version.
+
+  Added sections    : None. Every change lands inside Principle XIV, Rule 5 and its table.
+
+  Removed sections  : The **Truncate** fill operation. The ellipsis is removed from the module
+                      entirely — it appears nowhere in the constitution after this amendment except
+                      in the rationale recording why it went.
+
+  Not changed, and deliberately:
+    - The **Measurement** paragraph. Erring narrow matters more under this version, not less: a
+      measurement that erred wide previously cost an unnecessary cut and now costs an unnecessary
+      reduction, which is milder. The rule was already right.
+    - Rule 4's unit of failure, and Rule 9's three moments. A `max-lines` defect is structural in
+      exactly the way the other two are — read off the template alone — so it joins the existing
+      list rather than needing a new mechanism.
+    - "Overflow MUST NOT be silently truncated" in the collections rule. That governs *rows* of a
+      collection overflowing a template's declared capacity, not text overflowing its width, and is
+      a separate concern that this amendment does not touch.
+    - Recolour, group removal, image fill and vertical crop, all untouched.
+    - No template under `.specify/templates/` mentions text bounds, truncation or wrapping, so none
+      needed updating. Checked: plan, spec, tasks, checklist, agent-file, constitution templates.
+
+  Follow-up TODOs   : The implementing change does **not** yet exist in the tree and this amendment
+                      precedes it, which is the reverse of the usual order and is deliberate — the
+                      constitution forbade the target behaviour, so it had to move first. Owed by
+                      the same change, per the close-out discipline in CLAUDE.md:
+                        - `src/utils/svg_fill.py` — collapse `_set_text` and `_lay_out` onto one
+                          fitting routine; delete `_truncate_to_width`, `_ellipsise_line` and the
+                          `ELLIPSIS` constant; centre lines vertically.
+                        - `src/models/image_constants.py` — retire `NOTICE_INLINE_SIZE_TRUNCATED`
+                          and `NOTICE_WRAP_TRUNCATED` for one notice naming a field reduced below
+                          its floor.
+                        - `src/services/image_validity_service.py` — carry the narrowed and added
+                          structural defects.
+                        - The fourteen templates under `resources/defaults/templates/`, which today
+                          leave circuit, country, grand prix, date and time unbounded.
+                        - `docs/wip-specs/image_module_specification.md`, `README.md` and the image
+                          module's how-to guide.
+
 [2026-08-27 — v6.2.0 → v6.3.0: MINOR — the 3-second budget is stated of autocomplete, which cannot defer and must therefore answer empty rather than late]
   Version change    : 6.2.0 → 6.3.0
   Bump rationale    : MINOR. The acknowledgement rule named a remedy that does not exist on one
@@ -3951,8 +4047,7 @@ The module MUST support exactly these fill operations, and no others:
 | Text fill | `<text>` / `<tspan>` | Replaces the element's text content |
 | Image fill | element | Rewrites `xlink:href` to an asset path |
 | Recolour | element | Merges a `fill:` declaration into the element's inline `style` |
-| Truncate | `<text>` carrying `inline-size` | Cuts at a word boundary and ends with an ellipsis |
-| Text wrap | `<text>` carrying `shape-inside` | Breaks the string into `<tspan>` lines against the referenced rectangle |
+| Text fit | `<text>` carrying a declared box | Breaks the string into `<tspan>` lines within the box's line budget, reducing the field's size until it fits. Nothing is ever cut |
 | Empty or remove | element, or its `_group` wrapper | Clears the text, or deletes the node and its subtree |
 
 Vertical crop — rewriting the root `height` and `viewBox` to a crop-point node's `y` — is
@@ -4165,39 +4260,65 @@ falling back to text or rejecting the command that asked for it.
 
 **5. Text bounds are declared by the template.**
 
-Single-line fields that may receive unbounded input — any field carrying a Discord display
-name — MUST declare an `inline-size`; overflow is cut at a word boundary, ended with an
-ellipsis, and raises a notice. A single word wider than the room it is given MUST be broken
-within itself rather than allowed to run across what stands beside it. Overflow MUST NOT be
-silently clipped by the rasteriser.
+Every field that may receive a value of a length the league does not control — a Discord display
+name, a circuit, a country, a grand prix, a date — MUST declare a **box**. Overflow MUST NOT be
+silently clipped by the rasteriser, and a field declaring no box is drawn as a single unbounded line
+that will run across whatever stands beside it.
 
-Wrapped fields MUST declare `shape-inside`, naming a rectangle of the template that is the extent of
-the field: its width is what the text is wrapped against, its height what the text may occupy. That
-rectangle carries neither fill nor stroke and is never itself drawn. A field declaring `inline-size`
-and `shape-inside` both is a wrapped field, and is wrapped rather than truncated.
+A box is declared in one of two ways, and where a field declares both, the rectangle wins:
 
-**The wrapping contract**, which every image type inherits:
+- **In CSS.** The width is the field's `inline-size`; the height is its `max-lines` multiplied by
+  the `line-height` resolving upon it; and the box is positioned so that its vertical centre is the
+  field's declared `y`. A field taking a single line therefore sits exactly where the template drew
+  it, and one taking two grows half a line either side of that same point. No node is added to the
+  template to say so.
+- **By rectangle.** The field declares `shape-inside` naming a rectangle of the template, which is
+  the extent of the field. That rectangle carries neither fill nor stroke and is never itself drawn.
+
+**`max-lines` is the field's line budget.** Where it is declared it IS the budget, whichever way the
+box was declared. Where it is absent, a field declaring `shape-inside` takes the lines its rectangle
+admits — its height divided by the line height in force — and a field declaring neither takes one
+line.
+
+**The fitting contract**, which every image type inherits:
 
 - The text is broken **first at the line breaks its author entered**, and each piece so obtained
-  broken again at word boundaries into lines no wider than the rectangle. A break the author entered
+  broken again at word boundaries into lines no wider than the box. A break the author entered
   begins a line of the field; a run of them leaves the blank lines between, and each blank line counts
   against the field's budget as a line of text does. Prose written in paragraphs is drawn in
   paragraphs.
+- A word wider than the box MUST be broken **within itself** rather than allowed to run across what
+  stands beside it.
 - Each line carries the horizontal coordinate and the anchoring the field declares, and each line
   after the first is offset from the one above it by the **line height in force** — the `line-height`
   resolving upon the field, whether declared on it or inherited by it.
-- The lines the rectangle admits are its height divided by that line height. Where the text set at the
-  template-declared size occupies more, the field's size is set down by half-pixel steps and the text
-  wrapped again, to a floor of **half** the template-declared size; at that floor it is cut at a word
-  boundary, ended with an ellipsis, and raises a notice naming the field.
-- Line height MUST scale with the reduced size, and the admissible line count MUST be recomputed at
-  the reduced leading. A field set smaller therefore holds **more lines**, rather than the same number
-  more widely spaced, and the reduction can win room where otherwise it could only narrow lines it was
-  already limited to.
-- Each wrapped field is reduced **on its own**. The canvas is not resized, and no other field follows
-  the size of the field reduced.
+- Where the text set at the template-declared size occupies more lines than the budget, the field's
+  size is set down by half-pixel steps and the text broken again, until it fits.
+- **The text is never cut.** No field is truncated and no ellipsis is drawn. Whatever the league
+  entered is drawn in full, however small the field must become to hold it.
+- Below **half** the template-declared size a field is no longer the size its designer intended, and
+  a notice MUST be raised naming it. That floor **stops nothing**: the reduction continues past it
+  until the text fits. A hard stop of one pixel guards against a box of no usable width, which no
+  reduction could satisfy.
+- Line height MUST scale with the reduced size. Where the budget is the rectangle's rather than a
+  declared `max-lines`, the admissible count MUST be recomputed at the reduced leading. A field set
+  smaller therefore holds **more lines**, rather than the same number more widely spaced, and the
+  reduction can win room where otherwise it could only narrow lines it was already limited to.
+- The lines are **centred vertically within the box**, so that a field taking one line and a field
+  taking two sit alike and a template reads as one design whether or not a value happened to wrap.
+  Fields declaring `shape-inside` are the exception and are laid from the top of their rectangle:
+  those carry prose — a steward's description, a steward's justification — and prose floating in the
+  middle of a box it does not fill reads as a mistake rather than as a design.
+- Each field is fitted **on its own**. The canvas is not resized, and no other field follows the
+  size of the field reduced.
 - `shape-inside` MUST be removed from the field once its lines are laid out, the rasteriser otherwise
   re-flowing text the module has already set.
+
+**Why the cut was withdrawn.** A truncated value is a wrong value drawn confidently: "Autodromo Enzo
+e Dino Ferra…" names no circuit, and a league reading it cannot tell whether its data or its template
+is at fault. A reduced value is the right one, merely smaller, and the notice tells the league which
+field is under pressure. The module would rather draw a league's own words small than draw most of
+them.
 
 **Three template defects are problems** (Rule 4), and all three are **structural** under Rule 9 —
 read off the template alone, needing no data — so each is complete at every one of the three moments
@@ -4205,11 +4326,12 @@ and refuses at each with the severity that moment carries. Each MUST be reported
 fault and distinguishably from the other two:
 
 - a `shape-inside` naming a rectangle the template does not declare;
-- a wrapped field upon which no `line-height` resolves. A default leading substituted here would
-  silently decide how much of a league's prose is drawn, which is the template's decision and not the
-  module's;
-- a rectangle declaring **no usable width and height**. It is named, and it exists, and it still gives
-  the text nowhere to go: there is no measure to wrap against and no budget to count lines from.
+- a field upon which no `line-height` resolves, where one is needed to fix its budget or its
+  leading. A default leading substituted here would silently decide how much of a league's prose is
+  drawn, which is the template's decision and not the module's;
+- a box of **no usable width**, or a `max-lines` that is not a positive whole number. Either is
+  named, and exists, and still gives the text nowhere to go: there is no measure to wrap against, or
+  no budget to count lines from.
 
 The third is the one a reader would think redundant and is the one that cost most to find. A named
 rectangle with no extent is not an absent rectangle — every check for the first passes — and the
@@ -4228,9 +4350,9 @@ canvas holds.
 
 **The module places no ceiling on free text.** Where a field carries prose a person wrote — a
 steward's description, a steward's justification — no length limit is imposed at its source, and the
-answer to a long one is the reduction and the cut above. It is for the league to declare a rectangle
-the longest such text its people write will fit, and a template giving unbounded prose a single
-unwrapped line is relying on it staying short.
+answer to a long one is the reduction above and nothing else. It is for the league to declare a
+rectangle the longest such text its people write will fit at a size worth reading, and a template
+giving unbounded prose a single unwrapped line is relying on it staying short.
 
 **6. Assets are aspect-authored, never padded by the generator.**
 
@@ -6014,4 +6136,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 6.3.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-27
+**Version**: 7.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-27
