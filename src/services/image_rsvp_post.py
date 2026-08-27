@@ -121,6 +121,8 @@ async def try_attach(
             image_type=RSVP_TEMPLATE_KEY,
         )
 
+        from utils.image_naming import stem_for_drawing
+
         decision = await bot.image_render_service.render_for_posting(
             server_id,
             RSVP_TEMPLATE_KEY,
@@ -129,6 +131,7 @@ async def try_attach(
             ),
             posting_origin=PostingOrigin.SCHEDULED,
             bot=bot,
+            filename_stem=stem_for_drawing(drawing, RSVP_TEMPLATE_KEY),
         )
 
         label = f"{division_name} — check-in for round {round_number}"
@@ -139,7 +142,8 @@ async def try_attach(
                 await _report(bot, server_id, label, decision.problem.detail)
             return None
 
-        return discord.File(str(decision.png_paths[0]), filename="checkin.png")
+        png = decision.png_paths[0]
+        return discord.File(str(png), filename=Path(png).name)
     except Exception as exc:  # noqa: BLE001 — the call must post whatever happens here
         log.error(
             "rsvp: the check-in graphic could not be drawn for server %s: %s",

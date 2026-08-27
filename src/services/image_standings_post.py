@@ -65,12 +65,6 @@ TEMPLATE_KEYS: dict[str, str] = {
     "constructors": CONSTRUCTORS_TEMPLATE_KEY,
 }
 
-#: Championship -> the snapshot column naming the message that carries it. Mirrors
-#: ``results_post_service._STANDINGS_ID_COLUMNS``, which is the writer.
-_ATTACHMENT_NAMES = {
-    "drivers": "standings_drivers.png",
-    "constructors": "standings_constructors.png",
-}
 
 
 @dataclass
@@ -437,6 +431,8 @@ async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
         image_type=drawing.template_key,
     )
 
+    from utils.image_naming import stem_for_drawing
+
     return await bot.image_render_service.render_for_posting(
         server_id,
         drawing.template_key,
@@ -445,6 +441,7 @@ async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
         ),
         posting_origin=origin,
         bot=bot,
+        filename_stem=stem_for_drawing(drawing),
     )
 
 
@@ -505,7 +502,7 @@ async def _post_one(
     from services.image_render_service import discard_attachment
 
     png = decision.png_paths[0]
-    attachment = discord.File(str(png), filename=_ATTACHMENT_NAMES[championship])
+    attachment = discord.File(str(png), filename=png.name)
     try:
         message = await channel.send(f"{heading}\n{label}", file=attachment)
     except discord.HTTPException as exc:

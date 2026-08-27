@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
@@ -1142,7 +1143,7 @@ async def _sheet_attachment(
         if not render.draws:
             return None
 
-        return discord.File(str(render.png), filename="attendance.png")
+        return discord.File(str(render.png), filename=Path(render.png).name)
     except Exception as exc:  # noqa: BLE001 — the sheet must post whatever happens here
         log.error(
             "post_attendance_sheet: the graphic could not be drawn for division %s: %s",

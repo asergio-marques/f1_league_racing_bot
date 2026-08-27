@@ -140,6 +140,8 @@ async def render_calendar_image(
     if raw_flag:
         flag_directory = Path(raw_flag)
 
+    from utils.image_naming import stem_for_drawing
+
     return await bot.image_render_service.render(
         server_id,
         TEMPLATE_KEY,
@@ -150,6 +152,7 @@ async def render_calendar_image(
             flag_directory=flag_directory,
         ),
         output_dir=output_dir,
+        filename_stem=stem_for_drawing(drawing, TEMPLATE_KEY),
     )
 
 
@@ -256,7 +259,7 @@ async def replace_calendar_message(
         # what covers a picture that never reached a send at all.
         from services.image_render_service import discard_attachment
 
-        attachment = discord.File(str(image_path), filename="calendar.png")
+        attachment = discord.File(str(image_path), filename=image_path.name)
         try:
             posted = await channel.send(content, file=attachment)
         finally:

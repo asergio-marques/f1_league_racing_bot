@@ -99,7 +99,14 @@ async def test_the_results_render_body_runs_and_labels_itself_with_its_template(
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
-    drawing = SimpleNamespace(template_key="results_race_template")
+    drawing = SimpleNamespace(
+        template_key="results_race_template",
+        session_name="Feature Race",
+        season_number="3",
+        division_tier="1",
+        division_name="Elite",
+        round_number="4",
+    )
 
     decision = await image_results_post.render_png(
         bot, 1, drawing, PostingOrigin.SCHEDULED
@@ -114,6 +121,11 @@ async def test_the_results_render_body_runs_and_labels_itself_with_its_template(
         bot.image_render_service.render_for_posting.await_args.args[1]
         == "results_race_template"
     )
+    # The **session's** name, not the template's: one template draws four sessions.
+    assert (
+        bot.image_render_service.render_for_posting.await_args.kwargs["filename_stem"]
+        == "season3_division1_round4_feature_race_results"
+    )
 
 
 async def test_the_results_render_body_labels_qualifying_as_qualifying(
@@ -125,11 +137,22 @@ async def test_the_results_render_body_labels_qualifying_as_qualifying(
 
     bot, _png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
-    drawing = SimpleNamespace(template_key="results_qualifying_template")
+    drawing = SimpleNamespace(
+        template_key="results_qualifying_template",
+        session_name="Sprint Qualifying",
+        season_number="3",
+        division_tier="1",
+        division_name="Elite",
+        round_number="4",
+    )
 
     await image_results_post.render_png(bot, 1, drawing, PostingOrigin.SCHEDULED)
 
     assert seen["image_type"] == "results_qualifying_template"
+    assert (
+        bot.image_render_service.render_for_posting.await_args.kwargs["filename_stem"]
+        == "season3_division1_round4_sprint_qualifying_results"
+    )
 
 
 async def test_the_lineup_render_body_runs_and_labels_itself_with_its_template(
@@ -197,13 +220,23 @@ async def test_the_weather_render_body_runs_and_labels_itself(tmp_path, monkeypa
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
-    drawing = SimpleNamespace(template_key="weather_p2_sprint_template")
+    drawing = SimpleNamespace(
+        template_key="weather_p2_sprint_template",
+        season_number="3",
+        division_tier="2",
+        division_name="Academy",
+        round_number="7",
+    )
 
     render = await image_weather_post.render_forecast(bot, 1, drawing)
 
     assert render.draws, render.problem
     assert render.png == png
     assert seen["image_type"] == "weather_p2_sprint_template"
+    assert (
+        bot.image_render_service.render_for_posting.await_args.kwargs["filename_stem"]
+        == "season3_division2_round7_weather_p2_sprint"
+    )
 
 
 async def test_the_rsvp_render_body_runs_and_labels_itself(tmp_path, monkeypatch):

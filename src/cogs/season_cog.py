@@ -288,7 +288,7 @@ class SeasonCog(commands.Cog):
                 return REVIEW_IMAGE_FAULT
 
             attachment = _discord.File(
-                str(outcome.png_path), filename=f"lineup_{division.id}.png"
+                str(outcome.png_path), filename=outcome.png_path.name
             )
             try:
                 await interaction.followup.send(
@@ -340,7 +340,7 @@ class SeasonCog(commands.Cog):
                 return REVIEW_IMAGE_FAULT
 
             attachment = _discord.File(
-                str(outcome.png_path), filename=f"calendar_{division.id}.png"
+                str(outcome.png_path), filename=outcome.png_path.name
             )
             try:
                 await interaction.followup.send(

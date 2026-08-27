@@ -343,7 +343,7 @@ class TeamCog(commands.Cog):
                     if outcome.png_path is not None:
                         files.append(
                             discord.File(
-                                str(outcome.png_path), filename=f"lineup_{div.id}.png"
+                                str(outcome.png_path), filename=outcome.png_path.name
                             )
                         )
                     notices.extend(outcome.notices)

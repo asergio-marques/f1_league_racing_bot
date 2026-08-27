@@ -195,6 +195,8 @@ async def render_png(bot, server_id: int, guild, division_id: int, origin: Posti
         image_type=LINEUP_TEMPLATE_KEY,
     )
 
+    from utils.image_naming import stem_for_drawing
+
     return await bot.image_render_service.render_for_posting(
         server_id,
         LINEUP_TEMPLATE_KEY,
@@ -203,6 +205,7 @@ async def render_png(bot, server_id: int, guild, division_id: int, origin: Posti
         ),
         posting_origin=origin,
         bot=bot,
+        filename_stem=stem_for_drawing(drawing, LINEUP_TEMPLATE_KEY),
     )
 
 
@@ -274,7 +277,7 @@ async def try_post(
     from services.image_render_service import discard_attachment
 
     png = decision.png_paths[0]
-    attachment = discord.File(str(png), filename="lineup.png")
+    attachment = discord.File(str(png), filename=png.name)
     try:
         message = await channel.send(file=attachment)
     except discord.HTTPException as exc:

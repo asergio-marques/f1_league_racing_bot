@@ -298,6 +298,11 @@ async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
         image_type=drawing.template_key,
     )
 
+    from utils.image_naming import stem_for_drawing
+
+    # One template draws four sessions, so the *session's* own label names the file:
+    # `feature_qualifying_results` rather than the template's `qualifying_results`,
+    # which would not say which of a sprint weekend's two qualifyings was drawn.
     return await bot.image_render_service.render_for_posting(
         server_id,
         drawing.template_key,
@@ -306,6 +311,9 @@ async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
         ),
         posting_origin=origin,
         bot=bot,
+        filename_stem=stem_for_drawing(
+            drawing, subject=f"{drawing.session_name} results"
+        ),
     )
 
 
@@ -407,7 +415,7 @@ async def try_post(
     # Discarded through the attachment rather than the path: the file object holds the
     # handle open, and closing it here rather than trusting the send to have done it keeps
     # the cleanup independent of how far the send got.
-    attachment = discord.File(str(png), filename="results.png")
+    attachment = discord.File(str(png), filename=png.name)
     try:
         message = await channel.send(f"{heading}\n{label}", file=attachment)
     except discord.HTTPException as exc:

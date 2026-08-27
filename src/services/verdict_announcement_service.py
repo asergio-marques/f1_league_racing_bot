@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 
 import discord
 
@@ -250,7 +251,10 @@ async def _send_verdict(
     if render is not None and render.draws:
         import discord as _discord
 
-        attachment = _discord.File(str(render.png))
+        # Named, rather than left to Discord to read the path's basename: the render
+        # service already wrote a name saying which season, division and round this
+        # verdict belongs to, and leaking the raw template key was never intended.
+        attachment = _discord.File(str(render.png), filename=Path(render.png).name)
         try:
             await target_channel.send(f"<@{driver_discord_id}>", file=attachment)
         finally:

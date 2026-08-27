@@ -187,6 +187,8 @@ async def render_forecast(
             image_type=drawing.template_key,
         )
 
+        from utils.image_naming import stem_for_drawing
+
         decision = await bot.image_render_service.render_for_posting(
             server_id,
             drawing.template_key,
@@ -195,6 +197,7 @@ async def render_forecast(
             ),
             posting_origin=origin,
             bot=bot,
+            filename_stem=stem_for_drawing(drawing),
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
         log.error("weather: render failed for server %s: %s", server_id, exc)
@@ -279,7 +282,7 @@ async def attach_forecast(bot, round_id: int, phase: int, server_id: int):
         if not render.draws:
             return None
 
-        return discord.File(str(render.png), filename=f"weather_{phase}.png")
+        return discord.File(str(render.png), filename=Path(render.png).name)
     except Exception as exc:  # noqa: BLE001 — a graphic never breaks a forecast
         log.error("weather: could not attach a graphic to round %s: %s", round_id, exc)
         return None
