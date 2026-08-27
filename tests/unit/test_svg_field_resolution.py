@@ -268,14 +268,19 @@ def test_a_field_taken_off_by_its_group_is_not_unresolved():
 # ── T048: which bound a field gets is decided by what it declares ─────────
 
 
-def test_inline_size_alone_truncates():
+def test_inline_size_alone_reduces_to_one_line():
+    """An `inline-size` with no `max-lines` is a one-line box, and one line is never cut."""
+    name = "Bartholomew Fotheringay-Pemberton III"
     result, out = render(
         '<text id="name" style="inline-size:40px;font-size:12px">x</text>',
-        text={"name": "Bartholomew Fotheringay-Pemberton III"},
+        text={"name": name},
     )
     kinds = {n.notice_kind for n in result.notices}
-    assert "INLINE_SIZE_TRUNCATED" in kinds
-    assert FieldIndex(out).resolve("name").text.endswith("…")
+    assert "FIELD_REDUCED" in kinds, "40px for that name must pass below the floor"
+
+    element = FieldIndex(out).resolve("name")
+    assert element.text == name, "the whole name must be drawn"
+    assert "…" not in element.text
 
 
 def test_shape_inside_without_inline_size_wraps(tmp_path):

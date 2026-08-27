@@ -46,14 +46,14 @@
   <defs>
     <style>
       .eyebrow  { font-size:15px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
-      .title    { font-size:34px; fill:#F2F5F8; font-weight:700 }
+      .title    { font-size:34px; fill:#F2F5F8; font-weight:700; inline-size:860px; max-lines:1 }
       .phase    { font-size:16px; fill:#8A94A3; letter-spacing:.16em; font-weight:600 }
       .roundlbl { font-size:17px; fill:#8A94A3; letter-spacing:.20em; font-weight:600 }
       .roundnum { font-size:17px; fill:#E8113C; letter-spacing:.20em; font-weight:700 }
-      .track    { font-size:46px; fill:#F2F5F8; font-weight:700 }
+      .track    { font-size:42px; line-height:1.05; inline-size:800px; max-lines:2; fill:#F2F5F8; font-weight:700 }
       .sub      { font-size:19px; fill:#8A94A3 }
       .celllbl  { font-size:12px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
-      .cellval  { font-size:26px; fill:#F2F5F8; font-weight:700 }
+      .cellval  { font-size:24px; line-height:1.1; fill:#F2F5F8; font-weight:700 }
       .note     { font-size:15px; fill:#8A94A3 }
       .colhead  { font-size:10px; fill:#8A94A3; letter-spacing:.14em; font-weight:700 }
       .sname    { font-size:21px; fill:#F2F5F8; letter-spacing:.02em; font-weight:700 }
@@ -80,12 +80,12 @@
   <rect x="0" y="93" width="1200" height="3" fill="#E8113C"/>
 
   <!--  round block  -->
-  <text class="roundlbl" x="48" y="140">
+  <text class="roundlbl" x="48" y="124">
     <tspan>ROUND&#160;</tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">1</tspan>
   </text>
   <text id="track_name" inkscape:label="track_name" class="track" x="48" y="188">Track Name</text>
   <g id="race_name_group" inkscape:label="race_name_group">
-    <text id="race_name" inkscape:label="race_name" class="sub" x="48" y="220">Grand Prix Name</text>
+    <text id="race_name" inkscape:label="race_name" class="sub" x="48" y="250" style="line-height:1.1;inline-size:800px;max-lines:2">Grand Prix Name</text>
   </g>
 
   <!--  The plate is inside the group with the image it frames. A round of the
@@ -112,7 +112,7 @@
   <!--  the round, four facts to a cell, each under a label of its own  -->
   <rect x="48" y="272" width="264" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
   <text class="celllbl" x="72" y="306">FORMAT</text>
-  <text id="round_format" inkscape:label="round_format" class="cellval" x="72" y="346">Format</text>
+  <text id="round_format" inkscape:label="round_format" class="cellval" x="72" y="346" style="inline-size:216px;max-lines:2">Format</text>
 
   <!--  The card and its label are inside the group. A round of the mystery
         format names no country, and the card was left standing empty under a
@@ -120,16 +120,16 @@
   <g id="country_name_group" inkscape:label="country_name_group">
     <rect x="328" y="272" width="264" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
     <text class="celllbl" x="352" y="306">COUNTRY</text>
-    <text id="country_name" inkscape:label="country_name" class="cellval" x="352" y="346">Country</text>
+    <text id="country_name" inkscape:label="country_name" class="cellval" x="352" y="346" style="inline-size:216px;max-lines:2">Country</text>
   </g>
 
   <rect x="608" y="272" width="264" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
   <text class="celllbl" x="632" y="306">DATE</text>
-  <text id="round_date" inkscape:label="round_date" class="cellval" x="632" y="346">01 Jan 2025</text>
+  <text id="round_date" inkscape:label="round_date" class="cellval" x="632" y="346" style="inline-size:216px;max-lines:2">01 Jan 2025</text>
 
   <rect x="888" y="272" width="264" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
   <text class="celllbl" x="912" y="306">START TIME</text>
-  <text id="round_time" inkscape:label="round_time" class="cellval" x="912" y="346">00:00 UTC</text>
+  <text id="round_time" inkscape:label="round_time" class="cellval" x="912" y="346" style="inline-size:216px;max-lines:2">00:00 UTC</text>
 
   <!--  the deadline, which is the one thing the call adds to the calendar  -->
   <rect x="48" y="396" width="1104" height="88" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>

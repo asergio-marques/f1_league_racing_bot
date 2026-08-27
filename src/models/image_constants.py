@@ -284,8 +284,15 @@ FASTEST_LAP_BACKGROUND_ID = "fastest_lap_background"
 
 #: Notice kinds (Constitution XIV.4).
 NOTICE_FONT_SUBSTITUTED = "FONT_SUBSTITUTED"
-NOTICE_WRAP_TRUNCATED = "WRAP_TRUNCATED"
-NOTICE_INLINE_SIZE_TRUNCATED = "INLINE_SIZE_TRUNCATED"
+
+#: A field was set below **half** the size its template declared in order to hold its value
+#: (XIV.5, v7.0.0). The floor stops nothing — the reduction continues past it until the text
+#: fits — so this reports a field under pressure, never a field drawn short.
+#:
+#: It replaces `WRAP_TRUNCATED` and `INLINE_SIZE_TRUNCATED`, both withdrawn with the cut they
+#: reported: text is no longer truncated or ellipsised anywhere in the module.
+NOTICE_FIELD_REDUCED = "FIELD_REDUCED"
+
 NOTICE_ASSET_FALLBACK_USED = "ASSET_FALLBACK_USED"
 NOTICE_OPTIONAL_FIELD_EMPTIED = "OPTIONAL_FIELD_EMPTIED"
 

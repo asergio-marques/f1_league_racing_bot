@@ -147,6 +147,39 @@ def test_stylesheet_rule_by_class_is_resolved():
     assert computed_style(element, stylesheet(root))["fill"] == "#333333"
 
 
+def test_a_comment_containing_a_comma_does_not_disable_the_rule_after_it():
+    """A selector group is split on commas, so an unstripped comment swallows the next rule.
+
+    Every shipped results, lineup, attendance and verdict template documents `.dname` in a
+    comment directly above it, and each of those comments contains a comma. Until comments
+    were stripped, `.dname` matched nothing at all and the driver-name bounds those templates
+    declared were silently inert — names ran across the column beside them with no notice.
+    """
+    root = _doc(
+        "<style>"
+        "/*  a name is of no length the league controls, so it is bounded  */"
+        ".plate { fill: #555555; inline-size: 262px }"
+        "</style>"
+        '<rect id="plate" class="plate"/>'
+    )
+    style = computed_style(FieldIndex(root).resolve("plate"), stylesheet(root))
+    assert style["fill"] == "#555555"
+    assert style["inline-size"] == "262px"
+
+
+def test_a_multi_line_comment_between_rules_is_stripped():
+    root = _doc(
+        "<style>.a { fill: #010101 }\n"
+        "/*  one, two,\n    three  */\n"
+        ".b { fill: #020202 }</style>"
+        '<rect id="one" class="a"/><rect id="two" class="b"/>'
+    )
+    rules = stylesheet(root)
+    index = FieldIndex(root)
+    assert computed_style(index.resolve("one"), rules)["fill"] == "#010101"
+    assert computed_style(index.resolve("two"), rules)["fill"] == "#020202"
+
+
 def test_stylesheet_rule_by_id_is_resolved():
     root = _doc('<style>#plate { fill: #444444; }</style><rect id="plate"/>')
     element = FieldIndex(root).resolve("plate")

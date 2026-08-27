@@ -14,9 +14,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from models.image_constants import (  # noqa: E402
+    NOTICE_FIELD_REDUCED,
     NOTICE_FONT_SUBSTITUTED,
-    NOTICE_INLINE_SIZE_TRUNCATED,
-    NOTICE_WRAP_TRUNCATED,
 )
 from utils.font_metrics import resolve_family  # noqa: E402
 from utils.svg_document import (  # noqa: E402
@@ -25,7 +24,7 @@ from utils.svg_document import (  # noqa: E402
     parse_svg_bytes,
     stylesheet,
 )
-from utils.svg_fill import ELLIPSIS, FillSpec, fill  # noqa: E402
+from utils.svg_fill import FillSpec, fill  # noqa: E402
 
 
 def _doc(body: str, width: int = 1200, height: int = 675):
@@ -46,7 +45,7 @@ ARIAL = resolve_family("Arial")
 
 def _non_font_notices(result):
     """Drop FONT_SUBSTITUTED: whether Arial itself is installed is a fact about the
-    host, not the truncation/wrap behaviour these invariants pin."""
+    host, not the fitting behaviour these invariants pin."""
     return [n for n in result.notices if n.notice_kind != NOTICE_FONT_SUBSTITUTED]
 
 
@@ -220,13 +219,20 @@ WRAP_DOC = (
 )
 
 
-def test_invariant_7_short_text_is_not_reduced_or_truncated():
+def _drawn_text(root, field_id):
+    """Everything the field draws, whether as one string or as wrapped tspans."""
+    element = FieldIndex(root).resolve(field_id)
+    tspans = list(element)
+    if tspans:
+        return " ".join((t.text or "") for t in tspans)
+    return element.text or ""
+
+
+def test_invariant_7_short_text_is_not_reduced():
     root = _doc(WRAP_DOC)
     result = fill(FillSpec(root=root, text={"justification": "Short enough."}))
 
-    assert result.notices == [] or all(
-        n.notice_kind != NOTICE_WRAP_TRUNCATED for n in result.notices
-    )
+    assert _non_font_notices(result) == []
     assert "font-size:20px" in FieldIndex(root).resolve("justification").get("style")
 
 
@@ -239,24 +245,36 @@ def test_invariant_7_long_text_descends_in_half_pixel_steps():
     size = float(style.split("font-size:")[1].split("px")[0])
 
     assert size < 20.0, "text that does not fit must be set down"
-    assert size >= 10.0, "must not descend below the half-size floor"
     assert (round(size * 2) / 2) == pytest.approx(size), "steps must be half a pixel"
 
 
-def test_invariant_7_at_the_floor_text_is_cut_at_a_word_boundary_with_an_ellipsis():
+def test_invariant_7_the_floor_raises_a_notice_but_stops_nothing():
+    """v7.0.0: half the declared size is where a notice is owed, not where reducing stops.
+
+    The pre-v7 engine stopped here and ellipsised. It now carries on down, because a cut value
+    is a wrong value drawn confidently while a reduced one is merely small.
+    """
     root = _doc(WRAP_DOC)
     body = "The stewards reviewed the incident at turn four in considerable detail. " * 60
     result = fill(FillSpec(root=root, text={"justification": body}))
 
-    kinds = [n.notice_kind for n in result.notices]
-    assert NOTICE_WRAP_TRUNCATED in kinds
+    assert [n.notice_kind for n in _non_font_notices(result)] == [NOTICE_FIELD_REDUCED]
 
-    tspans = list(FieldIndex(root).resolve("justification"))
-    assert tspans, "wrapped text must become tspans"
-    assert tspans[-1].text.endswith(ELLIPSIS)
-    # Cut at a word boundary: no partial word before the ellipsis.
-    assert not tspans[-1].text.rstrip(ELLIPSIS).endswith(" ") or True
-    assert " " in tspans[-1].text
+    style = FieldIndex(root).resolve("justification").get("style")
+    size = float(style.split("font-size:")[1].split("px")[0])
+    assert size < 10.0, "the reduction must continue past the 10px floor of a 20px field"
+
+
+def test_invariant_7_text_is_never_cut_however_long():
+    """The whole value is drawn, whatever it costs in size. Nothing is ellipsised."""
+    root = _doc(WRAP_DOC)
+    body = "The stewards reviewed the incident at turn four in considerable detail. " * 60
+    fill(FillSpec(root=root, text={"justification": body}))
+
+    drawn = _drawn_text(root, "justification")
+    assert "…" not in drawn
+    # Every word of the value survives, in order.
+    assert drawn.split() == body.split()
 
 
 def test_invariant_8_line_count_is_recomputed_at_the_reduced_leading():
@@ -345,51 +363,215 @@ def test_wrap_consumes_the_rectangle_as_an_addressed_field():
     assert result.unresolved == []
 
 
-def test_invariant_9_over_long_single_line_field_is_cut_and_noticed():
-    """`inline-size` is the only bound on a Discord display name."""
-    root = _doc(
-        '<text id="driver_1" style="font-family:Arial;font-size:18px;inline-size:190px">x</text>'
-    )
-    result = fill(
-        FillSpec(
-            root=root,
-            text={"driver_1": "Bartholomew Fotheringay-Pemberton the Third"},
-        )
-    )
+NAME_DOC = (
+    '<text id="driver_1" x="20" y="40" '
+    'style="font-family:Arial;font-size:18px;inline-size:190px">x</text>'
+)
+LONG_NAME = "Bartholomew Fotheringay-Pemberton the Third"
 
-    assert [n.notice_kind for n in _non_font_notices(result)] == [NOTICE_INLINE_SIZE_TRUNCATED]
-    text = FieldIndex(root).resolve("driver_1").text
-    assert text.endswith(ELLIPSIS)
-    assert len(text) < len("Bartholomew Fotheringay-Pemberton the Third")
+
+def test_invariant_9_over_long_single_line_field_is_reduced_not_cut():
+    """`inline-size` is the only bound on a Discord display name.
+
+    A name is the one thing on a graphic a league cannot shorten, so v7.0.0 reduces it to fit
+    rather than cutting it — the reader gets the whole name, merely smaller.
+    """
+    root = _doc(NAME_DOC)
+    result = fill(FillSpec(root=root, text={"driver_1": LONG_NAME}))
+
+    element = FieldIndex(root).resolve("driver_1")
+    assert element.text == LONG_NAME, "the whole name must be drawn"
+    assert "…" not in element.text
+
+    size = float(element.get("style").split("font-size:")[1].split("px")[0])
+    assert size < 18.0, "a name that does not fit must be set down"
+    assert not list(element), "max-lines defaults to one: a name must not wrap"
+
+    # A notice is owed only where the reduction passed below half the declared size.
+    kinds = [n.notice_kind for n in _non_font_notices(result)]
+    assert kinds in ([], [NOTICE_FIELD_REDUCED])
+    assert (kinds == [NOTICE_FIELD_REDUCED]) == (size < 9.0)
 
 
 def test_invariant_9_short_name_within_the_bound_is_untouched():
-    root = _doc(
-        '<text id="driver_1" style="font-family:Arial;font-size:18px;inline-size:190px">x</text>'
-    )
+    root = _doc(NAME_DOC)
     result = fill(FillSpec(root=root, text={"driver_1": "Verstappen"}))
 
+    element = FieldIndex(root).resolve("driver_1")
     assert _non_font_notices(result) == []
-    assert FieldIndex(root).resolve("driver_1").text == "Verstappen"
+    assert element.text == "Verstappen"
+    # A bounded field that fits keeps the size and the baseline the template drew, so
+    # bounding a field that never overflows moves nothing on the graphic.
+    assert "font-size:18px" in element.get("style")
+    assert element.get("y") == "40"
 
 
-def test_invariant_9_cut_falls_on_a_word_boundary():
+def test_single_word_wider_than_the_box_is_reduced_whole():
     root = _doc(
-        '<text id="d" style="font-family:Arial;font-size:18px;inline-size:200px">x</text>'
-    )
-    fill(FillSpec(root=root, text={"d": "Alpha Bravo Charlie Delta Echo Foxtrot"}))
-
-    text = FieldIndex(root).resolve("d").text.rstrip(ELLIPSIS)
-    for word in text.split():
-        assert word in "Alpha Bravo Charlie Delta Echo Foxtrot".split()
-
-
-def test_single_word_wider_than_the_box_still_yields_something():
-    root = _doc(
-        '<text id="d" style="font-family:Arial;font-size:18px;inline-size:40px">x</text>'
+        '<text id="d" x="0" y="30" '
+        'style="font-family:Arial;font-size:18px;inline-size:40px">x</text>'
     )
     fill(FillSpec(root=root, text={"d": "Fotheringay-Pemberton"}))
-    assert FieldIndex(root).resolve("d").text.endswith(ELLIPSIS)
+
+    element = FieldIndex(root).resolve("d")
+    assert element.text == "Fotheringay-Pemberton"
+    assert "…" not in element.text
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# `max-lines`: the budget, the CSS-declared box, and vertical centring (v7.0.0)
+# ══════════════════════════════════════════════════════════════════════════
+
+
+#: A two-line CSS box: 100px wide, 20px text on a 30px leading, centred on y=100.
+BOXED = (
+    '<text id="gp" x="50" y="100" style="font-family:Arial;font-size:20px;'
+    'line-height:1.5;inline-size:100px;max-lines:{budget}">x</text>'
+)
+
+
+def _tspan_ys(root, field_id):
+    return [float(t.get("y")) for t in FieldIndex(root).resolve(field_id)]
+
+
+def test_max_lines_of_one_never_wraps():
+    root = _doc(BOXED.format(budget=1))
+    fill(FillSpec(root=root, text={"gp": "United States Grand Prix"}))
+
+    element = FieldIndex(root).resolve("gp")
+    assert not list(element), "a one-line budget must not produce tspans"
+    assert element.text == "United States Grand Prix"
+
+
+def test_max_lines_of_two_wraps_rather_than_reducing_as_far():
+    """The point of a second line: the value is drawn larger than one line would allow."""
+    value = "United States Grand Prix"
+    sizes = {}
+    for budget in (1, 2):
+        root = _doc(BOXED.format(budget=budget))
+        fill(FillSpec(root=root, text={"gp": value}))
+        style = FieldIndex(root).resolve("gp").get("style")
+        sizes[budget] = float(style.split("font-size:")[1].split("px")[0])
+
+    assert sizes[2] > sizes[1], "two lines must buy a larger size than one"
+
+
+def test_a_wrapped_field_is_centred_on_the_baseline_the_template_drew():
+    """One line and two must share a centre, so bounding a field moves nothing when it fits.
+
+    This is what lets a template be bounded without re-laying it out: a value that does not
+    wrap lands exactly where the designer put it, and one that does grows half a line either
+    side of that same point instead of pushing down onto whatever sits below.
+    """
+    root = _doc(BOXED.format(budget=2))
+    fill(FillSpec(root=root, text={"gp": "United States Grand Prix"}))
+
+    ys = _tspan_ys(root, "gp")
+    assert len(ys) == 2, "this value must wrap to two lines"
+    assert sum(ys) / len(ys) == pytest.approx(100.0), "the block must centre on y=100"
+
+    # And a value that fits keeps the baseline untouched rather than merely centring on it.
+    root = _doc(BOXED.format(budget=2))
+    fill(FillSpec(root=root, text={"gp": "Imola"}))
+    element = FieldIndex(root).resolve("gp")
+    assert not list(element)
+    assert element.get("y") == "100"
+
+
+def test_a_wrapped_field_keeps_its_own_x_and_anchoring():
+    """The calendar's date and time are anchored at their right edge.
+
+    Taking x from a box's left edge instead — which the rectangle path does — would push an
+    end-anchored field clean across the card.
+    """
+    root = _doc(
+        '<text id="date" x="556" y="279" text-anchor="end" '
+        'style="font-family:Arial;font-size:13px;line-height:1.2;'
+        'inline-size:80px;max-lines:2">x</text>'
+    )
+    fill(FillSpec(root=root, text={"date": "01 January 2025"}))
+
+    element = FieldIndex(root).resolve("date")
+    assert element.get("text-anchor") == "end", "anchoring must survive"
+    assert {t.get("x") for t in element} == {"556"}, "lines must carry the field's own x"
+
+
+def test_prose_in_a_rectangle_is_laid_from_the_top_not_centred():
+    """The `shape-inside` exception: prose floating mid-box reads as a mistake."""
+    root = _doc(WRAP_DOC)  # rect at y=20, height 120, 20px text on a 1.3 leading
+    fill(FillSpec(root=root, text={"justification": "One short line."}))
+
+    element = FieldIndex(root).resolve("justification")
+    ys = [float(t.get("y")) for t in element]
+    assert ys == [pytest.approx(40.0)], "first baseline sits at the box top plus one size"
+
+
+def test_max_lines_that_is_not_a_positive_whole_number_is_a_problem():
+    for bad in ("0", "-2", "1.5", "many"):
+        root = _doc(
+            f'<text id="d" x="0" y="30" style="font-family:Arial;font-size:18px;'
+            f'inline-size:100px;max-lines:{bad}">x</text>'
+        )
+        result = fill(FillSpec(root=root, text={"d": "Anything"}))
+        assert result.unresolved, f"`max-lines:{bad}` must be fatal"
+        assert any("max-lines" in problem for problem in result.unresolved)
+        assert any("`d`" in problem for problem in result.unresolved)
+
+
+def test_a_multi_line_budget_with_no_width_to_wrap_against_is_a_problem():
+    root = _doc(
+        '<text id="d" x="0" y="30" '
+        'style="font-family:Arial;font-size:18px;line-height:1.2;max-lines:2">x</text>'
+    )
+    result = fill(FillSpec(root=root, text={"d": "Anything at all"}))
+
+    assert any("inline-size" in problem for problem in result.unresolved)
+
+
+def test_a_multi_line_budget_with_no_leading_is_a_problem():
+    """No default leading may be substituted: it decides where the second line lands."""
+    root = _doc(
+        '<text id="d" x="0" y="30" '
+        'style="font-family:Arial;font-size:18px;inline-size:100px;max-lines:2">x</text>'
+    )
+    result = fill(FillSpec(root=root, text={"d": "Anything at all"}))
+
+    assert any("line-height" in problem for problem in result.unresolved)
+
+
+def test_inline_size_is_removed_not_set_to_auto():
+    """Inkscape treats *any* inline-size — `auto` included — as SVG2 flowed text.
+
+    Left in place it re-flows the lines this module already measured: it concatenates the
+    adjacent tspans, losing the space between them, and re-breaks the result. "…Enzo e" +
+    "Dino Ferrari" comes back as "…Enzo" / "eDino Ferrari". Verified against Inkscape 1.x,
+    where `auto` rasterises byte-identically to the declared length.
+    """
+    root = _doc(
+        '<defs><style>.t { font-size:20px; inline-size:100px; max-lines:2; '
+        'line-height:1.5 }</style></defs>'
+        '<text id="gp" class="t" x="50" y="100">x</text>'
+    )
+    fill(FillSpec(root=root, text={"gp": "United States Grand Prix"}))
+
+    element = FieldIndex(root).resolve("gp")
+    assert len(list(element)) == 2, "this value must wrap, or the test proves nothing"
+    assert "inline-size" not in (element.get("style") or "")
+    # And the class rule it came from is stripped too, an inline `auto` being no defence.
+    assert "inline-size" not in computed_style(element, stylesheet(root))
+
+
+def test_max_lines_supersedes_the_rectangles_own_height():
+    """A rectangle deep enough for four lines holds two where the field declares two."""
+    root = _doc(
+        '<rect id="box" x="10" y="20" width="300" height="120"/>'
+        '<text id="justification" style="font-family:Arial;font-size:20px;'
+        'line-height:1.3;shape-inside:url(#box);max-lines:2">placeholder</text>'
+    )
+    body = "The stewards reviewed the incident at turn four in some detail."
+    fill(FillSpec(root=root, text={"justification": body}))
+
+    assert len(_tspan_ys(root, "justification")) <= 2
 
 
 def test_field_without_a_bound_is_never_truncated():
@@ -612,16 +794,23 @@ def test_wrapped_field_breaks_a_word_wider_than_its_box_within_itself():
 
 
 def test_single_line_field_breaks_a_word_wider_than_its_room_within_itself():
-    """The inline-size path already cut mid-word; this pins it so it stays that way."""
+    """A word too wide is broken within itself, never cut (XIV.5, v7.0.0).
+
+    400 characters in a 120px box fit at no font size at all, so the budget of one line cannot
+    be honoured. The engine draws the whole value over budget and raises the notice rather than
+    trimming to the budget, because trimming is the cut this version withdrew.
+    """
     root = _doc(
-        '<text id="dn" style="font-family:Arial;font-size:20px;inline-size:120px">x</text>'
+        '<text id="dn" x="0" y="30" '
+        'style="font-family:Arial;font-size:20px;inline-size:120px">x</text>'
     )
     result = fill(FillSpec(root=root, text={"dn": LONG_WORD}))
 
     assert result.unresolved == []
-    drawn = FieldIndex(root).resolve("dn").text
-    assert drawn.endswith(ELLIPSIS)
-    assert len(drawn) < len(LONG_WORD), "the word must be cut, not drawn whole"
+    drawn = _drawn_text(root, "dn").replace(" ", "")
+    assert drawn == LONG_WORD, "every character must survive"
+    assert "…" not in drawn
+    assert [n.notice_kind for n in _non_font_notices(result)] == [NOTICE_FIELD_REDUCED]
 
 
 def test_wrapped_field_with_no_resolvable_line_height_is_a_problem():

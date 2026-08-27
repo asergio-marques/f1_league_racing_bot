@@ -63,11 +63,11 @@
   <defs>
     <style>
       .eyebrow  { font-size:15px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
-      .title    { font-size:34px; fill:#F2F5F8; font-weight:700 }
+      .title    { font-size:34px; fill:#F2F5F8; font-weight:700; inline-size:860px; max-lines:1 }
       .roundlbl { font-size:17px; fill:#8A94A3; letter-spacing:.20em; font-weight:600 }
       .roundnum { font-size:17px; fill:#E8113C; letter-spacing:.20em; font-weight:700 }
       .track    { font-size:46px; fill:#F2F5F8; font-weight:700 }
-      .sub      { font-size:19px; fill:#8A94A3 }
+      .sub      { font-size:19px; fill:#8A94A3; inline-size:1104px; max-lines:1 }
       .statlbl  { font-size:12px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
       .statval  { font-size:40px; fill:#F2F5F8; font-weight:700 }
       .statunit { font-size:14px; fill:#8A94A3; font-weight:600 }
@@ -75,11 +75,11 @@
       .rnum     { font-size:12px; fill:#F2F5F8; letter-spacing:.04em; font-weight:700 }
       .cell     { font-size:12px; fill:#E4E9EF; font-weight:600 }
       /*  inline-size states the room a single-line field is given: a value
-          wider than it is cut at a word boundary and ended with an ellipsis
-          rather than painted across the column beside it. A driver name is a
+          wider than it is set down in size until it fits, rather than
+          painted across the column beside it. It is never cut. A driver name is a
           Discord display name of no length the league controls.  */
-      .dname    { font-size:13px; fill:#F2F5F8; font-weight:600; inline-size:250px }
-      .tname    { font-size:10px; fill:#8A94A3; inline-size:232px }
+      .dname    { font-size:13px; fill:#F2F5F8; font-weight:600; inline-size:250px; max-lines:1 }
+      .tname    { font-size:10px; fill:#8A94A3; inline-size:232px; max-lines:1 }
       .pts      { font-size:15px; fill:#F2F5F8; font-weight:700 }
       .sanc     { font-size:10px; fill:#E8113C; font-weight:700 }
       .foot     { font-size:11px; fill:#5A626E; letter-spacing:.22em; font-weight:600 }

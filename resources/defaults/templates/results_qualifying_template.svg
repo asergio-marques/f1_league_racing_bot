@@ -64,22 +64,22 @@
   <defs>
     <style>
       .eyebrow  { font-size:15px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
-      .title    { font-size:34px; fill:#F2F5F8; font-weight:700 }
+      .title    { font-size:34px; fill:#F2F5F8; font-weight:700; inline-size:860px; max-lines:1 }
       .phase    { font-size:16px; fill:#8A94A3; letter-spacing:.16em; font-weight:600 }
       .roundlbl { font-size:17px; fill:#8A94A3; letter-spacing:.20em; font-weight:600 }
       .roundnum { font-size:17px; fill:#E8113C; letter-spacing:.20em; font-weight:700 }
-      .track    { font-size:46px; fill:#F2F5F8; font-weight:700 }
-      .sub      { font-size:19px; fill:#8A94A3 }
+      .track    { font-size:46px; fill:#F2F5F8; font-weight:700; inline-size:720px; max-lines:1 }
+      .sub      { font-size:19px; fill:#8A94A3; inline-size:720px; max-lines:1 }
       .colhead  { font-size:10px; fill:#8A94A3; letter-spacing:.14em; font-weight:700 }
       .foot     { font-size:11px; fill:#5A626E; letter-spacing:.22em; font-weight:600 }
       .pos      { font-size:15px; fill:#F2F5F8; font-weight:700 }
       .pos1     { font-size:15px; fill:#E8113C; font-weight:700 }
       /*  inline-size states the room a single-line field is given. A driver
           name is a Discord display name of no length the league controls, so
-          a name wider than its column is cut at a word boundary and ended
-          with an ellipsis rather than painted over the column beside it.  */
-      .dname    { font-size:13px; fill:#F2F5F8; font-weight:600; inline-size:262px }
-      .tname    { font-size:13px; fill:#AEB8C4; inline-size:224px }
+          a name wider than its column is set down in size until it fits,
+          rather than painted over the column beside it. It is never cut.  */
+      .dname    { font-size:13px; fill:#F2F5F8; font-weight:600; inline-size:262px; max-lines:1 }
+      .tname    { font-size:13px; fill:#AEB8C4; inline-size:224px; max-lines:1 }
       .val      { font-size:13px; fill:#E4E9EF; font-weight:600 }
       .pen      { font-size:12px; fill:#8A94A3; font-weight:600 }
       .pts      { font-size:15px; fill:#F2F5F8; font-weight:700 }

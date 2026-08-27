@@ -73,18 +73,18 @@
   <defs>
     <style>
       .eyebrow  { font-size:15px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
-      .title    { font-size:34px; fill:#F2F5F8; font-weight:700 }
+      .title    { font-size:34px; fill:#F2F5F8; font-weight:700; inline-size:860px; max-lines:1 }
       .phase    { font-size:16px; fill:#8A94A3; letter-spacing:.16em; font-weight:600 }
       .track    { font-size:46px; fill:#F2F5F8; font-weight:700 }
       .sub      { font-size:19px; fill:#8A94A3 }
       .colhead  { font-size:10px; fill:#8A94A3; letter-spacing:.14em; font-weight:700 }
-      .team     { font-size:16px; fill:#F2F5F8; font-weight:700 }
+      .team     { font-size:16px; fill:#F2F5F8; font-weight:700; inline-size:236px; max-lines:1 }
       /*  inline-size states the room a single-line field is given: a value
-          wider than it is cut at a word boundary and ended with an ellipsis
-          rather than painted across the column beside it. A driver name is a
+          wider than it is set down in size until it fits, rather than
+          painted across the column beside it. It is never cut. A driver name is a
           Discord display name of no length the league controls.  */
-      .dname    { font-size:15px; fill:#F2F5F8; font-weight:600; inline-size:300px }
-      .rname    { font-size:12px; fill:#E4E9EF; font-weight:600 }
+      .dname    { font-size:15px; fill:#F2F5F8; font-weight:600; inline-size:300px; max-lines:1 }
+      .rname    { font-size:12px; fill:#E4E9EF; font-weight:600; inline-size:132px; max-lines:1 }
       .foot     { font-size:11px; fill:#5A626E; letter-spacing:.22em; font-weight:600 }
     </style>
   </defs>

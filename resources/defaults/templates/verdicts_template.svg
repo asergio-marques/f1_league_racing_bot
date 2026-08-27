@@ -65,20 +65,20 @@
   <defs>
     <style>
       .eyebrow  { font-size:15px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
-      .title    { font-size:34px; fill:#F2F5F8; font-weight:700 }
+      .title    { font-size:34px; fill:#F2F5F8; font-weight:700; inline-size:860px; max-lines:1 }
       .phase    { font-size:16px; fill:#8A94A3; letter-spacing:.16em; font-weight:600 }
       .roundlbl { font-size:17px; fill:#8A94A3; letter-spacing:.20em; font-weight:600 }
       .roundnum { font-size:17px; fill:#E8113C; letter-spacing:.20em; font-weight:700 }
-      .track    { font-size:46px; fill:#F2F5F8; font-weight:700 }
-      .sub      { font-size:19px; fill:#8A94A3 }
+      .track    { font-size:46px; fill:#F2F5F8; font-weight:700; inline-size:1104px; max-lines:1 }
+      .sub      { font-size:19px; fill:#8A94A3; inline-size:1104px; max-lines:1 }
       .colhead  { font-size:10px; fill:#8A94A3; letter-spacing:.14em; font-weight:700 }
       /*  inline-size states the room a single-line field is given: a value
-          wider than it is cut at a word boundary and ended with an ellipsis
-          rather than painted across the column beside it. A driver name is a
+          wider than it is set down in size until it fits, rather than
+          painted across the column beside it. It is never cut. A driver name is a
           Discord display name of no length the league controls.  */
-      .dname    { font-size:26px; fill:#F2F5F8; font-weight:700; inline-size:700px }
-      .tname    { font-size:20px; fill:#E4E9EF; font-weight:600; inline-size:700px }
-      .verdict  { font-size:34px; fill:#F2F5F8; font-weight:700 }
+      .dname    { font-size:26px; fill:#F2F5F8; font-weight:700; inline-size:700px; max-lines:1 }
+      .tname    { font-size:20px; fill:#E4E9EF; font-weight:600; inline-size:700px; max-lines:1 }
+      .verdict  { font-size:30px; fill:#F2F5F8; font-weight:700; line-height:1.05; inline-size:1104px; max-lines:2 }
       .prose    { font-size:17px; fill:#E4E9EF }
       .foot     { font-size:11px; fill:#5A626E; letter-spacing:.22em; font-weight:600 }
     </style>
@@ -130,7 +130,7 @@
 
   <!--  the sanction, in the words the text announcement uses  -->
   <text class="colhead" x="48" y="474">SANCTION</text>
-  <text id="penalty" inkscape:label="penalty" class="verdict" x="48" y="518">Sanction</text>
+  <text id="penalty" inkscape:label="penalty" class="verdict" x="48" y="522">Sanction</text>
   <line x1="48" y1="550" x2="1152" y2="550" stroke="#262B33" stroke-width="1"/>
 
   <!--  what the steward wrote: wrapped, and reduced if it does not fit  -->

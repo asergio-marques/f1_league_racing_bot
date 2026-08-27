@@ -1,6 +1,6 @@
 """The six fill operations of Constitution Principle XIV.2, and no others.
 
-    Text fill | Image fill | Recolour | Group removal | Vertical crop | Text wrap
+    Text fill | Image fill | Recolour | Group removal | Vertical crop | Text fit
 
 ``fill()`` **raises nothing** for a data disagreement — it reports, and the caller
 decides. That is what lets a caller distinguish a render that failed from one that
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -20,10 +21,9 @@ from lxml import etree
 from models.image_constants import (
     NOTICE_ASSET_FALLBACK_USED,
     NOTICE_CROP_POINT_OFF_CANVAS,
+    NOTICE_FIELD_REDUCED,
     NOTICE_FONT_SUBSTITUTED,
-    NOTICE_INLINE_SIZE_TRUNCATED,
     NOTICE_OPTIONAL_FIELD_EMPTIED,
-    NOTICE_WRAP_TRUNCATED,
     is_closed_set_datum,
 )
 from models.image_module import FillResult, RenderNotice
@@ -42,10 +42,14 @@ from utils.svg_document import (
 
 log = logging.getLogger(__name__)
 
-ELLIPSIS = "…"
-
 #: Half a pixel at a time, per XIV.5.
 _SIZE_STEP = 0.5
+
+#: The reduction stops here and nowhere else (XIV.5, v7.0.0). The legibility floor of half the
+#: declared size raises a notice but does not halt the descent, so something has to end it for a
+#: box of no usable width, which no reduction could ever satisfy. One pixel is far below any size
+#: a template would declare, so a field that reaches it is already reported and already wrong.
+_MIN_SIZE = 1.0
 
 _SHAPE_INSIDE_RE = re.compile(r"url\(\s*#([^)\s]+)\s*\)")
 
@@ -454,11 +458,20 @@ def fill(spec: FillSpec) -> FillResult:
         if substitution is not None:
             notices.append(substitution)
 
+        # The structural defects of a bounded field (XIV.5, v7.0.0). Each is read off the
+        # template alone, so each is knowable long before a render — the layer of Rule 9
+        # checks the same ones against the same template.
+        budget = _max_lines(style)
+        if budget == _MAX_LINES_INVALID:
+            unresolved.append(
+                f"field `{field_id}` declares a `max-lines` of "
+                f"`{style.get('max-lines', '').strip()}`, which is not a positive whole "
+                f"number of lines"
+            )
+            continue
+
         shape_id = _shape_inside_id(style)
         if shape_id is not None:
-            # The three structural defects of a wrapped field (XIV.5, v4.8.0). Each is read
-            # off the template alone, so each is knowable long before a render — the layer
-            # of Rule 9 checks the same three against the same template.
             rect = index.resolve(shape_id)
             if rect is None:
                 unresolved.append(
@@ -471,16 +484,24 @@ def fill(spec: FillSpec) -> FillResult:
             if ratio is None:
                 unresolved.append(
                     f"wrapped field `{field_id}` has no `line-height` resolving upon it, "
-                    f"so the number of lines its box admits cannot be worked out"
+                    f"so the leading between its lines cannot be worked out"
                 )
                 continue
 
             box_width = length(rect.get("width"))
             box_height = length(rect.get("height"))
-            if box_width is None or box_height is None:
+            if box_width is None:
                 unresolved.append(
                     f"wrapped field `{field_id}` names shape-inside `{shape_id}`, "
-                    f"which declares no usable width and height to lay the text out in"
+                    f"which declares no usable width to lay the text out in"
+                )
+                continue
+            # Height fixes the budget only where the field declares no `max-lines` of its own.
+            if budget is None and box_height is None:
+                unresolved.append(
+                    f"wrapped field `{field_id}` names shape-inside `{shape_id}`, "
+                    f"which declares no usable height, and declares no `max-lines` to "
+                    f"stand in for it"
                 )
                 continue
 
@@ -494,7 +515,8 @@ def fill(spec: FillSpec) -> FillResult:
                 field_id,
                 ratio=ratio,
                 box_width=box_width,
-                box_height=box_height,
+                box_height=box_height or 0.0,
+                budget=budget,
             )
             if notice is not None:
                 notices.append(notice)
@@ -502,10 +524,43 @@ def fill(spec: FillSpec) -> FillResult:
             consumed.add(shape_id)  # the rectangle is consumed as an addressed field
             continue
 
-        notice = _set_text(element, str(value), style, resolved, spec.image_type, field_id)
+        # A box declared in CSS, or no box at all: `inline-size` wide, `max-lines` tall.
+        limit = length(style.get("inline-size"))
+        ratio: float | None = None
+        if budget is not None and budget > 1:
+            if limit is None:
+                unresolved.append(
+                    f"field `{field_id}` declares a `max-lines` of {budget} but no "
+                    f"`inline-size` giving the width to wrap it against"
+                )
+                continue
+            ratio = _line_height_ratio(style, _font_size(style))
+            if ratio is None:
+                unresolved.append(
+                    f"field `{field_id}` declares a `max-lines` of {budget} but has no "
+                    f"`line-height` resolving upon it, so the leading between its lines "
+                    f"cannot be worked out"
+                )
+                continue
+
+        notice = _set_text(
+            element,
+            str(value),
+            style,
+            resolved,
+            spec.image_type,
+            field_id,
+            limit=limit,
+            budget=budget or 1,
+            ratio=ratio,
+        )
         if notice is not None:
             notices.append(notice)
         consumed.add(field_id)
+
+    # Every field has now been measured against its box, so no bound may survive into the
+    # rasteriser, which would otherwise re-flow the lines this module has already set.
+    _remove_inline_size(root)
 
     # ── Unresolved fields (XIV.3) ─────────────────────────────────────────
     # A field the crop took off the canvas is not a field left unfilled, so only ids
@@ -780,6 +835,82 @@ def _line_height_ratio(style: dict[str, str], size: float) -> float | None:
     return None
 
 
+#: Returned by ``_max_lines`` where a budget is declared but is not a positive whole number.
+#: A structural defect under XIV.5, reported by the caller and never silently defaulted.
+_MAX_LINES_INVALID = -1
+
+
+def _max_lines(style: dict[str, str]) -> int | None:
+    """The field's declared line budget, or None where it declares none (XIV.5).
+
+    Where declared, this **is** the budget, whichever way the box was declared — it supersedes
+    the count a rectangle's height would give. Half a line is not a budget and neither is none
+    of one, so anything but a positive whole number is a defect rather than a value to round.
+    """
+    raw = (style.get("max-lines") or "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        return _MAX_LINES_INVALID
+    if value <= 0 or value != int(value):
+        return _MAX_LINES_INVALID
+    return int(value)
+
+
+def _fit_lines(
+    value: str,
+    resolved: ResolvedFont,
+    declared_size: float,
+    width: float,
+    budget_at: "Callable[[float], int]",
+) -> tuple[list[str], float, bool]:
+    """Break *value* into no more lines than its budget, reducing until it fits (XIV.5).
+
+    Returns the lines, the size they are set at, and whether that size fell below the legibility
+    floor of half *declared_size*.
+
+    **The floor stops nothing** (v7.0.0). It marks the point at which a notice is owed, and the
+    reduction carries on past it until the text fits, because the alternative — stopping and
+    cutting — draws a value that is wrong rather than one that is small. Only ``_MIN_SIZE`` ends
+    the descent, and only to keep a box of no usable width from looping for ever.
+
+    *budget_at* is a function of the size because a rectangle's budget grows as the leading
+    shrinks; a declared ``max-lines`` ignores its argument and is constant.
+
+    Where even ``_MIN_SIZE`` will not bring the value within its budget — 400 characters in a
+    120px box, which no font size reaches — the lines are returned **over budget** rather than
+    trimmed to it. Trimming would be cutting, and cutting is exactly what v7.0.0 withdrew, so a
+    field asked to hold the impossible draws it all and says so through the notice the caller
+    raises. Only the caller can tell whether that reads as wrapping or as overlap, and neither
+    is a thing the module can make good on the league's behalf.
+    """
+    size = declared_size
+    while True:
+        lines = _wrap(value, resolved, size, width)
+        if len(lines) <= budget_at(size):
+            break
+        if size - _SIZE_STEP < _MIN_SIZE:
+            break
+        size -= _SIZE_STEP
+    return lines, size, size < declared_size / 2.0
+
+
+def _reduced_notice(
+    image_type: str, field_id: str, size: float, declared_size: float
+) -> RenderNotice:
+    return RenderNotice(
+        image_type=image_type,
+        notice_kind=NOTICE_FIELD_REDUCED,
+        detail=(
+            f"`{field_id}` was set to {size:g}px to hold its value, below the "
+            f"{declared_size / 2.0:g}px floor of the {declared_size:g}px it declares."
+        ),
+        field_id=field_id,
+    )
+
+
 def _set_text(
     element: etree._Element,
     value: str,
@@ -787,56 +918,55 @@ def _set_text(
     resolved: ResolvedFont,
     image_type: str,
     field_id: str,
+    *,
+    limit: float | None,
+    budget: int,
+    ratio: float | None,
 ) -> RenderNotice | None:
-    """Fill a single-line field, honouring any declared ``inline-size`` (XIV.5).
+    """Fill a field whose box is declared in CSS, or which declares none at all (XIV.5).
 
-    ``inline-size`` is the only bound the module places on a Discord display name, which
-    is of no length a league controls.
+    The box is ``inline-size`` wide and ``max-lines`` x ``line-height`` tall, and is centred on
+    the field's declared ``y``. A field taking one line therefore lands exactly on the baseline
+    the template drew — so bounding a field that never wraps moves nothing — and one taking two
+    grows half a line either side of it.
+
+    The element's own ``x`` is kept rather than rewritten, which is what preserves ``text-anchor``:
+    the calendar's date and time are anchored at their right edge, and re-anchoring them to a box's
+    left edge would push them across the card.
     """
-    limit = length(style.get("inline-size"))
-    size = _font_size(style)
-    notice: RenderNotice | None = None
+    if limit is None:
+        # No box at all: one unbounded line, measured against nothing (XIV.5).
+        _clear_children(element)
+        element.text = value
+        return None
 
-    if limit is not None and measure(value, resolved, size) > limit:
-        value = _truncate_to_width(value, resolved, size, limit)
-        notice = RenderNotice(
-            image_type=image_type,
-            notice_kind=NOTICE_INLINE_SIZE_TRUNCATED,
-            detail=f"`{field_id}` was cut to the {limit:g}px it was given.",
-            field_id=field_id,
+    declared_size = _font_size(style)
+    lines, size, reduced = _fit_lines(
+        value, resolved, declared_size, limit, lambda _size: budget
+    )
+
+    if size != declared_size:
+        _restyle(element, {"font-size": f"{size:g}px"})
+
+    # `inline-size` is not cancelled here. It is stripped from the whole document once every
+    # field has been measured — see `_remove_inline_size`, which records why it cannot be done
+    # field by field.
+    if len(lines) <= 1:
+        _clear_children(element)
+        element.text = lines[0] if lines else ""
+    else:
+        leading = size * (ratio if ratio is not None else 1.0)
+        baseline = _element_y(element)
+        x = length(element.get("x"))
+        _write_lines(
+            element,
+            lines,
+            x=x,
+            first_baseline=(baseline or 0.0) - (len(lines) - 1) * leading / 2.0,
+            leading=leading,
         )
-        # The text now fits by construction; cancel the bound explicitly rather than
-        # deleting it, so a stylesheet rule declaring it cannot come back.
-        _restyle(element, {"inline-size": "auto"})
 
-    _clear_children(element)
-    element.text = value
-    return notice
-
-
-def _truncate_to_width(
-    value: str, resolved: ResolvedFont, size: float, limit: float
-) -> str:
-    """Cut at a word boundary and end with an ellipsis (XIV.5)."""
-    if measure(ELLIPSIS, resolved, size) > limit:
-        return ELLIPSIS
-
-    words = value.split()
-    kept: list[str] = []
-    for word in words:
-        candidate = " ".join(kept + [word]) + ELLIPSIS
-        if measure(candidate, resolved, size) > limit:
-            break
-        kept.append(word)
-
-    if kept:
-        return " ".join(kept) + ELLIPSIS
-
-    # A single word wider than the whole box: cut mid-word rather than emit nothing.
-    trimmed = value
-    while trimmed and measure(trimmed + ELLIPSIS, resolved, size) > limit:
-        trimmed = trimmed[:-1]
-    return (trimmed + ELLIPSIS) if trimmed else ELLIPSIS
+    return _reduced_notice(image_type, field_id, size, declared_size) if reduced else None
 
 
 def root_of(element: etree._Element) -> etree._Element:
@@ -866,6 +996,47 @@ def _remove_shape_inside(element: etree._Element, root: etree._Element) -> None:
         if "shape-inside" not in css or f"#{element_id}" not in css:
             continue
         style_element.text = _strip_property_from_id_rule(css, element_id, "shape-inside")
+
+
+def _remove_inline_size(root: etree._Element) -> None:
+    """Strip ``inline-size`` from the whole document once every field is laid out (XIV.5).
+
+    Inkscape honours **no cancelling value**. `inline-size:auto` leaves a `<text>` in SVG2
+    flowed mode exactly as a real length does, whereupon the rasteriser re-flows the very lines
+    this module measured and placed: it concatenates the adjacent `<tspan>`s, losing the space
+    between them, and re-breaks the result at its own idea of the box. "Enzo e" + "Dino
+    Ferrari" comes back as "Enzo" / "eDino Ferrari". Verified against Inkscape 1.x, where
+    `auto` rasterises byte-identically to the declared length; only removal works. This is the
+    same trap `_remove_shape_inside` exists for, and it is sprung the same way.
+
+    Done **once, at the end**, and not field by field, because the declaration usually lives on
+    a *class* shared by many fields — the twelve rounds of a calendar all draw their circuit
+    from one `.rsub` rule. Stripping it while the loop still had fields to measure would leave
+    every later one unbounded, which is the defect this whole change exists to remove.
+    """
+    for element in root.iter():
+        if "inline-size" in (element.get("style") or ""):
+            _restyle(element, {"inline-size": None})
+
+    for style_element in root.iter(f"{{{SVG_NS}}}style"):
+        css = style_element.text or ""
+        if "inline-size" in css:
+            style_element.text = _strip_property(css, "inline-size")
+
+
+def _strip_property(css: str, prop: str) -> str:
+    """Remove *prop* from every rule of *css*, whatever its selector."""
+
+    def _rewrite(match: re.Match[str]) -> str:
+        selectors, block = match.group(1), match.group(2)
+        kept = [
+            declaration
+            for declaration in block.split(";")
+            if declaration.strip() and not declaration.strip().lower().startswith(prop)
+        ]
+        return f"{selectors}{{{';'.join(kept)}}}"
+
+    return re.sub(r"([^{}]+)\{([^{}]*)\}", _rewrite, css)
 
 
 def _strip_property_from_id_rule(css: str, element_id: str, prop: str) -> str:
@@ -905,45 +1076,40 @@ def _lay_out(
     ratio: float,
     box_width: float,
     box_height: float,
+    budget: int | None,
 ) -> RenderNotice | None:
     """Wrap *value* against *rect*, descending by half a pixel until it fits (XIV.5).
 
-    At the floor of **half** the template-declared size, the text is cut at a word
-    boundary and ended with an ellipsis. Line height scales with the reduced size and the
-    admissible line count is recomputed at the reduced leading — which is what makes the
-    floor buy substantially more room than the same line count set smaller.
+    The text is never cut. Below **half** the template-declared size a notice is raised, and the
+    reduction carries on past that floor until the value fits (v7.0.0). Where the field declares
+    no ``max-lines``, line height scales with the reduced size and the admissible line count is
+    recomputed at the reduced leading — which is what makes reducing buy substantially more room
+    than the same line count set smaller.
 
     *ratio*, *box_width* and *box_height* are resolved and validated by the caller: a
-    field with no leading, or a rectangle with no extent, is a **problem** and never
+    field with no leading, or a rectangle with no usable width, is a **problem** and never
     reaches layout.
+
+    Laid from the **top** of the rectangle rather than centred within it. These are the prose
+    fields — a steward's description, a steward's justification — and prose floating in the
+    middle of a box it does not fill reads as a mistake rather than as a design (XIV.5, v7.0.0).
     """
     box_x = length(rect.get("x")) or 0.0
     box_y = length(rect.get("y")) or 0.0
 
     declared_size = _font_size(style)
-    floor_size = declared_size / 2.0
 
-    size = declared_size
-    truncated = False
-    lines: list[str] = []
+    if budget is None:
+        def budget_at(size: float) -> int:
+            # A rectangle's own budget grows as the leading shrinks, so a field set smaller holds
+            # **more lines** rather than the same number more widely spaced (XIV.5). A declared
+            # `max-lines` is constant instead, and says so by ignoring the size.
+            return max(1, int(box_height // (size * ratio)))
+    else:
+        def budget_at(_size: float) -> int:
+            return budget
 
-    while True:
-        leading = size * ratio
-        admissible = max(1, int(box_height // leading))
-        lines = _wrap(value, resolved, size, box_width)
-
-        if len(lines) <= admissible:
-            break
-
-        if size - _SIZE_STEP < floor_size:
-            # At the floor: cut at a word boundary and ellipsise the last kept line.
-            lines = lines[:admissible]
-            if lines:
-                lines[-1] = _ellipsise_line(lines[-1], resolved, size, box_width)
-            truncated = True
-            break
-
-        size -= _SIZE_STEP
+    lines, size, reduced = _fit_lines(value, resolved, declared_size, box_width, budget_at)
 
     # The reduced size is written inline, and shape-inside is *removed* — not set to
     # `none`. Inkscape treats a `<text>` carrying any shape-inside declaration, `none`
@@ -951,19 +1117,9 @@ def _lay_out(
     # whole field to the top edge of the canvas. The declaration has to go entirely.
     _restyle(element, {"font-size": f"{size:g}px"})
     _remove_shape_inside(element, root_of(element))
-    _write_lines(element, lines, box_x, box_y, size, size * ratio)
+    _write_lines(element, lines, x=box_x, first_baseline=box_y + size, leading=size * ratio)
 
-    if truncated:
-        return RenderNotice(
-            image_type=image_type,
-            notice_kind=NOTICE_WRAP_TRUNCATED,
-            detail=(
-                f"`{field_id}` reached the {floor_size:g}px floor and was cut to the "
-                f"room its box gives."
-            ),
-            field_id=field_id,
-        )
-    return None
+    return _reduced_notice(image_type, field_id, size, declared_size) if reduced else None
 
 
 def _split_word(word: str, resolved: ResolvedFont, size: float, width: float) -> list[str]:
@@ -1024,32 +1180,33 @@ def _wrap(value: str, resolved: ResolvedFont, size: float, width: float) -> list
     return lines
 
 
-def _ellipsise_line(
-    line: str, resolved: ResolvedFont, size: float, width: float
-) -> str:
-    if measure(line + ELLIPSIS, resolved, size) <= width:
-        return line + ELLIPSIS
-    return _truncate_to_width(line, resolved, size, width)
-
-
 def _write_lines(
     element: etree._Element,
     lines: list[str],
-    x: float,
-    y: float,
-    size: float,
+    *,
+    x: float | None,
+    first_baseline: float,
     leading: float,
 ) -> None:
-    """Replace the element's content with one ``<tspan>`` per line at an absolute y."""
+    """Replace the element's content with one ``<tspan>`` per line at an absolute y.
+
+    *x* is None where the element declares none of its own, in which case each line inherits the
+    horizontal position and anchoring already in force rather than being pinned to a box's edge.
+    Pinning is what the rectangle path wants and what the CSS-declared box path must not do: a
+    field anchored at its right edge, as the calendar's date and time are, would be pushed across
+    the card by an x taken from anywhere but itself.
+    """
     _clear_children(element)
     element.text = None
-    element.set("x", f"{x:g}")
-    element.set("y", f"{y + size:g}")
+    if x is not None:
+        element.set("x", f"{x:g}")
+    element.set("y", f"{first_baseline:g}")
 
     for number, line in enumerate(lines):
         tspan = etree.SubElement(element, f"{{{SVG_NS}}}tspan")
-        tspan.set("x", f"{x:g}")
-        tspan.set("y", f"{y + size + number * leading:g}")
+        if x is not None:
+            tspan.set("x", f"{x:g}")
+        tspan.set("y", f"{first_baseline + number * leading:g}")
         tspan.text = line
 
 

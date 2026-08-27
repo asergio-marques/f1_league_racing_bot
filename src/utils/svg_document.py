@@ -253,6 +253,10 @@ class FieldIndex:
 _DECLARATION_RE = re.compile(r"([\w-]+)\s*:\s*([^;]+)")
 _RULE_RE = re.compile(r"([^{}]+)\{([^{}]*)\}")
 
+#: CSS comments, stripped before rules are parsed. See ``stylesheet`` for why this is not
+#: cosmetic: a comma inside a comment silently disables the rule that follows it.
+_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+
 
 def declarations(text: str | None) -> dict[str, str]:
     """Parse a CSS declaration block into a dict."""
@@ -269,10 +273,17 @@ def stylesheet(root: etree._Element) -> dict[str, dict[str, str]]:
 
     Only the simple selectors a template realistically uses are indexed: ``#id``,
     ``.class`` and bare element names. A selector list is split and each part indexed.
+
+    **Comments are stripped first, and must be.** A selector group is split on commas, so a
+    `/* ... */` comment containing one — which any prose sentence eventually does — splits into
+    two false selectors and takes the rule *following* it with it, leaving that rule matching
+    nothing at all. The shipped results, lineup, attendance and verdict templates all document
+    `.dname` in a comment above it, and every one of those bounds was silently inert until this
+    was fixed.
     """
     rules: dict[str, dict[str, str]] = {}
     for style_element in root.iter(f"{{{SVG_NS}}}style"):
-        css = style_element.text or ""
+        css = _COMMENT_RE.sub(" ", style_element.text or "")
         for selector_group, block in _RULE_RE.findall(css):
             parsed = declarations(block)
             if not parsed:

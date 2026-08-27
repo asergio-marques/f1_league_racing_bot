@@ -44,12 +44,60 @@ much prose fits.
   would silently decide how much of a steward's prose your league sees.
 - **Keep the height a whole multiple of the line height.** The packaged file uses 156 ÷ 26 = six
   lines. Changing either number changes the budget.
-- Long prose is set down half a pixel at a time to a floor of half the declared size, and cut
-  there with an ellipsis and a note. Because the leading falls with the size, a field set
-  smaller holds *more* lines rather than the same number spread wider.
+- Long prose is set down half a pixel at a time until it fits. Passing below half the declared
+  size raises a note naming the field, but **stops nothing** — the text is never cut and no
+  ellipsis is ever drawn. Because the leading falls with the size, a field set smaller holds
+  *more* lines rather than the same number spread wider.
 
 `penalty` may be wrapped the same way. It is a single unbounded line in the packaged file,
 which relies on sanction descriptions staying as short as they are today.
+
+## Every other field declares its room in CSS
+
+Prose aside, a field states the room it has with two properties on the text element itself —
+no rectangle, no extra node:
+
+- **`inline-size`** is the width it may use.
+- **`max-lines`** is how many lines it may take. Leave it out and the field takes one.
+
+A value too wide is broken at word boundaries up to that budget, and then set down half a
+pixel at a time until it fits. **Nothing is ever cut.** A circuit whose name will not fit is
+drawn small, not shortened to something that names no circuit.
+
+The lines are centred on the `y` you drew the field at, so a field that takes one line sits
+exactly where you put it and one that takes two grows half a line either side. That is what
+lets you bound a field without moving anything else on the drawing.
+
+Two rules to keep in mind when raising a budget above one:
+
+- **`line-height` is required** for a field that may wrap, exactly as it is for prose, and the
+  bot refuses the file without it rather than guessing a leading.
+- **Leave the vertical room yourself.** The bot measures a field against its own box and knows
+  nothing of what you drew above or below it. `max-lines:2` on a field with room for one turns
+  a sideways overlap into a downward one. The packaged weather and check-in files moved their
+  round label up and their subtitle row down to win that room; the calendar grew its cards from
+  88 px to 136 px, and its row pitch from 104 px to 152 px. It also widened its cards from 528 px
+  to 676 px to carry a circuit map and a flag standing the full height of the text between them,
+  so the canvas it declares went from 1200 × 876 to 1496 × 1164.
+
+**A box must also clear whatever is drawn beside it**, which is a width, not a height. In the
+packaged files the grand prix name stops short of the flag slot, the circuit stops short of the
+country, and a weather title stops short of the rain-probability figure and the artwork plate on
+its right — which is why the same `.track` class carries a different `inline-size` from one
+weather file to the next. Widen one of these and it will run under the picture next to it.
+
+## The constructors grid names no driver
+
+`standings_constructors_template.svg` draws two results per round for each of a team's cars —
+sprint and feature — and **no driver name beside them**. Twelve rounds of that grid leave a name
+about 70 px, which is not a width a name can be read at whatever size it is set in; the cars of a
+row are told apart by the car number in the classification on the left instead. Dropping the
+column took the file from 2000 px wide to 1128 px, which is the greater part of why it is now
+legible.
+
+The field itself has not gone away: `row_<x>_round_<z>_driver_<w>_name` is optional, exactly as
+the lineup's reserve slots are, so a league that wants it may draw it in its own file and widen
+the round pitch to suit. The packaged file simply declines it.
 
 ## These are a starting point, not a fixture
 
