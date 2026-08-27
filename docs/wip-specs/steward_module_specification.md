@@ -12,9 +12,15 @@
 ## Concepts
 - Driver license - A individual record of a driver's history in the league, onto which the current amount of warning/penalty/discipline points and their history (and each of those points' expirations dates), plus qualifying/race/season/league ban current information and history is appended to.
 - Steward - A trusted user denoted with a special role which may be different from that of league managers, which are able to see tickets and pass judgement on them.
-- Head steward - A privileged user denoted with a special role that serves as the leader of the stewarding team, and serves as a tie-breaker when verdicts for a given ticket are equally split. It is mandatory that a stewarding team has a head steward. They may confer head steward responsabilities another member of the stewarding team for a temporary period.
-- Temporary head steward - Also referred to as temp head steward and acting head steward. A user with similar privileges as the head steward, which last only for a limited amount of time, as a result of being deferred head steward responsabilities temporarily. While a temporary head steward is active, the head steward loses their tie-break privilege.
+- Head steward - A privileged user denoted with a special role that serves as the leader of the stewarding team. It is mandatory that a stewarding team has a head steward. They may confer acting head steward responsabilities onto another member of the stewarding team for a temporary period. By default, the head steward is the effective head steward for all tickets.
+- Acting head steward - Also referred to as temporary or temp head steward. A privileged user denoted with a special role with similar privileges as the head steward, which lasts only for a limited amount of time, as a result of being deferred head steward responsabilities temporarily. While a temporary head steward is active, the head steward loses their default status as effective head steward on all tickets and the ability to use commands which require head steward privilege.
+- Effective head steward - The designated head steward for a specific ticket. By default, this is the head steward, or the acting head steward if the latter functionality is in use. This user is able to add or remove drivers from tickets, approve requests to do either, or to approve steward exclusions from tickets. Their vote may also serve as a tie-breaker when outcomes voted for a given ticket are equally split. The effective head steward for a given ticket may change while the stewarding cycle is underway.
 - Stewarding team - The collective composed of all stewards.
+- Effective stewarding team - The members of the steward team that have the ability to participate in the stewarding cycle of a given report. Depending on the drivers involved in the ticket, configurations, temporary head steward status, or exclusion requests, it is possible that not all permanent members of the stewarding team are part of the effective stewarding team. This list is mutable while the stewarding cycle is underway. By default, the effective stewarding team is composed of:
+  - Effective head steward.
+  - All steward team elements EXCEPT:
+    - Those driving in the division to which a report pertains if steward conflicts of interest are not allowed.
+    - Any involved driver that belongs to the steward team.
 - Stewarding cycle - The full process for stewarding after a round is scheduled to take place. This is an informal concept, meaning it is not a strict definition, just an auxiliary name. It kicks off at the time a round is scheduled to happen with the enabling of reports for that round, and ends only when all appeals' verdicts are posted (if there were any appeals) OR when all reports' verdicts are posted (if there were any reports) OR once the report submission deadline passes (if there were no reports). It is composed of the following stages:
   - Report submission - Active starting at the scheduled round time, and automatically disabled after a configured amount of time after the scheduled round time. Period of time in which drivers or the stewarding team can initiate reports against other drivers of the division.
   - Defense submission - Active from the moment the report is created, and automatically disabled after a configured amount of time after the scheduled round time, which cannot be shorter than that of report submission. Aims to allow other drivers to provide their own version of events and evidence.
@@ -24,9 +30,26 @@
 - Conduct investigation cycle - The full process for a Code of Conduct investigation can be initiated by a member of the steward team at any time. This is an informal concept, meaning it is not a strict definition, just an auxiliary name. It kicks off when the head steward (or temporary head steward) initiates a Code of Conduct investigation targeted at one or more specific driver(s), submitting a justification and evidence (which may be private to the steward team or shared with the mentioned drivers).
   - Defense submission - Active from the moment the investigation is triggered, and automatically disabled once a configured period of time elapses. In this stage, the mentioned drivers are allowed to submit defenses and additional evidence relevant to the case opened.
   - Investigation deliberation - Active once the defense submission ends, and automatically disabled once a configured period of time. Aims to allow stewards to vote on the final verdict, providing justification. After this period is over, the verdict is posted to the configured verdict channel of all divisions the reported drivers are assigned to (if the driver is assigned to two or more divisions, repeating posts must have the indication "(repost)").
+- Involved driver - A group of drivers consisting of all drivers formally added to a report and the driver who triggered the report.
 - Ticket - A user-submitted incidence which may be either a report, an appeal or a Code of Conduct investigation. The former two may be public (seen by any driver of the division to which they pertain) or private (seen only by drivers involved and the stewarding team). The latter is always private to the utmost (only the steward team and the driver involved can see this).
-- Report - May also be referred to as stewards' report. This is an incidence submitted by either a driver or by a member representing the steward team as an anonymous collective, which may refer to one or more other drivers, pertaining to an incident that occurred during the most recent round.
-- Appeal - A special kind of ticket submitted by a driver or by a member representing the steward team as an anonymous collective which aims for this ticket to be judged once more, so that the ultimate verdict is passed. The submission of an appeal by a driver may require 1 or more appeal tokens to be spent.
+- Report - May also be referred to as stewards' report. This is an incidence submitted by either a driver or by a member representing the steward team as an anonymous collective, which may refer to one or more other drivers, pertaining to an incident that occurred during the most recent round. A report ticket object to be persisted in the database will be under a round's own persisted object, and must contain the following information:
+  - Unique ID in the "S<x>_D<y>_R<z>_<w>" format, where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the report pertaining to this season, tier and round. The season, division, round values can be extracted from this ID.
+  - Status, which relates to the stewarding cycle stages as follows:
+    - INIT - Appeal just opened, which moves its stage to Defense submission.
+    - Delib - Report deliberation.
+    - CLOSE - Report deliberation over, votes tallied up, outcome decided and verdict posted.
+  - User IDs of the involved drivers.
+  - Session of the round (Sprint Qualifying, Sprint Race, Feature Qualifying, Feature Race).
+  - Lap (empty if round was a Qualifying round).
+  - Effective steward team.
+    - For each member, there will be a flag noting the head steward of the effective steward team.
+    - For each member, the ID of the outcome object is recorded (empty if no vote was cast).
+  - ID of the outcome object settled after all votes are weighted, at the end of the deliberation phase.
+- Appeal - A special kind of ticket submitted by a driver or by a member representing the steward team as an anonymous collective which aims for this ticket to be judged once more, so that the ultimate verdict is passed. The submission of an appeal by a driver may require 1 or more appeal tokens to be spent. An appeal ticket object to be persisted in the database will follow the same rules as a report ticket object, with the following exceptions:
+  - Status, which relates to the stewarding cycle stages as follows:
+    - INIT - Appeal just opened, appeal submission stage is still underway.
+    - Delib - Appeal deliberation.
+    - CLOSE - Appeal deliberation over, votes tallied up, outcome decided and verdict posted.
 - Appeal token - A special kind of currency that may be required for drivers to be able to submit an appeal. Appeal tokens are accumulated on a driver's license, and expire upon the current season's end. Upon a successful appeal, depending on configuration, drivers may be returned their spent tokens.
 - Code of Conduct investigation - May also be referred to as a CoC investigation. A special kind of ticket and the only one which is not linked to a round, instead being linked to a driver; as such, it cannot lead to any changes in results (time penalties, warning or penalty points). It may only be initiated by the head steward. It cannot be appealed, and any decisions made are final. This functionality is optional and is disabled by default.
 - Outcome - A standardized penalty table item for reports and appeals, which draws a relationship from a "standard penalty description/case" to a "standard penalty", which may be one, or multiple between time penalties, warning points, penalty points, qualifying bans, race bans, season bans and league bans. Each outcome has a unique ID string, which is to be used when voting, and an identifying shorthand. Additionally, there is also a "No Further Action" outcome which sets none of the possible punishments onto a driver. The outcome is decided from the majority verdict among votes casted. The list for outcomes is managed separately from that of conduct outcomes, so there may be overlap of IDs of items between the two.
@@ -96,6 +119,8 @@
   - By default, this value will be set to 0. This means that, effectively drivers have unlimited appeal abilities.
   - This value cannot be greater than that configured by "steward appeal starting-tokens".
   - This value shall be ignored if the appeal is initiated by a member of the steward team AND said member is not assigned to a team of the division to which the appeal pertains.
+- <NEW COMMAND> A "steward toggle-conflict" command will be made available to league managers, which shall determine whether stewards who are also drivers are able to participate in the stewarding cycle of tickets that pertain to divisions they are driving in, accepting a possible conflict of interest.
+  - By default this setting is on, meaning stewards can review reports/appeals pertaining to the division they are driving for, and that leagues implicitly accept a possible conflict of interest.
 - <NEW COMMAND> A "steward outcome add" command will be made available to league managers, which shall open a modal window with the following input fields:
   - ID - Mandatory - Unique ID for the outcome. Maximum of 10 characters.
   - Brief - Mandatory - Unique short description of the outcome. Maximum of 50 characters.
@@ -109,7 +134,7 @@
   - Race bans - Optional - Integer input only. Number of race bans added to the driver license of the offending driver.
   - Season ban - Optional - Checkbox that, if ticked, means that the offending driver's license will accrue a ban lasted for one season.
   - League ban - Optional - Checkbox that, if ticked, means that the offending driver's license will accrue a league ban.
-  - Contrary to the others, this command may be accepted if any report deliberation or appeal deliberation phases are on-going.
+  - Contrary to the others, this command may be accepted if any report deliberation or appeal deliberation phases are on-going. This means that the outcome object must be appended to all ticket data objects that are not in status "closed".
   - At least one of the "Time penalty", "Warning point", "Penalty point", "Qualifying ban", "Race ban", "Season ban", "League ban" fields must be different from 0.
 - <NEW COMMAND> A "steward outcome modify" command will be made available to league managers, which shall have as input a string standing for an outcome's ID. If this ID is valid, then a modal dialog much like the one opened by "steward outcome add" shall open, prefilled with the values of the outcome of the input ID. All fields with the exception of the ID can be modified.
   - This command shall fail if any report deliberation or appeal deliberation phases are on-going.
@@ -173,34 +198,105 @@
   - Season ban - 0
 
 ## Stewarding cycle
-- By default, the bot shall post a "Ticket submission is currently closed"
+- All inputs of the stewarding cycle must be auditable via the steward log channel. Attempts to file a report (and its data), driver addition/removal to tickets, etc etc etc. All logs must include the display name (and user ID) of the input.
+- It is imperative that the steward team is seen as a unified front, so no public messages will identify or mention a member of the steward team when acting in their capabilities as steward.
+  - However, as stated above, steward logs shall identify them when needed.
+- By default, the bot shall post a "Ticket submission is currently closed for <X> division" in a division's report channel.
+- If appeals are not enabled, once a report's verdict is posted in the appropriate channel by the end of the report deliberation phase, the incident (report) is deemed closed and final.
+- If appeals are enabled, if a report is not appealed by the time the appeal submission phase ends, the incident (report) is deemed closed and final.
+- Once appeal verdicts are posted at the end of the appeal deliberation phase, the incident (appeal and the report it pertains to) is deemed closed and final.
 
 ### Report submission
-- At the scheduled start date of a round for a given division, the bot shall post a "Report incident" button to the configured ticket channel of the division, without mentioning the division role.
-- When a user presses this button, a modal dialog shall appear, with the following elements:
-  - Season - Mandatory -  Integer - Automatically generated, cannot be changed by anyone. Derived from the current season's number.
-  - Division - Mandatory -  String - Automatically generated, cannot be changed by anyone. Derived from the division to which the report channel is associated.
+- At the scheduled start datetime of a round for a given division, the bot shall delete the "default" message, and post a "Report incident" button to the configured ticket channel of the division, without mentioning the division role.
+- At the scheduled start datetime of a round for a given division, a countdown with the period of time configured by "steward report-submission-period" will start. Once this time elapses, the default message shall be displayed once more in the divisions' reports channel, and the "Report incident" button removed.
+- When a user presses the "Report incident" button, a modal dialog shall appear, with the following elements:
+  - Season - Mandatory - Integer - Automatically generated, cannot be changed by anyone. Derived from the current season's number.
+  - Division - Mandatory - String - Automatically generated, cannot be changed by anyone. Derived from the division to which the report channel is associated.
   - Round - Mandatory -  Integer - Automatically generated, cannot be changed by anyone. Derived from the most recent round that took place.
-  - Involved drivers - Mandatory -  1..n mentions - 
-  - Session - Mandatory - Dropdown - Select which session the incident took place.. Option depend on round format: if round format is sprint, then the options available shall be "Sprint Qualifying", "Sprint Race", "Feature Qualifying" and "Feature Race", otherwise, the options available are just "Qualifying" and "Race"
-  - Lap - Mandatory if session = "Sprint race" or "Feature race" - Integer - 
-  - Complaint - Mandatory - 
-  - Evidence - Mandatory - 
-- After valid submission, the report will be henceforth designed as a string which follows format "S<x>_D<y>_R<z>_<w>", where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the report pertaining to this season, tier and round.
+  - Involved drivers - Optional - 0..n mentions - Other drivers directly or indirectly involved in the incident, whose footage or evidence may be of use to the steward team's deliberations. <CHECK FEASIBILITY OF USING A CHECKLIST WITH ALL DIVISION DRIVERS>
+    - These drivers must be assigned to the division this report pertains to.
+    - The report will not be valid if there is any entry here that is not an involved driver.
+    - The driver who triggered the report is considered an involved driver, and is not distinct from the other drivers for the purpose of this ticket.
+  - Session - Mandatory - Dropdown - Select which session the incident took place in. Options available depend on round format: if round format is sprint, then the options available shall be "Sprint Qualifying", "Sprint Race", "Feature Qualifying" and "Feature Race", otherwise, the options available are just "Qualifying" and "Race".
+  - Lap - Mandatory if session = "Sprint race" or "Feature race", greyed out otherwise - Integer - The race lap in which the incident took place.
+  - Complaint - Mandatory - String - Full description of the incident as per the reclaimant's understanding.
+  - Evidence files - Optional - 0..5 media (image or video) - One or multiple images or video files that provide basis for the claims in the complaint.
+  - Evidence links - Optional - 0..5 links - One or multiple images or video links that provide basis for the claims in the complaint.
+    - Between "evidence files" and "evidence links", there must be at least one file/link. Otherwise, the report will not be valid.
+- The validation of the information will be performed before closing the modal, so that users do not have to input information twice.
+  - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
+- After valid submission, the report will be henceforth be identified with a unique ID following the format "S<x>_D<y>_R<z>_<w>", where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the report pertaining to this season, tier and round. This report ID will be utilized for some steward commands.
+- After valid submission, a channel bearing the ticket unique ID as the title will be created, with the information from the modal dialog input by the reportee summarized and posted as the header message in the channel. All involved drivers will be mentioned properly in this message.
+- If the effective head steward is one of the involved drivers, or has a conflict of interest as defined by "steward toggle-conflict", the bot will post a message with a button to assign effective head steward for the ticket to someone else of the steward team. The user will be validated for the criteria above, and after they are designated effective head steward, the former one will be removed from the effective steward team for the report.
+  - If the effective head steward does not assign anyone else by the time the report deliberation phase is reached, a random member of the effective steward team is to be chosen by the bot for this position.
+- After valid submission, the ticket's state changes immediately to the defense submission stage, and a report data object is recorded in the database associated to this season, division and round. All remaining time in the defense submission stage will be added to the total of the defense submission stage.
+  - This effectively means that all tickets' defense submission stage ends at the same time, regardless of the initial report submission taking place at the start or at the end of the report submission stage.
 
 ### Defense submission
-- 
+- Once the period of time configured for the duration of the report submission stage elapses, a countdown with the period of time configured by "steward defense-submission-period" will start. Once this time elapses, the ticket will enter the report deliberation phase.
+- Once this phase is entered, the following buttons will be posted on the channel after the header message is posted:
+  - Request input from driver - Can only be used by members of the effective steward team. When pressed, a modal is opened so that one user is mentioned (mandatory) and a justification is input (optional). When confirmed, the exact behavior depends on who triggered the exclusion:
+    - If the one requesting this exclusion is a regular member of the effective stewarding team, a modal is opened so that a user mention (mandatory) and a justification is input (mandatory). When confirmed, the bot will post a message tagging the effective head steward for the ticket, stating that a steward has requested evidence from that driver, and printing the justification. If approved, then the driver will be added to the ticket, and the request process message will be deleted. If rejected, the bot will post a message to note that the request was rejected, and the request process message will be deleted.
+    - If the one requesting this exclusion is the effective head steward, a modal is opened so that a user mention (mandatory) and a justification is input (mandatory). When confirmed, the driver will be added to the ticket.
+    - When added, the driver will be given the same permissions as other involved drivers.
+    - The command is rejected if the targeted is the one who initiated the ticket, if they are in the involved drivers list already, or if the ticket is already in report deliberation or appeal deliberation.
+  - Remove driver - Can only be used by the effective head steward, rejects input by others. When pressed, a modal is opened so that one user is mentioned, and once confirmed, that driver will be removed from the list of involved drivers, and have their permissions as an involved driver removed.
+    - The command is rejected if the targeted user is the one who initiated the ticket, or if they are not in the involved drivers list, or if the ticket is already in report deliberation or appeal deliberation.
+  - Request remove driver - Can only be used by members of the effective steward team for this ticket and drivers, rejects input by the effective head steward. When pressed, a modal is opened so that one user is mentioned (mandatory) and a justification is input (optional). When confirmed, posts a message tagging the head steward identifying which driver is to be removed, informing of the justification given. Once the effective head steward confirms it, that driver will be removed from the list of involved drivers, and have their permissions as an involved driver removed.
+    - The command is rejected if the targeted user is the one who initiated the ticket, or if they are not in the involved drivers list, or if the ticket is already in report deliberation or appeal deliberation.
+  - Request exclusion - Can be used by any member of the effective steward team for this ticket. The exact behavior depends on who triggered the exclusion:
+    - If the one requesting this exclusion is a regular member of the effective stewarding team, a modal is opened so that a justification is input (mandatory). When confirmed, the bot will post a message tagging the effective head steward for the ticket and identifying the steward that requested the exclusion, plus the justification. If approved, then the steward will be removed from the effective steward team for this ticket. If rejected, then a modal will be opened to assign a justification (optional), and after confirmation, theeffective head steward will be mentioned in a message in the steward command channel informing of the decision.
+    - If the one requesting this exclusion is the effective head steward, a modal is opened so that a justification is input and another member of the effective stewarding team is mentioned, so that they will be assigned effective head steward privileges for this ticket. Once confirmed, the member will be requested to accept or reject. If accepted, they are made the effective head steward for the ticket's effective stewarding team. If rejected, then a modal will be opened to assign a justification (optional), and after confirmation, the steward will be mentioned in a message in the steward command channel informing of the decision.
+    - If a member of the effective stewarding team requests an exclusion having already cast their vote in the deliberation phase, their vote will be excluded.
+  - Mute - Can be used by anyone of the steward team. When pressed, a modal is opened so that the user inputs 1..n mentions of users from whom to remove write message/attach file permissions.
+    - The command is rejected if the user is not the one who initiated the ticket, or if they are not in the involved drivers list. This can be used on stewards as well.
+  - Unmute - Can be used by anyone of the steward team. When pressed, a modal is opened so that the user inputs 1..n mentions of users to whom to get write message/attach file permissions.
+    - The command is rejected if the user is not the one who initiated the ticket, or if they are not in the involved drivers list. This can be used on stewards as well.
+- When a driver is added to a ticket, they will be considered an involved driver, and given the same permissions as other involved drivers.
+- When a driver is remove from a ticket, they will no longer be considered an involved driver, and the permissions of an involved driver will be removed from him.
+- When a driver is added to or removed from a ticket, the bot will edit the "header message" (containing the post information) to account for the addition/removal, and post a new message informing of this change, mentioning the driver and a justification if given.
+- If a driver was added to or removed from a ticket as a result of a request, then the message with the request will be deleted after confirmation/rejection.
+- During this phase, regular members of the effective stewarding team only have read permission for the channel. They shall be able to utilize the aforementioned buttons (as per their own specification).
+- During this phase, the effective head steward shall have read/write and attach media permission for the channel.
+- During this phase, the user who initiated the report and all users marked as involved drivers shall have read/write and attach media permission for the channel.
+- This phase cannot be terminated early.
 
 ### Report deliberation
-- 
-
+- Once this phase is entered, the involved drivers lose all permission to read, write or attach media to the channel.
+- Once this phase is entered, the members of the effective reporting teams will gain the permission to write or attach media to the channel.
+- Once this phase is entered, a countdown with the period of time configured by "steward report-deliberation-period" will start.
+- Once this phase is entered, a single button titled "Vote" is posted by the bot. This button will serve for members of the effective stewarding team to cast, modify, or remove their vote on the outcome of the report. The button opens a modal which is as follows:
+  - Steward's display name - String - Greyed out, cannot be changed. Display name of the steward that initiated the vote.
+  - Report ID - String - Greyed out, cannot be changed. Unique ID of the report which is being voted on.
+  - Driver - Dropdown - Contains the display names of the driver all involved drivers. This is the user who will receive the outcome.
+  - Infringement - String - Optional - Optional string rule number which was allegedly violated. Useful for final verdict write-up.
+  - Outcome - Dropdown - Mandatory - Dropdown containing all outcomes currently configured, displaying their IDs, allowing the steward to select 1 of them.
+    - PROBLEM WITH THIS DESIGN: what if a steward wants to penalize multiple drivers? this current approach stops that. A method I thought of would be to construct the modal dynamically, with each involved drivers getting an outcome field, but that would make the tally of the votes and the generation of the verdict a pain.
+  - Justification - String - Mandatory - A free form text with a 1000 character limit for the steward to give their reasonings for the vote.
+  - Two or three buttons at the bottom - "Cancel", "Remove vote" if the steward is reopening the vote dialog after having voted, and "Confirm".
+- A steward's vote is only valid via "Confirm" if all mandatory fields are filled.
+- Once a steward's vote is deemed valid, all data for the vote will be recorded and persisted.
+- If a steward reopens the vote modal dialog after having voted, the dialog will be pre-filled with their previous data.
+- If the steward has chosen "Confirm" upon reopening the dialog, the previously persisted vote information will be modified to align with the current information in the modal.
+- If the steward has chosen "Cancel" upon reopening the dialog, no change is to occur to their current vote.
+- If the steward has chosen "Remove vote" upon reopening the dialog, the previously persisted vote information will be deleted, and it will be as if the steward had never voted.
+- At the end of the countdown period for this phase, all stewarding team members except for the effective head steward lose message write permission for the report channel.
+- At the end of the countdown period for this phase, all outcomes from votes will be counted. For the purpose of counting, only cast votes will be taken into consideration for the determination of plurality. This means that in a situation where the effective stewarding team for a ticket consists of 9 people, and only 5 of those people have voted, only those 5 votes will be used for assessing the ultimate verdict.
+- Driver-outcome pairs are both considered a vote for the purpose of vote tallying. This means that "Driver A-Outcome X" and "Driver B-Outcome X" are votes for two different things.
+    - The sole exception for this is Outcome NFA, which is a fixed, immutable set that is always part of the list of outcomes. "Driver A-Outcome NFA" and "Driver B-Outcome NFA" are effectively the same vote expressed twice.
+- If any one driver-outcome pair reaches plurality without a tie, the ultimate result of the report will be that outcome being applied to that driver.
+- If two or more driver-outcome pairs are tied, and the effective head steward has voted in one of them, the ultimate result of the report will be the outcome voted by the effective head steward.
+- If two or more driver-outcome pairs are tied, and the effective head steward has not voted in either of them (also covers the possibility of the effective head steward not voting at all), the bot will trigger a cascade of events:
+  - The bot shall post a message on the verdicts channel saying "Verdicts for round <x> are slightly delayed, please stand by."
+  - On the report's channel, the bot shall post a button per driver-outcome pair that is tied as the most voted option. The one assigned as effective head steward will be the only one able to use these buttons. The pair chosen dictates the ultimate verdict.
+  - A timer counts down 1 hour from the moment the buttons are posted; if the effective head steward has not picked an driver-outcome pair once this timer runs out, then the driver-outcome pair that reached their final vote count the earliest will be the final verdict.
+- Once the ultimate result of a report is reached through any of the mediums above, the head steward will be prompted to insert a justification for the outcome as text, via a bot message. This bot message will also have a confirm button. The effective head steward may send multiple messages that will all be concatenated into one (split by newlines) for the verdict output.
+    - PROBLEM WITH THIS DESIGN: Lack of timely justification given by the head steward may delay verdict posting, and by consequene the whole stewarding cycle. I see two alternatives here: either the option for the effective head steward to utilize the text of one of the stewards who voted for this driver-outcome, as-is or modified, or perhaps use an LLM to merge together the justifications for the winning pair, and provide that as a default justification text for the head steward to modify - and if the head steward doesn't confirm the "offered" justification after some period, it's accepted? perhaps this ought to be a configurable option as not many idea would like the idea of using a LLM for anything
+  
 ### Appeal submission
 - 
 
 ### Appeal deliberation
-- 
-
-### Others?
 - 
 
 ## Conduct cycle
@@ -212,3 +308,9 @@
 
 ### Investigation deliberation
 - 
+
+## Verdict output
+### Textual
+
+
+### Image
