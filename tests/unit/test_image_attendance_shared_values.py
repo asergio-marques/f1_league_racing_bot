@@ -114,6 +114,17 @@ async def grid_db(tmp_path):
                 id INTEGER PRIMARY KEY, round_id INTEGER, division_id INTEGER,
                 driver_profile_id INTEGER, points_awarded INTEGER
             );
+            -- The columns `track_service.get_all_tracks` actually selects. A fixture
+            -- declaring fewer makes the registry unreadable, which the sheet survives by
+            -- drawing no heading flags — and every assertion about them would then pass
+            -- vacuously.
+            CREATE TABLE tracks (
+                id INTEGER PRIMARY KEY, name TEXT, gp_name TEXT, location TEXT,
+                country TEXT, mu REAL, sigma REAL
+            );
+            INSERT INTO tracks VALUES
+                (1, 'Silverstone Circuit', 'British GP', 'Silverstone', 'United Kingdom', 0, 0),
+                (2, 'Circuit Zandvoort',   'Dutch GP',   'Zandvoort',   'Netherlands',    0, 0);
             INSERT INTO rounds VALUES (10, 7, 1, 'NORMAL',  'Silverstone Circuit', 'ACTIVE');
             INSERT INTO rounds VALUES (11, 7, 2, 'MYSTERY', NULL,                  'ACTIVE');
             INSERT INTO rounds VALUES (12, 7, 3, 'SPRINT',  'Circuit Zandvoort',   'ACTIVE');
@@ -137,8 +148,26 @@ async def test_the_grid_draws_every_round_the_division_holds_run_or_not(grid_db)
 
 @pytest.mark.asyncio
 async def test_a_mystery_round_is_drawn_from_the_mystery_datum(grid_db):
+    """044 FR-012 — the **country** is the datum the heading's flag resolves by.
+
+    This asserted on `track` until 2026-08-28, which 044 had already stopped being an
+    asset datum — so the sheet drew no flag on any heading and the test still passed.
+    """
     headings, _ = await attendance_service._round_grid(grid_db, 7, [501])
     assert headings[1].track == "Mystery"
+    assert headings[1].country == "Mystery"
+
+
+@pytest.mark.asyncio
+async def test_a_round_heading_carries_the_country_its_circuit_is_run_in(grid_db):
+    """Every heading, not only the mystery one: the posted sheet drew none of them."""
+    headings, _ = await attendance_service._round_grid(grid_db, 7, [501])
+    assert [h.country for h in headings] == [
+        "United Kingdom",
+        "Mystery",
+        "Netherlands",
+        None,  # Suzuka is in no registry this fixture holds
+    ]
 
 
 @pytest.mark.asyncio

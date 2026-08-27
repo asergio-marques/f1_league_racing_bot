@@ -907,6 +907,8 @@ async def build_standings_preview(bot, context: PreviewContext):
     names, teams, flags, role_of = _driver_maps(context, drivers)
     round_obj = context.round
     racing_teams = _racing_teams(context)
+    from services.image_calendar_service import MYSTERY_DATUM
+
     tracks = await _tracks(bot)
 
     headings = []
@@ -915,14 +917,19 @@ async def build_standings_preview(bot, context: PreviewContext):
         sorted(context.rounds, key=lambda r: r.round_number), start=1
     ):
         entry_format = _format_of(entry)
-        track_name = None if entry_format == "MYSTERY" else getattr(entry, "track_name", None)
+        mystery = entry_format == "MYSTERY"
+        track_name = None if mystery else getattr(entry, "track_name", None)
         record = tracks.get(track_name) if track_name else None
         headings.append(
             RoundHeading(
                 ordinal=ordinal,
                 number=str(entry.round_number),
                 track=track_name,
-                country=getattr(record, "country", None) if record else None,
+                country=(
+                    MYSTERY_DATUM
+                    if mystery
+                    else (getattr(record, "country", None) if record else None)
+                ),
             )
         )
         round_formats[ordinal] = entry_format
@@ -1038,6 +1045,7 @@ async def build_attendance_preview(bot, context: PreviewContext):
         resolve_drawing,
     )
     from services.image_preview_data import fabricate_attendance_records
+    from services.image_calendar_service import MYSTERY_DATUM
 
     names, _teams, flags, _role_of = _driver_maps(context)
     round_obj = context.round
@@ -1046,16 +1054,19 @@ async def build_attendance_preview(bot, context: PreviewContext):
 
     headings = []
     for ordinal, entry in enumerate(sorted(rounds, key=lambda r: r.round_number), start=1):
-        track_name = (
-            None if _format_of(entry) == "MYSTERY" else getattr(entry, "track_name", None)
-        )
+        mystery = _format_of(entry) == "MYSTERY"
+        track_name = None if mystery else getattr(entry, "track_name", None)
         record = tracks.get(track_name) if track_name else None
         headings.append(
             RoundHeading(
                 ordinal=ordinal,
                 number=str(entry.round_number),
                 track=track_name,
-                country=getattr(record, "country", None) if record else None,
+                country=(
+                    MYSTERY_DATUM
+                    if mystery
+                    else (getattr(record, "country", None) if record else None)
+                ),
             )
         )
 

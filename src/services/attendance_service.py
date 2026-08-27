@@ -1170,7 +1170,9 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
     A missing cell and a stored zero are the same picture and the same meaning: the round
     counted nothing against that driver. Nothing here distinguishes the six ways that happens.
     """
+    from services.calendar_post_service import tracks_by_name
     from services.image_attendance_service import RoundHeading
+    from services.image_calendar_service import MYSTERY_DATUM
 
     headings: list = []
     cells: dict[int, dict[int, int | None]] = {}
@@ -1184,15 +1186,40 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
                 )
             ).fetchall()
 
+            # The heading's flag resolves by **country**, not by circuit (044 moved the
+            # datum when the column heading became a flag rather than a track map), so the
+            # registry is joined here. Without it every heading on the posted sheet drew no
+            # flag at all, while `/images test attendance` drew them from the same rounds.
+            #
+            # Read on its own terms: a registry that cannot be read costs the sheet its
+            # heading flags, and must not cost it the grid. The rounds, the drivers and
+            # the points they scored are what the sheet is for.
+            try:
+                tracks = await tracks_by_name(db_path)
+            except Exception as exc:  # noqa: BLE001
+                log.error(
+                    "post_attendance_sheet: the track registry could not be read, so the "
+                    "round headings are drawn without their flags: %s",
+                    exc,
+                )
+                tracks = {}
+
             ordinal_of: dict[int, int] = {}
             for ordinal, row in enumerate(rows, start=1):
                 ordinal_of[int(row["id"])] = ordinal
                 mystery = str(row["format"] or "").upper().endswith("MYSTERY")
+                track_name = None if mystery else (row["track_name"] or None)
+                record = tracks.get(track_name) if track_name else None
                 headings.append(
                     RoundHeading(
                         ordinal=ordinal,
                         number=str(row["round_number"]),
-                        track="Mystery" if mystery else (row["track_name"] or None),
+                        track=MYSTERY_DATUM if mystery else track_name,
+                        country=(
+                            MYSTERY_DATUM
+                            if mystery
+                            else (getattr(record, "country", None) if record else None)
+                        ),
                     )
                 )
 
