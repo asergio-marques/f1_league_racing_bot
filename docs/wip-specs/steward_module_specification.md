@@ -243,6 +243,7 @@
   - If the effective head steward does not assign anyone else by the time the report deliberation phase is reached, a random member of the effective steward team is to be chosen by the bot for this position.
 - After valid submission, the ticket's state changes immediately to the defense submission stage, and a report data object is recorded in the database associated to this season, division and round. All remaining time in the defense submission stage will be added to the total of the defense submission stage.
   - This effectively means that all tickets' defense submission stage ends at the same time, regardless of the initial report submission taking place at the start or at the end of the report submission stage.
+- If there are no reports submitted until this phase ends, then the stewarding cycle is considered closed.
 
 ### Defense submission
 - Once the period of time configured for the duration of the report submission stage elapses, a countdown with the period of time configured by "steward defense-submission-period" will start. Once this time elapses, the ticket will enter the report deliberation phase.
@@ -302,19 +303,45 @@
   - The bot shall post a message on the verdicts channel saying "Verdicts for round <x> are slightly delayed, please stand by."
   - On the report's channel, the bot shall post a button per driver-outcome pair that is tied as the most voted option. The one assigned as effective head steward will be the only one able to use these buttons. The pair chosen dictates the ultimate verdict.
   - A timer counts down 1 hour from the moment the buttons are posted; if the effective head steward has not picked an driver-outcome pair once this timer runs out, then the driver-outcome pair that reached their final vote count the earliest will be the final verdict.
-- Once the ultimate result of a report is reached through any of the mediums above, the bot will post a message informing the effective head steward of the decision reached (which driver is struck with what penalty, what the majority voted infringement was), and provide a default justification text via the method determined by "steward final-justification-mode" (or "steward final-justification-mode", if the primary method is not feasible).
-  - Buttons for accepting it as is or open prompt with that text inserted for modification.
-  - The bot will also provide, in a different message, the justifications provided by all stewards that chose this driver-outcome pair.
-- 
-- 
-- 
-- head steward will be prompted to insert a justification for the outcome as text, via a bot message. This The effective head steward may send multiple messages that will all be concatenated into one (split by newlines) for the verdict output.
-    - PROBLEM WITH THIS DESIGN: Lack of timely justification given by the head steward may delay verdict posting, and by consequene the whole stewarding cycle. I see two alternatives here: either the option for the effective head steward to utilize the text of one of the stewards who voted for this driver-outcome, as-is or modified, or perhaps use an LLM to merge together the justifications for the winning pair, and provide that as a default justification text for the head steward to modify - and if the head steward doesn't confirm the "offered" justification after some period, it's accepted? perhaps this ought to be a configurable option as not many idea would like the idea of using a LLM for anything
+- Once the ultimate result of a report is reached through any of the mediums above, the bot will:
+  - Post a message informing the effective head steward of the decision reached (which driver is struck with what penalty, what the majority voted infringement was), providing a default justification text determined via the method configured by "steward final-justification-mode" (or "steward final-justification-mode", if the primary method is not feasible).
+  - Buttons usable only by the effective head steward of the ticket, one for accepting the default justification text as provided by the bot as-is, another to modify the default justification via a modal (text is already autoloaded into modal prompt).
+  - In a message different from the one above, the justifications provided by all stewards that chose this driver-outcome pair will be presented as a reference.
+  - Start a timer counting down 1 hour from the moment the buttons are posted; if the effective head steward has not confirmed the justification text once this timer runs out, then the one provided by the bot will be utilized for the verdict post.
+- Once the justification message is settled, either via effective head steward confirmation or by timeout, the bot will remove all write permissions to the channel, and generate the final output to be posted in the verdicts channel.
+  - The format of the final output is determined in another section.
+- Only after the final output is determined for all reports pertaining to a given round of a given division, will they be posted, in report ID alphabetical order (which will coincide with the submission order), in the verdicts channel.
+- The channel will not be deleted even after publishing of the verdicts.
+- The report deliberation phase is only considered over once all reports pertaining to a given round of a given division are posted to the appropriate channel.
+  - If appeals functionality is enabled, then the stewarding cycle will move on to that phase.
+  - Otherwise, then the stewarding cycle is considered closed.
+- Once the report deliberation phase is considered over, the round results will be reposted, with all accured penalties factored in.
+  - This functionality is somewhat implemented already, just a matter of reusing it.
   
 ### Appeal submission
+- Once this phase is entered, the bot shall delete the "default" message (written again once the report submission phase ends), and post an "Appeal incident" button to the configured ticket channel of the division, without mentioning the division role.
+- Once this phase is entered, a countdown with the period of time configured by "steward appeal-submission-period" will start. Once this time elapses, the default message shall be displayed once more in the divisions' reports channel, and the "Appeal incident" button removed.
+- When a user presses the "Appeal incident" button, it will be verified if they meet the requirements for lodging an appeal, which shall be:
+  - ...
+- Once it is determined that the user meets the requirements to perform an appeal, a modal dialog shall appear, with the following elements:
+  - Season - Mandatory - Integer - Automatically generated, cannot be changed by anyone. Derived from the current season's number.
+  - Division - Mandatory - String - Automatically generated, cannot be changed by anyone. Derived from the division to which the report channel is associated.
+  - Round - Mandatory -  Integer - Automatically generated, cannot be changed by anyone. Derived from the most recent round that took place.
+  - Report ID - Mandatory - String - The unique ID of the report that the drivers wishes to appeal, as per the report channel's title.
+  - Justification - Mandatory - String - Reason for the appeal, outlining the reason as to why the user disagreed with the initial verdict handed out.
+  - Evidence files - Optional - 0..5 media (image or video) - One or multiple images or video files that provide basis for the claims in the complaint.
+  - Evidence links - Optional - 0..5 links - One or multiple images or video links that provide basis for the claims in the complaint.
+    - Between "evidence files" and "evidence links", there must be at least one file/link. Otherwise, the appeal will not be valid.
+- The validation of the information will be performed before closing the modal, so that users do not have to input information twice.
+  - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
+
 - <NEW COMMAND> steward retract-verdict - lets effective head steward revise the justification in a verdict
+- If there are no appeals submitted until this phase ends, then the stewarding cycle is considered closed.
 
 ### Appeal deliberation
+- 
+
+### Cycle close
 - 
 
 ## Conduct cycle
