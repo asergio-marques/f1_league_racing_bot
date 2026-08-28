@@ -121,6 +121,18 @@
   - This value shall be ignored if the appeal is initiated by a member of the steward team AND said member is not assigned to a team of the division to which the appeal pertains.
 - <NEW COMMAND> A "steward toggle-conflict" command will be made available to league managers, which shall determine whether stewards who are also drivers are able to participate in the stewarding cycle of tickets that pertain to divisions they are driving in, accepting a possible conflict of interest.
   - By default this setting is on, meaning stewards can review reports/appeals pertaining to the division they are driving for, and that leagues implicitly accept a possible conflict of interest.
+- <NEW COMMAND> A "steward final-justification-mode" command will be made available to league managers, which shall alter the method through which the default verdict justification text is determined, which is to be provided by the bot once a verdict is reached for any ticket. The modes available are:
+  - Longest - Active by default - The bot takes the longest justification, in character count, provided by the stewards.
+  - Own - The bot takes the effective head steward's own justification for the driver-outcome pair, if his vote coincided with the winning option.
+  - LLM - The bot feeds the justifications given by all stewards who voted on the driver-outcome pair to a remote or local-running LLM, which will then provide a full professional sounding text for the justification. This mode cannot be chosen if there is no valid LLM token/communication set up.
+  - By default, this value shall be set to "longest".
+- <NEW COMMAND>  A "steward fallback-justification-mode" command will be made available to league managers, which shall alter the backup method through which the default verdict justification text is determined, which is to be provided by the bot once a verdict is reached for any ticket. The methods available are the same as the ones listed in the requirement for "steward final-justification-mode".
+  - By default, this value shall be set to "own".
+  - The method chosen by this command cannot be the same as the one chosen with "steward final-justification-mode".
+  - If "steward final-justification-mode" is changed to "longest" when "steward fallback-justification-mode" is already "longest", then the latter shall change to "own".
+  - If "steward final-justification-mode" is changed to "own" when "steward fallback-justification-mode" is already "own", then the latter shall change to "longest".
+  - If "steward final-justification-mode" is changed to "LLM" when "steward fallback-justification-mode" is already "LLM", then the latter shall change to "longest".
+- If neither "steward final-justification-mode" nor "steward fallback-justification-mode" are feasible options, then the bot will provide either "longest", if possible, or no text at all.
 - <NEW COMMAND> A "steward outcome add" command will be made available to league managers, which shall open a modal window with the following input fields:
   - ID - Mandatory - Unique ID for the outcome. Maximum of 10 characters.
   - Brief - Mandatory - Unique short description of the outcome. Maximum of 50 characters.
@@ -290,11 +302,17 @@
   - The bot shall post a message on the verdicts channel saying "Verdicts for round <x> are slightly delayed, please stand by."
   - On the report's channel, the bot shall post a button per driver-outcome pair that is tied as the most voted option. The one assigned as effective head steward will be the only one able to use these buttons. The pair chosen dictates the ultimate verdict.
   - A timer counts down 1 hour from the moment the buttons are posted; if the effective head steward has not picked an driver-outcome pair once this timer runs out, then the driver-outcome pair that reached their final vote count the earliest will be the final verdict.
-- Once the ultimate result of a report is reached through any of the mediums above, the head steward will be prompted to insert a justification for the outcome as text, via a bot message. This bot message will also have a confirm button. The effective head steward may send multiple messages that will all be concatenated into one (split by newlines) for the verdict output.
+- Once the ultimate result of a report is reached through any of the mediums above, the bot will post a message informing the effective head steward of the decision reached (which driver is struck with what penalty, what the majority voted infringement was), and provide a default justification text via the method determined by "steward final-justification-mode" (or "steward final-justification-mode", if the primary method is not feasible).
+  - Buttons for accepting it as is or open prompt with that text inserted for modification.
+  - The bot will also provide, in a different message, the justifications provided by all stewards that chose this driver-outcome pair.
+- 
+- 
+- 
+- head steward will be prompted to insert a justification for the outcome as text, via a bot message. This The effective head steward may send multiple messages that will all be concatenated into one (split by newlines) for the verdict output.
     - PROBLEM WITH THIS DESIGN: Lack of timely justification given by the head steward may delay verdict posting, and by consequene the whole stewarding cycle. I see two alternatives here: either the option for the effective head steward to utilize the text of one of the stewards who voted for this driver-outcome, as-is or modified, or perhaps use an LLM to merge together the justifications for the winning pair, and provide that as a default justification text for the head steward to modify - and if the head steward doesn't confirm the "offered" justification after some period, it's accepted? perhaps this ought to be a configurable option as not many idea would like the idea of using a LLM for anything
   
 ### Appeal submission
-- 
+- <NEW COMMAND> steward retract-verdict - lets effective head steward revise the justification in a verdict
 
 ### Appeal deliberation
 - 
