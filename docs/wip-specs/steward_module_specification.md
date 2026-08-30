@@ -237,8 +237,8 @@
     - Between "evidence files" and "evidence links", there must be at least one file/link. Otherwise, the report will not be valid.
 - The validation of the information will be performed before closing the modal, so that users do not have to input information twice.
   - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
-- After valid submission, the report will be henceforth be identified with a unique ID following the format "S<x>_D<y>_R<z>_<w>", where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the report pertaining to this season, tier and round. This report ID will be utilized for some steward commands.
-- After valid submission, a channel bearing the ticket unique ID as the title will be created, with the information from the modal dialog input by the reportee summarized and posted as the header message in the channel. All involved drivers will be mentioned properly in this message.
+- After valid submission, the report will be henceforth be identified with a unique ID following the format "S<x>_D<y>_R<z>_<w>", where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the report pertaining to this season, tier and round.
+- After valid submission, a channel bearing the report's unique ID as the title will be created, with the information from the modal dialog input by the reportee summarized and posted as the header message in the channel. All involved drivers shall be mentioned properly in this message.
 - If the effective head steward is one of the involved drivers, or has a conflict of interest as defined by "steward toggle-conflict", the bot will post a message with a button to assign effective head steward for the ticket to someone else of the steward team. The user will be validated for the criteria above, and after they are designated effective head steward, the former one will be removed from the effective steward team for the report.
   - If the effective head steward does not assign anyone else by the time the report deliberation phase is reached, a random member of the effective steward team is to be chosen by the bot for this position.
 - After valid submission, the ticket's state changes immediately to the defense submission stage, and a report data object is recorded in the database associated to this season, division and round. All remaining time in the defense submission stage will be added to the total of the defense submission stage.
@@ -266,7 +266,7 @@
   - Unmute - Can be used by anyone of the steward team. When pressed, a modal is opened so that the user inputs 1..n mentions of users to whom to get write message/attach file permissions.
     - The command is rejected if the user is not the one who initiated the ticket, or if they are not in the involved drivers list. This can be used on stewards as well.
 - When a driver is added to a ticket, they will be considered an involved driver, and given the same permissions as other involved drivers.
-- When a driver is remove from a ticket, they will no longer be considered an involved driver, and the permissions of an involved driver will be removed from him.
+- When a driver is removed from a ticket, they will no longer be considered an involved driver, and the permissions of an involved driver will be removed from him.
 - When a driver is added to or removed from a ticket, the bot will edit the "header message" (containing the post information) to account for the addition/removal, and post a new message informing of this change, mentioning the driver and a justification if given.
 - If a driver was added to or removed from a ticket as a result of a request, then the message with the request will be deleted after confirmation/rejection.
 - During this phase, regular members of the effective stewarding team only have read permission for the channel. They shall be able to utilize the aforementioned buttons (as per their own specification).
@@ -315,14 +315,15 @@
 - The report deliberation phase is only considered over once all reports pertaining to a given round of a given division are posted to the appropriate channel.
   - If appeals functionality is enabled, then the stewarding cycle will move on to that phase.
   - Otherwise, then the stewarding cycle is considered closed.
-- Once the report deliberation phase is considered over, the round results will be reposted, with all accured penalties factored in.
+- Once the report deliberation phase is considered over, the round results and the standings after the round will be reposted, with all accured penalties factored in.
   - This functionality is somewhat implemented already, just a matter of reusing it.
   
 ### Appeal submission
 - Once this phase is entered, the bot shall delete the "default" message (written again once the report submission phase ends), and post an "Appeal incident" button to the configured ticket channel of the division, without mentioning the division role.
 - Once this phase is entered, a countdown with the period of time configured by "steward appeal-submission-period" will start. Once this time elapses, the default message shall be displayed once more in the divisions' reports channel, and the "Appeal incident" button removed.
 - When a user presses the "Appeal incident" button, it will be verified if they meet the requirements for lodging an appeal, which shall be:
-  - ...
+  - Is part of the division of that report.
+  - Their current number of tokens is equal to or greater than that configured by "steward appeal token-spend".
 - Once it is determined that the user meets the requirements to perform an appeal, a modal dialog shall appear, with the following elements:
   - Season - Mandatory - Integer - Automatically generated, cannot be changed by anyone. Derived from the current season's number.
   - Division - Mandatory - String - Automatically generated, cannot be changed by anyone. Derived from the division to which the report channel is associated.
@@ -334,15 +335,23 @@
     - Between "evidence files" and "evidence links", there must be at least one file/link. Otherwise, the appeal will not be valid.
 - The validation of the information will be performed before closing the modal, so that users do not have to input information twice.
   - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
-
-- <NEW COMMAND> steward retract-verdict - lets effective head steward revise the justification in a verdict
+- After valid submission, the appeal will be henceforth be identified with a unique ID following the format "<Report ID>-APPEAL", where <Report ID> is the full ID of the original report.
+- After valid submission, a channel bearing the appeal's unique ID as the title will be created, with the information from the modal dialog input by the reportee summarized and posted as the header message in the channel, and with an additional link to the channel that pertains to the original report, for the stewarding team's reference.
+- As this is considered a different ticket, the effective stewarding team for this ticket may not necessarily be the same one as the original report's by default.
+- If the effective head steward is one of the involved drivers, or has a conflict of interest as defined by "steward toggle-conflict", the bot will post a message with a button to assign effective head steward for the ticket to someone else of the steward team. The user will be validated for the criteria above, and after they are designated effective head steward, the former one will be removed from the effective steward team for the report.
+  - If the effective head steward does not assign anyone else by the time the appeal deliberation phase is reached, a random member of the effective steward team is to be chosen by the bot for this position.
+- Once the channel is created, the same buttons as those created for the defense submission phase shall be made available in the header, with the same permissions and logic.
+- During this phase, regular members of the effective stewarding team only have read permission for the channel. They shall be able to utilize the aforementioned buttons (as per their own specification).
+- During this phase, the effective head steward shall have read/write and attach media permission for the channel.
+- During this phase, the user who initiated the report and all users marked as involved drivers shall have read/write and attach media permission for the channel.
+- If a report is not appealed by the end of the appeal submission phase, the stewarding cycle for that ticket will be deemed closed.
 - If there are no appeals submitted until this phase ends, then the stewarding cycle is considered closed.
 
 ### Appeal deliberation
 - 
 
 ### Cycle close
-- 
+- <NEW COMMAND> steward retract-verdict - lets effective head steward revise the justification in a verdict
 
 ## Conduct cycle
 ### Trigger
