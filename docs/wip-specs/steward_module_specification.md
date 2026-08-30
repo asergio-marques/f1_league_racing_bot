@@ -4,6 +4,7 @@
 - The stewarding module is disabled by default.
 - The stewarding module may not be enabled once the season is approved.
 - The stewarding module is heavily connected to the results & standings module, but only part of its functionality is to be disabled if the results & standings module is disabled as well.
+- If the stewarding module is enabled, then it shall not be possible to use the penalty and appeal functionality in the results & standings module. This functionality will hereby be governed by the stewarding module.
 - The stewarding module is connected to the attendance module, and modifies its outputs.
 - The stewarding module is connected to the signup module, and modifies its outputs.
 - Stewarding module activation status shall be displayed in the season review.
@@ -62,6 +63,10 @@
 - Race ban - A possible direct or indirect outcome of a verdict for all ticket types. Race bans are appended to a driver's license. The driver that receives this sanction is thereby forbidden from taking part in the next round of the division in which they received a qualifying ban for, be it in the current season, or the next. This means that they may not be present in the classification of any sessions for the round they are banned for. If configured, the bot may automatically detect a failure to serve a race ban via a round's results, and automatically open a steward team report againt the offending driver. Race bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
 - Season ban - A possible direct or indirect outcome of a verdict for all ticket types. Season bans are appended to a driver's license. The driver that receives this sanction loses all their current seats for all divisions, full-time and reserve both. Drivers with a season ban will be assigned a special role, and will be unable to engage with the signup wizard. A season ban will expire after a set number of races (which may be a hard-bound value or the length of the current season), upon the current season's end (or the next season's end, if received on the final round), or after a fixed period of time. If configured, the bot may automatically detect if a driver has a given number of multiple season bans, and automatically open a steward team report against the offending driver with a view at bestowing a league ban. Season bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
 - League ban - A possible direct or indirect outcome of a verdict for all ticket types. League bans are appended to a driver's license. The driver that receives this sanction thereby loses all their current seats for all divisions, full-time and reserve both. A driver that receives a league ban will be banned from the league server for a configured duration of time. Upon rejoining the server, all users that receive a league ban will be assigned a special role, and will be unable to engage with the signup wizard. League bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
+- Auto-rule - A predefined, league-configured automated penalty handed out by the bot if a driver meets the criteria configured in the rule. These rules can be one of three types:
+  - Single round - Rules that verify only multiples of a specific penalty accured in a single round.
+  - Multi round - Rules that verify only multiples of a specific penalty accured across multiple rounds.
+  - Accumulatory - Rules that verify only the accumulation of a specific penalty on a driver's license.
 
 ## Configuring the stewarding module
 - All configuration changes must be logged to the standard log channel.
@@ -208,6 +213,21 @@
   - Qualifying ban - 0
   - Race ban - 0
   - Season ban - 0
+
+### Automated penalizations
+- <NEW COMMAND> A "steward auto-pen add" command will be made available to league managers, which shall have no inputs. Upon usage of this command, a modal dialog will open, with the following fields:
+  - Type - Mandatory - Type of criteria that shall be met. Can be single round, multi round, or accumulatory.
+  - ID - String - Unique string ID for this rule. Must not overlap with that of other auto rules.
+  - Type of infractions committed - Mandatory - Dropdown - Type of penalty that must be given out to a driver in the quantity above for this rule to be triggered.
+  - Number of infractions committed - Mandatory - Integer - Quantity of penalties of a certain type that must be given out to a driver in the quantity above for this rule to be triggered.
+    - This value must not be 0.
+  - Penalty given - Mandatory - Dropdown - Type of penalty to be bestowed upon a driver when this rule is triggered.
+    - This value must not be the same as defined in "Type of infractions committed"
+  - Number of penalties - Mandatory - Integer - Quantity of penalties of the type defined in "penalty given" to be bestowed upon a driver when this rule is triggered.
+    - This value must not be 0.
+- <NEW COMMAND> A "steward auto-pen modify" command will be made available to league managers, which shall have as input the ID of an auto-rule... <tbd>
+- <NEW COMMAND> A "steward auto-pen remove" command will be made available to league managers, which shall have as input the ID of an auto-rule... <tbd>
+- <NEW COMMAND> A "steward auto-pen list" command will be made available to league managers, which shall have no inputs... <tbd>
 
 ## Stewarding cycle
 - All inputs of the stewarding cycle must be auditable via the steward log channel. Attempts to file a report (and its data), driver addition/removal to tickets, etc etc etc. All logs must include the display name (and user ID) of the input.
