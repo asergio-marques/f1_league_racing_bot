@@ -276,18 +276,20 @@
 
 ### Report deliberation
 - Once this phase is entered, the involved drivers lose all permission to read, write or attach media to the channel.
-- Once this phase is entered, the members of the effective reporting teams will gain the permission to write or attach media to the channel.
+- Once this phase is entered, the members of the effective stewarding team will gain the permission to write or attach media to the channel.
 - Once this phase is entered, a countdown with the period of time configured by "steward report-deliberation-period" will start.
 - Once this phase is entered, a single button titled "Vote" is posted by the bot. This button will serve for members of the effective stewarding team to cast, modify, or remove their vote on the outcome of the report. The button opens a modal which is as follows:
   - Steward's display name - String - Greyed out, cannot be changed. Display name of the steward that initiated the vote.
   - Report ID - String - Greyed out, cannot be changed. Unique ID of the report which is being voted on.
-  - Driver - Dropdown - Contains the display names of the driver all involved drivers. This is the user who will receive the outcome.
-  - Infringement - String - Optional - Optional string rule number which was allegedly violated. Useful for final verdict write-up.
+  - Driver - Dropdown - Contains the display names of all drivers, allowing the steward to pick the display name of the driver which is to receive the outcome. Greyed-out if outcome chosen is NFA.
   - Outcome - Dropdown - Mandatory - Dropdown containing all outcomes currently configured, displaying their IDs, allowing the steward to select 1 of them.
+    - If outcome chosen is NFA, then the driver pick will become "None".
     - PROBLEM WITH THIS DESIGN: what if a steward wants to penalize multiple drivers? this current approach stops that. A method I thought of would be to construct the modal dynamically, with each involved drivers getting an outcome field, but that would make the tally of the votes and the generation of the verdict a pain.
+  - Infringement - String - Optional - String standing for the ID/number which was allegedly violated. Useful for final verdict write-up.
   - Justification - String - Mandatory - A free form text with a 1000 character limit for the steward to give their reasonings for the vote.
   - Two or three buttons at the bottom - "Cancel", "Remove vote" if the steward is reopening the vote dialog after having voted, and "Confirm".
 - A steward's vote is only valid via "Confirm" if all mandatory fields are filled.
+- If the steward has voted for outcome NFA, their vote is only valid if the driver picked is "None".
 - Once a steward's vote is deemed valid, all data for the vote will be recorded and persisted.
 - If a steward reopens the vote modal dialog after having voted, the dialog will be pre-filled with their previous data.
 - If the steward has chosen "Confirm" upon reopening the dialog, the previously persisted vote information will be modified to align with the current information in the modal.
@@ -296,11 +298,10 @@
 - At the end of the countdown period for this phase, all stewarding team members except for the effective head steward lose message write permission for the report channel.
 - At the end of the countdown period for this phase, all outcomes from votes will be counted. For the purpose of counting, only cast votes will be taken into consideration for the determination of plurality. This means that in a situation where the effective stewarding team for a ticket consists of 9 people, and only 5 of those people have voted, only those 5 votes will be used for assessing the ultimate verdict.
 - Driver-outcome pairs are both considered a vote for the purpose of vote tallying. This means that "Driver A-Outcome X" and "Driver B-Outcome X" are votes for two different things.
-    - The sole exception for this is Outcome NFA, which is a fixed, immutable set that is always part of the list of outcomes. "Driver A-Outcome NFA" and "Driver B-Outcome NFA" are effectively the same vote expressed twice.
 - If any one driver-outcome pair reaches plurality without a tie, the ultimate result of the report will be that outcome being applied to that driver.
 - If two or more driver-outcome pairs are tied, and the effective head steward has voted in one of them, the ultimate result of the report will be the outcome voted by the effective head steward.
 - If two or more driver-outcome pairs are tied, and the effective head steward has not voted in either of them (also covers the possibility of the effective head steward not voting at all), the bot will trigger a cascade of events:
-  - The bot shall post a message on the verdicts channel saying "Verdicts for round <x> are slightly delayed, please stand by."
+  - The bot shall post a message on the verdicts channel saying "Report verdicts for round <x> are slightly delayed, please stand by."
   - On the report's channel, the bot shall post a button per driver-outcome pair that is tied as the most voted option. The one assigned as effective head steward will be the only one able to use these buttons. The pair chosen dictates the ultimate verdict.
   - A timer counts down 1 hour from the moment the buttons are posted; if the effective head steward has not picked an driver-outcome pair once this timer runs out, then the driver-outcome pair that reached their final vote count the earliest will be the final verdict.
 - Once the ultimate result of a report is reached through any of the mediums above, the bot will:
@@ -344,11 +345,60 @@
 - During this phase, regular members of the effective stewarding team only have read permission for the channel. They shall be able to utilize the aforementioned buttons (as per their own specification).
 - During this phase, the effective head steward shall have read/write and attach media permission for the channel.
 - During this phase, the user who initiated the report and all users marked as involved drivers shall have read/write and attach media permission for the channel.
+- When a driver is added to a ticket, they will be considered an involved driver, and given the same permissions as other involved drivers.
+- When a driver is removed from a ticket, they will no longer be considered an involved driver, and the permissions of an involved driver will be removed from him.
+- When a driver is added to or removed from a ticket, the bot will edit the "header message" (containing the post information) to account for the addition/removal, and post a new message informing of this change, mentioning the driver and a justification if given.
+- If a driver was added to or removed from a ticket as a result of a request, then the message with the request will be deleted after confirmation/rejection.
 - If a report is not appealed by the end of the appeal submission phase, the stewarding cycle for that ticket will be deemed closed.
 - If there are no appeals submitted until this phase ends, then the stewarding cycle is considered closed.
 
 ### Appeal deliberation
-- 
+- Once this phase is entered, the involved drivers lose all permission to read, write or attach media to the channel.
+- Once this phase is entered, the members of the effective stewarding team will gain the permission to write or attach media to the channel.
+- Once this phase is entered, a countdown with the period of time configured by "steward appeal-deliberation-period" will start.
+- Once this phase is entered, a single button titled "Vote" is posted by the bot. This button will serve for members of the effective stewarding team to cast, modify, or remove their vote on the outcome of the appeal. The button opens a modal which is as follows:
+  - Steward's display name - String - Greyed out, cannot be changed. Display name of the steward that initiated the vote.
+  - Appeal ID - String - Greyed out, cannot be changed. Unique ID of the appeal which is being voted on.
+  - Driver - Dropdown - Contains the display names of all drivers, allowing the steward to pick the display name of the driver which is to receive the outcome. Greyed-out if decision is "uphold verdict", or the outcome chosen is NFA.
+  - Decision - Dropdown - Mandatory - A dropdown consisting of two options, "Uphold verdict" and "Change verdict".
+  - Outcome - Dropdown - Optional - Dropdown containing all outcomes currently configured except for the the one dictated in the original report, displaying their IDs, allowing the steward to select 1 of them. Greyed-out if the "Decision" field is not "change verdict".
+    - If outcome chosen is NFA, then the driver pick will become "None".
+    - PROBLEM WITH THIS DESIGN: same as report deliberation - what if a steward wants to penalize multiple drivers? this current approach stops that.    
+  - Infringement - String - Optional - String standing for the ID/number which was allegedly violated. Useful for final verdict write-up.
+  - Justification - String - Mandatory - A free form text with a 1000 character limit for the steward to give their reasonings for the vote.
+  - Two or three buttons at the bottom - "Cancel", "Remove vote" if the steward is reopening the vote dialog after having voted, and "Confirm".
+- A steward's vote is only valid via "Confirm" if all mandatory fields are filled.
+- If the steward has voted for decision "uphold verdict", their vote is only valid if the driver picked is "None".
+- If the steward has voted for outcome NFA, their vote is only valid if the driver picked is "None".
+- Once a steward's vote is deemed valid, all data for the vote will be recorded and persisted.
+- If a steward reopens the vote modal dialog after having voted, the dialog will be pre-filled with their previous data.
+- If the steward has chosen "Confirm" upon reopening the dialog, the previously persisted vote information will be modified to align with the current information in the modal.
+- If the steward has chosen "Cancel" upon reopening the dialog, no change is to occur to their current vote.
+- If the steward has chosen "Remove vote" upon reopening the dialog, the previously persisted vote information will be deleted, and it will be as if the steward had never voted.
+- At the end of the countdown period for this phase, all stewarding team members except for the effective head steward lose message write permission for the appeal channel.
+- At the end of the countdown period for this phase, all outcomes from votes will be counted. For the purpose of counting, only cast votes will be taken into consideration for the determination of plurality. This means that in a situation where the effective stewarding team for a ticket consists of 9 people, and only 5 of those people have voted, only those 5 votes will be used for assessing the ultimate verdict.
+  - In the context of an appeal, decision "uphold penalty" counts as an outcome.
+- Driver-outcome pairs are both considered a vote for the purpose of vote tallying. This means that "Driver A-Outcome X" and "Driver B-Outcome X" are votes for two different things.
+- If any one driver-outcome pair reaches plurality without a tie, the ultimate result of the appeal will be that outcome being applied to that driver.
+- If two or more driver-outcome pairs are tied, and the effective head steward has voted in one of them, the ultimate result of the appeal will be the outcome voted by the effective head steward.
+- If two or more driver-outcome pairs are tied, and the effective head steward has not voted in either of them (also covers the possibility of the effective head steward not voting at all), the bot will trigger a cascade of events:
+  - The bot shall post a message on the verdicts channel saying "Appeal verdicts for round <x> are slightly delayed, please stand by."
+  - On the appeal's channel, the bot shall post a button per driver-outcome pair that is tied as the most voted option. The one assigned as effective head steward will be the only one able to use these buttons. The pair chosen dictates the ultimate verdict.
+  - A timer counts down 1 hour from the moment the buttons are posted; if the effective head steward has not picked an driver-outcome pair once this timer runs out, then the driver-outcome pair that reached their final vote count the earliest will be the final verdict.
+- Once the ultimate result of a appeal is reached through any of the mediums above, the bot will:
+  - Post a message informing the effective head steward of the decision reached (which driver is struck with what penalty, what the majority voted infringement was), providing a default justification text determined via the method configured by "steward final-justification-mode" (or "steward final-justification-mode", if the primary method is not feasible).
+  - Buttons usable only by the effective head steward of the ticket, one for accepting the default justification text as provided by the bot as-is, another to modify the default justification via a modal (text is already autoloaded into modal prompt).
+  - In a message different from the one above, the justifications provided by all stewards that chose this driver-outcome pair will be presented as a reference.
+  - Start a timer counting down 1 hour from the moment the buttons are posted; if the effective head steward has not confirmed the justification text once this timer runs out, then the one provided by the bot will be utilized for the verdict post.
+- Once the justification message is settled, either via effective head steward confirmation or by timeout, the bot will remove all write permissions to the channel, and generate the final output to be posted in the verdicts channel.
+  - The format of the final output is determined in another section.
+- Only after the final output is determined for all appeals pertaining to a given round of a given division, will they be posted, in appeal ID alphabetical order (which will coincide with the submission order of the original reports), in the verdicts channel.
+- After the verdicts are published, a 7 day countdown will be initiated, at the end of which the channel will be deleted.
+  - <SKETCH OUT> Is it practical to save these? Perhaps these could be persisted locally on the device running the bot...
+- The appeal deliberation phase is only considered over once all appeals pertaining to a given round of a given division are posted to the appropriate channel.
+- Once the appeal deliberation phase is considered over, the round results and the standings after the round will be reposted with the appeals' results (and penalties) factored in.
+  - This functionality is somewhat implemented already, just a matter of reusing it.
+  - <tbd> if the verdict is changed, the value displayed in the appeals' column in the results should take into consideration the original verdict (e.g. a penalty of 5 seconds that was rescinded should show as -5s in the appeal column...)
 
 ### Cycle close
 - <NEW COMMAND> steward retract-verdict - lets effective head steward revise the justification in a verdict
