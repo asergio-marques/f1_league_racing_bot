@@ -454,10 +454,197 @@ def test_an_existing_uri_is_left_alone():
         assert _as_href(value) == value
 
 
-def test_a_relative_reference_is_left_alone():
-    """A template may legally point at a file beside itself."""
-    assert _as_href("british.svg") == "british.svg"
-    assert _as_href("flags/british.svg") == "flags/british.svg"
+def test_a_relative_reference_is_anchored_to_the_project_root(monkeypatch, tmp_path):
+    """Withdrawn 2026-08-31: a relative reference used to be written through untouched.
+
+    "A template may legally point at a file beside itself" was the reasoning, and it was
+    the wrong base. The rasteriser reads the filled SVG out of a *temporary* directory, so
+    "beside itself" meant beside a file in `/tmp` and never beside the template. Measured
+    on Inkscape 1.4: a relative href and an href naming a file that does not exist produce
+    byte-identical PNGs, both with nothing drawn, both exiting 0 with an empty stderr.
+
+    The project root is the base that serves both callers — a configured asset directory
+    is stored relative to it, and a template pointing at a file beside itself is pointing
+    inside it, since that is where templates live.
+    """
+    import utils.paths as paths
+
+    monkeypatch.setattr(paths, "PROJECT_ROOT", tmp_path)
+
+    assert _as_href("british.svg") == (tmp_path / "british.svg").as_uri()
+    assert _as_href("flags/british.svg") == (tmp_path / "flags" / "british.svg").as_uri()
+
+
+# ── Links the rasteriser will not find ────────────────────────────────────
+#
+# Inkscape 1.4 says nothing about an href it cannot resolve: exit 0, empty stderr, and a
+# PNG byte-identical to one drawn from an href naming a file that never existed. There is
+# therefore nothing to read after the fact, so the module checks before handing the
+# document over.
+
+
+@pytest.mark.parametrize(
+    "uri,expected",
+    [
+        # As `Path.as_uri()` writes one on Windows. `urlparse` keeps a leading slash
+        # before the drive letter; `Path` reads that as rooted and finds nothing.
+        ("file:///C:/assets/british.svg", "C:/assets/british.svg"),
+        ("file:///c:/assets/british.svg", "c:/assets/british.svg"),
+        # Percent-encoding, which `as_uri()` applies to spaces and non-ASCII.
+        ("file:///C:/my%20assets/british.svg", "C:/my assets/british.svg"),
+        # POSIX: the leading slash is the root and must survive.
+        ("file:///srv/assets/british.svg", "/srv/assets/british.svg"),
+        ("file:///srv/my%20assets/british.svg", "/srv/my assets/british.svg"),
+        # UNC: the share sits in the URI's netloc and must be put back.
+        ("file://server/share/british.svg", "//server/share/british.svg"),
+    ],
+)
+def test_a_file_uri_becomes_the_path_it_names(uri, expected):
+    """Regression: the Windows drive-letter form failed 31 tests in CI on 2026-08-31.
+
+    Pure string logic, so **both** platforms' forms are exercised from any host. That is
+    the point: the bug survived a green Linux run precisely because nothing here read a
+    Windows-shaped URI, and delegating to `urllib.request.url2pathname` would have left
+    the same hole, since it dispatches on the running platform.
+    """
+    from utils.svg_fill import _path_from_file_uri
+
+    assert _path_from_file_uri(uri).as_posix() == expected
+
+
+def test_a_resolved_asset_round_trips_through_its_uri(tmp_path):
+    """Whatever the host, what `_as_href` writes must lead back to the same file.
+
+    The property the 31 failures actually violated: every asset was resolved correctly,
+    turned into a URI correctly, and then not found again.
+    """
+    from utils.svg_fill import _as_href, _path_from_file_uri
+
+    asset = tmp_path / "british.svg"
+    asset.write_bytes(SVG)
+
+    recovered = _path_from_file_uri(_as_href(str(asset)))
+
+    assert recovered == asset
+    assert recovered.is_file()
+
+
+def test_a_template_authored_link_to_a_missing_file_is_fatal(tmp_path):
+    """The one case no other check looks at: an `<image>` the module never filled.
+
+    A league authors it into its own template and the file later moves. Every check in
+    the module passes — it is not a field, so nothing resolves it, nothing empties it and
+    nothing reports it — and the league gets a hole in the picture with no explanation.
+    """
+    from utils.svg_fill import FillSpec, fill
+
+    root = parse_svg_bytes(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+        f'<image id="badge" href="{(tmp_path / "gone.svg").as_uri()}"/></svg>'.encode()
+    )
+
+    result = fill(FillSpec(root=root))
+
+    assert any("`badge`" in line and "not a file on this host" in line
+               for line in result.unresolved)
+
+
+def test_a_template_authored_relative_link_is_anchored_not_merely_checked():
+    """A relative href resolves against the *working directory*, so checking it lies.
+
+    The file is found — the bot runs from the project root — and the check would pass a
+    link the rasteriser then cannot follow, certifying the very fault it exists to catch.
+    It must be rewritten absolute and left that way on the element.
+    """
+    from utils.svg_fill import FillSpec, fill
+
+    root = parse_svg_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+        b'<image id="crest" href="resources/defaults/tracks/fallback.svg"/></svg>'
+    )
+
+    result = fill(FillSpec(root=root))
+
+    assert result.unresolved == []
+    href = parse_svg_bytes(result.svg).find(".//{http://www.w3.org/2000/svg}image").get("href")
+    assert href.startswith("file:///"), "the rasteriser cannot follow a relative reference"
+    assert href.endswith("resources/defaults/tracks/fallback.svg")
+
+
+def test_a_template_authored_link_that_resolves_is_not_reported(tmp_path):
+    """The check must not cost a league a template that was always correct."""
+    from utils.svg_fill import FillSpec, fill
+
+    present = tmp_path / "badge.svg"
+    present.write_bytes(SVG)
+    root = parse_svg_bytes(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+        f'<image id="badge" href="{present.as_uri()}"/></svg>'.encode()
+    )
+
+    assert fill(FillSpec(root=root)).unresolved == []
+
+
+def test_a_data_uri_is_never_checked_against_the_filesystem():
+    """It carries its own bytes; there is no file to be missing."""
+    from utils.svg_fill import FillSpec, fill
+
+    root = parse_svg_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+        b'<image id="badge" href="data:image/svg+xml;base64,AAAA"/></svg>'
+    )
+
+    assert fill(FillSpec(root=root)).unresolved == []
+
+
+@pytest.mark.rasteriser
+def test_a_relative_href_draws_exactly_what_a_missing_one_draws(tmp_path):
+    """The measurement the whole fix rests on, pinned against the real rasteriser.
+
+    Two SVGs in one directory: one linking a real file by a path relative to the *project
+    root*, one linking a file that does not exist at all. The rasteriser reads each out of
+    `tmp_path`, so it resolves the relative href against `tmp_path` and finds nothing —
+    and the two PNGs come out identical. A third, linking the same real file by an
+    absolute `file://` URI, differs from both.
+
+    This is why the module anchors a relative href rather than trusting the rasteriser to
+    complain: it does not complain.
+    """
+    import subprocess
+
+    from models.image_constants import packaged_directory_for
+    from services.image_render_service import find_converter
+    from utils.paths import PROJECT_ROOT
+
+    asset = PROJECT_ROOT / packaged_directory_for("flag") / "other.svg"
+    relative = asset.relative_to(PROJECT_ROOT).as_posix()
+
+    def _draw(name: str, href: str) -> bytes:
+        source = tmp_path / f"{name}.svg"
+        source.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" '
+            'xmlns:xlink="http://www.w3.org/1999/xlink" width="120" height="80">'
+            '<rect width="120" height="80" fill="#ffffff"/>'
+            f'<image x="0" y="0" width="120" height="80" xlink:href="{href}"/></svg>',
+            encoding="utf-8",
+        )
+        out = tmp_path / f"{name}.png"
+        subprocess.run(
+            [
+                find_converter(),
+                str(source),
+                "--export-type=png",
+                f"--export-filename={out}",
+                "--export-width=120",
+                "--export-height=80",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        return out.read_bytes()
+
+    assert _draw("relative", relative) == _draw("missing", "file:///no/such/file.svg")
+    assert _draw("absolute", asset.as_uri()) != _draw("missing2", "file:///no/such.svg")
 
 
 def test_a_resolved_asset_is_written_as_a_uri_not_a_path(flags):

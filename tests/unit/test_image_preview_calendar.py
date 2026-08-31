@@ -201,9 +201,8 @@ class TestItUsesTheLeaguesOwnDirectories:
         seen = {}
         original = calendar_service.build_fill_spec
 
-        def _capture(drawing, root, *, track_directory=None, flag_directory=None):
-            seen["track"] = track_directory
-            seen["flag"] = flag_directory
+        def _capture(drawing, root, *, asset_directories=None):
+            seen.update(asset_directories or {})
             return SimpleNamespace()
 
         # The preview closed over the module attribute at call time, so patching it here

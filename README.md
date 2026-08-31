@@ -1490,6 +1490,15 @@ These sit under `/images template` rather than `/images config` because Discord 
 
 **The file is checked before it is stored.** The command refuses, and your existing filename stays in force, if the name does not end in `.svg`, if no such file is in the configured directory, if it will not parse as SVG, or if it is missing a field the image needs. You are told which of those it was — a malformed file is described in plain terms ("a comment contains a double hyphen at line 12"), never as a parser error. Nothing is written unless every check passes, so a refused command cannot leave the bot pointed at a file it can't use.
 
+> **A picture of your own that your template links to must actually be there.** Anything the bot
+> does not address — layers, background shapes, your league's crest sitting in a corner — is
+> otherwise left alone, but a linked image is the one exception: if the file it points at is not
+> on the machine, the drawing is **refused** and you are told which element and which file. The
+> reason is that the converter says nothing at all about a link it cannot follow — it silently
+> stamps a broken-image mark where your picture should be and reports success, so without this
+> check the first you would know of it is your league looking at it. Point such an image at a path
+> inside the bot's own folder; a path with no leading slash is read from there.
+
 > **A blank declares the room it has, and nothing is ever cut to fit it.** Two properties on the text
 > element say it: `inline-size` is how wide the blank may be, and `max-lines` how many lines it may
 > take. Leave `max-lines` out and the blank takes one line. A value too long is broken at word
@@ -1521,7 +1530,7 @@ These sit under `/images template` rather than `/images config` because Discord 
 
 > **Divisions may differ however you like.** Different teams, different numbers of them, different seat counts — one lineup file serves them all, and `/season review` no longer asks a season to be uniform. It says something only when a division holds more teams, or a team more drivers, than your template has room for.
 
-> **The two results templates are not interchangeable.** They share every field but the columns of their rows: qualifying carries `row_<x>_best_lap`, `row_<x>_gap` and an optional `row_<x>_tyre`; race carries `row_<x>_time`, `row_<x>_fastest_lap` and `row_<x>_ingame_penalty`. Naming a race file in the qualifying slot is refused, and the bot says which field gave it away rather than listing everything the file is missing. Identifiers of your own — layer names, background shapes, anything the bot does not address — are ignored entirely, so you can build the file however suits you.
+> **The two results templates are not interchangeable.** They share every field but the columns of their rows: qualifying carries `row_<x>_best_lap`, `row_<x>_gap` and an optional `row_<x>_tyre`; race carries `row_<x>_time`, `row_<x>_fastest_lap` and `row_<x>_ingame_penalty`. Naming a race file in the qualifying slot is refused, and the bot says which field gave it away rather than listing everything the file is missing. Identifiers of your own — layer names, background shapes, anything the bot does not address — are ignored entirely, so you can build the file however suits you. The one thing that is looked at is a linked image, whose file has to exist; see the callout under `/images template` above.
 >
 > Draw as many rows as your grid needs, numbered from 1 with no gaps; the bot counts them from the file. A session with fewer entries than you drew rows removes the unused `row_<x>_group` and its whole contents, so leave nothing outside that group that you would mind seeing on a short grid. A session with **more** entries than you drew rows is refused and names the drivers who would have been dropped — the bot will not quietly cut a classification short.
 >

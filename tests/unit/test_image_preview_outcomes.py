@@ -282,6 +282,78 @@ class TestStandingsPreview:
         assert "row_1_round_1_feature_race_result" in spec.text
         assert "row_1_round_2_feature_race_result" in spec.empty_quietly
 
+    async def test_the_gap_to_the_leader_is_drawn_on_the_drivers_preview(
+        self, bot, league
+    ):
+        """Regression: the preview drew the points and left the gap beside them blank.
+
+        A preview stands against no reference round, so it passes no movement — and once
+        passed no gaps either, on the mistaken reading that the two go together. They do
+        not: the gap is arithmetic over the classification being drawn alone. A manager
+        judging the template's `PTS · GAP` column saw half of what a posting would put
+        there.
+        """
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        drivers_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_drivers_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_drivers_template.svg")
+        spec = drivers_spec_builder(root)
+
+        # The leader has no gap to draw and is emptied; everyone below carries one.
+        assert "row_1_gap_to_leader" in spec.empty_quietly
+        assert spec.text["row_2_gap_to_leader"].startswith("-")
+        assert spec.text["row_2_gap_to_leader"] != "-0"
+
+    async def test_the_gap_to_the_leader_is_drawn_on_the_constructors_preview(
+        self, bot, league
+    ):
+        """The same omission stood on both championships, so both are pinned."""
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        constructors_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_constructors_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_constructors_template.svg")
+        spec = constructors_spec_builder(root)
+
+        assert "row_1_gap_to_leader" in spec.empty_quietly
+        assert spec.text["row_2_gap_to_leader"].startswith("-")
+
+    async def test_the_gap_agrees_with_the_points_it_stands_beside(self, bot, league):
+        """The column is one value read two ways, so the two must reconcile."""
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        drivers_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_drivers_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_drivers_template.svg")
+        spec = drivers_spec_builder(root)
+
+        leader_points = int(spec.text["row_1_points"])
+        second_points = int(spec.text["row_2_points"])
+
+        assert spec.text["row_2_gap_to_leader"] == f"-{leader_points - second_points}"
+
 
 # ── Attendance (T024) ─────────────────────────────────────────────────────
 

@@ -222,14 +222,22 @@ def build_fill_spec(
     drawing: CalendarDrawing,
     root,
     *,
-    track_directory: Path | None = None,
-    flag_directory: Path | None = None,
+    asset_directories: Mapping[str, Path] | None = None,
 ) -> FillSpec:
     """Project *drawing* onto *root*, deciding the crop and what leaves beside it.
 
     Raises :class:`CalendarDataError` where the template cannot be counted. Overflow is
     **not** raised here: it is reported through ``row_count`` so the render service issues
     the capacity problem in one place, with the count, capacity and template named.
+
+    *asset_directories* is the ``{asset class: directory}`` map every other graphic's
+    builder takes, and is taken here for the same reason: it is what
+    ``image_render_service.spec_builder_with_faults`` hands a builder, so a calendar that
+    named its two directories as separate keyword arguments could not be routed through
+    the shared helper and resolved them by hand instead. That hand-rolled resolution
+    produced *relative* paths where every other path produced absolute ones, and a
+    relative href reaches the rasteriser as a file it cannot find — see
+    ``utils.svg_fill._as_href``.
     """
     catalogue = catalogue_for(TEMPLATE_KEY)
     index = FieldIndex(root)
@@ -323,12 +331,14 @@ def build_fill_spec(
     )
     # Each class draws from its own configured directory, and never from the other's
     # (044). A flag that does not resolve draws the flag directory's fallback, never a
-    # circuit map, and the reverse.
-    directories = {}
-    if track_directory is not None:
-        directories["track"] = track_directory
-    if flag_directory is not None:
-        directories["flag"] = flag_directory
+    # circuit map, and the reverse. Only the two classes this graphic draws are taken from
+    # the map, so a caller handing over the whole configuration cannot widen what the
+    # calendar reaches for.
+    directories = {
+        asset_class: directory
+        for asset_class, directory in (asset_directories or {}).items()
+        if asset_class in ("track", "flag") and directory is not None
+    }
     if directories:
         spec.asset_directories = directories
     return spec

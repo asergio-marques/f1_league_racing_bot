@@ -605,12 +605,111 @@ def fill(spec: FillSpec) -> FillResult:
                 continue
             unresolved.append(f"field `{field_id}` was not filled")
 
+    # ── Linked images the rasteriser will not find (XIV.14) ───────────────
+    unresolved.extend(_unreachable_links(root))
+
     return FillResult(
         svg=etree.tostring(root.getroottree(), xml_declaration=True, encoding="utf-8"),
         canvas=canvas,
         unresolved=unresolved,
         notices=notices,
     )
+
+
+def _unreachable_links(root: etree._Element) -> list[str]:
+    """Every ``<image>`` in the finished document whose file is not there.
+
+    The rasteriser gives no warning about one. Inkscape 1.4 exits **0** and prints
+    **nothing** on stderr for an href it cannot resolve; it simply draws no image and
+    produces a PNG byte-identical to the one it would have drawn had the element named a
+    file that never existed. So there is no diagnostic to read after the fact, and the
+    check has to happen here, before the document is handed over.
+
+    It runs over the whole tree rather than over the fields this module filled, because
+    the fields this module filled are the ones already guaranteed: ``resolve_asset``
+    tested each of them and ``_as_href`` anchored it. What is *not* guaranteed is an
+    ``<image>`` a league authored into its own template and pointed at a file that has
+    since moved — which no other check in the module looks at, and which reaches a league
+    as a hole in the picture with nothing said about it.
+
+    **A template-authored href is anchored here too**, through the same ``_as_href`` the
+    fill path uses. Reading such an href without anchoring it would be worse than not
+    checking at all: a relative one resolves against the *working directory* and is found,
+    so the check would pass a link the rasteriser then fails to follow — the module would
+    be certifying the very fault it exists to catch. Anchoring makes the check honest and
+    leaves the document with the absolute reference the rasteriser needs.
+
+    Fatal rather than a notice, on the same reasoning that makes a missing asset fatal:
+    a graphic with a piece silently absent is worse than no graphic and a message saying
+    which file is missing. Only ``file:`` and bare paths are checked — a ``data:`` URI
+    carries its own bytes and a remote scheme is not this module's to reach.
+    """
+    missing: list[str] = []
+    seen: set[str] = set()
+
+    for element in root.iter(f"{{{SVG_NS}}}image"):
+        href = element.get("href") or element.get(f"{{{XLINK_NS}}}href")
+        if not href or href in seen:
+            continue
+        seen.add(href)
+
+        if _URI_SCHEME_RE.match(href) and not re.match(r"^[a-zA-Z]:[\\/]", href):
+            if not href.lower().startswith("file:"):
+                continue  # data:, http: — not a path on this host
+            path = _path_from_file_uri(href)
+        else:
+            # Anchor it, and leave the anchored form on the element.
+            _set_href(element, href)
+            path = _path_from_file_uri(element.get("href"))
+
+        if path.is_file():
+            continue
+
+        field_id = element.get("id") or "an unnamed <image>"
+        missing.append(
+            f"image field `{field_id}` links to `{href}`, which is not a file on this "
+            f"host; the rasteriser would draw nothing there and report nothing"
+        )
+
+    return missing
+
+
+#: A `file:` URI whose path begins with a drive letter, as `Path.as_uri()` writes one on
+#: Windows: `file:///C:/assets/british.svg`, whose parsed path is `/C:/assets/british.svg`.
+_DRIVE_LETTER_PATH_RE = re.compile(r"^/[a-zA-Z]:")
+
+
+def _path_from_file_uri(href: str) -> Path:
+    """The inverse of ``Path.as_uri()`` — the filesystem path a ``file:`` URI names.
+
+    Written out rather than delegated to ``urllib.request.url2pathname``, which dispatches
+    on the *running* platform and therefore cannot be exercised for Windows from a Linux
+    host. This suite runs on Linux, on Windows and on a Raspberry Pi, and the rule after
+    2026-08-26 is that a test must not depend on what the host happens to carry — a
+    platform-dispatching call would leave the Windows branch untested everywhere but
+    Windows, which is exactly how the bug this function fixes reached CI.
+
+    Two forms need care, and neither arises on a POSIX host:
+
+    * **A drive letter.** ``Path("C:/x/y.svg").as_uri()`` is ``file:///C:/x/y.svg``, and
+      ``urlparse`` hands back ``/C:/x/y.svg`` — a leading slash the drive letter must not
+      carry. ``Path`` reads that as rooted, ``is_file()`` answers False for a file that is
+      plainly there, and every resolved asset is reported missing. That is precisely what
+      failed 31 tests on the ``windows-latest`` runner on 2026-08-31.
+    * **A UNC path.** ``Path("//server/share/y.svg").as_uri()`` puts ``server`` in the
+      URI's *netloc*, so the share is lost unless it is put back.
+    """
+    from urllib.parse import unquote, urlparse
+
+    parsed = urlparse(href)
+    path = unquote(parsed.path)
+
+    if _DRIVE_LETTER_PATH_RE.match(path):
+        path = path[1:]
+
+    if parsed.netloc:
+        return Path(f"//{parsed.netloc}{path}")
+    return Path(path)
 
 
 # ── Operation helpers ─────────────────────────────────────────────────────
@@ -657,18 +756,36 @@ def _as_href(value: str) -> str:
     rasteriser cannot resolve it and silently draws a broken-image icon in its place —
     a defect invisible in the SVG and obvious only in the PNG (Constitution XIV.14).
 
-    An absolute path is therefore converted to a ``file://`` URI. Anything already
-    carrying a scheme, and any relative reference, is left alone: a template may legally
-    point at a file beside itself.
+    A **relative** path is worse, because it looks as though it works. The rasteriser
+    reads the filled SVG out of a temporary directory, so it resolves a relative href
+    against *that* directory and not against the project — and the file is silently
+    absent from the drawing while every check upstream reports success, because
+    ``resolve_asset`` tested the same relative path against the bot's own working
+    directory and found it. That is precisely how the calendar drew none of a league's
+    circuit maps or country flags while raising no notice of any kind.
+
+    So a relative reference is anchored to the project root before it is converted, and
+    every filesystem path leaves here as a ``file://`` URI. The project root is the right
+    anchor for both kinds of caller: a configured asset directory is *stored* relative to
+    it, and a template pointing at a file beside itself is pointing inside it too, since
+    that is where templates live. Anything already carrying a scheme is passed through —
+    ``data:`` and ``http:`` are not paths and must not be joined to anything.
+
+    Deliberately the last line of defence rather than the only one. A caller should still
+    resolve its directories through ``image_render_service.resolve_configured_directories``,
+    which reports *why* a directory was rejected; this only guarantees that failing to do
+    so cannot produce a picture with a hole in it and no explanation.
     """
     text = str(value)
     if _URI_SCHEME_RE.match(text) and not re.match(r"^[a-zA-Z]:[\\/]", text):
         return text  # data:, file:, http: … already a URI
 
+    import utils.paths as paths  # read as an attribute: tests patch PROJECT_ROOT
+
     candidate = Path(text)
-    if candidate.is_absolute():
-        return candidate.as_uri()
-    return text
+    if not candidate.is_absolute():
+        candidate = Path(paths.PROJECT_ROOT) / candidate
+    return candidate.as_uri()
 
 
 def _set_href(element: etree._Element, href: str) -> None:

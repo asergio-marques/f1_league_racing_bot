@@ -870,7 +870,9 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
             track_directory = None
 
         return build_fill_spec(
-            build_calendar_drawing(root), root, track_directory=track_directory
+            build_calendar_drawing(root),
+            root,
+            asset_directories={"track": track_directory} if track_directory else None,
         )
 
     if template_key == "lineup_template":

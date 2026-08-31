@@ -115,6 +115,10 @@ async def render_calendar_image(
 ):
     """Render one division's calendar. Returns a RenderOutcome."""
     from services.image_calendar_service import build_fill_spec, resolve_drawing
+    from services.image_render_service import (
+        resolve_configured_directories,
+        spec_builder_with_faults,
+    )
 
     config = await bot.image_config_service.get_config(server_id)
 
@@ -129,31 +133,46 @@ async def render_calendar_image(
         time_zone=getattr(config, "time_zone", None),
     )
 
-    track_directory = None
-    raw = getattr(config, "track_image_directory", None)
-    if raw:
-        track_directory = Path(raw)
-
-    # The calendar draws both imagery classes, so it needs both directories (044).
-    flag_directory = None
-    raw_flag = getattr(config, "flag_directory", None)
-    if raw_flag:
-        flag_directory = Path(raw_flag)
+    # The calendar draws both imagery classes, so it needs both directories (044). They
+    # are resolved by the helper every other posting path uses, which anchors them to the
+    # project root and keeps the reason any rejection was made. Resolving them here by
+    # hand produced *relative* paths, which resolve against the temporary directory the
+    # rasteriser reads the SVG from rather than against the project — so every circuit map
+    # and every country flag a league supplied was silently absent from the drawing, while
+    # the packaged `mystery.svg`, resolved absolutely, appeared beside them.
+    directories, directory_faults = resolve_configured_directories(
+        config,
+        (("track", "track_image_directory"), ("flag", "flag_directory")),
+        image_type=TEMPLATE_KEY,
+    )
 
     from utils.image_naming import stem_for_drawing
 
-    return await bot.image_render_service.render(
+    outcome = await bot.image_render_service.render(
         server_id,
         TEMPLATE_KEY,
-        lambda root: build_fill_spec(
-            drawing,
-            root,
-            track_directory=track_directory,
-            flag_directory=flag_directory,
+        spec_builder_with_faults(
+            build_fill_spec, drawing, directories, directory_faults
         ),
         output_dir=output_dir,
         filename_stem=stem_for_drawing(drawing, TEMPLATE_KEY),
     )
+
+    # Every other posting path reaches the log channel through `render_for_posting`, which
+    # this one cannot use: its two callers differ in origin — the calendar of record is
+    # scheduled and falls back to text, `/season review`'s copy is commanded and rejects —
+    # and both read a `RenderOutcome` rather than a `PostingDecision`. So the report is
+    # made here instead, because a notice that reaches only the `image_render_notices`
+    # table reaches nobody. That is why an entire league's circuit maps could go missing
+    # from a calendar with not one word said about it anywhere a manager looks.
+    if outcome.notices:
+        from services.image_render_service import ImageRenderService
+
+        await ImageRenderService.report_notices(
+            bot, server_id, outcome.notices, subject=f"calendar — {division.name}"
+        )
+
+    return outcome
 
 
 #: The calendar's command-output states, mirroring ``image_lineup_post``'s. Named here
