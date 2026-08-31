@@ -433,6 +433,13 @@ Found on 2026-08-26, alongside the autocomplete investigation above.
 - `tests/unit/test_image_attendance_shared_values.py:169` and `tests/unit/test_image_attendance_notices.py:191, :197` pass the literal string `"no-such.db"` as a database path to stand for one that does not exist. `aiosqlite.connect` **creates** a missing file rather than refusing, so each run leaves an empty `no-such.db` in whatever directory pytest was started from — the repository root, in practice.
 - Harmless and invisible: it is empty, and `.gitignore`'s `*.db` keeps it out of `git status`. It is recorded because the tests read as though they were exercising an absent database, and they are not — the file exists by the time the code under test opens it, so what they actually cover is an *empty* one. A `tmp_path` that is genuinely never created would test the intended thing and leave nothing behind.
 
+**P3 — Template field enumeration is recomputed from scratch several times per posting, and its cost scales with the size of the drawing file.**
+- Found on 2026-08-31 while adding the highlight chips to the standings drawings, which roughly doubled the number of identifiers the drivers template declares (3,695 to 6,095).
+- `ImageValidityService.template_reports` calls `evaluate_all_templates` afresh on every call and caches nothing. A standings posting reaches it about four times — twice through `standings_enabled`, then once per championship inside `render_for_posting` — and each pass runs `all_mandatory_ids` and `all_known_ids` over the whole file.
+- The cost is in `NestedSpec.declared_capacity`, which regular-expression matches the *entire* declared set once per row: fifty rows against six thousand names, per enumeration. Measured on the Raspberry Pi the bot runs on, `all_mandatory_ids` over the drivers template went from 0.266s to 0.438s, so a standings posting now spends roughly 0.7s more in Python than it did.
+- Not visible to a league: the same posting spends about 4.9s in Inkscape, so the added time is well inside the noise of a render that already takes five seconds, and nothing waits on it. It is recorded because the shape of the problem is quadratic in a file a league is invited to enlarge — a template drawn for a hundred rows and twenty rounds would feel it.
+- The remedy, if it is ever wanted, is to memoise `declared_capacity` per `(stem, declared)` inside `RowSpec._nested_ids` rather than to shrink the templates. It was deliberately not begun here: the feature that exposed it does not depend on it.
+
 ## Behaviour worth knowing rather than fixing
 
 These are deliberate, or at least consistent, but are surprising enough to be mistaken for defects.

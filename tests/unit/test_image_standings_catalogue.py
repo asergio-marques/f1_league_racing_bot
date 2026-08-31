@@ -446,3 +446,187 @@ def test_the_round_heading_flag_id_names_its_class():
     columns = STANDINGS_DRIVERS_CATALOGUE.columns
     assert columns.prefix == "round"
     assert "flag" in columns.fields
+
+
+# ── The highlight layers ──────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "catalogue,nest",
+    [
+        (STANDINGS_DRIVERS_CATALOGUE, "round"),
+        (STANDINGS_CONSTRUCTORS_CATALOGUE, "driver"),
+    ],
+)
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "sprint_race_background",
+        "sprint_race_fastest_lap",
+        "feature_race_background",
+        "feature_race_fastest_lap",
+        "sprint_qualifying_background",
+        "feature_qualifying_background",
+    ],
+)
+def test_a_highlight_layer_is_an_optional_valueless_field_of_the_cell(catalogue, nest, suffix):
+    """Declarable, never mandatory, and never asked for a value: it is only recoloured."""
+    spec = catalogue.rows.nested
+    if nest == "driver":
+        spec = spec.nested
+    assert suffix in spec.fields
+    assert suffix in spec.valueless_fields
+    assert suffix not in spec.mandatory_fields
+
+
+def test_the_fastest_lap_of_a_grid_cell_is_not_the_one_a_race_result_draws():
+    """`_canonical` folds digits to `#`, and the two must not fold onto each other.
+
+    A results graphic already claims `row_<x>_fastest_lap`. Were the grid's overlay to
+    canonicalise onto it, `sibling_fields_declared` would call every standings template the
+    wrong file for its slot the moment it declared one.
+    """
+    from models.image_catalogues import _canonical
+
+    assert _canonical("row_7_fastest_lap") == "row_#_fastest_lap"
+    assert (
+        _canonical("row_2_round_7_feature_race_fastest_lap")
+        == "row_#_round_#_feature_race_fastest_lap"
+    )
+    assert (
+        _canonical("row_2_round_7_driver_1_feature_race_fastest_lap")
+        == "row_#_round_#_driver_#_feature_race_fastest_lap"
+    )
+    assert len({
+        _canonical("row_7_fastest_lap"),
+        _canonical("row_2_round_7_feature_race_fastest_lap"),
+        _canonical("row_2_round_7_driver_1_feature_race_fastest_lap"),
+    }) == 3
+
+
+@pytest.mark.parametrize("key", [DRIVERS, CONSTRUCTORS])
+def test_every_shipped_chip_stands_under_the_cell_it_highlights(key):
+    """Geometry, checked against the template rather than against a formula.
+
+    Three things must hold for a chip to do its job: it is a rect, it stands inside the
+    cell's own group so a trimmed row or round takes it away, and it is authored **before**
+    the text so it paints underneath rather than over it.
+
+    Containment is asserted on the text's **anchor point alone** and never on any measured
+    extent of the text. Fonts differ between this repository's three target hosts — a
+    development machine, CI's runners and the Pi the bot runs on — and a chip wide enough
+    for `DSQ` in one font is not in another, so an assertion on rendered width would pass
+    where its author sat and fail everywhere else.
+    """
+    root, _ = _shipped(key)
+    chips = [
+        node
+        for node in root.iter()
+        if (node.get("id") or "").endswith(("_background", "_fastest_lap"))
+        and node.get("id", "").startswith("row_")
+    ]
+    assert chips, "the shipped template declares no highlight chip at all"
+
+    for chip in sorted(chips, key=lambda node: node.get("id")):
+        chip_id = chip.get("id")
+        assert etree.QName(chip).localname == "rect", f"{chip_id} is not a rect"
+
+        stem = chip_id.rsplit("_background", 1)[0].rsplit("_fastest_lap", 1)[0]
+        parent = chip.getparent()
+        siblings = list(parent)
+        cell = next(
+            (
+                node
+                for node in siblings
+                if any(
+                    (span.get("id") or "") == f"{stem}_result" for span in node.iter()
+                )
+            ),
+            None,
+        )
+        assert cell is not None, f"{chip_id} does not stand beside the cell it highlights"
+        assert siblings.index(chip) < siblings.index(cell), (
+            f"{chip_id} is authored after its text and would paint over it"
+        )
+
+        x, y = float(chip.get("x")), float(chip.get("y"))
+        width, height = float(chip.get("width")), float(chip.get("height"))
+        anchor_x, anchor_y = float(cell.get("x")), float(cell.get("y"))
+        assert x <= anchor_x <= x + width, f"{chip_id} does not span its cell's anchor"
+        assert y <= anchor_y <= y + height, f"{chip_id} does not cover its cell's baseline"
+
+
+@pytest.mark.parametrize("key", [DRIVERS, CONSTRUCTORS])
+def test_every_shipped_chip_is_authored_transparent(key):
+    """They are recoloured, never removed — so an unhighlighted cell must show nothing."""
+    root, _ = _shipped(key)
+    for node in root.iter():
+        node_id = node.get("id") or ""
+        if node_id.startswith("row_") and node_id.endswith(("_background", "_fastest_lap")):
+            assert node.get("fill") == "none", f"{node_id} would be visible unhighlighted"
+
+
+@pytest.mark.parametrize("key", [DRIVERS, CONSTRUCTORS])
+def test_the_shipped_stylesheet_paints_every_kind_the_render_can_apply(key):
+    """A kind with no rule paints nothing, so the shipped palette must name them all."""
+    import services.image_standings_service as standings
+
+    root, _ = _shipped(key)
+    paints = standings._highlight_paints(root)
+    for family in ("sprint", "feature"):
+        for kind in (
+            standings.HIGHLIGHT_P1,
+            standings.HIGHLIGHT_P2,
+            standings.HIGHLIGHT_P3,
+            standings.HIGHLIGHT_POINTS,
+            standings.HIGHLIGHT_FASTEST_LAP,
+        ):
+            assert standings._paint(paints, kind, family), f"{family}/{kind} has no paint"
+
+
+@pytest.mark.parametrize("key", [DRIVERS, CONSTRUCTORS])
+def test_the_shipped_palette_recolours_the_text_on_its_opaque_chips_alone(key):
+    """A text colour is owed by the chips that would otherwise swallow the cell's own.
+
+    The three podium chips and the fastest-lap overlay are solid enough to need one. The
+    points tint deliberately is not: it is the commonest mark on the grid and is pitched
+    light, so the cell keeps the colour the stylesheet already gives it. That is the
+    template exercising the per-kind opt-in, not an omission.
+    """
+    import services.image_standings_service as standings
+
+    root, _ = _shipped(key)
+    paints = standings._highlight_paints(root)
+    for family in ("sprint", "feature"):
+        for kind in (
+            standings.HIGHLIGHT_P1,
+            standings.HIGHLIGHT_P2,
+            standings.HIGHLIGHT_P3,
+            standings.HIGHLIGHT_FASTEST_LAP,
+        ):
+            assert standings._paint(
+                paints, kind, family, variants=("_text",)
+            ), f"{family}/{kind} has no text colour"
+            assert standings._paint(
+                paints, kind, family, variants=("_sup_text", "_text")
+            ), f"{family}/{kind} has no raised-glyph colour"
+
+        assert (
+            standings._paint(paints, standings.HIGHLIGHT_POINTS, family, variants=("_text",))
+            is None
+        ), "the points tint is light enough to leave the cell's own colour standing"
+
+
+@pytest.mark.parametrize("key", [DRIVERS, CONSTRUCTORS])
+def test_every_gradient_the_shipped_stylesheet_names_is_defined(key):
+    """A `fill:url(#…)` naming a gradient the template lacks paints nothing at all."""
+    import re
+
+    import services.image_standings_service as standings
+
+    root, _ = _shipped(key)
+    defined = {node.get("id") for node in root.iter() if node.get("id")}
+    for selector, paint in standings._highlight_paints(root).items():
+        match = re.fullmatch(r"url\(#([^)]+)\)", paint)
+        if match is not None:
+            assert match.group(1) in defined, f".{selector} names a missing gradient"

@@ -200,6 +200,14 @@ class FieldIndex:
     objects too, without the manager choosing them, and sweeping those in would let a
     field name collide with a shape nobody meant to address.
 
+    **Nothing inside ``<defs>`` is indexed.** A gradient, filter, marker or clip path is
+    referenced by ``url(#…)`` and therefore *must* carry an identifier, but it is a paint
+    the template mixes rather than a place the render puts a value — it is never a field. It
+    has to be excluded rather than merely ignored, because ``declared()`` is what the
+    catalogue checks a template against: an indexed gradient would be reported as an id the
+    catalogue cannot name, and the standings templates would be refused for owning the very
+    gradients their highlight chips are painted with.
+
     Rebuild after any structural change to the tree; a removal invalidates the index
     exactly as it did the dict this class replaces.
     """
@@ -213,7 +221,16 @@ class FieldIndex:
         label_attr = f"{{{INKSCAPE_NS}}}label"
         groupmode_attr = f"{{{INKSCAPE_NS}}}groupmode"
 
+        # Held in a set rather than compared by identity value: keeping the proxies alive is
+        # what makes lxml's element identity stable for the length of the walk.
+        definitions: set[etree._Element] = set()
+        for defs in root.iter(f"{{{SVG_NS}}}defs"):
+            definitions.update(defs.iter())
+
         for element in root.iter():
+            if element in definitions:
+                continue
+
             element_id = element.get("id")
             if element_id:
                 self.by_id.setdefault(element_id, element)

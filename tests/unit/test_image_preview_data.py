@@ -61,3 +61,105 @@ class TestVerdictTextConstants:
         from services import image_preview_data as data
 
         assert len(data.LONG_DRIVER_NAME) > 30
+
+
+# ---------------------------------------------------------------------------
+# The standings grid's scatter (feature/standings_position_highlight)
+# ---------------------------------------------------------------------------
+
+class TestStandingsScatter:
+    """Every round of a preview grid holds a different classification.
+
+    The builders number a field in the order they are handed it, so without a scatter the
+    driver at the top of the list would win every round and the grid would draw one flat
+    column — which tells a manager judging a template nothing about how it handles the
+    varied grid a real season produces.
+    """
+
+    @staticmethod
+    def _drivers(count: int):
+        from types import SimpleNamespace
+
+        return [
+            SimpleNamespace(key=n, team_name="Team", seat_number=1)
+            for n in range(1, count + 1)
+        ]
+
+    def test_every_driver_appears_exactly_once_in_every_round(self):
+        from services.image_preview_data import _scattered
+
+        drivers = self._drivers(20)
+        for ordinal in range(1, 13):
+            order = _scattered(drivers, ordinal, 0)
+            assert sorted(d.key for d in order) == [d.key for d in drivers]
+
+    def test_two_rounds_classify_the_field_differently(self):
+        from services.image_preview_data import _scattered
+
+        drivers = self._drivers(20)
+        orders = {
+            tuple(d.key for d in _scattered(drivers, ordinal, 0))
+            for ordinal in range(1, 13)
+        }
+        assert len(orders) == 12
+
+    def test_no_driver_marches_by_a_constant_from_round_to_round(self):
+        """A fixed multiplier would shift the whole field alike — a rotation, which stripes.
+
+        The grid is read as a picture, and a constant stride draws diagonal bands rather
+        than a scatter.
+        """
+        from services.image_preview_data import _scattered
+
+        drivers = self._drivers(20)
+        places = [
+            [d.key for d in _scattered(drivers, ordinal, 0)].index(1)
+            for ordinal in range(1, 13)
+        ]
+        deltas = {b - a for a, b in zip(places, places[1:])}
+        assert len(deltas) > 1
+
+    def test_the_same_round_is_classified_the_same_way_twice(self):
+        """Derived, never random — two renders of one round must be comparable."""
+        from services.image_preview_data import _scattered
+
+        drivers = self._drivers(20)
+        first = [d.key for d in _scattered(drivers, 4, 1)]
+        assert first == [d.key for d in _scattered(drivers, 4, 1)]
+
+    def test_a_field_too_small_to_permute_is_handed_back_unchanged(self):
+        from services.image_preview_data import _scattered
+
+        for count in (0, 1, 2):
+            drivers = self._drivers(count)
+            assert _scattered(drivers, 3, 0) == drivers
+
+    def test_the_fastest_lap_does_not_fall_in_the_same_place_every_round(self):
+        """Pinned to one position it would only ever be seen over the same chip."""
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers(20)
+        results = fabricate_standings_round_results(
+            list(range(1, 13)),
+            {ordinal: "NORMAL" for ordinal in range(1, 13)},
+            drivers,
+            {"Team": 900},
+        )
+        places = {
+            next(
+                row.finishing_position
+                for row in results[ordinal]["FEATURE_RACE"]
+                if row.fastest_lap_bonus
+            )
+            for ordinal in range(1, 13)
+        }
+        assert len(places) > 1
+        assert 1 in places, "a fastest lap must sometimes fall to the winner"
+
+    def test_a_single_classification_keeps_the_second_place_it_always_had(self):
+        """The results preview draws one race and needs no variation; it is untouched."""
+        from services.image_preview_data import fabricate_race_rows
+
+        rows = fabricate_race_rows(self._drivers(20), {"Team": 900}, {})
+        holder = [row for row in rows if row.fastest_lap_bonus]
+        assert [row.finishing_position for row in holder] == [2]

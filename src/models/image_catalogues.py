@@ -1059,6 +1059,30 @@ _STANDINGS_CELL_FIELDS = frozenset(
     }
 )
 
+#: The highlight layers a cell may carry beneath its text: a **background** taking the podium
+#: or points colour, and a **fastest-lap overlay** that may stand over it. Optional, and
+#: independently so — a template opts in per cell and per kind by declaring the field and a
+#: matching ``.highlight_*`` rule, and one declaring neither renders as it always did.
+#:
+#: **Valueless.** These are the module's first fields that are only ever recoloured and never
+#: filled, so XIV.3's "its value could not be determined" cannot apply to them; the render
+#: writes no text upon them and asking for one would be asking for nothing.
+#:
+#: The two qualifying backgrounds are admitted although the shipped templates decline them.
+#: A raised qualifying glyph shares one auto-laid text chunk with the race result beside it
+#: and so has no fixed position to put a chip behind; a league that re-lays its own template
+#: to give qualifying a column of its own may declare them, and is not refused for it.
+_STANDINGS_CELL_HIGHLIGHTS = frozenset(
+    {
+        "sprint_qualifying_background",
+        "sprint_race_background",
+        "sprint_race_fastest_lap",
+        "feature_qualifying_background",
+        "feature_race_background",
+        "feature_race_fastest_lap",
+    }
+)
+
 #: The round headings, shared by both standings championships **and by the attendance
 #: sheet**. An **optional unit** (XIV.3, v4.5.0): a template declaring no round draws its
 #: classification or its totals alone and owes no field here, while one declaring any round
@@ -1111,8 +1135,13 @@ STANDINGS_DRIVERS_CATALOGUE = FieldCatalogue(
             prefix="round",
             capacity=None,
             optional_unit=True,
-            fields=_STANDINGS_CELL_FIELDS | {"group"},
+            fields=_STANDINGS_CELL_FIELDS | _STANDINGS_CELL_HIGHLIGHTS | {"group"},
             mandatory_fields=frozenset(),
+            # The group was already valueless in fact and unclassified in the spec, this
+            # nest declaring no valueless field at all. It is named now because the
+            # highlight rects must be, and `RowSpec.valueless_field_ids` consults the nest
+            # only where the set is non-empty.
+            valueless_fields=_STANDINGS_CELL_HIGHLIGHTS | {"group"},
         ),
     ),
 )
@@ -1150,8 +1179,13 @@ STANDINGS_CONSTRUCTORS_CATALOGUE = FieldCatalogue(
                 prefix="driver",
                 capacity=None,
                 capacity_per_member=True,
-                fields=_STANDINGS_CELL_FIELDS | {"group", "name"},
+                fields=(
+                    _STANDINGS_CELL_FIELDS
+                    | _STANDINGS_CELL_HIGHLIGHTS
+                    | {"group", "name"}
+                ),
                 mandatory_fields=frozenset(),
+                valueless_fields=_STANDINGS_CELL_HIGHLIGHTS | {"group"},
             ),
         ),
     ),

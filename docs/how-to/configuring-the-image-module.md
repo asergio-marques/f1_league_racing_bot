@@ -282,6 +282,16 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 >
 > Put the **last** row's crop point at the height the file itself declares, so a full division is still drawn whole. The two go together and both are optional: leave them out and your drawing works exactly as it always did, at full height. The drawings that come with the bot have both. Anything you draw below the rows and outside `footer_group` is cut off, so put it in the group or move it above the rows.
 
+> **The standings grids can colour their race cells, and the colours are yours to choose.** Both standings drawings mark out where the season's results fell: a gold, silver or bronze chip behind a podium finish, a green tint behind any other points finish, and a purple layer *over* the chip for the fastest lap — so a race won with the fastest lap shows both. The drawings that come with the bot do this already.
+>
+> **Retune it in the drawing's own stylesheet.** The colours are classes beginning `.highlight_` — `.highlight_p1`, `.highlight_points`, `.highlight_fastest_lap`, and a `.highlight_p1_text` for the number itself. Edit them there and you are done; there is no command for this, so nothing the bot stores can ever disagree with your file. Prefix a class with `sprint_` or `feature_` to give one of the two races a look of its own.
+>
+> **Turn it off by deleting.** Remove a class and that one highlight stops appearing. Remove the `..._background` and `..._fastest_lap` shapes from a cell and that cell is never coloured. Remove both and the grid draws exactly as it did before any of this existed — so an older drawing of your own keeps working untouched.
+>
+> **What counts as a points finish is whatever your points configuration pays for**, so this follows your league rather than a fixed top ten. The fastest lap is only marked where your configuration actually awards a fastest-lap bonus for that session and the driver finished inside any position limit you set: a league that awards none marks nothing, which is right rather than broken. A driver disqualified from a win is drawn `DSQ` and gets no gold.
+>
+> **Only the two race cells are coloured.** The small qualifying number raised beside a result shares one run of text with it and so has nowhere fixed to put a chip; it is recoloured to stay readable on the chip beneath it, and that colour tells you nothing about where the driver qualified.
+
 **Make room for your biggest season.** Where the drawing file sets the limit — table rows, calendar rounds, reserve seats — the bot will refuse to go past it rather than quietly leaving someone off. The one exception is a reserve block you left out altogether, which is a decision rather than a limit and is honoured in silence. If your calendar drawing has room for 22 rounds, `/round add` will stop you at 23. Spare room costs nothing, as unused slots are hidden.
 
 ---
@@ -302,7 +312,7 @@ The check-in call is the odd one out — it *adds* a picture rather than replaci
 
 **Standings is the other odd one out: it posts two pictures where the text posts one message.** The driver standings go first and the constructor standings after, each carrying its heading and lifecycle label as message text and its table as an attachment. Both are drawn again and replaced on every occasion the standings were reposted before — a round first posted as provisional, a penalty or appeal phase closed, an amendment approved, a points change recalculating a round, and `/results standings sync`.
 
-> **Both pictures carry the whole season as a grid** — every round the division holds, run or not, with a result cell per session and, on the constructors picture, a car per driver who drove. The classification beside the grid — positions, points, gaps — resolves the same way it always has. `/images test standings` shows you exactly this.
+> **Both pictures carry the whole season as a grid** — every round the division holds, run or not, with a result cell per session and, on the constructors picture, a car per driver who drove. The classification beside the grid — positions, points, gaps — resolves the same way it always has, and the race cells are coloured for podiums, points finishes and fastest laps as described under Step 5. `/images test standings` shows you exactly this, with a different classification invented for each round so you can judge the colours across a whole grid rather than down one row.
 
 > **Either championship can fail on its own.** The one that failed is posted as text — that section by itself, not the whole table — and the one that drew is left alone, so you never read the same championship twice in one round.
 

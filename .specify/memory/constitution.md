@@ -1,6 +1,48 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-31 — v7.2.0 → v7.3.0: MINOR — a valueless field may be drawn by colour alone, and a
+ data-driven palette belongs to the template]
+  Version change    : 7.2.0 → 7.3.0
+  Bump rationale    : MINOR. Principle XIV's recolour rules gain materially expanded guidance in
+                      two parts, and neither strikes anything from a closed enumeration. The
+                      enumeration of fill operations is untouched: recolour is still one of the
+                      six, and no operation is added or removed.
+
+                      The first part **narrows an obligation and exempts a case**. v7.2.0 read "a
+                      recoloured field MUST still be filled" without qualification, which no field
+                      had yet contradicted — every recoloured field to date carried text. The
+                      standings highlight chips are the first fields drawn by their colour alone,
+                      and Rule 3 already admits a valueless field for the vertical crop point; this
+                      says the same exemption reaches a recoloured one. An implementation
+                      conforming to v7.2.0 filled every recoloured field and therefore still
+                      conforms, so this is not read as a backward-incompatible redefinition.
+
+                      The second part is a **new obligation**: where the data decide the colour,
+                      the palette MUST come from the template's stylesheet rather than from bot
+                      configuration, and an unnamed kind MUST NOT be painted. That is added
+                      guidance, which the versioning policy classes as MINOR. It records a decision
+                      taken in conversation on 2026-08-31.
+
+  Modified sections :
+    - Principle XIV, the fill-operations table: the Recolour row now names where a data-driven
+      palette comes from.
+    - Principle XIV, the recolour paragraph following the vertical crop. Split into three: the
+      existing merge-into-inline-style requirement with "must still be filled" now bound to a field
+      that carries a value; a new paragraph exempting a valueless field, referred to Rule 3 and to
+      the crop point it already covers; a new paragraph placing a data-driven palette in the
+      template's stylesheet and forbidding the painting of a kind it names no rule for.
+  Added sections    : none
+  Removed sections  : none
+  Deferred items    : none. No placeholder tokens remain in the document.
+  Templates review  : `.specify/templates/` carries no statement of the recolour rules and needed
+                      no change. The rules themselves are restated for the image module in
+                      `docs/wip-specs/image_module_specification.md`, which was amended in the same
+                      change under "What a generation does to a field".
+-->
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-08-31 — v7.1.0 → v7.2.0: MINOR — an asset href MUST be absolute, and an absent linked image MUST refuse]
   Version change    : 7.1.0 → 7.2.0
   Bump rationale    : MINOR. Principle XIV, Rule 6 gains materially expanded guidance in two parts,
@@ -4165,7 +4207,7 @@ The module MUST support exactly these fill operations, and no others:
 |-----------|--------|--------|
 | Text fill | `<text>` / `<tspan>` | Replaces the element's text content |
 | Image fill | element | Rewrites `xlink:href` to an asset path |
-| Recolour | element | Merges a `fill:` declaration into the element's inline `style` |
+| Recolour | element | Merges a `fill:` declaration into the element's inline `style`, from a palette the template's stylesheet declares where the data decide it |
 | Text fit | `<text>` carrying a declared box | Breaks the string into `<tspan>` lines within the box's line budget, reducing the field's size until it fits. Nothing is ever cut |
 | Empty or remove | element, or its `_group` wrapper | Clears the text, or deletes the node and its subtree |
 | Vertical crop | the root, at a declared crop point | Carries the footer group up, then rewrites the root `height` and `viewBox` to the crop point's `y` |
@@ -4196,8 +4238,20 @@ existing hand-authored template working unchanged.
 
 Recolour MUST be merged into the existing inline `style` rather than written as a
 presentation attribute or as a `style` replacement, so that template-declared styling on the
-same element survives. Recolour MUST NOT count as addressing a field: a recoloured field
-MUST still be filled.
+same element survives. Recolour MUST NOT count as addressing a field: a recoloured field that
+carries a value MUST still be filled.
+
+A **valueless** field (Rule 3) is exempt from that obligation, being drawn by its colour alone.
+It MUST be neither filled nor asked for a value, and its absence from the values a generation
+determines MUST NOT be read as unresolved — exactly as a vertical crop point is neither filled
+nor asked for one. Its absence from a template that claims it remains a fault of the template.
+
+Where the colour a recolour applies is decided by the **data**, the palette MUST be read from
+the template's own stylesheet by documented class names, and MUST NOT be held in bot
+configuration. A kind for which the template names no rule MUST NOT be painted, and the field
+MUST be left as the template drew it. A league states the appearance of its graphics in the
+template and nowhere else, which is also what lets a paint the module has no vocabulary for —
+a gradient, a pattern — be used without the module gaining one.
 
 **Removable groups.** Any field, mandatory or optional, MAY be wrapped in a group named for that
 field followed by `_group`. Where such a group is declared, it MUST be removed in its entirety
@@ -6291,4 +6345,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-31
+**Version**: 7.3.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-31

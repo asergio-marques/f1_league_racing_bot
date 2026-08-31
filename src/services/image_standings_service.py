@@ -26,7 +26,7 @@ from typing import Mapping, Sequence
 from models.image_catalogues import CapacityError, catalogue_for, row_crop_fields
 from models.points_config import SessionType
 from utils import results_formatter
-from utils.svg_document import FieldIndex
+from utils.svg_document import FieldIndex, stylesheet
 from utils.svg_fill import FillSpec
 from utils.country_data import country_for_nationality
 
@@ -52,20 +52,89 @@ class StandingsDataError(Exception):
     """
 
 
-@dataclass(frozen=True)
-class RoundCells:
-    """The cells of one round on one row, part of the season grid.
+#: The four backgrounds a cell may be given, in precedence order. A podium place takes
+#: priority over a points finish — a winner is in the points too, and the gold says more.
+#:
+#: Each value doubles as the **stem of the selector** the template is asked for, so
+#: ``f"highlight_{kind}"`` composes without a second table to keep in step.
+HIGHLIGHT_P1 = "p1"
+HIGHLIGHT_P2 = "p2"
+HIGHLIGHT_P3 = "p3"
+HIGHLIGHT_POINTS = "points"
 
-    A cell's value is a finishing position or an outcome literal; an **empty string** means
-    the data determined it to be nothing — no session of that type, a round unrun or
-    cancelled, or a driver who took no part — and is emptied quietly rather than dashed
-    (XIV.3).
+#: The fastest-lap overlay. Not a member of the four above: it is an independent layer and
+#: may stand at the same time as any of them.
+HIGHLIGHT_FASTEST_LAP = "fastest_lap"
+
+#: The podium places, by finishing position.
+_PODIUM = {1: HIGHLIGHT_P1, 2: HIGHLIGHT_P2, 3: HIGHLIGHT_P3}
+
+
+@dataclass(frozen=True)
+class CellValue:
+    """One cell of the season grid: what it says, and what it is worth calling out.
+
+    Text and highlight travel together deliberately. They are two readings of one session
+    result, and a projection that derived them apart would eventually draw a gold chip under
+    an outcome literal — which is exactly the case ``highlight_for`` exists to refuse.
     """
 
-    #: Session key → cell text, for a drivers row.
-    sessions: dict[str, str] = field(default_factory=dict)
-    #: Car ordinal → (driver name or None, session key → cell text), for a constructors row.
-    cars: dict[int, tuple[str | None, dict[str, str]]] = field(default_factory=dict)
+    #: The finishing position or outcome literal drawn in the cell. An **empty string** means
+    #: the data determined it to be nothing — no session of that type, a round unrun or
+    #: cancelled, or a driver who took no part — and is emptied quietly rather than dashed
+    #: (XIV.3).
+    text: str = ""
+    #: One of the four background kinds, or None where the cell earns no background.
+    highlight: str | None = None
+    #: Whether the fastest-lap overlay stands on this cell.
+    fastest_lap: bool = False
+
+
+def highlight_for(row) -> tuple[str | None, bool]:
+    """The background kind and the fastest-lap layer one session result confers.
+
+    Three rules, and each is a fact about the data rather than about the template — which
+    paint answers a kind is settled later, against the template's own stylesheet.
+
+    **A podium place is a podium place only where the driver was classified.** A driver
+    disqualified from first place is drawn by ``format_grid_cell`` as the outcome literal
+    ``DSQ``, and painting that gold would state something the results module does not.
+
+    ``points_awarded`` and ``fastest_lap_bonus`` are read rather than recomputed, and they
+    answer the question exactly. Per ``standings_service.compute_points_for_session``,
+    ``points_awarded > 0`` means *classified, and in a points-paying position under the
+    points configuration that session actually used*; ``fastest_lap_bonus > 0`` means *held
+    the fastest lap, fastest-lap points were available for that race, and this driver was
+    eligible under the configured position limit*. Both conditions the specification asks
+    for are therefore already settled upstream, and asking the configuration a second time
+    here could only introduce a way for the graphic and the points to disagree (XIV.7).
+
+    The ``getattr`` on the bonus is required rather than defensive: a
+    ``QualifyingSessionResult`` carries no such field, which is also why a qualifying cell
+    can never hold the overlay.
+    """
+    from models.session_result import OutcomeModifier
+
+    classified = getattr(row, "outcome", None) is OutcomeModifier.CLASSIFIED
+
+    highlight: str | None = None
+    if classified:
+        highlight = _PODIUM.get(getattr(row, "finishing_position", 0))
+        if highlight is None and (getattr(row, "points_awarded", 0) or 0) > 0:
+            highlight = HIGHLIGHT_POINTS
+
+    fastest_lap = (getattr(row, "fastest_lap_bonus", 0) or 0) > 0
+    return highlight, fastest_lap
+
+
+@dataclass(frozen=True)
+class RoundCells:
+    """The cells of one round on one row, part of the season grid."""
+
+    #: Session key → cell, for a drivers row.
+    sessions: dict[str, CellValue] = field(default_factory=dict)
+    #: Car ordinal → (driver name or None, session key → cell), for a constructors row.
+    cars: dict[int, tuple[str | None, dict[str, CellValue]]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -285,21 +354,35 @@ _CELL_SUFFIX_BY_SESSION = {
 }
 
 
-def _session_cells(driver_key: int, session_map: Mapping[str, Sequence] | None) -> dict[str, str]:
+def _session_cells(
+    driver_key: int, session_map: Mapping[str, Sequence] | None
+) -> dict[str, CellValue]:
     """One driver's four session cells for one round (FR-023, FR-024).
 
     Emptied — never dashed — in every case the data determines to be nothing: the round
     holds no session of that type, or this driver holds no record in a session it does hold
-    (took no part).
+    (took no part). A cell with nothing in it earns no highlight either.
+
+    The **single funnel** for both championships: the drivers grid calls it once per row and
+    the constructors grid once per car, so a highlight decided here cannot reach one graphic
+    and miss the other. The preview reaches it by the same path and needs no code of its own.
     """
-    cells: dict[str, str] = {}
+    cells: dict[str, CellValue] = {}
     for session_type, suffix in _CELL_SUFFIX_BY_SESSION.items():
         rows = None if session_map is None else session_map.get(session_type.value)
         if not rows:
-            cells[suffix] = ""
+            cells[suffix] = CellValue()
             continue
         row = next((r for r in rows if r.driver_user_id == driver_key), None)
-        cells[suffix] = "" if row is None else results_formatter.format_grid_cell(row)
+        if row is None:
+            cells[suffix] = CellValue()
+            continue
+        highlight, fastest_lap = highlight_for(row)
+        cells[suffix] = CellValue(
+            text=results_formatter.format_grid_cell(row),
+            highlight=highlight,
+            fastest_lap=fastest_lap,
+        )
     return cells
 
 
@@ -417,6 +500,149 @@ def _round_ids(declared, ordinal: int) -> list[str]:
     return sorted(ids)
 
 
+#: The prefix every highlight selector carries. A template says which highlights it wants by
+#: declaring rules under these names, and gets none it does not name.
+_HIGHLIGHT_SELECTOR = "highlight_"
+
+
+def _highlight_paints(root) -> dict[str, str]:
+    """Selector stem -> the fill it declares, read from the template's own stylesheet.
+
+    The paints are the template's business and never the bot's (a decision taken in
+    conversation, 2026-08-31): a league edits one ``<style>`` block rather than a row of
+    configuration commands, and because the value is copied verbatim a ``fill:url(#…)``
+    naming a gradient in the template's ``<defs>`` works with no machinery of its own.
+
+    Only ``.highlight_*`` rules carrying a ``fill`` are collected; anything else the
+    stylesheet holds is left alone. A template declaring no such rule yields an empty map,
+    and every highlight below then resolves to None — which is how a template authored
+    before this feature renders exactly as it did.
+    """
+    return {
+        selector[1:]: block["fill"]
+        for selector, block in stylesheet(root).items()
+        if selector.startswith(f".{_HIGHLIGHT_SELECTOR}") and "fill" in block
+    }
+
+
+def _paint(
+    paints: Mapping[str, str],
+    kind: str,
+    family: str,
+    *,
+    variants: Sequence[str] = ("",),
+) -> str | None:
+    """The fill a template gives *kind* on a cell of *family*, or None where it gives none.
+
+    Two tiers, the narrower first: ``.highlight_sprint_p1`` before ``.highlight_p1``. A
+    league wanting its sprint chips a shade darker than its feature ones declares both; one
+    content with a single look declares only the second and pays nothing for the tier it did
+    not use.
+
+    *variants* walks a fallback within each tier — the raised qualifying glyph asks for
+    ``_sup_text`` and settles for ``_text`` — and is ordered most specific first.
+    """
+    for variant in variants:
+        for name in (
+            f"{_HIGHLIGHT_SELECTOR}{family}_{kind}{variant}",
+            f"{_HIGHLIGHT_SELECTOR}{kind}{variant}",
+        ):
+            paint = paints.get(name)
+            if paint:
+                return paint
+    return None
+
+
+def _project_highlight(
+    field_id: str,
+    suffix: str,
+    cell: CellValue,
+    declared,
+    paints: Mapping[str, str],
+    recolour: dict[str, str],
+) -> None:
+    """The chips beneath one cell, and the text colours that keep it readable.
+
+    Two independent layers, as the specification asks: a **background** carrying the podium
+    or points colour, and a **fastest-lap overlay** above it that may stand at the same time.
+    Each is applied only where the template declares both the field to paint and a rule to
+    paint it with, so a league opts in per cell and per kind and gets nothing it did not ask
+    for.
+
+    Neither rect is ever removed. They are authored transparent, so an unhighlighted cell
+    contributes nothing at all to the spec — where removal would put a thousand ids into
+    ``spec.remove`` per image and walk a subtree for each.
+
+    The text colours run last and in one order: the **fastest lap wins** over the background
+    beneath it, being the more specific signal. The raised qualifying glyph is recoloured
+    with them, and this is not a highlight of the qualifying result — it says nothing about
+    where the driver qualified. The chip spans the whole column and the glyph sits on top of
+    it, so without this a P1 cell would draw the stylesheet's grey superscript on gold. That
+    it overrides a colour the qualifying cell set for itself is deliberate: the chip is
+    physically beneath the glyph, and legibility upon it is not optional.
+    """
+    family = suffix.split("_", 1)[0]
+    stem = field_id[: -len("_result")]
+    applied: str | None = None
+
+    if cell.highlight:
+        background_id = f"{stem}_background"
+        paint = _paint(paints, cell.highlight, family)
+        if paint and background_id in declared:
+            recolour[background_id] = paint
+            applied = cell.highlight
+
+    if cell.fastest_lap:
+        overlay_id = f"{stem}_{HIGHLIGHT_FASTEST_LAP}"
+        paint = _paint(paints, HIGHLIGHT_FASTEST_LAP, family)
+        if paint and overlay_id in declared:
+            recolour[overlay_id] = paint
+            applied = HIGHLIGHT_FASTEST_LAP
+
+    if applied is None:
+        return
+
+    text_paint = _paint(paints, applied, family, variants=("_text",))
+    if text_paint:
+        recolour[field_id] = text_paint
+
+    if not suffix.endswith("_race_result"):
+        return
+    sup_id = f"{stem[: -len('_race')]}_qualifying_result"
+    if sup_id in declared:
+        sup_paint = _paint(paints, applied, family, variants=("_sup_text", "_text"))
+        if sup_paint:
+            recolour[sup_id] = sup_paint
+
+
+def _project_cells(
+    cell_stem: str,
+    sessions: Mapping[str, CellValue],
+    declared,
+    paints: Mapping[str, str],
+    *,
+    text: dict[str, str],
+    empty_quietly: list[str],
+    recolour: dict[str, str],
+) -> None:
+    """The four session cells hanging off one stem, filled and highlighted.
+
+    Called by both grids — a drivers row's round, and a constructors car — so the cells of
+    the two championships cannot drift apart.
+    """
+    for suffix in _CELL_SUFFIX_BY_SESSION.values():
+        field_id = f"{cell_stem}_{suffix}"
+        if field_id not in declared:
+            continue
+        cell = sessions.get(suffix) or CellValue()
+        if cell.text:
+            text[field_id] = cell.text
+        else:
+            empty_quietly.append(field_id)
+        if paints:
+            _project_highlight(field_id, suffix, cell, declared, paints, recolour)
+
+
 def build_fill_spec(
     drawing: StandingsDrawing,
     root,
@@ -458,6 +684,8 @@ def build_fill_spec(
     remove: list[str] = []
     image_data: dict[str, tuple[str, str]] = {}
     off_canvas: set[str] = set()
+    recolour: dict[str, str] = {}
+    paints = _highlight_paints(root)
 
     def put(field_id: str, value: str | None) -> None:
         """Fill where declared; empty rather than dash where the value does not apply.
@@ -539,9 +767,11 @@ def build_fill_spec(
             declared,
             drivers=drawing.is_drivers,
             team_seat_counts=drawing.team_seat_counts,
+            paints=paints,
             text=text,
             empty_quietly=empty_quietly,
             remove=remove,
+            recolour=recolour,
         )
 
     # The round headings actually drawn — a column heading, so it draws the round's
@@ -597,6 +827,7 @@ def build_fill_spec(
         empty=empty,
         empty_quietly=empty_quietly,
         remove=remove,
+        recolour=recolour,
         off_canvas=off_canvas,
         row_count=drawing.entry_count,
         image_data=image_data,
@@ -620,9 +851,11 @@ def _project_grid_row(
     *,
     drivers: bool,
     team_seat_counts: Mapping[str, int],
+    paints: Mapping[str, str],
     text: dict[str, str],
     empty_quietly: list[str],
     remove: list[str],
+    recolour: dict[str, str],
 ) -> None:
     """One row's cells across the rounds actually drawn.
 
@@ -637,16 +870,15 @@ def _project_grid_row(
         round_stem = f"{stem}_{_ROUND_PREFIX}_{heading.ordinal}"
 
         if drivers:
-            sessions = cell.sessions if cell else {}
-            for suffix in _CELL_SUFFIX_BY_SESSION.values():
-                field_id = f"{round_stem}_{suffix}"
-                if field_id not in declared:
-                    continue
-                value = sessions.get(suffix, "")
-                if value:
-                    text[field_id] = value
-                else:
-                    empty_quietly.append(field_id)
+            _project_cells(
+                round_stem,
+                cell.sessions if cell else {},
+                declared,
+                paints,
+                text=text,
+                empty_quietly=empty_quietly,
+                recolour=recolour,
+            )
             continue
 
         car_nest = (
@@ -691,15 +923,15 @@ def _project_grid_row(
                     text[name_id] = name
                 else:
                     empty_quietly.append(name_id)
-            for suffix in _CELL_SUFFIX_BY_SESSION.values():
-                field_id = f"{car_stem}_{suffix}"
-                if field_id not in declared:
-                    continue
-                value = sessions.get(suffix, "")
-                if value:
-                    text[field_id] = value
-                else:
-                    empty_quietly.append(field_id)
+            _project_cells(
+                car_stem,
+                sessions,
+                declared,
+                paints,
+                text=text,
+                empty_quietly=empty_quietly,
+                recolour=recolour,
+            )
 
 
 def _project_movement(

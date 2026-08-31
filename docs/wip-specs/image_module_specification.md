@@ -132,13 +132,15 @@ These hold for every image type of the module and are stated here rather than re
 - A generation performs the following operations upon a field and no others:
     - it places text upon it;
     - it places an image upon it, by the reference the field carries to an image file;
-    - it sets the colour of its text, which today applies to the "row_<x>_fastest_lap" field of a race results graphic alone;
+    - it sets the colour of it, which applies to the "row_<x>_fastest_lap" field of a race results graphic and to the highlight fields of a standings graphic;
     - it breaks its text into lines, where the field is a wrapping field as defined for the verdicts graphic;
     - it reduces the size of its text until it fits the room the field declares, as defined below;
     - it removes it, or empties its text.
 - A field carrying an image is removed rather than emptied, an image field having nothing to empty. Emptying one would leave it pointing at whatever file the template shipped, drawn as a stale picture or as a broken-image mark.
 - A colour shall be written into the inline style of the element, merged with the declarations already standing there. A presentation attribute loses to the stylesheet a template declares, and a style assigned wholesale takes with it the declarations the template placed upon the field.
-- Setting the colour of a field is not filling it. A field that is recoloured shall be filled as any other.
+- Setting the colour of a field is not filling it. A field that carries a value and is recoloured shall be filled as any other.
+- A field may be declared to carry no value, being drawn by its colour alone. Such a field shall be neither filled nor asked for a value, and its absence from the values a generation determines is not an error. The highlight fields of a standings graphic are of this kind.
+- Where the colour a field is given is decided by the data, the colours themselves shall be read from the stylesheet the template declares, by the class names named for the graphic that uses them. A colour the template names no rule for shall not be applied, and the field shall be left as the template drew it. A league states the appearance of its graphics in the template and nowhere else.
 
 ### Addressing of fields
 - A field is addressed by the identifier of a node of the SVG file. The identifier is normative.
@@ -752,6 +754,11 @@ These hold for every image type of the module and are stated here rather than re
             - row_<x>_round_<z>_sprint_race_result - Optional - Field on which the result obtained by the driver in the sprint race session of that round is placed as text
             - row_<x>_round_<z>_feature_qualifying_result - Optional - Field on which the result obtained by the driver in the feature qualifying session of that round is placed as text
             - row_<x>_round_<z>_feature_race_result - Optional - Field on which the result obtained by the driver in the feature race session of that round is placed as text
+            - row_<x>_round_<z>_sprint_race_background - Optional - Field carrying no value, drawn beneath the sprint race result of that round and given the colour of the highlight that result earns
+            - row_<x>_round_<z>_sprint_race_fastest_lap - Optional - Field carrying no value, drawn above the background named above and given the colour of the fastest lap where that result holds it
+            - row_<x>_round_<z>_feature_race_background - Optional - Field carrying no value, drawn beneath the feature race result of that round and given the colour of the highlight that result earns
+            - row_<x>_round_<z>_feature_race_fastest_lap - Optional - Field carrying no value, drawn above the background named above and given the colour of the fastest lap where that result holds it
+            - row_<x>_round_<z>_sprint_qualifying_background and row_<x>_round_<z>_feature_qualifying_background - Optional - Fields carrying no value, drawn beneath the qualifying result of that round. A template drawing its qualifying result raised beside the race result, as the templates supplied do, shall decline them: the two stand as one run of text and the raised figure has no position of its own for a background to be drawn behind
 - For generation of a constructor standings graphic, the template may have the following fields, among which the mandatory fields will be verified at template file setting and before generation:
     - season_number - Optional - Field on which the season number of the server is placed
     - division_name - Mandatory - Field on which the name given to the division at "division add" is placed
@@ -783,6 +790,8 @@ These hold for every image type of the module and are stated here rather than re
             - row_<x>_round_<z>_driver_<w>_sprint_race_result - Optional - Field on which the result obtained by that driver in the sprint race session of that round is placed as text
             - row_<x>_round_<z>_driver_<w>_feature_qualifying_result - Optional - Field on which the result obtained by that driver in the feature qualifying session of that round is placed as text
             - row_<x>_round_<z>_driver_<w>_feature_race_result - Optional - Field on which the result obtained by that driver in the feature race session of that round is placed as text
+            - row_<x>_round_<z>_driver_<w>_sprint_race_background, row_<x>_round_<z>_driver_<w>_sprint_race_fastest_lap, row_<x>_round_<z>_driver_<w>_feature_race_background and row_<x>_round_<z>_driver_<w>_feature_race_fastest_lap - Optional - Fields carrying no value, drawn beneath the result of that session as they are on the driver standings graphic and governed by the same rules
+            - row_<x>_round_<z>_driver_<w>_sprint_qualifying_background and row_<x>_round_<z>_driver_<w>_feature_qualifying_background - Optional - Fields carrying no value, declined by the templates supplied for the reason given on the driver standings graphic
 - The constructor standings graphic has no field carrying the nationality of a driver, and none carrying the result of a team in a session.
 - <w> is a value between 1 and the number of seats configured for the team of the row.
 - <x> is the ordinal of the row counted from the top of the classification drawn, beginning at 1 and running without a gap. It is ordinarily the standing position recorded for the entry placed on it, but it is not that position and shall not be drawn in its place: the "row_<x>_position" field carries the position the standings recorded, read from the record and not from the ordinal.
@@ -818,6 +827,22 @@ These hold for every image type of the module and are stated here rather than re
     - the name placed on a car is that of the driver who drove it in that round, resolved as it is for the lineup graphic;
     - a car that no driver drove in a round has its "row_<x>_round_<z>_driver_<w>_group" field removed in its entirety; where the template declares no such group, the name and the result cells of that car are emptied.
 - Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash.
+
+### The highlighting of a result cell
+- A result cell of a race session may be marked out by the colour drawn beneath it, so that a league reading either standings graphic sees at a glance where the podiums, the points finishes and the fastest laps of the season fell. The whole of this is optional: a template declaring no highlight field, or naming no colour for a highlight, is drawn exactly as a template that has none.
+- A cell is drawn over two fields, each given a colour independently of the other:
+    - a background, taking the colour of the highest highlight the result earns;
+    - a fastest lap layer, drawn above the background and taking the colour of the fastest lap where that result holds it. It stands together with a background and never in its place, so that a race won with the fastest lap is marked as both.
+- A result earns a background as follows, the first that applies being the one taken:
+    - the result finished first, second or third in that session, each place taking a colour of its own;
+    - the result was awarded points in that session under the points configuration used for it;
+    - otherwise the result earns no background.
+- A result earns the fastest lap layer where it was awarded the fastest-lap bonus of that session. A league whose points configuration awards no fastest-lap bonus for a session, or whose driver finished outside the position limit configured for it, marks no cell of that session.
+- A result that was not classified earns no background, whatever position is recorded against it. A driver disqualified from first place is drawn as "DSQ" and shall not be marked as a winner.
+- A qualifying result earns a background by the same rules, and never the fastest lap layer, which is a matter of a race session alone.
+- Where a highlight is drawn, the colour of the result itself may be set with it, so that a value stays legible upon the colour beneath it. The fastest lap governs that colour where both are drawn.
+    - Where the template draws a qualifying result raised beside the race result, the raised figure stands upon the background of the race cell and its colour shall be set with it for the same reason. That colour states nothing of the qualifying result.
+- The colours are those the template names, read from its stylesheet as the conventions above require. A template may give the sprint sessions colours of their own and leave the feature sessions to the colours it names for both.
 
 ### Handling of mismatches between standings and template
 - Divergences between the entries of a classification and the rows a template declares are treated as follows:
@@ -862,6 +887,8 @@ These hold for every image type of the module and are stated here rather than re
 - The "images test standings" command shall generate two images, one from the drivers template and one from the constructors template, both drawn for the division named and both labelled "Final Results".
 - The standings drawn shall be those standing after the round named, the grid holding the calendar the division actually configures, so that the rendering of a round yet to be run may be evaluated alongside those already run and the grid drawn at the width the league would see.
 - Results shall be fabricated for every round of that calendar up to and including the round named, and for none after it.
+- The results fabricated for a round shall classify the field in an order of that round's own, no two rounds of the grid classifying it alike, so that the grid drawn carries the variety a season produces rather than the same classification repeated across it. The round which the fastest lap falls to shall vary likewise, and shall fall to the winner of a round and to a driver outside the podium alike, so that every ground the fastest lap may be drawn upon can be evaluated.
+    - The orders shall be derived from the round and the session and never drawn at random, a preview being required to draw the same picture on every invocation so that two renderings of one round may be compared against each other.
 - The entries fabricated shall be the drivers of the division named and the teams they are seated upon.
 - The entries of the drivers image shall include, insofar as the number of rows declared allows:
     - the first-placed driver, whose gap field is empty;

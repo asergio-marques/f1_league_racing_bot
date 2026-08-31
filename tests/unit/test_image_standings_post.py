@@ -55,6 +55,11 @@ def _bot(db_path="db", *, module=True, toggle=True, drivers_valid=True, construc
     return bot
 
 
+_TEMPLATE_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "..", "resources", "defaults", "templates"
+)
+
+
 def _guild():
     guild = MagicMock()
     guild.id = 1
@@ -711,8 +716,8 @@ async def test_the_run_round_fills_its_cells_and_the_unrun_one_empties_them(tmp_
     )
 
     leader = drivers.entries[0]
-    assert leader.cells[1].sessions["feature_race_result"] != ""
-    assert leader.cells[2].sessions["feature_race_result"] == "", (
+    assert leader.cells[1].sessions["feature_race_result"].text != ""
+    assert leader.cells[2].sessions["feature_race_result"].text == "", (
         "a round the division has not run empties its cells rather than dashing them"
     )
 
@@ -1182,3 +1187,183 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
 
     for png in pngs:
         assert not png.exists(), "a failed upload must not strand the picture"
+
+
+# ── The highlight chips, through the posting path's own drawings ──────────
+
+
+async def _highlighted_svg(tmp_path):
+    """The posting path's real drawings, filled onto the shipped templates.
+
+    No rasteriser is touched, so this runs in CI: `build_drawings` reads the database,
+    `build_fill_spec` reads the shipped stylesheet, and `fill` writes the inline styles. The
+    pixels are checked separately by the marked test below.
+    """
+    from db.database import get_connection
+    from services.image_standings_post import build_drawings
+    from services.image_standings_service import build_fill_spec
+    from utils.svg_document import load_svg
+    from utils.svg_fill import fill
+
+    db_path, division_id, round_ids = await _seed_league(tmp_path)
+    # The seed classifies but awards no fastest lap. Give the winner one, so the round holds
+    # a cell carrying both layers at once — the case the two-layer rule exists for.
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE race_session_results SET fastest_lap_bonus = 1 WHERE driver_user_id = 11"
+        )
+        await db.commit()
+
+    driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
+    bot = _bot(db_path)
+    bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
+
+    drawings = await build_drawings(
+        bot,
+        _guild(),
+        db_path=db_path,
+        server_id=1,
+        division_id=division_id,
+        round_id=round_ids[0],
+        round_number=1,
+        driver_snapshots=driver_snaps,
+        team_snapshots=team_snaps,
+        reserve_user_ids=set(),
+        show_reserves=False,
+        result_status="FINAL",
+        division_name="Alpha",
+    )
+
+    out = {}
+    for drawing in drawings:
+        doc = load_svg(
+            os.path.join(_TEMPLATE_DIR, f"{drawing.template_key}.svg")
+        )
+        root = doc.root if hasattr(doc, "root") else doc
+        result = fill(build_fill_spec(drawing, root))
+        out[drawing.template_key] = (root, result)
+    return out
+
+
+def _chip_faults(result) -> list[str]:
+    """Whatever the fill could not resolve that names a highlight chip."""
+    return [
+        fault
+        for fault in result.unresolved
+        if "_background" in fault or "_fastest_lap" in fault
+    ]
+
+
+async def test_the_winners_chip_is_painted_on_the_finished_drawing(tmp_path):
+    """End to end within CI: a real classification reaches a real template's own gold."""
+    from utils.svg_document import FieldIndex, computed_style, stylesheet
+
+    root, result = (await _highlighted_svg(tmp_path))["standings_drivers_template"]
+    # Asset directories are not configured in a unit test, which the team images report.
+    # No chip may appear here: a recolour naming a field the template lost would.
+    assert _chip_faults(result) == []
+
+    import services.image_standings_service as standings
+
+    index = FieldIndex(root)
+    rules = stylesheet(root)
+    paints = standings._highlight_paints(root)
+    # Resolved the way the render resolves them: the feature family falls back to the
+    # unprefixed rule, which the shipped palette declares and the sprint family overrides.
+    gold = standings._paint(paints, standings.HIGHLIGHT_P1, "feature")
+    purple = standings._paint(paints, standings.HIGHLIGHT_FASTEST_LAP, "feature")
+    assert gold and purple
+
+    chip = index.resolve("row_1_round_1_feature_race_background")
+    assert computed_style(chip, rules)["fill"] == gold
+    overlay = index.resolve("row_1_round_1_feature_race_fastest_lap")
+    assert computed_style(overlay, rules)["fill"] == purple
+
+
+async def test_a_cell_that_earns_nothing_keeps_its_chips_invisible(tmp_path):
+    """Round 2 has not been run, so its chips must still be transparent."""
+    from utils.svg_document import FieldIndex, computed_style, stylesheet
+
+    root, _ = (await _highlighted_svg(tmp_path))["standings_drivers_template"]
+    index, rules = FieldIndex(root), stylesheet(root)
+    chip = index.resolve("row_1_round_2_feature_race_background")
+    assert computed_style(chip, rules)["fill"] == "none"
+
+
+async def test_the_constructors_cars_carry_the_chips_too(tmp_path):
+    from utils.svg_document import FieldIndex, computed_style, stylesheet
+
+    root, result = (await _highlighted_svg(tmp_path))["standings_constructors_template"]
+    assert _chip_faults(result) == []
+
+    index, rules = FieldIndex(root), stylesheet(root)
+    chip = index.resolve("row_1_round_1_driver_1_feature_race_background")
+    assert computed_style(chip, rules)["fill"] == rules[".highlight_p1"]["fill"]
+
+
+@pytest.mark.rasteriser
+async def test_the_winners_chip_is_gold_in_the_raster(tmp_path):
+    """Rule XIV.14 — the chips are verified as pixels, never as markup.
+
+    The SVG-level tests above prove the recolour was written. Only the raster proves it was
+    *drawn*: a paint server the rasteriser cannot resolve, or a chip authored after its text,
+    both leave correct-looking markup and a wrong picture.
+
+    Every coordinate here is read out of the template rather than assumed, and the sample is
+    taken at the chip's own left edge — well clear of the glyph, whose width depends on which
+    font the host resolved and would differ between this machine, CI and the Pi.
+    """
+    from PIL import Image  # noqa: PLC0415
+
+    from services.image_render_service import rasterise
+    from utils.svg_document import FieldIndex, canvas_of, stylesheet
+    from utils.svg_fill import fill as fill_spec_onto
+
+    import services.image_standings_service as standings
+
+    db_path, division_id, round_ids = await _seed_league(tmp_path)
+    driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
+    bot = _bot(db_path)
+    bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
+
+    from services.image_standings_post import build_drawings
+    from services.image_standings_service import build_fill_spec
+    from utils.svg_document import load_svg
+
+    drawings = await build_drawings(
+        bot,
+        _guild(),
+        db_path=db_path,
+        server_id=1,
+        division_id=division_id,
+        round_id=round_ids[0],
+        round_number=1,
+        driver_snapshots=driver_snaps,
+        team_snapshots=team_snaps,
+        reserve_user_ids=set(),
+        show_reserves=False,
+        result_status="FINAL",
+        division_name="Alpha",
+    )
+    drawing = next(d for d in drawings if d.template_key == "standings_drivers_template")
+
+    doc = load_svg(os.path.join(_TEMPLATE_DIR, "standings_drivers_template.svg"))
+    root = doc.root if hasattr(doc, "root") else doc
+    chip = FieldIndex(root).resolve("row_1_round_1_feature_race_background")
+    left, top = float(chip.get("x")), float(chip.get("y"))
+    height = float(chip.get("height"))
+
+    result = fill_spec_onto(build_fill_spec(drawing, root))
+    png = rasterise(result.svg, tmp_path / "standings.png", result.canvas or canvas_of(root))
+
+    image = Image.open(png).convert("RGB")
+    inside = image.getpixel((int(left) + 2, int(top + height / 2)))
+    # Two rows below the chip is the plain row band, which no highlight reaches.
+    outside = image.getpixel((int(left) + 2, int(top + height) + 4))
+
+    expected = standings._paint(
+        standings._highlight_paints(root), standings.HIGHLIGHT_P1, "feature"
+    )
+    gold = tuple(int(expected.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4))
+    assert inside == gold, f"the winner's chip rasterised as {inside}, not {gold}"
+    assert outside != gold, "the chip bled outside the cell it belongs to"

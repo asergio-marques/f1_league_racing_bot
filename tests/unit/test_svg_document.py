@@ -231,3 +231,44 @@ def test_unrelated_declarations_survive_alongside_fill():
     resolved = computed_style(element, stylesheet(root))
     assert resolved["fill"] == "#222222"
     assert resolved["font-variant-numeric"] == "tabular-nums"
+
+
+# ── What a <defs> holds is never a field ──────────────────────────────────
+
+
+def _with_defs() -> "object":
+    return parse_svg_bytes(b"""<svg xmlns="http://www.w3.org/2000/svg"
+         xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+         width="100" height="100">
+      <defs>
+        <linearGradient id="highlightFastestLapGradient">
+          <stop id="firstStop" offset="0" stop-color="#A020F0"/>
+        </linearGradient>
+        <clipPath id="someClip"><rect id="clipRect" width="10" height="10"/></clipPath>
+      </defs>
+      <rect id="row_1_feature_race_background" width="10" height="10"/>
+    </svg>""")
+
+
+def test_a_paint_server_is_not_declared_as_a_field():
+    """A gradient must carry an id to be referenced, and is still not a field.
+
+    `declared()` is what a catalogue checks a template against, so an indexed gradient
+    would be reported as an id the catalogue cannot name — and a template would be refused
+    for owning the very gradient its own stylesheet paints with.
+    """
+    root = _with_defs()
+    index = FieldIndex(root)
+    assert "row_1_feature_race_background" in index.declared()
+    assert index.declared().isdisjoint(
+        {"highlightFastestLapGradient", "firstStop", "someClip", "clipRect"}
+    )
+
+
+def test_a_paint_server_cannot_be_resolved_as_a_field_either():
+    """Excluded from the index outright, not merely absent from `declared()`."""
+    root = _with_defs()
+    index = FieldIndex(root)
+    assert index.resolve("highlightFastestLapGradient") is None
+    assert "highlightFastestLapGradient" not in index
+    assert index.resolve("row_1_feature_race_background") is not None

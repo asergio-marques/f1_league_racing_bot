@@ -1542,6 +1542,26 @@ These sit under `/images template` rather than `/images config` because Discord 
 >
 > Both are entirely optional and go together: declare neither and your file is drawn at its full height exactly as it always was. The five shipped templates declare both. The calendar is the exception — it has always required a crop point per round.
 
+> **Optional: highlight the podiums, points finishes and fastest laps on a standings grid.** Both standings templates can mark out the race cells of their season grid, so a league reading the picture sees where the season's results actually fell instead of a wall of identical numbers. The shipped files do this already; you can retune it, or delete it entirely.
+>
+> **The colours live in your template's stylesheet**, under class names beginning `.highlight_`. Change them there and nothing else needs touching — there is no command to set them, and no bot setting that can disagree with your file.
+>
+> | Class | What it colours |
+> |---|---|
+> | `.highlight_p1`, `.highlight_p2`, `.highlight_p3` | The chip behind a first, second or third place |
+> | `.highlight_points` | The chip behind any other points-scoring finish |
+> | `.highlight_fastest_lap` | A second layer drawn *over* the chip, for the fastest lap |
+> | `.highlight_p1_text` and so on | The colour of the result itself, so it stays readable on the chip |
+> | `.highlight_p1_sup_text` and so on | The colour of the small qualifying figure raised beside it |
+>
+> A `fill` of `url(#yourGradient)` works, which is how the shipped files draw the fastest lap and the points finish as diagonal fades — put the gradient in `<defs>` as usual.
+>
+> **Everything here is opt-in twice over, and both halves are yours.** Delete a class and that highlight simply stops appearing. Delete the `row_<x>_round_<z>_..._background` and `..._fastest_lap` rects from a cell and that cell is never highlighted. Delete both and the grid draws exactly as it did before any of this existed. Prefix a class with `sprint_` or `feature_` — `.highlight_sprint_p1` — to give one of the two races a look of its own; the unprefixed class covers whatever you have not singled out.
+>
+> **A points finish is whatever your points configuration pays for**, so a league that scores fifteen places lights fifteen cells and one that scores ten lights ten. The fastest lap lights a cell only where your configuration actually awards a fastest-lap bonus for that session *and* the driver finished inside any position limit you set — a league that awards none marks nothing, which is correct rather than broken. A driver disqualified from a win is drawn `DSQ` and gets no gold.
+>
+> **The two race cells are highlighted; the raised qualifying figure is not.** On the shipped templates that small number shares one run of text with the race result beside it, so it has no fixed position of its own and nothing can be drawn behind it. It is recoloured to stay readable on the chip, and that colour says nothing about where the driver qualified. Re-lay your own template to give qualifying a column of its own and you may declare `..._sprint_qualifying_background` and `..._feature_qualifying_background` too.
+
 #### `/images config <directory>` — Where files are searched for
 *Access: Server administrator*
 
@@ -1685,7 +1705,7 @@ Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four
 
 > **`lineup` ships with the bot like every other template, but the preview is still how you check it.** It is drawn against your real team list and refused where you have none beyond Reserve, because a lineup of nothing but reserves is not a lineup. Where the division has teams but nobody seated, drivers are invented so the drawing can still be judged.
 
-> **`standings` draws both championships as the whole season, not just the round named.** Every round the division holds gets a column — run or not — with a result cell per session, and, on the constructors picture, a car per driver who drove it. The classification named by `round` sits beside that grid.
+> **`standings` draws both championships as the whole season, not just the round named.** Every round the division holds gets a column — run or not — with a result cell per session, and, on the constructors picture, a car per driver who drove it. The classification named by `round` sits beside that grid. **Each round of the preview is given a different finishing order**, and the fastest lap moves about the field, so you can judge the cell highlighting across a whole grid instead of down one row — a preview that named the same winner every round would tell you nothing about it. The orders are worked out from the round rather than drawn at random, so previewing the same round twice gives you the same picture to compare against.
 
 **Checking your work.** Look at the exported PNG, not the SVG in a browser. They disagree on precisely the things worth checking — flowed text, substituted fonts, and the crop. The `/images test` commands return the PNG.
 
