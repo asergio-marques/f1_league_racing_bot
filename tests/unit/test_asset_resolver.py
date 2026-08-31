@@ -663,16 +663,28 @@ def test_a_resolved_asset_is_written_as_a_uri_not_a_path(flags):
 # Per-class aspect table (044, Constitution XIV.6)
 # --------------------------------------------------------------------------
 
-def test_every_asset_class_declares_an_aspect():
+def test_every_asset_class_declares_an_aspect_or_is_declared_exempt():
     """A class added later must not silently escape the aspect check.
 
-    The check reads ASSET_CLASS_ASPECTS by class; a class present in the directory
-    table but absent here would be validated against nothing at all.
+    The check reads ASSET_CLASS_ASPECTS by class; a class present in the directory table but
+    absent here would be validated against nothing at all. Since v7.4.0 a class **may** be
+    absent — its slots stretching rather than holding one aspect — but only by saying so in
+    STRETCHING_ASSET_CLASSES, so that an omission still has to be deliberate.
     """
-    from models.image_constants import ASSET_CLASS_ASPECTS, ASSET_CLASS_DIRECTORIES
+    from models.image_constants import (
+        ASSET_CLASS_ASPECTS,
+        ASSET_CLASS_DIRECTORIES,
+        STRETCHING_ASSET_CLASSES,
+    )
 
     missing = set(ASSET_CLASS_DIRECTORIES) - set(ASSET_CLASS_ASPECTS)
-    assert not missing, f"asset classes with no declared aspect: {sorted(missing)}"
+    assert missing == set(STRETCHING_ASSET_CLASSES), (
+        f"asset classes with no declared aspect and no declared exemption: "
+        f"{sorted(missing - STRETCHING_ASSET_CLASSES)}"
+    )
+    assert not (STRETCHING_ASSET_CLASSES & set(ASSET_CLASS_ASPECTS)), (
+        "a class cannot both stretch and hold an aspect"
+    )
 
     extra = set(ASSET_CLASS_ASPECTS) - set(ASSET_CLASS_DIRECTORIES)
     assert not extra, f"aspects declared for unknown classes: {sorted(extra)}"

@@ -8,7 +8,7 @@ The contract (resources/README.md, Constitution XIV.6):
 
 * authored at exactly the aspect declared for the class — the generator never pads, and the
   converter smears edge pixels across any letterbox band rather than leaving it clear;
-* plain SVG: no `clipPath`, no gradient, no filter;
+* plain SVG: no `clipPath`, no filter (a gradient is allowed);
 * **no text** — text font-substitutes, so an asset carrying any would rasterise differently
   from one machine to the next.
 
@@ -68,9 +68,21 @@ def test_there_is_something_to_check():
     ("asset_class", "path"), SHIPPED, ids=[f"{c}/{p.name}" for c, p in SHIPPED]
 )
 def test_every_shipped_asset_declares_its_class_aspect(asset_class, path):
-    width, height = _declared_size(path)
-    expected = ASSET_CLASS_ASPECTS[asset_class]
+    """A stretching class is exempt, and its artwork is checked for being drawable instead.
 
+    Nothing can be asserted about the ratio of a file whose slot distorts it to fit — the
+    template decides the shape, and two templates may decide differently (XIV.6, v7.4.0).
+    What still binds is that the file declares a size at all, since a viewBox-less asset has
+    no intrinsic geometry to stretch.
+    """
+    from models.image_constants import STRETCHING_ASSET_CLASSES
+
+    width, height = _declared_size(path)
+    if asset_class in STRETCHING_ASSET_CLASSES:
+        assert width > 0 and height > 0
+        return
+
+    expected = ASSET_CLASS_ASPECTS[asset_class]
     assert abs((width / height) - expected) <= expected * ASSET_ASPECT_TOLERANCE, (
         f"{path.name} is {width}x{height}, which is not {expected}:1 for `{asset_class}`"
     )
@@ -83,8 +95,11 @@ def test_no_shipped_asset_carries_text_or_a_forbidden_construct(asset_class, pat
     root = ET.parse(path).getroot()
     tags = {element.tag for element in root.iter()}
 
-    for forbidden in ("text", "tspan", "clipPath", "linearGradient", "radialGradient",
-                      "filter", "flowRoot"):
+    # A gradient is **not** forbidden (Constitution XIV.6, v7.4.0). It was, without a reason
+    # ever being recorded, while the templates depended on one throughout; two assets whose
+    # gradients share an id were then shown to render independently, the rasteriser treating
+    # each referenced file as its own document. Nothing was being protected against.
+    for forbidden in ("text", "tspan", "clipPath", "filter", "flowRoot"):
         assert f"{{{SVG_NS}}}{forbidden}" not in tags, f"{path.name} carries <{forbidden}>"
 
 

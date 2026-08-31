@@ -66,6 +66,10 @@ HIGHLIGHT_POINTS = "points"
 #: may stand at the same time as any of them.
 HIGHLIGHT_FASTEST_LAP = "fastest_lap"
 
+#: The asset class every chip draws. Which chip is drawn is the **datum** — one of the four
+#: kinds above, or the fastest lap — never a class of its own, so a league keeps one folder.
+HIGHLIGHT_ASSET_CLASS = "standings_highlight"
+
 #: The podium places, by finishing position.
 _PODIUM = {1: HIGHLIGHT_P1, 2: HIGHLIGHT_P2, 3: HIGHLIGHT_P3}
 
@@ -508,15 +512,13 @@ _HIGHLIGHT_SELECTOR = "highlight_"
 def _highlight_paints(root) -> dict[str, str]:
     """Selector stem -> the fill it declares, read from the template's own stylesheet.
 
-    The paints are the template's business and never the bot's (a decision taken in
-    conversation, 2026-08-31): a league edits one ``<style>`` block rather than a row of
-    configuration commands, and because the value is copied verbatim a ``fill:url(#…)``
-    naming a gradient in the template's ``<defs>`` works with no machinery of its own.
+    **Text colours only.** The chip itself is artwork of the ``standings_highlight`` class;
+    what is left to the stylesheet is the *ink* drawn over it, which no asset could supply —
+    the result is a text node of the template, sitting above the image.
 
-    Only ``.highlight_*`` rules carrying a ``fill`` are collected; anything else the
-    stylesheet holds is left alone. A template declaring no such rule yields an empty map,
-    and every highlight below then resolves to None — which is how a template authored
-    before this feature renders exactly as it did.
+    Only ``.highlight_*`` rules carrying a ``fill`` are collected. A template declaring none
+    yields an empty map and no text is recoloured, which is how a template that draws its own
+    chips but leaves the numbers alone renders exactly as its author drew it.
     """
     return {
         selector[1:]: block["fill"]
@@ -526,30 +528,20 @@ def _highlight_paints(root) -> dict[str, str]:
 
 
 def _paint(
-    paints: Mapping[str, str],
-    kind: str,
-    family: str,
-    *,
-    variants: Sequence[str] = ("",),
+    paints: Mapping[str, str], kind: str, *, variants: Sequence[str] = ("_text",)
 ) -> str | None:
-    """The fill a template gives *kind* on a cell of *family*, or None where it gives none.
+    """The ink a template gives *kind*, or None where it gives none.
 
-    Two tiers, the narrower first: ``.highlight_sprint_p1`` before ``.highlight_p1``. A
-    league wanting its sprint chips a shade darker than its feature ones declares both; one
-    content with a single look declares only the second and pays nothing for the tier it did
-    not use.
+    One tier. Sprint and feature share a look (decided 2026-08-31), so the per-family
+    selector the first version carried is withdrawn rather than left half-used.
 
-    *variants* walks a fallback within each tier — the raised qualifying glyph asks for
-    ``_sup_text`` and settles for ``_text`` — and is ordered most specific first.
+    *variants* walks a fallback — the raised qualifying glyph asks for ``_sup_text`` and
+    settles for ``_text`` — and is ordered most specific first.
     """
     for variant in variants:
-        for name in (
-            f"{_HIGHLIGHT_SELECTOR}{family}_{kind}{variant}",
-            f"{_HIGHLIGHT_SELECTOR}{kind}{variant}",
-        ):
-            paint = paints.get(name)
-            if paint:
-                return paint
+        paint = paints.get(f"{_HIGHLIGHT_SELECTOR}{kind}{variant}")
+        if paint:
+            return paint
     return None
 
 
@@ -560,49 +552,48 @@ def _project_highlight(
     declared,
     paints: Mapping[str, str],
     recolour: dict[str, str],
+    image_data: dict[str, tuple[str, str]],
 ) -> None:
     """The chips beneath one cell, and the text colours that keep it readable.
 
-    Two independent layers, as the specification asks: a **background** carrying the podium
-    or points colour, and a **fastest-lap overlay** above it that may stand at the same time.
-    Each is applied only where the template declares both the field to paint and a rule to
-    paint it with, so a league opts in per cell and per kind and gets nothing it did not ask
-    for.
+    Two independent layers, as the specification asks: a **background** drawing the podium or
+    points chip, and a **fastest-lap mark** above it that may stand at the same time. Each is
+    an asset of the ``standings_highlight`` class, so what the mark actually looks like is a
+    file a league may replace — which is how the fastest lap became a corner triangle rather
+    than a wash over the whole cell.
 
-    Neither rect is ever removed. They are authored transparent, so an unhighlighted cell
-    contributes nothing at all to the spec — where removal would put a thousand ids into
-    ``spec.remove`` per image and walk a subtree for each.
+    A cell that earns no highlight is **left alone**, neither filled nor removed. The slots
+    are ``<image>`` elements the template ships with no href, which draw nothing and which
+    ``_unreachable_links`` passes over; removing them instead would put a thousand ids into
+    ``spec.remove`` per graphic and walk a subtree for each.
 
-    The text colours run last and in one order: the **fastest lap wins** over the background
-    beneath it, being the more specific signal. The raised qualifying glyph is recoloured
-    with them, and this is not a highlight of the qualifying result — it says nothing about
-    where the driver qualified. The chip spans the whole column and the glyph sits on top of
-    it, so without this a P1 cell would draw the stylesheet's grey superscript on gold. That
-    it overrides a colour the qualifying cell set for itself is deliberate: the chip is
+    The text colours run last and in one order: the **fastest lap wins** over the chip beneath
+    it, being the more specific signal. The raised qualifying glyph is recoloured with them,
+    and this is not a highlight of the qualifying result — it says nothing about where the
+    driver qualified. The chip spans the whole column and the glyph sits on top of it, so
+    without this a P1 cell would draw the stylesheet's grey superscript on gold. That it
+    overrides a colour the qualifying cell set for itself is deliberate: the chip is
     physically beneath the glyph, and legibility upon it is not optional.
     """
-    family = suffix.split("_", 1)[0]
     stem = field_id[: -len("_result")]
     applied: str | None = None
 
     if cell.highlight:
         background_id = f"{stem}_background"
-        paint = _paint(paints, cell.highlight, family)
-        if paint and background_id in declared:
-            recolour[background_id] = paint
+        if background_id in declared:
+            image_data[background_id] = (HIGHLIGHT_ASSET_CLASS, cell.highlight)
             applied = cell.highlight
 
     if cell.fastest_lap:
         overlay_id = f"{stem}_{HIGHLIGHT_FASTEST_LAP}"
-        paint = _paint(paints, HIGHLIGHT_FASTEST_LAP, family)
-        if paint and overlay_id in declared:
-            recolour[overlay_id] = paint
+        if overlay_id in declared:
+            image_data[overlay_id] = (HIGHLIGHT_ASSET_CLASS, HIGHLIGHT_FASTEST_LAP)
             applied = HIGHLIGHT_FASTEST_LAP
 
     if applied is None:
         return
 
-    text_paint = _paint(paints, applied, family, variants=("_text",))
+    text_paint = _paint(paints, applied)
     if text_paint:
         recolour[field_id] = text_paint
 
@@ -610,7 +601,7 @@ def _project_highlight(
         return
     sup_id = f"{stem[: -len('_race')]}_qualifying_result"
     if sup_id in declared:
-        sup_paint = _paint(paints, applied, family, variants=("_sup_text", "_text"))
+        sup_paint = _paint(paints, applied, variants=("_sup_text", "_text"))
         if sup_paint:
             recolour[sup_id] = sup_paint
 
@@ -624,6 +615,7 @@ def _project_cells(
     text: dict[str, str],
     empty_quietly: list[str],
     recolour: dict[str, str],
+    image_data: dict[str, tuple[str, str]],
 ) -> None:
     """The four session cells hanging off one stem, filled and highlighted.
 
@@ -639,8 +631,9 @@ def _project_cells(
             text[field_id] = cell.text
         else:
             empty_quietly.append(field_id)
-        if paints:
-            _project_highlight(field_id, suffix, cell, declared, paints, recolour)
+        _project_highlight(
+            field_id, suffix, cell, declared, paints, recolour, image_data
+        )
 
 
 def build_fill_spec(
@@ -772,6 +765,7 @@ def build_fill_spec(
             empty_quietly=empty_quietly,
             remove=remove,
             recolour=recolour,
+            image_data=image_data,
         )
 
     # The round headings actually drawn — a column heading, so it draws the round's
@@ -856,6 +850,7 @@ def _project_grid_row(
     empty_quietly: list[str],
     remove: list[str],
     recolour: dict[str, str],
+    image_data: dict[str, tuple[str, str]],
 ) -> None:
     """One row's cells across the rounds actually drawn.
 
@@ -878,6 +873,7 @@ def _project_grid_row(
                 text=text,
                 empty_quietly=empty_quietly,
                 recolour=recolour,
+                image_data=image_data,
             )
             continue
 
@@ -931,6 +927,7 @@ def _project_grid_row(
                 text=text,
                 empty_quietly=empty_quietly,
                 recolour=recolour,
+                image_data=image_data,
             )
 
 

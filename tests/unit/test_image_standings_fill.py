@@ -101,8 +101,8 @@ _CELL_SUFFIXES = (
 )
 
 
-#: The chips a race cell may declare beneath it. Authored before the text so they paint
-#: under it, exactly as the shipped templates do.
+#: The chips a race cell may declare beneath it. `<image>` slots carrying no href, authored
+#: before the text so they paint under it, exactly as the shipped templates do.
 _HIGHLIGHT_SUFFIXES = (
     "sprint_race_background",
     "sprint_race_fastest_lap",
@@ -113,9 +113,9 @@ _HIGHLIGHT_SUFFIXES = (
 
 def _highlight_rects(parent, stem: str) -> None:
     for suffix in _HIGHLIGHT_SUFFIXES:
-        rect = etree.SubElement(parent, f"{{{SVG_NS}}}rect")
-        rect.set("id", f"{stem}_{suffix}")
-        rect.set("fill", "none")
+        slot = etree.SubElement(parent, f"{{{SVG_NS}}}image")
+        slot.set("id", f"{stem}_{suffix}")
+        slot.set("preserveAspectRatio", "none")
 
 
 def _grid_template(
@@ -589,20 +589,27 @@ def test_a_car_beyond_the_teams_own_configured_seats_is_trimmed_even_when_alloca
 
 # ── The highlight layers ──────────────────────────────────────────────────
 #
-# Two independent opt-ins meet here: the template must declare the field to paint, and a
-# `.highlight_*` rule to paint it with. Every test below turns one of them off.
+# The chip is an asset; only the ink over it comes from the stylesheet. So the tests split:
+# `spec.image_data` carries which mark is drawn, `spec.recolour` only the text colours.
 
-_PALETTE = """
-    .highlight_p1 { fill: #D4AF37 }
-    .highlight_p2 { fill: #C0C0C0 }
-    .highlight_points { fill: url(#pointsGrad) }
-    .highlight_fastest_lap { fill: url(#flGrad) }
+_INK = """
     .highlight_p1_text { fill: #0B0D10 }
     .highlight_fastest_lap_text { fill: #F2F5F8 }
 """
 
+_ASSET = "standings_highlight"
 
-def _highlighted(cell, *, style=_PALETTE, highlights=True, rounds=1):
+
+def _chips(spec) -> dict:
+    """Just the highlight slots of a spec's image data — the row's team badge is not one."""
+    return {
+        name: datum
+        for name, datum in spec.image_data.items()
+        if name.endswith(("_background", "_fastest_lap"))
+    }
+
+
+def _highlighted(cell, *, style=_INK, highlights=True, rounds=1):
     """One drivers row whose round 1 holds *cell*, projected onto a template."""
     root = _grid_template(1, rounds, highlights=highlights, style=style)
     heading = RoundHeading(ordinal=1, number="1")
@@ -610,73 +617,71 @@ def _highlighted(cell, *, style=_PALETTE, highlights=True, rounds=1):
     return build_fill_spec(_drawing([entry], rounds=[heading]), root)
 
 
-def test_a_podium_cell_recolours_its_background_with_the_rule_the_template_declares():
+def test_a_podium_cell_draws_the_chip_of_its_place():
     spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1))
-    assert spec.recolour["row_1_round_1_feature_race_background"] == "#D4AF37"
+    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "p1")
 
 
-def test_a_gradient_paint_is_copied_through_verbatim():
-    """`fill:url(#…)` is a legal CSS value, which is what lets a template use a gradient."""
-    spec = _highlighted(CellValue(text="7", highlight=HIGHLIGHT_POINTS))
-    assert spec.recolour["row_1_round_1_feature_race_background"] == "url(#pointsGrad)"
+def test_each_podium_place_draws_its_own_chip():
+    for kind in (HIGHLIGHT_P1, HIGHLIGHT_P2, HIGHLIGHT_P3, HIGHLIGHT_POINTS):
+        spec = _highlighted(CellValue(text="1", highlight=kind))
+        assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, kind)
+
+
+def test_the_chip_is_the_datum_and_never_a_class_of_its_own():
+    """One folder holds all five marks, so a league configures one directory."""
+    spec = _highlighted(CellValue(text="7", highlight=HIGHLIGHT_POINTS, fastest_lap=True))
+    assert {cls for cls, _ in _chips(spec).values()} == {_ASSET}
 
 
 def test_a_highlighted_cell_is_still_filled():
-    """A recolour does not consume a field — it is filled as any other (XIV.2)."""
+    """Drawing a chip beneath a cell does not stand in for filling it (XIV.2)."""
     spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1))
     assert spec.text["row_1_round_1_feature_race_result"] == "1"
 
 
-def test_a_template_declaring_the_rects_but_no_rule_is_left_alone():
-    """Opt-in per kind: the paints are the template's to give and it gave none."""
-    spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1), style=None)
-    assert spec.recolour == {}
-    assert spec.text["row_1_round_1_feature_race_result"] == "1"
-
-
-def test_a_template_declaring_a_rule_but_no_rect_is_left_alone():
-    """Opt-in per cell: nothing is invented for a template that drew no chip."""
+def test_a_template_declaring_no_chip_slot_draws_none():
+    """Opt-in per cell: nothing is invented for a template that drew no slot."""
     spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1), highlights=False)
-    assert spec.recolour == {}
-
-
-def test_a_kind_the_template_names_no_rule_for_paints_nothing():
-    """P3 is absent from the palette above, so a third place goes unpainted."""
-    spec = _highlighted(CellValue(text="3", highlight=HIGHLIGHT_P3))
+    assert _chips(spec) == {}
     assert spec.recolour == {}
 
 
 def test_an_unhighlighted_cell_contributes_nothing_to_the_spec():
-    """The rects are authored transparent, so they are never removed and never painted."""
+    """The slots carry no href, so they draw nothing and are never removed."""
     spec = _highlighted(CellValue(text="12"))
+    assert _chips(spec) == {}
     assert spec.recolour == {}
-    assert "row_1_round_1_feature_race_background" not in spec.remove
+    assert not any("_background" in name for name in spec.remove)
 
 
-def test_a_narrower_family_rule_beats_the_shared_one():
-    style = _PALETTE + "\n.highlight_feature_p1 { fill: #FFD700 }"
-    spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1), style=style)
-    assert spec.recolour["row_1_round_1_feature_race_background"] == "#FFD700"
-
-
-def test_a_family_rule_for_the_other_family_does_not_reach_this_cell():
-    style = _PALETTE + "\n.highlight_sprint_p1 { fill: #8A6D1F }"
-    spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1), style=style)
-    assert spec.recolour["row_1_round_1_feature_race_background"] == "#D4AF37"
-
-
-def test_the_fastest_lap_overlay_is_painted_only_where_the_cell_holds_it():
+def test_the_fastest_lap_mark_is_drawn_only_where_the_cell_holds_it():
     spec = _highlighted(CellValue(text="5", fastest_lap=True))
-    assert spec.recolour["row_1_round_1_feature_race_fastest_lap"] == "url(#flGrad)"
+    assert spec.image_data["row_1_round_1_feature_race_fastest_lap"] == (_ASSET, "fastest_lap")
     spec = _highlighted(CellValue(text="5"))
-    assert "row_1_round_1_feature_race_fastest_lap" not in spec.recolour
+    assert "row_1_round_1_feature_race_fastest_lap" not in spec.image_data
 
 
 def test_the_two_layers_stand_together():
-    """A winner who took the fastest lap gets both — the overlay never replaces the chip."""
+    """A winner who took the fastest lap gets both; the mark never replaces the chip."""
     spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1, fastest_lap=True))
-    assert spec.recolour["row_1_round_1_feature_race_background"] == "#D4AF37"
-    assert spec.recolour["row_1_round_1_feature_race_fastest_lap"] == "url(#flGrad)"
+    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "p1")
+    assert spec.image_data["row_1_round_1_feature_race_fastest_lap"] == (_ASSET, "fastest_lap")
+
+
+def test_a_sprint_cell_draws_the_same_chip_as_a_feature_one():
+    """One look for both (decided 2026-08-31): the family no longer selects anything."""
+    root = _grid_template(1, 1, highlights=True, style=_INK)
+    heading = RoundHeading(ordinal=1, number="1")
+    entry = _entry(1, cells={1: _cells(
+        sprint_race_result=CellValue(text="1", highlight=HIGHLIGHT_P1),
+        feature_race_result=CellValue(text="1", highlight=HIGHLIGHT_P1),
+    )})
+    spec = build_fill_spec(_drawing([entry], rounds=[heading]), root)
+    assert (
+        spec.image_data["row_1_round_1_sprint_race_background"]
+        == spec.image_data["row_1_round_1_feature_race_background"]
+    )
 
 
 def test_the_text_colour_follows_the_highlight_that_was_applied():
@@ -684,15 +689,15 @@ def test_the_text_colour_follows_the_highlight_that_was_applied():
     assert spec.recolour["row_1_round_1_feature_race_result"] == "#0B0D10"
 
 
-def test_the_fastest_lap_wins_the_text_colour_over_the_background_beneath_it():
+def test_the_fastest_lap_wins_the_text_colour_over_the_chip_beneath_it():
     spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1, fastest_lap=True))
     assert spec.recolour["row_1_round_1_feature_race_result"] == "#F2F5F8"
 
 
 def test_no_text_colour_is_set_where_the_template_names_none():
-    """P2 has a chip rule but no `_text` rule, so the cell keeps the stylesheet's own fill."""
-    spec = _highlighted(CellValue(text="2", highlight=HIGHLIGHT_P2))
-    assert spec.recolour["row_1_round_1_feature_race_background"] == "#C0C0C0"
+    """A chip light enough to read through wants no ink of its own, and names none."""
+    spec = _highlighted(CellValue(text="7", highlight=HIGHLIGHT_POINTS))
+    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "points")
     assert "row_1_round_1_feature_race_result" not in spec.recolour
 
 
@@ -706,7 +711,7 @@ def test_the_raised_qualifying_glyph_is_recoloured_to_stay_legible_on_the_chip()
 
 
 def test_the_raised_glyph_prefers_a_rule_written_for_it():
-    style = _PALETTE + "\n.highlight_p1_sup_text { fill: #4A3B00 }"
+    style = _INK + "\n.highlight_p1_sup_text { fill: #4A3B00 }"
     spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1), style=style)
     assert spec.recolour["row_1_round_1_feature_qualifying_result"] == "#4A3B00"
     assert spec.recolour["row_1_round_1_feature_race_result"] == "#0B0D10"
@@ -716,33 +721,36 @@ def test_a_comment_holding_a_comma_above_a_rule_does_not_disable_it():
     """A selector group is split on commas, so an unstripped comment would eat the rule.
 
     `stylesheet` strips comments first and its docstring records the bug; this pins that the
-    highlight rules are read through that fix rather than around it.
+    ink rules are read through that fix rather than around it.
     """
-    style = "/* gold, silver and bronze */\n.highlight_p1 { fill: #D4AF37 }"
+    style = "/* gold, silver and bronze */\n.highlight_p1_text { fill: #0B0D10 }"
     spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1), style=style)
-    assert spec.recolour["row_1_round_1_feature_race_background"] == "#D4AF37"
+    assert spec.recolour["row_1_round_1_feature_race_result"] == "#0B0D10"
 
 
-def test_a_trimmed_round_leaves_its_chips_unpainted():
-    """The cells are off the canvas, and a recolour naming a removed id is unresolved."""
-    root = _grid_template(1, 2, highlights=True, style=_PALETTE)
+def test_a_trimmed_round_leaves_its_chips_undrawn():
+    root = _grid_template(1, 2, highlights=True, style=_INK)
     heading = RoundHeading(ordinal=1, number="1")
-    entry = _entry(1, cells={1: _cells(feature_race_result=CellValue(text="1", highlight=HIGHLIGHT_P1))})
+    entry = _entry(1, cells={1: _cells(
+        feature_race_result=CellValue(text="1", highlight=HIGHLIGHT_P1)
+    )})
     spec = build_fill_spec(_drawing([entry], rounds=[heading]), root)
-    assert "row_1_round_2_feature_race_background" not in spec.recolour
+    assert "row_1_round_2_feature_race_background" not in spec.image_data
     assert "row_1_round_2_feature_race_background" in spec.remove
 
 
-def test_a_trimmed_row_leaves_its_chips_unpainted():
-    root = _grid_template(2, 1, highlights=True, style=_PALETTE)
+def test_a_trimmed_row_leaves_its_chips_undrawn():
+    root = _grid_template(2, 1, highlights=True, style=_INK)
     heading = RoundHeading(ordinal=1, number="1")
-    entry = _entry(1, cells={1: _cells(feature_race_result=CellValue(text="1", highlight=HIGHLIGHT_P1))})
+    entry = _entry(1, cells={1: _cells(
+        feature_race_result=CellValue(text="1", highlight=HIGHLIGHT_P1)
+    )})
     spec = build_fill_spec(_drawing([entry], rounds=[heading]), root)
-    assert not any(key.startswith("row_2_") for key in spec.recolour)
+    assert not any(key.startswith("row_2_") for key in _chips(spec))
 
 
 def test_a_constructors_car_is_highlighted_by_the_same_rules():
-    root = _grid_template(1, 1, drivers=False, cars=2, highlights=True, style=_PALETTE)
+    root = _grid_template(1, 1, drivers=False, cars=2, highlights=True, style=_INK)
     heading = RoundHeading(ordinal=1, number="1")
     sessions = {suffix: CellValue() for suffix in _CELL_SUFFIXES}
     sessions["feature_race_result"] = CellValue(
@@ -753,7 +761,7 @@ def test_a_constructors_car_is_highlighted_by_the_same_rules():
         _drawing([entry], rounds=[heading], template_key=CONSTRUCTORS_TEMPLATE_KEY), root
     )
     stem = "row_1_round_1_driver_1_feature_race"
-    assert spec.recolour[f"{stem}_background"] == "#D4AF37"
-    assert spec.recolour[f"{stem}_fastest_lap"] == "url(#flGrad)"
+    assert spec.image_data[f"{stem}_background"] == (_ASSET, "p1")
+    assert spec.image_data[f"{stem}_fastest_lap"] == (_ASSET, "fastest_lap")
     # The overlay is the more specific signal, so it takes the text colour.
     assert spec.recolour[f"{stem}_result"] == "#F2F5F8"

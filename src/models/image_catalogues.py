@@ -1064,9 +1064,14 @@ _STANDINGS_CELL_FIELDS = frozenset(
 #: independently so — a template opts in per cell and per kind by declaring the field and a
 #: matching ``.highlight_*`` rule, and one declaring neither renders as it always did.
 #:
-#: **Valueless.** These are the module's first fields that are only ever recoloured and never
-#: filled, so XIV.3's "its value could not be determined" cannot apply to them; the render
-#: writes no text upon them and asking for one would be asking for nothing.
+#: **Asset fields**, of the closed-set `standings_highlight` class. The chip is artwork rather
+#: than a colour: a stylesheet can only ever wash the whole cell, where a file can draw a plate,
+#: a corner mark, or whatever else a league wants of it. The five data — `p1`, `p2`, `p3`,
+#: `points`, `fastest_lap` — are the module's own vocabulary, so a league missing one is given
+#: the bot's own file rather than a generic fallback (XIV.13).
+#:
+#: Their slots **stretch** rather than hold one aspect (XIV.6, v7.4.0): a cell is 52 x 22 on the
+#: drivers grid and 52 x 18 on the constructors one, and no single ratio serves two row bands.
 #:
 #: The two qualifying backgrounds are admitted although the shipped templates decline them.
 #: A raised qualifying glyph shares one auto-laid text chunk with the race result beside it
@@ -1082,6 +1087,11 @@ _STANDINGS_CELL_HIGHLIGHTS = frozenset(
         "feature_race_fastest_lap",
     }
 )
+
+#: Every highlight field draws the one class; which chip is drawn is the datum, not the class.
+_STANDINGS_CELL_HIGHLIGHT_ASSETS = {
+    suffix: "standings_highlight" for suffix in _STANDINGS_CELL_HIGHLIGHTS
+}
 
 #: The round headings, shared by both standings championships **and by the attendance
 #: sheet**. An **optional unit** (XIV.3, v4.5.0): a template declaring no round draws its
@@ -1138,10 +1148,11 @@ STANDINGS_DRIVERS_CATALOGUE = FieldCatalogue(
             fields=_STANDINGS_CELL_FIELDS | _STANDINGS_CELL_HIGHLIGHTS | {"group"},
             mandatory_fields=frozenset(),
             # The group was already valueless in fact and unclassified in the spec, this
-            # nest declaring no valueless field at all. It is named now because the
-            # highlight rects must be, and `RowSpec.valueless_field_ids` consults the nest
-            # only where the set is non-empty.
-            valueless_fields=_STANDINGS_CELL_HIGHLIGHTS | {"group"},
+            # nest declaring no valueless field at all. Naming it costs nothing and
+            # `RowSpec.valueless_field_ids` consults the nest only where the set is
+            # non-empty. The highlight fields are **not** valueless: they carry an asset.
+            valueless_fields=frozenset({"group"}),
+            assets=dict(_STANDINGS_CELL_HIGHLIGHT_ASSETS),
         ),
     ),
 )
@@ -1185,7 +1196,8 @@ STANDINGS_CONSTRUCTORS_CATALOGUE = FieldCatalogue(
                     | {"group", "name"}
                 ),
                 mandatory_fields=frozenset(),
-                valueless_fields=_STANDINGS_CELL_HIGHLIGHTS | {"group"},
+                valueless_fields=frozenset({"group"}),
+                assets=dict(_STANDINGS_CELL_HIGHLIGHT_ASSETS),
             ),
         ),
     ),

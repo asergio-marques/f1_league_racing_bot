@@ -789,6 +789,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
                 ("flag", "flag_directory"),
                 ("track", "track_image_directory"),
                 ("marker", "marker_directory"),
+                ("standings_highlight", "standings_highlight_directory"),
             ),
             image_type=drawing.template_key,
         )
@@ -1192,14 +1193,25 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
 # ── The highlight chips, through the posting path's own drawings ──────────
 
 
+def _chip_faults(result) -> list[str]:
+    """Whatever the fill could not resolve that names a highlight chip."""
+    return [
+        fault
+        for fault in result.unresolved
+        if "_background" in fault or "_fastest_lap" in fault
+    ]
+
+
 async def _highlighted_svg(tmp_path):
     """The posting path's real drawings, filled onto the shipped templates.
 
-    No rasteriser is touched, so this runs in CI: `build_drawings` reads the database,
-    `build_fill_spec` reads the shipped stylesheet, and `fill` writes the inline styles. The
-    pixels are checked separately by the marked test below.
+    No rasteriser is touched, so this runs in CI: `build_drawings` reads the database and
+    `build_fill_spec` resolves the chips against the packaged artwork. The pixels are checked
+    separately by the marked test below.
     """
     from db.database import get_connection
+    from services.image_config_service import ImageConfigService
+    from services.image_render_service import resolve_configured_directories
     from services.image_standings_post import build_drawings
     from services.image_standings_service import build_fill_spec
     from utils.svg_document import load_svg
@@ -1216,7 +1228,9 @@ async def _highlighted_svg(tmp_path):
 
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
     bot = _bot(db_path)
-    bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
+    config_service = ImageConfigService(db_path)
+    await config_service.create_with_defaults(1)
+    bot.image_config_service = config_service
 
     drawings = await build_drawings(
         bot,
@@ -1234,136 +1248,101 @@ async def _highlighted_svg(tmp_path):
         division_name="Alpha",
     )
 
+    config = await config_service.get_config(1)
     out = {}
     for drawing in drawings:
-        doc = load_svg(
-            os.path.join(_TEMPLATE_DIR, f"{drawing.template_key}.svg")
+        directories, _faults = resolve_configured_directories(
+            config,
+            (("standings_highlight", "standings_highlight_directory"),),
+            image_type=drawing.template_key,
         )
+        doc = load_svg(os.path.join(_TEMPLATE_DIR, f"{drawing.template_key}.svg"))
         root = doc.root if hasattr(doc, "root") else doc
-        result = fill(build_fill_spec(drawing, root))
-        out[drawing.template_key] = (root, result)
+        spec = build_fill_spec(drawing, root, asset_directories=directories)
+        out[drawing.template_key] = (root, spec, fill(spec))
     return out
 
 
-def _chip_faults(result) -> list[str]:
-    """Whatever the fill could not resolve that names a highlight chip."""
-    return [
-        fault
-        for fault in result.unresolved
-        if "_background" in fault or "_fastest_lap" in fault
-    ]
+async def test_the_winner_is_given_the_first_place_chip(tmp_path):
+    """End to end within CI: a real classification reaches the packaged artwork."""
+    root, spec, result = (await _highlighted_svg(tmp_path))["standings_drivers_template"]
+    assert _chip_faults(result) == [], _chip_faults(result)
+
+    assert spec.image_data["row_1_round_1_feature_race_background"] == (
+        "standings_highlight",
+        "p1",
+    )
+    assert spec.image_data["row_1_round_1_feature_race_fastest_lap"] == (
+        "standings_highlight",
+        "fastest_lap",
+    )
 
 
-async def test_the_winners_chip_is_painted_on_the_finished_drawing(tmp_path):
-    """End to end within CI: a real classification reaches a real template's own gold."""
-    from utils.svg_document import FieldIndex, computed_style, stylesheet
+async def test_the_chip_slot_ends_up_pointing_at_the_packaged_file(tmp_path):
+    """The datum is resolved through the class's directory, not by a path built here."""
+    from utils.svg_document import FieldIndex
 
-    root, result = (await _highlighted_svg(tmp_path))["standings_drivers_template"]
-    # Asset directories are not configured in a unit test, which the team images report.
-    # No chip may appear here: a recolour naming a field the template lost would.
-    assert _chip_faults(result) == []
-
-    import services.image_standings_service as standings
-
-    index = FieldIndex(root)
-    rules = stylesheet(root)
-    paints = standings._highlight_paints(root)
-    # Resolved the way the render resolves them: the feature family falls back to the
-    # unprefixed rule, which the shipped palette declares and the sprint family overrides.
-    gold = standings._paint(paints, standings.HIGHLIGHT_P1, "feature")
-    purple = standings._paint(paints, standings.HIGHLIGHT_FASTEST_LAP, "feature")
-    assert gold and purple
-
-    chip = index.resolve("row_1_round_1_feature_race_background")
-    assert computed_style(chip, rules)["fill"] == gold
-    overlay = index.resolve("row_1_round_1_feature_race_fastest_lap")
-    assert computed_style(overlay, rules)["fill"] == purple
+    root, _spec, _result = (await _highlighted_svg(tmp_path))["standings_drivers_template"]
+    slot = FieldIndex(root).resolve("row_1_round_1_feature_race_background")
+    href = slot.get("href") or slot.get("{http://www.w3.org/1999/xlink}href")
+    assert href and href.endswith("standings-highlights/p1.svg"), href
 
 
-async def test_a_cell_that_earns_nothing_keeps_its_chips_invisible(tmp_path):
-    """Round 2 has not been run, so its chips must still be transparent."""
-    from utils.svg_document import FieldIndex, computed_style, stylesheet
+async def test_a_cell_that_earns_nothing_is_left_without_an_href(tmp_path):
+    """Round 2 has not been run, so its slots must still draw nothing."""
+    from utils.svg_document import FieldIndex
 
-    root, _ = (await _highlighted_svg(tmp_path))["standings_drivers_template"]
-    index, rules = FieldIndex(root), stylesheet(root)
-    chip = index.resolve("row_1_round_2_feature_race_background")
-    assert computed_style(chip, rules)["fill"] == "none"
+    root, _spec, _result = (await _highlighted_svg(tmp_path))["standings_drivers_template"]
+    slot = FieldIndex(root).resolve("row_1_round_2_feature_race_background")
+    assert slot is not None, "the slot was removed; it should simply have been left alone"
+    assert not slot.get("href")
+    assert not slot.get("{http://www.w3.org/1999/xlink}href")
 
 
 async def test_the_constructors_cars_carry_the_chips_too(tmp_path):
-    from utils.svg_document import FieldIndex, computed_style, stylesheet
-
-    root, result = (await _highlighted_svg(tmp_path))["standings_constructors_template"]
-    assert _chip_faults(result) == []
-
-    index, rules = FieldIndex(root), stylesheet(root)
-    chip = index.resolve("row_1_round_1_driver_1_feature_race_background")
-    assert computed_style(chip, rules)["fill"] == rules[".highlight_p1"]["fill"]
+    root, spec, result = (await _highlighted_svg(tmp_path))["standings_constructors_template"]
+    assert _chip_faults(result) == [], _chip_faults(result)
+    assert spec.image_data["row_1_round_1_driver_1_feature_race_background"] == (
+        "standings_highlight",
+        "p1",
+    )
 
 
 @pytest.mark.rasteriser
-async def test_the_winners_chip_is_gold_in_the_raster(tmp_path):
+async def test_the_chips_reach_the_raster_as_the_artwork_says(tmp_path):
     """Rule XIV.14 — the chips are verified as pixels, never as markup.
 
-    The SVG-level tests above prove the recolour was written. Only the raster proves it was
-    *drawn*: a paint server the rasteriser cannot resolve, or a chip authored after its text,
-    both leave correct-looking markup and a wrong picture.
+    The tests above prove the right asset was chosen and the href anchored. Only the raster
+    proves it was *drawn*: an href the rasteriser cannot follow, a slot authored after its
+    text, or a `preserveAspectRatio` that letterboxes instead of stretching, all leave
+    correct-looking markup and a wrong picture.
 
-    Every coordinate here is read out of the template rather than assumed, and the sample is
-    taken at the chip's own left edge — well clear of the glyph, whose width depends on which
-    font the host resolved and would differ between this machine, CI and the Pi.
+    Every coordinate is read out of the template rather than assumed, and the samples are
+    taken well clear of the glyph, whose width depends on which font the host resolved.
     """
     from PIL import Image  # noqa: PLC0415
 
     from services.image_render_service import rasterise
-    from utils.svg_document import FieldIndex, canvas_of, stylesheet
+    from utils.svg_document import FieldIndex, canvas_of
     from utils.svg_fill import fill as fill_spec_onto
 
-    import services.image_standings_service as standings
-
-    db_path, division_id, round_ids = await _seed_league(tmp_path)
-    driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
-    bot = _bot(db_path)
-    bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
-
-    from services.image_standings_post import build_drawings
-    from services.image_standings_service import build_fill_spec
-    from utils.svg_document import load_svg
-
-    drawings = await build_drawings(
-        bot,
-        _guild(),
-        db_path=db_path,
-        server_id=1,
-        division_id=division_id,
-        round_id=round_ids[0],
-        round_number=1,
-        driver_snapshots=driver_snaps,
-        team_snapshots=team_snaps,
-        reserve_user_ids=set(),
-        show_reserves=False,
-        result_status="FINAL",
-        division_name="Alpha",
-    )
-    drawing = next(d for d in drawings if d.template_key == "standings_drivers_template")
-
-    doc = load_svg(os.path.join(_TEMPLATE_DIR, "standings_drivers_template.svg"))
-    root = doc.root if hasattr(doc, "root") else doc
+    root, spec, _ = (await _highlighted_svg(tmp_path))["standings_drivers_template"]
     chip = FieldIndex(root).resolve("row_1_round_1_feature_race_background")
     left, top = float(chip.get("x")), float(chip.get("y"))
-    height = float(chip.get("height"))
+    width, height = float(chip.get("width")), float(chip.get("height"))
 
-    result = fill_spec_onto(build_fill_spec(drawing, root))
+    result = fill_spec_onto(spec)
     png = rasterise(result.svg, tmp_path / "standings.png", result.canvas or canvas_of(root))
-
     image = Image.open(png).convert("RGB")
-    inside = image.getpixel((int(left) + 2, int(top + height / 2)))
-    # Two rows below the chip is the plain row band, which no highlight reaches.
-    outside = image.getpixel((int(left) + 2, int(top + height) + 4))
 
-    expected = standings._paint(
-        standings._highlight_paints(root), standings.HIGHLIGHT_P1, "feature"
-    )
-    gold = tuple(int(expected.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4))
-    assert inside == gold, f"the winner's chip rasterised as {inside}, not {gold}"
-    assert outside != gold, "the chip bled outside the cell it belongs to"
+    # The packaged p1 plate, sampled at the chip's lower-left — clear of both the text and
+    # the fastest-lap triangle, which the artwork puts in the top-right corner.
+    gold = (0xC9, 0xA2, 0x27)
+    assert image.getpixel((int(left) + 6, int(top + height) - 4)) == gold
+
+    # The fastest-lap mark is a corner triangle over the plate, not a wash across it.
+    purple = (0xA0, 0x20, 0xF0)
+    assert image.getpixel((int(left + width) - 4, int(top) + 3)) == purple
+
+    # Two rows below the chip is the plain row band, which no highlight reaches.
+    assert image.getpixel((int(left) + 6, int(top + height) + 8)) not in (gold, purple)

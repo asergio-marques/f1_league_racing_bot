@@ -27,7 +27,11 @@ _MIGRATIONS_DIR = os.path.join(
 #: Every migration that defines or redefines `image_config`, in order. Named rather than
 #: globbed because the rest of the schema is not needed here -- but *all* of them must be
 #: applied, or this fixture asserts defaults the shipped bot no longer has.
-_MIGRATIONS = ("039_image_module.sql", "043_league_asset_directories.sql")
+_MIGRATIONS = (
+    "039_image_module.sql",
+    "043_league_asset_directories.sql",
+    "044_standings_highlight_directory.sql",
+)
 
 
 @pytest.fixture
@@ -103,9 +107,9 @@ async def test_set_field_rejects_column_outside_allow_list(service):
 
 
 async def test_allow_list_covers_all_settable_columns(service):
-    # 1 template dir + 15 filenames + 7 asset dirs + 4 preferences = 27 scalar columns.
-    # With the 8 toggles that is 35 configuration values in total (SC-008).
-    assert len(SETTABLE_COLUMNS) == 27
+    # 1 template dir + 15 filenames + 8 asset dirs + 4 preferences = 28 scalar columns.
+    # With the 8 toggles that is 36 configuration values in total (SC-008).
+    assert len(SETTABLE_COLUMNS) == 28
     await service.create_with_defaults(1)
     for column in SETTABLE_COLUMNS:
         await service.set_field(1, column, "probe")
@@ -401,6 +405,7 @@ def _make_config(template_directory="templates", **overrides) -> _ImageConfig:
         marker_directory="resources/defaults/markers",
         weather_icon_directory="resources/defaults/weather",
         tyre_directory="resources/defaults/tyres",
+        standings_highlight_directory="resources/defaults/standings-highlights",
         time_zone="UTC",
         time_format="24H",
         date_format="DDD_DD_MON_YYYY",

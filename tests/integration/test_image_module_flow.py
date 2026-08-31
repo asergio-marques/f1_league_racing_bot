@@ -1112,7 +1112,7 @@ async def test_asset_directory_independence(module_service, config_service, tmp_
 
     config = await config_service.get_config(SERVER_ID)
     reports = evaluate_directories(config, root=tmp_path)
-    assert all(r.valid for r in reports.values()), "baseline: all seven resolve"
+    assert all(r.valid for r in reports.values()), "baseline: every class resolves"
 
     for column in ASSET_DIRECTORIES:
         await config_service.set_field(SERVER_ID, column, "resources/absent")
@@ -1120,7 +1120,9 @@ async def test_asset_directory_independence(module_service, config_service, tmp_
         reports = evaluate_directories(config, root=tmp_path)
 
         assert not reports[column].valid
-        assert sum(1 for r in reports.values() if r.valid) == 6, (
+        # Counted from the table rather than written out, so adding a class does not put
+        # this test wrong about a property that has nothing to do with how many there are.
+        assert sum(1 for r in reports.values() if r.valid) == len(ASSET_DIRECTORIES) - 1, (
             f"relocating {column} disturbed another asset directory"
         )
         assert "not found" in reports[column].reason.lower()

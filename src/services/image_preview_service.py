@@ -530,6 +530,7 @@ ASSET_CLASS_COLUMNS: tuple[tuple[str, str], ...] = (
     ("flag", "flag_directory"),
     ("driver", "driver_image_directory"),
     ("marker", "marker_directory"),
+    ("standings_highlight", "standings_highlight_directory"),
     ("weather", "weather_icon_directory"),
     ("tyre", "tyre_directory"),
 )

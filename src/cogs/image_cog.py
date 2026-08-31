@@ -148,7 +148,7 @@ class ImageCog(commands.Cog):
     async def _set_directory(
         self, interaction: discord.Interaction, column: str, value: str, label: str
     ) -> None:
-        """Shared body for the template directory and the seven asset directories.
+        """Shared body for the template directory and the eight asset directories.
 
         A path that escapes the project root is rejected here, at the point of
         configuration, rather than surfacing as a render failure later (FR-011, FR-016).
@@ -546,7 +546,7 @@ class ImageCog(commands.Cog):
     async def config_verdicts_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "verdicts_template", filename)
 
-    # ── The seven asset directory commands ────────────────────────────────
+    # ── The eight asset directory commands ────────────────────────────────
     #
     # Identical in shape to `template-directory`; only the column differs. Each is
     # subject to the same project-root containment rejection (FR-016).
@@ -600,6 +600,23 @@ class ImageCog(commands.Cog):
     @server_admin_only
     async def config_marker_directory(self, interaction: discord.Interaction, directory: str) -> None:
         await self._set_directory(interaction, "marker_directory", directory, "Position-change markers")
+
+    @config.command(
+        name="standings-highlight-directory",
+        description="Set the folder searched for standings result highlight marks.",
+    )
+    @app_commands.describe(directory="Path relative to the project root.")
+    @channel_guard
+    @server_admin_only
+    async def config_standings_highlight_directory(
+        self, interaction: discord.Interaction, directory: str
+    ) -> None:
+        await self._set_directory(
+            interaction,
+            "standings_highlight_directory",
+            directory,
+            "Standings result highlights",
+        )
 
     @config.command(
         name="weather-icon-directory",

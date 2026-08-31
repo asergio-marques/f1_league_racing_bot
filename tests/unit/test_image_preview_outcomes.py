@@ -305,8 +305,8 @@ class TestStandingsPreview:
         root = load_svg(root_dir / "standings_drivers_template.svg")
         spec = drivers_spec_builder(root)
 
-        backgrounds = [key for key in spec.recolour if key.endswith("_background")]
-        overlays = [key for key in spec.recolour if key.endswith("_fastest_lap")]
+        backgrounds = [key for key in spec.image_data if key.endswith("_background")]
+        overlays = [key for key in spec.image_data if key.endswith("_fastest_lap")]
         assert backgrounds, "the preview drew no highlight at all"
         assert overlays, "the preview drew no fastest lap"
 
