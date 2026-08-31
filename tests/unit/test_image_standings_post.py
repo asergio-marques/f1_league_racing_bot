@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,6 +25,19 @@ pytestmark = pytest.mark.asyncio
 
 DRIVERS = "standings_drivers_template"
 CONSTRUCTORS = "standings_constructors_template"
+
+
+def _drawn(tmp_path, championship: str) -> Path:
+    """A stub PNG named as the render service would name it.
+
+    The attachment a league receives is now the render's own filename — one naming rule,
+    in ``utils.image_naming``, rather than a literal at each posting site. A stub whose
+    name says nothing would let a posting attach the wrong championship's picture and
+    still satisfy this file, so the stubs carry real names.
+    """
+    png = tmp_path / f"season3_division1_round4_standings_{championship}.png"
+    png.write_bytes(b"x")
+    return png
 
 
 def _bot(db_path="db", *, module=True, toggle=True, drivers_valid=True, constructors_valid=True):
@@ -192,59 +206,64 @@ async def test_a_reader_that_raises_falls_back_rather_than_breaking_the_posting(
 
 
 async def test_both_render_so_two_messages_are_posted_and_no_section_falls_back(tmp_path):
-    png = tmp_path / "s.png"
-    png.write_bytes(b"x")
     sent = []
 
-    outcome = await _try_post(
-        _bot(), _channel(sent), AsyncMock(return_value=_decision(png=png))
-    )
+    async def render(bot, server_id, drawing, origin):
+        return _decision(
+            png=_drawn(
+                tmp_path,
+                "drivers" if drawing.template_key == DRIVERS else "constructors",
+            )
+        )
+
+    outcome = await _try_post(_bot(), _channel(sent), AsyncMock(side_effect=render))
 
     assert outcome.applicable
     assert outcome.fallback_championships == []
     assert outcome.drivers.posted and outcome.constructors.posted
     assert len(sent) == 2, "the two championships are two messages"
     assert [kwargs["file"].filename for _content, kwargs in sent] == [
-        "standings_drivers.png",
-        "standings_constructors.png",
-    ], "drivers first, constructors after"
+        "season3_division1_round4_standings_drivers.png",
+        "season3_division1_round4_standings_constructors.png",
+    ], "drivers first, constructors after, each attached under its own render's name"
 
 
 async def test_the_drivers_failing_falls_back_to_the_drivers_section_alone(tmp_path):
     """The constructors graphic still draws, so its table must not be repeated as text."""
-    png = tmp_path / "s.png"
-    png.write_bytes(b"x")
     sent = []
 
     async def render(bot, server_id, drawing, origin):
         if drawing.template_key == DRIVERS:
             return _decision(posts=False, problem=MagicMock(detail="no rows"))
-        return _decision(png=png)
+        return _decision(png=_drawn(tmp_path, "constructors"))
 
     outcome = await _try_post(_bot(), _channel(sent), AsyncMock(side_effect=render))
 
     assert outcome.fallback_championships == ["drivers"]
     assert outcome.constructors.posted
     assert len(sent) == 1
-    assert sent[0][1]["file"].filename == "standings_constructors.png"
+    assert (
+        sent[0][1]["file"].filename
+        == "season3_division1_round4_standings_constructors.png"
+    )
 
 
 async def test_the_constructors_failing_falls_back_to_the_constructors_section_alone(tmp_path):
-    png = tmp_path / "s.png"
-    png.write_bytes(b"x")
     sent = []
 
     async def render(bot, server_id, drawing, origin):
         if drawing.template_key == CONSTRUCTORS:
             return _decision(posts=False, problem=MagicMock(detail="no rows"))
-        return _decision(png=png)
+        return _decision(png=_drawn(tmp_path, "drivers"))
 
     outcome = await _try_post(_bot(), _channel(sent), AsyncMock(side_effect=render))
 
     assert outcome.fallback_championships == ["constructors"]
     assert outcome.drivers.posted
     assert len(sent) == 1
-    assert sent[0][1]["file"].filename == "standings_drivers.png"
+    assert (
+        sent[0][1]["file"].filename == "season3_division1_round4_standings_drivers.png"
+    )
 
 
 async def test_both_failing_falls_back_to_both_sections_so_each_is_read_exactly_once():

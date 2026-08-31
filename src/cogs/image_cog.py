@@ -1108,10 +1108,28 @@ class ImageCog(commands.Cog):
             )
             return
 
+        # A preview is named exactly as a posting is, and for the same reason: a manager
+        # running several of them collects several files, and `standings_drivers.png`
+        # twice over says nothing about which division or round each drew.
+        from utils.image_naming import image_filename_stem, subject_for_template
+
+        round_number = (
+            getattr(context.round, "round_number", None) if context.round else None
+        )
+
         outcomes = []
         for label, template_key, spec_builder in requests:
             outcome = await self.bot.image_render_service.render(  # type: ignore[attr-defined]
-                interaction.guild_id, template_key, spec_builder
+                interaction.guild_id,
+                template_key,
+                spec_builder,
+                filename_stem=image_filename_stem(
+                    subject_for_template(template_key),
+                    season_number=context.season_number,
+                    division_tier=context.division_tier,
+                    division_name=context.division_name,
+                    round_number=round_number,
+                ),
             )
             outcomes.append((label, template_key, outcome))
 
@@ -1496,9 +1514,13 @@ class ImageCog(commands.Cog):
             else:
                 lines.append(f"✅ {label}")
                 for index, path in enumerate(outcome.png_paths):
+                    # The render service already wrote the name; the ordinal suffix only
+                    # keeps a kind that draws more than one picture from colliding.
                     suffix = f"_{index}" if index else ""
                     files.append(
-                        discord.File(str(path), filename=f"{template_key}{suffix}.png")
+                        discord.File(
+                            str(path), filename=f"{path.stem}{suffix}{path.suffix}"
+                        )
                     )
             all_notices.extend(outcome.notices)
 

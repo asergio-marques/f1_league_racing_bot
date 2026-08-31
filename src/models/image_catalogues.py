@@ -881,6 +881,23 @@ LINEUP_CATALOGUE = FieldCatalogue(
 )
 
 
+#: The crop point and the footer band, which every image type drawn as a **list of rows** may
+#: declare (Constitution XIV.2, v7.1.0) so that a division of twenty drivers is not drawn on a
+#: canvas built for fifty.
+#:
+#: **Optional, deliberately.** A league's own template authored before v7.1.0 declares neither
+#: and must go on rendering at full height; making the crop point mandatory would invalidate
+#: every one of them at the moment it was named. The calendar is the exception and keeps its own
+#: mandatory crop point: it has required one since 037, and no template of it exists that does
+#: not declare one.
+#:
+#: The crop point is `valueless` for the same reason the calendar's is — geometry the render
+#: reads, never text it writes — so Rule 3's "its value could not be determined" cannot apply.
+_ROW_CROP_FIELD = "vertical_crop_point"
+
+#: The footer band is a whole-graphic field, not a per-row one: there is one of it.
+FOOTER_GROUP_FIELD = "footer_group"
+
 #: What both results templates address, whatever the session they draw. Declared once and
 #: composed into each of the two catalogues below (XIV.10, v4.4.0: siblings may share the
 #: declaration of their common part and must remain separately addressable).
@@ -890,6 +907,7 @@ _RESULTS_MANDATORY = frozenset(
 _RESULTS_OPTIONAL = frozenset(
     {
         "season_number",
+        FOOTER_GROUP_FIELD,
         "division_tier",
         # Column groups (XIV.2, v4.4.0): each wraps the heading of a sanction column and no
         # cell of any row, and leaves while that phase stands open.
@@ -944,9 +962,9 @@ RESULTS_QUALIFYING_CATALOGUE = FieldCatalogue(
     rows=RowSpec(
         prefix="row",
         capacity=None,
-        fields=_RESULTS_ROW_FIELDS | {"tyre", "best_lap", "gap"},
+        fields=_RESULTS_ROW_FIELDS | {"tyre", "best_lap", "gap", _ROW_CROP_FIELD},
         mandatory_fields=_RESULTS_ROW_MANDATORY | {"best_lap", "gap"},
-        valueless_fields=frozenset({"group"}),
+        valueless_fields=frozenset({"group", _ROW_CROP_FIELD}),
         assets={**_RESULTS_ROW_ASSETS, "tyre": "tyre"},
         # A tyre is a value the submission of a session need not carry, so its absence is a
         # state worth depicting rather than a gap worth reporting (XIV.13, v4.4.0).
@@ -964,14 +982,22 @@ RESULTS_QUALIFYING_CATALOGUE = FieldCatalogue(
 RESULTS_RACE_CATALOGUE = FieldCatalogue(
     mandatory=_RESULTS_MANDATORY,
     optional=_RESULTS_OPTIONAL
-    | {"fastest_lap_group", "fastest_lap_driver_name", "fastest_lap_time"},
+    | {
+        "fastest_lap_group",
+        # The marking's legend, removed with the plate above. Its own group because it is
+        # drawn in the footer band the crop carries up (XIV.2, v7.1.0).
+        "fastest_lap_legend_group",
+        "fastest_lap_driver_name",
+        "fastest_lap_time",
+    },
     rows=RowSpec(
         prefix="row",
         capacity=None,
-        fields=_RESULTS_ROW_FIELDS | {"time", "fastest_lap", "ingame_penalty"},
+        fields=_RESULTS_ROW_FIELDS
+        | {"time", "fastest_lap", "ingame_penalty", _ROW_CROP_FIELD},
         mandatory_fields=_RESULTS_ROW_MANDATORY
         | {"time", "fastest_lap", "ingame_penalty"},
-        valueless_fields=frozenset({"group"}),
+        valueless_fields=frozenset({"group", _ROW_CROP_FIELD}),
         assets=dict(_RESULTS_ROW_ASSETS),
     ),
 )
@@ -989,6 +1015,7 @@ _STANDINGS_MANDATORY = frozenset({"division_name", "round_number", "result_statu
 _STANDINGS_OPTIONAL = frozenset(
     {
         "season_number",
+        FOOTER_GROUP_FIELD,
         "season_number_group",
         "division_tier",
         "division_tier_group",
@@ -1074,9 +1101,11 @@ STANDINGS_DRIVERS_CATALOGUE = FieldCatalogue(
     rows=RowSpec(
         prefix="row",
         capacity=None,
-        fields=_STANDINGS_ROW_FIELDS | {"driver_name", "driver_flag"},
+        fields=_STANDINGS_ROW_FIELDS | {"driver_name", "driver_flag", _ROW_CROP_FIELD},
         mandatory_fields=_STANDINGS_ROW_MANDATORY | {"driver_name"},
-        valueless_fields=frozenset({"group", "position_change_group"}),
+        valueless_fields=frozenset(
+            {"group", "position_change_group", _ROW_CROP_FIELD}
+        ),
         assets={**_STANDINGS_ROW_ASSETS, "driver_flag": "flag"},
         nested=NestedSpec(
             prefix="round",
@@ -1102,9 +1131,11 @@ STANDINGS_CONSTRUCTORS_CATALOGUE = FieldCatalogue(
     rows=RowSpec(
         prefix="row",
         capacity=None,
-        fields=_STANDINGS_ROW_FIELDS,
+        fields=_STANDINGS_ROW_FIELDS | {_ROW_CROP_FIELD},
         mandatory_fields=_STANDINGS_ROW_MANDATORY,
-        valueless_fields=frozenset({"group", "position_change_group"}),
+        valueless_fields=frozenset(
+            {"group", "position_change_group", _ROW_CROP_FIELD}
+        ),
         assets=dict(_STANDINGS_ROW_ASSETS),
         nested=NestedSpec(
             prefix="round",
@@ -1141,6 +1172,7 @@ _ATTENDANCE_MANDATORY = frozenset({"division_name", "round_number"})
 _ATTENDANCE_OPTIONAL = frozenset(
     {
         "season_number",
+        FOOTER_GROUP_FIELD,
         "season_number_group",
         "division_tier",
         "division_tier_group",
@@ -1186,10 +1218,11 @@ ATTENDANCE_CATALOGUE = FieldCatalogue(
                 "team_image",
                 "points",
                 "sanction",
+                _ROW_CROP_FIELD,
             }
         ),
         mandatory_fields=frozenset({"group", "driver_name", "points"}),
-        valueless_fields=frozenset({"group"}),
+        valueless_fields=frozenset({"group", _ROW_CROP_FIELD}),
         assets={"driver_flag": "flag", "team_image": "team"},
         nested=NestedSpec(
             prefix="round",
@@ -1648,6 +1681,42 @@ def sibling_owners(template_key: str, ids: Iterable[str]) -> list[str]:
         if wanted & (_canonical_ids(catalogue) - own_ids):
             owners.append(key)
     return owners
+
+
+def row_crop_fields(
+    declared: Iterable[str], *, drawn: int, capacity: int, prefix: str = "row"
+) -> dict:
+    """The crop keywords for a template drawn as a list of rows (XIV.2, v7.1.0).
+
+    Splatted into a :class:`FillSpec` by every image type whose rows a division may fill
+    only partly, so the rule lives here and not once per service::
+
+        spec = FillSpec(..., **row_crop_fields(declared, drawn=len(rows), capacity=cap))
+
+    Three answers, and each of them can be "no":
+
+    * ``crop`` — the crop point of the **last row the data filled**, or None where the
+      template declares no such point. A template authored before v7.1.0 declares none, and
+      renders at its full height exactly as it did.
+    * ``crop_is_final`` — whether that row is also the last the *template* declares, which
+      is the only case in which the crop point is expected to stand at the canvas height.
+      A division drawn shorter crops higher by design and must raise nothing.
+    * ``footer`` — the band beneath the rows, carried up by the crop rather than cut off.
+
+    **A graphic with no rows at all is not cropped.** There is no ``row_0`` crop point, and
+    cropping at row 1's would draw one empty row band — worse than the full canvas, and
+    stating something untrue about a division that has nobody in it.
+    """
+    names = set(declared)
+    if drawn < 1:
+        return {}
+
+    crop_id = f"{prefix}_{drawn}_{_ROW_CROP_FIELD}"
+    return {
+        "crop": crop_id if crop_id in names else None,
+        "crop_is_final": drawn == capacity,
+        "footer": FOOTER_GROUP_FIELD if FOOTER_GROUP_FIELD in names else None,
+    }
 
 
 def sibling_fields_declared(template_key: str, declared: Iterable[str]) -> list[str]:

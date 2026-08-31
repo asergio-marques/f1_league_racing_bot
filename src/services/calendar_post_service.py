@@ -140,6 +140,8 @@ async def render_calendar_image(
     if raw_flag:
         flag_directory = Path(raw_flag)
 
+    from utils.image_naming import stem_for_drawing
+
     return await bot.image_render_service.render(
         server_id,
         TEMPLATE_KEY,
@@ -150,6 +152,83 @@ async def render_calendar_image(
             flag_directory=flag_directory,
         ),
         output_dir=output_dir,
+        filename_stem=stem_for_drawing(drawing, TEMPLATE_KEY),
+    )
+
+
+#: The calendar's command-output states, mirroring ``image_lineup_post``'s. Named here
+#: rather than imported so the calendar's own branch keeps its vocabulary in one file.
+#:
+#: The league does not convey its calendar as a graphic — the caller posts its text.
+NOT_APPLICABLE = "NOT_APPLICABLE"
+#: A graphic was drawn and is the caller's to send and discard.
+DREW = "DREW"
+#: A graphic was wanted and could not be made. Constitution XIV.7 makes a **commanded**
+#: posting reject rather than substitute text, so the message says what is at fault.
+REJECTED = "REJECTED"
+
+
+@dataclass
+class CalendarCommandOutcome:
+    """What a command-output calendar render produced."""
+
+    action: str = NOT_APPLICABLE
+    message: str | None = None
+    notices: list = field(default_factory=list)
+    png_path: Path | None = None
+
+    @property
+    def drew(self) -> bool:
+        return self.action == DREW
+
+
+async def render_for_command(
+    bot,
+    server_id: int,
+    division,
+    rounds,
+    tracks,
+    *,
+    season_number=None,
+) -> CalendarCommandOutcome:
+    """Produce a division's calendar PNG as **command output**, posting it nowhere.
+
+    The counterpart of :func:`image_lineup_post.render_for_command`, and it exists for the
+    same reason: `/season review` shows a manager what their league will see, and that is
+    not the calendar *of record*. This function writes no ``calendar_message_id``, deletes
+    nothing from the calendar channel and touches no channel at all — which
+    :func:`post_division_calendar` necessarily does, and is why a flag on it would not
+    serve.
+
+    The caller owns the returned path and must ``discard_render`` it.
+    """
+    if not await image_calendar_wanted(bot, server_id):
+        return CalendarCommandOutcome()
+
+    try:
+        outcome = await render_calendar_image(
+            bot, server_id, division, rounds, tracks, season_number=season_number
+        )
+    except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
+        log.exception("calendar: command render raised for division %s", division.id)
+        return CalendarCommandOutcome(action=REJECTED, message=f"\u274c {exc}")
+
+    notices = [n.detail for n in (outcome.notices or [])]
+    if outcome.problem is not None:
+        return CalendarCommandOutcome(
+            action=REJECTED,
+            message=f"\u274c The calendar image could not be drawn \u2014 {outcome.problem.detail}",
+            notices=notices,
+        )
+    if not outcome.png_paths:
+        return CalendarCommandOutcome(
+            action=REJECTED,
+            message="\u274c The calendar image could not be drawn.",
+            notices=notices,
+        )
+
+    return CalendarCommandOutcome(
+        action=DREW, notices=notices, png_path=outcome.png_paths[0]
     )
 
 
@@ -180,7 +259,7 @@ async def replace_calendar_message(
         # what covers a picture that never reached a send at all.
         from services.image_render_service import discard_attachment
 
-        attachment = discord.File(str(image_path), filename="calendar.png")
+        attachment = discord.File(str(image_path), filename=image_path.name)
         try:
             posted = await channel.send(content, file=attachment)
         finally:

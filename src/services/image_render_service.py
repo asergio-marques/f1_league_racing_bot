@@ -603,12 +603,20 @@ class ImageRenderService:
         *,
         output_dir: Path | None = None,
         persist_notices: bool = True,
+        filename_stem: str | None = None,
     ) -> RenderOutcome:
         """Render one template.
 
         *spec_builder* is called with the parsed template root and returns a
         :class:`FillSpec`. Keeping it a callback means the caller owns the data and this
         service owns the pipeline.
+
+        *filename_stem* names the PNG on disk, and through it the attachment a league
+        receives — see :mod:`utils.image_naming`. It defaults to *image_type*, which is the
+        template's own key and says nothing about what was drawn; a posting path that knows
+        the season, division and round passes a stem built from them. The **directory** is
+        what keeps concurrent renders apart and what ``discard_render`` recognises as the
+        bot's own, so the stem is free to be anything a filesystem will take.
         """
         from utils.svg_document import SvgError, load_svg
         from utils.svg_fill import fill
@@ -703,7 +711,7 @@ class ImageRenderService:
 
         directory = output_dir or Path(tempfile.mkdtemp(prefix=_RENDER_DIR_PREFIX))
         directory.mkdir(parents=True, exist_ok=True)
-        destination = directory / f"{image_type}.png"
+        destination = directory / f"{filename_stem or image_type}.png"
 
         try:
             # Blocking subprocess: it MUST NOT run on the event loop. On a single-process
@@ -803,6 +811,7 @@ class ImageRenderService:
         posting_origin: PostingOrigin,
         bot=None,
         output_dir: Path | None = None,
+        filename_stem: str | None = None,
     ) -> PostingDecision:
         """Render, and decide what the caller should do with a failure.
 
@@ -828,7 +837,11 @@ class ImageRenderService:
             )
 
         outcome = await self.render(
-            server_id, image_type, spec_builder, output_dir=output_dir
+            server_id,
+            image_type,
+            spec_builder,
+            output_dir=output_dir,
+            filename_stem=filename_stem,
         )
 
         if bot is not None and outcome.notices:

@@ -65,12 +65,6 @@ TEMPLATE_KEYS: dict[str, str] = {
     "constructors": CONSTRUCTORS_TEMPLATE_KEY,
 }
 
-#: Championship -> the snapshot column naming the message that carries it. Mirrors
-#: ``results_post_service._STANDINGS_ID_COLUMNS``, which is the writer.
-_ATTACHMENT_NAMES = {
-    "drivers": "standings_drivers.png",
-    "constructors": "standings_constructors.png",
-}
 
 
 @dataclass
@@ -178,6 +172,7 @@ async def _calendar(bot, division_id: int):
     from one posting to the next. A round's *cells* are what emptying handles.
     """
     from services.calendar_post_service import tracks_by_name
+    from services.image_calendar_service import MYSTERY_DATUM
     from services.image_standings_service import RoundHeading
 
     tracks = await tracks_by_name(bot.db_path)
@@ -195,15 +190,23 @@ async def _calendar(bot, division_id: int):
     ordinal_of_round: dict[int, int] = {}
     for ordinal, row in enumerate(rows, start=1):
         # A mystery round names no circuit until it is revealed, and its flag is the
-        # mystery asset rather than a country's (044).
-        track_name = None if row["format"] == "MYSTERY" else row["track_name"]
+        # mystery asset rather than a country's (044, FR-012). The datum is the literal
+        # `Mystery`, which the closed-set rule resolves to the module's own `mystery.svg`
+        # even where a league's flag directory has none — so this is a *substitution*, not
+        # an absence, and `country=None` would delete the heading's flag instead.
+        mystery = row["format"] == "MYSTERY"
+        track_name = None if mystery else row["track_name"]
         record = tracks.get(track_name) if track_name else None
         headings.append(
             RoundHeading(
                 ordinal=ordinal,
                 number=str(row["round_number"]),
                 track=track_name,
-                country=getattr(record, "country", None) if record else None,
+                country=(
+                    MYSTERY_DATUM
+                    if mystery
+                    else (getattr(record, "country", None) if record else None)
+                ),
             )
         )
         ordinal_of_round[row["id"]] = ordinal
@@ -437,6 +440,8 @@ async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
         image_type=drawing.template_key,
     )
 
+    from utils.image_naming import stem_for_drawing
+
     return await bot.image_render_service.render_for_posting(
         server_id,
         drawing.template_key,
@@ -445,6 +450,7 @@ async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
         ),
         posting_origin=origin,
         bot=bot,
+        filename_stem=stem_for_drawing(drawing),
     )
 
 
@@ -505,7 +511,7 @@ async def _post_one(
     from services.image_render_service import discard_attachment
 
     png = decision.png_paths[0]
-    attachment = discord.File(str(png), filename=_ATTACHMENT_NAMES[championship])
+    attachment = discord.File(str(png), filename=png.name)
     try:
         message = await channel.send(f"{heading}\n{label}", file=attachment)
     except discord.HTTPException as exc:

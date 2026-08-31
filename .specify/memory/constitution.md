@@ -1,6 +1,77 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-28 — v7.0.0 → v7.1.0: MINOR — the vertical crop becomes a general operation and carries a declared footer group]
+  Version change    : 7.0.0 → 7.1.0
+  Bump rationale    : MINOR. The fill-operations table is introduced by "The module MUST support
+                      exactly these fill operations, and no others", and **Vertical crop** is added
+                      to it. That **widens** a closed enumeration rather than narrowing one: an
+                      implementation conforming to v7.0.0 — which already performed the crop, for
+                      the calendar — does not violate this version, and no template authored to
+                      v7.0.0 is made wrong by it.
+
+                      The contrast is deliberate. v6.3.0 → v7.0.0 took MAJOR on the same table
+                      because **Truncate** was *struck* from it, making an implementation that
+                      truncated newly wrong. Nothing is struck here. The only sentence removed —
+                      "Vertical crop … is specific to the calendar image type and is specified
+                      there, not as a general operation" — is a *restriction* being lifted, and
+                      lifting a restriction is the MINOR case by the policy's own reading.
+
+                      The footer group is a new **optional** template field, which the policy
+                      classifies as materially expanded guidance. It is optional in the strong
+                      sense: a template declaring neither crop points nor a footer group renders at
+                      full height exactly as it does today, so no league's hand-authored file is
+                      invalidated. Only the calendar continues to *require* crop points, which it
+                      already did.
+
+  Modified sections :
+    - Principle XIV, Rule 2, fill-operations table: a **Vertical crop** row is added, targeting the
+      root at a declared crop point and stating both halves of the effect — the footer group is
+      carried up, then the root `height` and `viewBox` are rewritten. The table rises from five
+      operations to **six**. The module docstring of `src/utils/svg_fill.py` already counted six
+      under a different grouping (it counted the crop and separated group removal) and so is
+      unaffected by the count.
+    - Principle XIV, Rule 2 — the sentence confining the crop to the calendar is **struck**, and a
+      new subsection, "The vertical crop", stands in its place. It states: that any image type
+      whose capacity is fixed by the template (Rule 12) may declare a crop point per member; that
+      the cut is taken at the crop point of the last member the **data** fill; that a crop point is
+      a valueless field under Rule 3, so its absence is fatal and its never carrying a value is
+      not; that a declared footer group is carried up by the height difference *before* the canvas
+      is rewritten; that the last **declared** member's crop point is expected to sit at the
+      declared canvas height, a divergence being a notice under Rule 4 and never a refusal; and
+      that declaring crop points is optional for every type but the calendar, a template declaring
+      none rendering at full height.
+    - Principle XIV, Rule 12 — "for an image type that defines a vertical crop" becomes "where the
+      template declares crop points", with a cross-reference to Rule 2. The rule already
+      anticipated a crop reaching beyond the calendar; only its phrasing tied the mechanism to the
+      image type rather than to the file.
+
+  Added sections    : None as such — "The vertical crop" is a subsection of Rule 2, replacing the
+                      one-sentence deferral that stood there.
+
+  Removed sections  : None.
+
+  Templates checked : `.specify/templates/` — plan, spec, tasks, checklist, agent-file and
+                      constitution templates carry no reference to the fill-operations table or to
+                      the crop, so none needed updating.
+
+  Follow-up TODOs   : None.
+
+  Session context   : Decided in conversation on 2026-08-28, while shortening the standings,
+                      attendance and results templates to the rows a division actually fills. The
+                      calendar had cropped itself since 037; the four row templates could not,
+                      and a division of twenty drivers was drawn on a fifty-row canvas.
+
+                      The obstacle was that all four shipped templates carry caption text *below*
+                      their last row — "DRIVER CHAMPIONSHIP", "RACE CLASSIFICATION" — which a plain
+                      crop cut off. Three answers were weighed: re-lay the four templates to put
+                      the captions above the rows (no amendment, but it loses the caption for any
+                      league whose own template keeps one below); derive the cut from the row pitch
+                      and the template's bottom margin (no amendment and no template edit, but it
+                      guesses, and still loses the caption); or carry the footer up with the crop.
+                      The third was chosen: it is the only one that draws the graphic correctly,
+                      and the amendment it costs is a widening rather than a break.
+
 [2026-08-27 — v6.3.0 → v7.0.0: MAJOR — text is never cut; a field declares a box and a line budget, and is reduced until it fits; lines are centred in their box]
   Version change    : 6.3.0 → 7.0.0
   Bump rationale    : MAJOR. An operation is removed from a closed list and a mandatory behaviour
@@ -4049,9 +4120,31 @@ The module MUST support exactly these fill operations, and no others:
 | Recolour | element | Merges a `fill:` declaration into the element's inline `style` |
 | Text fit | `<text>` carrying a declared box | Breaks the string into `<tspan>` lines within the box's line budget, reducing the field's size until it fits. Nothing is ever cut |
 | Empty or remove | element, or its `_group` wrapper | Clears the text, or deletes the node and its subtree |
+| Vertical crop | the root, at a declared crop point | Carries the footer group up, then rewrites the root `height` and `viewBox` to the crop point's `y` |
 
-Vertical crop — rewriting the root `height` and `viewBox` to a crop-point node's `y` — is
-specific to the calendar image type and is specified there, not as a general operation.
+**The vertical crop.** Any image type whose capacity is fixed by the template (Rule 12) MAY
+declare a crop point per member of its repeating collection, and the render MUST cut the canvas
+at the crop point of the **last member the data fill**. This is what lets a classification drawn
+for twenty drivers stop at row twenty rather than carry thirty rows of empty canvas, and a
+calendar of eight rounds end after the eighth.
+
+A crop point is a **valueless** field (Rule 3): geometry the render reads, never text it writes.
+Its absence from a template that claims one is a fault of the template; its never carrying a
+value is not.
+
+Where the template declares a **footer group** — a band of static chrome standing beneath the
+repeating collection, such as a caption naming the graphic — the crop MUST carry that group up
+by the difference between the declared canvas height and the crop point, and MUST do so *before*
+rewriting the height and `viewBox`. A graphic drawn short therefore keeps the band beneath its
+rows instead of losing it off the bottom, and a template declaring no footer group is cropped
+exactly as one always was. It follows that the crop point of the **last member the template
+declares** is expected to sit at the declared canvas height: a template whose last crop point
+does not still draws every smaller division correctly and MUST NOT be refused, but the
+divergence MUST be reported as a notice (Rule 4).
+
+Declaring crop points is OPTIONAL for every image type but the calendar, which requires them. A
+template declaring none MUST render at its full declared height, which is what keeps a league's
+existing hand-authored template working unchanged.
 
 Recolour MUST be merged into the existing inline `style` rather than written as a
 presentation attribute or as a `style` replacement, so that template-declared styling on the
@@ -4794,8 +4887,8 @@ which for every collection it declares:
 Where the capacity is fixed **by the template**:
 
 - **Fewer data than slots**: the unused members MUST be removed — by their
-  `<collection>_<x>_group` where one is declared (Rule 2), or, for an image type that defines a
-  vertical crop, by cutting the canvas at the corresponding crop point. Members taken off the
+  `<collection>_<x>_group` where one is declared (Rule 2), or, where the template declares crop
+  points, by cutting the canvas at the corresponding crop point (Rule 2). Members taken off the
   canvas this way are not unresolved fields (Rule 3), and no notice arises.
 - **More data than slots**: a **problem** (Rule 4), rejected at the earliest moment it can be
   detected — including the command that would grow the division past the capacity, which is
@@ -6136,4 +6229,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-27
+**Version**: 7.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-28

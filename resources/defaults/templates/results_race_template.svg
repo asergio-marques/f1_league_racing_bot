@@ -50,11 +50,14 @@
        controls and one anchored at the left of the plate would run off the
        canvas.
 
-       The legend in the right of the footer sits inside fastest_lap_group and
-       not with the rest of the footer, though it is nowhere near the plate: it
-       says that a lap is marked by colour, which is untrue of a session that
-       conferred no bonus, and a group is how a template says that a piece of
-       chrome belongs to a thing that may not be drawn.
+       The legend in the right of the footer stands with the rest of the footer
+       and carries fastest_lap_legend_group of its own. It says that a lap is
+       marked by colour, which is untrue of a session that conferred no bonus,
+       so it must leave when the plate does — and a group is how a template says
+       that a piece of chrome belongs to a thing that may not be drawn. It has
+       its own rather than sitting inside fastest_lap_group because it is drawn
+       in the footer band, which the crop carries up, and a node cannot be in
+       two groups.
 
        Mandatory : row_<x>_group, row_<x>_position, row_<x>_driver_name,
                    row_<x>_team_name, row_<x>_team_image,
@@ -67,8 +70,9 @@
        Optional  : season_number, division_tier, season_number_group,
                    division_tier_group, postrace_penalty_group,
                    appeal_penalty_group, row_<x>_driver_flag,
-                   fastest_lap_group, fastest_lap_driver_name,
-                   fastest_lap_time
+                   fastest_lap_group, fastest_lap_legend_group,
+                   fastest_lap_driver_name, fastest_lap_time,
+                   footer_group, row_<x>_vertical_crop_point
        Declined  : none &#183; every field of the race catalogue is declared
        =================================================================== -->
 
@@ -132,8 +136,6 @@
     <text class="statlbl" x="1128" y="137" text-anchor="end">FASTEST LAP</text>
     <text id="fastest_lap_driver_name" inkscape:label="fastest_lap_driver_name" class="fldrv" x="1128" y="173" text-anchor="end">Driver Name</text>
     <text id="fastest_lap_time" inkscape:label="fastest_lap_time" class="fltime" x="1128" y="207" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <!--  the legend of the marking, which is true only where the marking is  -->
-    <text class="foot" x="1152" y="1072" text-anchor="end">FASTEST LAP MARKED IN COLOUR</text>
   </g>
 
   <!--  column headers  -->
@@ -157,6 +159,7 @@
 
   <!-- ================= rows ================= -->
   <g id="row_1_group" inkscape:label="row_1_group">
+      <rect id="row_1_vertical_crop_point" inkscape:label="row_1_vertical_crop_point" x="0" y="412" width="1" height="0" fill="none"/>
     <text id="row_1_position" inkscape:label="row_1_position" class="pos1" x="80" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums">1</text>
     <image id="row_1_driver_flag" inkscape:label="row_1_driver_flag" x="92" y="345" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_1_driver_name" inkscape:label="row_1_driver_name" class="dname" x="124" y="357">Driver Name</text>
@@ -170,6 +173,7 @@
     <text id="row_1_points" inkscape:label="row_1_points" class="pts" x="1152" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_2_group" inkscape:label="row_2_group">
+      <rect id="row_2_vertical_crop_point" inkscape:label="row_2_vertical_crop_point" x="0" y="444" width="1" height="0" fill="none"/>
     <rect x="48" y="368" width="1104" height="32" fill="#14171C"/>
     <text id="row_2_position" inkscape:label="row_2_position" class="pos" x="80" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums">2</text>
     <image id="row_2_driver_flag" inkscape:label="row_2_driver_flag" x="92" y="377" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
@@ -184,6 +188,7 @@
     <text id="row_2_points" inkscape:label="row_2_points" class="pts" x="1152" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_3_group" inkscape:label="row_3_group">
+      <rect id="row_3_vertical_crop_point" inkscape:label="row_3_vertical_crop_point" x="0" y="476" width="1" height="0" fill="none"/>
     <text id="row_3_position" inkscape:label="row_3_position" class="pos" x="80" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums">3</text>
     <image id="row_3_driver_flag" inkscape:label="row_3_driver_flag" x="92" y="409" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_3_driver_name" inkscape:label="row_3_driver_name" class="dname" x="124" y="421">Driver Name</text>
@@ -197,6 +202,7 @@
     <text id="row_3_points" inkscape:label="row_3_points" class="pts" x="1152" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_4_group" inkscape:label="row_4_group">
+      <rect id="row_4_vertical_crop_point" inkscape:label="row_4_vertical_crop_point" x="0" y="508" width="1" height="0" fill="none"/>
     <rect x="48" y="432" width="1104" height="32" fill="#14171C"/>
     <text id="row_4_position" inkscape:label="row_4_position" class="pos" x="80" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums">4</text>
     <image id="row_4_driver_flag" inkscape:label="row_4_driver_flag" x="92" y="441" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
@@ -211,6 +217,7 @@
     <text id="row_4_points" inkscape:label="row_4_points" class="pts" x="1152" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_5_group" inkscape:label="row_5_group">
+      <rect id="row_5_vertical_crop_point" inkscape:label="row_5_vertical_crop_point" x="0" y="540" width="1" height="0" fill="none"/>
     <text id="row_5_position" inkscape:label="row_5_position" class="pos" x="80" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums">5</text>
     <image id="row_5_driver_flag" inkscape:label="row_5_driver_flag" x="92" y="473" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_5_driver_name" inkscape:label="row_5_driver_name" class="dname" x="124" y="485">Driver Name</text>
@@ -224,6 +231,7 @@
     <text id="row_5_points" inkscape:label="row_5_points" class="pts" x="1152" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_6_group" inkscape:label="row_6_group">
+      <rect id="row_6_vertical_crop_point" inkscape:label="row_6_vertical_crop_point" x="0" y="572" width="1" height="0" fill="none"/>
     <rect x="48" y="496" width="1104" height="32" fill="#14171C"/>
     <text id="row_6_position" inkscape:label="row_6_position" class="pos" x="80" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums">6</text>
     <image id="row_6_driver_flag" inkscape:label="row_6_driver_flag" x="92" y="505" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
@@ -238,6 +246,7 @@
     <text id="row_6_points" inkscape:label="row_6_points" class="pts" x="1152" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_7_group" inkscape:label="row_7_group">
+      <rect id="row_7_vertical_crop_point" inkscape:label="row_7_vertical_crop_point" x="0" y="604" width="1" height="0" fill="none"/>
     <text id="row_7_position" inkscape:label="row_7_position" class="pos" x="80" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums">7</text>
     <image id="row_7_driver_flag" inkscape:label="row_7_driver_flag" x="92" y="537" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_7_driver_name" inkscape:label="row_7_driver_name" class="dname" x="124" y="549">Driver Name</text>
@@ -251,6 +260,7 @@
     <text id="row_7_points" inkscape:label="row_7_points" class="pts" x="1152" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_8_group" inkscape:label="row_8_group">
+      <rect id="row_8_vertical_crop_point" inkscape:label="row_8_vertical_crop_point" x="0" y="636" width="1" height="0" fill="none"/>
     <rect x="48" y="560" width="1104" height="32" fill="#14171C"/>
     <text id="row_8_position" inkscape:label="row_8_position" class="pos" x="80" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums">8</text>
     <image id="row_8_driver_flag" inkscape:label="row_8_driver_flag" x="92" y="569" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
@@ -265,6 +275,7 @@
     <text id="row_8_points" inkscape:label="row_8_points" class="pts" x="1152" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_9_group" inkscape:label="row_9_group">
+      <rect id="row_9_vertical_crop_point" inkscape:label="row_9_vertical_crop_point" x="0" y="668" width="1" height="0" fill="none"/>
     <text id="row_9_position" inkscape:label="row_9_position" class="pos" x="80" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums">9</text>
     <image id="row_9_driver_flag" inkscape:label="row_9_driver_flag" x="92" y="601" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_9_driver_name" inkscape:label="row_9_driver_name" class="dname" x="124" y="613">Driver Name</text>
@@ -278,6 +289,7 @@
     <text id="row_9_points" inkscape:label="row_9_points" class="pts" x="1152" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_10_group" inkscape:label="row_10_group">
+      <rect id="row_10_vertical_crop_point" inkscape:label="row_10_vertical_crop_point" x="0" y="700" width="1" height="0" fill="none"/>
     <rect x="48" y="624" width="1104" height="32" fill="#14171C"/>
     <text id="row_10_position" inkscape:label="row_10_position" class="pos" x="80" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums">10</text>
     <image id="row_10_driver_flag" inkscape:label="row_10_driver_flag" x="92" y="633" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
@@ -292,6 +304,7 @@
     <text id="row_10_points" inkscape:label="row_10_points" class="pts" x="1152" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_11_group" inkscape:label="row_11_group">
+      <rect id="row_11_vertical_crop_point" inkscape:label="row_11_vertical_crop_point" x="0" y="732" width="1" height="0" fill="none"/>
     <text id="row_11_position" inkscape:label="row_11_position" class="pos" x="80" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums">11</text>
     <image id="row_11_driver_flag" inkscape:label="row_11_driver_flag" x="92" y="665" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_11_driver_name" inkscape:label="row_11_driver_name" class="dname" x="124" y="677">Driver Name</text>
@@ -305,6 +318,7 @@
     <text id="row_11_points" inkscape:label="row_11_points" class="pts" x="1152" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_12_group" inkscape:label="row_12_group">
+      <rect id="row_12_vertical_crop_point" inkscape:label="row_12_vertical_crop_point" x="0" y="764" width="1" height="0" fill="none"/>
     <rect x="48" y="688" width="1104" height="32" fill="#14171C"/>
     <text id="row_12_position" inkscape:label="row_12_position" class="pos" x="80" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums">12</text>
     <image id="row_12_driver_flag" inkscape:label="row_12_driver_flag" x="92" y="697" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
@@ -319,6 +333,7 @@
     <text id="row_12_points" inkscape:label="row_12_points" class="pts" x="1152" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_13_group" inkscape:label="row_13_group">
+      <rect id="row_13_vertical_crop_point" inkscape:label="row_13_vertical_crop_point" x="0" y="796" width="1" height="0" fill="none"/>
     <text id="row_13_position" inkscape:label="row_13_position" class="pos" x="80" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums">13</text>
     <image id="row_13_driver_flag" inkscape:label="row_13_driver_flag" x="92" y="729" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_13_driver_name" inkscape:label="row_13_driver_name" class="dname" x="124" y="741">Driver Name</text>
@@ -332,6 +347,7 @@
     <text id="row_13_points" inkscape:label="row_13_points" class="pts" x="1152" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_14_group" inkscape:label="row_14_group">
+      <rect id="row_14_vertical_crop_point" inkscape:label="row_14_vertical_crop_point" x="0" y="828" width="1" height="0" fill="none"/>
     <rect x="48" y="752" width="1104" height="32" fill="#14171C"/>
     <text id="row_14_position" inkscape:label="row_14_position" class="pos" x="80" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums">14</text>
     <image id="row_14_driver_flag" inkscape:label="row_14_driver_flag" x="92" y="761" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
@@ -346,6 +362,7 @@
     <text id="row_14_points" inkscape:label="row_14_points" class="pts" x="1152" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_15_group" inkscape:label="row_15_group">
+      <rect id="row_15_vertical_crop_point" inkscape:label="row_15_vertical_crop_point" x="0" y="860" width="1" height="0" fill="none"/>
     <text id="row_15_position" inkscape:label="row_15_position" class="pos" x="80" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums">15</text>
     <image id="row_15_driver_flag" inkscape:label="row_15_driver_flag" x="92" y="793" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_15_driver_name" inkscape:label="row_15_driver_name" class="dname" x="124" y="805">Driver Name</text>
@@ -359,6 +376,7 @@
     <text id="row_15_points" inkscape:label="row_15_points" class="pts" x="1152" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_16_group" inkscape:label="row_16_group">
+      <rect id="row_16_vertical_crop_point" inkscape:label="row_16_vertical_crop_point" x="0" y="892" width="1" height="0" fill="none"/>
     <rect x="48" y="816" width="1104" height="32" fill="#14171C"/>
     <text id="row_16_position" inkscape:label="row_16_position" class="pos" x="80" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums">16</text>
     <image id="row_16_driver_flag" inkscape:label="row_16_driver_flag" x="92" y="825" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
@@ -373,6 +391,7 @@
     <text id="row_16_points" inkscape:label="row_16_points" class="pts" x="1152" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_17_group" inkscape:label="row_17_group">
+      <rect id="row_17_vertical_crop_point" inkscape:label="row_17_vertical_crop_point" x="0" y="924" width="1" height="0" fill="none"/>
     <text id="row_17_position" inkscape:label="row_17_position" class="pos" x="80" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums">17</text>
     <image id="row_17_driver_flag" inkscape:label="row_17_driver_flag" x="92" y="857" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_17_driver_name" inkscape:label="row_17_driver_name" class="dname" x="124" y="869">Driver Name</text>
@@ -386,6 +405,7 @@
     <text id="row_17_points" inkscape:label="row_17_points" class="pts" x="1152" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_18_group" inkscape:label="row_18_group">
+      <rect id="row_18_vertical_crop_point" inkscape:label="row_18_vertical_crop_point" x="0" y="956" width="1" height="0" fill="none"/>
     <rect x="48" y="880" width="1104" height="32" fill="#14171C"/>
     <text id="row_18_position" inkscape:label="row_18_position" class="pos" x="80" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums">18</text>
     <image id="row_18_driver_flag" inkscape:label="row_18_driver_flag" x="92" y="889" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
@@ -400,6 +420,7 @@
     <text id="row_18_points" inkscape:label="row_18_points" class="pts" x="1152" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_19_group" inkscape:label="row_19_group">
+      <rect id="row_19_vertical_crop_point" inkscape:label="row_19_vertical_crop_point" x="0" y="988" width="1" height="0" fill="none"/>
     <text id="row_19_position" inkscape:label="row_19_position" class="pos" x="80" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums">19</text>
     <image id="row_19_driver_flag" inkscape:label="row_19_driver_flag" x="92" y="921" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_19_driver_name" inkscape:label="row_19_driver_name" class="dname" x="124" y="933">Driver Name</text>
@@ -413,6 +434,7 @@
     <text id="row_19_points" inkscape:label="row_19_points" class="pts" x="1152" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_20_group" inkscape:label="row_20_group">
+      <rect id="row_20_vertical_crop_point" inkscape:label="row_20_vertical_crop_point" x="0" y="1020" width="1" height="0" fill="none"/>
     <rect x="48" y="944" width="1104" height="32" fill="#14171C"/>
     <text id="row_20_position" inkscape:label="row_20_position" class="pos" x="80" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums">20</text>
     <image id="row_20_driver_flag" inkscape:label="row_20_driver_flag" x="92" y="953" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
@@ -427,6 +449,7 @@
     <text id="row_20_points" inkscape:label="row_20_points" class="pts" x="1152" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_21_group" inkscape:label="row_21_group">
+      <rect id="row_21_vertical_crop_point" inkscape:label="row_21_vertical_crop_point" x="0" y="1052" width="1" height="0" fill="none"/>
     <text id="row_21_position" inkscape:label="row_21_position" class="pos" x="80" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums">21</text>
     <image id="row_21_driver_flag" inkscape:label="row_21_driver_flag" x="92" y="985" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_21_driver_name" inkscape:label="row_21_driver_name" class="dname" x="124" y="997">Driver Name</text>
@@ -440,6 +463,7 @@
     <text id="row_21_points" inkscape:label="row_21_points" class="pts" x="1152" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_22_group" inkscape:label="row_22_group">
+      <rect id="row_22_vertical_crop_point" inkscape:label="row_22_vertical_crop_point" x="0" y="1084" width="1" height="0" fill="none"/>
     <rect x="48" y="1008" width="1104" height="32" fill="#14171C"/>
     <text id="row_22_position" inkscape:label="row_22_position" class="pos" x="80" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums">22</text>
     <image id="row_22_driver_flag" inkscape:label="row_22_driver_flag" x="92" y="1017" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
@@ -455,6 +479,15 @@
   </g>
 
   <!--  footer  -->
-  <line x1="48" y1="1046" x2="1152" y2="1046" stroke="#262B33" stroke-width="1"/>
-  <text class="foot" x="48" y="1072">RACE CLASSIFICATION</text>
+  <g id="footer_group" inkscape:label="footer_group">
+    <line x1="48" y1="1046" x2="1152" y2="1046" stroke="#262B33" stroke-width="1"/>
+    <text class="foot" x="48" y="1072">RACE CLASSIFICATION</text>
+    <!--  the legend of the marking, which is true only where the marking is. It carries
+          its own group rather than sitting inside fastest_lap_group, because it is drawn
+          in this band and rides up with it when the canvas is cropped, and a node cannot
+          be in two groups. The race service removes the two together.  -->
+    <g id="fastest_lap_legend_group" inkscape:label="fastest_lap_legend_group">
+      <text class="foot" x="1152" y="1072" text-anchor="end">FASTEST LAP MARKED IN COLOUR</text>
+    </g>
+  </g>
 </svg>

@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from models.image_catalogues import CapacityError, catalogue_for
+from models.image_catalogues import CapacityError, catalogue_for, row_crop_fields
 from models.points_config import SessionType
 from utils import results_formatter
 from utils.svg_document import FieldIndex
@@ -601,6 +601,10 @@ def build_fill_spec(
         row_count=drawing.entry_count,
         image_data=image_data,
         catalogue=catalogue,
+        # Shorten the canvas to the rows this division actually fills, carrying the
+        # caption band beneath them up with it (XIV.2, v7.1.0). A template declaring no
+        # crop point is drawn at its full height, exactly as before.
+        **row_crop_fields(declared, drawn=len(drawn), capacity=capacity),
     )
     if asset_directories:
         spec.asset_directories = dict(asset_directories)

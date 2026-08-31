@@ -88,6 +88,8 @@ async def render_sheet(
             image_type=ATTENDANCE_TEMPLATE_KEY,
         )
 
+        from utils.image_naming import stem_for_drawing
+
         decision = await bot.image_render_service.render_for_posting(
             server_id,
             ATTENDANCE_TEMPLATE_KEY,
@@ -96,6 +98,7 @@ async def render_sheet(
             ),
             posting_origin=origin,
             bot=bot,
+            filename_stem=stem_for_drawing(drawing, ATTENDANCE_TEMPLATE_KEY),
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
         log.error("attendance: render failed for server %s: %s", server_id, exc)

@@ -410,12 +410,30 @@ def test_round_headings_are_filled():
 
 
 def test_a_round_with_no_country_removes_the_flag_without_a_notice():
+    """A round whose circuit names no country the registry knows: no flag to draw.
+
+    Distinct from the mystery round below, which *has* a datum and must draw it. The two
+    were conflated until 2026-08-28, and the mystery column drew nothing at all.
+    """
     root = _grid_template(1, 1)
     heading = RoundHeading(ordinal=1, number="1", country=None)
     spec = build_fill_spec(_drawing([_entry(1, cells={1: _cells()})], rounds=[heading]), root)
     assert "round_1_flag" in spec.remove
     assert "round_1_flag" not in spec.empty
     assert "round_1_flag" not in spec.image_data
+
+
+def test_a_mystery_round_draws_the_mystery_flag_rather_than_no_flag():
+    """044 FR-012 — both classes of a mystery round resolve the datum `Mystery`.
+
+    The closed-set rule then finds the module's own `mystery.svg` even where a league's
+    flag directory has none, so this is a substitution and never an absence.
+    """
+    root = _grid_template(1, 1)
+    heading = RoundHeading(ordinal=1, number="10", track=None, country="Mystery")
+    spec = build_fill_spec(_drawing([_entry(1, cells={1: _cells()})], rounds=[heading]), root)
+    assert spec.image_data["round_1_flag"] == ("flag", "Mystery")
+    assert "round_1_flag" not in spec.remove
 
 
 def test_driver_grid_cells_are_filled():

@@ -104,6 +104,19 @@ def _pending_to_division_models(cfg: PendingConfig) -> list[Division]:
 # ---------------------------------------------------------------------------
 
 
+#: What a graphic did in `/season review`, and what the text around it must therefore do.
+#:
+#: The review shows a manager what their league will actually see, so a graphic
+#: **replaces** the section's text rather than standing beside it. Three states and not
+#: two: an aspect switched off is the league conveying that section as text and nothing is
+#: wrong, whereas a graphic that was wanted and could not be drawn is a fault the manager
+#: has to fix — the text still stands in, so the review stays a complete picture of the
+#: season, but the approve button is withheld until the module draws.
+REVIEW_IMAGE_DREW = "DREW"
+REVIEW_IMAGE_TEXT = "TEXT"
+REVIEW_IMAGE_FAULT = "FAULT"
+
+
 class SeasonCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -245,12 +258,15 @@ class SeasonCog(commands.Cog):
             return []
         return problems
 
-    async def _post_review_lineup_image(self, interaction, division) -> None:
-        """Attach the lineup graphic to `/season review`, beside the textual lineup.
+    async def _post_review_lineup_image(self, interaction, division) -> str:
+        """Post the lineup graphic for `/season review`, **in place of** the text lineup.
 
-        Silent where the aspect is off. A fatal render is reported to the caller and
-        nothing is posted — a commanded posting never falls back (Constitution XIV.7) —
-        but it does not stop the rest of the review being shown.
+        Returns one of :data:`REVIEW_IMAGE_DREW`, :data:`REVIEW_IMAGE_TEXT` or
+        :data:`REVIEW_IMAGE_FAULT`, which is what tells the caller whether to post the
+        textual lineup and whether to offer the approve button.
+
+        These images are command output and not the lineup of record (038 FR-028): no
+        ``lineup_message_id`` is written and the lineup channel is untouched.
         """
         try:
             import discord as _discord
@@ -259,27 +275,84 @@ class SeasonCog(commands.Cog):
             from services.image_render_service import discard_attachment, discard_render
 
             if not await lineup_enabled(self.bot, interaction.guild_id):
-                return
+                return REVIEW_IMAGE_TEXT
+
             outcome = await render_for_command(
                 self.bot, interaction.guild, division.id
             )
-            attachment = (
-                _discord.File(
-                    str(outcome.png_path), filename=f"lineup_{division.id}.png"
-                )
-                if outcome.png_path is not None
-                else None
+            if outcome.png_path is None:
+                # A commanded render that would not draw. The manager is told what is at
+                # fault; the textual lineup still stands in so the review is complete.
+                if outcome.message:
+                    await interaction.followup.send(outcome.message, ephemeral=True)
+                return REVIEW_IMAGE_FAULT
+
+            attachment = _discord.File(
+                str(outcome.png_path), filename=outcome.png_path.name
             )
             try:
-                if attachment is not None:
-                    await interaction.followup.send(file=attachment, ephemeral=False)
-                elif outcome.message:
-                    await interaction.followup.send(outcome.message, ephemeral=True)
+                await interaction.followup.send(
+                    "\U0001f3ce\ufe0f **Lineup**", file=attachment, ephemeral=False
+                )
             finally:
                 discard_attachment(attachment)
                 discard_render(outcome.png_path)
+            return REVIEW_IMAGE_DREW
         except Exception as exc:  # noqa: BLE001 — never break a review on this
             log.error("season review: lineup image failed: %s", exc)
+            return REVIEW_IMAGE_FAULT
+
+    async def _post_review_calendar_image(
+        self, interaction, division, rounds, season_number
+    ) -> str:
+        """Post the calendar graphic for `/season review`, **in place of** the text.
+
+        The counterpart of :meth:`_post_review_lineup_image`, and it reads the same three
+        states. Renders through ``calendar_post_service.render_for_command``, which posts
+        to no channel and writes no ``calendar_message_id`` — the calendar of record is
+        `/season approve`'s to place, not the review's.
+        """
+        try:
+            import discord as _discord
+
+            from services.calendar_post_service import (
+                image_calendar_wanted,
+                render_for_command,
+                tracks_by_name,
+            )
+            from services.image_render_service import discard_attachment, discard_render
+
+            if not await image_calendar_wanted(self.bot, interaction.guild_id):
+                return REVIEW_IMAGE_TEXT
+
+            tracks = await tracks_by_name(self.bot.db_path)
+            outcome = await render_for_command(
+                self.bot,
+                interaction.guild_id,
+                division,
+                rounds,
+                tracks,
+                season_number=season_number,
+            )
+            if outcome.png_path is None:
+                if outcome.message:
+                    await interaction.followup.send(outcome.message, ephemeral=True)
+                return REVIEW_IMAGE_FAULT
+
+            attachment = _discord.File(
+                str(outcome.png_path), filename=outcome.png_path.name
+            )
+            try:
+                await interaction.followup.send(
+                    "\U0001f4c5 **Calendar**", file=attachment, ephemeral=False
+                )
+            finally:
+                discard_attachment(attachment)
+                discard_render(outcome.png_path)
+            return REVIEW_IMAGE_DREW
+        except Exception as exc:  # noqa: BLE001 — never break a review on this
+            log.error("season review: calendar image failed: %s", exc)
+            return REVIEW_IMAGE_FAULT
 
     async def _lineup_problems(self, server_id: int, season_id: int) -> list[str]:
         """Where the lineup template cannot draw a division of this season (047 FR-022).
@@ -359,6 +432,83 @@ class SeasonCog(commands.Cog):
         except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
             log.error("season: lineup template check failed: %s", exc)
             return []
+
+    async def _undrawable_graphics(
+        self, guild, server_id: int, divisions, rounds_of, season_number
+    ) -> list[str]:
+        """Every division whose lineup or calendar graphic will not draw, named.
+
+        The season review and this read **one and the same evaluation**, as they already do
+        for template validity: a graphic the review could not draw is a graphic every
+        posting of the season will fail to draw, so approving past it would commit a season
+        whose calendar and lineup fall back to text on every channel a league reads.
+
+        Silent for an aspect that is switched off — a league conveying its calendar as text
+        has nothing here to fail — and silent for a division the render draws.
+
+        This renders in earnest, and the season is then posted by rendering again. The cost
+        is one extra rasterisation per division per enabled aspect, on a command that
+        already defers and already schedules a season's worth of work; refusing on anything
+        cheaper would mean refusing on something other than what a posting will actually do.
+        """
+        from services.calendar_post_service import (
+            image_calendar_wanted,
+            tracks_by_name,
+        )
+        from services.calendar_post_service import (
+            render_for_command as render_calendar,
+        )
+        from services.image_lineup_post import lineup_enabled
+        from services.image_lineup_post import render_for_command as render_lineup
+        from services.image_render_service import discard_render
+
+        problems: list[str] = []
+        try:
+            draws_lineup = await lineup_enabled(self.bot, server_id)
+            draws_calendar = await image_calendar_wanted(self.bot, server_id)
+            if not (draws_lineup or draws_calendar):
+                return []
+
+            tracks = await tracks_by_name(self.bot.db_path) if draws_calendar else {}
+
+            for division in divisions:
+                if draws_lineup:
+                    outcome = await render_lineup(self.bot, guild, division.id)
+                    try:
+                        if outcome.png_path is None:
+                            problems.append(
+                                f"**{division.name}** — the lineup could not be drawn"
+                                + (f": {outcome.message}" if outcome.message else "")
+                            )
+                    finally:
+                        discard_render(outcome.png_path)
+
+                if draws_calendar:
+                    outcome = await render_calendar(
+                        self.bot,
+                        server_id,
+                        division,
+                        rounds_of.get(division.id, []),
+                        tracks,
+                        season_number=season_number,
+                    )
+                    try:
+                        if outcome.png_path is None:
+                            problems.append(
+                                f"**{division.name}** — the calendar could not be drawn"
+                                + (f": {outcome.message}" if outcome.message else "")
+                            )
+                    finally:
+                        discard_render(outcome.png_path)
+        except Exception as exc:  # noqa: BLE001
+            # A fault in the check is itself a reason not to approve: the season would be
+            # committed on the strength of a test that never ran.
+            log.error("season approve: the graphics check failed: %s", exc)
+            return [
+                "the image module could not be checked at all — "
+                f"{exc}. The season has not been approved."
+            ]
+        return problems
 
     async def _image_template_problems(self, server_id: int) -> list[str]:
         """Every unusable template, named individually (FR-007, FR-008).
@@ -769,6 +919,13 @@ class SeasonCog(commands.Cog):
 
         view = _ApproveView(self)
 
+        # Raised by any division whose lineup or calendar graphic was wanted and could not
+        # be drawn. The section's text still stands in, so the review is a complete
+        # picture of the season, but the approve button is withheld: a season approved now
+        # would post that fault to the league's own channels, and the manager reading this
+        # is the one person able to fix it.
+        image_fault = False
+
         # Load from DB to get tier and team roster data
         if cfg.season_id != 0:
             # ── Modules ───────────────────────────────────────────────
@@ -1001,70 +1158,96 @@ class SeasonCog(commands.Cog):
                 cfg_lines.append(f"  Weather channel: {weather_chan}")
                 await interaction.followup.send("\n".join(cfg_lines), ephemeral=False)
 
-                # ── Message 2: calendar (rounds) ──────────────────────
-                rounds_db = await self.bot.season_service.get_division_rounds(div.id)
-                cal_lines: list[str] = ["\U0001f4c5 **Calendar**"]
-                for r in rounds_db:
-                    cal_lines.append(
-                        f"  Round {r.round_number}: {r.format.value} "
-                        f"@ {r.track_name or 'Mystery'} \u2014 {discord_ts(r.scheduled_at)}"
-                    )
-                await interaction.followup.send("\n".join(cal_lines), ephemeral=False)
-
-                # ── Message 3: lineup (teams + assigned drivers) ──────
-                teams = await self.bot.team_service.get_division_teams(div.id)
-                lineup_lines: list[str] = ["\U0001f3ce\ufe0f **Lineup**"]
-                if teams:
-                    lineup_lines.append("  **Teams:** " + ", ".join(t["name"] for t in teams))
-                    missing_roles = [t["name"] for t in teams if t["name"] in roleless]
-                    if missing_roles:
-                        lineup_lines.append(
-                            "  ⚠️ **No role assigned:** "
-                            + ", ".join(f'"{n}"' for n in missing_roles)
-                            + " — result submission will reject drivers in these teams."
-                        )
-                async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
-                    _cur = await _db.execute(
-                        """
-                        SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name,
-                               ti.name AS team_name, ti.is_reserve
-                        FROM driver_season_assignments dsa
-                        JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-                        JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                        JOIN team_instances ti ON ti.id = ts.team_instance_id
-                        WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                        ORDER BY ti.name, dp.discord_user_id
-                        """,
-                        (div.id,),
-                    )
-                    assignment_rows = await _cur.fetchall()
-                if assignment_rows:
-                    regular_teams: dict[str, list[str]] = {}
-                    reserve_teams: dict[str, list[str]] = {}
-                    for _row in assignment_rows:
-                        if _row["is_test_driver"] and _row["test_display_name"]:
-                            label = f"<@{_row['discord_user_id']}> ({_row['test_display_name']})"
-                        else:
-                            label = f"<@{_row['discord_user_id']}>"
-                        target = reserve_teams if _row["is_reserve"] else regular_teams
-                        target.setdefault(_row["team_name"], []).append(label)
-                    for t_name, mentions in regular_teams.items():
-                        lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
-                    if reserve_teams:
-                        lineup_lines.append("  ---")
-                        for t_name, mentions in reserve_teams.items():
-                            lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
-                else:
-                    lineup_lines.append("  *(no drivers assigned)*")
-                await interaction.followup.send("\n".join(lineup_lines), ephemeral=False)
-
-                # ── Message 3a: the lineup graphic (038, FR-027) ──────
+                # ── Message 2: calendar — the graphic, or the text ────
                 #
-                # Posted **in addition to** the textual lineup above, never in place of
-                # it, so a manager can judge the graphic before approving the season.
-                # It is command output and not the lineup of record: no message id is
-                # persisted and the lineup channel is untouched (FR-028).
-                await self._post_review_lineup_image(interaction, div)
+                # Whichever form the league actually conveys. The review is what a
+                # manager judges the season by, so showing them text a league will
+                # never see would be showing them the wrong thing.
+                rounds_db = await self.bot.season_service.get_division_rounds(div.id)
+                cal_state = await self._post_review_calendar_image(
+                    interaction, div, rounds_db, cfg.season_number or None
+                )
+                if cal_state == REVIEW_IMAGE_FAULT:
+                    image_fault = True
+                if cal_state != REVIEW_IMAGE_DREW:
+                    cal_lines: list[str] = ["\U0001f4c5 **Calendar**"]
+                    for r in rounds_db:
+                        cal_lines.append(
+                            f"  Round {r.round_number}: {r.format.value} "
+                            f"@ {r.track_name or 'Mystery'} \u2014 {discord_ts(r.scheduled_at)}"
+                        )
+                    await interaction.followup.send("\n".join(cal_lines), ephemeral=False)
+
+                # ── Message 3: lineup — the graphic, or the text ──────
+                #
+                # As with the calendar above: whichever form the league conveys. The
+                # roleless-team warning is a review *finding* the graphic cannot show,
+                # so it is posted either way.
+                teams = await self.bot.team_service.get_division_teams(div.id)
+                missing_roles = (
+                    [t["name"] for t in teams if t["name"] in roleless] if teams else []
+                )
+                role_warning = (
+                    "  \u26a0\ufe0f **No role assigned:** "
+                    + ", ".join(f'"{n}"' for n in missing_roles)
+                    + " \u2014 result submission will reject drivers in these teams."
+                    if missing_roles
+                    else None
+                )
+
+                lineup_state = await self._post_review_lineup_image(interaction, div)
+                if lineup_state == REVIEW_IMAGE_FAULT:
+                    image_fault = True
+
+                if lineup_state == REVIEW_IMAGE_DREW:
+                    if role_warning is not None:
+                        await interaction.followup.send(
+                            role_warning.strip(), ephemeral=False
+                        )
+                else:
+                    lineup_lines: list[str] = ["\U0001f3ce\ufe0f **Lineup**"]
+                    if teams:
+                        lineup_lines.append(
+                            "  **Teams:** " + ", ".join(t["name"] for t in teams)
+                        )
+                        if role_warning is not None:
+                            lineup_lines.append(role_warning)
+                    async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
+                        _cur = await _db.execute(
+                            """
+                            SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name,
+                                   ti.name AS team_name, ti.is_reserve
+                            FROM driver_season_assignments dsa
+                            JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+                            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                            JOIN team_instances ti ON ti.id = ts.team_instance_id
+                            WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
+                            ORDER BY ti.name, dp.discord_user_id
+                            """,
+                            (div.id,),
+                        )
+                        assignment_rows = await _cur.fetchall()
+                    if assignment_rows:
+                        regular_teams: dict[str, list[str]] = {}
+                        reserve_teams: dict[str, list[str]] = {}
+                        for _row in assignment_rows:
+                            if _row["is_test_driver"] and _row["test_display_name"]:
+                                label = f"<@{_row['discord_user_id']}> ({_row['test_display_name']})"
+                            else:
+                                label = f"<@{_row['discord_user_id']}>"
+                            target = reserve_teams if _row["is_reserve"] else regular_teams
+                            target.setdefault(_row["team_name"], []).append(label)
+                        for t_name, mentions in regular_teams.items():
+                            lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
+                        if reserve_teams:
+                            lineup_lines.append("  ---")
+                            for t_name, mentions in reserve_teams.items():
+                                lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
+                    else:
+                        lineup_lines.append("  *(no drivers assigned)*")
+                    await interaction.followup.send(
+                        "\n".join(lineup_lines), ephemeral=False
+                    )
 
             # ── Server-level UNASSIGNED warning ──────────────────────
             async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
@@ -1078,7 +1261,20 @@ class SeasonCog(commands.Cog):
                     f"⚠️ {_unassigned_row['cnt']} driver(s) UNASSIGNED — placement incomplete",
                     ephemeral=False,
                 )
-            await interaction.followup.send("Use the button below to approve.", view=view, ephemeral=True)
+            if image_fault:
+                await interaction.followup.send(
+                    "\u26d4 **The image module is not correctly configured.** One or more "
+                    "graphics could not be drawn for this review — the fault is reported "
+                    "above, and the section was shown as text instead.\n"
+                    "The season is **not** offered for approval while that stands, and "
+                    "`/season approve` will refuse it for the same reason. Correct the "
+                    "template or the assets it names, then run `/season review` again.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    "Use the button below to approve.", view=view, ephemeral=True
+                )
         else:
             # Pending (not yet persisted) path — header then one block per division
             await interaction.followup.send("\n".join(header_lines), ephemeral=False)
@@ -3689,6 +3885,27 @@ class SeasonCog(commands.Cog):
             msg = (
                 f"❌ Season cannot be approved — the `lineup` image aspect is on but "
                 f"the template cannot draw this season:\n• {bullet_list}"
+            )
+            await interaction.followup.send(msg, ephemeral=True)
+            return
+
+        # ── Gate 4b: the graphics this season will actually post ──────────────
+        #
+        # Gates 4 and 4a check the template; this draws it. A template that is structurally
+        # valid and holds every mandatory field can still fail on the data of this season —
+        # a track the registry does not know, a value that cannot be determined — and that
+        # fault reaches every channel of the league. The review reports it and withholds
+        # its button; this is where the season is stopped.
+        undrawable = await self._undrawable_graphics(
+            interaction.guild, cfg.server_id, divisions, div_rounds, cfg.season_number or None
+        )
+        if undrawable:
+            bullet_list = "\n\u2022 ".join(undrawable)
+            msg = (
+                f"\u274c Season cannot be approved \u2014 the image module is enabled but "
+                f"these graphics could not be drawn:\n\u2022 {bullet_list}\n"
+                f"Correct the template or the artwork it names, then run `/season review` "
+                f"again."
             )
             await interaction.followup.send(msg, ephemeral=True)
             return

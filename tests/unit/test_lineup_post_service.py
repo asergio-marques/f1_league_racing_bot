@@ -227,12 +227,19 @@ def test_team_lineup_posts_one_image_per_division():
     assert "files.append(" in block
 
 
-def test_season_review_posts_the_image_in_addition_to_the_text():
-    """FR-027 — in addition to, never in replacement of."""
+def test_season_review_posts_the_image_in_place_of_the_text():
+    """038 FR-027 **reversed** (decided 2026-08-27).
+
+    The review shows a manager what their league will actually see, so where the lineup
+    aspect is on the graphic replaces the textual lineup rather than joining it. The
+    text is still built and sent where no graphic was drawn — see
+    tests/unit/test_season_review_images.py for the three states in full.
+    """
     source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
-    text_at = source.index("join(lineup_lines)")
     image_at = source.index("_post_review_lineup_image")
-    assert text_at < image_at, "the textual lineup must still be sent"
+    text_at = source.index("join(lineup_lines)")
+    assert image_at < text_at, "the graphic must decide before the text is built"
+    assert "if lineup_state == REVIEW_IMAGE_DREW:" in source
 
 
 def test_season_review_sends_one_message_per_subsection():

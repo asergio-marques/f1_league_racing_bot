@@ -54,7 +54,8 @@
                    row_<x>_position_change, row_<x>_position_change_marker,
                    round_<z>_group, round_<z>_flag, row_<x>_round_<z>_group,
                    row_<x>_round_<z>_{sprint_qualifying,sprint_race,
-                   feature_qualifying,feature_race}_result
+                   feature_qualifying,feature_race}_result,
+                   footer_group, row_<x>_vertical_crop_point
        Declined  : none &#183; every field of the driver standings catalogue is
                    declared
        =================================================================== -->
@@ -123,6 +124,7 @@
 
   <!-- ================= rows ================= -->
   <g id="row_1_group" inkscape:label="row_1_group">
+      <rect id="row_1_vertical_crop_point" inkscape:label="row_1_vertical_crop_point" x="0" y="412" width="1" height="0" fill="none"/>
     <text id="row_1_position" inkscape:label="row_1_position" class="pos1" x="72" y="350" text-anchor="end" style="font-variant-numeric:tabular-nums">1</text>
     <g id="row_1_position_change_group" inkscape:label="row_1_position_change_group">
       <image id="row_1_position_change_marker" inkscape:label="row_1_position_change_marker" x="80" y="340" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -185,6 +187,7 @@
     </g>
   </g>
   <g id="row_2_group" inkscape:label="row_2_group">
+      <rect id="row_2_vertical_crop_point" inkscape:label="row_2_vertical_crop_point" x="0" y="444" width="1" height="0" fill="none"/>
     <rect x="48" y="368" width="1104" height="32" fill="#14171C"/>
     <text id="row_2_position" inkscape:label="row_2_position" class="pos" x="72" y="382" text-anchor="end" style="font-variant-numeric:tabular-nums">2</text>
     <g id="row_2_position_change_group" inkscape:label="row_2_position_change_group">
@@ -248,6 +251,7 @@
     </g>
   </g>
   <g id="row_3_group" inkscape:label="row_3_group">
+      <rect id="row_3_vertical_crop_point" inkscape:label="row_3_vertical_crop_point" x="0" y="476" width="1" height="0" fill="none"/>
     <text id="row_3_position" inkscape:label="row_3_position" class="pos" x="72" y="414" text-anchor="end" style="font-variant-numeric:tabular-nums">3</text>
     <g id="row_3_position_change_group" inkscape:label="row_3_position_change_group">
       <image id="row_3_position_change_marker" inkscape:label="row_3_position_change_marker" x="80" y="404" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -310,6 +314,7 @@
     </g>
   </g>
   <g id="row_4_group" inkscape:label="row_4_group">
+      <rect id="row_4_vertical_crop_point" inkscape:label="row_4_vertical_crop_point" x="0" y="508" width="1" height="0" fill="none"/>
     <rect x="48" y="432" width="1104" height="32" fill="#14171C"/>
     <text id="row_4_position" inkscape:label="row_4_position" class="pos" x="72" y="446" text-anchor="end" style="font-variant-numeric:tabular-nums">4</text>
     <g id="row_4_position_change_group" inkscape:label="row_4_position_change_group">
@@ -373,6 +378,7 @@
     </g>
   </g>
   <g id="row_5_group" inkscape:label="row_5_group">
+      <rect id="row_5_vertical_crop_point" inkscape:label="row_5_vertical_crop_point" x="0" y="540" width="1" height="0" fill="none"/>
     <text id="row_5_position" inkscape:label="row_5_position" class="pos" x="72" y="478" text-anchor="end" style="font-variant-numeric:tabular-nums">5</text>
     <g id="row_5_position_change_group" inkscape:label="row_5_position_change_group">
       <image id="row_5_position_change_marker" inkscape:label="row_5_position_change_marker" x="80" y="468" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -435,6 +441,7 @@
     </g>
   </g>
   <g id="row_6_group" inkscape:label="row_6_group">
+      <rect id="row_6_vertical_crop_point" inkscape:label="row_6_vertical_crop_point" x="0" y="572" width="1" height="0" fill="none"/>
     <rect x="48" y="496" width="1104" height="32" fill="#14171C"/>
     <text id="row_6_position" inkscape:label="row_6_position" class="pos" x="72" y="510" text-anchor="end" style="font-variant-numeric:tabular-nums">6</text>
     <g id="row_6_position_change_group" inkscape:label="row_6_position_change_group">
@@ -498,6 +505,7 @@
     </g>
   </g>
   <g id="row_7_group" inkscape:label="row_7_group">
+      <rect id="row_7_vertical_crop_point" inkscape:label="row_7_vertical_crop_point" x="0" y="604" width="1" height="0" fill="none"/>
     <text id="row_7_position" inkscape:label="row_7_position" class="pos" x="72" y="542" text-anchor="end" style="font-variant-numeric:tabular-nums">7</text>
     <g id="row_7_position_change_group" inkscape:label="row_7_position_change_group">
       <image id="row_7_position_change_marker" inkscape:label="row_7_position_change_marker" x="80" y="532" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -560,6 +568,7 @@
     </g>
   </g>
   <g id="row_8_group" inkscape:label="row_8_group">
+      <rect id="row_8_vertical_crop_point" inkscape:label="row_8_vertical_crop_point" x="0" y="636" width="1" height="0" fill="none"/>
     <rect x="48" y="560" width="1104" height="32" fill="#14171C"/>
     <text id="row_8_position" inkscape:label="row_8_position" class="pos" x="72" y="574" text-anchor="end" style="font-variant-numeric:tabular-nums">8</text>
     <g id="row_8_position_change_group" inkscape:label="row_8_position_change_group">
@@ -623,6 +632,7 @@
     </g>
   </g>
   <g id="row_9_group" inkscape:label="row_9_group">
+      <rect id="row_9_vertical_crop_point" inkscape:label="row_9_vertical_crop_point" x="0" y="668" width="1" height="0" fill="none"/>
     <text id="row_9_position" inkscape:label="row_9_position" class="pos" x="72" y="606" text-anchor="end" style="font-variant-numeric:tabular-nums">9</text>
     <g id="row_9_position_change_group" inkscape:label="row_9_position_change_group">
       <image id="row_9_position_change_marker" inkscape:label="row_9_position_change_marker" x="80" y="596" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -685,6 +695,7 @@
     </g>
   </g>
   <g id="row_10_group" inkscape:label="row_10_group">
+      <rect id="row_10_vertical_crop_point" inkscape:label="row_10_vertical_crop_point" x="0" y="700" width="1" height="0" fill="none"/>
     <rect x="48" y="624" width="1104" height="32" fill="#14171C"/>
     <text id="row_10_position" inkscape:label="row_10_position" class="pos" x="72" y="638" text-anchor="end" style="font-variant-numeric:tabular-nums">10</text>
     <g id="row_10_position_change_group" inkscape:label="row_10_position_change_group">
@@ -748,6 +759,7 @@
     </g>
   </g>
   <g id="row_11_group" inkscape:label="row_11_group">
+      <rect id="row_11_vertical_crop_point" inkscape:label="row_11_vertical_crop_point" x="0" y="732" width="1" height="0" fill="none"/>
     <text id="row_11_position" inkscape:label="row_11_position" class="pos" x="72" y="670" text-anchor="end" style="font-variant-numeric:tabular-nums">11</text>
     <g id="row_11_position_change_group" inkscape:label="row_11_position_change_group">
       <image id="row_11_position_change_marker" inkscape:label="row_11_position_change_marker" x="80" y="660" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -810,6 +822,7 @@
     </g>
   </g>
   <g id="row_12_group" inkscape:label="row_12_group">
+      <rect id="row_12_vertical_crop_point" inkscape:label="row_12_vertical_crop_point" x="0" y="764" width="1" height="0" fill="none"/>
     <rect x="48" y="688" width="1104" height="32" fill="#14171C"/>
     <text id="row_12_position" inkscape:label="row_12_position" class="pos" x="72" y="702" text-anchor="end" style="font-variant-numeric:tabular-nums">12</text>
     <g id="row_12_position_change_group" inkscape:label="row_12_position_change_group">
@@ -873,6 +886,7 @@
     </g>
   </g>
   <g id="row_13_group" inkscape:label="row_13_group">
+      <rect id="row_13_vertical_crop_point" inkscape:label="row_13_vertical_crop_point" x="0" y="796" width="1" height="0" fill="none"/>
     <text id="row_13_position" inkscape:label="row_13_position" class="pos" x="72" y="734" text-anchor="end" style="font-variant-numeric:tabular-nums">13</text>
     <g id="row_13_position_change_group" inkscape:label="row_13_position_change_group">
       <image id="row_13_position_change_marker" inkscape:label="row_13_position_change_marker" x="80" y="724" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -935,6 +949,7 @@
     </g>
   </g>
   <g id="row_14_group" inkscape:label="row_14_group">
+      <rect id="row_14_vertical_crop_point" inkscape:label="row_14_vertical_crop_point" x="0" y="828" width="1" height="0" fill="none"/>
     <rect x="48" y="752" width="1104" height="32" fill="#14171C"/>
     <text id="row_14_position" inkscape:label="row_14_position" class="pos" x="72" y="766" text-anchor="end" style="font-variant-numeric:tabular-nums">14</text>
     <g id="row_14_position_change_group" inkscape:label="row_14_position_change_group">
@@ -998,6 +1013,7 @@
     </g>
   </g>
   <g id="row_15_group" inkscape:label="row_15_group">
+      <rect id="row_15_vertical_crop_point" inkscape:label="row_15_vertical_crop_point" x="0" y="860" width="1" height="0" fill="none"/>
     <text id="row_15_position" inkscape:label="row_15_position" class="pos" x="72" y="798" text-anchor="end" style="font-variant-numeric:tabular-nums">15</text>
     <g id="row_15_position_change_group" inkscape:label="row_15_position_change_group">
       <image id="row_15_position_change_marker" inkscape:label="row_15_position_change_marker" x="80" y="788" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -1060,6 +1076,7 @@
     </g>
   </g>
   <g id="row_16_group" inkscape:label="row_16_group">
+      <rect id="row_16_vertical_crop_point" inkscape:label="row_16_vertical_crop_point" x="0" y="892" width="1" height="0" fill="none"/>
     <rect x="48" y="816" width="1104" height="32" fill="#14171C"/>
     <text id="row_16_position" inkscape:label="row_16_position" class="pos" x="72" y="830" text-anchor="end" style="font-variant-numeric:tabular-nums">16</text>
     <g id="row_16_position_change_group" inkscape:label="row_16_position_change_group">
@@ -1123,6 +1140,7 @@
     </g>
   </g>
   <g id="row_17_group" inkscape:label="row_17_group">
+      <rect id="row_17_vertical_crop_point" inkscape:label="row_17_vertical_crop_point" x="0" y="924" width="1" height="0" fill="none"/>
     <text id="row_17_position" inkscape:label="row_17_position" class="pos" x="72" y="862" text-anchor="end" style="font-variant-numeric:tabular-nums">17</text>
     <g id="row_17_position_change_group" inkscape:label="row_17_position_change_group">
       <image id="row_17_position_change_marker" inkscape:label="row_17_position_change_marker" x="80" y="852" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -1185,6 +1203,7 @@
     </g>
   </g>
   <g id="row_18_group" inkscape:label="row_18_group">
+      <rect id="row_18_vertical_crop_point" inkscape:label="row_18_vertical_crop_point" x="0" y="956" width="1" height="0" fill="none"/>
     <rect x="48" y="880" width="1104" height="32" fill="#14171C"/>
     <text id="row_18_position" inkscape:label="row_18_position" class="pos" x="72" y="894" text-anchor="end" style="font-variant-numeric:tabular-nums">18</text>
     <g id="row_18_position_change_group" inkscape:label="row_18_position_change_group">
@@ -1248,6 +1267,7 @@
     </g>
   </g>
   <g id="row_19_group" inkscape:label="row_19_group">
+      <rect id="row_19_vertical_crop_point" inkscape:label="row_19_vertical_crop_point" x="0" y="988" width="1" height="0" fill="none"/>
     <text id="row_19_position" inkscape:label="row_19_position" class="pos" x="72" y="926" text-anchor="end" style="font-variant-numeric:tabular-nums">19</text>
     <g id="row_19_position_change_group" inkscape:label="row_19_position_change_group">
       <image id="row_19_position_change_marker" inkscape:label="row_19_position_change_marker" x="80" y="916" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -1310,6 +1330,7 @@
     </g>
   </g>
   <g id="row_20_group" inkscape:label="row_20_group">
+      <rect id="row_20_vertical_crop_point" inkscape:label="row_20_vertical_crop_point" x="0" y="1020" width="1" height="0" fill="none"/>
     <rect x="48" y="944" width="1104" height="32" fill="#14171C"/>
     <text id="row_20_position" inkscape:label="row_20_position" class="pos" x="72" y="958" text-anchor="end" style="font-variant-numeric:tabular-nums">20</text>
     <g id="row_20_position_change_group" inkscape:label="row_20_position_change_group">
@@ -1373,6 +1394,7 @@
     </g>
   </g>
   <g id="row_21_group" inkscape:label="row_21_group">
+      <rect id="row_21_vertical_crop_point" inkscape:label="row_21_vertical_crop_point" x="0" y="1052" width="1" height="0" fill="none"/>
     <text id="row_21_position" inkscape:label="row_21_position" class="pos" x="72" y="990" text-anchor="end" style="font-variant-numeric:tabular-nums">21</text>
     <g id="row_21_position_change_group" inkscape:label="row_21_position_change_group">
       <image id="row_21_position_change_marker" inkscape:label="row_21_position_change_marker" x="80" y="980" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -1435,6 +1457,7 @@
     </g>
   </g>
   <g id="row_22_group" inkscape:label="row_22_group">
+      <rect id="row_22_vertical_crop_point" inkscape:label="row_22_vertical_crop_point" x="0" y="1084" width="1" height="0" fill="none"/>
     <rect x="48" y="1008" width="1104" height="32" fill="#14171C"/>
     <text id="row_22_position" inkscape:label="row_22_position" class="pos" x="72" y="1022" text-anchor="end" style="font-variant-numeric:tabular-nums">22</text>
     <g id="row_22_position_change_group" inkscape:label="row_22_position_change_group">
@@ -1498,6 +1521,7 @@
     </g>
   </g>
   <g id="row_23_group" inkscape:label="row_23_group">
+      <rect id="row_23_vertical_crop_point" inkscape:label="row_23_vertical_crop_point" x="0" y="1116" width="1" height="0" fill="none"/>
     <text id="row_23_position" inkscape:label="row_23_position" class="pos" x="72" y="1054" text-anchor="end" style="font-variant-numeric:tabular-nums">23</text>
     <g id="row_23_position_change_group" inkscape:label="row_23_position_change_group">
       <image id="row_23_position_change_marker" inkscape:label="row_23_position_change_marker" x="80" y="1044" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -1560,6 +1584,7 @@
     </g>
   </g>
   <g id="row_24_group" inkscape:label="row_24_group">
+      <rect id="row_24_vertical_crop_point" inkscape:label="row_24_vertical_crop_point" x="0" y="1148" width="1" height="0" fill="none"/>
     <rect x="48" y="1072" width="1104" height="32" fill="#14171C"/>
     <text id="row_24_position" inkscape:label="row_24_position" class="pos" x="72" y="1086" text-anchor="end" style="font-variant-numeric:tabular-nums">24</text>
     <g id="row_24_position_change_group" inkscape:label="row_24_position_change_group">
@@ -1623,6 +1648,7 @@
     </g>
   </g>
   <g id="row_25_group" inkscape:label="row_25_group">
+      <rect id="row_25_vertical_crop_point" inkscape:label="row_25_vertical_crop_point" x="0" y="1180" width="1" height="0" fill="none"/>
     <text id="row_25_position" inkscape:label="row_25_position" class="pos" x="72" y="1118" text-anchor="end" style="font-variant-numeric:tabular-nums">25</text>
     <g id="row_25_position_change_group" inkscape:label="row_25_position_change_group">
       <image id="row_25_position_change_marker" inkscape:label="row_25_position_change_marker" x="80" y="1108" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -1685,6 +1711,7 @@
     </g>
   </g>
   <g id="row_26_group" inkscape:label="row_26_group">
+      <rect id="row_26_vertical_crop_point" inkscape:label="row_26_vertical_crop_point" x="0" y="1212" width="1" height="0" fill="none"/>
     <rect x="48" y="1136" width="1104" height="32" fill="#14171C"/>
     <text id="row_26_position" inkscape:label="row_26_position" class="pos" x="72" y="1150" text-anchor="end" style="font-variant-numeric:tabular-nums">26</text>
     <g id="row_26_position_change_group" inkscape:label="row_26_position_change_group">
@@ -1748,6 +1775,7 @@
     </g>
   </g>
   <g id="row_27_group" inkscape:label="row_27_group">
+      <rect id="row_27_vertical_crop_point" inkscape:label="row_27_vertical_crop_point" x="0" y="1244" width="1" height="0" fill="none"/>
     <text id="row_27_position" inkscape:label="row_27_position" class="pos" x="72" y="1182" text-anchor="end" style="font-variant-numeric:tabular-nums">27</text>
     <g id="row_27_position_change_group" inkscape:label="row_27_position_change_group">
       <image id="row_27_position_change_marker" inkscape:label="row_27_position_change_marker" x="80" y="1172" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -1810,6 +1838,7 @@
     </g>
   </g>
   <g id="row_28_group" inkscape:label="row_28_group">
+      <rect id="row_28_vertical_crop_point" inkscape:label="row_28_vertical_crop_point" x="0" y="1276" width="1" height="0" fill="none"/>
     <rect x="48" y="1200" width="1104" height="32" fill="#14171C"/>
     <text id="row_28_position" inkscape:label="row_28_position" class="pos" x="72" y="1214" text-anchor="end" style="font-variant-numeric:tabular-nums">28</text>
     <g id="row_28_position_change_group" inkscape:label="row_28_position_change_group">
@@ -1873,6 +1902,7 @@
     </g>
   </g>
   <g id="row_29_group" inkscape:label="row_29_group">
+      <rect id="row_29_vertical_crop_point" inkscape:label="row_29_vertical_crop_point" x="0" y="1308" width="1" height="0" fill="none"/>
     <text id="row_29_position" inkscape:label="row_29_position" class="pos" x="72" y="1246" text-anchor="end" style="font-variant-numeric:tabular-nums">29</text>
     <g id="row_29_position_change_group" inkscape:label="row_29_position_change_group">
       <image id="row_29_position_change_marker" inkscape:label="row_29_position_change_marker" x="80" y="1236" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -1935,6 +1965,7 @@
     </g>
   </g>
   <g id="row_30_group" inkscape:label="row_30_group">
+      <rect id="row_30_vertical_crop_point" inkscape:label="row_30_vertical_crop_point" x="0" y="1340" width="1" height="0" fill="none"/>
     <rect x="48" y="1264" width="1104" height="32" fill="#14171C"/>
     <text id="row_30_position" inkscape:label="row_30_position" class="pos" x="72" y="1278" text-anchor="end" style="font-variant-numeric:tabular-nums">30</text>
     <g id="row_30_position_change_group" inkscape:label="row_30_position_change_group">
@@ -1998,6 +2029,7 @@
     </g>
   </g>
   <g id="row_31_group" inkscape:label="row_31_group">
+      <rect id="row_31_vertical_crop_point" inkscape:label="row_31_vertical_crop_point" x="0" y="1372" width="1" height="0" fill="none"/>
     <text id="row_31_position" inkscape:label="row_31_position" class="pos" x="72" y="1310" text-anchor="end" style="font-variant-numeric:tabular-nums">31</text>
     <g id="row_31_position_change_group" inkscape:label="row_31_position_change_group">
       <image id="row_31_position_change_marker" inkscape:label="row_31_position_change_marker" x="80" y="1300" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -2060,6 +2092,7 @@
     </g>
   </g>
   <g id="row_32_group" inkscape:label="row_32_group">
+      <rect id="row_32_vertical_crop_point" inkscape:label="row_32_vertical_crop_point" x="0" y="1404" width="1" height="0" fill="none"/>
     <rect x="48" y="1328" width="1104" height="32" fill="#14171C"/>
     <text id="row_32_position" inkscape:label="row_32_position" class="pos" x="72" y="1342" text-anchor="end" style="font-variant-numeric:tabular-nums">32</text>
     <g id="row_32_position_change_group" inkscape:label="row_32_position_change_group">
@@ -2123,6 +2156,7 @@
     </g>
   </g>
   <g id="row_33_group" inkscape:label="row_33_group">
+      <rect id="row_33_vertical_crop_point" inkscape:label="row_33_vertical_crop_point" x="0" y="1436" width="1" height="0" fill="none"/>
     <text id="row_33_position" inkscape:label="row_33_position" class="pos" x="72" y="1374" text-anchor="end" style="font-variant-numeric:tabular-nums">33</text>
     <g id="row_33_position_change_group" inkscape:label="row_33_position_change_group">
       <image id="row_33_position_change_marker" inkscape:label="row_33_position_change_marker" x="80" y="1364" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -2185,6 +2219,7 @@
     </g>
   </g>
   <g id="row_34_group" inkscape:label="row_34_group">
+      <rect id="row_34_vertical_crop_point" inkscape:label="row_34_vertical_crop_point" x="0" y="1468" width="1" height="0" fill="none"/>
     <rect x="48" y="1392" width="1104" height="32" fill="#14171C"/>
     <text id="row_34_position" inkscape:label="row_34_position" class="pos" x="72" y="1406" text-anchor="end" style="font-variant-numeric:tabular-nums">34</text>
     <g id="row_34_position_change_group" inkscape:label="row_34_position_change_group">
@@ -2248,6 +2283,7 @@
     </g>
   </g>
   <g id="row_35_group" inkscape:label="row_35_group">
+      <rect id="row_35_vertical_crop_point" inkscape:label="row_35_vertical_crop_point" x="0" y="1500" width="1" height="0" fill="none"/>
     <text id="row_35_position" inkscape:label="row_35_position" class="pos" x="72" y="1438" text-anchor="end" style="font-variant-numeric:tabular-nums">35</text>
     <g id="row_35_position_change_group" inkscape:label="row_35_position_change_group">
       <image id="row_35_position_change_marker" inkscape:label="row_35_position_change_marker" x="80" y="1428" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -2310,6 +2346,7 @@
     </g>
   </g>
   <g id="row_36_group" inkscape:label="row_36_group">
+      <rect id="row_36_vertical_crop_point" inkscape:label="row_36_vertical_crop_point" x="0" y="1532" width="1" height="0" fill="none"/>
     <rect x="48" y="1456" width="1104" height="32" fill="#14171C"/>
     <text id="row_36_position" inkscape:label="row_36_position" class="pos" x="72" y="1470" text-anchor="end" style="font-variant-numeric:tabular-nums">36</text>
     <g id="row_36_position_change_group" inkscape:label="row_36_position_change_group">
@@ -2373,6 +2410,7 @@
     </g>
   </g>
   <g id="row_37_group" inkscape:label="row_37_group">
+      <rect id="row_37_vertical_crop_point" inkscape:label="row_37_vertical_crop_point" x="0" y="1564" width="1" height="0" fill="none"/>
     <text id="row_37_position" inkscape:label="row_37_position" class="pos" x="72" y="1502" text-anchor="end" style="font-variant-numeric:tabular-nums">37</text>
     <g id="row_37_position_change_group" inkscape:label="row_37_position_change_group">
       <image id="row_37_position_change_marker" inkscape:label="row_37_position_change_marker" x="80" y="1492" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -2435,6 +2473,7 @@
     </g>
   </g>
   <g id="row_38_group" inkscape:label="row_38_group">
+      <rect id="row_38_vertical_crop_point" inkscape:label="row_38_vertical_crop_point" x="0" y="1596" width="1" height="0" fill="none"/>
     <rect x="48" y="1520" width="1104" height="32" fill="#14171C"/>
     <text id="row_38_position" inkscape:label="row_38_position" class="pos" x="72" y="1534" text-anchor="end" style="font-variant-numeric:tabular-nums">38</text>
     <g id="row_38_position_change_group" inkscape:label="row_38_position_change_group">
@@ -2498,6 +2537,7 @@
     </g>
   </g>
   <g id="row_39_group" inkscape:label="row_39_group">
+      <rect id="row_39_vertical_crop_point" inkscape:label="row_39_vertical_crop_point" x="0" y="1628" width="1" height="0" fill="none"/>
     <text id="row_39_position" inkscape:label="row_39_position" class="pos" x="72" y="1566" text-anchor="end" style="font-variant-numeric:tabular-nums">39</text>
     <g id="row_39_position_change_group" inkscape:label="row_39_position_change_group">
       <image id="row_39_position_change_marker" inkscape:label="row_39_position_change_marker" x="80" y="1556" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -2560,6 +2600,7 @@
     </g>
   </g>
   <g id="row_40_group" inkscape:label="row_40_group">
+      <rect id="row_40_vertical_crop_point" inkscape:label="row_40_vertical_crop_point" x="0" y="1660" width="1" height="0" fill="none"/>
     <rect x="48" y="1584" width="1104" height="32" fill="#14171C"/>
     <text id="row_40_position" inkscape:label="row_40_position" class="pos" x="72" y="1598" text-anchor="end" style="font-variant-numeric:tabular-nums">40</text>
     <g id="row_40_position_change_group" inkscape:label="row_40_position_change_group">
@@ -2623,6 +2664,7 @@
     </g>
   </g>
   <g id="row_41_group" inkscape:label="row_41_group">
+      <rect id="row_41_vertical_crop_point" inkscape:label="row_41_vertical_crop_point" x="0" y="1692" width="1" height="0" fill="none"/>
     <text id="row_41_position" inkscape:label="row_41_position" class="pos" x="72" y="1630" text-anchor="end" style="font-variant-numeric:tabular-nums">41</text>
     <g id="row_41_position_change_group" inkscape:label="row_41_position_change_group">
       <image id="row_41_position_change_marker" inkscape:label="row_41_position_change_marker" x="80" y="1620" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -2685,6 +2727,7 @@
     </g>
   </g>
   <g id="row_42_group" inkscape:label="row_42_group">
+      <rect id="row_42_vertical_crop_point" inkscape:label="row_42_vertical_crop_point" x="0" y="1724" width="1" height="0" fill="none"/>
     <rect x="48" y="1648" width="1104" height="32" fill="#14171C"/>
     <text id="row_42_position" inkscape:label="row_42_position" class="pos" x="72" y="1662" text-anchor="end" style="font-variant-numeric:tabular-nums">42</text>
     <g id="row_42_position_change_group" inkscape:label="row_42_position_change_group">
@@ -2748,6 +2791,7 @@
     </g>
   </g>
   <g id="row_43_group" inkscape:label="row_43_group">
+      <rect id="row_43_vertical_crop_point" inkscape:label="row_43_vertical_crop_point" x="0" y="1756" width="1" height="0" fill="none"/>
     <text id="row_43_position" inkscape:label="row_43_position" class="pos" x="72" y="1694" text-anchor="end" style="font-variant-numeric:tabular-nums">43</text>
     <g id="row_43_position_change_group" inkscape:label="row_43_position_change_group">
       <image id="row_43_position_change_marker" inkscape:label="row_43_position_change_marker" x="80" y="1684" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -2810,6 +2854,7 @@
     </g>
   </g>
   <g id="row_44_group" inkscape:label="row_44_group">
+      <rect id="row_44_vertical_crop_point" inkscape:label="row_44_vertical_crop_point" x="0" y="1788" width="1" height="0" fill="none"/>
     <rect x="48" y="1712" width="1104" height="32" fill="#14171C"/>
     <text id="row_44_position" inkscape:label="row_44_position" class="pos" x="72" y="1726" text-anchor="end" style="font-variant-numeric:tabular-nums">44</text>
     <g id="row_44_position_change_group" inkscape:label="row_44_position_change_group">
@@ -2873,6 +2918,7 @@
     </g>
   </g>
   <g id="row_45_group" inkscape:label="row_45_group">
+      <rect id="row_45_vertical_crop_point" inkscape:label="row_45_vertical_crop_point" x="0" y="1820" width="1" height="0" fill="none"/>
     <text id="row_45_position" inkscape:label="row_45_position" class="pos" x="72" y="1758" text-anchor="end" style="font-variant-numeric:tabular-nums">45</text>
     <g id="row_45_position_change_group" inkscape:label="row_45_position_change_group">
       <image id="row_45_position_change_marker" inkscape:label="row_45_position_change_marker" x="80" y="1748" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -2935,6 +2981,7 @@
     </g>
   </g>
   <g id="row_46_group" inkscape:label="row_46_group">
+      <rect id="row_46_vertical_crop_point" inkscape:label="row_46_vertical_crop_point" x="0" y="1852" width="1" height="0" fill="none"/>
     <rect x="48" y="1776" width="1104" height="32" fill="#14171C"/>
     <text id="row_46_position" inkscape:label="row_46_position" class="pos" x="72" y="1790" text-anchor="end" style="font-variant-numeric:tabular-nums">46</text>
     <g id="row_46_position_change_group" inkscape:label="row_46_position_change_group">
@@ -2998,6 +3045,7 @@
     </g>
   </g>
   <g id="row_47_group" inkscape:label="row_47_group">
+      <rect id="row_47_vertical_crop_point" inkscape:label="row_47_vertical_crop_point" x="0" y="1884" width="1" height="0" fill="none"/>
     <text id="row_47_position" inkscape:label="row_47_position" class="pos" x="72" y="1822" text-anchor="end" style="font-variant-numeric:tabular-nums">47</text>
     <g id="row_47_position_change_group" inkscape:label="row_47_position_change_group">
       <image id="row_47_position_change_marker" inkscape:label="row_47_position_change_marker" x="80" y="1812" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -3060,6 +3108,7 @@
     </g>
   </g>
   <g id="row_48_group" inkscape:label="row_48_group">
+      <rect id="row_48_vertical_crop_point" inkscape:label="row_48_vertical_crop_point" x="0" y="1916" width="1" height="0" fill="none"/>
     <rect x="48" y="1840" width="1104" height="32" fill="#14171C"/>
     <text id="row_48_position" inkscape:label="row_48_position" class="pos" x="72" y="1854" text-anchor="end" style="font-variant-numeric:tabular-nums">48</text>
     <g id="row_48_position_change_group" inkscape:label="row_48_position_change_group">
@@ -3123,6 +3172,7 @@
     </g>
   </g>
   <g id="row_49_group" inkscape:label="row_49_group">
+      <rect id="row_49_vertical_crop_point" inkscape:label="row_49_vertical_crop_point" x="0" y="1948" width="1" height="0" fill="none"/>
     <text id="row_49_position" inkscape:label="row_49_position" class="pos" x="72" y="1886" text-anchor="end" style="font-variant-numeric:tabular-nums">49</text>
     <g id="row_49_position_change_group" inkscape:label="row_49_position_change_group">
       <image id="row_49_position_change_marker" inkscape:label="row_49_position_change_marker" x="80" y="1876" width="11" height="11" preserveAspectRatio="xMidYMid meet"/>
@@ -3185,6 +3235,7 @@
     </g>
   </g>
   <g id="row_50_group" inkscape:label="row_50_group">
+      <rect id="row_50_vertical_crop_point" inkscape:label="row_50_vertical_crop_point" x="0" y="1980" width="1" height="0" fill="none"/>
     <rect x="48" y="1904" width="1104" height="32" fill="#14171C"/>
     <text id="row_50_position" inkscape:label="row_50_position" class="pos" x="72" y="1918" text-anchor="end" style="font-variant-numeric:tabular-nums">50</text>
     <g id="row_50_position_change_group" inkscape:label="row_50_position_change_group">
@@ -3335,7 +3386,9 @@
   </g>
 
   <!--  footer  -->
-  <line x1="48" y1="1942" x2="1152" y2="1942" stroke="#262B33" stroke-width="1"/>
-  <text class="foot" x="48" y="1968">DRIVER CHAMPIONSHIP</text>
-  <text class="foot" x="1152" y="1968" text-anchor="end">RACE RESULT · QUALIFYING RAISED</text>
+  <g id="footer_group" inkscape:label="footer_group">
+    <line x1="48" y1="1942" x2="1152" y2="1942" stroke="#262B33" stroke-width="1"/>
+    <text class="foot" x="48" y="1968">DRIVER CHAMPIONSHIP</text>
+    <text class="foot" x="1152" y="1968" text-anchor="end">RACE RESULT · QUALIFYING RAISED</text>
+  </g>
 </svg>
