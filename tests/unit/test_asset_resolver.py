@@ -483,6 +483,52 @@ def test_a_relative_reference_is_anchored_to_the_project_root(monkeypatch, tmp_p
 # document over.
 
 
+@pytest.mark.parametrize(
+    "uri,expected",
+    [
+        # As `Path.as_uri()` writes one on Windows. `urlparse` keeps a leading slash
+        # before the drive letter; `Path` reads that as rooted and finds nothing.
+        ("file:///C:/assets/british.svg", "C:/assets/british.svg"),
+        ("file:///c:/assets/british.svg", "c:/assets/british.svg"),
+        # Percent-encoding, which `as_uri()` applies to spaces and non-ASCII.
+        ("file:///C:/my%20assets/british.svg", "C:/my assets/british.svg"),
+        # POSIX: the leading slash is the root and must survive.
+        ("file:///srv/assets/british.svg", "/srv/assets/british.svg"),
+        ("file:///srv/my%20assets/british.svg", "/srv/my assets/british.svg"),
+        # UNC: the share sits in the URI's netloc and must be put back.
+        ("file://server/share/british.svg", "//server/share/british.svg"),
+    ],
+)
+def test_a_file_uri_becomes_the_path_it_names(uri, expected):
+    """Regression: the Windows drive-letter form failed 31 tests in CI on 2026-08-31.
+
+    Pure string logic, so **both** platforms' forms are exercised from any host. That is
+    the point: the bug survived a green Linux run precisely because nothing here read a
+    Windows-shaped URI, and delegating to `urllib.request.url2pathname` would have left
+    the same hole, since it dispatches on the running platform.
+    """
+    from utils.svg_fill import _path_from_file_uri
+
+    assert _path_from_file_uri(uri).as_posix() == expected
+
+
+def test_a_resolved_asset_round_trips_through_its_uri(tmp_path):
+    """Whatever the host, what `_as_href` writes must lead back to the same file.
+
+    The property the 31 failures actually violated: every asset was resolved correctly,
+    turned into a URI correctly, and then not found again.
+    """
+    from utils.svg_fill import _as_href, _path_from_file_uri
+
+    asset = tmp_path / "british.svg"
+    asset.write_bytes(SVG)
+
+    recovered = _path_from_file_uri(_as_href(str(asset)))
+
+    assert recovered == asset
+    assert recovered.is_file()
+
+
 def test_a_template_authored_link_to_a_missing_file_is_fatal(tmp_path):
     """The one case no other check looks at: an `<image>` the module never filled.
 
@@ -501,6 +547,28 @@ def test_a_template_authored_link_to_a_missing_file_is_fatal(tmp_path):
 
     assert any("`badge`" in line and "not a file on this host" in line
                for line in result.unresolved)
+
+
+def test_a_template_authored_relative_link_is_anchored_not_merely_checked():
+    """A relative href resolves against the *working directory*, so checking it lies.
+
+    The file is found — the bot runs from the project root — and the check would pass a
+    link the rasteriser then cannot follow, certifying the very fault it exists to catch.
+    It must be rewritten absolute and left that way on the element.
+    """
+    from utils.svg_fill import FillSpec, fill
+
+    root = parse_svg_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+        b'<image id="crest" href="resources/defaults/tracks/fallback.svg"/></svg>'
+    )
+
+    result = fill(FillSpec(root=root))
+
+    assert result.unresolved == []
+    href = parse_svg_bytes(result.svg).find(".//{http://www.w3.org/2000/svg}image").get("href")
+    assert href.startswith("file:///"), "the rasteriser cannot follow a relative reference"
+    assert href.endswith("resources/defaults/tracks/fallback.svg")
 
 
 def test_a_template_authored_link_that_resolves_is_not_reported(tmp_path):

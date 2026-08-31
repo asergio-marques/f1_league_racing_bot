@@ -632,13 +632,18 @@ def _unreachable_links(root: etree._Element) -> list[str]:
     since moved — which no other check in the module looks at, and which reaches a league
     as a hole in the picture with nothing said about it.
 
+    **A template-authored href is anchored here too**, through the same ``_as_href`` the
+    fill path uses. Reading such an href without anchoring it would be worse than not
+    checking at all: a relative one resolves against the *working directory* and is found,
+    so the check would pass a link the rasteriser then fails to follow — the module would
+    be certifying the very fault it exists to catch. Anchoring makes the check honest and
+    leaves the document with the absolute reference the rasteriser needs.
+
     Fatal rather than a notice, on the same reasoning that makes a missing asset fatal:
     a graphic with a piece silently absent is worse than no graphic and a message saying
     which file is missing. Only ``file:`` and bare paths are checked — a ``data:`` URI
     carries its own bytes and a remote scheme is not this module's to reach.
     """
-    from urllib.parse import unquote, urlparse
-
     missing: list[str] = []
     seen: set[str] = set()
 
@@ -651,10 +656,11 @@ def _unreachable_links(root: etree._Element) -> list[str]:
         if _URI_SCHEME_RE.match(href) and not re.match(r"^[a-zA-Z]:[\\/]", href):
             if not href.lower().startswith("file:"):
                 continue  # data:, http: — not a path on this host
-            parsed = urlparse(href)
-            path = Path(unquote(parsed.path))
+            path = _path_from_file_uri(href)
         else:
-            path = Path(href)
+            # Anchor it, and leave the anchored form on the element.
+            _set_href(element, href)
+            path = _path_from_file_uri(element.get("href"))
 
         if path.is_file():
             continue
@@ -666,6 +672,44 @@ def _unreachable_links(root: etree._Element) -> list[str]:
         )
 
     return missing
+
+
+#: A `file:` URI whose path begins with a drive letter, as `Path.as_uri()` writes one on
+#: Windows: `file:///C:/assets/british.svg`, whose parsed path is `/C:/assets/british.svg`.
+_DRIVE_LETTER_PATH_RE = re.compile(r"^/[a-zA-Z]:")
+
+
+def _path_from_file_uri(href: str) -> Path:
+    """The inverse of ``Path.as_uri()`` — the filesystem path a ``file:`` URI names.
+
+    Written out rather than delegated to ``urllib.request.url2pathname``, which dispatches
+    on the *running* platform and therefore cannot be exercised for Windows from a Linux
+    host. This suite runs on Linux, on Windows and on a Raspberry Pi, and the rule after
+    2026-08-26 is that a test must not depend on what the host happens to carry — a
+    platform-dispatching call would leave the Windows branch untested everywhere but
+    Windows, which is exactly how the bug this function fixes reached CI.
+
+    Two forms need care, and neither arises on a POSIX host:
+
+    * **A drive letter.** ``Path("C:/x/y.svg").as_uri()`` is ``file:///C:/x/y.svg``, and
+      ``urlparse`` hands back ``/C:/x/y.svg`` — a leading slash the drive letter must not
+      carry. ``Path`` reads that as rooted, ``is_file()`` answers False for a file that is
+      plainly there, and every resolved asset is reported missing. That is precisely what
+      failed 31 tests on the ``windows-latest`` runner on 2026-08-31.
+    * **A UNC path.** ``Path("//server/share/y.svg").as_uri()`` puts ``server`` in the
+      URI's *netloc*, so the share is lost unless it is put back.
+    """
+    from urllib.parse import unquote, urlparse
+
+    parsed = urlparse(href)
+    path = unquote(parsed.path)
+
+    if _DRIVE_LETTER_PATH_RE.match(path):
+        path = path[1:]
+
+    if parsed.netloc:
+        return Path(f"//{parsed.netloc}{path}")
+    return Path(path)
 
 
 # ── Operation helpers ─────────────────────────────────────────────────────
