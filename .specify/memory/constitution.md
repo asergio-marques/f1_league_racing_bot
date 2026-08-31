@@ -1,6 +1,54 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-31 — v7.1.0 → v7.2.0: MINOR — an asset href MUST be absolute, and an absent linked image MUST refuse]
+  Version change    : 7.1.0 → 7.2.0
+  Bump rationale    : MINOR. Principle XIV, Rule 6 gains materially expanded guidance in two parts,
+                      and neither strikes anything from a closed enumeration.
+
+                      The first part is a **clarification of a requirement that already stood**.
+                      v7.1.0 already read "An asset MUST be referenced by an href that is a URI. A
+                      bare filesystem path is not one." A relative filesystem path is a bare
+                      filesystem path, so an implementation writing one was already non-conforming;
+                      naming the project root as the base it MUST be resolved against says how to
+                      conform, not what conformance now is. On its own this half would be PATCH.
+
+                      The second part is a **new obligation**: the module MUST refuse a graphic
+                      linking an image absent from the host. That is added guidance, which the
+                      versioning policy classes as MINOR. It is deliberately not read as MAJOR: the
+                      policy reserves that for "backward incompatible governance/principle removals
+                      or redefinitions", and nothing is removed or redefined here. The contrast with
+                      v6.3.0 → v7.0.0 is the point — that took MAJOR because **Truncate** was
+                      *struck* from a closed enumeration of fill operations, making a previously
+                      conforming implementation newly wrong by an act of deletion. This version
+                      deletes nothing.
+
+  Modified sections :
+    - Principle XIV, Rule 6 (Assets), the asset-href paragraph. Rewritten in three parts: the href
+      MUST now be an **absolute** URI, with a relative reference resolved against the project root
+      before it is placed on a field; the module MUST refuse a graphic linking an absent image,
+      naming the element and the file, and this binds an `<image>` a league authored into its own
+      template as much as one the module placed; and the closing sentence is corrected in tense.
+
+  Corrected claim   : the paragraph asserted that a broken asset href is caught by no render-time
+                      check. That ceased to be true on 2026-08-31, when such a check was built. The
+                      sentence is now scoped to the period before that date, and Rule 14's
+                      remaining justification is narrowed to the cases still uncaught by any check —
+                      flowed text, substituted fonts, and the crop. Rule 14 itself is untouched:
+                      its own list already names "unresolvable asset references", which remains a
+                      case where browser and rasteriser disagree even though the module now refuses
+                      it before the rasteriser is reached.
+
+  Evidence          : measured on the host's Inkscape 1.4. An href relative to the project root and
+                      an href naming a file that never existed produce **byte-identical** PNGs, both
+                      exiting 0 with an empty stderr. There is therefore no diagnostic to read after
+                      a render, which is why the obligation is to refuse *before* rasterising rather
+                      than to inspect the rasteriser's output.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred TODOs    : none.
+
 [2026-08-28 — v7.0.0 → v7.1.0: MINOR — the vertical crop becomes a general operation and carries a declared footer group]
   Version change    : 7.0.0 → 7.1.0
   Bump rationale    : MINOR. The fill-operations table is introduced by "The module MUST support
@@ -4475,10 +4523,24 @@ class, never *across* two.
 The aspect a class carries is not fixed by this Principle. It belongs to the asset documentation a
 league reads, and changing one is a change to every template declaring that class's slots.
 
-An asset MUST be referenced by an href that is a **URI**. A bare filesystem path is not one: the
-rasteriser resolves it to nothing and draws a broken-image mark, which no render-time check
-catches. This is the single most likely way for a correct-looking SVG to rasterise wrongly, and
-is why Rule 14 exists.
+An asset MUST be referenced by an href that is a **URI**, and that URI MUST be **absolute**. A bare
+filesystem path is not a URI at all, and a *relative* reference is the more dangerous of the two
+because it looks as though it works: the rasteriser reads the filled document out of a working
+directory of its own and resolves the reference against **that** directory, so a path every check
+upstream confirmed — the module having resolved it against the project root — reaches the rasteriser
+as a file that is not there. A relative reference MUST therefore be resolved against the project
+root before it is placed on a field.
+
+**The module MUST refuse to produce a graphic that links an image absent from the host**, naming the
+element and the file it sought. This binds an `<image>` a league authored into its own template as
+much as one the module placed: the former receives no asset and is read by no other check, so
+nothing else in the pipeline would ever look at it. The refusal is required because the rasteriser
+reports **nothing whatever** — Inkscape 1.4 exits 0 with an empty stderr for an href it cannot
+follow, and draws a PNG byte-identical to one drawn from an href naming a file that never existed.
+
+Until 2026-08-31 no render-time check caught any of this, and it was the single most likely way for
+a correct-looking SVG to rasterise wrongly. That is why Rule 14 exists, and Rule 14 stands unchanged
+for the cases still uncaught by any check: flowed text, substituted fonts, and the crop.
 
 **7. Image output is additive.**
 
@@ -6229,4 +6291,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-28
+**Version**: 7.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-31
