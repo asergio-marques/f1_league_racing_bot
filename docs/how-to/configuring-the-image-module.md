@@ -269,6 +269,10 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 
 > **You do not need a spare picture of your own.** When the bot cannot find the file for a particular team, circuit or flag, it uses a stand-in — yours if you put a `fallback.svg` in that folder, and otherwise the one that comes with the bot. So a folder holding eight of your ten team badges still draws every picture: the two without a badge get the stand-in, and the bot tells you which ones. Add a `fallback.svg` of your own only if you would rather your stand-in was used than ours.
 
+> **Spare rows can be cut off the bottom, if you tell the drawing where to cut.** A standings, attendance or results drawing with fifty rows gives a division of twenty thirty rows of empty space. To avoid that, give each row a blank called `row_<x>_vertical_crop_point` — a zero-height shape whose **`y` is the height you want the picture to end at when that row is the last one filled** — and put anything you draw *below* the rows, such as a caption or a legend, in a group called `footer_group`. The bot then cuts the picture at that row and carries the caption up to sit beneath it.
+>
+> Put the **last** row's crop point at the height the file itself declares, so a full division is still drawn whole. The two go together and both are optional: leave them out and your drawing works exactly as it always did, at full height. The drawings that come with the bot have both. Anything you draw below the rows and outside `footer_group` is cut off, so put it in the group or move it above the rows.
+
 **Make room for your biggest season.** Where the drawing file sets the limit — table rows, calendar rounds, reserve seats — the bot will refuse to go past it rather than quietly leaving someone off. The one exception is a reserve block you left out altogether, which is a decision rather than a limit and is honoured in silence. If your calendar drawing has room for 22 rounds, `/round add` will stop you at 23. Spare room costs nothing, as unused slots are hidden.
 
 ---
@@ -296,6 +300,10 @@ The check-in call is the odd one out — it *adds* a picture rather than replaci
 When you switch something on, the bot tells you if it would not work as things stand.
 
 > **If a picture fails, only that picture fails.** The division falls back to its usual text post and the log channel explains why; other divisions still get their pictures. Nothing is ever held up waiting for a picture — results, penalties, forecasts and standings all happen exactly as they would with the module off, and the picture is drawn afterwards.
+
+**What the pictures are called.** Each one is named for what it shows, so a folder of them saved off Discord still makes sense months later: `season1_division1_round10_standings_drivers.png`, `season1_division1_round10_feature_qualifying_results.png`, `season1_division1_lineup.png`. The division is named by its tier where the picture knows it and by its name otherwise. There is no round in a lineup or calendar filename, because those stand for the whole season rather than one round of it. `/images test` names what it sends you the same way.
+
+**What the pictures are called.** Each one is named for what it shows, so a folder of them saved off Discord still makes sense months later: `season1_division1_round10_standings_drivers.png`, `season1_division1_round10_feature_qualifying_results.png`, `season1_division1_lineup.png`. The division is named by its tier where the picture knows it and by its name otherwise. There is no round in a lineup or calendar filename, because those stand for the whole season rather than one round of it. `/images test` names what it sends you the same way.
 
 ---
 
@@ -340,6 +348,10 @@ Several kinds send more than one picture: the results send one per session of th
 **A cancelled division still previews.** It is offered in the division list and draws like any other, deliberately — a preview posts nothing where a driver can see it, so a division you have withdrawn is a perfectly good one to check a drawing against, and often the most convenient.
 
 `/season review` shows the same summary and names anything that would stop the season. **`/season approve` refuses to run** while something is broken — review is where you spot it, approval is where it stops you.
+
+**The review draws the calendar and the lineup for real.** With `calendar` or `lineup` switched on, that division's block in the review carries the picture instead of the text — the same picture the season will post once you approve it. That is the point of looking: what you sign off is what your league gets. With the switch off you see the text, as before.
+
+> **A picture the review cannot draw takes the Approve button away.** You are told what is wrong, that block falls back to its text so you still see the whole season, and the review ends with a note that the image module is not correctly configured instead of the button. Fix what it names and run `/season review` again. If you would rather commit anyway, `/season approve` still works — it stops you only on a drawing file that is outright unusable.
 
 > **Judge the finished picture, not the drawing file in a web browser.** They disagree on exactly the things worth checking — wrapped text, typefaces and missing images. The previews send you the finished picture for this reason.
 

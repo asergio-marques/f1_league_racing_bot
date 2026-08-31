@@ -261,6 +261,8 @@ The bot posts the whole configuration to the channel, **as several messages rath
 
 Then a block per division giving its role, its channels, its full calendar and its lineup.
 
+With the image module on and the calendar or lineup output switched on, that division's calendar and lineup arrive as the drawn pictures rather than as text, so what you approve is what your league will actually receive. See [Configuring the image module](configuring-the-image-module.md) for the switches. A picture that cannot be drawn takes the **Approve** button away until you fix it.
+
 A module you have not switched on has no settings to show, so its message is simply not posted — six is the most you will see, not the number you should expect.
 
 Read it properly. It is the last look you get at the season as a whole before it goes live, and it names anything that will stop approval.

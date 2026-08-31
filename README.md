@@ -309,6 +309,10 @@ No parameters. Displays the pending season configuration with **Approve** and **
 
 The report arrives as **one message per subsection**, in this order: the season and its enabled modules; signup; attendance; points configurations; weather; image outputs. A subsection with nothing in it — a module you have not enabled — is not posted at all. The per-division blocks follow, as before. Each subsection is split further if it alone is too long for one Discord message, because an over-long message is refused whole rather than truncated.
 
+**The review shows you what your league will actually get.** Where the images module is on and the `calendar` or `lineup` aspect with it, that division's calendar and lineup arrive as the drawn pictures rather than as text — the same pictures the season will post once approved. With the aspect off, you get the text exactly as before. The warning naming teams with no Discord role assigned is a finding of the review rather than part of the lineup, so it is shown either way.
+
+> **A picture that cannot be drawn withholds the Approve button.** You are told what is wrong, that section falls back to its text so the review is still complete, and the review ends with a note that the image module is not correctly configured instead of the button. Fix the template or the artwork it names and run `/season review` again. `/season approve` still works if you would rather commit anyway — it refuses only on a template that is outright unusable.
+
 #### `/season approve` — Commit the configuration
 *Access: Trusted admin*
 
@@ -1397,6 +1401,8 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 `lxml` and `fontTools` are ordinary Python dependencies and are already in `requirements.txt`.
 
+**What the files are called.** Every picture is named for what it shows rather than for the template that drew it, so a folder of them saved off Discord still makes sense: `season1_division1_round10_standings_drivers.png`, `season1_division1_round10_feature_qualifying_results.png`, `season1_division1_lineup.png`. The division is named by its tier where the graphic knows it and by its name otherwise (`season1_elite_calendar.png`); the season or round is left out where there is none, and the lineup and calendar carry no round because they stand for the whole season. `/images test` names its output the same way.
+
 #### `/images config toggle` — Choose image or text, per kind of output
 *Access: Trusted admin*
 
@@ -1415,9 +1421,9 @@ The choice names above are exactly the names `/images config view` and `/season 
 > table as an attachment. Either championship can fail on its own, in which case that one alone is
 > posted as text and the other keeps its picture.
 >
-> With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
+> With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`, and `/season review` shows you that image in place of its text calendar. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
 >
-> With `lineup` on, a division's lineup channel carries a drawn graphic instead of the text embed, redrawn on every occasion the text was redrawn before: season approval, a driver being assigned, unassigned or sacked, and the attendance module's auto-reserve and auto-sack. `/team lineup` answers with the graphic too, and `/season review` posts it *alongside* its text so you can judge it before approving. The reserve distribution the attendance module does at each RSVP deadline does **not** redraw it — the graphic shows who is in which team for the season, not who is on the grid for one round.
+> With `lineup` on, a division's lineup channel carries a drawn graphic instead of the text embed, redrawn on every occasion the text was redrawn before: season approval, a driver being assigned, unassigned or sacked, and the attendance module's auto-reserve and auto-sack. `/team lineup` answers with the graphic too, and `/season review` shows it *in place of* its text, so what you judge before approving is what your league will receive. The reserve distribution the attendance module does at each RSVP deadline does **not** redraw it — the graphic shows who is in which team for the season, not who is on the grid for one round.
 >
 > The image is built before the old message is deleted, so a lineup that cannot be drawn leaves the one already posted where it is; that division falls back to text and the log channel says why. With the toggle off, the lineup behaves in every respect as it did before this feature.
 >
@@ -1520,6 +1526,12 @@ These sit under `/images template` rather than `/images config` because Discord 
 > Draw as many rows as your grid needs, numbered from 1 with no gaps; the bot counts them from the file. A session with fewer entries than you drew rows removes the unused `row_<x>_group` and its whole contents, so leave nothing outside that group that you would mind seeing on a short grid. A session with **more** entries than you drew rows is refused and names the drivers who would have been dropped — the bot will not quietly cut a classification short.
 >
 > A driver with no tyre recorded draws the tyre directory's `fallback.svg` and says nothing about it: a tyre is a value a submission need not carry, so its absence is a state worth depicting rather than a gap worth reporting.
+
+> **Optional: shorten the picture to the rows it actually fills.** A standings, attendance or results template drawn for fifty rows gives a division of twenty thirty rows of empty canvas. Give each row a `row_<x>_vertical_crop_point` — a zero-height shape whose **`y` is where the picture should end when that row is the last one drawn** — and the bot cuts the canvas there. Put the last row's crop point at the height your file declares, so a full-size division is still drawn whole; a file that does not is drawn to its crop point anyway and the log says so.
+>
+> Whatever you draw *below* the rows — a caption, a legend, a rule — goes in a group called `footer_group`, and the bot carries it up with the cut so it still sits under the last row. Anything below the rows and outside that group is cut off.
+>
+> Both are entirely optional and go together: declare neither and your file is drawn at its full height exactly as it always was. The five shipped templates declare both. The calendar is the exception — it has always required a crop point per round.
 
 #### `/images config <directory>` — Where files are searched for
 *Access: Server administrator*
