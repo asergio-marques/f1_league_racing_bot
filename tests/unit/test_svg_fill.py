@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -589,12 +590,67 @@ def test_field_without_a_bound_is_never_truncated():
 
 
 def test_image_fill_rewrites_href():
+    """A relative path is anchored to the project root and leaves as a `file://` URI.
+
+    It used to be written through untouched. The rasteriser reads the filled SVG out of a
+    temporary directory and resolves a relative href against *that*, so the file was
+    silently absent from the picture while every check upstream reported success. See
+    `_as_href`.
+    """
+    import utils.paths as paths
+
     root = _doc('<image id="track" xlink:href="placeholder.svg"/>')
-    result = fill(FillSpec(root=root, images={"track": "resources/defaults/tracks/monza.svg"}))
+    result = fill(FillSpec(root=root, images={"track": "resources/defaults/tracks/fallback.svg"}))
 
     element = FieldIndex(root).resolve("track")
-    assert element.get("{http://www.w3.org/1999/xlink}href") == "resources/defaults/tracks/monza.svg"
+    expected = (Path(paths.PROJECT_ROOT) / "resources/defaults/tracks/fallback.svg").as_uri()
+    assert element.get("{http://www.w3.org/1999/xlink}href") == expected
+    assert element.get("href") == expected
     assert result.unresolved == []
+
+
+def test_an_absolute_image_path_still_becomes_a_file_uri(tmp_path):
+    """The behaviour that already stood, kept: an absolute path is never joined to."""
+    asset = tmp_path / "monza.svg"
+    asset.write_text("<svg/>", encoding="utf-8")
+
+    root = _doc('<image id="track" xlink:href="placeholder.svg"/>')
+    fill(FillSpec(root=root, images={"track": str(asset)}))
+
+    element = FieldIndex(root).resolve("track")
+    assert element.get("href") == asset.as_uri()
+
+
+@pytest.mark.parametrize(
+    "href",
+    ["data:image/png;base64,AAAA", "https://example.invalid/flag.svg", "file:///tmp/a.svg"],
+)
+def test_an_href_carrying_a_scheme_is_passed_through(href):
+    """A URI is not a path and must not be joined to the project root."""
+    root = _doc('<image id="track" xlink:href="placeholder.svg"/>')
+    fill(FillSpec(root=root, images={"track": href}))
+
+    assert FieldIndex(root).resolve("track").get("href") == href
+
+
+def test_a_template_authored_relative_href_still_resolves(monkeypatch, tmp_path):
+    """A template may point at a file beside itself, and templates live under the root.
+
+    Pinned rather than assumed: anchoring is only safe because the project root is the
+    right base for a template-authored reference as well as a configured one.
+    """
+    import utils.paths as paths
+
+    beside = tmp_path / "templates"
+    beside.mkdir()
+    (beside / "badge.svg").write_text("<svg/>", encoding="utf-8")
+    monkeypatch.setattr(paths, "PROJECT_ROOT", tmp_path)
+
+    root = _doc('<image id="track" xlink:href="placeholder.svg"/>')
+    fill(FillSpec(root=root, images={"track": "templates/badge.svg"}))
+
+    element = FieldIndex(root).resolve("track")
+    assert element.get("href") == (tmp_path / "templates" / "badge.svg").as_uri()
 
 
 def test_unknown_image_field_is_a_problem():

@@ -138,6 +138,93 @@ async def test_a_gate_that_raises_falls_to_the_text(tmp_path):
     assert await cps.image_calendar_wanted(bot, 1) is False
 
 
+# ── The two asset directories ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_the_asset_directories_are_absolute(tmp_path):
+    """Regression: the calendar resolved its own directories and produced relative paths.
+
+    A relative path passes `resolve_asset` — the bot's working directory is the project
+    root — and is written into the SVG as a relative href. The rasteriser reads that SVG
+    out of a temporary directory and resolves the href against *that*, so every circuit
+    map and country flag a league supplied was silently absent from the picture. Only the
+    packaged `mystery.svg`, which is resolved against the project root and is therefore
+    absolute, appeared.
+
+    Every other posting path goes through `resolve_configured_directories`. This pins the
+    calendar to it.
+    """
+    from utils.svg_document import load_svg
+
+    bot = _bot(tmp_path)
+    bot.image_config_service.get_config = AsyncMock(
+        return_value=NS(
+            date_format="DDD_DD_MON_YYYY",
+            time_format="24H",
+            time_zone="UTC",
+            track_image_directory="resources/defaults/tracks",
+            flag_directory="resources/defaults/flags",
+        )
+    )
+
+    captured = {}
+
+    async def _render(server_id, image_type, spec_builder, **kwargs):
+        captured["builder"] = spec_builder
+        return NS(problem=None, notices=[], png_paths=[])
+
+    bot.image_render_service.render = AsyncMock(side_effect=_render)
+
+    await cps.render_calendar_image(bot, 1, _division(), _rounds(), TRACKS)
+
+    templates = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+    spec = captured["builder"](load_svg(templates / "calendar_template.svg"))
+
+    assert set(spec.asset_directories) == {"track", "flag"}
+    for asset_class, directory in spec.asset_directories.items():
+        assert directory.is_absolute(), asset_class
+    assert spec.asset_directories["track"].name == "tracks"
+    assert spec.asset_directories["flag"].name == "flags"
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_directory_is_carried_through_as_a_fault(tmp_path):
+    """The reason is the point: `not configured` and `rejected` are different faults.
+
+    The hand-rolled resolution reported neither — a directory that escaped the project
+    root simply became `None`, and the filler then said the class was never configured.
+    """
+    from utils.svg_document import load_svg
+
+    bot = _bot(tmp_path)
+    bot.image_config_service.get_config = AsyncMock(
+        return_value=NS(
+            date_format="DDD_DD_MON_YYYY",
+            time_format="24H",
+            time_zone="UTC",
+            track_image_directory="resources/defaults/tracks",
+            flag_directory="../../elsewhere",
+        )
+    )
+
+    captured = {}
+
+    async def _render(server_id, image_type, spec_builder, **kwargs):
+        captured["builder"] = spec_builder
+        return NS(problem=None, notices=[], png_paths=[])
+
+    bot.image_render_service.render = AsyncMock(side_effect=_render)
+
+    await cps.render_calendar_image(bot, 1, _division(), _rounds(), TRACKS)
+
+    templates = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+    spec = captured["builder"](load_svg(templates / "calendar_template.svg"))
+
+    assert "flag" not in spec.asset_directories
+    assert "flag" in spec.asset_directory_faults
+
+
 # ── 4. Fallback vs rejection ──────────────────────────────────────────────
 
 

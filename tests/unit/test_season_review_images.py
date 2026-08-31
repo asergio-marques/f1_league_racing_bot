@@ -271,6 +271,251 @@ def test_the_roleless_team_warning_survives_the_graphic():
     assert "role_warning" in textual.split("else:")[0]
 
 
+# ── Pre-generation: every graphic drawn before any is posted ──────────────
+#
+# The instant deletion turned out not to be a constraint at all: `discard_render` is
+# called by whoever posted the file, and nothing sweeps the render directories in the
+# background, so holding a batch is a matter of not calling it yet. What bounds the batch
+# is the host — `/tmp` on the Raspberry Pi is a tmpfs, so a picture waiting to be posted
+# costs RAM.
+
+
+def _prerender_bot():
+    bot = MagicMock()
+    bot.db_path = ":memory:"
+    return bot
+
+
+def _outcome(png):
+    return MagicMock(png_path=png, message=None, notices=[])
+
+
+async def test_every_graphic_is_drawn_before_any_division_block_is_posted(
+    monkeypatch, tmp_path
+):
+    """The point of the change: the review stops dribbling out one render at a time."""
+    import services.calendar_post_service as cps
+    import services.image_lineup_post as lineup_post
+
+    drawn = []
+
+    async def _calendar(bot, server_id, division, rounds, tracks, **kwargs):
+        drawn.append(("calendar", division.id))
+        return _outcome(_png(tmp_path))
+
+    async def _lineup(bot, guild, division_id):
+        drawn.append(("lineup", division_id))
+        return _outcome(_png(tmp_path))
+
+    monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=True))
+    monkeypatch.setattr(cps, "tracks_by_name", AsyncMock(return_value={}))
+    monkeypatch.setattr(cps, "render_for_command", _calendar)
+    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(lineup_post, "render_for_command", _lineup)
+
+    divisions = [_division(1), _division(2)]
+    prepared = await _cog(_prerender_bot())._prerender_review_images(
+        _interaction(), divisions, {1: [], 2: []}, 4
+    )
+
+    assert set(prepared) == {(1, "calendar"), (1, "lineup"), (2, "calendar"), (2, "lineup")}
+    assert drawn == [
+        ("calendar", 1), ("lineup", 1), ("calendar", 2), ("lineup", 2),
+    ]
+
+
+async def test_an_aspect_that_is_off_is_not_pre_rendered(monkeypatch, tmp_path):
+    """A key left absent is what tells the posting helper to decide for itself."""
+    import services.calendar_post_service as cps
+    import services.image_lineup_post as lineup_post
+
+    monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=False))
+    monkeypatch.setattr(cps, "tracks_by_name", AsyncMock(return_value={}))
+    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        lineup_post, "render_for_command", AsyncMock(return_value=_outcome(_png(tmp_path)))
+    )
+
+    prepared = await _cog(_prerender_bot())._prerender_review_images(
+        _interaction(), [_division(1)], {1: []}, 4
+    )
+
+    assert set(prepared) == {(1, "lineup")}
+
+
+async def test_both_aspects_off_draws_nothing_and_reads_no_tracks(monkeypatch):
+    import services.calendar_post_service as cps
+    import services.image_lineup_post as lineup_post
+
+    tracks = AsyncMock(return_value={})
+    monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=False))
+    monkeypatch.setattr(cps, "tracks_by_name", tracks)
+    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=False))
+
+    prepared = await _cog(_prerender_bot())._prerender_review_images(
+        _interaction(), [_division(1)], {1: []}, 4
+    )
+
+    assert prepared == {}
+    tracks.assert_not_awaited()
+
+
+async def test_a_pre_render_that_raises_leaves_the_key_absent(monkeypatch, tmp_path):
+    """The posting helper draws it again, where the message to the manager already lives."""
+    import services.calendar_post_service as cps
+    import services.image_lineup_post as lineup_post
+
+    monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=True))
+    monkeypatch.setattr(cps, "tracks_by_name", AsyncMock(return_value={}))
+    monkeypatch.setattr(
+        cps, "render_for_command", AsyncMock(side_effect=RuntimeError("inkscape gone"))
+    )
+    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        lineup_post, "render_for_command", AsyncMock(return_value=_outcome(_png(tmp_path)))
+    )
+
+    prepared = await _cog(_prerender_bot())._prerender_review_images(
+        _interaction(), [_division(1)], {1: []}, 4
+    )
+
+    assert (1, "calendar") not in prepared
+    assert (1, "lineup") in prepared
+
+
+async def test_a_gate_that_raises_pre_renders_nothing(monkeypatch):
+    """A review must survive a fault in the gates, as the calendar's own gate does."""
+    import services.calendar_post_service as cps
+
+    monkeypatch.setattr(
+        cps, "image_calendar_wanted", AsyncMock(side_effect=RuntimeError("db down"))
+    )
+
+    prepared = await _cog(_prerender_bot())._prerender_review_images(
+        _interaction(), [_division(1)], {1: []}, 4
+    )
+
+    assert prepared == {}
+
+
+async def test_the_budget_stops_the_pre_render_rather_than_the_review(
+    monkeypatch, tmp_path
+):
+    """Past the budget a division draws at the moment it is posted, as it always did.
+
+    `/tmp` is a tmpfs on the host the bot runs on, so an unbounded batch would take the
+    machine's memory rather than merely its time. The guard costs speed, never
+    correctness — an absent key is exactly what an aspect being off already produces.
+    """
+    from cogs.season_cog import SeasonCog
+
+    import services.calendar_post_service as cps
+    import services.image_lineup_post as lineup_post
+
+    big = tmp_path / "big.png"
+    big.write_bytes(b"\x00" * 4096)
+
+    monkeypatch.setattr(
+        SeasonCog, "REVIEW_PRERENDER_BUDGET_BYTES", 4096, raising=True
+    )
+    monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=True))
+    monkeypatch.setattr(cps, "tracks_by_name", AsyncMock(return_value={}))
+    monkeypatch.setattr(cps, "render_for_command", AsyncMock(return_value=_outcome(big)))
+    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        lineup_post, "render_for_command", AsyncMock(return_value=_outcome(big))
+    )
+
+    divisions = [_division(1), _division(2), _division(3)]
+    prepared = await _cog(_prerender_bot())._prerender_review_images(
+        _interaction(), divisions, {1: [], 2: [], 3: []}, 4
+    )
+
+    # The first calendar alone spends the whole budget; nothing after it is held.
+    assert set(prepared) == {(1, "calendar")}
+
+
+async def test_a_prepared_graphic_is_posted_without_being_drawn_again(
+    monkeypatch, tmp_path
+):
+    from cogs.season_cog import REVIEW_IMAGE_DREW
+    import services.image_lineup_post as lineup_post
+
+    render = AsyncMock()
+    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(lineup_post, "render_for_command", render)
+    interaction = _interaction()
+
+    state = await _cog()._post_review_lineup_image(
+        interaction, _division(), prepared=_outcome(_png(tmp_path))
+    )
+
+    assert state == REVIEW_IMAGE_DREW
+    render.assert_not_awaited()
+    interaction.followup.send.assert_awaited_once()
+
+
+async def test_a_prepared_calendar_is_posted_without_being_drawn_again(
+    monkeypatch, tmp_path
+):
+    from cogs.season_cog import REVIEW_IMAGE_DREW
+    import services.calendar_post_service as cps
+
+    render = AsyncMock()
+    monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=True))
+    monkeypatch.setattr(cps, "render_for_command", render)
+    monkeypatch.setattr(cps, "tracks_by_name", AsyncMock(return_value={}))
+    interaction = _interaction()
+
+    state = await _cog()._post_review_calendar_image(
+        interaction, _division(), [], 3, prepared=_outcome(_png(tmp_path))
+    )
+
+    assert state == REVIEW_IMAGE_DREW
+    render.assert_not_awaited()
+
+
+def test_nothing_pre_rendered_survives_the_review():
+    """A file held for posting and never posted must not be left on a tmpfs."""
+    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+
+    assert "_prerender_review_images" in source
+    assert "finally:" in source
+    assert "_discard_prepared_review_images(prepared)" in source
+
+    prerender_at = source.index("_prerender_review_images")
+    loop_at = source.index("for div in db_divisions:")
+    assert prerender_at < loop_at, "every graphic is drawn before the first is posted"
+
+
+def test_the_discard_removes_every_graphic_still_held(tmp_path, monkeypatch):
+    from cogs.season_cog import SeasonCog
+
+    import services.image_render_service as render_service
+
+    removed = []
+    monkeypatch.setattr(
+        render_service, "discard_render", lambda *paths: removed.extend(paths)
+    )
+
+    prepared = {
+        (1, "calendar"): _outcome(tmp_path / "a.png"),
+        (2, "lineup"): _outcome(tmp_path / "b.png"),
+    }
+    SeasonCog._discard_prepared_review_images(prepared)
+
+    assert removed == [tmp_path / "a.png", tmp_path / "b.png"]
+    assert prepared == {}
+
+
+def test_the_posting_loop_pops_what_it_posts():
+    """What the discard finds is what was never sent, and only that."""
+    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+
+    assert 'prepared.pop((div.id, "calendar"), None)' in source
+    assert 'prepared.pop((div.id, "lineup"), None)' in source
+
+
 # ── Approval refuses on a graphic that will not draw ──────────────────────
 #
 # The review withholds its button; `/season approve` refuses outright, so the two cannot
