@@ -269,3 +269,152 @@ def test_the_roleless_team_warning_survives_the_graphic():
     block = source[source.index("_post_review_lineup_image"):]
     drew, _, textual = block.partition("if lineup_state == REVIEW_IMAGE_DREW:")
     assert "role_warning" in textual.split("else:")[0]
+
+
+# ── Approval refuses on a graphic that will not draw ──────────────────────
+#
+# The review withholds its button; `/season approve` refuses outright, so the two cannot
+# disagree and a season cannot be committed past a fault by skipping the review. That is
+# the rule Gate 4 already followed for template validity, extended to the drawing itself.
+
+
+def _divisions(*names):
+    out = []
+    for index, name in enumerate(names, start=1):
+        division = MagicMock()
+        division.id = index
+        division.name = name
+        division.tier = index
+        out.append(division)
+    return out
+
+
+async def _undrawable(bot=None, **kwargs):
+    cog = _cog(bot)
+    return await cog._undrawable_graphics(
+        kwargs.get("guild", MagicMock()),
+        kwargs.get("server_id", 7),
+        kwargs.get("divisions", _divisions("Elite")),
+        kwargs.get("rounds_of", {1: []}),
+        kwargs.get("season_number", 3),
+    )
+
+
+async def test_both_aspects_off_checks_nothing_at_all(monkeypatch):
+    """A league conveying both as text has no graphic here to fail."""
+    import services.calendar_post_service as calendar_post
+    import services.image_lineup_post as lineup_post
+
+    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=False))
+    monkeypatch.setattr(
+        calendar_post, "image_calendar_wanted", AsyncMock(return_value=False)
+    )
+    tracks = AsyncMock(return_value={})
+    monkeypatch.setattr(calendar_post, "tracks_by_name", tracks)
+
+    assert await _undrawable() == []
+    tracks.assert_not_awaited(), "nothing should be read for a check that does not run"
+
+
+async def test_a_lineup_that_will_not_draw_names_its_division(monkeypatch, tmp_path):
+    import services.calendar_post_service as calendar_post
+    import services.image_lineup_post as lineup_post
+
+    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        calendar_post, "image_calendar_wanted", AsyncMock(return_value=False)
+    )
+
+    async def render(bot, guild, division_id):
+        if division_id == 2:
+            return MagicMock(png_path=None, message="no value for `team_3_name`")
+        return MagicMock(png_path=_png(tmp_path), message=None)
+
+    monkeypatch.setattr(lineup_post, "render_for_command", AsyncMock(side_effect=render))
+
+    problems = await _undrawable(divisions=_divisions("Elite", "Academy"))
+
+    assert len(problems) == 1
+    assert "Academy" in problems[0] and "team_3_name" in problems[0]
+    assert "Elite" not in problems[0], "a division that drew must not be named"
+
+
+async def test_a_calendar_that_will_not_draw_names_its_division(monkeypatch):
+    import services.calendar_post_service as calendar_post
+    import services.image_lineup_post as lineup_post
+
+    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=False))
+    monkeypatch.setattr(
+        calendar_post, "image_calendar_wanted", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(calendar_post, "tracks_by_name", AsyncMock(return_value={}))
+    monkeypatch.setattr(
+        calendar_post,
+        "render_for_command",
+        AsyncMock(return_value=MagicMock(png_path=None, message="unknown circuit")),
+    )
+
+    problems = await _undrawable()
+
+    assert len(problems) == 1
+    assert "Elite" in problems[0] and "calendar" in problems[0]
+
+
+async def test_a_check_that_cannot_run_refuses_rather_than_passing(monkeypatch):
+    """A season committed on the strength of a test that never ran is the worse outcome."""
+    import services.image_lineup_post as lineup_post
+
+    monkeypatch.setattr(
+        lineup_post, "lineup_enabled", AsyncMock(side_effect=RuntimeError("db gone"))
+    )
+
+    problems = await _undrawable()
+
+    assert len(problems) == 1
+    assert "could not be checked" in problems[0]
+
+
+async def test_every_graphic_drawn_is_no_problem(monkeypatch, tmp_path):
+    import services.calendar_post_service as calendar_post
+    import services.image_lineup_post as lineup_post
+
+    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        calendar_post, "image_calendar_wanted", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(calendar_post, "tracks_by_name", AsyncMock(return_value={}))
+    drawn = MagicMock(png_path=_png(tmp_path), message=None)
+    monkeypatch.setattr(
+        lineup_post, "render_for_command", AsyncMock(return_value=drawn)
+    )
+    monkeypatch.setattr(
+        calendar_post, "render_for_command", AsyncMock(return_value=drawn)
+    )
+
+    assert await _undrawable(divisions=_divisions("Elite", "Academy")) == []
+
+
+def test_approval_refuses_before_it_commits_anything():
+    """The gate must stand among the others, ahead of the work approval does."""
+    source = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve")
+
+    gate_at = source.index("_undrawable_graphics")
+    assert "Gate 4b" in source
+
+    # Ahead of the module gates that follow it, and of the posting approval does.
+    for later in ("Gate 3: signup module", "post_division_calendar"):
+        assert gate_at < source.index(later), f"the gate must precede {later}"
+
+    # And it returns rather than merely reporting.
+    tail = source[gate_at:]
+    branch = tail[tail.index("if undrawable:") : tail.index("Gate 3: signup module")]
+    assert "return" in branch
+
+
+def test_the_review_and_the_approval_read_the_same_evaluation():
+    """Both must refuse on the same fault, or a manager can commit past the review."""
+    review = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+    approve = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve")
+
+    assert "image_fault" in review
+    assert "_undrawable_graphics" in approve

@@ -351,7 +351,7 @@ Several kinds send more than one picture: the results send one per session of th
 
 **The review draws the calendar and the lineup for real.** With `calendar` or `lineup` switched on, that division's block in the review carries the picture instead of the text — the same picture the season will post once you approve it. That is the point of looking: what you sign off is what your league gets. With the switch off you see the text, as before.
 
-> **A picture the review cannot draw takes the Approve button away.** You are told what is wrong, that block falls back to its text so you still see the whole season, and the review ends with a note that the image module is not correctly configured instead of the button. Fix what it names and run `/season review` again. If you would rather commit anyway, `/season approve` still works — it stops you only on a drawing file that is outright unusable.
+> **A picture the review cannot draw takes the Approve button away.** You are told what is wrong, that block falls back to its text so you still see the whole season, and the review ends with a note that the image module is not correctly configured instead of the button. `/season approve` refuses on the same check, naming the division and the picture that failed, so typing the command instead of pressing the button gets you nowhere. Fix what it names and run `/season review` again.
 
 > **Judge the finished picture, not the drawing file in a web browser.** They disagree on exactly the things worth checking — wrapped text, typefaces and missing images. The previews send you the finished picture for this reason.
 
@@ -373,7 +373,7 @@ Worth running through just before `/season approve`.
 - [ ] The time zone is the one your league actually races in
 - [ ] You have looked at each output with its `/images test` command — against a real division once you have a season, and against the invented league before then — and been happy with it
 - [ ] Your artwork is on the bot's computer, correctly named
-- [ ] `/season review` reports nothing blocking
+- [ ] `/season review` reports nothing blocking, and still offers the **Approve** button
 
 ---
 
@@ -393,6 +393,7 @@ Worth running through just before `/season approve`.
 | A preview showing grey placeholders | The bot could not find that file in your folder — the reply names which one, and what it was looking for |
 | A preview refusing outright | It names why: unknown division, no such round, no team beyond Reserve, or a forecast asked of a mystery round |
 | Nothing posted at all, and nothing in the log | Usually the channel for that output is not set, or the module behind it is off. Check step 2 |
+| `/season approve` refusing over a picture | It draws every calendar and lineup the season would post before it commits anything, and stops on one that will not draw. It names the division and which picture — fix that and try again |
 
 Smaller problems — a swapped typeface, a field set very small to fit, a placeholder used — are reported with the picture and written to the log channel. They never appear in a channel your drivers read.
 

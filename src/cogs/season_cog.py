@@ -433,6 +433,83 @@ class SeasonCog(commands.Cog):
             log.error("season: lineup template check failed: %s", exc)
             return []
 
+    async def _undrawable_graphics(
+        self, guild, server_id: int, divisions, rounds_of, season_number
+    ) -> list[str]:
+        """Every division whose lineup or calendar graphic will not draw, named.
+
+        The season review and this read **one and the same evaluation**, as they already do
+        for template validity: a graphic the review could not draw is a graphic every
+        posting of the season will fail to draw, so approving past it would commit a season
+        whose calendar and lineup fall back to text on every channel a league reads.
+
+        Silent for an aspect that is switched off — a league conveying its calendar as text
+        has nothing here to fail — and silent for a division the render draws.
+
+        This renders in earnest, and the season is then posted by rendering again. The cost
+        is one extra rasterisation per division per enabled aspect, on a command that
+        already defers and already schedules a season's worth of work; refusing on anything
+        cheaper would mean refusing on something other than what a posting will actually do.
+        """
+        from services.calendar_post_service import (
+            image_calendar_wanted,
+            tracks_by_name,
+        )
+        from services.calendar_post_service import (
+            render_for_command as render_calendar,
+        )
+        from services.image_lineup_post import lineup_enabled
+        from services.image_lineup_post import render_for_command as render_lineup
+        from services.image_render_service import discard_render
+
+        problems: list[str] = []
+        try:
+            draws_lineup = await lineup_enabled(self.bot, server_id)
+            draws_calendar = await image_calendar_wanted(self.bot, server_id)
+            if not (draws_lineup or draws_calendar):
+                return []
+
+            tracks = await tracks_by_name(self.bot.db_path) if draws_calendar else {}
+
+            for division in divisions:
+                if draws_lineup:
+                    outcome = await render_lineup(self.bot, guild, division.id)
+                    try:
+                        if outcome.png_path is None:
+                            problems.append(
+                                f"**{division.name}** — the lineup could not be drawn"
+                                + (f": {outcome.message}" if outcome.message else "")
+                            )
+                    finally:
+                        discard_render(outcome.png_path)
+
+                if draws_calendar:
+                    outcome = await render_calendar(
+                        self.bot,
+                        server_id,
+                        division,
+                        rounds_of.get(division.id, []),
+                        tracks,
+                        season_number=season_number,
+                    )
+                    try:
+                        if outcome.png_path is None:
+                            problems.append(
+                                f"**{division.name}** — the calendar could not be drawn"
+                                + (f": {outcome.message}" if outcome.message else "")
+                            )
+                    finally:
+                        discard_render(outcome.png_path)
+        except Exception as exc:  # noqa: BLE001
+            # A fault in the check is itself a reason not to approve: the season would be
+            # committed on the strength of a test that never ran.
+            log.error("season approve: the graphics check failed: %s", exc)
+            return [
+                "the image module could not be checked at all — "
+                f"{exc}. The season has not been approved."
+            ]
+        return problems
+
     async def _image_template_problems(self, server_id: int) -> list[str]:
         """Every unusable template, named individually (FR-007, FR-008).
 
@@ -1189,8 +1266,9 @@ class SeasonCog(commands.Cog):
                     "\u26d4 **The image module is not correctly configured.** One or more "
                     "graphics could not be drawn for this review — the fault is reported "
                     "above, and the section was shown as text instead.\n"
-                    "The season is **not** offered for approval while that stands: correct "
-                    "the template or the assets it names, then run `/season review` again.",
+                    "The season is **not** offered for approval while that stands, and "
+                    "`/season approve` will refuse it for the same reason. Correct the "
+                    "template or the assets it names, then run `/season review` again.",
                     ephemeral=True,
                 )
             else:
@@ -3807,6 +3885,27 @@ class SeasonCog(commands.Cog):
             msg = (
                 f"❌ Season cannot be approved — the `lineup` image aspect is on but "
                 f"the template cannot draw this season:\n• {bullet_list}"
+            )
+            await interaction.followup.send(msg, ephemeral=True)
+            return
+
+        # ── Gate 4b: the graphics this season will actually post ──────────────
+        #
+        # Gates 4 and 4a check the template; this draws it. A template that is structurally
+        # valid and holds every mandatory field can still fail on the data of this season —
+        # a track the registry does not know, a value that cannot be determined — and that
+        # fault reaches every channel of the league. The review reports it and withholds
+        # its button; this is where the season is stopped.
+        undrawable = await self._undrawable_graphics(
+            interaction.guild, cfg.server_id, divisions, div_rounds, cfg.season_number or None
+        )
+        if undrawable:
+            bullet_list = "\n\u2022 ".join(undrawable)
+            msg = (
+                f"\u274c Season cannot be approved \u2014 the image module is enabled but "
+                f"these graphics could not be drawn:\n\u2022 {bullet_list}\n"
+                f"Correct the template or the artwork it names, then run `/season review` "
+                f"again."
             )
             await interaction.followup.send(msg, ephemeral=True)
             return
