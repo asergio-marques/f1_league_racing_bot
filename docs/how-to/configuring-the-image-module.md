@@ -263,6 +263,15 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 
 > **Deciding how a round is pictured is a drawing-file job.** On the calendar and the check-in call, the flag blank and the circuit-map blank are separate and both optional: keep both, drop one, or drop both, and the calendar decides it round by round. The files that come with the bot keep both, so you can see each and delete what you do not want. The other pictures get the flag and have no map blank to give them — a drawing file that adds one is refused.
 
+> **A picture of your own inside a drawing file must actually be on the machine.** Your league's
+> crest in a corner, a sponsor strip, a watermark — draw whatever you like, and the bot leaves all
+> of it alone. The one thing it does check is the *link*: if such a picture points at a file that is
+> not there, the drawing is refused and you are told which one and what it was looking for. That is
+> because the converter says nothing whatever about a link it cannot follow — it puts a broken-image
+> mark where your picture should be and reports success — so without the check the first anyone
+> would know of it is your league looking at the result. Point it at a path inside the bot's own
+> project folder; a path written without a leading slash is read from there.
+
 > **A blank has to be the right shape for what goes in it.** Flag blanks are 3:2 and every other kind is square. The bot refuses a drawing file whose blank is the wrong shape, and tells you which blank, what shape it wanted and what it found — because it never stretches or pads a picture to fit, so a wrongly shaped blank would smear every flag you ever draw into it and no artwork of yours could put it right. The rule and the sizes are in [main README](../../README.md#image-module).
 
 > **The weather drawings have a minimum.** Phases 2 and 3 each have two versions — one for sprint weekends, one for everything else — because a sprint weekend has more sessions to show. If a file does not have room for enough sessions, the bot refuses it straight away and tells you how many it needs. Having room to spare is fine; the extra is simply hidden.
@@ -391,6 +400,7 @@ Worth running through just before `/season approve`.
 | The bot refusing to add a round or assign a driver | It would go past what your drawing file can show. Make the drawing bigger, or switch that output off |
 | Grey placeholders where your own artwork should be | Either the filename does not match, or it is in a folder the bot is not looking in. The log channel names what it could not find |
 | A preview showing grey placeholders | The bot could not find that file in your folder — the reply names which one, and what it was looking for |
+| A picture refused over a linked image | Something in your drawing file points at a picture file that is not on the machine. You are told which element and which file — put the file there, correct the path, or delete the element |
 | A preview refusing outright | It names why: unknown division, no such round, no team beyond Reserve, or a forecast asked of a mystery round |
 | Nothing posted at all, and nothing in the log | Usually the channel for that output is not set, or the module behind it is off. Check step 2 |
 | `/season approve` refusing over a picture | It draws every calendar and lineup the season would post before it commits anything, and stops on one that will not draw. It names the division and which picture — fix that and try again |
