@@ -106,8 +106,10 @@ _CELL_SUFFIXES = (
 _HIGHLIGHT_SUFFIXES = (
     "sprint_race_background",
     "sprint_race_fastest_lap",
+    "sprint_qualifying_mark",
     "feature_race_background",
     "feature_race_fastest_lap",
+    "feature_qualifying_mark",
 )
 
 
@@ -592,6 +594,8 @@ def test_a_car_beyond_the_teams_own_configured_seats_is_trimmed_even_when_alloca
 # The chip is an asset; only the ink over it comes from the stylesheet. So the tests split:
 # `spec.image_data` carries which mark is drawn, `spec.recolour` only the text colours.
 
+#: A template may still *name* a fastest-lap ink; the render must ignore it, which is what
+#: `test_the_fastest_lap_does_not_touch_the_text_colour` holds it to.
 _INK = """
     .highlight_p1_text { fill: #0B0D10 }
     .highlight_fastest_lap_text { fill: #F2F5F8 }
@@ -605,7 +609,7 @@ def _chips(spec) -> dict:
     return {
         name: datum
         for name, datum in spec.image_data.items()
-        if name.endswith(("_background", "_fastest_lap"))
+        if name.endswith(("_background", "_fastest_lap", "_qualifying_mark"))
     }
 
 
@@ -629,7 +633,7 @@ def test_each_podium_place_draws_its_own_chip():
 
 
 def test_the_chip_is_the_datum_and_never_a_class_of_its_own():
-    """One folder holds all five marks, so a league configures one directory."""
+    """One folder holds all nine marks, so a league configures one directory."""
     spec = _highlighted(CellValue(text="7", highlight=HIGHLIGHT_POINTS, fastest_lap=True))
     assert {cls for cls, _ in _chips(spec).values()} == {_ASSET}
 
@@ -689,9 +693,24 @@ def test_the_text_colour_follows_the_highlight_that_was_applied():
     assert spec.recolour["row_1_round_1_feature_race_result"] == "#0B0D10"
 
 
-def test_the_fastest_lap_wins_the_text_colour_over_the_chip_beneath_it():
-    spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1, fastest_lap=True))
-    assert spec.recolour["row_1_round_1_feature_race_result"] == "#F2F5F8"
+def test_the_fastest_lap_does_not_touch_the_text_colour():
+    """Regression: it did, and painted white numerals onto a gold plate.
+
+    The mark took the ink while it was still a full-cell wash, and went on taking it once it
+    became a corner triangle. It occupies a corner; the numerals sit inboard over the plate,
+    so the plate is the only thing they are read against.
+    """
+    plain = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1))
+    with_fl = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1, fastest_lap=True))
+    assert with_fl.recolour == plain.recolour
+    assert with_fl.recolour["row_1_round_1_feature_race_result"] == "#0B0D10"
+
+
+def test_a_fastest_lap_with_no_plate_beneath_it_sets_no_ink_at_all():
+    """Nothing is under the numerals but the row band, which `.cell` already reads on."""
+    spec = _highlighted(CellValue(text="12", fastest_lap=True))
+    assert spec.image_data["row_1_round_1_feature_race_fastest_lap"] == (_ASSET, "fastest_lap")
+    assert spec.recolour == {}
 
 
 def test_no_text_colour_is_set_where_the_template_names_none():
@@ -763,5 +782,115 @@ def test_a_constructors_car_is_highlighted_by_the_same_rules():
     stem = "row_1_round_1_driver_1_feature_race"
     assert spec.image_data[f"{stem}_background"] == (_ASSET, "p1")
     assert spec.image_data[f"{stem}_fastest_lap"] == (_ASSET, "fastest_lap")
-    # The overlay is the more specific signal, so it takes the text colour.
-    assert spec.recolour[f"{stem}_result"] == "#F2F5F8"
+    # The plate sets the ink; neither corner mark does.
+    assert spec.recolour[f"{stem}_result"] == "#0B0D10"
+
+
+# ── The qualifying mark ───────────────────────────────────────────────────
+#
+# A qualifying result earns the same four kinds a race result does, but takes a different
+# picture: a corner triangle rather than a plate, so the two can stand on one cell at once.
+
+
+def _both(race=None, qualifying=None, style=_INK):
+    """One drivers row whose round 1 holds a race cell and its raised qualifying result."""
+    root = _grid_template(1, 1, highlights=True, style=style)
+    heading = RoundHeading(ordinal=1, number="1")
+    entry = _entry(1, cells={1: _cells(
+        feature_race_result=race or CellValue(),
+        feature_qualifying_result=qualifying or CellValue(),
+    )})
+    return build_fill_spec(_drawing([entry], rounds=[heading]), root)
+
+
+def test_a_qualifying_podium_draws_its_own_mark():
+    spec = _both(qualifying=CellValue(text="2", highlight=HIGHLIGHT_P2))
+    assert spec.image_data["row_1_round_1_feature_qualifying_mark"] == (_ASSET, "qualifying_p2")
+
+
+def test_a_qualifying_points_finish_draws_the_points_mark():
+    """The fourth requirement, and the reason the mark covers more than the podium."""
+    spec = _both(qualifying=CellValue(text="7", highlight=HIGHLIGHT_POINTS))
+    assert spec.image_data["row_1_round_1_feature_qualifying_mark"] == (
+        _ASSET,
+        "qualifying_points",
+    )
+
+
+def test_a_qualifying_result_outside_the_points_draws_nothing():
+    spec = _both(qualifying=CellValue(text="14"))
+    assert "row_1_round_1_feature_qualifying_mark" not in spec.image_data
+
+
+def test_a_qualifying_mark_is_a_different_picture_from_the_race_plate():
+    """Same kind, different datum — otherwise a pole-to-win cell would be one flat block."""
+    spec = _both(
+        race=CellValue(text="1", highlight=HIGHLIGHT_P1),
+        qualifying=CellValue(text="1", highlight=HIGHLIGHT_P1),
+    )
+    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "p1")
+    assert spec.image_data["row_1_round_1_feature_qualifying_mark"] == (_ASSET, "qualifying_p1")
+
+
+def test_a_race_cell_never_draws_a_qualifying_datum():
+    spec = _both(race=CellValue(text="3", highlight=HIGHLIGHT_P3))
+    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "p3")
+    assert not any(
+        datum.startswith("qualifying_") for _cls, datum in _chips(spec).values()
+    )
+
+
+def test_all_three_marks_can_stand_on_one_cell():
+    """A win from pole with the fastest lap — the busiest a cell gets."""
+    spec = _both(
+        race=CellValue(text="1", highlight=HIGHLIGHT_P1, fastest_lap=True),
+        qualifying=CellValue(text="1", highlight=HIGHLIGHT_P1),
+    )
+    stem = "row_1_round_1_feature"
+    assert _chips(spec) == {
+        f"{stem}_race_background": (_ASSET, "p1"),
+        f"{stem}_race_fastest_lap": (_ASSET, "fastest_lap"),
+        f"{stem}_qualifying_mark": (_ASSET, "qualifying_p1"),
+    }
+
+
+def test_a_qualifying_cell_never_draws_a_fastest_lap():
+    """A qualifying row carries no fastest-lap field, so the layer cannot arise there."""
+    spec = _both(qualifying=CellValue(text="1", highlight=HIGHLIGHT_P1, fastest_lap=True))
+    assert "row_1_round_1_feature_qualifying_fastest_lap" not in spec.image_data
+
+
+def test_every_datum_the_projection_can_emit_has_a_packaged_file():
+    """A kind added in code without artwork would resolve to the fallback and draw a lie."""
+    from pathlib import Path
+
+    from models.image_constants import packaged_directory_for
+    from services.image_standings_service import HIGHLIGHT_DATA
+    from utils.paths import PROJECT_ROOT
+
+    packaged = Path(PROJECT_ROOT) / packaged_directory_for("standings_highlight")
+    missing = [d for d in HIGHLIGHT_DATA if not (packaged / f"{d}.svg").is_file()]
+    assert missing == [], f"no packaged artwork for: {missing}"
+
+
+def test_a_qualifying_mark_colours_no_text():
+    """Regression: it did, and the glyph vanished.
+
+    The mark is deliberately much darker than the plates. Taking the raised figure's ink from
+    it meant `.highlight_p1_text` — a near-black chosen to read on a *light* gold plate — was
+    painted onto a dark triangle, and onto the bare row band wherever the race earned no plate
+    of its own. The raised figure sits inboard of the corner the mark occupies and over the
+    race plate, so it is the plate that governs its ink and the mark that governs none.
+    """
+    spec = _both(qualifying=CellValue(text="1", highlight=HIGHLIGHT_P1))
+    assert spec.image_data["row_1_round_1_feature_qualifying_mark"] == (_ASSET, "qualifying_p1")
+    assert spec.recolour == {}
+
+
+def test_the_race_plate_still_colours_the_raised_figure_it_sits_under():
+    """The other half of the same rule: the plate governs, and still does."""
+    spec = _both(
+        race=CellValue(text="1", highlight=HIGHLIGHT_P1),
+        qualifying=CellValue(text="1", highlight=HIGHLIGHT_P1),
+    )
+    assert spec.recolour["row_1_round_1_feature_qualifying_result"] == "#0B0D10"

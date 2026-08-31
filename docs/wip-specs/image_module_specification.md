@@ -764,7 +764,7 @@ These hold for every image type of the module and are stated here rather than re
             - row_<x>_round_<z>_sprint_race_fastest_lap - Optional - Field on which the mark of the fastest lap will be placed where that result holds it, drawn above the background named above and searched for in the same directory
             - row_<x>_round_<z>_feature_race_background - Optional - Field on which the mark of the highlight the feature race result of that round earns will be placed, drawn beneath that result and searched for in the same directory
             - row_<x>_round_<z>_feature_race_fastest_lap - Optional - Field on which the mark of the fastest lap will be placed where that result holds it, drawn above the background named above and searched for in the same directory
-            - row_<x>_round_<z>_sprint_qualifying_background and row_<x>_round_<z>_feature_qualifying_background - Optional - Fields on which the mark of the highlight the qualifying result of that round earns will be placed. A template drawing its qualifying result raised beside the race result, as the templates supplied do, shall decline them: the two stand as one run of text and the raised figure has no position of its own for a mark to be drawn behind
+            - row_<x>_round_<z>_sprint_qualifying_mark and row_<x>_round_<z>_feature_qualifying_mark - Optional - Fields on which the mark of the highlight the qualifying result of that round earns will be placed, drawn over the race cell of that session and searched for in the same directory
 - For generation of a constructor standings graphic, the template may have the following fields, among which the mandatory fields will be verified at template file setting and before generation:
     - season_number - Optional - Field on which the season number of the server is placed
     - division_name - Mandatory - Field on which the name given to the division at "division add" is placed
@@ -797,7 +797,7 @@ These hold for every image type of the module and are stated here rather than re
             - row_<x>_round_<z>_driver_<w>_feature_qualifying_result - Optional - Field on which the result obtained by that driver in the feature qualifying session of that round is placed as text
             - row_<x>_round_<z>_driver_<w>_feature_race_result - Optional - Field on which the result obtained by that driver in the feature race session of that round is placed as text
             - row_<x>_round_<z>_driver_<w>_sprint_race_background, row_<x>_round_<z>_driver_<w>_sprint_race_fastest_lap, row_<x>_round_<z>_driver_<w>_feature_race_background and row_<x>_round_<z>_driver_<w>_feature_race_fastest_lap - Optional - Fields on which the marks of the highlights that session's result earns will be placed, drawn as they are on the driver standings graphic and governed by the same rules
-            - row_<x>_round_<z>_driver_<w>_sprint_qualifying_background and row_<x>_round_<z>_driver_<w>_feature_qualifying_background - Optional - Fields declined by the templates supplied for the reason given on the driver standings graphic
+            - row_<x>_round_<z>_driver_<w>_sprint_qualifying_mark and row_<x>_round_<z>_driver_<w>_feature_qualifying_mark - Optional - Fields on which the marks of the highlights that car's qualifying result earns will be placed, drawn as they are on the driver standings graphic and governed by the same rules
 - The constructor standings graphic has no field carrying the nationality of a driver, and none carrying the result of a team in a session.
 - <w> is a value between 1 and the number of seats configured for the team of the row.
 - <x> is the ordinal of the row counted from the top of the classification drawn, beginning at 1 and running without a gap. It is ordinarily the standing position recorded for the entry placed on it, but it is not that position and shall not be drawn in its place: the "row_<x>_position" field carries the position the standings recorded, read from the record and not from the ordinal.
@@ -836,10 +836,13 @@ These hold for every image type of the module and are stated here rather than re
 
 ### The highlighting of a result cell
 - A result cell of a race session may be marked out by an image drawn beneath it, so that a league reading either standings graphic sees at a glance where the podiums, the points finishes and the fastest laps of the season fell. The whole of this is optional: a template declaring no highlight field is drawn exactly as a template that has none.
-- A cell is drawn over two fields, each carrying an image independently of the other:
-    - a background, carrying the mark of the highest highlight the result earns;
-    - a fastest lap layer, drawn above the background and carrying the mark of the fastest lap where that result holds it. It stands together with a background and never in its place, so that a race won with the fastest lap is marked as both.
-- The marks are images of a single asset class, resolved as every other image of the module is. The class is a closed set of five data, which are the whole of the vocabulary either graphic may ask for: "p1", "p2", "p3", "points" and "fastest_lap".
+- A cell is drawn over three fields, each carrying an image independently of the others:
+    - a background, carrying the mark of the highest highlight the race result earns;
+    - a fastest lap layer, carrying the mark of the fastest lap where that result holds it;
+    - a qualifying layer, carrying the mark of the highest highlight the qualifying result of that session earns.
+- The three stand together and none stands in place of another, so that a race won from the front of the grid with the fastest lap is marked as all three.
+- The marks are images of a single asset class, resolved as every other image of the module is. The class is a closed set of nine data, which are the whole of the vocabulary either graphic may ask for: "p1", "p2", "p3", "points" and "fastest_lap" for a race result, and "qualifying_p1", "qualifying_p2", "qualifying_p3" and "qualifying_points" for a qualifying one.
+    - A qualifying result earns the same four kinds a race result earns and takes a different image for each, so that the two may be told apart where both are drawn upon one cell.
     - A sprint session and a feature session are marked alike. Neither the class nor the datum records which of the two a cell belongs to.
 - A result earns a background as follows, the first that applies being the one taken:
     - the result finished first, second or third in that session, each place taking a mark of its own;
@@ -847,12 +850,14 @@ These hold for every image type of the module and are stated here rather than re
     - otherwise the result earns no background.
 - A result earns the fastest lap layer where it was awarded the fastest-lap bonus of that session. A league whose points configuration awards no fastest-lap bonus for a session, or whose driver finished outside the position limit configured for it, marks no cell of that session.
 - A result that was not classified earns no background, whatever position is recorded against it. A driver disqualified from first place is drawn as "DSQ" and shall not be marked as a winner.
-- A qualifying result earns a background by the same rules, and never the fastest lap layer, which is a matter of a race session alone.
+- A qualifying result earns its layer by the same rules, and never the fastest lap layer, which is a matter of a race session alone.
+- The qualifying layer of a session is drawn upon the cell of that session's **race** result, the raised qualifying figure sharing one run of text with the race result and having no position of its own.
 - A highlight field a result earns nothing for shall be left as the template drew it, and neither filled nor removed. It carries no reference to a file and draws nothing.
 - The class being closed, a league that supplies no file for a datum is given the module's own, and cannot suppress a mark by withholding one. A league that would not have a mark drawn shall supply a transparent image under that datum's name; a league that would have none of them drawn declines the fields in its template.
 - The slots of this class stretch to the field they fill and are not fitted within it, the class carrying no fixed aspect. A template may therefore draw a cell of one shape where another draws a cell of another.
-- Where a highlight is drawn, the colour of the result itself may be set with it, so that a value stays legible upon the mark beneath it. That colour is named by the template, the mark being an image that cannot supply it. The fastest lap governs the colour where both are drawn.
-    - Where the template draws a qualifying result raised beside the race result, the raised figure stands upon the mark of the race cell and its colour shall be set with it for the same reason. That colour states nothing of the qualifying result.
+- Where a background is drawn, the colour of the result itself may be set with it, so that a value stays legible upon the background beneath it. That colour is named by the template, the background being an image that cannot supply it.
+- **The colour of a result follows the background of its cell and nothing else.** Neither the fastest lap layer nor the qualifying layer shall set it. Each occupies a corner of the cell while the result is drawn inboard of them, over the background, so the background is the only thing the result is read against.
+    - Where the template draws a qualifying result raised beside the race result, the raised figure stands upon the background of the race cell and its colour shall be set with that background for the same reason. That colour states nothing of the qualifying result.
 
 ### Handling of mismatches between standings and template
 - Divergences between the entries of a classification and the rows a template declares are treated as follows:

@@ -62,6 +62,14 @@ HIGHLIGHT_P2 = "p2"
 HIGHLIGHT_P3 = "p3"
 HIGHLIGHT_POINTS = "points"
 
+#: The four together, for the places that need to walk them.
+HIGHLIGHT_KINDS: tuple[str, ...] = (
+    HIGHLIGHT_P1,
+    HIGHLIGHT_P2,
+    HIGHLIGHT_P3,
+    HIGHLIGHT_POINTS,
+)
+
 #: The fastest-lap overlay. Not a member of the four above: it is an independent layer and
 #: may stand at the same time as any of them.
 HIGHLIGHT_FASTEST_LAP = "fastest_lap"
@@ -69,6 +77,23 @@ HIGHLIGHT_FASTEST_LAP = "fastest_lap"
 #: The asset class every chip draws. Which chip is drawn is the **datum** — one of the four
 #: kinds above, or the fastest lap — never a class of its own, so a league keeps one folder.
 HIGHLIGHT_ASSET_CLASS = "standings_highlight"
+
+#: What a qualifying result's datum is prefixed with. The four kinds are the same four a race
+#: result earns, but the mark is a different picture: a small corner triangle drawn a step
+#: darker than the plate of its own placing, where a race result takes the plate itself.
+QUALIFYING_DATUM_PREFIX = "qualifying_"
+
+#: Every datum the projection can hand to the asset resolver. Named so that a test can hold the
+#: packaged folder to it — a kind added here without a file would resolve to the fallback and
+#: draw the wrong mark rather than fail.
+HIGHLIGHT_DATA: tuple[str, ...] = (
+    HIGHLIGHT_P1,
+    HIGHLIGHT_P2,
+    HIGHLIGHT_P3,
+    HIGHLIGHT_POINTS,
+    HIGHLIGHT_FASTEST_LAP,
+    *(f"{QUALIFYING_DATUM_PREFIX}{kind}" for kind in HIGHLIGHT_KINDS),
+)
 
 #: The podium places, by finishing position.
 _PODIUM = {1: HIGHLIGHT_P1, 2: HIGHLIGHT_P2, 3: HIGHLIGHT_P3}
@@ -567,28 +592,44 @@ def _project_highlight(
     ``_unreachable_links`` passes over; removing them instead would put a thousand ids into
     ``spec.remove`` per graphic and walk a subtree for each.
 
-    The text colours run last and in one order: the **fastest lap wins** over the chip beneath
-    it, being the more specific signal. The raised qualifying glyph is recoloured with them,
-    and this is not a highlight of the qualifying result — it says nothing about where the
-    driver qualified. The chip spans the whole column and the glyph sits on top of it, so
-    without this a P1 cell would draw the stylesheet's grey superscript on gold. That it
-    overrides a colour the qualifying cell set for itself is deliberate: the chip is
-    physically beneath the glyph, and legibility upon it is not optional.
+    **The ink follows the background and nothing else.** Neither corner mark may set it. Both
+    occupy a corner while the text sits inboard over the plate, so the plate is the only thing
+    the reader sees the glyph against, and the only thing its legibility can be judged from.
+    This was learnt twice: the fastest lap took the ink while it was still a full-cell wash and
+    kept doing so once it became a triangle, which painted white numerals onto a gold plate;
+    and a qualifying mark did the same, painting a near-black glyph onto the bare row band.
+
+    The raised qualifying glyph is recoloured with the plate for the same reason and not as a
+    highlight of its own — it says nothing about where the driver qualified. The plate spans
+    the whole column and the glyph sits on top of it, so without this a P1 cell would draw the
+    stylesheet's grey superscript on gold.
     """
     stem = field_id[: -len("_result")]
+    qualifying = suffix.endswith("_qualifying_result")
     applied: str | None = None
 
     if cell.highlight:
-        background_id = f"{stem}_background"
-        if background_id in declared:
-            image_data[background_id] = (HIGHLIGHT_ASSET_CLASS, cell.highlight)
+        slot_id = f"{stem}_mark" if qualifying else f"{stem}_background"
+        datum = (
+            f"{QUALIFYING_DATUM_PREFIX}{cell.highlight}" if qualifying else cell.highlight
+        )
+        if slot_id in declared:
+            image_data[slot_id] = (HIGHLIGHT_ASSET_CLASS, datum)
             applied = cell.highlight
+
+    if qualifying:
+        # **A qualifying mark colours no text.** The raised figure it stands for sits inboard
+        # of the corner the mark occupies, and over the race plate, so it is the plate that
+        # governs its ink. Taking the ink from the mark instead put a near-black glyph —
+        # chosen to read on a *light* gold plate — onto a deliberately dark triangle, and on
+        # the bare row band where the race earned no plate at all.
+        return
 
     if cell.fastest_lap:
         overlay_id = f"{stem}_{HIGHLIGHT_FASTEST_LAP}"
         if overlay_id in declared:
             image_data[overlay_id] = (HIGHLIGHT_ASSET_CLASS, HIGHLIGHT_FASTEST_LAP)
-            applied = HIGHLIGHT_FASTEST_LAP
+            # It does **not** become the applied highlight. See the ink rule below.
 
     if applied is None:
         return

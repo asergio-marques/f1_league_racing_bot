@@ -101,41 +101,52 @@ the round pitch to suit. The packaged file simply declines it.
 
 ## The highlight chips on a standings grid
 
-Both standings files stand a pair of `<image>` slots beneath each **race** cell, before the
-`<text>` so they paint under it:
+Both standings files stand **three** `<image>` slots beneath each race cell, before the
+`<text>` so they paint under it, and all three share one box:
 
-    row_<x>_round_<z>_<sprint|feature>_race_background
-    row_<x>_round_<z>_<sprint|feature>_race_fastest_lap
+    row_<x>_round_<z>_<sprint|feature>_race_background      the plate
+    row_<x>_round_<z>_<sprint|feature>_race_fastest_lap     top-left corner
+    row_<x>_round_<z>_<sprint|feature>_qualifying_mark      top-right corner
 
 and the constructors file the same under `..._driver_<w>_...`. They draw the
-**standings-highlights** class — five files, `p1.svg` through `fastest_lap.svg` — so what a
-mark looks like is artwork in that folder and not a colour written into the template. That is
-what lets the fastest lap be a small corner triangle instead of a wash over the cell.
+**standings-highlights** class — nine files — so what a mark looks like is artwork in that
+folder and not a colour written into the template.
 
-Both are authored with **no href**, which is why an unhighlighted cell draws nothing and is
-never removed: an `<image>` carrying no reference draws nothing, and removing the slot instead
-would put a thousand identifiers into every fill spec.
+They share a box deliberately: **where** a mark sits is the artwork's business. The plate fills
+its box, the packaged `fastest_lap.svg` draws a triangle into the top-left of its own, and
+`qualifying_p1.svg` and friends into the top-right. Redraw a file and its mark moves, with no
+template to edit. Giving each a corner-sized slot instead would freeze that arrangement into
+several thousand elements a league could not restyle.
+
+The **qualifying mark hangs off the qualifying session's name though it is drawn over the race
+cell**, because it marks the qualifying result. The raised qualifying figure shares one text
+chunk with the race result and has no position of its own, so nothing can be drawn behind it —
+a corner of the race cell is what can be, and that is what made qualifying markable at all. The
+top-right is the corner nearest that figure.
+
+All three are authored with **no href**, which is why a cell earning no highlight draws nothing
+and is never removed: an `<image>` carrying no reference draws nothing, and removing the slot
+instead would put thousands of identifiers into every fill spec.
+
+All three carry `preserveAspectRatio="none"`. This class alone has no fixed aspect — the drivers
+chip is 52 × 22 and the constructors chip 52 × 18, shapes fixed by two different row bands — so
+the file stretches to the slot. Draw artwork that survives that.
+
+What remains in each file's `<style>` is the **ink**: `.highlight_p1_text` and friends colour
+the result itself, and `.highlight_p1_sup_text` the raised qualifying figure, which sits on the
+*plate* and would otherwise keep its grey `.sup`. A file cannot colour text drawn over it, so
+these cannot move to the artwork.
+
+**Only the background takes ink; neither corner mark does.** Both occupy a corner while the
+numerals sit inboard over the plate, so the plate is the only thing they are read against. This
+was learnt twice: the fastest lap kept taking the ink after it became a triangle and painted
+white numerals onto a gold plate, and the qualifying mark did the same onto the bare row band.
+A template may still name `.highlight_fastest_lap_text`; the render ignores it.
 
 The class is **closed**, so deleting a file from a league's folder does not suppress that mark —
 the packaged file is drawn in its place, which is the rule that makes a fresh clone work. A
 league suppresses one mark by supplying a fully transparent SVG under that name, and the whole
 feature by deleting the slots from its template.
-
-Both carry `preserveAspectRatio="none"`. This class alone has no fixed aspect — the drivers
-chip is 52 × 22 and the constructors chip 52 × 18, shapes fixed by two different row bands —
-so the file stretches to the slot. Draw artwork that survives that.
-
-What remains in each file's `<style>` is the **ink**: `.highlight_p1_text` and friends colour
-the result itself, and `.highlight_p1_sup_text` the raised qualifying figure, which sits on the
-mark and would otherwise keep its grey `.sup`. A file cannot colour text drawn over it, so
-these cannot move to the artwork. That recolour is contrast alone and says nothing about the
-qualifying result.
-
-**The two qualifying cells decline a background**, though the catalogue admits the fields. The
-raised figure is a `tspan` of the same text element as the race result and carries no `x` of its
-own, so the pair centre as one run and neither has a fixed position for a mark to sit behind. A
-file that gives qualifying a column of its own may declare
-`row_<x>_round_<z>_<sprint|feature>_qualifying_background` and will be honoured.
 
 ## The grid is 54 px per column
 

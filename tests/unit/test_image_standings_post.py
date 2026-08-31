@@ -1218,12 +1218,26 @@ async def _highlighted_svg(tmp_path):
     from utils.svg_fill import fill
 
     db_path, division_id, round_ids = await _seed_league(tmp_path)
-    # The seed classifies but awards no fastest lap. Give the winner one, so the round holds
-    # a cell carrying both layers at once — the case the two-layer rule exists for.
+    # The seed classifies a race but awards no fastest lap and runs no qualifying. Add both,
+    # so round 1 holds a cell carrying all three marks at once — a win from pole with the
+    # fastest lap, which is the busiest a cell gets and the case the layering exists for.
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE race_session_results SET fastest_lap_bonus = 1 WHERE driver_user_id = 11"
         )
+        cursor = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'FEATURE_QUALIFYING', 'ACTIVE')",
+            (round_ids[0], division_id),
+        )
+        qualifying_id = cursor.lastrowid
+        for user_id, role_id, position in ((11, 900, 1), (12, 900, 2), (13, 901, 1)):
+            await db.execute(
+                "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
+                "team_role_id, finishing_position, outcome, points_awarded) "
+                "VALUES (?, ?, ?, ?, 'CLASSIFIED', 3)",
+                (qualifying_id, user_id, role_id, position),
+            )
         await db.commit()
 
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
@@ -1309,16 +1323,17 @@ async def test_the_constructors_cars_carry_the_chips_too(tmp_path):
 
 
 @pytest.mark.rasteriser
-async def test_the_chips_reach_the_raster_as_the_artwork_says(tmp_path):
-    """Rule XIV.14 — the chips are verified as pixels, never as markup.
+async def test_the_three_marks_reach_the_raster_in_their_own_corners(tmp_path):
+    """Rule XIV.14 — the marks are verified as pixels, never as markup.
 
-    The tests above prove the right asset was chosen and the href anchored. Only the raster
-    proves it was *drawn*: an href the rasteriser cannot follow, a slot authored after its
-    text, or a `preserveAspectRatio` that letterboxes instead of stretching, all leave
-    correct-looking markup and a wrong picture.
+    The tests above prove the right assets were chosen and the hrefs anchored. Only the raster
+    proves they were *drawn where the artwork says*: an href the rasteriser cannot follow, a
+    slot authored after its text, or a `preserveAspectRatio` that letterboxes instead of
+    stretching, all leave correct-looking markup and a wrong picture. So does a triangle that
+    did not move when its file said it should.
 
-    Every coordinate is read out of the template rather than assumed, and the samples are
-    taken well clear of the glyph, whose width depends on which font the host resolved.
+    Every coordinate is read out of the template rather than assumed, and the samples are taken
+    well clear of the glyph, whose width depends on which font the host resolved.
     """
     from PIL import Image  # noqa: PLC0415
 
@@ -1335,14 +1350,30 @@ async def test_the_chips_reach_the_raster_as_the_artwork_says(tmp_path):
     png = rasterise(result.svg, tmp_path / "standings.png", result.canvas or canvas_of(root))
     image = Image.open(png).convert("RGB")
 
-    # The packaged p1 plate, sampled at the chip's lower-left — clear of both the text and
-    # the fastest-lap triangle, which the artwork puts in the top-right corner.
-    gold = (0xC9, 0xA2, 0x27)
-    assert image.getpixel((int(left) + 6, int(top + height) - 4)) == gold
+    def near(pixel, expected, tolerance=6):
+        return all(abs(a - b) <= tolerance for a, b in zip(pixel, expected))
 
-    # The fastest-lap mark is a corner triangle over the plate, not a wash across it.
+    # The plate and the mark are one step apart in **lightness**, within one hue: a winner who
+    # also took pole shows the mark merging into the plate, which is what a matched pair should
+    # do, while the same gold mark over a *bronze* plate stays plainly gold. Lightness is what
+    # the eye reads an edge from at this size — an earlier palette separated mark from plate by
+    # hue alone and the gold mark looked like a stain on the bronze plate.
+    plate_gold = (0xE6, 0xC5, 0x5A)
     purple = (0xA0, 0x20, 0xF0)
-    assert image.getpixel((int(left + width) - 4, int(top) + 3)) == purple
+    mark_gold = (0xC9, 0xA2, 0x27)
 
-    # Two rows below the chip is the plain row band, which no highlight reaches.
-    assert image.getpixel((int(left) + 6, int(top + height) + 8)) not in (gold, purple)
+    # The p1 plate, sampled low and central — clear of the text and of both corner marks.
+    assert image.getpixel((int(left + width / 2), int(top + height) - 3)) == plate_gold
+
+    # The fastest lap is a triangle in the **top-left**, moved there so the qualifying mark
+    # can have the corner nearest the raised figure it stands for.
+    assert image.getpixel((int(left) + 3, int(top) + 2)) == purple
+
+    # The qualifying mark is a triangle in the **top-right**, drawn over the plate a shade
+    # darker than it — enough to be seen, little enough to merge where the two agree.
+    corner = image.getpixel((int(left + width) - 3, int(top) + 2))
+    assert near(corner, mark_gold), f"top-right corner was {corner}, not the qualifying mark"
+
+    # Two rows below the chip is the plain row band, which no mark reaches.
+    below = image.getpixel((int(left) + 6, int(top + height) + 8))
+    assert not any(near(below, c) for c in (plate_gold, purple, mark_gold))

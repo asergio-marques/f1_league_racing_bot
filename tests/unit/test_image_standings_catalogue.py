@@ -465,8 +465,8 @@ def test_the_round_heading_flag_id_names_its_class():
         "sprint_race_fastest_lap",
         "feature_race_background",
         "feature_race_fastest_lap",
-        "sprint_qualifying_background",
-        "feature_qualifying_background",
+        "sprint_qualifying_mark",
+        "feature_qualifying_mark",
     ],
 )
 def test_a_highlight_layer_is_an_optional_asset_field_of_the_cell(catalogue, nest, suffix):

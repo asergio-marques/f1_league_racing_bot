@@ -1073,16 +1073,16 @@ _STANDINGS_CELL_FIELDS = frozenset(
 #: Their slots **stretch** rather than hold one aspect (XIV.6, v7.4.0): a cell is 52 x 22 on the
 #: drivers grid and 52 x 18 on the constructors one, and no single ratio serves two row bands.
 #:
-#: The two qualifying backgrounds are admitted although the shipped templates decline them.
-#: A raised qualifying glyph shares one auto-laid text chunk with the race result beside it
-#: and so has no fixed position to put a chip behind; a league that re-lays its own template
-#: to give qualifying a column of its own may declare them, and is not refused for it.
+#: A **qualifying mark** is not a background and is not drawn behind the raised glyph, which
+#: shares one auto-laid text chunk with the race result and has no fixed position of its own.
+#: It is a corner of the *race* cell's box — the corner nearest the raised figure — which is
+#: what made qualifying highlightable at all once the marks became artwork rather than colours.
 _STANDINGS_CELL_HIGHLIGHTS = frozenset(
     {
-        "sprint_qualifying_background",
+        "sprint_qualifying_mark",
         "sprint_race_background",
         "sprint_race_fastest_lap",
-        "feature_qualifying_background",
+        "feature_qualifying_mark",
         "feature_race_background",
         "feature_race_fastest_lap",
     }

@@ -167,7 +167,7 @@ So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`
 | Driver photos | The driver's **Discord user ID number**, so their photo does not vanish when they change their nickname |
 | Arrows and weather | Fixed names the bot already uses — these come complete, just replace the pictures |
 | Tyre compounds | The compound name — `soft.svg` |
-| Standings marks | Fixed names the bot already uses — `p1.svg`, `p2.svg`, `p3.svg`, `points.svg`, `fastest_lap.svg`. These come complete, just replace the pictures |
+| Standings marks | Fixed names the bot already uses — `p1.svg`, `p2.svg`, `p3.svg`, `points.svg`, `fastest_lap.svg`, and `qualifying_` versions of the first four. These come complete, just replace the pictures |
 
 > **Guinea-Bissau, the Democratic Republic of the Congo and Dominica each need their own flag file now.** `Guinean`, `Congolese` and `Dominican` used to cover two countries apiece in English and could only ever resolve one — Guinea, Congo and the Dominican Republic. A driver from the other country of each pair has a nationality of their own to select — `Bissau-Guinean`, `Congolese (Kinshasa)` and `Dominican (Dominica)` — so if your league has such a driver, add `guinea_bissau.svg`, `democratic_republic_of_the_congo.svg` or `dominica.svg` alongside the flags you already supply.
 
@@ -284,13 +284,25 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 >
 > Put the **last** row's crop point at the height the file itself declares, so a full division is still drawn whole. The two go together and both are optional: leave them out and your drawing works exactly as it always did, at full height. The drawings that come with the bot have both. Anything you draw below the rows and outside `footer_group` is cut off, so put it in the group or move it above the rows.
 
-> **The standings grids mark out their race cells, and the marks are files you can replace.** Both standings drawings show where the season's results fell: a gold, silver or bronze plate behind a podium finish, a green tint behind any other points finish, and a small purple triangle in the corner for the fastest lap — so a race won with the fastest lap shows both. The drawings that come with the bot do this already.
+> **The standings grids mark out their race cells, and the marks are files you can replace.** Both standings drawings show where the season's results fell: a gold, silver or bronze plate behind a podium finish, a green tint behind any other points finish, a small purple triangle in the **top-left** corner for the fastest lap, and a gold, silver, bronze or green triangle in the **top-right** for where the driver **qualified**, each a shade darker than the plate of the same placing. The drawings that come with the bot do this already.
 >
-> **To change how a mark looks, replace its file.** They live in `resources/league/standings-highlights` and are named `p1.svg`, `p2.svg`, `p3.svg`, `points.svg` and `fastest_lap.svg`. Drop your own in under one of those names and it is drawn; leave the folder empty and the bot's own marks are used. There is no command and no colour setting for this — it is artwork, like your team badges.
+> **To change how a mark looks, replace its file.** They live in `resources/league/standings-highlights`:
+>
+> | File | Drawn for |
+> |---|---|
+> | `p1.svg` `p2.svg` `p3.svg` `points.svg` | The race result — a plate behind the number |
+> | `fastest_lap.svg` | The fastest lap — top-left corner |
+> | `qualifying_p1.svg` `qualifying_p2.svg` `qualifying_p3.svg` `qualifying_points.svg` | The qualifying result — top-right corner |
+>
+> Drop your own in under one of those names and it is drawn; leave the folder empty and the bot's own marks are used. There is no command and no colour setting for this — it is artwork, like your team badges.
+>
+> **The qualifying mark sits on the race cell**, in the corner nearest the small raised number it stands for. That number shares one run of text with the race result and has no fixed position, so nothing can go *behind* it — a corner of the cell can, which is what makes qualifying markable at all. A cell showing all three marks at once is a win from pole with the fastest lap.
 >
 > **These marks stretch to fit the cell**, unlike every other folder, where the size in the table above is a rule. A cell is a slightly different shape on the drivers drawing than on the constructors one, so draw something that survives being squashed a little — a rectangle or a corner shape does, a circle turns into an ellipse.
 >
-> **The numbers on top stay in the drawing file.** A picture cannot colour text laid over it, so the ink is still a `.highlight_p1_text` rule in the drawing's stylesheet, with `.highlight_p1_sup_text` for the small qualifying number raised beside the result — which sits on the mark and would otherwise stay grey. Name no rule and the number keeps the colour it already has.
+> **The numbers on top stay in the drawing file.** A picture cannot colour text laid over it, so the ink is still a `.highlight_p1_text` rule in the drawing's stylesheet, with `.highlight_p1_sup_text` for the small qualifying number raised beside the result — which sits on the plate and would otherwise stay grey. Name no rule and the number keeps the colour it already has.
+>
+> **Only the plate decides the ink.** Neither corner mark does. They sit in a corner and the numbers sit inboard over the plate, so the plate is the only thing you read them against — a fastest lap on a gold plate still takes the gold plate's dark ink, and would be unreadable if it took the mark's.
 >
 > **Don't want one of these marks? Supply an empty picture.** Deleting the file does *not* turn a mark off — these five names are the bot's own, so an absent file just means the bot draws its version, the same way the markers and weather icons work. What does turn one off is a **fully transparent SVG** saved under that name:
 >
@@ -304,7 +316,7 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 >
 > **What counts as a points finish is whatever your points configuration pays for**, so this follows your league rather than a fixed top ten. The fastest lap is only marked where your configuration actually awards a fastest-lap bonus for that session and the driver finished inside any position limit you set: a league that awards none marks nothing, which is right rather than broken. A driver disqualified from a win is drawn `DSQ` and gets no gold.
 >
-> **Only the two race cells are marked.** The small qualifying number raised beside a result shares one run of text with it and so has nowhere fixed to put a mark behind; it is recoloured to stay readable on whatever is beneath it, and that colour tells you nothing about where the driver qualified.
+> **A qualifying position counts as a points one if your configuration pays for it.** A league that awards no qualifying points sees no qualifying mark below the podium, and one awarding none at all sees no qualifying mark whatever — the same rule as the race, applied to the session before it.
 
 > **The standings drawings got wider.** They are now 1728 px across, from 1200 and 1128. The old columns could not hold the widest thing a cell can be asked to show — a `DSQ` with another outcome raised beside it — so it ran over into the next round, and nothing said so. Each session column is now 54 px wide. If you have re-laid a standings drawing of your own, give your columns the same room; nothing can check this for you.
 

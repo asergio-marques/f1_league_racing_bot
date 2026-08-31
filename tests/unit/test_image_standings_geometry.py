@@ -26,6 +26,10 @@ _TEMPLATE_DIR = os.path.join(
     os.path.dirname(__file__), "..", "..", "resources", "defaults", "templates"
 )
 
+#: What a chip slot's id ends in. The qualifying mark is one of them: it is drawn over the race
+#: cell, in the corner nearest the raised figure it stands for.
+_CHIP_SUFFIXES = ("_background", "_fastest_lap", "_qualifying_mark")
+
 DRIVERS = "standings_drivers_template"
 CONSTRUCTORS = "standings_constructors_template"
 
@@ -166,7 +170,7 @@ def test_every_chip_is_a_stretching_image_beneath_its_cell(key):
         node
         for node in root.iter()
         if (node.get("id") or "").startswith("row_")
-        and (node.get("id") or "").endswith(("_background", "_fastest_lap"))
+        and (node.get("id") or "").endswith(_CHIP_SUFFIXES)
     ]
     assert chips, "the shipped template declares no highlight chip at all"
 
@@ -180,7 +184,13 @@ def test_every_chip_is_a_stretching_image_beneath_its_cell(key):
             "{http://www.w3.org/1999/xlink}href"
         ), f"{chip_id} ships an href; an unhighlighted cell must draw nothing"
 
-        stem = chip_id.rsplit("_background", 1)[0].rsplit("_fastest_lap", 1)[0]
+        stem = chip_id
+        for suffix in _CHIP_SUFFIXES:
+            stem = stem.rsplit(suffix, 1)[0]
+        # A qualifying mark hangs off the qualifying session but is drawn over the race cell,
+        # so it is that cell whose text it must precede and whose anchor it must span.
+        if chip_id.endswith("_qualifying_mark"):
+            stem = f"{stem}_race"
         siblings = list(chip.getparent())
         cell = next(
             (
@@ -203,13 +213,52 @@ def test_every_chip_is_a_stretching_image_beneath_its_cell(key):
 
 
 @pytest.mark.parametrize("key", [DRIVERS, CONSTRUCTORS])
-def test_only_the_race_cells_carry_chips(key):
-    """The raised qualifying figure has no fixed position, so nothing can sit behind it."""
+def test_every_race_cell_carries_three_slots_sharing_one_box(key):
+    """A plate, a fastest lap and a qualifying mark, all in the same box.
+
+    They share a box because **where** a mark sits is the artwork's business: the packaged
+    fastest lap draws into the top-left of its slot and the qualifying mark into the top-right,
+    and a league redrawing either moves it without touching a template. Giving each a
+    corner-sized slot would freeze that arrangement into thousands of elements instead.
+    """
+    root = _root(key)
+    boxes: dict[str, set[tuple[float, float, float, float]]] = {}
+    for node in root.iter():
+        node_id = node.get("id") or ""
+        if not node_id.startswith("row_") or not node_id.endswith(_CHIP_SUFFIXES):
+            continue
+        stem = node_id
+        for suffix in _CHIP_SUFFIXES:
+            stem = stem.rsplit(suffix, 1)[0]
+        cell = f"{stem}_race" if node_id.endswith("_qualifying_mark") else stem
+        boxes.setdefault(cell, set()).add(
+            tuple(float(node.get(a)) for a in ("x", "y", "width", "height"))
+        )
+
+    assert boxes, "the shipped template declares no chip slot at all"
+    for cell, found in sorted(boxes.items()):
+        assert len(found) == 1, f"{cell}: its three slots do not share one box — {found}"
+
+    counts = {cell: 0 for cell in boxes}
+    for node in root.iter():
+        node_id = node.get("id") or ""
+        if node_id.startswith("row_") and node_id.endswith(_CHIP_SUFFIXES):
+            stem = node_id
+            for suffix in _CHIP_SUFFIXES:
+                stem = stem.rsplit(suffix, 1)[0]
+            counts[f"{stem}_race" if node_id.endswith("_qualifying_mark") else stem] += 1
+    assert set(counts.values()) == {3}, "a race cell does not carry exactly three slots"
+
+
+@pytest.mark.parametrize("key", [DRIVERS, CONSTRUCTORS])
+def test_no_slot_is_declared_for_a_qualifying_cell_of_its_own(key):
+    """The mark belongs to the race cell's box; there is no separate qualifying cell."""
     root = _root(key)
     for node in root.iter():
         node_id = node.get("id") or ""
-        if node_id.endswith(("_background", "_fastest_lap")) and node_id.startswith("row_"):
-            assert "_qualifying_" not in node_id, node_id
+        assert not node_id.endswith(
+            ("_sprint_qualifying_background", "_feature_qualifying_background")
+        ), f"{node_id} uses the withdrawn name"
 
 
 def test_the_two_grids_may_differ_in_chip_shape():

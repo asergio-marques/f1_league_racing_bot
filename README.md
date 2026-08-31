@@ -1544,13 +1544,27 @@ These sit under `/images template` rather than `/images config` because Discord 
 
 > **Optional: highlight the podiums, points finishes and fastest laps on a standings grid.** Both standings templates mark out the race cells of their season grid, so a league reading the picture sees where the season's results actually fell instead of a wall of identical numbers. The shipped files do this already.
 >
-> **The marks are artwork, not colours.** Each is an SVG in `resources/league/standings-highlights` — `p1.svg`, `p2.svg`, `p3.svg`, `points.svg` and `fastest_lap.svg` — resolved exactly as team badges and flags are. Drop your own file in under one of those names and it is drawn; leave the folder empty and the bot's own marks are used. Gradients are fine, and so is any shape you like: the packaged `fastest_lap.svg` is a small triangle in the top-right corner rather than a wash over the cell, which is only possible because it is a file.
+> **The marks are artwork, not colours.** Each is an SVG in `resources/league/standings-highlights`, resolved exactly as team badges and flags are. Drop your own file in under one of these names and it is drawn; leave the folder empty and the bot's own marks are used.
+>
+> | File | Drawn for |
+> |---|---|
+> | `p1.svg` `p2.svg` `p3.svg` | A podium finish in the race — a full plate |
+> | `points.svg` | Any other points-scoring race finish — a light tint |
+> | `fastest_lap.svg` | The fastest lap — a triangle in the **top-left** corner |
+> | `qualifying_p1.svg` `qualifying_p2.svg` `qualifying_p3.svg` | A podium in **qualifying** — a triangle in the **top-right** |
+> | `qualifying_points.svg` | Any other points-scoring qualifying position |
+>
+> Gradients are fine, and so is any shape you like. The packaged qualifying marks are corner triangles that fade inward, each one **a step darker than the plate of its own placing**. That is deliberate two ways: a driver who qualified first *and* won sees the mark merge gently into the plate, while the same gold mark over a *bronze* plate stays plainly gold. If you redraw them, separate a mark from its plate by lightness rather than by hue alone — at 13 px the eye reads the edge from lightness, and a gold mark that differs from bronze only in hue looks like a stain.
 >
 > **The marks stretch to the cell.** This is the one class with no fixed aspect ratio — a cell is a different shape on the drivers grid than on the constructors one, and no single ratio serves both — so draw artwork that survives being squashed a little. A rectangle or a corner shape does; a circle becomes an ellipse.
 >
-> A cell can carry **two** marks at once: the podium or points chip, and the fastest lap over it. That is why the fastest-lap mark should leave most of the cell alone.
+> A cell can carry **three** marks at once — the race plate, the fastest lap in one corner and the qualifying mark in the other. That is a win from pole with the fastest lap, and it is why the two corner marks should each leave most of the cell alone.
 >
-> **The numbers on top are still the template's.** A file cannot colour text drawn over it, so the ink stays in the stylesheet as `.highlight_p1_text` and so on, with `.highlight_p1_sup_text` for the small qualifying figure raised beside the result — which sits on the mark and would otherwise keep its grey. Name no rule and the cell keeps the colour it already has.
+> **The qualifying mark is drawn on the race cell**, in the corner nearest the small raised number it stands for. The raised number shares one run of text with the race result and has no fixed position of its own, so nothing can be drawn *behind* it — a corner of the cell is what can be, and that is what made qualifying markable at all.
+>
+> **The numbers on top are still the template's.** A file cannot colour text drawn over it, so the ink stays in the stylesheet as `.highlight_p1_text` and so on, with `.highlight_p1_sup_text` for the small qualifying figure raised beside the result — which sits on the plate and would otherwise keep its grey. Name no rule and the cell keeps the colour it already has.
+>
+> **Only the plate sets the ink.** Neither corner mark does — they sit in a corner while the numbers sit inboard over the plate, so the plate is the only thing you read them against. Naming a `.highlight_fastest_lap_text` rule has no effect; a fastest lap on a gold plate still takes the gold plate's ink.
 >
 > **To turn one mark off, draw nothing.** Deleting the file will not do it: this is one of the sets the bot named rather than you, so an absent file simply means the bot's own is drawn — the same rule that lets a fresh install work. Supply a **fully transparent SVG** under that name instead, and that highlight stops appearing while the others carry on:
 >
@@ -1564,7 +1578,7 @@ These sit under `/images template` rather than `/images config` because Discord 
 >
 > **What counts as a points finish is whatever your points configuration pays for**, so a league that scores fifteen places marks fifteen cells and one that scores ten marks ten. The fastest lap is marked only where your configuration actually awards a fastest-lap bonus for that session *and* the driver finished inside any position limit you set — a league that awards none marks nothing, which is correct rather than broken. A driver disqualified from a win is drawn `DSQ` and gets no gold.
 >
-> **Only the two race cells are marked.** The small qualifying number raised beside a result shares one run of text with it and so has nowhere fixed to put a mark behind; it is recoloured to stay readable and that colour says nothing about where the driver qualified.
+> **What counts as a points qualifying position is, again, your configuration.** A league that awards no qualifying points sees no qualifying mark below the podium, and one that awards none at all sees none whatever — the same rule as the race, applied to the session before it.
 
 > **The standings grids are 1728 px wide.** They were 1200 and 1128, and the columns were too narrow for the widest thing a cell can hold — a `DSQ` with another outcome raised beside it — which overran into the next round with nothing said about it. Each session column is now 54 px. If you have re-laid a standings template of your own, give your columns the same room; nothing checks it for you, because SVG text simply overruns and reports nothing.
 
@@ -1601,7 +1615,7 @@ The subcommands in the table above exist for the league that wants its files som
 
 **What the bot named, the bot supplies.** Some of the values a picture draws are not yours at all: you never chose them and cannot be incomplete against them. Where your folder has no file for one, the bot draws **its own correct image** for that value rather than a generic placeholder — the one respect in which the packaged directory is searched under your value's own name rather than only for a fallback. Two kinds of value qualify:
 
-- **Whole classes.** `resources/defaults/markers/` carries all three directions a standing can move — `gained`, `lost`, `unchanged`; `resources/defaults/weather/` carries all eight the bot can ask for — `sunny`, `mixed` and `rain` for a session's type, and `clear`, `light_cloud`, `overcast`, `wet` and `very_wet` for a concrete weather; and `resources/defaults/standings-highlights/` carries all five marks a result cell can earn — `p1`, `p2`, `p3`, `points` and `fastest_lap`. Every marker, every forecast and every highlight therefore draws a correct picture out of the box, whatever is or is not in your folder.
+- **Whole classes.** `resources/defaults/markers/` carries all three directions a standing can move — `gained`, `lost`, `unchanged`; `resources/defaults/weather/` carries all eight the bot can ask for — `sunny`, `mixed` and `rain` for a session's type, and `clear`, `light_cloud`, `overcast`, `wet` and `very_wet` for a concrete weather; and `resources/defaults/standings-highlights/` carries all nine marks a result cell can earn — `p1`, `p2`, `p3`, `points` and `fastest_lap` for the race, and `qualifying_p1` through `qualifying_points` for where the driver qualified. Every marker, every forecast and every highlight therefore draws a correct picture out of the box, whatever is or is not in your folder.
 - **Two reserved names inside classes that are otherwise yours.** `mystery`, for a round whose circuit is concealed, and `other`, for a driver who chose no nationality in particular. Your flag folder is full of countries you chose; these two are not among them.
 
 Your own file always wins where you supply one — this only ever fills a gap. Country flags, circuit maps, team badges, portraits and tyres are **not** covered by any of this: they are yours, and a missing one draws the placeholder. Replace the reserved artwork freely; keep the filenames. See [resources/README.md](resources/README.md) for the naming rule and the aspect each class expects.

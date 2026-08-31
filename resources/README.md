@@ -77,9 +77,10 @@ classes need not match each other, and flags and maps deliberately do not.
 - the eight `defaults/weather/` icons — `sunny.svg`, `mixed.svg` and `rain.svg` for the type of
   weather drawn for a session, and `clear.svg`, `light_cloud.svg`, `overcast.svg`,
   `wet.svg` and `very_wet.svg` for a concrete weather within one;
-- the five `defaults/standings-highlights/` marks — `p1.svg`, `p2.svg`, `p3.svg` and
-  `points.svg` for the chip drawn beneath a result cell, and `fastest_lap.svg` for the mark
-  drawn over it.
+- the nine `defaults/standings-highlights/` marks — `p1.svg`, `p2.svg`, `p3.svg` and
+  `points.svg` for the plate drawn beneath a race result, `fastest_lap.svg` for the mark drawn
+  in its top-left corner, and `qualifying_p1.svg` through `qualifying_points.svg` for the mark
+  drawn in its top-right, which stands for where the driver qualified.
 
 **Not shipped:** the assets for any particular circuit, team, driver, country or tyre.
 Those are a league's own, and the module exists to let each league bring its own design

@@ -100,18 +100,18 @@ TEMPLATES_SPEC = {
     "standings_constructors_template.svg": {"chip_height": 18, "old_right": 1080},
 }
 
-#: Only the two race cells are given chips. The raised qualifying figure shares one auto-laid
-#: text chunk with the race result beside it, so it has no position of its own for a chip to
-#: sit behind. The catalogue still admits the two qualifying fields for a template that gives
-#: qualifying a column of its own.
-RACE_SESSIONS = ("sprint_race", "feature_race")
+#: Every slot hangs off a race cell, the qualifying mark included. The raised qualifying figure
+#: shares one auto-laid text chunk with the race result and has no position of its own, so its
+#: mark is drawn in a corner of the race cell's box rather than behind the figure.
 
 CELL_RE = re.compile(
     r'^(?P<indent>\s*)<text class="cell" x="(?P<x>[-\d.]+)" y="(?P<y>[-\d.]+)"'
     r'(?P<rest>[^>]*)><tspan id="(?P<id>[^"]+)_(?P<session>sprint|feature)_'
     r'(?P<kind>race|qualifying)_result"'
 )
-CHIP_RE = re.compile(r'^\s*<(?:rect|image) id="[^"]*_(?:background|fastest_lap)"')
+CHIP_RE = re.compile(
+    r'^\s*<(?:rect|image) id="[^"]*_(?:background|fastest_lap|qualifying_mark)"'
+)
 
 
 def _num(value: float) -> str:
@@ -119,7 +119,16 @@ def _num(value: float) -> str:
 
 
 def chips_for(stem: str, session: str, centre: float, top: float, height: int) -> list[str]:
-    """The two slots standing beneath one race cell, background first.
+    """The three slots standing beneath one race cell, all sharing one box.
+
+    Sharing the box is deliberate: where a mark sits is the **artwork's** business, not the
+    template's. The plate fills its box, the fastest lap draws in the top-left corner of its
+    own, and the qualifying mark in the top-right of its own. Giving each a corner-sized slot
+    instead would freeze that arrangement into 3,600 elements a league could not restyle.
+
+    The qualifying mark hangs off the *qualifying* session's stem though it is drawn over the
+    race cell, because it marks the qualifying result. It is the corner nearest the raised
+    qualifying figure, which is why that corner and not another.
 
     Both are authored with **no href**. An ``<image>`` carrying none draws nothing and is
     passed over by the unreachable-link check, so a cell that earns no highlight costs the
@@ -134,10 +143,14 @@ def chips_for(stem: str, session: str, centre: float, top: float, height: int) -
         f'x="{left}" y="{_num(top)}" width="{CHIP_WIDTH}" height="{height}" '
         f'preserveAspectRatio="none"'
     )
+    family = session.rsplit("_", 1)[0]
     return [
-        f'<image id="{stem}_{session}_{layer}" '
-        f'inkscape:label="{stem}_{session}_{layer}" {box}/>'
-        for layer in ("background", "fastest_lap")
+        f'<image id="{name}" inkscape:label="{name}" {box}/>'
+        for name in (
+            f"{stem}_{session}_background",
+            f"{stem}_{session}_fastest_lap",
+            f"{stem}_{family}_qualifying_mark",
+        )
     ]
 
 
@@ -224,7 +237,7 @@ def rewrite(path: pathlib.Path) -> tuple[int, int]:
                 # it belongs to, and a qualifying cell of the same round is a different id.
                 for chip in chips_for(stem, f"{session}_{kind}", centre, top, height)
             )
-            chips += 2
+            chips += 3
 
         out.append(
             re.sub(r'(<text class="cell" )x="[-\d.]+"', rf'\g<1>x="{_num(centre)}"', line, count=1)
