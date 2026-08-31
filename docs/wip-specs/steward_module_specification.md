@@ -186,7 +186,7 @@
   - By default, this value will be set to 24.
   - Input value must be equal or greater than 1.
 - <NEW COMMAND> A "steward conduct-outcome add" command will be made available to league managers, which shall open a modal window with the following input fields:
-  - ID - Mandatory - Unique ID for the conduct outcome. Maximum of 10 characters.
+  - ID - Mandatory - Unique ID for the conduct outcome. ap with that of other outcomes. Maximum of 12 characters.
   - Brief - Mandatory - Unique short description of the conduct outcome. Maximum of 50 characters.
   - Description - Optional - Long form description of the conduct outcome. Maximum of 250 characters.
   - Discipline points - Optional - Integer input only. Number of warning points added to the driver license of the offending driver.
@@ -215,19 +215,20 @@
   - Season ban - 0
 
 ### Automated penalizations
-- <NEW COMMAND> A "steward auto-pen add" command will be made available to league managers, which shall have no inputs. Upon usage of this command, a modal dialog will open, with the following fields:
+- <NEW COMMAND> A "steward auto-rule add" command will be made available to league managers, which shall have no inputs. Upon usage of this command, a modal dialog will open, with the following fields:
   - Type - Mandatory - Type of criteria that shall be met. Can be single round, multi round, or accumulatory.
-  - ID - String - Unique string ID for this rule. Must not overlap with that of other auto rules.
+  - ID - String - Unique ID for this rule. Must not overlap with that of other auto rules. Maximum of 12 characters
   - Type of infractions committed - Mandatory - Dropdown - Type of penalty that must be given out to a driver in the quantity above for this rule to be triggered.
   - Number of infractions committed - Mandatory - Integer - Quantity of penalties of a certain type that must be given out to a driver in the quantity above for this rule to be triggered.
     - This value must not be 0.
   - Penalty given - Mandatory - Dropdown - Type of penalty to be bestowed upon a driver when this rule is triggered.
     - This value must not be the same as defined in "Type of infractions committed"
-  - Number of penalties - Mandatory - Integer - Quantity of penalties of the type defined in "penalty given" to be bestowed upon a driver when this rule is triggered.
+  - Number of penalties given - Mandatory - Integer - Quantity of penalties of the type defined in "penalty given" to be bestowed upon a driver when this rule is triggered.
     - This value must not be 0.
-- <NEW COMMAND> A "steward auto-pen modify" command will be made available to league managers, which shall have as input the ID of an auto-rule... <tbd>
-- <NEW COMMAND> A "steward auto-pen remove" command will be made available to league managers, which shall have as input the ID of an auto-rule... <tbd>
-- <NEW COMMAND> A "steward auto-pen list" command will be made available to league managers, which shall have no inputs... <tbd>
+- Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule will be added to the list and made active immediately. 
+- <NEW COMMAND> A "steward auto-rule modify" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog similar to that of "steward auto-rule add" will appear, with the data from the auto-rule of the input ID preloaded and modifiable. The ID cannot be modified, hence that field shall be greyed-out.
+- <NEW COMMAND> A "steward auto-rule remove" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog will show up for confirmation of deletion of the auto-rule. Once confirmed, the auto-rule will no longer be active and enforceable, and it will be deleted from the current list.
+- <NEW COMMAND> A "steward auto-rule list" command will be made available to league managers and stewards, which shall have no inputs. In reply, the bot will post a transient (temporary, seen only to the command user) list with all the auto-rules currently available, as a plain text table with the following columns in order: ID, Type of infractions committed, No. of infractions committed, penalty given, number of penalties given.
 
 ## Stewarding cycle
 - All inputs of the stewarding cycle must be auditable via the steward log channel. Attempts to file a report (and its data), driver addition/removal to tickets, etc etc etc. All logs must include the display name (and user ID) of the input.
@@ -422,6 +423,7 @@
 
 ### Cycle close
 - <NEW COMMAND> steward retract-verdict - lets effective head steward revise the justification in a verdict
+- Only when all tickets for this round reach this stage, are warning points and penalty points applied to a driver's license.
 
 ## Conduct cycle
 ### Trigger
