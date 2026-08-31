@@ -625,17 +625,9 @@ async def build_calendar_preview(bot, context: PreviewContext):
         time_zone=getattr(config, "time_zone", None),
     )
 
-    # The calendar names its two directories separately rather than taking the map every
-    # other type takes; both come from the league's configuration all the same.
-    track_directory = context.asset_directories.get("track")
-    flag_directory = context.asset_directories.get("flag")
-
     def _spec(root):
         return build_fill_spec(
-            drawing,
-            root,
-            track_directory=track_directory,
-            flag_directory=flag_directory,
+            drawing, root, asset_directories=context.asset_directories
         )
 
     return [("Calendar", "calendar_template", _spec)]
@@ -891,9 +883,17 @@ async def build_standings_preview(bot, context: PreviewContext):
     actually see — the case a fabricated calendar could never put a template through.
     Session results for the rounds already run are fabricated over the division's own
     drivers, through the same builders the results preview calls.
+
+    The **gap to the leader is drawn** here and the movement is not, which is deliberate
+    and not an oversight of one or the other. A preview stands against no reference round,
+    so no entry has a previous position to have moved from; the gap is arithmetic over the
+    classification being drawn alone and is therefore always available. Passing no ``gaps``
+    once emptied the column on every row of both championships, so a manager judging the
+    ``PTS · GAP`` column of their template saw only half of what a posting would put there.
     """
     from types import SimpleNamespace
 
+    from services import standings_service
     from services.image_preview_data import fabricate_standings_round_results
     from services.image_standings_service import (
         CONSTRUCTORS_TEMPLATE_KEY,
@@ -981,6 +981,16 @@ async def build_standings_preview(bot, context: PreviewContext):
         if team.name in role_of
     ]
 
+    # The gap needs no reference round, so a preview draws it in full where it draws no
+    # movement at all (see `standings_service.Movement`). Derived by the same call the
+    # posting path makes, never by a subtraction written a second time here.
+    driver_gaps = standings_service.derive_gaps(
+        [(x.driver_user_id, x.standing_position, x.total_points) for x in driver_snapshots]
+    )
+    team_gaps = standings_service.derive_gaps(
+        [(x.team_role_id, x.standing_position, x.total_points) for x in team_snapshots]
+    )
+
     shared = dict(
         division_name=context.division_name,
         round_number=round_obj.round_number,
@@ -999,6 +1009,7 @@ async def build_standings_preview(bot, context: PreviewContext):
         display_names=names,
         team_names={d.key: d.team_name for d in drivers},
         movements={d.key: None for d in drivers},
+        gaps=driver_gaps,
         nationalities=flags,
         **shared,
     )
@@ -1008,6 +1019,7 @@ async def build_standings_preview(bot, context: PreviewContext):
         display_names={role_of[t.name]: t.name for t in racing_teams if t.name in role_of},
         team_names={role_of[t.name]: t.name for t in racing_teams if t.name in role_of},
         movements={role_of[t.name]: None for t in racing_teams if t.name in role_of},
+        gaps=team_gaps,
         team_seat_assignments=team_seat_assignments,
         team_seat_counts=team_seat_counts,
         driver_display_names=names,

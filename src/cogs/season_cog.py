@@ -258,7 +258,140 @@ class SeasonCog(commands.Cog):
             return []
         return problems
 
-    async def _post_review_lineup_image(self, interaction, division) -> str:
+    #: How many bytes of pre-rendered graphics a review may hold at once.
+    #:
+    #: The bot runs on a Raspberry Pi 4 whose ``/tmp`` is a **tmpfs**, so a picture waiting
+    #: to be posted costs RAM and not disk. A review draws two graphics per division and
+    #: `MAX_ATTACHMENT_BYTES` lets a single one reach 25 MB, so an unbounded pre-render on
+    #: a large league could take the host's memory rather than merely its time. Past this
+    #: figure the remaining divisions fall back to drawing at the moment they are posted,
+    #: which is what the review did in full before pre-rendering existed — so the guard
+    #: costs speed and never correctness.
+    #:
+    #: 64 MB holds roughly twenty typical graphics, which covers a ten-division league
+    #: outright, while leaving the tmpfs room for everything else the host puts there.
+    REVIEW_PRERENDER_BUDGET_BYTES = 64 * 1024 * 1024
+
+    async def _prerender_review_images(
+        self, interaction, divisions, rounds_by_division, season_number
+    ) -> dict:
+        """Draw every graphic `/season review` will post, before it posts any of them.
+
+        Returns ``{(division id, "calendar" | "lineup"): outcome}``. A key is absent where
+        the aspect is off, where the render failed, or where the budget above stopped the
+        pre-render — and an absent key simply means the posting helper draws it itself, so
+        a caller never has to distinguish the three.
+
+        **The instant deletion is not what it appears to be.** A rendered file is deleted
+        by ``discard_render``, which the *caller* invokes once its send has returned;
+        nothing sweeps the directory in the background and each render already gets a
+        directory of its own. Holding a batch is therefore a matter of not calling it yet,
+        which is exactly what `ImageCog._run_preview` already does for `/images test`.
+
+        Two things are bought by it. A review of five divisions posted its ten graphics
+        roughly nine seconds apart, because each was drawn inside the posting loop; now the
+        blocks go out at message speed. And ``image_fault`` — which withholds the approve
+        button — is settled before the first division block is sent rather than part-way
+        through, so a manager is not reading a review that is still deciding whether to
+        offer them the button at the end of it.
+
+        Faults are swallowed here on purpose. A pre-render that raises leaves the key
+        absent and the posting helper draws the graphic again in its own ``try``, where the
+        three-state contract and the message to the manager already live. Reporting a fault
+        twice, from two places, would be the only thing this could add.
+        """
+        from services.calendar_post_service import (
+            image_calendar_wanted,
+            tracks_by_name,
+        )
+        from services.calendar_post_service import render_for_command as render_calendar
+        from services.image_lineup_post import lineup_enabled
+        from services.image_lineup_post import render_for_command as render_lineup
+
+        prepared: dict = {}
+        server_id = interaction.guild_id
+        held = 0
+
+        try:
+            draws_calendar = await image_calendar_wanted(self.bot, server_id)
+            draws_lineup = await lineup_enabled(self.bot, server_id)
+        except Exception as exc:  # noqa: BLE001 — never break a review on this
+            log.error("season review: could not read the image gates: %s", exc)
+            return prepared
+
+        if not (draws_calendar or draws_lineup):
+            return prepared
+
+        tracks = await tracks_by_name(self.bot.db_path) if draws_calendar else {}
+
+        for division in divisions:
+            if not division.name:
+                continue
+            if held >= self.REVIEW_PRERENDER_BUDGET_BYTES:
+                break
+
+            if draws_calendar:
+                held += self._hold(
+                    prepared,
+                    (division.id, "calendar"),
+                    await self._safe_render(
+                        render_calendar,
+                        self.bot,
+                        server_id,
+                        division,
+                        rounds_by_division.get(division.id, []),
+                        tracks,
+                        season_number=season_number,
+                    ),
+                )
+            if draws_lineup and held < self.REVIEW_PRERENDER_BUDGET_BYTES:
+                held += self._hold(
+                    prepared,
+                    (division.id, "lineup"),
+                    await self._safe_render(
+                        render_lineup, self.bot, interaction.guild, division.id
+                    ),
+                )
+
+        return prepared
+
+    async def _safe_render(self, render, *args, **kwargs):
+        """Call one render, returning None rather than letting it break the review."""
+        try:
+            return await render(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001 — the posting helper will draw it again
+            log.error("season review: pre-render failed: %s", exc)
+            return None
+
+    @staticmethod
+    def _hold(prepared: dict, key, outcome) -> int:
+        """Keep *outcome* if it drew, and report what holding it costs in bytes."""
+        path = getattr(outcome, "png_path", None) if outcome is not None else None
+        if path is None:
+            return 0
+        prepared[key] = outcome
+        try:
+            return path.stat().st_size
+        except OSError:
+            # The file is there — the render returned it — so a stat that fails says
+            # nothing useful about the budget. Charge nothing rather than guess.
+            return 0
+
+    @staticmethod
+    def _discard_prepared_review_images(prepared: dict) -> None:
+        """Delete every graphic still held, whatever ended the review.
+
+        The posting loop pops each key as it posts it, so what remains here is what was
+        drawn and never sent — a division the loop never reached, or all of them where it
+        raised. On a tmpfs that is memory, and nothing else will ever look at these files.
+        """
+        from services.image_render_service import discard_render
+
+        for outcome in prepared.values():
+            discard_render(getattr(outcome, "png_path", None))
+        prepared.clear()
+
+    async def _post_review_lineup_image(self, interaction, division, *, prepared=None) -> str:
         """Post the lineup graphic for `/season review`, **in place of** the text lineup.
 
         Returns one of :data:`REVIEW_IMAGE_DREW`, :data:`REVIEW_IMAGE_TEXT` or
@@ -267,6 +400,11 @@ class SeasonCog(commands.Cog):
 
         These images are command output and not the lineup of record (038 FR-028): no
         ``lineup_message_id`` is written and the lineup channel is untouched.
+
+        *prepared* is the outcome :meth:`_prerender_review_images` already produced for
+        this division. Where it is given the render is not repeated; where it is None the
+        graphic is drawn here, which is both the budget-exceeded fallback and what every
+        other caller of this method gets.
         """
         try:
             import discord as _discord
@@ -277,9 +415,11 @@ class SeasonCog(commands.Cog):
             if not await lineup_enabled(self.bot, interaction.guild_id):
                 return REVIEW_IMAGE_TEXT
 
-            outcome = await render_for_command(
-                self.bot, interaction.guild, division.id
-            )
+            outcome = prepared
+            if outcome is None:
+                outcome = await render_for_command(
+                    self.bot, interaction.guild, division.id
+                )
             if outcome.png_path is None:
                 # A commanded render that would not draw. The manager is told what is at
                 # fault; the textual lineup still stands in so the review is complete.
@@ -303,7 +443,7 @@ class SeasonCog(commands.Cog):
             return REVIEW_IMAGE_FAULT
 
     async def _post_review_calendar_image(
-        self, interaction, division, rounds, season_number
+        self, interaction, division, rounds, season_number, *, prepared=None
     ) -> str:
         """Post the calendar graphic for `/season review`, **in place of** the text.
 
@@ -311,6 +451,9 @@ class SeasonCog(commands.Cog):
         states. Renders through ``calendar_post_service.render_for_command``, which posts
         to no channel and writes no ``calendar_message_id`` — the calendar of record is
         `/season approve`'s to place, not the review's.
+
+        *prepared* carries a graphic :meth:`_prerender_review_images` already drew, on the
+        same terms as the lineup's.
         """
         try:
             import discord as _discord
@@ -325,15 +468,17 @@ class SeasonCog(commands.Cog):
             if not await image_calendar_wanted(self.bot, interaction.guild_id):
                 return REVIEW_IMAGE_TEXT
 
-            tracks = await tracks_by_name(self.bot.db_path)
-            outcome = await render_for_command(
-                self.bot,
-                interaction.guild_id,
-                division,
-                rounds,
-                tracks,
-                season_number=season_number,
-            )
+            outcome = prepared
+            if outcome is None:
+                tracks = await tracks_by_name(self.bot.db_path)
+                outcome = await render_for_command(
+                    self.bot,
+                    interaction.guild_id,
+                    division,
+                    rounds,
+                    tracks,
+                    season_number=season_number,
+                )
             if outcome.png_path is None:
                 if outcome.message:
                     await interaction.followup.send(outcome.message, ephemeral=True)
@@ -1114,140 +1259,165 @@ class SeasonCog(commands.Cog):
 
             # ── Per-division blocks (4 messages each) ────────────────
             db_divisions = await self.bot.season_service.get_divisions_with_results_config(cfg.season_id)
-            for div in db_divisions:
-                if not div.name:
-                    continue
-                tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
-
-                # ── Message 0: division banner ─────────────────────────
-                sep = "\u2500" * 35
-                await interaction.followup.send(
-                    f"{sep}\n# {div.name.upper()}{tier_tag}\n{sep}", ephemeral=False
-                )
-
-                # ── Message 1: config (role + channels) ──────────────
-                cal_chan = f"<#{div.calendar_channel_id}>" if div.calendar_channel_id else "*(not set)*"
-                lineup_chan = f"<#{div.lineup_channel_id}>" if div.lineup_channel_id else "*(not set)*"
-                results_chan = f"<#{div.results_channel_id}>" if div.results_channel_id else "*(none)*"
-                standings_chan = f"<#{div.standings_channel_id}>" if div.standings_channel_id else "*(none)*"
-                verdicts_chan = f"<#{div.penalty_channel_id}>" if div.penalty_channel_id else "*(not configured)*"
-                weather_chan = f"<#{div.forecast_channel_id}>" if div.forecast_channel_id else "*(none)*"
-                cfg_lines: list[str] = [
-                    "\U0001f4c2 **Configuration**",
-                    f"  Role: <@&{div.mention_role_id}>",
-                    f"  Calendar channel: {cal_chan}",
-                    f"  Lineup channel: {lineup_chan}",
-                    f"  Results channel: {results_chan}",
-                    f"  Standings channel: {standings_chan}",
-                    f"  Verdicts channel: {verdicts_chan}",
-                ]
-                if attendance_on:
-                    att_div_cfg = await self.bot.attendance_service.get_division_config(div.id)  # type: ignore[attr-defined]
-                    rsvp_chan = (
-                        f"<#{att_div_cfg.rsvp_channel_id}>"
-                        if att_div_cfg and att_div_cfg.rsvp_channel_id
-                        else "*(not set)*"
+            # Every graphic first, then the whole review at message speed (see
+            # `_prerender_review_images`). The rounds are read once here and handed to
+            # both, rather than the loop querying for them a second time.
+            rounds_by_division = {}
+            for _div in db_divisions:
+                if _div.name:
+                    rounds_by_division[_div.id] = (
+                        await self.bot.season_service.get_division_rounds(_div.id)
                     )
-                    att_chan = (
-                        f"<#{att_div_cfg.attendance_channel_id}>"
-                        if att_div_cfg and att_div_cfg.attendance_channel_id
-                        else "*(not set)*"
-                    )
-                    cfg_lines.append(f"  RSVP channel: {rsvp_chan}")
-                    cfg_lines.append(f"  Attendance channel: {att_chan}")
-                cfg_lines.append(f"  Weather channel: {weather_chan}")
-                await interaction.followup.send("\n".join(cfg_lines), ephemeral=False)
+            prepared = await self._prerender_review_images(
+                interaction, db_divisions, rounds_by_division, cfg.season_number or None
+            )
 
-                # ── Message 2: calendar — the graphic, or the text ────
-                #
-                # Whichever form the league actually conveys. The review is what a
-                # manager judges the season by, so showing them text a league will
-                # never see would be showing them the wrong thing.
-                rounds_db = await self.bot.season_service.get_division_rounds(div.id)
-                cal_state = await self._post_review_calendar_image(
-                    interaction, div, rounds_db, cfg.season_number or None
-                )
-                if cal_state == REVIEW_IMAGE_FAULT:
-                    image_fault = True
-                if cal_state != REVIEW_IMAGE_DREW:
-                    cal_lines: list[str] = ["\U0001f4c5 **Calendar**"]
-                    for r in rounds_db:
-                        cal_lines.append(
-                            f"  Round {r.round_number}: {r.format.value} "
-                            f"@ {r.track_name or 'Mystery'} \u2014 {discord_ts(r.scheduled_at)}"
-                        )
-                    await interaction.followup.send("\n".join(cal_lines), ephemeral=False)
+            try:
+                for div in db_divisions:
+                    if not div.name:
+                        continue
+                    tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
 
-                # ── Message 3: lineup — the graphic, or the text ──────
-                #
-                # As with the calendar above: whichever form the league conveys. The
-                # roleless-team warning is a review *finding* the graphic cannot show,
-                # so it is posted either way.
-                teams = await self.bot.team_service.get_division_teams(div.id)
-                missing_roles = (
-                    [t["name"] for t in teams if t["name"] in roleless] if teams else []
-                )
-                role_warning = (
-                    "  \u26a0\ufe0f **No role assigned:** "
-                    + ", ".join(f'"{n}"' for n in missing_roles)
-                    + " \u2014 result submission will reject drivers in these teams."
-                    if missing_roles
-                    else None
-                )
-
-                lineup_state = await self._post_review_lineup_image(interaction, div)
-                if lineup_state == REVIEW_IMAGE_FAULT:
-                    image_fault = True
-
-                if lineup_state == REVIEW_IMAGE_DREW:
-                    if role_warning is not None:
-                        await interaction.followup.send(
-                            role_warning.strip(), ephemeral=False
-                        )
-                else:
-                    lineup_lines: list[str] = ["\U0001f3ce\ufe0f **Lineup**"]
-                    if teams:
-                        lineup_lines.append(
-                            "  **Teams:** " + ", ".join(t["name"] for t in teams)
-                        )
-                        if role_warning is not None:
-                            lineup_lines.append(role_warning)
-                    async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
-                        _cur = await _db.execute(
-                            """
-                            SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name,
-                                   ti.name AS team_name, ti.is_reserve
-                            FROM driver_season_assignments dsa
-                            JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-                            JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                            JOIN team_instances ti ON ti.id = ts.team_instance_id
-                            WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                            ORDER BY ti.name, dp.discord_user_id
-                            """,
-                            (div.id,),
-                        )
-                        assignment_rows = await _cur.fetchall()
-                    if assignment_rows:
-                        regular_teams: dict[str, list[str]] = {}
-                        reserve_teams: dict[str, list[str]] = {}
-                        for _row in assignment_rows:
-                            if _row["is_test_driver"] and _row["test_display_name"]:
-                                label = f"<@{_row['discord_user_id']}> ({_row['test_display_name']})"
-                            else:
-                                label = f"<@{_row['discord_user_id']}>"
-                            target = reserve_teams if _row["is_reserve"] else regular_teams
-                            target.setdefault(_row["team_name"], []).append(label)
-                        for t_name, mentions in regular_teams.items():
-                            lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
-                        if reserve_teams:
-                            lineup_lines.append("  ---")
-                            for t_name, mentions in reserve_teams.items():
-                                lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
-                    else:
-                        lineup_lines.append("  *(no drivers assigned)*")
+                    # ── Message 0: division banner ─────────────────────────
+                    sep = "\u2500" * 35
                     await interaction.followup.send(
-                        "\n".join(lineup_lines), ephemeral=False
+                        f"{sep}\n# {div.name.upper()}{tier_tag}\n{sep}", ephemeral=False
                     )
+
+                    # ── Message 1: config (role + channels) ──────────────
+                    cal_chan = f"<#{div.calendar_channel_id}>" if div.calendar_channel_id else "*(not set)*"
+                    lineup_chan = f"<#{div.lineup_channel_id}>" if div.lineup_channel_id else "*(not set)*"
+                    results_chan = f"<#{div.results_channel_id}>" if div.results_channel_id else "*(none)*"
+                    standings_chan = f"<#{div.standings_channel_id}>" if div.standings_channel_id else "*(none)*"
+                    verdicts_chan = f"<#{div.penalty_channel_id}>" if div.penalty_channel_id else "*(not configured)*"
+                    weather_chan = f"<#{div.forecast_channel_id}>" if div.forecast_channel_id else "*(none)*"
+                    cfg_lines: list[str] = [
+                        "\U0001f4c2 **Configuration**",
+                        f"  Role: <@&{div.mention_role_id}>",
+                        f"  Calendar channel: {cal_chan}",
+                        f"  Lineup channel: {lineup_chan}",
+                        f"  Results channel: {results_chan}",
+                        f"  Standings channel: {standings_chan}",
+                        f"  Verdicts channel: {verdicts_chan}",
+                    ]
+                    if attendance_on:
+                        att_div_cfg = await self.bot.attendance_service.get_division_config(div.id)  # type: ignore[attr-defined]
+                        rsvp_chan = (
+                            f"<#{att_div_cfg.rsvp_channel_id}>"
+                            if att_div_cfg and att_div_cfg.rsvp_channel_id
+                            else "*(not set)*"
+                        )
+                        att_chan = (
+                            f"<#{att_div_cfg.attendance_channel_id}>"
+                            if att_div_cfg and att_div_cfg.attendance_channel_id
+                            else "*(not set)*"
+                        )
+                        cfg_lines.append(f"  RSVP channel: {rsvp_chan}")
+                        cfg_lines.append(f"  Attendance channel: {att_chan}")
+                    cfg_lines.append(f"  Weather channel: {weather_chan}")
+                    await interaction.followup.send("\n".join(cfg_lines), ephemeral=False)
+
+                    # ── Message 2: calendar — the graphic, or the text ────
+                    #
+                    # Whichever form the league actually conveys. The review is what a
+                    # manager judges the season by, so showing them text a league will
+                    # never see would be showing them the wrong thing.
+                    rounds_db = rounds_by_division.get(div.id, [])
+                    cal_state = await self._post_review_calendar_image(
+                        interaction,
+                        div,
+                        rounds_db,
+                        cfg.season_number or None,
+                        prepared=prepared.pop((div.id, "calendar"), None),
+                    )
+                    if cal_state == REVIEW_IMAGE_FAULT:
+                        image_fault = True
+                    if cal_state != REVIEW_IMAGE_DREW:
+                        cal_lines: list[str] = ["\U0001f4c5 **Calendar**"]
+                        for r in rounds_db:
+                            cal_lines.append(
+                                f"  Round {r.round_number}: {r.format.value} "
+                                f"@ {r.track_name or 'Mystery'} \u2014 {discord_ts(r.scheduled_at)}"
+                            )
+                        await interaction.followup.send("\n".join(cal_lines), ephemeral=False)
+
+                    # ── Message 3: lineup — the graphic, or the text ──────
+                    #
+                    # As with the calendar above: whichever form the league conveys. The
+                    # roleless-team warning is a review *finding* the graphic cannot show,
+                    # so it is posted either way.
+                    teams = await self.bot.team_service.get_division_teams(div.id)
+                    missing_roles = (
+                        [t["name"] for t in teams if t["name"] in roleless] if teams else []
+                    )
+                    role_warning = (
+                        "  \u26a0\ufe0f **No role assigned:** "
+                        + ", ".join(f'"{n}"' for n in missing_roles)
+                        + " \u2014 result submission will reject drivers in these teams."
+                        if missing_roles
+                        else None
+                    )
+
+                    lineup_state = await self._post_review_lineup_image(
+                        interaction, div, prepared=prepared.pop((div.id, "lineup"), None)
+                    )
+                    if lineup_state == REVIEW_IMAGE_FAULT:
+                        image_fault = True
+
+                    if lineup_state == REVIEW_IMAGE_DREW:
+                        if role_warning is not None:
+                            await interaction.followup.send(
+                                role_warning.strip(), ephemeral=False
+                            )
+                    else:
+                        lineup_lines: list[str] = ["\U0001f3ce\ufe0f **Lineup**"]
+                        if teams:
+                            lineup_lines.append(
+                                "  **Teams:** " + ", ".join(t["name"] for t in teams)
+                            )
+                            if role_warning is not None:
+                                lineup_lines.append(role_warning)
+                        async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
+                            _cur = await _db.execute(
+                                """
+                                SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name,
+                                       ti.name AS team_name, ti.is_reserve
+                                FROM driver_season_assignments dsa
+                                JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+                                JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                                JOIN team_instances ti ON ti.id = ts.team_instance_id
+                                WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
+                                ORDER BY ti.name, dp.discord_user_id
+                                """,
+                                (div.id,),
+                            )
+                            assignment_rows = await _cur.fetchall()
+                        if assignment_rows:
+                            regular_teams: dict[str, list[str]] = {}
+                            reserve_teams: dict[str, list[str]] = {}
+                            for _row in assignment_rows:
+                                if _row["is_test_driver"] and _row["test_display_name"]:
+                                    label = f"<@{_row['discord_user_id']}> ({_row['test_display_name']})"
+                                else:
+                                    label = f"<@{_row['discord_user_id']}>"
+                                target = reserve_teams if _row["is_reserve"] else regular_teams
+                                target.setdefault(_row["team_name"], []).append(label)
+                            for t_name, mentions in regular_teams.items():
+                                lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
+                            if reserve_teams:
+                                lineup_lines.append("  ---")
+                                for t_name, mentions in reserve_teams.items():
+                                    lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
+                        else:
+                            lineup_lines.append("  *(no drivers assigned)*")
+                        await interaction.followup.send(
+                            "\n".join(lineup_lines), ephemeral=False
+                        )
+
+            finally:
+                # Whatever the loop did not post — a division it never reached, or every
+                # one of them if it raised — must not be left on a tmpfs.
+                self._discard_prepared_review_images(prepared)
 
             # ── Server-level UNASSIGNED warning ──────────────────────
             async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
