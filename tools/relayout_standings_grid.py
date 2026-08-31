@@ -44,6 +44,10 @@ TEMPLATES = ROOT / "resources" / "defaults" / "templates"
 
 # ── The grid, in six numbers ──────────────────────────────────────────────
 
+#: The page margin. The heading rules, the footer rule and the zebra bands all run from here
+#: to the grid's right edge, so widening the grid widens them too.
+LEFT_MARGIN = 48
+
 #: Where the season grid begins. Everything to the left of this — the classification block,
 #: its positions, names, points and gaps — is not this script's business and does not move.
 GRID_LEFT = 360
@@ -168,11 +172,23 @@ def rewrite(path: pathlib.Path) -> tuple[int, int]:
         text,
         count=1,
     )
+    # The bands that span the picture, which widen with it: the canvas ground and the red rule
+    # beneath the heading run the full width from x=0; the zebra bands run from the page margin
+    # to the grid's right edge. Leaving these behind was the one thing the first widening
+    # missed, and it is invisible in the markup — the picture simply ends early.
+    #
+    # Matched by a `<rect x="` with no attribute before it, which is what separates a band from
+    # a **crop point**: that also sits at x=0, but carries an `id` first and is a zero-width
+    # mark whose width must never be touched.
     text = re.sub(
-        r'<rect x="0" y="0" width="\d+" (height="\d+" fill="#0B0D10"/>)',
-        lambda m: f'<rect x="0" y="0" width="{CANVAS_WIDTH}" {m.group(1)}',
+        r'<rect x="0" (y="[-\d.]+" )width="\d+"',
+        lambda m: f'<rect x="0" {m.group(1)}width="{CANVAS_WIDTH}"',
         text,
-        count=1,
+    )
+    text = re.sub(
+        rf'<rect x="{LEFT_MARGIN}" (y="[-\d.]+" )width="\d+"',
+        lambda m: f'<rect x="{LEFT_MARGIN}" {m.group(1)}width="{GRID_RIGHT - LEFT_MARGIN}"',
+        text,
     )
     text = re.sub(rf'\b(x2?)="{old_right}"', lambda m: f'{m.group(1)}="{GRID_RIGHT}"', text)
 

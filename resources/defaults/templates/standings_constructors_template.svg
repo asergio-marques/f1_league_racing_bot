@@ -193,7 +193,7 @@
   </g>
   <text id="division_name" inkscape:label="division_name" class="title" x="48" y="76">Division Name</text>
   <text id="result_status" inkscape:label="result_status" class="phase" x="1680" y="72" text-anchor="end">Final Results</text>
-  <rect x="0" y="93" width="1128" height="3" fill="#E8113C"/>
+  <rect x="0" y="93" width="1728" height="3" fill="#E8113C"/>
 
   <!--  round block  -->
   <text class="roundlbl" x="48" y="140">
@@ -468,7 +468,7 @@
   </g>
   <g id="row_2_group" inkscape:label="row_2_group">
       <rect id="row_2_vertical_crop_point" inkscape:label="row_2_vertical_crop_point" x="0" y="492" width="1" height="0" fill="none"/>
-    <rect x="48" y="388" width="1032" height="52" fill="#14171C"/>
+    <rect x="48" y="388" width="1632" height="52" fill="#14171C"/>
     <text id="row_2_position" inkscape:label="row_2_position" class="pos" x="70" y="420" text-anchor="end" style="font-variant-numeric:tabular-nums">2</text>
     <g id="row_2_position_change_group" inkscape:label="row_2_position_change_group">
       <image id="row_2_position_change_marker" inkscape:label="row_2_position_change_marker" x="78" y="399" width="13" height="13" preserveAspectRatio="xMidYMid meet"/>
@@ -979,7 +979,7 @@
   </g>
   <g id="row_4_group" inkscape:label="row_4_group">
       <rect id="row_4_vertical_crop_point" inkscape:label="row_4_vertical_crop_point" x="0" y="596" width="1" height="0" fill="none"/>
-    <rect x="48" y="492" width="1032" height="52" fill="#14171C"/>
+    <rect x="48" y="492" width="1632" height="52" fill="#14171C"/>
     <text id="row_4_position" inkscape:label="row_4_position" class="pos" x="70" y="524" text-anchor="end" style="font-variant-numeric:tabular-nums">4</text>
     <g id="row_4_position_change_group" inkscape:label="row_4_position_change_group">
       <image id="row_4_position_change_marker" inkscape:label="row_4_position_change_marker" x="78" y="503" width="13" height="13" preserveAspectRatio="xMidYMid meet"/>
@@ -1490,7 +1490,7 @@
   </g>
   <g id="row_6_group" inkscape:label="row_6_group">
       <rect id="row_6_vertical_crop_point" inkscape:label="row_6_vertical_crop_point" x="0" y="700" width="1" height="0" fill="none"/>
-    <rect x="48" y="596" width="1032" height="52" fill="#14171C"/>
+    <rect x="48" y="596" width="1632" height="52" fill="#14171C"/>
     <text id="row_6_position" inkscape:label="row_6_position" class="pos" x="70" y="628" text-anchor="end" style="font-variant-numeric:tabular-nums">6</text>
     <g id="row_6_position_change_group" inkscape:label="row_6_position_change_group">
       <image id="row_6_position_change_marker" inkscape:label="row_6_position_change_marker" x="78" y="607" width="13" height="13" preserveAspectRatio="xMidYMid meet"/>
@@ -2001,7 +2001,7 @@
   </g>
   <g id="row_8_group" inkscape:label="row_8_group">
       <rect id="row_8_vertical_crop_point" inkscape:label="row_8_vertical_crop_point" x="0" y="804" width="1" height="0" fill="none"/>
-    <rect x="48" y="700" width="1032" height="52" fill="#14171C"/>
+    <rect x="48" y="700" width="1632" height="52" fill="#14171C"/>
     <text id="row_8_position" inkscape:label="row_8_position" class="pos" x="70" y="732" text-anchor="end" style="font-variant-numeric:tabular-nums">8</text>
     <g id="row_8_position_change_group" inkscape:label="row_8_position_change_group">
       <image id="row_8_position_change_marker" inkscape:label="row_8_position_change_marker" x="78" y="711" width="13" height="13" preserveAspectRatio="xMidYMid meet"/>
@@ -2512,7 +2512,7 @@
   </g>
   <g id="row_10_group" inkscape:label="row_10_group">
       <rect id="row_10_vertical_crop_point" inkscape:label="row_10_vertical_crop_point" x="0" y="908" width="1" height="0" fill="none"/>
-    <rect x="48" y="804" width="1032" height="52" fill="#14171C"/>
+    <rect x="48" y="804" width="1632" height="52" fill="#14171C"/>
     <text id="row_10_position" inkscape:label="row_10_position" class="pos" x="70" y="836" text-anchor="end" style="font-variant-numeric:tabular-nums">10</text>
     <g id="row_10_position_change_group" inkscape:label="row_10_position_change_group">
       <image id="row_10_position_change_marker" inkscape:label="row_10_position_change_marker" x="78" y="815" width="13" height="13" preserveAspectRatio="xMidYMid meet"/>

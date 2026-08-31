@@ -362,3 +362,47 @@ def test_the_widest_cell_a_grid_can_carry_stays_inside_its_column(tmp_path):
             f"text reaches the divider between rounds {z - 1} and {z} "
             f"(brightest pixel {brightest}); the column is too narrow for `DSQ`+`DSQ`"
         )
+
+
+@pytest.mark.parametrize("key", [DRIVERS, CONSTRUCTORS])
+def test_every_band_spans_the_picture_it_is_drawn_on(key):
+    """Regression: widening the canvas left the heading rule and the zebra bands behind.
+
+    They carry no identifier and no data, so nothing else in the module looks at them, and a
+    band that stops early is invisible in the markup — the picture simply ends before its
+    edge does. Two kinds, distinguished by where they start:
+
+    * a band at x=0 is full-bleed — the canvas ground and the red rule under the heading —
+      and must reach the canvas edge;
+    * a band at the page margin is the zebra stripe behind a row, and must reach the grid's
+      right edge, which is that same margin in from the other side.
+
+    A **crop point** also sits at x=0 and is deliberately excluded: it carries an identifier,
+    is a zero-width mark the crop reads rather than anything drawn, and its width must never
+    be touched.
+    """
+    root = _root(key)
+    for node in root.iter():
+        if not isinstance(node.tag, str) or etree.QName(node).localname != "rect":
+            continue
+        if node.get("id"):
+            continue
+        x, width = float(node.get("x") or 0), float(node.get("width") or 0)
+        expected = CANVAS_WIDTH if x == 0 else GRID_RIGHT
+        assert x + width == expected, (
+            f"a band at x={x:g} reaches {x + width:g}, not {expected} — it stops short of "
+            f"the picture's edge"
+        )
+
+
+@pytest.mark.parametrize("key", [DRIVERS, CONSTRUCTORS])
+def test_a_crop_point_keeps_its_zero_width(key):
+    """The other half of the rule above: the band pass must not have touched these."""
+    root = _root(key)
+    points = [
+        node
+        for node in root.iter()
+        if (node.get("id") or "").endswith("_vertical_crop_point")
+    ]
+    assert points, "the shipped template declares no crop point"
+    assert {node.get("width") for node in points} == {"1"}
