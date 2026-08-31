@@ -446,3 +446,70 @@ def test_the_round_heading_flag_id_names_its_class():
     columns = STANDINGS_DRIVERS_CATALOGUE.columns
     assert columns.prefix == "round"
     assert "flag" in columns.fields
+
+
+# ── The highlight layers ──────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "catalogue,nest",
+    [
+        (STANDINGS_DRIVERS_CATALOGUE, "round"),
+        (STANDINGS_CONSTRUCTORS_CATALOGUE, "driver"),
+    ],
+)
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "sprint_race_background",
+        "sprint_race_fastest_lap",
+        "feature_race_background",
+        "feature_race_fastest_lap",
+        "sprint_qualifying_mark",
+        "feature_qualifying_mark",
+    ],
+)
+def test_a_highlight_layer_is_an_optional_asset_field_of_the_cell(catalogue, nest, suffix):
+    """Declarable, never mandatory, and drawing the one closed-set class.
+
+    It is **not** valueless: a valueless field is drawn by geometry or colour alone, and this
+    one carries an asset — which is exactly what lets a league replace the mark.
+    """
+    spec = catalogue.rows.nested
+    if nest == "driver":
+        spec = spec.nested
+    assert suffix in spec.fields
+    assert suffix not in spec.valueless_fields
+    assert suffix not in spec.mandatory_fields
+    assert spec.assets[suffix] == "standings_highlight"
+
+
+def test_the_fastest_lap_of_a_grid_cell_is_not_the_one_a_race_result_draws():
+    """`_canonical` folds digits to `#`, and the two must not fold onto each other.
+
+    A results graphic already claims `row_<x>_fastest_lap`. Were the grid's overlay to
+    canonicalise onto it, `sibling_fields_declared` would call every standings template the
+    wrong file for its slot the moment it declared one.
+    """
+    from models.image_catalogues import _canonical
+
+    assert _canonical("row_7_fastest_lap") == "row_#_fastest_lap"
+    assert (
+        _canonical("row_2_round_7_feature_race_fastest_lap")
+        == "row_#_round_#_feature_race_fastest_lap"
+    )
+    assert (
+        _canonical("row_2_round_7_driver_1_feature_race_fastest_lap")
+        == "row_#_round_#_driver_#_feature_race_fastest_lap"
+    )
+    assert len({
+        _canonical("row_7_fastest_lap"),
+        _canonical("row_2_round_7_feature_race_fastest_lap"),
+        _canonical("row_2_round_7_driver_1_feature_race_fastest_lap"),
+    }) == 3
+
+
+
+
+
+

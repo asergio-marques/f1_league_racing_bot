@@ -56,19 +56,32 @@ ASSET_COLUMNS = (
 async def pre_migration_db(tmp_path):
     """A database migrated up to 042 — the schema as it stood before this change.
 
-    043 is moved aside rather than filtered out of the run, because the runner discovers
-    migrations by listing the directory; hiding the file is the only way to stop at 042
+    The migrations are moved aside rather than filtered out of the run, because the runner
+    discovers them by listing the directory; hiding the files is the only way to stop at 042
     without reimplementing that discovery here.
+
+    **Every migration from 043 onwards is stashed, not 043 alone.** Stopping at 042 means
+    stopping there: leaving a later migration in place lets it apply to the pre-043 schema and
+    then run again, out of order, when the fixture restores 043 — which is not a state any
+    deployment reaches, and which broke this fixture the moment a 044 was added. Listing the
+    directory rather than naming files keeps that true for every migration still to come.
     """
     path = str(tmp_path / "pre.db")
-    live = os.path.join(database._MIGRATIONS_DIR, MIGRATION)
-    stashed = str(tmp_path / MIGRATION)
+    stash = tmp_path / "stashed-migrations"
+    stash.mkdir()
 
-    shutil.move(live, stashed)
+    later = sorted(
+        name
+        for name in os.listdir(database._MIGRATIONS_DIR)
+        if name.endswith(".sql") and name >= MIGRATION
+    )
+    for name in later:
+        shutil.move(os.path.join(database._MIGRATIONS_DIR, name), str(stash / name))
     try:
         await run_migrations(path)
     finally:
-        shutil.move(stashed, live)
+        for name in later:
+            shutil.move(str(stash / name), os.path.join(database._MIGRATIONS_DIR, name))
     return path
 
 

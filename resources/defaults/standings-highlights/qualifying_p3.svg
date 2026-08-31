@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="56" viewBox="0 0 128 56">
+  <defs>
+    <linearGradient id="qualBronze" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#70452A" stop-opacity="1"/>
+      <stop offset=".62" stop-color="#70452A" stop-opacity="1"/>
+      <stop offset="1" stop-color="#70452A" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <polygon points="128,0 128,26 96,0" fill="url(#qualBronze)"/>
+</svg>

@@ -139,12 +139,18 @@ def fabricate_qualifying_rows(drivers, team_role_ids, points_map):
     return rows
 
 
-def fabricate_race_rows(drivers, team_role_ids, points_map):
+def fabricate_race_rows(drivers, team_role_ids, points_map, *, fastest_lap_position=2):
     """A believable race classification over *drivers*.
 
     The leader carries a total race time; everyone else an interval growing with position.
     A driver who did not finish is placed last, as the results module renumbers them, so
     the outcome literal is drawn where a league would actually see it.
+
+    *fastest_lap_position* is where the bonus falls. It is a parameter because a standings
+    grid draws many races at once: pinned to one place, the fastest-lap highlight would
+    only ever be seen over the same chip, and a manager judging their template would never
+    see it over a winner or over a midfield points finish. A single classification has no
+    such need and keeps the second place it always had.
     """
     rows = []
     count = len(drivers)
@@ -174,8 +180,8 @@ def fabricate_race_rows(drivers, team_role_ids, points_map):
                 ingame_time_penalties_ms=5_000 if position == 3 else 0,
                 postrace_time_penalties_ms=0,
                 appeal_time_penalties_ms=0,
-                fastest_lap="1:29.145" if position == 2 else None,
-                fastest_lap_bonus=1 if position == 2 else 0,
+                fastest_lap="1:29.145" if position == fastest_lap_position else None,
+                fastest_lap_bonus=1 if position == fastest_lap_position else 0,
                 points_awarded=points_map.get(position, 0),
             )
         )
@@ -183,6 +189,52 @@ def fabricate_race_rows(drivers, team_role_ids, points_map):
 
 
 # ── Standings grid (FR-025, FR-026) ───────────────────────────────────────
+
+
+#: Where the fastest lap falls, cycled by round. Chosen to put the overlay over each ground
+#: it can land on within a few rounds of any grid: a win, the rest of the podium, a midfield
+#: points finish, and a finish outside the points where it stands alone.
+_FASTEST_LAP_PLACES = (2, 6, 1, 11, 3)
+
+
+def _scattered(drivers, ordinal: int, session_index: int):
+    """*drivers* in the order they finished this session — a different order each round.
+
+    Without this every round of a preview grid would hold the same classification, the
+    builders below numbering the field in the order they are handed it. The first driver
+    would then be first in every round, and a manager judging a template would see one flat
+    column: a solid stripe of winner's chips down the top row and nothing anywhere else.
+
+    **Derived, never random.** This module's contract is stated at the head of the file — a
+    preview must draw the same picture on every invocation, or two renders of one round
+    cannot be compared against each other. So the order is a pure function of the round and
+    the session.
+
+    An affine map ``i -> (step*i + offset) mod n`` is a permutation whenever *step* is
+    coprime to *n*, so every driver appears exactly once by construction rather than by
+    luck. The arithmetic is written out here rather than left to `random.shuffle` so that
+    no change of Python can move it.
+
+    **The multiplier varies by round, and must.** Holding it fixed and moving only the
+    offset shifts every driver by the same amount from one round to the next — a rotation
+    in all but name, which preserves who follows whom and draws the grid as a set of
+    diagonal stripes. Changing the multiplier reorders the field against itself, which is
+    what scatters it.
+    """
+    count = len(drivers)
+    if count < 3:
+        return list(drivers)
+
+    steps = [s for s in range(2, count) if _coprime(s, count)] or [1]
+    step = steps[(ordinal * 3 + session_index) % len(steps)]
+    offset = (ordinal * 7 + session_index * 3) % count
+    return [drivers[(step * i + offset) % count] for i in range(count)]
+
+
+def _coprime(a: int, b: int) -> bool:
+    while b:
+        a, b = b, a % b
+    return a == 1
 
 
 def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team_role_ids):
@@ -209,16 +261,24 @@ def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team
         except ValueError:
             round_format = RoundFormat.NORMAL
         session_map: dict[str, list] = {}
-        for session_type in get_sessions_for_format(round_format):
+        for index, session_type in enumerate(get_sessions_for_format(round_format)):
             points_map = (
                 {1: 3, 2: 2, 3: 1}
                 if session_type.is_qualifying
                 else {n: max(0, 26 - 2 * (n - 1)) for n in range(1, 14)}
             )
+            field = _scattered(drivers, ordinal, index)
             rows = (
-                fabricate_qualifying_rows(drivers, team_role_ids, points_map)
+                fabricate_qualifying_rows(field, team_role_ids, points_map)
                 if session_type.is_qualifying
-                else fabricate_race_rows(drivers, team_role_ids, points_map)
+                else fabricate_race_rows(
+                    field,
+                    team_role_ids,
+                    points_map,
+                    fastest_lap_position=_FASTEST_LAP_PLACES[
+                        ordinal % len(_FASTEST_LAP_PLACES)
+                    ],
+                )
             )
             session_map[session_type.value] = rows
         out[ordinal] = session_map

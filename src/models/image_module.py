@@ -54,6 +54,7 @@ class ImageConfig:
     marker_directory: str
     weather_icon_directory: str
     tyre_directory: str
+    standings_highlight_directory: str
 
     # Presentation preferences
     time_zone: str

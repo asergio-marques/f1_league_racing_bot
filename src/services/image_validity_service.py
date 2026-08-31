@@ -721,7 +721,7 @@ PLAIN_FOLDER_UNSET = "no folder has been set for this"
 
 
 def plain_directory_reason(report: DirectoryReport) -> str:
-    """The same courtesy for the seven asset folders (FR-029)."""
+    """The same courtesy for the eight asset folders (FR-029)."""
     reason = (report.reason or "").lower()
     if "not a directory" in reason:
         return PLAIN_NOT_A_FOLDER
@@ -860,7 +860,7 @@ def _template_directory_problem(config: ImageConfig, root: Path | None) -> str |
 def evaluate_directories(
     config: ImageConfig, *, root: Path | None = None
 ) -> dict[str, DirectoryReport]:
-    """Validity of the seven asset directories, on the same terms (FR-029)."""
+    """Validity of the eight asset directories, on the same terms (FR-029)."""
     reports: dict[str, DirectoryReport] = {}
     for column in ASSET_DIRECTORIES:
         value = getattr(config, column)

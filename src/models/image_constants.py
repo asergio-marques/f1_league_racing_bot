@@ -190,6 +190,11 @@ ASSET_DIRECTORIES: dict[str, tuple[str, str, str]] = {
     "tyre_directory": (
         "tyre-directory", "resources/league/tyres", "resources/defaults/tyres",
     ),
+    "standings_highlight_directory": (
+        "standings-highlight-directory",
+        "resources/league/standings-highlights",
+        "resources/defaults/standings-highlights",
+    ),
 }
 
 #: Asset class -> the configuration column naming its directory. Kept beside
@@ -203,6 +208,7 @@ ASSET_CLASS_TO_COLUMN: dict[str, str] = {
     "marker": "marker_directory",
     "weather": "weather_icon_directory",
     "tyre": "tyre_directory",
+    "standings_highlight": "standings_highlight_directory",
 }
 
 
@@ -237,6 +243,7 @@ ASSET_LABELS: dict[str, str] = {
     "marker_directory": "Position-change markers",
     "weather_icon_directory": "Weather icons",
     "tyre_directory": "Tyre compounds",
+    "standings_highlight_directory": "Standings result highlights",
 }
 
 
@@ -317,6 +324,7 @@ ASSET_CLASS_DIRECTORIES: dict[str, str] = {
     "marker": "marker_directory",
     "weather": "weather_icon_directory",
     "tyre": "tyre_directory",
+    "standings_highlight": "standings_highlight_directory",
 }
 
 #: Asset classes whose data are a closed set the module itself defines, not values a league
@@ -324,7 +332,9 @@ ASSET_CLASS_DIRECTORIES: dict[str, str] = {
 #: incomplete against it, so the packaged directory of one of these classes is searched for
 #: the datum's own file — not only its `fallback.svg` — whether or not the league has pointed
 #: the class at a directory of its own. Every other class is never searched this way.
-CLOSED_SET_ASSET_CLASSES: frozenset[str] = frozenset({"marker", "weather"})
+CLOSED_SET_ASSET_CLASSES: frozenset[str] = frozenset(
+    {"marker", "weather", "standings_highlight"}
+)
 
 #: Slugs that are the module's own vocabulary wherever they appear, in a class whose data
 #: are otherwise the league's own. `mystery` stands for a round concealed until it is run
@@ -391,7 +401,25 @@ ASSET_CLASS_ASPECTS: dict[str, float] = {
     "marker": 1.0,         #  64 x  64
     "weather": 1.0,        #  64 x  64
     "tyre": 1.0,           #  64 x  64
+    # `standings_highlight` is absent, deliberately -- see STRETCHING_ASSET_CLASSES below.
 }
+
+#: Asset classes whose slots **stretch** to the box the template gives them rather than
+#: holding one aspect (Constitution XIV.6, v7.4.0). Such a class names no entry in
+#: :data:`ASSET_CLASS_ASPECTS`, and `aspect_faults_of` reads that table with `.get`, so the
+#: absence is the whole of the implementation.
+#:
+#: Declared here rather than left implicit precisely because absence is the mechanism: a class
+#: someone forgets to give an aspect would otherwise escape the check in silence. A class is
+#: exempt only by appearing here, and `test_every_asset_class_declares_an_aspect` holds the two
+#: tables to exactly that.
+#:
+#: The standings highlight chips are the case. A result cell is 52 x 22 on the drivers grid and
+#: 52 x 18 on the constructors one -- shapes fixed by two different row bands, which no single
+#: ratio could serve. Their slots carry `preserveAspectRatio="none"`, so the letterboxing the
+#: one-aspect rule exists to prevent cannot arise, and the artwork is the league's to draw for
+#: a shape that varies.
+STRETCHING_ASSET_CLASSES: frozenset[str] = frozenset({"standings_highlight"})
 
 #: Relative tolerance for the aspect comparison (044, contracts/asset-aspect.md).
 #:

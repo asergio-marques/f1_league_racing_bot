@@ -1542,6 +1542,46 @@ These sit under `/images template` rather than `/images config` because Discord 
 >
 > Both are entirely optional and go together: declare neither and your file is drawn at its full height exactly as it always was. The five shipped templates declare both. The calendar is the exception — it has always required a crop point per round.
 
+> **Optional: highlight the podiums, points finishes and fastest laps on a standings grid.** Both standings templates mark out the race cells of their season grid, so a league reading the picture sees where the season's results actually fell instead of a wall of identical numbers. The shipped files do this already.
+>
+> **The marks are artwork, not colours.** Each is an SVG in `resources/league/standings-highlights`, resolved exactly as team badges and flags are. Drop your own file in under one of these names and it is drawn; leave the folder empty and the bot's own marks are used.
+>
+> | File | Drawn for |
+> |---|---|
+> | `p1.svg` `p2.svg` `p3.svg` | A podium finish in the race — a full plate |
+> | `points.svg` | Any other points-scoring race finish — a light tint |
+> | `fastest_lap.svg` | The fastest lap — a triangle in the **top-left** corner |
+> | `qualifying_p1.svg` `qualifying_p2.svg` `qualifying_p3.svg` | A podium in **qualifying** — a triangle in the **top-right** |
+> | `qualifying_points.svg` | Any other points-scoring qualifying position |
+>
+> Gradients are fine, and so is any shape you like. The packaged qualifying marks are corner triangles that fade inward, each one **a step darker than the plate of its own placing**. That is deliberate two ways: a driver who qualified first *and* won sees the mark merge gently into the plate, while the same gold mark over a *bronze* plate stays plainly gold. If you redraw them, separate a mark from its plate by lightness rather than by hue alone — at 13 px the eye reads the edge from lightness, and a gold mark that differs from bronze only in hue looks like a stain.
+>
+> **The marks stretch to the cell.** This is the one class with no fixed aspect ratio — a cell is a different shape on the drivers grid than on the constructors one, and no single ratio serves both — so draw artwork that survives being squashed a little. A rectangle or a corner shape does; a circle becomes an ellipse.
+>
+> A cell can carry **three** marks at once — the race plate, the fastest lap in one corner and the qualifying mark in the other. That is a win from pole with the fastest lap, and it is why the two corner marks should each leave most of the cell alone.
+>
+> **The qualifying mark is drawn on the race cell**, in the corner nearest the small raised number it stands for. The raised number shares one run of text with the race result and has no fixed position of its own, so nothing can be drawn *behind* it — a corner of the cell is what can be, and that is what made qualifying markable at all.
+>
+> **The numbers on top are still the template's.** A file cannot colour text drawn over it, so the ink stays in the stylesheet as `.highlight_p1_text` and so on, with `.highlight_p1_sup_text` for the small qualifying figure raised beside the result — which sits on the plate and would otherwise keep its grey. Name no rule and the cell keeps the colour it already has.
+>
+> **Only the plate sets the ink.** Neither corner mark does — they sit in a corner while the numbers sit inboard over the plate, so the plate is the only thing you read them against. Naming a `.highlight_fastest_lap_text` rule has no effect; a fastest lap on a gold plate still takes the gold plate's ink.
+>
+> **To turn one mark off, draw nothing.** Deleting the file will not do it: this is one of the sets the bot named rather than you, so an absent file simply means the bot's own is drawn — the same rule that lets a fresh install work. Supply a **fully transparent SVG** under that name instead, and that highlight stops appearing while the others carry on:
+>
+> ```svg
+> <svg xmlns="http://www.w3.org/2000/svg" width="128" height="56" viewBox="0 0 128 56"/>
+> ```
+>
+> Save that as `points.svg` in your folder and no points finish is ever marked, while the podium plates and the fastest lap still are.
+>
+> **To turn the whole thing off**, remove the `row_<x>_round_<z>_..._background` and `..._fastest_lap` slots from your template. The grid then draws exactly as it did before any of this existed.
+>
+> **What counts as a points finish is whatever your points configuration pays for**, so a league that scores fifteen places marks fifteen cells and one that scores ten marks ten. The fastest lap is marked only where your configuration actually awards a fastest-lap bonus for that session *and* the driver finished inside any position limit you set — a league that awards none marks nothing, which is correct rather than broken. A driver disqualified from a win is drawn `DSQ` and gets no gold.
+>
+> **What counts as a points qualifying position is, again, your configuration.** A league that awards no qualifying points sees no qualifying mark below the podium, and one that awards none at all sees none whatever — the same rule as the race, applied to the session before it.
+
+> **The standings grids are 1728 px wide.** They were 1200 and 1128, and the columns were too narrow for the widest thing a cell can hold — a `DSQ` with another outcome raised beside it — which overran into the next round with nothing said about it. Each session column is now 54 px. If you have re-laid a standings template of your own, give your columns the same room; nothing checks it for you, because SVG text simply overruns and reports nothing.
+
 #### `/images config <directory>` — Where files are searched for
 *Access: Server administrator*
 
@@ -1559,8 +1599,9 @@ Every directory is a path relative to the project root, and one that resolves ou
 | `marker-directory` | `resources/league/markers` | Standings position-change markers |
 | `weather-icon-directory` | `resources/league/weather` | Weather condition icons |
 | `tyre-directory` | `resources/league/tyres` | Tyre compound icons |
+| `standings-highlight-directory` | `resources/league/standings-highlights` | Marks drawn on a standings result cell |
 
-**Your artwork goes in `resources/league/`, and the seven asset directories already point there.** Drop a file in and it is drawn — there is nothing to configure. `league/` ships with a folder per class (`resources/league/teams`, `resources/league/flags` and so on) and is listed in `.gitignore`, so your artwork never appears in a diff and an update to the bot can never overwrite it. Note that git is therefore **not** backing it up: keep your source artwork somewhere of your own.
+**Your artwork goes in `resources/league/`, and the eight asset directories already point there.** Drop a file in and it is drawn — there is nothing to configure. `league/` ships with a folder per class (`resources/league/teams`, `resources/league/flags` and so on) and is listed in `.gitignore`, so your artwork never appears in a diff and an update to the bot can never overwrite it. Note that git is therefore **not** backing it up: keep your source artwork somewhere of your own.
 
 **Everything the bot ships sits under `resources/defaults/`, and you never edit it.** It is replaced wholesale when you update the bot. You do not point anything at it and you do not copy anything out of it: it is the second place the bot looks, automatically, whenever your own folder has nothing for a value.
 
@@ -1574,7 +1615,7 @@ The subcommands in the table above exist for the league that wants its files som
 
 **What the bot named, the bot supplies.** Some of the values a picture draws are not yours at all: you never chose them and cannot be incomplete against them. Where your folder has no file for one, the bot draws **its own correct image** for that value rather than a generic placeholder — the one respect in which the packaged directory is searched under your value's own name rather than only for a fallback. Two kinds of value qualify:
 
-- **Whole classes.** `resources/defaults/markers/` carries all three directions a standing can move — `gained`, `lost`, `unchanged` — and `resources/defaults/weather/` carries all eight the bot can ask for: `sunny`, `mixed` and `rain` for a session's type, and `clear`, `light_cloud`, `overcast`, `wet` and `very_wet` for a concrete weather. Every marker and every forecast therefore draws a correct icon out of the box, whatever is or is not in your folder.
+- **Whole classes.** `resources/defaults/markers/` carries all three directions a standing can move — `gained`, `lost`, `unchanged`; `resources/defaults/weather/` carries all eight the bot can ask for — `sunny`, `mixed` and `rain` for a session's type, and `clear`, `light_cloud`, `overcast`, `wet` and `very_wet` for a concrete weather; and `resources/defaults/standings-highlights/` carries all nine marks a result cell can earn — `p1`, `p2`, `p3`, `points` and `fastest_lap` for the race, and `qualifying_p1` through `qualifying_points` for where the driver qualified. Every marker, every forecast and every highlight therefore draws a correct picture out of the box, whatever is or is not in your folder.
 - **Two reserved names inside classes that are otherwise yours.** `mystery`, for a round whose circuit is concealed, and `other`, for a driver who chose no nationality in particular. Your flag folder is full of countries you chose; these two are not among them.
 
 Your own file always wins where you supply one — this only ever fills a gap. Country flags, circuit maps, team badges, portraits and tyres are **not** covered by any of this: they are yours, and a missing one draws the placeholder. Replace the reserved artwork freely; keep the filenames. See [resources/README.md](resources/README.md) for the naming rule and the aspect each class expects.
@@ -1585,7 +1626,7 @@ Your own file always wins where you supply one — this only ever fills a gap. C
 
 > **Spell the country as the bot's track list spells it** — `United Kingdom`, not `Great Britain`; `United States of America`, not `United States`. That is what makes a driver's flag and a round's flag resolve the same file.
 
-> **Upgrading?** The seven asset directories now default to `resources/league/<class>` rather than `resources/defaults/<class>`. **Nothing on an existing server changes**: whatever each class is set to today is left exactly as it stands, whether you chose it or it was the old default. The new default applies to servers set up from here on. To adopt it, move your artwork into `resources/league/<class>` and set the class back with `/images config <class>-directory` — or carry on as you are, which keeps working.
+> **Upgrading?** The asset directories now default to `resources/league/<class>` rather than `resources/defaults/<class>`. **Nothing on an existing server changes**: whatever each class is set to today is left exactly as it stands, whether you chose it or it was the old default. The new default applies to servers set up from here on. To adopt it, move your artwork into `resources/league/<class>` and set the class back with `/images config <class>-directory` — or carry on as you are, which keeps working.
 
 > **Upgrading a league that already had flags named for nationalities?** Rename them to their countries — `british.svg` becomes `united_kingdom.svg`. A file under the old name is never looked for, so every driver would draw your `fallback.svg` instead.
 
@@ -1685,7 +1726,7 @@ Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four
 
 > **`lineup` ships with the bot like every other template, but the preview is still how you check it.** It is drawn against your real team list and refused where you have none beyond Reserve, because a lineup of nothing but reserves is not a lineup. Where the division has teams but nobody seated, drivers are invented so the drawing can still be judged.
 
-> **`standings` draws both championships as the whole season, not just the round named.** Every round the division holds gets a column — run or not — with a result cell per session, and, on the constructors picture, a car per driver who drove it. The classification named by `round` sits beside that grid.
+> **`standings` draws both championships as the whole season, not just the round named.** Every round the division holds gets a column — run or not — with a result cell per session, and, on the constructors picture, a car per driver who drove it. The classification named by `round` sits beside that grid. **Each round of the preview is given a different finishing order**, and the fastest lap moves about the field, so you can judge the cell highlighting across a whole grid instead of down one row — a preview that named the same winner every round would tell you nothing about it. The orders are worked out from the round rather than drawn at random, so previewing the same round twice gives you the same picture to compare against.
 
 **Checking your work.** Look at the exported PNG, not the SVG in a browser. They disagree on precisely the things worth checking — flowed text, substituted fonts, and the crop. The `/images test` commands return the PNG.
 

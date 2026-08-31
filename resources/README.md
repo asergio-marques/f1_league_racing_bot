@@ -28,6 +28,7 @@ root is accepted — but most leagues never need to run one.
 | Movement markers | `league/markers/` | `defaults/markers/` | `/images config marker-directory` | 64 × 64 |
 | Weather icons | `league/weather/` | `defaults/weather/` | `/images config weather-icon-directory` | 64 × 64 |
 | Tyre compounds | `league/tyres/` | `defaults/tyres/` | `/images config tyre-directory` | 64 × 64 |
+| Standings marks | `league/standings-highlights/` | `defaults/standings-highlights/` | `/images config standings-highlight-directory` | **stretches** — see below |
 
 **Templates are the exception in the table.** They have nothing to fall back to — the folder
 you configure is the only place a template is searched — so their folder is still
@@ -75,22 +76,32 @@ classes need not match each other, and flags and maps deliberately do not.
   a standing position can move;
 - the eight `defaults/weather/` icons — `sunny.svg`, `mixed.svg` and `rain.svg` for the type of
   weather drawn for a session, and `clear.svg`, `light_cloud.svg`, `overcast.svg`,
-  `wet.svg` and `very_wet.svg` for a concrete weather within one.
+  `wet.svg` and `very_wet.svg` for a concrete weather within one;
+- the nine `defaults/standings-highlights/` marks — `p1.svg`, `p2.svg`, `p3.svg` and
+  `points.svg` for the plate drawn beneath a race result, `fastest_lap.svg` for the mark drawn
+  in its top-left corner, and `qualifying_p1.svg` through `qualifying_points.svg` for the mark
+  drawn in its top-right, which stands for where the driver qualified.
 
 **Not shipped:** the assets for any particular circuit, team, driver, country or tyre.
 Those are a league's own, and the module exists to let each league bring its own design
 language rather than inherit one.
 
-**Why the markers and the weather icons are different.** Those two sets are not a league's
-values at all — they are the bot's own vocabulary, fixed and closed, and no league chose
+**Why the markers, the weather icons and the standings marks are different.** Those three sets
+are not a league's values at all — they are the bot's own vocabulary, fixed and closed, and no league chose
 them. A league cannot have an incomplete set of something it did not define, so the module
 ships every file rather than leaving each directory to fall back on every render. The same
 reasoning covers two individual filenames inside classes that are otherwise a league's own —
 `mystery` and `other` — which the bot also named and therefore also supplies. Replace any of
 them freely; keep the filenames, the aspect and the no-text rule below.
 
+It follows that **deleting a file of one of these sets does not remove what it draws** — the
+packaged file is drawn in its place. To suppress one, supply a fully transparent SVG under its
+name. That is chiefly of use for the standings marks, where a league may want the podium plates
+and not the points tint.
+
 So a fresh clone draws every graphic before a league has made anything at all. The markers,
-the weather icons and the two reserved flags are the bot's own artwork, drawn properly; the
+the weather icons, the standings marks and the two reserved flags are the bot's own artwork,
+drawn properly; the
 circuits, teams, drivers, countries and tyres are placeholders, those being a league's to
 supply. That is the intended starting point: the module works from the first render, and a
 league fills `league/` class by class as it makes its own artwork, seeing its own files
@@ -184,8 +195,23 @@ the flag directory, is reserved on exactly the same terms.
 
 ## Authoring your own assets
 
-Plain SVG, no `clipPath`, no gradients, no filters. Authored at exactly the aspect of the
-slot, padded with transparent margins where the subject does not fill it.
+Plain SVG, no `clipPath` and no filters. **Gradients are fine** — the rasteriser draws each
+asset as its own document, so a gradient in one cannot disturb another even where the two
+happen to name it the same thing.
+
+**No text.** Fonts substitute from one machine to the next, so an asset carrying any would
+rasterise differently on the machine that drew it and the machine that serves it. Draw
+lettering as paths.
+
+Authored at exactly the aspect of the slot, padded with transparent margins where the subject
+does not fill it.
+
+**One class stretches instead**, and the table above marks it: the standings marks. A result
+cell is a different shape on the drivers grid than on the constructors one, and no single ratio
+serves both, so those slots draw the file to the room they have rather than fitting it inside.
+Author at whatever size suits the artwork — the shipped set is 128 × 56 — and draw something
+that survives being squashed a little. A rectangle or a corner shape does; a circle becomes an
+ellipse. This is the only class exempt from the rule above.
 
 The full authoring contract — template field naming, removable groups, text bounds — is in
 the main [README](../README.md) under **Image Module → Templates: what the bot expects**.

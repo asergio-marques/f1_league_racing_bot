@@ -42,6 +42,7 @@ def _config():
         marker_directory="resources/defaults/markers",
         weather_icon_directory="resources/defaults/weather",
         tyre_directory="resources/defaults/tyres",
+        standings_highlight_directory="resources/defaults/standings-highlights",
         date_format="D_MONTH_YYYY",
         time_format="24H",
         time_zone="UTC",

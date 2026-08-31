@@ -282,6 +282,37 @@ class TestStandingsPreview:
         assert "row_1_round_1_feature_race_result" in spec.text
         assert "row_1_round_2_feature_race_result" in spec.empty_quietly
 
+    async def test_the_preview_grid_shows_the_highlights_a_league_would_see(
+        self, bot, league
+    ):
+        """The preview reaches the highlights through the same funnel, with no code of its own.
+
+        Both layers must appear, and the backgrounds must be spread over more than one row:
+        the whole point of scattering the fabricated classifications is that a manager
+        judging their template sees a grid, not a stripe down the winner's row.
+        """
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=3, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        drivers_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_drivers_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_drivers_template.svg")
+        spec = drivers_spec_builder(root)
+
+        backgrounds = [key for key in spec.image_data if key.endswith("_background")]
+        overlays = [key for key in spec.image_data if key.endswith("_fastest_lap")]
+        assert backgrounds, "the preview drew no highlight at all"
+        assert overlays, "the preview drew no fastest lap"
+
+        rows = {key.split("_")[1] for key in backgrounds}
+        assert len(rows) > 1, "every highlight fell on one row — the grid is a flat column"
+
     async def test_the_gap_to_the_leader_is_drawn_on_the_drivers_preview(
         self, bot, league
     ):

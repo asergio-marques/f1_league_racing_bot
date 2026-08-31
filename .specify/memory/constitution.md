@@ -1,6 +1,91 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-08-31 — v7.3.0 → v7.4.0: MINOR — a class whose slots stretch, and the withdrawal of the
+ gradient prohibition]
+  Version change    : 7.3.0 → 7.4.0
+  Bump rationale    : MINOR. Two changes to Principle XIV, Rule 6. Neither removes a principle
+                      and neither redefines one incompatibly, which is what the versioning
+                      policy reserves MAJOR for.
+
+                      The first **adds an alternative** to the one-aspect rule rather than
+                      relaxing it. A class may declare that its slots stretch, and the rule then
+                      does not bind it. Every class conforming to v7.3.0 declared an aspect and
+                      carries on unchanged; nothing previously valid becomes invalid. The
+                      exemption is guarded rather than free — it must be declared, because
+                      absence is the mechanism that skips the check and a forgotten aspect would
+                      otherwise escape it silently.
+
+                      The second **strikes a prohibition**, which widens what conforms rather
+                      than narrowing it: every asset valid under v7.3.0 is valid under v7.4.0.
+                      The contrast with v6.3.0 → v7.0.0 is the point — that took MAJOR because
+                      **Truncate** was struck from a *closed enumeration of operations*, making a
+                      previously conforming implementation newly wrong. Striking a ban on an
+                      input makes nothing newly wrong.
+
+  Modified sections :
+    - Principle XIV, Rule 6, the plain-SVG sentence: `gradient` struck from the list of forbidden
+      constructs, with a paragraph recording why the ban is withdrawn — it was never justified
+      anywhere, the module's own templates relied on gradients, and the id-collision hazard that
+      might have justified it was tested and does not arise. `clipPath`, filter and the no-text
+      rule are untouched.
+    - Principle XIV, Rule 6, after the one-aspect paragraph: two paragraphs added, admitting a
+      class whose slots stretch and requiring that such a class be enumerated rather than merely
+      lacking an aspect.
+  Added sections    : none
+  Removed sections  : none
+  Deferred items    : none. No placeholder tokens remain in the document.
+  Templates review  : `.specify/templates/` states neither rule and needed no change. The
+                      module-facing restatements — `resources/README.md`, the asset tables in
+                      `src/models/image_constants.py`, and the shipped-asset tests — were amended
+                      in the same change, `STRETCHING_ASSET_CLASSES` being the enumeration this
+                      amendment requires.
+-->
+<!--
+SYNC IMPACT REPORT
+==================
+[2026-08-31 — v7.2.0 → v7.3.0: MINOR — a valueless field may be drawn by colour alone, and a
+ data-driven palette belongs to the template]
+  Version change    : 7.2.0 → 7.3.0
+  Bump rationale    : MINOR. Principle XIV's recolour rules gain materially expanded guidance in
+                      two parts, and neither strikes anything from a closed enumeration. The
+                      enumeration of fill operations is untouched: recolour is still one of the
+                      six, and no operation is added or removed.
+
+                      The first part **narrows an obligation and exempts a case**. v7.2.0 read "a
+                      recoloured field MUST still be filled" without qualification, which no field
+                      had yet contradicted — every recoloured field to date carried text. The
+                      standings highlight chips are the first fields drawn by their colour alone,
+                      and Rule 3 already admits a valueless field for the vertical crop point; this
+                      says the same exemption reaches a recoloured one. An implementation
+                      conforming to v7.2.0 filled every recoloured field and therefore still
+                      conforms, so this is not read as a backward-incompatible redefinition.
+
+                      The second part is a **new obligation**: where the data decide the colour,
+                      the palette MUST come from the template's stylesheet rather than from bot
+                      configuration, and an unnamed kind MUST NOT be painted. That is added
+                      guidance, which the versioning policy classes as MINOR. It records a decision
+                      taken in conversation on 2026-08-31.
+
+  Modified sections :
+    - Principle XIV, the fill-operations table: the Recolour row now names where a data-driven
+      palette comes from.
+    - Principle XIV, the recolour paragraph following the vertical crop. Split into three: the
+      existing merge-into-inline-style requirement with "must still be filled" now bound to a field
+      that carries a value; a new paragraph exempting a valueless field, referred to Rule 3 and to
+      the crop point it already covers; a new paragraph placing a data-driven palette in the
+      template's stylesheet and forbidding the painting of a kind it names no rule for.
+  Added sections    : none
+  Removed sections  : none
+  Deferred items    : none. No placeholder tokens remain in the document.
+  Templates review  : `.specify/templates/` carries no statement of the recolour rules and needed
+                      no change. The rules themselves are restated for the image module in
+                      `docs/wip-specs/image_module_specification.md`, which was amended in the same
+                      change under "What a generation does to a field".
+-->
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-08-31 — v7.1.0 → v7.2.0: MINOR — an asset href MUST be absolute, and an absent linked image MUST refuse]
   Version change    : 7.1.0 → 7.2.0
   Bump rationale    : MINOR. Principle XIV, Rule 6 gains materially expanded guidance in two parts,
@@ -4165,7 +4250,7 @@ The module MUST support exactly these fill operations, and no others:
 |-----------|--------|--------|
 | Text fill | `<text>` / `<tspan>` | Replaces the element's text content |
 | Image fill | element | Rewrites `xlink:href` to an asset path |
-| Recolour | element | Merges a `fill:` declaration into the element's inline `style` |
+| Recolour | element | Merges a `fill:` declaration into the element's inline `style`, from a palette the template's stylesheet declares where the data decide it |
 | Text fit | `<text>` carrying a declared box | Breaks the string into `<tspan>` lines within the box's line budget, reducing the field's size until it fits. Nothing is ever cut |
 | Empty or remove | element, or its `_group` wrapper | Clears the text, or deletes the node and its subtree |
 | Vertical crop | the root, at a declared crop point | Carries the footer group up, then rewrites the root `height` and `viewBox` to the crop point's `y` |
@@ -4196,8 +4281,20 @@ existing hand-authored template working unchanged.
 
 Recolour MUST be merged into the existing inline `style` rather than written as a
 presentation attribute or as a `style` replacement, so that template-declared styling on the
-same element survives. Recolour MUST NOT count as addressing a field: a recoloured field
-MUST still be filled.
+same element survives. Recolour MUST NOT count as addressing a field: a recoloured field that
+carries a value MUST still be filled.
+
+A **valueless** field (Rule 3) is exempt from that obligation, being drawn by its colour alone.
+It MUST be neither filled nor asked for a value, and its absence from the values a generation
+determines MUST NOT be read as unresolved — exactly as a vertical crop point is neither filled
+nor asked for one. Its absence from a template that claims it remains a fault of the template.
+
+Where the colour a recolour applies is decided by the **data**, the palette MUST be read from
+the template's own stylesheet by documented class names, and MUST NOT be held in bot
+configuration. A kind for which the template names no rule MUST NOT be painted, and the field
+MUST be left as the template drew it. A league states the appearance of its graphics in the
+template and nowhere else, which is also what lets a paint the module has no vocabulary for —
+a gradient, a pattern — be used without the module gaining one.
 
 **Removable groups.** Any field, mandatory or optional, MAY be wrapped in a group named for that
 field followed by `_group`. Where such a group is declared, it MUST be removed in its entirety
@@ -4497,15 +4594,36 @@ giving unbounded prose a single unwrapped line is relying on it staying short.
 
 **6. Assets are aspect-authored, never padded by the generator.**
 
-Assets under `resources/` MUST be plain SVG with no `clipPath`, gradient, or filter, and MUST
+Assets under `resources/` MUST be plain SVG with no `clipPath` and no filter, and MUST
 be authored at exactly the aspect ratio of the slot they fill, padded with transparent margins
 by their author where the subject does not fill that aspect. The generator MUST NOT pad or
 letterbox an asset. A league supplying its own assets is bound by the same requirement, and
 the module MUST document it wherever asset upload is offered.
 
+**A gradient is permitted**, the prohibition on one having been withdrawn in v7.4.0. It was
+asserted here from the first and never once justified — unlike the aspect requirement in the
+same sentence, which carries the Rationale below — while the module's own templates depended on
+gradients throughout. The hazard it might have guarded against was tested on 2026-08-31 and does
+not exist in this pipeline: two assets whose gradients carry the *same* identifier render
+independently, the rasteriser drawing each referenced file as its own document. `clipPath` and
+filter are untouched, as is the requirement that an asset carry no text.
+
 **One class carries one aspect, and every slot of that class MUST carry it — on every template,
 of every image type.** A template declaring a slot of a class at any other aspect is invalid, and
 Layer 2 MUST refuse it, naming the offending field.
+
+**A class MAY instead declare that its slots stretch**, in which case the rule above does not
+bind it (v7.4.0). Every slot of such a class MUST be authored `preserveAspectRatio="none"`, so
+the asset is drawn to the box the template gives it rather than fitted inside one. The
+letterboxing the one-aspect rule exists to prevent therefore cannot arise, which is the whole of
+why the exemption is sound; the generator still MUST NOT pad. What follows is that the artwork is
+the league's to draw for a shape that varies, and the module MUST say so wherever it documents
+that class.
+
+A class is exempt **only by being declared so**, never by an aspect having been forgotten. The
+absence of an aspect is the mechanism by which the check is skipped, so an undeclared omission
+would escape it in silence; the exempt classes MUST therefore be enumerated separately, and the
+two enumerations MUST be held to each other by a test.
 
 **Rationale**: a league authors **one file per datum of a class**, and the rule above forbids the
 generator to pad. A class serving slots of two aspects would therefore letterbox that one file
@@ -6291,4 +6409,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-31
+**Version**: 7.4.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-31

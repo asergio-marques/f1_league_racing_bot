@@ -55,6 +55,11 @@ def _bot(db_path="db", *, module=True, toggle=True, drivers_valid=True, construc
     return bot
 
 
+_TEMPLATE_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "..", "resources", "defaults", "templates"
+)
+
+
 def _guild():
     guild = MagicMock()
     guild.id = 1
@@ -711,8 +716,8 @@ async def test_the_run_round_fills_its_cells_and_the_unrun_one_empties_them(tmp_
     )
 
     leader = drivers.entries[0]
-    assert leader.cells[1].sessions["feature_race_result"] != ""
-    assert leader.cells[2].sessions["feature_race_result"] == "", (
+    assert leader.cells[1].sessions["feature_race_result"].text != ""
+    assert leader.cells[2].sessions["feature_race_result"].text == "", (
         "a round the division has not run empties its cells rather than dashing them"
     )
 
@@ -784,6 +789,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
                 ("flag", "flag_directory"),
                 ("track", "track_image_directory"),
                 ("marker", "marker_directory"),
+                ("standings_highlight", "standings_highlight_directory"),
             ),
             image_type=drawing.template_key,
         )
@@ -1182,3 +1188,192 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
 
     for png in pngs:
         assert not png.exists(), "a failed upload must not strand the picture"
+
+
+# ── The highlight chips, through the posting path's own drawings ──────────
+
+
+def _chip_faults(result) -> list[str]:
+    """Whatever the fill could not resolve that names a highlight chip."""
+    return [
+        fault
+        for fault in result.unresolved
+        if "_background" in fault or "_fastest_lap" in fault
+    ]
+
+
+async def _highlighted_svg(tmp_path):
+    """The posting path's real drawings, filled onto the shipped templates.
+
+    No rasteriser is touched, so this runs in CI: `build_drawings` reads the database and
+    `build_fill_spec` resolves the chips against the packaged artwork. The pixels are checked
+    separately by the marked test below.
+    """
+    from db.database import get_connection
+    from services.image_config_service import ImageConfigService
+    from services.image_render_service import resolve_configured_directories
+    from services.image_standings_post import build_drawings
+    from services.image_standings_service import build_fill_spec
+    from utils.svg_document import load_svg
+    from utils.svg_fill import fill
+
+    db_path, division_id, round_ids = await _seed_league(tmp_path)
+    # The seed classifies a race but awards no fastest lap and runs no qualifying. Add both,
+    # so round 1 holds a cell carrying all three marks at once — a win from pole with the
+    # fastest lap, which is the busiest a cell gets and the case the layering exists for.
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE race_session_results SET fastest_lap_bonus = 1 WHERE driver_user_id = 11"
+        )
+        cursor = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'FEATURE_QUALIFYING', 'ACTIVE')",
+            (round_ids[0], division_id),
+        )
+        qualifying_id = cursor.lastrowid
+        for user_id, role_id, position in ((11, 900, 1), (12, 900, 2), (13, 901, 1)):
+            await db.execute(
+                "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
+                "team_role_id, finishing_position, outcome, points_awarded) "
+                "VALUES (?, ?, ?, ?, 'CLASSIFIED', 3)",
+                (qualifying_id, user_id, role_id, position),
+            )
+        await db.commit()
+
+    driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
+    bot = _bot(db_path)
+    config_service = ImageConfigService(db_path)
+    await config_service.create_with_defaults(1)
+    bot.image_config_service = config_service
+
+    drawings = await build_drawings(
+        bot,
+        _guild(),
+        db_path=db_path,
+        server_id=1,
+        division_id=division_id,
+        round_id=round_ids[0],
+        round_number=1,
+        driver_snapshots=driver_snaps,
+        team_snapshots=team_snaps,
+        reserve_user_ids=set(),
+        show_reserves=False,
+        result_status="FINAL",
+        division_name="Alpha",
+    )
+
+    config = await config_service.get_config(1)
+    out = {}
+    for drawing in drawings:
+        directories, _faults = resolve_configured_directories(
+            config,
+            (("standings_highlight", "standings_highlight_directory"),),
+            image_type=drawing.template_key,
+        )
+        doc = load_svg(os.path.join(_TEMPLATE_DIR, f"{drawing.template_key}.svg"))
+        root = doc.root if hasattr(doc, "root") else doc
+        spec = build_fill_spec(drawing, root, asset_directories=directories)
+        out[drawing.template_key] = (root, spec, fill(spec))
+    return out
+
+
+async def test_the_winner_is_given_the_first_place_chip(tmp_path):
+    """End to end within CI: a real classification reaches the packaged artwork."""
+    root, spec, result = (await _highlighted_svg(tmp_path))["standings_drivers_template"]
+    assert _chip_faults(result) == [], _chip_faults(result)
+
+    assert spec.image_data["row_1_round_1_feature_race_background"] == (
+        "standings_highlight",
+        "p1",
+    )
+    assert spec.image_data["row_1_round_1_feature_race_fastest_lap"] == (
+        "standings_highlight",
+        "fastest_lap",
+    )
+
+
+async def test_the_chip_slot_ends_up_pointing_at_the_packaged_file(tmp_path):
+    """The datum is resolved through the class's directory, not by a path built here."""
+    from utils.svg_document import FieldIndex
+
+    root, _spec, _result = (await _highlighted_svg(tmp_path))["standings_drivers_template"]
+    slot = FieldIndex(root).resolve("row_1_round_1_feature_race_background")
+    href = slot.get("href") or slot.get("{http://www.w3.org/1999/xlink}href")
+    assert href and href.endswith("standings-highlights/p1.svg"), href
+
+
+async def test_a_cell_that_earns_nothing_is_left_without_an_href(tmp_path):
+    """Round 2 has not been run, so its slots must still draw nothing."""
+    from utils.svg_document import FieldIndex
+
+    root, _spec, _result = (await _highlighted_svg(tmp_path))["standings_drivers_template"]
+    slot = FieldIndex(root).resolve("row_1_round_2_feature_race_background")
+    assert slot is not None, "the slot was removed; it should simply have been left alone"
+    assert not slot.get("href")
+    assert not slot.get("{http://www.w3.org/1999/xlink}href")
+
+
+async def test_the_constructors_cars_carry_the_chips_too(tmp_path):
+    root, spec, result = (await _highlighted_svg(tmp_path))["standings_constructors_template"]
+    assert _chip_faults(result) == [], _chip_faults(result)
+    assert spec.image_data["row_1_round_1_driver_1_feature_race_background"] == (
+        "standings_highlight",
+        "p1",
+    )
+
+
+@pytest.mark.rasteriser
+async def test_the_three_marks_reach_the_raster_in_their_own_corners(tmp_path):
+    """Rule XIV.14 — the marks are verified as pixels, never as markup.
+
+    The tests above prove the right assets were chosen and the hrefs anchored. Only the raster
+    proves they were *drawn where the artwork says*: an href the rasteriser cannot follow, a
+    slot authored after its text, or a `preserveAspectRatio` that letterboxes instead of
+    stretching, all leave correct-looking markup and a wrong picture. So does a triangle that
+    did not move when its file said it should.
+
+    Every coordinate is read out of the template rather than assumed, and the samples are taken
+    well clear of the glyph, whose width depends on which font the host resolved.
+    """
+    from PIL import Image  # noqa: PLC0415
+
+    from services.image_render_service import rasterise
+    from utils.svg_document import FieldIndex, canvas_of
+    from utils.svg_fill import fill as fill_spec_onto
+
+    root, spec, _ = (await _highlighted_svg(tmp_path))["standings_drivers_template"]
+    chip = FieldIndex(root).resolve("row_1_round_1_feature_race_background")
+    left, top = float(chip.get("x")), float(chip.get("y"))
+    width, height = float(chip.get("width")), float(chip.get("height"))
+
+    result = fill_spec_onto(spec)
+    png = rasterise(result.svg, tmp_path / "standings.png", result.canvas or canvas_of(root))
+    image = Image.open(png).convert("RGB")
+
+    def near(pixel, expected, tolerance=6):
+        return all(abs(a - b) <= tolerance for a, b in zip(pixel, expected))
+
+    # The plate and the mark are one step apart in **lightness**, within one hue: a winner who
+    # also took pole shows the mark merging into the plate, which is what a matched pair should
+    # do, while the same gold mark over a *bronze* plate stays plainly gold. Lightness is what
+    # the eye reads an edge from at this size — an earlier palette separated mark from plate by
+    # hue alone and the gold mark looked like a stain on the bronze plate.
+    plate_gold = (0xE6, 0xC5, 0x5A)
+    purple = (0xA0, 0x20, 0xF0)
+    mark_gold = (0xC9, 0xA2, 0x27)
+
+    # The p1 plate, sampled low and central — clear of the text and of both corner marks.
+    assert image.getpixel((int(left + width / 2), int(top + height) - 3)) == plate_gold
+
+    # The fastest lap is a triangle in the **top-left**, moved there so the qualifying mark
+    # can have the corner nearest the raised figure it stands for.
+    assert image.getpixel((int(left) + 3, int(top) + 2)) == purple
+
+    # The qualifying mark is a triangle in the **top-right**, drawn over the plate a shade
+    # darker than it — enough to be seen, little enough to merge where the two agree.
+    corner = image.getpixel((int(left + width) - 3, int(top) + 2))
+    assert near(corner, mark_gold), f"top-right corner was {corner}, not the qualifying mark"
+
+    # Two rows below the chip is the plain row band, which no mark reaches.
+    below = image.getpixel((int(left) + 6, int(top + height) + 8))
+    assert not any(near(below, c) for c in (plate_gold, purple, mark_gold))

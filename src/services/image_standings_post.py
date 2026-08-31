@@ -436,6 +436,7 @@ async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
             ("track", "track_image_directory"),
             # The only aspect that draws position-change arrows.
             ("marker", "marker_directory"),
+            ("standings_highlight", "standings_highlight_directory"),
         ),
         image_type=drawing.template_key,
     )

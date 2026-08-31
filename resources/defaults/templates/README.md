@@ -99,26 +99,65 @@ The field itself has not gone away: `row_<x>_round_<z>_driver_<w>_name` is optio
 the lineup's reserve slots are, so a league that wants it may draw it in its own file and widen
 the round pitch to suit. The packaged file simply declines it.
 
-## These are a starting point, not a fixture
+## The highlight chips on a standings grid
 
-Restyle them freely, or replace them with your own and set the filename per kind with
-`/images template <kind>`. Any name ending `.svg` is accepted. What the bot requires is the
-contract, not the design: the field names it fills, the groups it removes, and the bounds it
-lays text within.
+Both standings files stand **three** `<image>` slots beneath each race cell, before the
+`<text>` so they paint under it, and all three share one box:
 
-That contract is in the main [README](../../README.md) under **Image Module → Templates:
-what the bot expects**. Before editing one, two things are worth knowing:
+    row_<x>_round_<z>_<sprint|feature>_race_background      the plate
+    row_<x>_round_<z>_<sprint|feature>_race_fastest_lap     top-left corner
+    row_<x>_round_<z>_<sprint|feature>_qualifying_mark      top-right corner
 
-- **Check your work in the exported PNG, not in a browser.** They disagree on exactly what
-  matters here — flowed text, substituted fonts, and the calendar crop. `/images test`
-  returns the PNG.
-- **The canvas is whatever the template declares.** Change `width` and `height` and the
-  output changes with them; nothing assumes a fixed size.
+and the constructors file the same under `..._driver_<w>_...`. They draw the
+**standings-highlights** class — nine files — so what a mark looks like is artwork in that
+folder and not a colour written into the template.
 
-## If a template will not load
+They share a box deliberately: **where** a mark sits is the artwork's business. The plate fills
+its box, the packaged `fastest_lap.svg` draws a triangle into the top-left of its own, and
+`qualifying_p1.svg` and friends into the top-right. Redraw a file and its mark moves, with no
+template to edit. Giving each a corner-sized slot instead would freeze that arrangement into
+several thousand elements a league could not restyle.
 
-`/images template <kind>` refuses a file it cannot use and leaves your previous filename in
-force, telling you which of these it was: the name does not end `.svg`, no such file is in
-this directory, the file will not parse as SVG, or it is missing a field the image needs.
-A malformed file is described plainly — "a comment contains a double hyphen at line 12" —
-rather than as a parser error.
+The **qualifying mark hangs off the qualifying session's name though it is drawn over the race
+cell**, because it marks the qualifying result. The raised qualifying figure shares one text
+chunk with the race result and has no position of its own, so nothing can be drawn behind it —
+a corner of the race cell is what can be, and that is what made qualifying markable at all. The
+top-right is the corner nearest that figure.
+
+All three are authored with **no href**, which is why a cell earning no highlight draws nothing
+and is never removed: an `<image>` carrying no reference draws nothing, and removing the slot
+instead would put thousands of identifiers into every fill spec.
+
+All three carry `preserveAspectRatio="none"`. This class alone has no fixed aspect — the drivers
+chip is 52 × 22 and the constructors chip 52 × 18, shapes fixed by two different row bands — so
+the file stretches to the slot. Draw artwork that survives that.
+
+What remains in each file's `<style>` is the **ink**: `.highlight_p1_text` and friends colour
+the result itself, and `.highlight_p1_sup_text` the raised qualifying figure, which sits on the
+*plate* and would otherwise keep its grey `.sup`. A file cannot colour text drawn over it, so
+these cannot move to the artwork.
+
+**Only the background takes ink; neither corner mark does.** Both occupy a corner while the
+numerals sit inboard over the plate, so the plate is the only thing they are read against. This
+was learnt twice: the fastest lap kept taking the ink after it became a triangle and painted
+white numerals onto a gold plate, and the qualifying mark did the same onto the bare row band.
+A template may still name `.highlight_fastest_lap_text`; the render ignores it.
+
+The class is **closed**, so deleting a file from a league's folder does not suppress that mark —
+the packaged file is drawn in its place, which is the rule that makes a fresh clone work. A
+league suppresses one mark by supplying a fully transparent SVG under that name, and the whole
+feature by deleting the slots from its template.
+
+## The grid is 54 px per column
+
+Both files run their season grid from x=360 at a round pitch of 110 — two 54 px session columns
+and a 2 px gutter — which puts the canvas at 1728 wide.
+
+The 54 is not arbitrary. A result cell may be asked to carry an outcome literal with another
+raised beside it, `DSQ` over `DSQ`, which measures about 46 px in the font the Raspberry Pi and
+CI resolve. The columns were 32 and 24, so that pair overran into the next round — invisibly,
+because SVG text simply overruns and reports nothing. Narrow them again and it will.
+
+`tools/relayout_standings_grid.py` computes the whole grid from those constants and is
+idempotent; `tests/unit/test_image_standings_geometry.py` asserts the shipped files against the
+same numbers from the other side, including a rasterised check that no text reaches a divider.

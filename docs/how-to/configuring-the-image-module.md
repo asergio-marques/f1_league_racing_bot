@@ -132,12 +132,13 @@ Anything you have not supplied is drawn from what the bot ships, so every pictur
 | `resources/league/markers` | Standings movement markers — up, down and unchanged | 64 × 64 |
 | `resources/league/weather` | Weather symbols | 64 × 64 |
 | `resources/league/tyres` | Tyre compounds | 64 × 64 |
+| `resources/league/standings-highlights` | Marks on a standings result cell | any — these stretch |
 
 **`resources/league/` is yours and the bot never touches it.** Updating the bot cannot overwrite what is in it. That also means nothing is backing it up — keep your original artwork somewhere of your own.
 
 **Never put your files in `resources/defaults/`.** That folder is the bot's, and updating the bot replaces it wholesale, taking anything you put there with it.
 
-**If you want your artwork somewhere else entirely**, there is a command per folder — `/images config track-image-directory`, `/images config team-image-directory`, and so on for all seven. Most leagues never need one. Two things if you do use them: the folder has to sit inside the bot's own project folder, and anything outside it is refused with your existing setting left alone; and a folder that does not exist yet is accepted anyway, with a warning, because files put there later are picked up on their own.
+**If you want your artwork somewhere else entirely**, there is a command per folder — `/images config track-image-directory`, `/images config team-image-directory`, and so on for all eight. Most leagues never need one. Two things if you do use them: the folder has to sit inside the bot's own project folder, and anything outside it is refused with your existing setting left alone; and a folder that does not exist yet is accepted anyway, with a warning, because files put there later are picked up on their own.
 
 ### Which pictures use which folder
 
@@ -166,6 +167,7 @@ So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`
 | Driver photos | The driver's **Discord user ID number**, so their photo does not vanish when they change their nickname |
 | Arrows and weather | Fixed names the bot already uses — these come complete, just replace the pictures |
 | Tyre compounds | The compound name — `soft.svg` |
+| Standings marks | Fixed names the bot already uses — `p1.svg`, `p2.svg`, `p3.svg`, `points.svg`, `fastest_lap.svg`, and `qualifying_` versions of the first four. These come complete, just replace the pictures |
 
 > **Guinea-Bissau, the Democratic Republic of the Congo and Dominica each need their own flag file now.** `Guinean`, `Congolese` and `Dominican` used to cover two countries apiece in English and could only ever resolve one — Guinea, Congo and the Dominican Republic. A driver from the other country of each pair has a nationality of their own to select — `Bissau-Guinean`, `Congolese (Kinshasa)` and `Dominican (Dominica)` — so if your league has such a driver, add `guinea_bissau.svg`, `democratic_republic_of_the_congo.svg` or `dominica.svg` alongside the flags you already supply.
 
@@ -173,7 +175,7 @@ So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`
 
 Say your league has a team called **Red Bull** and you have its badge ready.
 
-1. **Save it as an SVG at 120 × 120.** Keep it simple — no gradients, no filters, no clipping. If the badge is not square, add see-through space around it to make it square. The bot never pads pictures for you, and a picture of the wrong shape gets stretched and smeared.
+1. **Save it as an SVG at 120 × 120.** Keep it simple — no filters, no clipping, and no lettering (fonts differ from one machine to the next, so draw any text as shapes). Gradients are fine. If the badge is not square, add see-through space around it to make it square. The bot never pads pictures for you, and a picture of the wrong shape gets stretched and smeared.
 2. **Do not put any words in the artwork.** Text inside a badge can come out in the wrong typeface on a different computer. Keep lettering as shapes, or leave it out.
 3. **Work out the filename**: `Red Bull` becomes `red_bull.svg`.
 4. **Copy it onto the bot's computer**, into `resources/league/teams`. That is the whole of it — the bot is already looking there, and there is no command to run. Do not put it in `resources/defaults/teams`: that folder is the bot's and is replaced when you update it. This is the by-hand step — there is no command for it.
@@ -282,6 +284,42 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 >
 > Put the **last** row's crop point at the height the file itself declares, so a full division is still drawn whole. The two go together and both are optional: leave them out and your drawing works exactly as it always did, at full height. The drawings that come with the bot have both. Anything you draw below the rows and outside `footer_group` is cut off, so put it in the group or move it above the rows.
 
+> **The standings grids mark out their race cells, and the marks are files you can replace.** Both standings drawings show where the season's results fell: a gold, silver or bronze plate behind a podium finish, a green tint behind any other points finish, a small purple triangle in the **top-left** corner for the fastest lap, and a gold, silver, bronze or green triangle in the **top-right** for where the driver **qualified**, each a shade darker than the plate of the same placing. The drawings that come with the bot do this already.
+>
+> **To change how a mark looks, replace its file.** They live in `resources/league/standings-highlights`:
+>
+> | File | Drawn for |
+> |---|---|
+> | `p1.svg` `p2.svg` `p3.svg` `points.svg` | The race result — a plate behind the number |
+> | `fastest_lap.svg` | The fastest lap — top-left corner |
+> | `qualifying_p1.svg` `qualifying_p2.svg` `qualifying_p3.svg` `qualifying_points.svg` | The qualifying result — top-right corner |
+>
+> Drop your own in under one of those names and it is drawn; leave the folder empty and the bot's own marks are used. There is no command and no colour setting for this — it is artwork, like your team badges.
+>
+> **The qualifying mark sits on the race cell**, in the corner nearest the small raised number it stands for. That number shares one run of text with the race result and has no fixed position, so nothing can go *behind* it — a corner of the cell can, which is what makes qualifying markable at all. A cell showing all three marks at once is a win from pole with the fastest lap.
+>
+> **These marks stretch to fit the cell**, unlike every other folder, where the size in the table above is a rule. A cell is a slightly different shape on the drivers drawing than on the constructors one, so draw something that survives being squashed a little — a rectangle or a corner shape does, a circle turns into an ellipse.
+>
+> **The numbers on top stay in the drawing file.** A picture cannot colour text laid over it, so the ink is still a `.highlight_p1_text` rule in the drawing's stylesheet, with `.highlight_p1_sup_text` for the small qualifying number raised beside the result — which sits on the plate and would otherwise stay grey. Name no rule and the number keeps the colour it already has.
+>
+> **Only the plate decides the ink.** Neither corner mark does. They sit in a corner and the numbers sit inboard over the plate, so the plate is the only thing you read them against — a fastest lap on a gold plate still takes the gold plate's dark ink, and would be unreadable if it took the mark's.
+>
+> **Don't want one of these marks? Supply an empty picture.** Deleting the file does *not* turn a mark off — these five names are the bot's own, so an absent file just means the bot draws its version, the same way the markers and weather icons work. What does turn one off is a **fully transparent SVG** saved under that name:
+>
+> ```svg
+> <svg xmlns="http://www.w3.org/2000/svg" width="128" height="56" viewBox="0 0 128 56"/>
+> ```
+>
+> Put that in `resources/league/standings-highlights/points.svg` and points finishes stop being marked, while podiums and fastest laps carry on. Do it for all five and nothing is marked at all.
+>
+> **To remove the feature outright**, take the `..._background` and `..._fastest_lap` slots out of the drawing file. The grid then draws exactly as it did before any of this existed — which is also why an older drawing of your own keeps working untouched.
+>
+> **What counts as a points finish is whatever your points configuration pays for**, so this follows your league rather than a fixed top ten. The fastest lap is only marked where your configuration actually awards a fastest-lap bonus for that session and the driver finished inside any position limit you set: a league that awards none marks nothing, which is right rather than broken. A driver disqualified from a win is drawn `DSQ` and gets no gold.
+>
+> **A qualifying position counts as a points one if your configuration pays for it.** A league that awards no qualifying points sees no qualifying mark below the podium, and one awarding none at all sees no qualifying mark whatever — the same rule as the race, applied to the session before it.
+
+> **The standings drawings got wider.** They are now 1728 px across, from 1200 and 1128. The old columns could not hold the widest thing a cell can be asked to show — a `DSQ` with another outcome raised beside it — so it ran over into the next round, and nothing said so. Each session column is now 54 px wide. If you have re-laid a standings drawing of your own, give your columns the same room; nothing can check this for you.
+
 **Make room for your biggest season.** Where the drawing file sets the limit — table rows, calendar rounds, reserve seats — the bot will refuse to go past it rather than quietly leaving someone off. The one exception is a reserve block you left out altogether, which is a decision rather than a limit and is honoured in silence. If your calendar drawing has room for 22 rounds, `/round add` will stop you at 23. Spare room costs nothing, as unused slots are hidden.
 
 ---
@@ -302,7 +340,7 @@ The check-in call is the odd one out — it *adds* a picture rather than replaci
 
 **Standings is the other odd one out: it posts two pictures where the text posts one message.** The driver standings go first and the constructor standings after, each carrying its heading and lifecycle label as message text and its table as an attachment. Both are drawn again and replaced on every occasion the standings were reposted before — a round first posted as provisional, a penalty or appeal phase closed, an amendment approved, a points change recalculating a round, and `/results standings sync`.
 
-> **Both pictures carry the whole season as a grid** — every round the division holds, run or not, with a result cell per session and, on the constructors picture, a car per driver who drove. The classification beside the grid — positions, points, gaps — resolves the same way it always has. `/images test standings` shows you exactly this.
+> **Both pictures carry the whole season as a grid** — every round the division holds, run or not, with a result cell per session and, on the constructors picture, a car per driver who drove. The classification beside the grid — positions, points, gaps — resolves the same way it always has, and the race cells are coloured for podiums, points finishes and fastest laps as described under Step 5. `/images test standings` shows you exactly this, with a different classification invented for each round so you can judge the colours across a whole grid rather than down one row.
 
 > **Either championship can fail on its own.** The one that failed is posted as text — that section by itself, not the whole table — and the one that drew is left alone, so you never read the same championship twice in one round.
 

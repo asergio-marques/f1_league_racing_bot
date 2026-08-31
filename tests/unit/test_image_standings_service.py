@@ -22,7 +22,12 @@ from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnap
 from services.image_standings_service import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
+    HIGHLIGHT_P1,
+    HIGHLIGHT_P2,
+    HIGHLIGHT_P3,
+    HIGHLIGHT_POINTS,
     RoundHeading,
+    highlight_for,
     resolve_drawing,
 )
 from services.standings_service import MOVEMENT_GAINED, MOVEMENT_UNCHANGED, Movement
@@ -85,7 +90,14 @@ def _constructors_drawing(**overrides):
     return resolve_drawing(**values)
 
 
-def _qual(driver: int, team: int, position: int, *, outcome=OutcomeModifier.CLASSIFIED):
+def _qual(
+    driver: int,
+    team: int,
+    position: int,
+    *,
+    outcome=OutcomeModifier.CLASSIFIED,
+    points: int = 0,
+):
     return QualifyingSessionResult(
         id=0,
         session_result_id=0,
@@ -95,11 +107,19 @@ def _qual(driver: int, team: int, position: int, *, outcome=OutcomeModifier.CLAS
         outcome=outcome,
         tyre=None,
         best_lap=None,
-        points_awarded=0,
+        points_awarded=points,
     )
 
 
-def _race(driver: int, team: int, position: int, *, outcome=OutcomeModifier.CLASSIFIED):
+def _race(
+    driver: int,
+    team: int,
+    position: int,
+    *,
+    outcome=OutcomeModifier.CLASSIFIED,
+    points: int = 0,
+    fl_bonus: int = 0,
+):
     return RaceSessionResult(
         id=0,
         session_result_id=0,
@@ -113,8 +133,8 @@ def _race(driver: int, team: int, position: int, *, outcome=OutcomeModifier.CLAS
         postrace_time_penalties_ms=0,
         appeal_time_penalties_ms=0,
         fastest_lap=None,
-        fastest_lap_bonus=0,
-        points_awarded=0,
+        fastest_lap_bonus=fl_bonus,
+        points_awarded=points,
     )
 
 
@@ -371,7 +391,7 @@ def test_a_classified_result_draws_its_finishing_position():
         rounds=[RoundHeading(ordinal=1, number="1")],
         round_session_results={1: {"FEATURE_RACE": [_race(1, 900, 3)]}},
     )
-    assert drawing.entries[0].cells[1].sessions["feature_race_result"] == "3"
+    assert drawing.entries[0].cells[1].sessions["feature_race_result"].text == "3"
 
 
 @pytest.mark.parametrize("outcome", [OutcomeModifier.DNF, OutcomeModifier.DNS, OutcomeModifier.DSQ])
@@ -381,7 +401,7 @@ def test_a_non_classified_result_draws_its_outcome_literal_not_its_position(outc
         rounds=[RoundHeading(ordinal=1, number="1")],
         round_session_results={1: {"FEATURE_RACE": [_race(1, 900, 1, outcome=outcome)]}},
     )
-    assert drawing.entries[0].cells[1].sessions["feature_race_result"] == outcome.value
+    assert drawing.entries[0].cells[1].sessions["feature_race_result"].text == outcome.value
 
 
 def test_a_round_not_yet_run_draws_every_cell_of_it_empty():
@@ -396,7 +416,7 @@ def test_a_round_not_yet_run_draws_every_cell_of_it_empty():
         "feature_qualifying_result",
         "feature_race_result",
     }
-    assert all(value == "" for value in cells.values())
+    assert all(value.text == "" for value in cells.values())
 
 
 def test_a_round_the_division_holds_no_session_of_a_type_draws_that_cell_empty():
@@ -405,10 +425,10 @@ def test_a_round_the_division_holds_no_session_of_a_type_draws_that_cell_empty()
         round_session_results={1: {"FEATURE_RACE": [_race(1, 900, 1)]}},
     )
     cells = drawing.entries[0].cells[1].sessions
-    assert cells["feature_race_result"] == "1"
-    assert cells["sprint_race_result"] == ""
-    assert cells["sprint_qualifying_result"] == ""
-    assert cells["feature_qualifying_result"] == ""
+    assert cells["feature_race_result"].text == "1"
+    assert cells["sprint_race_result"].text == ""
+    assert cells["sprint_qualifying_result"].text == ""
+    assert cells["feature_qualifying_result"].text == ""
 
 
 def test_a_driver_absent_from_a_session_the_round_holds_draws_that_cell_empty():
@@ -418,8 +438,8 @@ def test_a_driver_absent_from_a_session_the_round_holds_draws_that_cell_empty():
         rounds=[RoundHeading(ordinal=1, number="1")],
         round_session_results={1: {"FEATURE_RACE": [_race(2, 900, 1)]}},
     )
-    assert drawing.entries[0].cells[1].sessions["feature_race_result"] == ""
-    assert drawing.entries[1].cells[1].sessions["feature_race_result"] == "1"
+    assert drawing.entries[0].cells[1].sessions["feature_race_result"].text == ""
+    assert drawing.entries[1].cells[1].sessions["feature_race_result"].text == "1"
 
 
 def test_a_seated_driver_takes_their_seat_ordinal():
@@ -431,12 +451,14 @@ def test_a_seated_driver_takes_their_seat_ordinal():
     )
     cars = drawing.entries[0].cells[1].cars
     assert set(cars) == {2}
-    assert cars[2] == ("Verstappen", {
+    name, sessions = cars[2]
+    assert name == "Verstappen"
+    assert {suffix: cell.text for suffix, cell in sessions.items()} == {
         "sprint_qualifying_result": "",
         "sprint_race_result": "",
         "feature_qualifying_result": "",
         "feature_race_result": "1",
-    })
+    }
 
 
 def test_a_seated_driver_who_did_not_drive_leaves_their_car_free():
@@ -470,3 +492,92 @@ def test_a_car_nobody_drove_is_absent_from_the_cells():
         team_seat_assignments={10: {501: 1, 502: 2}},
     )
     assert set(drawing.entries[0].cells[1].cars) == {1}
+
+
+# ── 7. Which cells are worth calling out ──────────────────────────────────
+#
+# The conditions are facts about the data alone. Which paint answers a kind, and whether the
+# template asked for any, is settled in `build_fill_spec` and tested with the projection.
+
+
+@pytest.mark.parametrize(
+    "position,expected",
+    [(1, HIGHLIGHT_P1), (2, HIGHLIGHT_P2), (3, HIGHLIGHT_P3)],
+)
+def test_a_podium_finish_earns_its_own_background(position, expected):
+    assert highlight_for(_race(1, 10, position)) == (expected, False)
+
+
+def test_a_points_finish_off_the_podium_earns_the_points_background():
+    assert highlight_for(_race(1, 10, 7, points=6)) == (HIGHLIGHT_POINTS, False)
+
+
+def test_the_podium_takes_priority_over_the_points_position():
+    """A winner scores points too, and the gold is the thing worth saying."""
+    assert highlight_for(_race(1, 10, 1, points=25)) == (HIGHLIGHT_P1, False)
+
+
+def test_a_finish_outside_the_points_earns_no_background():
+    assert highlight_for(_race(1, 10, 12, points=0)) == (None, False)
+
+
+@pytest.mark.parametrize(
+    "outcome", [OutcomeModifier.DNF, OutcomeModifier.DNS, OutcomeModifier.DSQ]
+)
+def test_a_driver_not_classified_first_is_not_a_winner(outcome):
+    """A disqualification from first place draws `DSQ`, and gold beneath it would lie."""
+    assert highlight_for(_race(1, 10, 1, outcome=outcome)) == (None, False)
+
+
+def test_the_fastest_lap_layer_follows_the_bonus_the_points_config_awarded():
+    """`fastest_lap_bonus` already answers *both* halves of the rule.
+
+    It is non-zero only where the driver held the lap **and** the configuration made
+    fastest-lap points available for that race and this finishing position. A league that
+    awards none therefore lights no cell, which is what the specification asks for.
+    """
+    assert highlight_for(_race(1, 10, 5, points=10, fl_bonus=1))[1] is True
+    assert highlight_for(_race(1, 10, 5, points=10, fl_bonus=0))[1] is False
+
+
+def test_the_fastest_lap_stands_alongside_a_podium_rather_than_replacing_it():
+    assert highlight_for(_race(1, 10, 2, points=18, fl_bonus=1)) == (HIGHLIGHT_P2, True)
+
+
+def test_a_qualifying_result_can_never_carry_the_fastest_lap_layer():
+    """It holds no such field — the layer is a race-session matter and only that."""
+    assert highlight_for(_qual(1, 10, 1, points=3)) == (HIGHLIGHT_P1, False)
+
+
+def test_a_qualifying_result_outside_the_points_earns_no_background():
+    assert highlight_for(_qual(1, 10, 5, points=0)) == (None, False)
+
+
+def test_a_cell_the_data_left_empty_carries_no_highlight():
+    drawing = _drivers_drawing(
+        rounds=[RoundHeading(ordinal=1, number="1")], round_session_results={}
+    )
+    cell = drawing.entries[0].cells[1].sessions["feature_race_result"]
+    assert (cell.text, cell.highlight, cell.fastest_lap) == ("", None, False)
+
+
+def test_a_drivers_cell_carries_the_highlight_its_result_earns():
+    drawing = _drivers_drawing(
+        rounds=[RoundHeading(ordinal=1, number="1")],
+        round_session_results={1: {"FEATURE_RACE": [_race(1, 900, 1, points=25, fl_bonus=1)]}},
+    )
+    cell = drawing.entries[0].cells[1].sessions["feature_race_result"]
+    assert (cell.text, cell.highlight, cell.fastest_lap) == ("1", HIGHLIGHT_P1, True)
+
+
+def test_a_constructors_car_carries_the_same_highlight_as_the_drivers_cell():
+    """Both grids resolve their cells through one funnel, so neither can drift."""
+    drawing = _constructors_drawing(
+        rounds=[RoundHeading(ordinal=1, number="1")],
+        round_session_results={1: {"FEATURE_RACE": [_race(501, 10, 3, points=15, fl_bonus=2)]}},
+        team_seat_assignments={10: {501: 1}},
+        driver_display_names={501: "Verstappen"},
+    )
+    _, sessions = drawing.entries[0].cells[1].cars[1]
+    cell = sessions["feature_race_result"]
+    assert (cell.text, cell.highlight, cell.fastest_lap) == ("3", HIGHLIGHT_P3, True)
