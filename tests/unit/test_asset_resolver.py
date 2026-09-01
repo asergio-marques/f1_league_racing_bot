@@ -826,3 +826,40 @@ def test_the_specific_fallback_is_preferred_to_the_generic_one_in_the_same_folde
         fallback_names=fallback_names_for("marker", "position_change_lost"),
     )
     assert resolution.path == league / "position_change_fallback.svg"
+
+
+# ── A portrait obtained from Discord resolves as any other asset ──────────
+
+
+def test_a_wrapped_portrait_resolves_as_an_ordinary_found_asset(tmp_path):
+    """The whole portrait design rests on the resolver needing no change at all.
+
+    The bot writes `<discord user id>.svg` carrying a base64 PNG, precisely so that
+    `ASSET_EXTENSION` stays single-valued and this lookup stays one computed name and one
+    existence test. If this ever fails, the wrapper has stopped being the right shape.
+    """
+    from services.driver_portrait_service import portrait_path, wrap_png
+
+    drivers = tmp_path / "drivers"
+    drivers.mkdir()
+    (drivers / FALLBACK_ASSET_NAME).write_bytes(SVG)
+    portrait_path(drivers, "198273645").write_text(wrap_png(b"pngbytes"), encoding="utf-8")
+
+    resolution = resolve_asset(drivers, "198273645")
+
+    assert resolution.outcome is AssetOutcome.FOUND
+    assert resolution.drew_own_file is True
+    assert resolution.path == drivers / "198273645.svg"
+
+
+def test_a_driver_without_a_portrait_still_falls_back(tmp_path):
+    # The absence of a portrait is not special: it is the ordinary fallback path, which is
+    # what a driver carrying only Discord's generated avatar must land on.
+    drivers = tmp_path / "drivers"
+    drivers.mkdir()
+    (drivers / FALLBACK_ASSET_NAME).write_bytes(SVG)
+
+    resolution = resolve_asset(drivers, "198273645")
+
+    assert resolution.outcome is AssetOutcome.FALLBACK
+    assert resolution.drew_own_file is False
