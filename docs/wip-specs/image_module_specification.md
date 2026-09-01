@@ -115,7 +115,8 @@ For this purpose, the Discord bot shall require three new dependencies: one with
     - The command shall fail where the images module is not enabled, and where "images use-pfp toggle" is disabled.
 - <NEW COMMAND> A new "images use-pfp daily-toggle" command will be made available to server administrators, which governs whether the portraits of the drivers of the active season are brought up to date once a day, at a time of day the league configures.
     - It shall be disabled by default, and the time of day shall be "03:00" until a league names another.
-    - On being used, a modal shall be presented in which the league names the time of day, and the setting shall be committed only upon a confirmation given after that modal. Where the league cancels at either step the command shall fail and the configuration be left as it stood.
+    - On being used to enable the updates, a modal shall be presented in which the league names the time of day, prefilled with the time presently configured, and the setting shall be committed only upon a confirmation given after that modal. Where the league cancels at either step the command shall fail and the configuration be left as it stood.
+    - On being used to disable them, no time is required and no modal shall be presented.
     - The time named shall be read as UTC, and the modal shall say so. A league naming a time without being told the zone it is read in would read it as its own, and the bot would update at an hour the league did not choose.
     - The command shall fail where the images module is not enabled, and where "images use-pfp toggle" is disabled.
 - Where "images use-pfp toggle" is enabled, at least one of "images use-pfp prerender-toggle" and "images use-pfp daily-toggle" shall be enabled, and both may be. A configuration enabling neither obtains a portrait at no moment whatever, which is what disabling the feature outright already provides, and is not a configuration the module shall hold.

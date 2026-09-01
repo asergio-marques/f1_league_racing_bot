@@ -164,7 +164,7 @@ So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`
 | Circuit maps | The track's **name** — not its short track ID |
 | Team badges | The team's name |
 | Country flags | The **country** — `united_kingdom.svg`. Never the nationality: `british.svg` is not looked for. A driver who answered `other` needs `other.svg`; one with nothing recorded draws no flag and needs no file |
-| Driver photos | The driver's **Discord user ID number**, so their photo does not vanish when they change their nickname |
+| Driver photos | The driver's **Discord user ID number**. The ID never changes, where a nickname or a username can, so a photo named this way does not vanish when a driver renames themselves. **You may not have to supply these at all** — see *Letting the bot fetch driver photos* below |
 | Arrows and weather | Fixed names the bot already uses — these come complete, just replace the pictures |
 | Tyre compounds | Fixed names the bot already uses — `soft.svg`, `medium.svg`, `hard.svg`, `intermediate.svg`, `wet.svg`. These come complete, just replace the pictures. The `fallback.svg` beside them is not a sixth compound: it is what a driver with no tyre recorded gets |
 | Standings marks | Fixed names the bot already uses — `race_p1.svg`, `race_p2.svg`, `race_p3.svg`, `race_points.svg`, `race_fastest_lap.svg`, and `qualifying_` versions of the first four. These come complete, just replace the pictures |
@@ -184,6 +184,41 @@ Say your league has a team called **Red Bull** and you have its badge ready.
 Every folder works the same way. Only the folder and the source of the name change.
 
 > **The previews use your artwork.** They look in the folders you configured, exactly as a real post does, and fall back to the grey placeholder only where a file is genuinely missing. The reply names each one it fell back on, and the file it was looking for, so a missing badge is something you can see and fix rather than guess at.
+
+### Letting the bot fetch driver photos
+
+Driver photos are the one folder you can leave empty and still get real pictures. Instead of
+finding and cropping a photo for every driver on the grid, you can have the bot take each
+driver's profile picture from your Discord server.
+
+**It is off until you switch it on.** Run `/images use-pfp toggle`. That is the whole of the
+setup — the bot updates the photos it needs just before it draws a lineup, so the next lineup
+you post has them.
+
+**To also refresh the whole grid overnight**, run `/images use-pfp daily-toggle`. A box opens
+asking for a time of day; type it and confirm. **That time is UTC**, not your local time, and
+the box says so. It starts at `03:00`, and most spellings work — `3`, `03:00`, `3am`, `1530`.
+Running the command again turns the daily refresh off, and needs no time.
+
+You can have both on at once. One of the two must stay on while the feature is enabled: if
+you try to switch off the last one, the bot refuses and changes nothing, because neither on
+would mean no photo is ever fetched — which is what `/images use-pfp toggle` already does.
+
+**A few things worth knowing before you turn it on:**
+
+- **Your own files always win.** A photo you put in `resources/league/drivers` yourself is
+  never replaced. You can hand-pick photos for some drivers and let the bot fetch the rest.
+- **It uses the picture the driver shows on your server** — their server profile picture if
+  they set one, otherwise their ordinary Discord picture.
+- **A driver with no picture of their own gets the grey placeholder**, exactly as before.
+  Discord's coloured default is not a photo, and the bot does not treat it as one.
+- **The pictures are square**, because that is how Discord stores them. The circle you see in
+  Discord is the app's own cropping, not part of the file.
+- **A driver who removes their Discord picture** loses the fetched photo too, and goes back to
+  the placeholder at the next lineup.
+
+`/season review` shows all three settings, so you can confirm what is on before a season
+starts.
 
 ### The stand-in picture, and where it comes from
 
@@ -324,7 +359,7 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 >
 > **The qualifying mark sits on the race cell**, in the corner nearest the small raised number it stands for. That number shares one run of text with the race result and has no fixed position, so nothing can go *behind* it — a corner of the cell can, which is what makes qualifying markable at all. A cell showing all three marks at once is a win from pole with the fastest lap.
 >
-> **These marks stretch to fit the cell**, unlike the rest of your artwork, where the size in the table above is a rule. A cell is a slightly different shape on the drivers drawing than on the constructors one, so draw something that survives being squashed a little — a rectangle or a corner shape does, a circle turns into an ellipse. The movement markers sharing the folder are unaffected and are still drawn at 64 × 64: it is the slot in the drawing that stretches, not the folder.
+> **These marks stretch to fit the cell**, unlike the rest of your artwork, where the size in the table above is a rule. A cell is a slightly different shape on the drivers drawing than on the constructors one, so draw something that survives being squashed a little — a rectangle or a corner shape does, a circle turns into an ellipse. The movement markers sharing the folder are unaffected and are still drawn at 64 × 64: it is the slot in the drawing that stretches, not the folder. **Only a marks or markers blank may be told to stretch.** If you draw your own file and tell a driver photo, badge, flag or circuit blank to stretch, the bot refuses the drawing file and names the blank — a photo blank set to stretch would draw every face in your league distorted, and no artwork could put that right.
 >
 > **The numbers on top stay in the drawing file.** A picture cannot colour text laid over it, so the ink is still a `.highlight_p1_text` rule in the drawing's stylesheet, with `.highlight_p1_sup_text` for the small qualifying number raised beside the result — which sits on the plate and would otherwise stay grey. Name no rule and the number keeps the colour it already has.
 >
@@ -457,6 +492,7 @@ Worth running through just before `/season approve`.
 - [ ] The time zone is the one your league actually races in
 - [ ] You have looked at each output with its `/images test` command — against a real division once you have a season, and against the invented league before then — and been happy with it
 - [ ] Your artwork is on the bot's computer, correctly named
+- [ ] If you are letting the bot fetch driver photos, `/season review` shows it switched on with at least one update method
 - [ ] `/season review` reports nothing blocking, and still offers the **Approve** button
 
 ---
