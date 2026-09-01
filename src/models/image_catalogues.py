@@ -782,7 +782,7 @@ class FieldCatalogue:
 #: runs, so the capacity is counted from the file rather than declared here (XIV.12, and
 #: see specs/037-calendar-image-generation/contracts/calendar-catalogue.md).
 #:
-#: The three mystery-round literals are not in this catalogue: "Mystery GP" and the rest
+#: The three mystery-round literals are not in this catalogue: "Mystery Grand Prix" and the rest
 #: are *values*, and a catalogue classifies fields. They live with the resolution, in
 #: ``services/image_calendar_service.py``.
 CALENDAR_CATALOGUE = FieldCatalogue(

@@ -407,7 +407,7 @@ These hold for every image type of the module and are stated here rather than re
 ### A round of the mystery format
 - A round of the mystery format conceals its track until it is run and records none. It is drawn all the same and marked as such, and is never a reason for a graphic to be refused.
 - Upon such a round every graphic shall place, on whichever of these fields it declares:
-    - "Mystery GP" upon the field naming the grand prix of the round;
+    - "Mystery Grand Prix" upon the field naming the grand prix of the round;
     - "Mystery" upon the field naming the country of the round;
     - "Mystery" upon the field naming the track of the round, which is the value the round object records as its location.
 - Such a round conceals its country with its track. Both the flag and the track map of such a round are resolved as the conventions above require from the datum "Mystery", drawing the "mystery.svg" file of the directory configured for that class, so that a league decides by the files it places there how a concealed round is depicted.
@@ -1041,7 +1041,7 @@ These hold for every image type of the module and are stated here rather than re
 - The name of a driver shall be resolved as it is for the lineup graphic, and their flag image searched for as it is for the lineup graphic. Where the nationality is absent the field shall be removed and a non-fatal error reported; where one is recorded, its image is resolved as the conventions above require.
 - The team of a row is the team of the division seating the driver at the moment of generation, which for a reserve driver is the reserve team. It is not the team whose car the driver drove in any single round. The team image shall be searched for as it is for the lineup graphic.
 - The image of a round shall be searched for as it is for the calendar graphic, the number of the round standing for the field in any error reported.
-- A round of the mystery format is drawn as the conventions above require, its race name field reading "Mystery GP" and its image resolved from the datum "Mystery". The sheet standing after such a round names it as it names any other.
+- A round of the mystery format is drawn as the conventions above require, its race name field reading "Mystery Grand Prix" and its image resolved from the datum "Mystery". The sheet standing after such a round names it as it names any other.
 - The check-in graphic re-presents the values the embed of the check-in call shows and never derives them by rules of its own.
 - The format of the round is "Normal", "Sprint", "Endurance" or "Mystery", which is the text the embed carries.
 - The name of the track is that recorded for the round, which is the value the embed carries as its location. The grand prix name and the country are read from the track object of the round. A round of the mystery format is drawn as the conventions above require, its track name, race name and country name fields carrying the values named there and its flag and track map alike resolved from the datum "Mystery". No mandatory field of this graphic is emptied for want of a track.
@@ -1261,7 +1261,7 @@ These hold for every image type of the module and are stated here rather than re
 - A Discord mention appearing within any text the graphic places shall be replaced by the name of the driver it addresses, resolved as the name of a driver is resolved elsewhere. The justification the attendance module composes for a sacking and for a move to the reserve team is written around such a mention and shall carry the name alone. The graphic mentions nobody; it is the message the graphic is attached to that mentions the driver the verdict pertains to.
 - The team is the team the driver drove for in the session the verdict pertains to, which for a reserve driver standing in for another is the team whose car they drove and never the reserve team. The name to be placed, and the name to be normalized to search for the team image, shall be resolved as they are for the results graphic: the team of the division holding the Discord role the result records, falling back to the name of the role itself should the division hold no such team.
 - A verdict of an attendance sanction names no team. Its team name field shall be emptied and its team image field removed, and no error shall be reported. A template drawing a label above them, or above the session name field emptied for the same reason, shall declare the removable group of those fields defined in the conventions above, so that the label does not stand over nothing.
-- The number of the round is read from the round object and the grand prix name from the track object of the round. A round of the mystery format is drawn as the conventions above require, its race name field reading "Mystery GP".
+- The number of the round is read from the round object and the grand prix name from the track object of the round. A round of the mystery format is drawn as the conventions above require, its race name field reading "Mystery Grand Prix".
 - Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash. A field carrying an image is removed rather than emptied.
 
 ### Handling of mismatches between verdict and template

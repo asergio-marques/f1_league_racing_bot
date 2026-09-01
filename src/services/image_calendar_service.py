@@ -35,7 +35,7 @@ TEMPLATE_KEY = "calendar_template"
 #: marked as such, and every mandatory field takes a real value (Constitution XIV.3, and
 #: the wip-spec's "A round of the mystery format").
 MYSTERY_COUNTRY = "Mystery"
-MYSTERY_RACE_NAME = "Mystery GP"
+MYSTERY_RACE_NAME = "Mystery Grand Prix"
 MYSTERY_TRACK_NAME = "Mystery"
 MYSTERY_DATUM = "Mystery"
 

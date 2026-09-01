@@ -61,7 +61,7 @@ _ORDINARY_SESSIONS = ("Qualifying", "Race")
 
 #: What a round of the mystery format draws, its track being concealed until it is run. These
 #: are values, not exemptions: no mandatory field is emptied for want of a track (FR-029).
-MYSTERY_RACE_NAME = "Mystery GP"
+MYSTERY_RACE_NAME = "Mystery Grand Prix"
 MYSTERY_LITERAL = "Mystery"
 
 

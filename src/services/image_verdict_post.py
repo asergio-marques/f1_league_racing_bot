@@ -204,7 +204,7 @@ async def build_drawing(
 
     race_name = context.get("race_name")
     if str(context.get("round_format") or "").upper() == "MYSTERY":
-        race_name = "Mystery GP"
+        race_name = "Mystery Grand Prix"
 
     return VerdictDrawing(
         kind=kind,

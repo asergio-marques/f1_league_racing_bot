@@ -173,9 +173,9 @@ def test_an_absent_season_number_is_emptied():
     assert "season_number" in spec.empty
 
 
-def test_a_mystery_round_reads_mystery_gp():
-    spec = build_fill_spec(_penalty(race_name="Mystery GP"), _root())
-    assert spec.text["race_name"] == "Mystery GP"
+def test_a_mystery_round_reads_mystery_grand_prix():
+    spec = build_fill_spec(_penalty(race_name="Mystery Grand Prix"), _root())
+    assert spec.text["race_name"] == "Mystery Grand Prix"
 
 
 def test_an_absent_nationality_removes_the_flag():

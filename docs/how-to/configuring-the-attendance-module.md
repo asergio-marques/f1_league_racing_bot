@@ -180,7 +180,7 @@ Out of the box, the check-in call is an embed and the attendance sheet is a list
 /images config toggle aspect:Check-in call
 ```
 
-`attendance` **replaces** the sheet's list with a drawn table — flags, team badges, and a column per round showing what each round cost. `rsvp` **adds** a graphic to the check-in call naming the round, its sessions, its date and the moment check-in closes; everything else about the call is unchanged, including the roster and the three buttons.
+`attendance` **replaces** the sheet's list with a drawn table — flags, team badges, and a column per round showing what each round cost. `rsvp` **adds** a graphic to the check-in call naming the round, its sessions, its date and the moment check-in closes; everything else about the call is unchanged, including the roster and the three buttons. The picture leads with the **grand prix** and puts the **circuit** on the line beneath it, and shows the country as a flag rather than spelling it out. A mystery round reads "Mystery Grand Prix" over "Mystery".
 
 > **The drawn sheet warns before the limit does.** If you set a threshold in step 6, the picture puts a wash behind the total of anyone near it: **amber** for a driver **within two points** of the limit, **red** once they have **reached** it. The two are the same weight and are told apart by colour, so the warning stands out rather than looking like a weaker version of the sanction. It is a warning a manager can read at a glance, a round or two before the bot acts. A driver on zero is never marked, however low you set the limit, and if you set no threshold nothing is marked at all. The plain text list carries no such warning — this is one of the things the picture adds.
 >
