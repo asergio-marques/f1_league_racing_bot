@@ -1,6 +1,56 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-01 — v7.5.0 → v7.6.0: MINOR — the vertical crop carries up what spans it, not the footer alone]
+  Version change    : 7.5.0 → 7.6.0
+  Bump rationale    : MINOR. One change to Principle XIV, Rule 2, and it **states a third effect of
+                      an operation that already existed**. No principle is removed and none is
+                      redefined incompatibly.
+
+                      Nothing conforming to v7.5.0 becomes non-conforming. A template drawing
+                      nothing across its crop points is cropped exactly as it was; a template
+                      drawing something across one was, under v7.5.0, drawing something the rule
+                      below already told it not to draw there, and is now drawn correctly instead of
+                      being told off for it. No template is invalidated and none must be redrawn.
+
+                      It is MINOR rather than PATCH because the crop now does something it did not
+                      do before — it rewrites the geometry of elements other than the root — which
+                      is materially expanded guidance and not a clarification of what was written.
+
+  Motivation        : Every shipped grid rules a separator down its round columns, from the headings
+                      to just above the caption band. The crop rewrote the canvas and carried the
+                      band up; nothing moved the separators, so on a division drawn short they ran
+                      to the new cut edge and straight through the band that had just moved above
+                      them — the one place the template had said they must not reach. The fault was
+                      in the operation rather than in any one template, and so is the remedy.
+
+  Modified sections :
+    - Principle XIV, Rule 2, fill-operations table: the **Vertical crop** row's effect gains the
+      shortening, so the table names all three halves of what the operation does.
+    - Principle XIV, Rule 2, "The vertical crop": two paragraphs added after the footer-group
+      paragraph. The first states the shortening and the distance it preserves; the second states
+      which shapes it applies to (a line, a rectangle, a path drawing one straight vertical rule),
+      that a purely translating transform is followed, and that a scaled or rotated subtree, the
+      footer group's own subtree and any definition are left as they stand.
+    - Principle XIV, Rule 2, the sentence forbidding a template to draw below a crop point: **not**
+      amended here. It governs what lies wholly below the cut, which is still lost, and the wip-spec
+      carries the same correction in the module's own words.
+  Added sections    : none
+  Removed sections  : none
+  Deferred items    : none. No placeholder tokens remain in the document.
+  Templates review  : `.specify/templates/` states nothing about the crop and needed no change. The
+                      rule was implemented and restated in the same change: `src/utils/svg_fill.py`
+                      (`_shorten_across_crop`, `_canvas_offset`, `_path_rule`),
+                      `docs/wip-specs/image_module_specification.md` (§ The vertical crop, and the
+                      calendar's prohibition on spanning elements qualified for the canvas
+                      background), `README.md` and `docs/how-to/configuring-the-image-module.md`
+                      (the template-authoring callouts). Covered by
+                      `tests/unit/test_image_row_crop.py`, whose new cases fail without the rule.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-01 — v7.4.0 → v7.5.0: MINOR — the stretching exemption moves from the class to the slot]
   Version change    : 7.4.0 → 7.5.0
   Bump rationale    : MINOR. One change to Principle XIV, Rule 6, and it **narrows the scope of an
@@ -4305,7 +4355,7 @@ The module MUST support exactly these fill operations, and no others:
 | Recolour | element | Merges a `fill:` declaration into the element's inline `style`, from a palette the template's stylesheet declares where the data decide it |
 | Text fit | `<text>` carrying a declared box | Breaks the string into `<tspan>` lines within the box's line budget, reducing the field's size until it fits. Nothing is ever cut |
 | Empty or remove | element, or its `_group` wrapper | Clears the text, or deletes the node and its subtree |
-| Vertical crop | the root, at a declared crop point | Carries the footer group up, then rewrites the root `height` and `viewBox` to the crop point's `y` |
+| Vertical crop | the root, at a declared crop point | Carries the footer group up and shortens what spans the cut, then rewrites the root `height` and `viewBox` to the crop point's `y` |
 
 **The vertical crop.** Any image type whose capacity is fixed by the template (Rule 12) MAY
 declare a crop point per member of its repeating collection, and the render MUST cut the canvas
@@ -4326,6 +4376,27 @@ exactly as one always was. It follows that the crop point of the **last member t
 declares** is expected to sit at the declared canvas height: a template whose last crop point
 does not still draws every smaller division correctly and MUST NOT be refused, but the
 divergence MUST be reported as a notice (Rule 4).
+
+An element **spanning** the crop point MUST have its lower end carried up by that same
+difference, so that it keeps the distance from the foot of the canvas at which it was drawn. A
+rule ruled down the repeating collection — the separator between the round columns of a standings
+grid or an attendance sheet — therefore stops above the footer band of a graphic drawn short
+exactly as it does of one drawn whole, instead of running on to the cut and through the band the
+crop has just carried up. An element already reaching the foot of the canvas reaches the new
+foot, which is what rewriting the height alone did to it. Without this the crop keeps only half
+its promise: a graphic drawn short is meant to be the graphic drawn whole with the empty members
+taken out, and it is not, in the one place a league looks.
+
+This MUST be applied to a line, a rectangle, and a path drawing one straight vertical rule and
+nothing else, those being the forms in which a template rules one. A path drawing anything more
+MUST be left as it stands, its shape not being one whose lower end can be moved without reading
+it. A transform that purely translates MUST be followed, an editor placing its artwork inside a
+positioned layer as a matter of course; an element under a scale, a rotation or a matrix MUST be
+left as it stands, its own coordinates not being those of the canvas. An element within the
+footer group MUST be left as it stands, that group being carried up whole, and so MUST an element
+within a definition — a clipping path, a mask, a symbol, a gradient — whose geometry is borrowed
+by whatever refers to it and is not drawn where it stands. An element left as it stands is
+clipped by the shortened canvas, as every spanning element was before this rule.
 
 Declaring crop points is OPTIONAL for every image type but the calendar, which requires them. A
 template declaring none MUST render at its full declared height, which is what keeps a league's
@@ -6470,4 +6541,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.5.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-01
+**Version**: 7.6.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-01
