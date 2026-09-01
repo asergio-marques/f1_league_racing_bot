@@ -173,6 +173,30 @@ class ImageConfigService:
         return not current
 
 
+def portrait_configuration_fault(config) -> str | None:
+    """Why this configuration's driver-portrait settings are invalid, or None.
+
+    The standing form of the rule `pfp_change_refusal` enforces on each change. The commands
+    make this state unreachable -- both sub-toggles refuse while portraits are disabled, and
+    `pfp_prerender` defaults on -- so this is defence in depth against a hand-edited database
+    or a future path that writes the columns directly, and is what `/season review` and
+    `/season approve` read.
+
+    Total, and tolerant of a configuration object predating migration 047: a missing field
+    reads as off, which is what its default says.
+    """
+    if config is None or not getattr(config, "use_pfp", False):
+        return None
+    if getattr(config, "pfp_prerender", False) or getattr(config, "pfp_daily", False):
+        return None
+    return (
+        "Driver portraits are set to be obtained from Discord, but neither pre-render "
+        "nor daily updates are enabled, so no portrait would ever be fetched. Enable "
+        "`/images use-pfp prerender-toggle` or `/images use-pfp daily-toggle`, or turn "
+        "off `/images use-pfp toggle`."
+    )
+
+
 def pfp_change_refusal(config: ImageConfig, column: str, enabled: bool) -> str | None:
     """Why this change to a portrait toggle must be refused, or None where it may proceed.
 

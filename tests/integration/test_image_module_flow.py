@@ -477,7 +477,26 @@ async def test_season_review_and_config_view_agree(
     review_lines = await season_cog._build_image_review_section(SERVER_ID)
 
     def aspect_lines(lines):
-        return [ln.strip() for ln in lines if ln.strip().startswith(("✅", "❌", "⚠️", "↳"))]
+        """The eight aspect lines, and the reasons hanging off them.
+
+        Named by label rather than by marker: the review also states the driver-portrait
+        settings, which are configuration rather than one of the eight aspects, and a
+        marker-only filter swept those in and made the two surfaces look divergent when
+        they are not.
+        """
+        from models.image_constants import ASPECT_LABELS
+
+        labels = tuple(ASPECT_LABELS.values())
+        kept = []
+        for raw in lines:
+            line = raw.strip()
+            if line.startswith("↳"):
+                kept.append(line)
+            elif line.startswith(("✅", "❌", "⚠️")) and any(
+                label in line for label in labels
+            ):
+                kept.append(line)
+        return kept
 
     assert aspect_lines(view_lines) == aspect_lines(review_lines)
     assert any("phase 3" in ln.lower() and "sprint" in ln.lower() for ln in review_lines)

@@ -251,12 +251,16 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
     """A season approved on a broken template would post the fault to the league."""
     source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
 
-    assert "image_fault = False" in source
-    assert source.count("image_fault = True") == 2, "both graphics must raise it"
+    # A list of reasons rather than a flag: an undrawable graphic and an invalid driver
+    # portrait configuration both withhold the button, and they read differently.
+    assert "approval_blockers: list[str] = []" in source
+    assert source.count("approval_blockers.append(") == 3, (
+        "both graphics and the portrait settings must raise it"
+    )
 
     tail = source[source.index("Server-level UNASSIGNED"):]
-    assert "if image_fault:" in tail
-    guarded = tail[tail.index("if image_fault:"):]
+    assert "if approval_blockers:" in tail
+    guarded = tail[tail.index("if approval_blockers:"):]
     fault_branch, _, approve_branch = guarded.partition("else:")
     assert "view=view" not in fault_branch, "the button must not be offered on a fault"
     assert "image module is not correctly configured" in fault_branch
@@ -661,5 +665,115 @@ def test_the_review_and_the_approval_read_the_same_evaluation():
     review = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
     approve = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve")
 
-    assert "image_fault" in review
+    assert "approval_blockers" in review
     assert "_undrawable_graphics" in approve
+
+    # The portrait settings block on both surfaces too, and through one helper so that the
+    # two cannot disagree about whether a season may be approved.
+    assert "_portrait_configuration_blocker" in review
+    assert "_portrait_configuration_blocker" in approve
+
+
+# ── The driver portrait settings in the review, and at approval ───────────
+
+
+def _portrait_cog(**config):
+    from unittest.mock import AsyncMock, MagicMock
+    from types import SimpleNamespace
+    from cogs.season_cog import SeasonCog
+
+    values = {
+        "use_pfp": False,
+        "pfp_prerender": True,
+        "pfp_daily": False,
+        "pfp_daily_time": "03:00",
+    }
+    values.update(config)
+    bot = MagicMock()
+    bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    bot.image_config_service.get_config = AsyncMock(
+        return_value=None if values.get("_absent") else SimpleNamespace(**values)
+    )
+    cog = SeasonCog.__new__(SeasonCog)
+    cog.bot = bot
+    return cog, bot
+
+
+async def test_the_review_states_the_portrait_settings_when_disabled():
+    cog, _bot = _portrait_cog(use_pfp=False)
+
+    lines = await cog._portrait_review_lines(1)
+
+    # Stated even when off: "the bot is not obtaining portraits" is an answer, not an
+    # absence of one, for a manager deciding whether the season is configured.
+    assert any("Driver portraits from Discord: disabled" in line for line in lines)
+
+
+async def test_the_review_names_both_update_triggers_and_the_time_in_utc():
+    cog, _bot = _portrait_cog(
+        use_pfp=True, pfp_prerender=True, pfp_daily=True, pfp_daily_time="07:45"
+    )
+
+    lines = await cog._portrait_review_lines(1)
+    text = "\n".join(lines)
+
+    assert "enabled" in text
+    assert "before each render" in text
+    assert "daily at 07:45 UTC" in text
+
+
+async def test_the_review_marks_an_invalid_portrait_configuration():
+    cog, _bot = _portrait_cog(use_pfp=True, pfp_prerender=False, pfp_daily=False)
+
+    text = "\n".join(await cog._portrait_review_lines(1))
+
+    assert "⛔" in text
+    assert "neither pre-render nor daily updates" in text
+
+
+async def test_the_review_section_survives_a_configuration_it_cannot_read():
+    cog, bot = _portrait_cog()
+    bot.image_config_service.get_config.side_effect = RuntimeError("gone")
+
+    lines = await cog._portrait_review_lines(1)
+
+    # A review must never fail because of this section.
+    assert any("could not be read" in line for line in lines)
+
+
+async def test_the_blocker_fires_only_on_an_invalid_configuration():
+    invalid, _ = _portrait_cog(use_pfp=True, pfp_prerender=False, pfp_daily=False)
+    assert await invalid._portrait_configuration_blocker(1) is not None
+
+    for values in (
+        {"use_pfp": False, "pfp_prerender": False, "pfp_daily": False},
+        {"use_pfp": True, "pfp_prerender": True, "pfp_daily": False},
+        {"use_pfp": True, "pfp_prerender": False, "pfp_daily": True},
+        {"use_pfp": True, "pfp_prerender": True, "pfp_daily": True},
+    ):
+        cog, _ = _portrait_cog(**values)
+        assert await cog._portrait_configuration_blocker(1) is None, values
+
+
+async def test_the_blocker_stands_aside_where_the_image_module_is_disabled():
+    cog, bot = _portrait_cog(use_pfp=True, pfp_prerender=False, pfp_daily=False)
+    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+
+    assert await cog._portrait_configuration_blocker(1) is None
+
+
+async def test_the_blocker_never_blocks_a_season_it_could_not_read():
+    cog, bot = _portrait_cog()
+    bot.image_config_service.get_config.side_effect = RuntimeError("gone")
+
+    assert await cog._portrait_configuration_blocker(1) is None
+
+
+def test_the_approval_gate_returns_rather_than_merely_reporting():
+    source = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve")
+
+    assert "Gate 4c" in source
+    branch = source[source.index("if portrait_fault is not None:"):]
+    branch = branch[: branch.index("Gate 3: signup module")]
+    assert "return" in branch
+    assert "Season cannot be approved" in branch
