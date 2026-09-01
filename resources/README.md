@@ -67,7 +67,10 @@ classes need not match each other, and flags and maps deliberately do not.
 **Shipped:**
 
 - the fifteen default templates in `defaults/templates/`, one per image type;
-- one `fallback.svg` in each asset directory, except `markers/`, which ships two — see below;
+- one `fallback.svg` in each asset directory, except `markers/`, which ships two — see below.
+  The tyre one is a special case worth knowing: since every compound now ships and a
+  submission cannot record anything else, it stands for **no compound recorded** and nothing
+  else, so it is drawn as an empty dashed ring carrying no letter;
 - `defaults/tracks/mystery.svg` and `defaults/flags/mystery.svg`, drawn for a round whose
   track — and with it its country — is concealed until it is run;
 - `defaults/flags/other.svg`, drawn for a driver who stated no nationality in particular;
@@ -77,8 +80,10 @@ classes need not match each other, and flags and maps deliberately do not.
   weather drawn for a session, and `clear.svg`, `light_cloud.svg`, `overcast.svg`,
   `wet.svg` and `very_wet.svg` for a concrete weather within one;
 - the five `defaults/tyres/` icons — `soft.svg`, `medium.svg`, `hard.svg`,
-  `intermediate.svg` and `wet.svg`, the compounds a session can be run on. There is no
-  sixth: a qualifying submission naming anything else is refused rather than recorded;
+  `intermediate.svg` and `wet.svg`, the compounds a session can be run on. Each is a
+  coloured ring lettered `S`, `M`, `H`, `I` or `W`, with a see-through centre so the card
+  shows through. There is no sixth: a qualifying submission naming anything else is refused
+  rather than recorded;
 - the nine standings marks, in `defaults/markers/` alongside the three above —
   `race_p1.svg`, `race_p2.svg`, `race_p3.svg` and `race_points.svg` for the plate drawn
   beneath a race result, `race_fastest_lap.svg` for the mark drawn in its top-left corner, and
