@@ -10,7 +10,7 @@ grid's geometry is now changing underneath them:
   actually resolve. The columns were 32px on the drivers grid and 24px on the constructors
   one, so the widest pair overran its neighbour. They are now 54px on both.
 * **The chips are ``<image>`` slots**, not rects. A chip is artwork of the closed-set
-  ``standings_highlight`` class, so a league may draw the mark it wants; the fastest lap is a
+  ``marker`` class, so a league may draw the mark it wants; the fastest lap is a
   corner triangle rather than a wash over the cell precisely because a file can be one and a
   stylesheet colour cannot.
 

@@ -15,6 +15,7 @@ import unicodedata
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import Sequence
 
 from models.image_constants import FALLBACK_ASSET_NAME
 
@@ -113,7 +114,12 @@ class AssetResolution:
 
 
 def resolve_asset(
-    directory: Path, datum: str, *, packaged: Path | None = None, closed_set: bool = False
+    directory: Path,
+    datum: str,
+    *,
+    packaged: Path | None = None,
+    closed_set: bool = False,
+    fallback_names: Sequence[str] = (FALLBACK_ASSET_NAME,),
 ) -> AssetResolution:
     """Find the file for *datum* in *directory*, or a fallback, or neither.
 
@@ -128,6 +134,14 @@ def resolve_asset(
     2. no such file, but *directory* holds a fallback          → ``FALLBACK``
     3. neither, but *packaged* holds a fallback                → ``FALLBACK``, packaged
     4. neither tier holds a fallback                           → ``MISSING``
+
+    *fallback_names* is what "holds a fallback" means, in order, most specific first
+    (v7.5.0). A class whose data are all one shape passes the single ``fallback.svg`` and
+    behaves exactly as before. `marker` passes two, because it draws the square
+    position-change arrows and the stretched standings and attendance marks out of one
+    folder and no one file can stand in for both; the caller decides which name leads by
+    asking ``fallback_names_for``. The list is searched **within a tier before moving on**,
+    so a league's own generic fallback still beats the packaged one, as it always did.
 
     The datum's own file is sought in *directory* **alone**. A file of that name sitting in
     *packaged* is never drawn: a league that supplied no image must not be handed one it
@@ -156,9 +170,10 @@ def resolve_asset(
         if candidate.is_file():
             return AssetResolution(AssetOutcome.FOUND, candidate, slug)
 
-    fallback = directory / FALLBACK_ASSET_NAME
-    if fallback.is_file():
-        return AssetResolution(AssetOutcome.FALLBACK, fallback, slug)
+    for name in fallback_names:
+        fallback = directory / name
+        if fallback.is_file():
+            return AssetResolution(AssetOutcome.FALLBACK, fallback, slug)
 
     if packaged is not None:
         if closed_set and slug:
@@ -168,21 +183,31 @@ def resolve_asset(
                     AssetOutcome.FALLBACK, packaged_exact, slug, from_packaged=True
                 )
 
-        packaged_fallback = packaged / FALLBACK_ASSET_NAME
-        if packaged_fallback.is_file():
-            return AssetResolution(
-                AssetOutcome.FALLBACK, packaged_fallback, slug, from_packaged=True
-            )
+        for name in fallback_names:
+            packaged_fallback = packaged / name
+            if packaged_fallback.is_file():
+                return AssetResolution(
+                    AssetOutcome.FALLBACK, packaged_fallback, slug, from_packaged=True
+                )
 
     return AssetResolution(AssetOutcome.MISSING, None, slug)
 
 
-def has_fallback(directory: Path, *, packaged: Path | None = None) -> bool:
+def has_fallback(
+    directory: Path,
+    *,
+    packaged: Path | None = None,
+    fallback_names: Sequence[str] = (FALLBACK_ASSET_NAME,),
+) -> bool:
     """Whether this asset class can survive a datum it has no file for.
 
     Both tiers, taken as a whole (FR-043). A configured directory carrying no fallback of
-    its own is still tolerant where the packaged directory carries one.
+    its own is still tolerant where the packaged directory carries one. *fallback_names*
+    is read as :func:`resolve_asset` reads it — any one of them answers.
     """
-    if (directory / FALLBACK_ASSET_NAME).is_file():
-        return True
-    return packaged is not None and (packaged / FALLBACK_ASSET_NAME).is_file()
+    for name in fallback_names:
+        if (directory / name).is_file():
+            return True
+        if packaged is not None and (packaged / name).is_file():
+            return True
+    return False

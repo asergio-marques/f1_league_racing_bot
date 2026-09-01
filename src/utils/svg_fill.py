@@ -27,6 +27,7 @@ from models.image_constants import (
     NOTICE_FIELD_REDUCED,
     NOTICE_FONT_SUBSTITUTED,
     NOTICE_OPTIONAL_FIELD_EMPTIED,
+    fallback_names_for,
     is_closed_set_datum,
 )
 from models.image_module import FillResult, RenderNotice
@@ -382,11 +383,14 @@ def fill(spec: FillSpec) -> FillResult:
             )
         )
 
+        slug = normalise(datum)
+        fallbacks = fallback_names_for(asset_class, slug)
         resolution = resolve_asset(
             Path(directory),
             datum,
             packaged=_packaged_directory(asset_class),
-            closed_set=is_closed_set_datum(asset_class, normalise(datum)),
+            closed_set=is_closed_set_datum(asset_class, slug),
+            fallback_names=fallbacks,
         )
 
         if resolution.found:
@@ -440,7 +444,7 @@ def fill(spec: FillSpec) -> FillResult:
         # not something to draw around.
         unresolved.append(
             f"field `{field_id}` needs a `{asset_class}` image for “{datum}”, and "
-            f"neither `{resolution.slug or datum}.svg` nor a `fallback.svg` is in that "
+            f"neither `{resolution.slug or datum}.svg` nor a `{fallbacks[0]}` is in that "
             f"directory"
         )
 

@@ -48,6 +48,32 @@ _ROUND_PREFIX = "round"
 SANCTION_ANNOTATION = "Reached point limit"
 
 
+#: The two labels the one limit plate can carry. The sheet draws a single plate because a
+#: league can only have a single limit: `/attendance config autoreserve` and
+#: `/attendance config autosack` refuse each other, so a template declaring one block for each
+#: would always draw one and delete the other, leaving a hole beside the survivor. The label
+#: is therefore a field the projection fills, as `SANCTION_ANNOTATION` is a literal it draws.
+LIMIT_LABEL_RESERVE = "RESERVE AT"
+LIMIT_LABEL_SACK = "SACKED AT"
+
+#: The two marks a driver's total may be drawn against, and the class they are artwork of.
+#: `marker` is shared with the standings result chips and the position-change arrows: three
+#: vocabularies of the module's own, closed all the way down, and one folder for a league to
+#: redraw them in.
+MARK_NEAR = "attendance_limit_near"
+MARK_REACHED = "attendance_limit_reached"
+MARK_ASSET_CLASS = "marker"
+
+#: Every datum the projection can hand to the asset resolver, named so a test can hold the
+#: packaged folder to it — a mark added here without a file would resolve to the fallback and
+#: draw the wrong picture rather than fail.
+MARK_DATA: tuple[str, ...] = (MARK_NEAR, MARK_REACHED)
+
+#: How many points below the limit the near mark reaches. A driver on the limit less one or
+#: less two is two points away or fewer; one on the limit less three is not marked at all.
+MARK_NEAR_BAND = 2
+
+
 class AttendanceDataError(Exception):
     """A fatal disagreement between a division and what an attendance sheet needs.
 
@@ -84,6 +110,11 @@ class SheetEntry:
     team_name: str = ""
     nationality: str | None = None
     sanction: str = ""
+    #: The mark drawn beneath the total, or None where the driver has earned none. It travels
+    #: with the row rather than being derived at projection time for the reason the standings
+    #: ``CellValue`` carries its highlight beside its text: they are two readings of one
+    #: number, and deriving them apart is how a mark comes to disagree with the total above it.
+    mark: str | None = None
     #: Round ordinal → the cell's text. An empty string is zero and is drawn empty.
     round_points: Mapping[int, str] = field(default_factory=dict)
 
@@ -112,8 +143,10 @@ class AttendanceDrawing:
     division_tier: str | None = None
     season_number: str | None = None
     race_name: str | None = None
-    autoreserve_limit: str | None = None
-    autosack_limit: str | None = None
+    #: The one limit plate: what it is called, and the number on it. Both are None together
+    #: where neither functionality is switched on, and the plate leaves the canvas whole.
+    limit_label: str | None = None
+    limit_value: str | None = None
     #: True where the league collects a driver's nationality at all. Where it does not, an
     #: empty flag field is exactly what was configured and raises nothing (XIV.4).
     nationality_collected: bool = True
@@ -140,6 +173,52 @@ def cell_text(points: int | None) -> str:
     nothing drawn.
     """
     return "" if not points else str(points)
+
+
+def active_limit(
+    *, autoreserve_threshold: int | None, autosack_threshold: int | None
+) -> tuple[str, int] | None:
+    """The one limit the sheet answers to — its label and its value — or None where neither is on.
+
+    A league can only have one. `/attendance config autoreserve` and `/attendance config
+    autosack` each refuse to be set while the other is active, so exactly one of the two is
+    ever a number and the sheet has one plate and one set of marks rather than two of each.
+
+    Auto-sack wins where a database somehow holds both, because that is what the enforcement
+    does: ``enforce_attendance_sanctions`` tests the sack threshold first and moves on to the
+    next driver, so a sheet marking against the reserve limit would warn of a sanction that
+    could no longer be the one applied.
+
+    0 and None are the same thing here as everywhere else in the module: switched off.
+    """
+    if autosack_threshold:
+        return LIMIT_LABEL_SACK, autosack_threshold
+    if autoreserve_threshold:
+        return LIMIT_LABEL_RESERVE, autoreserve_threshold
+    return None
+
+
+def mark_for(total: int | None, limit: int | None) -> str | None:
+    """The mark a driver's *total* earns against *limit*, or None where it earns none.
+
+    Two tiers, and *limit* is whichever of the two thresholds is live — the mark says a driver
+    is close to losing their seat and not which of the two ways they would lose it, exactly as
+    ``SANCTION_ANNOTATION`` does once they have.
+
+    ``>=`` at the limit, matching ``enforce_attendance_sanctions``: the sheet must not draw a
+    driver as merely close when the same number has already sanctioned them.
+
+    **A total of zero never marks.** The near band is otherwise anchored below zero for a limit
+    of one or two, which would paint the mark across every driver on a clean sheet — a warning
+    of nothing, drawn over almost the whole column.
+    """
+    if not limit or not total:
+        return None
+    if total >= limit:
+        return MARK_REACHED
+    if total >= max(1, limit - MARK_NEAR_BAND):
+        return MARK_NEAR
+    return None
 
 
 def resolve_drawing(
@@ -177,6 +256,13 @@ def resolve_drawing(
     team_map = team_names or {}
     nationality_map = nationalities or {}
 
+    # The one limit the plate names and the marks are measured against, decided once so a
+    # row can never be marked against a limit other than the one drawn above it.
+    limit = active_limit(
+        autoreserve_threshold=autoreserve_threshold,
+        autosack_threshold=autosack_threshold,
+    )
+
     def order(record: DriverRecord) -> tuple[int, str]:
         # The textual sheet's own order: total descending, then alphabetical on the name
         # actually resolved — so the tie-break reads the same string the graphic draws.
@@ -193,6 +279,7 @@ def resolve_drawing(
                 team_name=team_map.get(record.key, ""),
                 nationality=nationality_map.get(record.key),
                 sanction=SANCTION_ANNOTATION if record.sanctioned else "",
+                mark=mark_for(record.total, limit[1] if limit else None),
                 round_points={
                     ordinal: cell_text(value)
                     for ordinal, value in record.round_points.items()
@@ -206,10 +293,10 @@ def resolve_drawing(
         division_tier=None if division_tier is None else str(division_tier),
         season_number=None if season_number is None else str(season_number),
         race_name=race_name,
-        # A threshold of 0 or None is the functionality switched off, which is a configured
+        # Both thresholds off is the functionality switched off, which is a configured
         # absence: the block leaves whole and nothing is reported (XIV.4).
-        autoreserve_limit=str(autoreserve_threshold) if autoreserve_threshold else None,
-        autosack_limit=str(autosack_threshold) if autosack_threshold else None,
+        limit_label=limit[0] if limit else None,
+        limit_value=str(limit[1]) if limit else None,
         nationality_collected=nationality_collected,
         entries=entries,
         rounds=list(rounds or []),
@@ -317,23 +404,20 @@ def build_fill_spec(
     put_optional("division_tier", drawing.division_tier)
     put_optional("race_name", drawing.race_name)
 
-    # The two point limits. A switched-off functionality takes its whole block off the
-    # canvas; where the template declares no block group, the field alone is emptied. Neither
-    # raises a notice — the graphic is drawing exactly what the league configured (XIV.4).
-    for name, value in (
-        ("autoreserve", drawing.autoreserve_limit),
-        ("autosack", drawing.autosack_limit),
-    ):
-        limit_id = f"{name}_limit"
-        group_id = f"{name}_group"
-        if value:
-            put(limit_id, value)
-            continue
-        if group_id in declared:
-            off_canvas.update(_ids_bearing(declared, group_id))
-            remove.append(group_id)
-        elif limit_id in declared:
-            empty_quietly.append(limit_id)
+    # The one point limit, named by its own label. Both functionalities switched off takes the
+    # whole block off the canvas; where the template declares no block group, the two fields
+    # alone are emptied. Neither raises a notice — the graphic is drawing exactly what the
+    # league configured (XIV.4).
+    if drawing.limit_value:
+        put("limit_label", drawing.limit_label)
+        put("limit_value", drawing.limit_value)
+    elif "limit_group" in declared:
+        off_canvas.update(_ids_bearing(declared, "limit_group"))
+        remove.append("limit_group")
+    else:
+        empty_quietly.extend(
+            name for name in ("limit_label", "limit_value") if name in declared
+        )
 
     # ── The rows ──────────────────────────────────────────────────────────
     for entry in drawn:
@@ -342,6 +426,14 @@ def build_fill_spec(
         put(f"{stem}_points", entry.points)
         put(f"{stem}_team_name", entry.team_name)
         put(f"{stem}_sanction", entry.sanction)
+
+        # The mark beneath the total. A row earning none is **left alone**, neither filled nor
+        # removed: the slot is an `<image>` the template ships with no href, which draws
+        # nothing and which `_unreachable_links` passes over. Removing it instead would put
+        # fifty ids into `spec.remove` per sheet and walk a subtree for each.
+        mark_id = f"{stem}_points_background"
+        if entry.mark and mark_id in declared:
+            image_data[mark_id] = (MARK_ASSET_CLASS, entry.mark)
 
         if f"{stem}_team_image" in declared:
             if entry.team_name:

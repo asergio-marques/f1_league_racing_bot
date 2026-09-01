@@ -106,19 +106,16 @@ For this purpose, the Discord bot shall require three new dependencies: one with
 - <NEW COMMAND> A new "images config driver-image-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a driver themselves (portrait, photograph, avatar) will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the driver image files will be searched in a "resources/league/drivers" folder located at the project root.
-- <NEW COMMAND> A new "images config marker-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to mark the direction of a change of standing position will be searched.
+- <NEW COMMAND> A new "images config marker-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files of every mark the bot draws over a cell will be searched: the direction of a change of standing position, the mark a standings result cell earns, and the mark an attendance total earns.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the marker image files will be searched in a "resources/league/markers" folder located at the project root.
+    - The class is a closed set. The marks of a standings result cell and of an attendance total are drawn into slots that stretch; the markers of a change of standing position are not, and hold the aspect of their class.
 - <NEW COMMAND> A new "images config weather-icon-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a weather condition will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the weather icon files will be searched in a "resources/league/weather" folder located at the project root.
 - <NEW COMMAND> A new "images config tyre-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a tyre compound will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the tyre icon files will be searched in a "resources/league/tyres" folder located at the project root.
-- <NEW COMMAND> A new "images config standings-highlight-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to mark a result cell of a standings graphic will be searched.
-    - The directory will always be assumed to be a path relative to the project root.
-    - By default, the files will be searched in a "resources/league/standings-highlights" folder located at the project root.
-    - The class is a closed set of five data, and its slots stretch rather than carrying one aspect.
 
 ### Verification of template files configured
 - Right after one of the "images template X" commands is used, the following verifications shall be made:
@@ -286,7 +283,8 @@ These hold for every image type of the module and are stated here rather than re
 ### The fallback image
 - Mandatory and optional classify the fields of a template, and nothing else. An asset is not a field: it is the file placed upon one. The rules of this section govern the resolution of an asset and are not qualified by the classification of the field receiving it.
 - Every asset directory shall cover each datum of its class that a league can present it with, or resolve to a fallback that covers those it does not, drawn under the two-tier resolution below.
-- The packaged directory of a class is the directory shipped with the module for it — "resources/defaults/<class>" — and carries that class's own "fallback.svg". It is distinct from the directory a league has configured for the class, and shall never be the same directory: the configured directory defaults to "resources/league/<class>", so the two tiers stand apart whether or not a league has moved anything. A league shall not be required to configure a class in order to reach either tier.
+- The packaged directory of a class is the directory shipped with the module for it — "resources/defaults/<class>" — and carries that class's own fallback. It is distinct from the directory a league has configured for the class, and shall never be the same directory: the configured directory defaults to "resources/league/<class>", so the two tiers stand apart whether or not a league has moved anything. A league shall not be required to configure a class in order to reach either tier.
+- A class whose data are drawn at more than one shape shall carry a fallback per shape rather than one for the class, and the fallback consulted for a datum shall be the one of its own shape. The marker class carries two: "position_change_fallback.svg" for the three directions of a change of standing position, and "standings_attendance_fallback.svg" for every mark of a standings result cell and of an attendance total. Where a directory holds the generic "fallback.svg" as well, it shall be consulted after the fallback of the datum's own shape and never before it.
 - A datum that is the vocabulary of the module itself, rather than a value a league supplies, shall ship as a file in the packaged directory of its class beside that class's fallback. A league did not choose such a vocabulary and cannot be incomplete against it, whether or not it has pointed the class at a directory of its own: where the configured directory holds neither the datum's own file nor a fallback of its own, the packaged directory shall be searched for the datum's own file before its "fallback.svg" is drawn. This is the one respect in which a file of the datum's own name sitting in the packaged directory is drawn for a league that did not put it there.
     - A datum is of this kind in either of two ways, which are one rule at two granularities and not two rules.
         - Every datum of a class whose data are wholly the module's: the three directions of a change of standing position, and the vocabulary of weather. The class settles it, and the vocabulary is not restated here.
@@ -760,7 +758,7 @@ These hold for every image type of the module and are stated here rather than re
             - row_<x>_round_<z>_sprint_race_result - Optional - Field on which the result obtained by the driver in the sprint race session of that round is placed as text
             - row_<x>_round_<z>_feature_qualifying_result - Optional - Field on which the result obtained by the driver in the feature qualifying session of that round is placed as text
             - row_<x>_round_<z>_feature_race_result - Optional - Field on which the result obtained by the driver in the feature race session of that round is placed as text
-            - row_<x>_round_<z>_sprint_race_background - Optional - Field on which the mark of the highlight the sprint race result of that round earns will be placed, drawn beneath that result and searched for in the directory configured via "images config standings-highlight-directory"
+            - row_<x>_round_<z>_sprint_race_background - Optional - Field on which the mark of the highlight the sprint race result of that round earns will be placed, drawn beneath that result and searched for in the directory configured via "images config marker-directory"
             - row_<x>_round_<z>_sprint_race_fastest_lap - Optional - Field on which the mark of the fastest lap will be placed where that result holds it, drawn above the background named above and searched for in the same directory
             - row_<x>_round_<z>_feature_race_background - Optional - Field on which the mark of the highlight the feature race result of that round earns will be placed, drawn beneath that result and searched for in the same directory
             - row_<x>_round_<z>_feature_race_fastest_lap - Optional - Field on which the mark of the fastest lap will be placed where that result holds it, drawn above the background named above and searched for in the same directory
@@ -819,7 +817,7 @@ These hold for every image type of the module and are stated here rather than re
 - The gap to the leader is the points of the first-placed entry less those of the entry, rendered prefixed with a minus sign, and is empty for the first-placed entry.
 - The previous position and the position change are read against the standings of the round preceding the one drawn, the change being the number of positions separating the two, placed without a sign and "0" where the entry has neither gained nor lost.
 - The round preceding the one drawn is the most recent round of the division that holds standings. A round recorded as cancelled, and a round yet to be run, hold none and are stepped over, so that one cancelled round does not empty the column for every entry of the graphic drawn after it.
-- The marker image of the position change shall be searched for in the configured marker directory under a filename equal to the direction of that change: "gained" where the entry stands higher than it did after the preceding round, "lost" where it stands lower, and "unchanged" where it stands where it stood, and resolved as the conventions above require.
+- The marker image of the position change shall be searched for in the configured marker directory under a filename equal to the direction of that change: "position_change_gained" where the entry stands higher than it did after the preceding round, "position_change_lost" where it stands lower, and "position_change_none" where it stands where it stood, and resolved as the conventions above require.
 - The position change cannot be determined for the graphic of the first round of a division, nor for an entry the standings of the preceding round do not hold. In either case the "row_<x>_position_change_group" field shall be removed in its entirety; where the template declares no such group, the number shall be emptied and the marker removed. The previous position field is emptied in the same two cases.
 - A result cell of either graphic carries the finishing position recorded in that session of that round for the driver the cell stands for, or "DNF", "DNS" or "DSQ" where that is the outcome recorded for them. A driver dropped to the bottom of a session by a disqualification carries "DSQ" and not the position that drop gave them.
     - The module places one cell per session, and a template drawing the cells of two sessions together in the room of one - a race result with its qualifying result raised beside it, or any other such pairing - is making an arrangement of its own and shall size it for the widest pair it may be asked to carry, which is an outcome beside an outcome. A pair drawn in less room than that overruns the cell beside it, which no check of the template can detect and which the graphic reports in no way.
@@ -841,7 +839,8 @@ These hold for every image type of the module and are stated here rather than re
     - a fastest lap layer, carrying the mark of the fastest lap where that result holds it;
     - a qualifying layer, carrying the mark of the highest highlight the qualifying result of that session earns.
 - The three stand together and none stands in place of another, so that a race won from the front of the grid with the fastest lap is marked as all three.
-- The marks are images of a single asset class, resolved as every other image of the module is. The class is a closed set of nine data, which are the whole of the vocabulary either graphic may ask for: "p1", "p2", "p3", "points" and "fastest_lap" for a race result, and "qualifying_p1", "qualifying_p2", "qualifying_p3" and "qualifying_points" for a qualifying one.
+- The marks are images of a single asset class, resolved as every other image of the module is. The class is a closed set of nine data, which are the whole of the vocabulary either graphic may ask for: "race_p1", "race_p2", "race_p3", "race_points" and "race_fastest_lap" for a race result, and "qualifying_p1", "qualifying_p2", "qualifying_p3" and "qualifying_points" for a qualifying one.
+- Every datum of the marker class shall name the vocabulary it belongs to, one directory holding the marks of a standings result, the marks of an attendance total and the markers of a change of standing position alike. A datum whose name states only its value is ambiguous across the three.
     - A qualifying result earns the same four kinds a race result earns and takes a different image for each, so that the two may be told apart where both are drawn upon one cell.
     - A sprint session and a feature session are marked alike. Neither the class nor the datum records which of the two a cell belongs to.
 - A result earns a background as follows, the first that applies being the one taken:
@@ -939,10 +938,9 @@ These hold for every image type of the module and are stated here rather than re
     - division_tier - Optional - Field on which the tier given to the division at "division add" is placed
     - round_number - Mandatory - Field on which the human-readable number of the round after which the sheet stands is placed as text, read from the round object definition
     - race_name - Optional - Field on which the grand prix name of that round is placed as text, read from the track object definition
-    - autoreserve_group - Optional - Field acting as a container for every other field of the autoreserve limit, which shall be removed in its entirety when the autoreserve functionality is disabled
-    - autoreserve_limit - Optional - Field on which the number of attendance points at which a driver is moved to the reserve team is placed as text, read from the configuration set via "attendance config autoreserve"
-    - autosack_group - Optional - Field acting as a container for every other field of the autosack limit, which shall be removed in its entirety when the autosack functionality is disabled
-    - autosack_limit - Optional - Field on which the number of attendance points at which a driver is removed from all driving roles is placed as text, read from the configuration set via "attendance config autosack"
+    - limit_group - Optional - Field acting as a container for every other field of the point limit, which shall be removed in its entirety when neither the autoreserve nor the autosack functionality is enabled
+    - limit_label - Optional - Field on which the name of the enabled functionality is placed as text: "RESERVE AT" where autoreserve is enabled, "SACKED AT" where autosack is
+    - limit_value - Optional - Field on which the number of attendance points of the enabled functionality is placed as text, read from the configuration set via "attendance config autoreserve" or "attendance config autosack"
     - For each row of ordinal <x>:
         - row_<x>_group - Mandatory - Field acting as a container for every other field of the row, which shall be removed in its entirety when the sheet holds no driver of that ordinal
         - row_<x>_driver_name - Mandatory - Field on which the name of the driver is placed as text
@@ -950,6 +948,7 @@ These hold for every image type of the module and are stated here rather than re
         - row_<x>_team_name - Optional - Field on which the name of the team of the driver is placed as text
         - row_<x>_team_image - Optional - Field on which an image representing that team (e.g. logo, badge, car) will be placed, searched for in the directory configured via "images config team-image-directory"
         - row_<x>_points - Mandatory - Field on which the total attendance points accrued by the driver are placed as text
+        - row_<x>_points_background - Optional - Field on which the mark the driver's total earns against the point limit will be placed, drawn beneath that total and searched for in the directory configured via "images config marker-directory"
         - row_<x>_sanction - Optional - Field on which the annotation borne by a driver sanctioned upon this posting is placed as text
     - The following further fields, by which the attendance points each round of the division conferred are displayed alongside the totals they produced. The whole of this catalogue is optional, a template declaring none of it drawing the totals alone:
         - For each round of ordinal <z>:
@@ -994,7 +993,15 @@ These hold for every image type of the module and are stated here rather than re
 - The rounds displayed are every round the division holds, and not only those already run, as they are on the standings grid.
 - The sanction field carries "Reached point limit" for a driver moved to the reserve team or removed from their driving roles upon this posting, which is the annotation the textual sheet appends to them, the emphasis that message applies excluded. It shall be emptied for every other driver.
     - The annotation is the same for the two sanctions and the sheet is not where they are told apart. The verdict announced for the driver names which was enforced.
-- The limits are the values configured via "attendance config autoreserve" and "attendance config autosack". Where one of the two functionalities is disabled, its group shall be removed in its entirety; where the template declares no such group, the field carrying that limit shall be emptied.
+- The sheet draws one point limit, that of whichever of the two functionalities is enabled, the two being mutually exclusive. Its label names the functionality and its value is the number configured for it via "attendance config autoreserve" or "attendance config autosack". Where autosack is enabled the limit is the autosack one, which supersedes the autoreserve one wherever both are somehow recorded.
+    - Where neither functionality is enabled, the limit group shall be removed in its entirety; where the template declares no such group, the fields carrying the label and the value shall be emptied. Neither is an error, the graphic drawing what the league configured.
+- A row carries the mark its total earns against that limit, drawn beneath the total:
+    - A total that has reached the limit or passed it carries the mark of the limit reached.
+    - A total within two points of the limit, and short of it, carries the mark of the limit approached.
+    - A total of zero carries no mark, whatever the limit stands at.
+    - Every other total carries no mark. A row carrying none shall be neither filled nor removed.
+    - Where no functionality is enabled, no row carries a mark.
+    - The two marks are of the closed set of the marker class and are searched for as every other image of that class is.
 - The name of a driver shall be resolved as it is for the lineup graphic, and their flag image searched for as it is for the lineup graphic. Where the nationality is absent the field shall be removed and a non-fatal error reported; where one is recorded, its image is resolved as the conventions above require.
 - The team of a row is the team of the division seating the driver at the moment of generation, which for a reserve driver is the reserve team. It is not the team whose car the driver drove in any single round. The team image shall be searched for as it is for the lineup graphic.
 - The image of a round shall be searched for as it is for the calendar graphic, the number of the round standing for the field in any error reported.
@@ -1051,13 +1058,14 @@ These hold for every image type of the module and are stated here rather than re
     - The "images test attendance" and "images test rsvp" commands are the one exception, having no textual counterpart to fall back to. A fatal error met by one of them shall be reported to the league manager who invoked it and no image posted.
 
 ### Test data
-- The "images test attendance" command shall generate a sheet drawn for the division named, holding the calendar that division configures and standing after the round named, so that the emptying of the cells of a round yet to be run may be evaluated alongside those already finalized. The autoreserve and autosack limits are drawn as the division configures them.
+- The "images test attendance" command shall generate a sheet drawn for the division named, holding the calendar that division configures and standing after the round named, so that the emptying of the cells of a round yet to be run may be evaluated alongside those already finalized. The point limit is drawn as the division configures it.
 - Attendance records shall be fabricated for every round of that calendar up to and including the round named, and for none after it.
 - The drivers drawn shall be the drivers of the division named.
 - The drivers fabricated shall include, insofar as the number of rows declared allows:
     - a driver holding no attendance points at all, every round cell of whom is empty;
     - a driver holding points conferred by more than one round;
-    - a driver holding the greatest total, standing at the autoreserve limit and carrying the annotation of a driver sanctioned upon this posting;
+    - a driver holding the greatest total, standing at the point limit, carrying the annotation of a driver sanctioned upon this posting and the mark of the limit reached;
+    - a driver standing within two points of the point limit and short of it, carrying the mark of the limit approached, so that the two marks may be evaluated against one another and against a row carrying neither;
     - a driver a round of whom conferred points that a pardon waived in their entirety, so that the emptying of the cell of a pardoned round may be evaluated;
     - two drivers level on totals, so that the alphabetical ordering of drivers level may be evaluated;
     - a driver of the reserve team distributed into a seat for one of the rounds run;

@@ -18,12 +18,21 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from services.image_attendance_service import (  # noqa: E402
+    LIMIT_LABEL_RESERVE,
+    LIMIT_LABEL_SACK,
+    MARK_ASSET_CLASS,
+    MARK_DATA,
+    MARK_NEAR,
+    MARK_NEAR_BAND,
+    MARK_REACHED,
     SANCTION_ANNOTATION,
     AttendanceDataError,
     DriverRecord,
     RoundHeading,
+    active_limit,
     build_fill_spec,
     cell_text,
+    mark_for,
     resolve_drawing,
 )
 
@@ -33,8 +42,13 @@ SVG_NS = "http://www.w3.org/2000/svg"
 def _svg(ids):
     root = ET.Element(f"{{{SVG_NS}}}svg", {"width": "1200", "height": "675"})
     for name in ids:
-        tag = "image" if name.endswith(("_image", "_flag")) else "text"
-        ET.SubElement(root, f"{{{SVG_NS}}}{tag}", {"id": name})
+        image = name.endswith(("_image", "_flag", "_background"))
+        attrs = {"id": name}
+        if name.endswith("_background"):
+            # The chip slots stretch to their cell and say so, which is what exempts them
+            # from the class aspect the position-change arrows are still held to.
+            attrs["preserveAspectRatio"] = "none"
+        ET.SubElement(root, f"{{{SVG_NS}}}{'image' if image else 'text'}", attrs)
     return root
 
 
@@ -45,6 +59,7 @@ def _sheet_svg(rows=3, rounds=0, extras=()):
             f"row_{r}_group",
             f"row_{r}_driver_name",
             f"row_{r}_points",
+            f"row_{r}_points_background",
             f"row_{r}_team_name",
             f"row_{r}_team_image",
             f"row_{r}_driver_flag",
@@ -234,24 +249,34 @@ def test_every_other_driver_has_the_sanction_field_emptied_quietly():
 # ── The two point limits ──────────────────────────────────────────────────
 
 
-def test_configured_limits_are_drawn():
+_LIMIT_FIELDS = ("limit_group", "limit_label", "limit_value")
+
+
+@pytest.mark.parametrize(
+    ("autoreserve", "autosack", "label", "value"),
+    [
+        (None, 20, "SACKED AT", "20"),
+        (10, None, "RESERVE AT", "10"),
+        (10, 0, "RESERVE AT", "10"),
+        # A database holding both, which the config commands refuse to produce. Auto-sack
+        # wins because the enforcement applies it first and moves on, so a plate naming the
+        # reserve limit would announce a sanction that could no longer be the one applied.
+        (10, 20, "SACKED AT", "20"),
+    ],
+)
+def test_the_one_configured_limit_is_drawn(autoreserve, autosack, label, value):
     drawing = resolve_drawing(
         division_name="D",
         round_number=1,
         records=_records((1, 4, {}, False)),
         display_names={1: "A"},
-        autoreserve_threshold=10,
-        autosack_threshold=20,
+        autoreserve_threshold=autoreserve,
+        autosack_threshold=autosack,
     )
-    spec = build_fill_spec(
-        drawing,
-        _sheet_svg(
-            rows=1,
-            extras=("autoreserve_group", "autoreserve_limit", "autosack_group", "autosack_limit"),
-        ),
-    )
-    assert spec.text["autoreserve_limit"] == "10"
-    assert spec.text["autosack_limit"] == "20"
+    spec = build_fill_spec(drawing, _sheet_svg(rows=1, extras=_LIMIT_FIELDS))
+    assert spec.text["limit_label"] == label
+    assert spec.text["limit_value"] == value
+    assert "limit_group" not in spec.remove
 
 
 def test_a_disabled_functionality_removes_its_block_whole_and_reports_nothing():
@@ -265,19 +290,12 @@ def test_a_disabled_functionality_removes_its_block_whole_and_reports_nothing():
         autoreserve_threshold=None,
         autosack_threshold=0,
     )
-    spec = build_fill_spec(
-        drawing,
-        _sheet_svg(
-            rows=1,
-            extras=("autoreserve_group", "autoreserve_limit", "autosack_group", "autosack_limit"),
-        ),
-    )
-    assert "autoreserve_group" in spec.remove
-    assert "autosack_group" in spec.remove
+    spec = build_fill_spec(drawing, _sheet_svg(rows=1, extras=_LIMIT_FIELDS))
+    assert "limit_group" in spec.remove
     assert spec.empty == []
 
 
-def test_without_a_block_group_the_limit_field_alone_is_emptied():
+def test_without_a_block_group_the_limit_fields_alone_are_emptied():
     drawing = resolve_drawing(
         division_name="D",
         round_number=1,
@@ -285,10 +303,139 @@ def test_without_a_block_group_the_limit_field_alone_is_emptied():
         display_names={1: "A"},
     )
     spec = build_fill_spec(
-        drawing, _sheet_svg(rows=1, extras=("autoreserve_limit", "autosack_limit"))
+        drawing, _sheet_svg(rows=1, extras=("limit_label", "limit_value"))
     )
-    assert "autoreserve_limit" in spec.empty_quietly
-    assert "autoreserve_group" not in spec.remove
+    assert "limit_label" in spec.empty_quietly
+    assert "limit_value" in spec.empty_quietly
+    assert "limit_group" not in spec.remove
+
+
+# ── The mark beneath a total ──────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("autoreserve", "autosack", "expected"),
+    [
+        (None, None, None),
+        (0, 0, None),
+        (6, None, (LIMIT_LABEL_RESERVE, 6)),
+        (None, 10, (LIMIT_LABEL_SACK, 10)),
+        (0, 10, (LIMIT_LABEL_SACK, 10)),
+        (6, 0, (LIMIT_LABEL_RESERVE, 6)),
+        # Not a state the config commands can produce: each refuses to be set while the other
+        # is active. Auto-sack still wins, because `enforce_attendance_sanctions` tests it
+        # first and moves on to the next driver.
+        (6, 10, (LIMIT_LABEL_SACK, 10)),
+    ],
+)
+def test_the_one_live_threshold_is_the_one_the_sheet_answers_to(
+    autoreserve, autosack, expected
+):
+    assert (
+        active_limit(autoreserve_threshold=autoreserve, autosack_threshold=autosack)
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("total", "limit", "expected"),
+    [
+        (10, 10, MARK_REACHED),   # `>=`, as the enforcement compares
+        (11, 10, MARK_REACHED),
+        (9, 10, MARK_NEAR),       # one point away
+        (8, 10, MARK_NEAR),       # two points away, the far edge of the band
+        (7, 10, None),            # three away is not close
+        (1, 10, None),
+        (4, None, None),          # neither functionality on: nothing is marked
+        (4, 0, None),
+        (None, 10, None),
+    ],
+)
+def test_a_total_is_marked_by_how_close_it_stands_to_the_limit(total, limit, expected):
+    assert mark_for(total, limit) == expected
+
+
+def test_the_near_band_is_two_points_wide():
+    """Stated against the constant so the band and the number cannot drift apart."""
+    limit = 10
+    marked = [t for t in range(limit) if mark_for(t, limit) == MARK_NEAR]
+    assert marked == [limit - MARK_NEAR_BAND, limit - 1]
+
+
+@pytest.mark.parametrize("limit", [1, 2, 3])
+def test_a_clean_sheet_is_never_marked(limit):
+    """A total of zero earns nothing, however low the limit stands.
+
+    The near band would otherwise be anchored below zero for a limit of one or two, painting
+    the mark across every driver who has done nothing wrong — a warning of nothing, drawn
+    over almost the whole column.
+    """
+    assert mark_for(0, limit) is None
+    assert mark_for(None, limit) is None
+
+
+def test_the_mark_is_projected_beneath_the_total_it_answers_to():
+    drawing = resolve_drawing(
+        division_name="D",
+        round_number=1,
+        records=_records((1, 10, {}, True), (2, 8, {}, False), (3, 1, {}, False)),
+        display_names={1: "A", 2: "B", 3: "C"},
+        autosack_threshold=10,
+    )
+    spec = build_fill_spec(drawing, _sheet_svg(rows=3, extras=_LIMIT_FIELDS))
+
+    assert spec.image_data["row_1_points_background"] == (MARK_ASSET_CLASS, MARK_REACHED)
+    assert spec.image_data["row_2_points_background"] == (MARK_ASSET_CLASS, MARK_NEAR)
+    # A row earning no mark is left alone: neither filled nor removed, its hrefless slot
+    # drawing nothing.
+    assert "row_3_points_background" not in spec.image_data
+    assert "row_3_points_background" not in spec.remove
+
+
+def test_a_template_declaring_no_mark_slot_is_silent():
+    """A league's own sheet may draw the totals plain, and owes no field for the mark."""
+    drawing = resolve_drawing(
+        division_name="D",
+        round_number=1,
+        records=_records((1, 10, {}, False)),
+        display_names={1: "A"},
+        autosack_threshold=10,
+    )
+    root = _sheet_svg(rows=1, extras=_LIMIT_FIELDS)
+    for node in list(root):
+        if (node.get("id") or "").endswith("_points_background"):
+            root.remove(node)
+
+    spec = build_fill_spec(drawing, root)
+    reported = (*spec.image_data, *spec.empty, *spec.empty_quietly, *spec.remove)
+    assert not any(name.endswith("_points_background") for name in reported)
+
+
+def test_a_sheet_with_no_limit_marks_no_one():
+    drawing = resolve_drawing(
+        division_name="D",
+        round_number=1,
+        records=_records((1, 99, {}, False)),
+        display_names={1: "A"},
+    )
+    spec = build_fill_spec(drawing, _sheet_svg(rows=1, extras=_LIMIT_FIELDS))
+    assert spec.image_data == {}
+
+
+def test_every_mark_the_projection_can_emit_has_a_packaged_file():
+    """A datum named without a file would resolve to the fallback and draw the wrong picture.
+
+    The packaged tier is what a fresh install draws from, so a gap here reaches every league
+    at once and reaches them before they have supplied anything of their own.
+    """
+    from pathlib import Path
+
+    from models.image_constants import packaged_directory_for
+    from utils.paths import PROJECT_ROOT
+
+    packaged = Path(PROJECT_ROOT) / packaged_directory_for(MARK_ASSET_CLASS)
+    for datum in MARK_DATA:
+        assert (packaged / f"{datum}.svg").is_file(), f"no packaged file for `{datum}`"
 
 
 # ── The team of a row, and the assets ─────────────────────────────────────

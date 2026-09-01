@@ -442,9 +442,11 @@ def build_attendance_drawing(root, teams, *, limits: bool = True):
     be judged; exactly one where the template declares a single row. Teams are the server's own
     configuration, so a league reads its own liveries rather than invented ones.
 
-    *limits* draws the sheet with both point limits configured or with both switched off, which
-    is the pair the command produces -- the second showing the two blocks **removed** rather
-    than merely emptied (XIV.4, a configured absence).
+    *limits* draws the sheet with a point limit configured or with none, which is the pair the
+    command produces -- the second showing the block **removed** rather than merely emptied
+    (XIV.4, a configured absence). One limit and not two: a league can only have one, the two
+    config commands refusing each other, so a sample seeding both would show a sheet no league
+    could ever be looking at.
 
     The enumerated driver cases are assigned **in order** and any the declared row count cannot
     reach are simply not drawn, which is what "insofar as the number of rows declared allows"
@@ -534,8 +536,14 @@ def build_attendance_drawing(root, teams, *, limits: bool = True):
             (index - 1) % len(SAMPLE_LINEUP_NATIONALITIES)
         ]
 
+        # The totals are pitched at the marks as well as at the ordering: driver 3 stands on
+        # the limit and carries the sanction with it, driver 2 one point short of it, and
+        # driver 1 on nothing at all -- so a rendered sample shows both marks and a row
+        # bearing neither.
         if index == 1:
             total = 0
+        elif index == 2:
+            total = 9
         elif index == 3:
             total = 10
         elif index in (4, 5):
@@ -560,8 +568,8 @@ def build_attendance_drawing(root, teams, *, limits: bool = True):
         team_names=team_names,
         nationalities=nationalities,
         rounds=headings,
-        autoreserve_threshold=10 if limits else None,
-        autosack_threshold=20 if limits else None,
+        autoreserve_threshold=None,
+        autosack_threshold=10 if limits else None,
         division_tier=1,
         season_number=1,
         race_name=(headings[finalised - 1].track if finalised and headings else None),

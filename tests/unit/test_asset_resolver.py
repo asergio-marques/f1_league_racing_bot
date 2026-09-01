@@ -663,28 +663,18 @@ def test_a_resolved_asset_is_written_as_a_uri_not_a_path(flags):
 # Per-class aspect table (044, Constitution XIV.6)
 # --------------------------------------------------------------------------
 
-def test_every_asset_class_declares_an_aspect_or_is_declared_exempt():
+def test_every_asset_class_declares_an_aspect():
     """A class added later must not silently escape the aspect check.
 
     The check reads ASSET_CLASS_ASPECTS by class; a class present in the directory table but
-    absent here would be validated against nothing at all. Since v7.4.0 a class **may** be
-    absent — its slots stretching rather than holding one aspect — but only by saying so in
-    STRETCHING_ASSET_CLASSES, so that an omission still has to be deliberate.
+    absent here would be validated against nothing at all. Every class declares one again
+    since v7.5.0 — the stretching exemption moved from the class to the slot, so no class has
+    a reason to be missing.
     """
-    from models.image_constants import (
-        ASSET_CLASS_ASPECTS,
-        ASSET_CLASS_DIRECTORIES,
-        STRETCHING_ASSET_CLASSES,
-    )
+    from models.image_constants import ASSET_CLASS_ASPECTS, ASSET_CLASS_DIRECTORIES
 
     missing = set(ASSET_CLASS_DIRECTORIES) - set(ASSET_CLASS_ASPECTS)
-    assert missing == set(STRETCHING_ASSET_CLASSES), (
-        f"asset classes with no declared aspect and no declared exemption: "
-        f"{sorted(missing - STRETCHING_ASSET_CLASSES)}"
-    )
-    assert not (STRETCHING_ASSET_CLASSES & set(ASSET_CLASS_ASPECTS)), (
-        "a class cannot both stretch and hold an aspect"
-    )
+    assert not missing, f"asset classes with no declared aspect: {sorted(missing)}"
 
     extra = set(ASSET_CLASS_ASPECTS) - set(ASSET_CLASS_DIRECTORIES)
     assert not extra, f"aspects declared for unknown classes: {sorted(extra)}"
@@ -708,3 +698,131 @@ def test_the_aspect_tolerance_admits_authoring_noise_and_catches_a_square_flag()
 
     assert abs(authored - flag) / flag <= ASSET_ASPECT_TOLERANCE
     assert abs(square - flag) / flag > ASSET_ASPECT_TOLERANCE
+
+
+# --------------------------------------------------------------------------
+# The marker class answers its data with two fallbacks (v7.5.0)
+# --------------------------------------------------------------------------
+
+def test_the_position_change_data_are_the_standings_services_own():
+    """Restated in `image_constants` to keep a model out of a service; held here so the two
+    cannot drift. A direction added there and not here would be routed to the mark fallback
+    and drawn stretched."""
+    from models.image_constants import POSITION_CHANGE_DATA
+    from services.standings_service import (
+        MOVEMENT_GAINED,
+        MOVEMENT_LOST,
+        MOVEMENT_UNCHANGED,
+    )
+
+    assert POSITION_CHANGE_DATA == {MOVEMENT_GAINED, MOVEMENT_LOST, MOVEMENT_UNCHANGED}
+
+
+@pytest.mark.parametrize(
+    ("asset_class", "slug", "first"),
+    [
+        ("marker", "position_change_gained", "position_change_fallback.svg"),
+        ("marker", "position_change_none", "position_change_fallback.svg"),
+        ("marker", "race_p1", "standings_attendance_fallback.svg"),
+        ("marker", "qualifying_points", "standings_attendance_fallback.svg"),
+        ("marker", "attendance_limit_near", "standings_attendance_fallback.svg"),
+        # Nothing the module names. It routes to the mark fallback, which stretches and so
+        # cannot be the wrong shape for whatever slot asked.
+        ("marker", "not_a_datum", "standings_attendance_fallback.svg"),
+    ],
+)
+def test_a_marker_datum_is_routed_to_the_fallback_of_its_own_shape(asset_class, slug, first):
+    from models.image_constants import fallback_names_for
+
+    names = fallback_names_for(asset_class, slug)
+    assert names[0] == first
+    # The generic name is still the last resort, so a league that supplied only that one is
+    # no worse off than before.
+    assert names[-1] == "fallback.svg"
+
+
+@pytest.mark.parametrize("asset_class", ["flag", "team", "track", "driver", "weather", "tyre"])
+def test_every_other_class_asks_for_the_generic_fallback_alone(asset_class):
+    from models.image_constants import fallback_names_for
+
+    assert fallback_names_for(asset_class, "anything") == ("fallback.svg",)
+
+
+def test_a_leagues_own_arrow_fallback_is_not_drawn_for_a_missing_mark(tmp_path):
+    """The defect the split exists to prevent.
+
+    The configured directory's fallback is consulted **before** the packaged tier's copy of
+    the datum's own file, so one `fallback.svg` in a league's marker folder would answer for
+    a missing arrow and a missing plate alike — drawing a 64 x 64 arrow stretched into a
+    52 x 22 cell. Named per shape, the arrow's fallback is simply not a candidate for `p1`,
+    which falls through to the packaged `race_p1.svg` as it should.
+    """
+    from models.image_constants import fallback_names_for
+
+    league, packaged = tmp_path / "league", tmp_path / "packaged"
+    league.mkdir()
+    packaged.mkdir()
+    (league / "position_change_fallback.svg").write_text("<svg/>")
+    (packaged / "race_p1.svg").write_text("<svg/>")
+
+    resolution = resolve_asset(
+        league,
+        "race_p1",
+        packaged=packaged,
+        closed_set=True,
+        fallback_names=fallback_names_for("marker", "race_p1"),
+    )
+    assert resolution.path == packaged / "race_p1.svg"
+    assert resolution.drew_own_file
+
+
+def test_a_leagues_own_mark_fallback_still_beats_the_packaged_tier(tmp_path):
+    """The precedence that was there before is unchanged for a fallback of the right shape."""
+    from models.image_constants import fallback_names_for
+
+    league, packaged = tmp_path / "league", tmp_path / "packaged"
+    league.mkdir()
+    packaged.mkdir()
+    (league / "standings_attendance_fallback.svg").write_text("<svg/>")
+    (packaged / "race_p1.svg").write_text("<svg/>")
+
+    resolution = resolve_asset(
+        league,
+        "race_p1",
+        packaged=packaged,
+        closed_set=True,
+        fallback_names=fallback_names_for("marker", "race_p1"),
+    )
+    assert resolution.path == league / "standings_attendance_fallback.svg"
+    assert not resolution.drew_own_file
+
+
+def test_the_generic_fallback_answers_a_league_that_supplied_only_that(tmp_path):
+    from models.image_constants import fallback_names_for
+
+    league = tmp_path / "league"
+    league.mkdir()
+    (league / "fallback.svg").write_text("<svg/>")
+
+    resolution = resolve_asset(
+        league,
+        "position_change_gained",
+        fallback_names=fallback_names_for("marker", "position_change_gained"),
+    )
+    assert resolution.path == league / "fallback.svg"
+
+
+def test_the_specific_fallback_is_preferred_to_the_generic_one_in_the_same_folder(tmp_path):
+    from models.image_constants import fallback_names_for
+
+    league = tmp_path / "league"
+    league.mkdir()
+    (league / "fallback.svg").write_text("<svg/>")
+    (league / "position_change_fallback.svg").write_text("<svg/>")
+
+    resolution = resolve_asset(
+        league,
+        "position_change_lost",
+        fallback_names=fallback_names_for("marker", "position_change_lost"),
+    )
+    assert resolution.path == league / "position_change_fallback.svg"

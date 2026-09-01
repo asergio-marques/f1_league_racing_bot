@@ -303,7 +303,6 @@ def _config(template_directory: str, **overrides) -> ImageConfig:
         marker_directory="resources/defaults/markers",
         weather_icon_directory="resources/defaults/weather",
         tyre_directory="resources/defaults/tyres",
-        standings_highlight_directory="resources/defaults/standings-highlights",
         time_zone="UTC",
         time_format="24H",
         date_format="DDD_DD_MON_YYYY",
@@ -1318,8 +1317,11 @@ def test_the_two_results_templates_are_reported_separately(tmp_path, templates):
 # 044 — per-class aspect, and the two types that may draw a circuit map
 # --------------------------------------------------------------------------
 
-def _root_with(images):
-    """An SVG root declaring *images* as (id, width, height)."""
+def _root_with(images, *, stretching=()):
+    """An SVG root declaring *images* as (id, width, height).
+
+    Ids named in *stretching* additionally carry ``preserveAspectRatio="none"``.
+    """
     from lxml import etree
 
     ns = "http://www.w3.org/2000/svg"
@@ -1331,6 +1333,8 @@ def _root_with(images):
         node.set("id", field_id)
         node.set("width", str(width))
         node.set("height", str(height))
+        if field_id in stretching:
+            node.set("preserveAspectRatio", "none")
     return root
 
 
@@ -1379,6 +1383,48 @@ def test_a_slot_declaring_no_usable_dimensions_defers_rather_than_dividing_by_ze
 
     root = _root_with([("round_1_flag", 0, 0)])
     assert aspect_faults_of(root, "calendar_template") == []
+
+
+def test_a_slot_that_declares_it_stretches_is_passed_over_whatever_its_shape():
+    """The exemption is the slot's, not its class's (Constitution XIV.6, v7.5.0).
+
+    A slot carrying ``preserveAspectRatio="none"`` stretches to the box the template gives
+    it, so there is nothing for it to be letterboxed against. Declaring it per slot is what
+    lets one class draw both the square position-change arrows and the marks, whose cells are
+    three different shapes across the standings grids and the attendance sheet.
+    """
+    from services.image_validity_service import aspect_faults_of
+
+    root = _root_with([("round_1_flag", 120, 120)], stretching=("round_1_flag",))
+    assert aspect_faults_of(root, "calendar_template") == []
+
+
+def test_a_slot_without_that_declaration_is_still_judged():
+    """The guard above must not have quietly exempted every slot."""
+    from services.image_validity_service import aspect_faults_of
+
+    assert aspect_faults_of(_root_with([("round_1_flag", 120, 120)]), "calendar_template")
+
+
+def test_the_attendance_marks_stretch_and_the_arrows_beside_them_do_not():
+    """One class, two shapes, and the aspect check still reaches the arrows.
+
+    `marker` draws the position-change arrows at 1:1 and the standings and attendance marks
+    into whatever cell holds them. Merging the marks into the arrows' class would have been a
+    way to lose the arrows' check; this holds both halves at once.
+    """
+    from models.image_constants import ASSET_CLASS_ASPECTS
+    from services.image_validity_service import aspect_faults_of
+
+    assert ASSET_CLASS_ASPECTS["marker"] == pytest.approx(1.0)
+
+    mark = "row_1_points_background"
+    root = _root_with([(mark, 36, 24)], stretching=(mark,))
+    assert aspect_faults_of(root, "attendance_template") == []
+
+    faults = aspect_faults_of(_root_with([(mark, 36, 24)]), "attendance_template")
+    assert len(faults) == 1
+    assert mark in faults[0]
 
 
 def test_an_unknown_field_is_not_judged():

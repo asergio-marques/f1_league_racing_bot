@@ -481,7 +481,7 @@ def test_a_highlight_layer_is_an_optional_asset_field_of_the_cell(catalogue, nes
     assert suffix in spec.fields
     assert suffix not in spec.valueless_fields
     assert suffix not in spec.mandatory_fields
-    assert spec.assets[suffix] == "standings_highlight"
+    assert spec.assets[suffix] == "marker"
 
 
 def test_the_fastest_lap_of_a_grid_cell_is_not_the_one_a_race_result_draws():

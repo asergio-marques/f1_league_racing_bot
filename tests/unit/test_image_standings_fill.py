@@ -26,6 +26,7 @@ from services.image_standings_service import (
     HIGHLIGHT_P2,
     HIGHLIGHT_P3,
     HIGHLIGHT_POINTS,
+    RACE_DATUM_PREFIX,
     RoundCells,
     RoundHeading,
     StandingsDataError,
@@ -601,7 +602,7 @@ _INK = """
     .highlight_fastest_lap_text { fill: #F2F5F8 }
 """
 
-_ASSET = "standings_highlight"
+_ASSET = "marker"
 
 
 def _chips(spec) -> dict:
@@ -623,13 +624,21 @@ def _highlighted(cell, *, style=_INK, highlights=True, rounds=1):
 
 def test_a_podium_cell_draws_the_chip_of_its_place():
     spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1))
-    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "p1")
+    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "race_p1")
 
 
 def test_each_podium_place_draws_its_own_chip():
+    """The **kind** decides the chip; the datum names the session it was earned in.
+
+    A race cell asks for `race_<kind>` and a qualifying one for `qualifying_<kind>`, so the
+    two sets of marks are told apart by name in the one folder that now holds both.
+    """
     for kind in (HIGHLIGHT_P1, HIGHLIGHT_P2, HIGHLIGHT_P3, HIGHLIGHT_POINTS):
         spec = _highlighted(CellValue(text="1", highlight=kind))
-        assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, kind)
+        assert spec.image_data["row_1_round_1_feature_race_background"] == (
+            _ASSET,
+            f"{RACE_DATUM_PREFIX}{kind}",
+        )
 
 
 def test_the_chip_is_the_datum_and_never_a_class_of_its_own():
@@ -661,7 +670,7 @@ def test_an_unhighlighted_cell_contributes_nothing_to_the_spec():
 
 def test_the_fastest_lap_mark_is_drawn_only_where_the_cell_holds_it():
     spec = _highlighted(CellValue(text="5", fastest_lap=True))
-    assert spec.image_data["row_1_round_1_feature_race_fastest_lap"] == (_ASSET, "fastest_lap")
+    assert spec.image_data["row_1_round_1_feature_race_fastest_lap"] == (_ASSET, "race_fastest_lap")
     spec = _highlighted(CellValue(text="5"))
     assert "row_1_round_1_feature_race_fastest_lap" not in spec.image_data
 
@@ -669,8 +678,8 @@ def test_the_fastest_lap_mark_is_drawn_only_where_the_cell_holds_it():
 def test_the_two_layers_stand_together():
     """A winner who took the fastest lap gets both; the mark never replaces the chip."""
     spec = _highlighted(CellValue(text="1", highlight=HIGHLIGHT_P1, fastest_lap=True))
-    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "p1")
-    assert spec.image_data["row_1_round_1_feature_race_fastest_lap"] == (_ASSET, "fastest_lap")
+    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "race_p1")
+    assert spec.image_data["row_1_round_1_feature_race_fastest_lap"] == (_ASSET, "race_fastest_lap")
 
 
 def test_a_sprint_cell_draws_the_same_chip_as_a_feature_one():
@@ -709,14 +718,14 @@ def test_the_fastest_lap_does_not_touch_the_text_colour():
 def test_a_fastest_lap_with_no_plate_beneath_it_sets_no_ink_at_all():
     """Nothing is under the numerals but the row band, which `.cell` already reads on."""
     spec = _highlighted(CellValue(text="12", fastest_lap=True))
-    assert spec.image_data["row_1_round_1_feature_race_fastest_lap"] == (_ASSET, "fastest_lap")
+    assert spec.image_data["row_1_round_1_feature_race_fastest_lap"] == (_ASSET, "race_fastest_lap")
     assert spec.recolour == {}
 
 
 def test_no_text_colour_is_set_where_the_template_names_none():
     """A chip light enough to read through wants no ink of its own, and names none."""
     spec = _highlighted(CellValue(text="7", highlight=HIGHLIGHT_POINTS))
-    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "points")
+    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "race_points")
     assert "row_1_round_1_feature_race_result" not in spec.recolour
 
 
@@ -780,8 +789,8 @@ def test_a_constructors_car_is_highlighted_by_the_same_rules():
         _drawing([entry], rounds=[heading], template_key=CONSTRUCTORS_TEMPLATE_KEY), root
     )
     stem = "row_1_round_1_driver_1_feature_race"
-    assert spec.image_data[f"{stem}_background"] == (_ASSET, "p1")
-    assert spec.image_data[f"{stem}_fastest_lap"] == (_ASSET, "fastest_lap")
+    assert spec.image_data[f"{stem}_background"] == (_ASSET, "race_p1")
+    assert spec.image_data[f"{stem}_fastest_lap"] == (_ASSET, "race_fastest_lap")
     # The plate sets the ink; neither corner mark does.
     assert spec.recolour[f"{stem}_result"] == "#0B0D10"
 
@@ -828,13 +837,13 @@ def test_a_qualifying_mark_is_a_different_picture_from_the_race_plate():
         race=CellValue(text="1", highlight=HIGHLIGHT_P1),
         qualifying=CellValue(text="1", highlight=HIGHLIGHT_P1),
     )
-    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "p1")
+    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "race_p1")
     assert spec.image_data["row_1_round_1_feature_qualifying_mark"] == (_ASSET, "qualifying_p1")
 
 
 def test_a_race_cell_never_draws_a_qualifying_datum():
     spec = _both(race=CellValue(text="3", highlight=HIGHLIGHT_P3))
-    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "p3")
+    assert spec.image_data["row_1_round_1_feature_race_background"] == (_ASSET, "race_p3")
     assert not any(
         datum.startswith("qualifying_") for _cls, datum in _chips(spec).values()
     )
@@ -848,8 +857,8 @@ def test_all_three_marks_can_stand_on_one_cell():
     )
     stem = "row_1_round_1_feature"
     assert _chips(spec) == {
-        f"{stem}_race_background": (_ASSET, "p1"),
-        f"{stem}_race_fastest_lap": (_ASSET, "fastest_lap"),
+        f"{stem}_race_background": (_ASSET, "race_p1"),
+        f"{stem}_race_fastest_lap": (_ASSET, "race_fastest_lap"),
         f"{stem}_qualifying_mark": (_ASSET, "qualifying_p1"),
     }
 
@@ -868,7 +877,7 @@ def test_every_datum_the_projection_can_emit_has_a_packaged_file():
     from services.image_standings_service import HIGHLIGHT_DATA
     from utils.paths import PROJECT_ROOT
 
-    packaged = Path(PROJECT_ROOT) / packaged_directory_for("standings_highlight")
+    packaged = Path(PROJECT_ROOT) / packaged_directory_for("marker")
     missing = [d for d in HIGHLIGHT_DATA if not (packaged / f"{d}.svg").is_file()]
     assert missing == [], f"no packaged artwork for: {missing}"
 

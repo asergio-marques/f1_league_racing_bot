@@ -530,7 +530,6 @@ ASSET_CLASS_COLUMNS: tuple[tuple[str, str], ...] = (
     ("flag", "flag_directory"),
     ("driver", "driver_image_directory"),
     ("marker", "marker_directory"),
-    ("standings_highlight", "standings_highlight_directory"),
     ("weather", "weather_icon_directory"),
     ("tyre", "tyre_directory"),
 )
@@ -1099,7 +1098,10 @@ async def build_attendance_preview(bot, context: PreviewContext):
         team_names={d.key: d.team_name for d in context.drivers},
         nationalities=flags,
         rounds=headings,
-        autoreserve_threshold=6,
+        # One threshold, because a league can only have one: the two config commands refuse
+        # each other, and a preview seeding both would draw a plate and a set of marks no
+        # league could ever see.
+        autoreserve_threshold=None,
         autosack_threshold=10,
         division_tier=context.division_tier,
         season_number=context.season_number,

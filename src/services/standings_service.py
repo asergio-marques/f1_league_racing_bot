@@ -531,9 +531,14 @@ async def cascade_recompute_from_round(
 
 #: The three directions of a change of standing position. Each is the datum an asset is
 #: resolved from, so the module ships a file per direction (XIV.13, v4.5.0).
-MOVEMENT_GAINED = "gained"
-MOVEMENT_LOST = "lost"
-MOVEMENT_UNCHANGED = "unchanged"
+#:
+#: Each names what it is a change of, because the marker directory holds three vocabularies
+#: at once and a bare ``gained.svg`` beside ``race_p1.svg`` said nothing about which. The
+#: value is an asset datum and nothing else -- it is never persisted, and the only reader
+#: besides the resolver is the projection that hands it over.
+MOVEMENT_GAINED = "position_change_gained"
+MOVEMENT_LOST = "position_change_lost"
+MOVEMENT_UNCHANGED = "position_change_none"
 
 
 @dataclass(frozen=True)

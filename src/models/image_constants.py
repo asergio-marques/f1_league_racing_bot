@@ -190,11 +190,6 @@ ASSET_DIRECTORIES: dict[str, tuple[str, str, str]] = {
     "tyre_directory": (
         "tyre-directory", "resources/league/tyres", "resources/defaults/tyres",
     ),
-    "standings_highlight_directory": (
-        "standings-highlight-directory",
-        "resources/league/standings-highlights",
-        "resources/defaults/standings-highlights",
-    ),
 }
 
 #: Asset class -> the configuration column naming its directory. Kept beside
@@ -208,7 +203,6 @@ ASSET_CLASS_TO_COLUMN: dict[str, str] = {
     "marker": "marker_directory",
     "weather": "weather_icon_directory",
     "tyre": "tyre_directory",
-    "standings_highlight": "standings_highlight_directory",
 }
 
 
@@ -240,10 +234,9 @@ ASSET_LABELS: dict[str, str] = {
     "team_image_directory": "Team badges",
     "flag_directory": "Nationality flags",
     "driver_image_directory": "Driver portraits",
-    "marker_directory": "Position-change markers",
+    "marker_directory": "Markers and result marks",
     "weather_icon_directory": "Weather icons",
     "tyre_directory": "Tyre compounds",
-    "standings_highlight_directory": "Standings result highlights",
 }
 
 
@@ -324,7 +317,6 @@ ASSET_CLASS_DIRECTORIES: dict[str, str] = {
     "marker": "marker_directory",
     "weather": "weather_icon_directory",
     "tyre": "tyre_directory",
-    "standings_highlight": "standings_highlight_directory",
 }
 
 #: Asset classes whose data are a closed set the module itself defines, not values a league
@@ -332,9 +324,7 @@ ASSET_CLASS_DIRECTORIES: dict[str, str] = {
 #: incomplete against it, so the packaged directory of one of these classes is searched for
 #: the datum's own file — not only its `fallback.svg` — whether or not the league has pointed
 #: the class at a directory of its own. Every other class is never searched this way.
-CLOSED_SET_ASSET_CLASSES: frozenset[str] = frozenset(
-    {"marker", "weather", "standings_highlight"}
-)
+CLOSED_SET_ASSET_CLASSES: frozenset[str] = frozenset({"marker", "weather"})
 
 #: Slugs that are the module's own vocabulary wherever they appear, in a class whose data
 #: are otherwise the league's own. `mystery` stands for a round concealed until it is run
@@ -367,6 +357,52 @@ def is_closed_set_datum(asset_class: str, slug: str) -> bool:
 #: (Constitution XIV.13). One per asset directory; optional.
 FALLBACK_ASSET_NAME = "fallback.svg"
 
+#: The two fallbacks of the `marker` class, which serves data of more than one shape
+#: (v7.5.0).
+#:
+#: One fallback per directory answers a class whose data are all one shape. `marker` is not:
+#: it draws the 64 x 64 position-change arrows, the standings result marks stretched into a
+#: 52 x 22 or 52 x 18 cell, and the attendance marks stretched into a 36 x 24 one. A single
+#: file cannot stand in for all three, and the one a league supplies would be drawn for
+#: whichever of them it happened not to be drawn for.
+#:
+#: This matters because the **configured** directory's fallback is consulted before the
+#: packaged tier's copy of the datum's own file. A league that drops one `fallback.svg` into
+#: its marker folder would otherwise have that file answer for a missing arrow and a missing
+#: plate alike, in preference to the correct packaged file for either.
+POSITION_CHANGE_FALLBACK_ASSET_NAME = "position_change_fallback.svg"
+MARK_FALLBACK_ASSET_NAME = "standings_attendance_fallback.svg"
+
+#: The `marker` data that are position changes rather than marks. Restated here rather than
+#: imported from `standings_service`, which would invert the dependency -- a model reaching
+#: into a service -- and is held to that module's own constants by a test so it cannot drift.
+#:
+#: The set is stated for the arrows rather than for the marks because the arrows are the
+#: closed half: three directions a position can move, and no fourth. The marks are added to
+#: whenever a graphic finds something new worth calling out, and an unrecognised datum is
+#: better routed to the mark fallback -- which stretches, and so cannot be the wrong shape --
+#: than to an arrow's.
+POSITION_CHANGE_DATA: frozenset[str] = frozenset(
+    {"position_change_gained", "position_change_lost", "position_change_none"}
+)
+
+
+def fallback_names_for(asset_class: str, slug: str) -> tuple[str, ...]:
+    """The fallback filenames to try for this datum, most specific first.
+
+    Every class ends at :data:`FALLBACK_ASSET_NAME`, so a league that supplied only the
+    generic fallback still gets it and no class behaves differently from before. `marker`
+    alone puts a shape-appropriate name in front of it.
+    """
+    if asset_class != "marker":
+        return (FALLBACK_ASSET_NAME,)
+    specific = (
+        POSITION_CHANGE_FALLBACK_ASSET_NAME
+        if slug in POSITION_CHANGE_DATA
+        else MARK_FALLBACK_ASSET_NAME
+    )
+    return (specific, FALLBACK_ASSET_NAME)
+
 #: The reserved filename standing in for a round whose track -- and with it its
 #: country -- is concealed until it is run (Constitution XIV.13). Reserved in the
 #: track image directory and the flag directory alike.
@@ -387,6 +423,16 @@ OTHER_ASSET_NAME = "other.svg"
 #: of two aspects would letterbox that one file wherever it did not match, and no
 #: artwork the league could supply would answer it.
 #:
+#: **Every class declares one, and a slot opts out for itself** (v7.5.0). A slot carrying
+#: `preserveAspectRatio="none"` stretches to the box it is given, so there is no ratio for
+#: it to be letterboxed against and `aspect_faults_of` passes over it whatever its shape.
+#: The exemption belongs to the slot because that is where the fact lives: `marker` draws
+#: both the square position-change arrows and the standings and attendance marks, whose
+#: cells are 52 x 22, 52 x 18 and 36 x 24 -- three shapes no single class ratio could serve,
+#: and which the slots themselves already declare they stretch to fill. An earlier version
+#: made whole classes exempt instead, which cost a class of its own for the marks and left
+#: the arrows beside them unchecked the moment the two were put in one folder.
+#:
 #: Two classes need not match each other, and flag and track deliberately do not.
 #: The constraint is *within* a class, never *across* two.
 #:
@@ -401,25 +447,7 @@ ASSET_CLASS_ASPECTS: dict[str, float] = {
     "marker": 1.0,         #  64 x  64
     "weather": 1.0,        #  64 x  64
     "tyre": 1.0,           #  64 x  64
-    # `standings_highlight` is absent, deliberately -- see STRETCHING_ASSET_CLASSES below.
 }
-
-#: Asset classes whose slots **stretch** to the box the template gives them rather than
-#: holding one aspect (Constitution XIV.6, v7.4.0). Such a class names no entry in
-#: :data:`ASSET_CLASS_ASPECTS`, and `aspect_faults_of` reads that table with `.get`, so the
-#: absence is the whole of the implementation.
-#:
-#: Declared here rather than left implicit precisely because absence is the mechanism: a class
-#: someone forgets to give an aspect would otherwise escape the check in silence. A class is
-#: exempt only by appearing here, and `test_every_asset_class_declares_an_aspect` holds the two
-#: tables to exactly that.
-#:
-#: The standings highlight chips are the case. A result cell is 52 x 22 on the drivers grid and
-#: 52 x 18 on the constructors one -- shapes fixed by two different row bands, which no single
-#: ratio could serve. Their slots carry `preserveAspectRatio="none"`, so the letterboxing the
-#: one-aspect rule exists to prevent cannot arise, and the artwork is the league's to draw for
-#: a shape that varies.
-STRETCHING_ASSET_CLASSES: frozenset[str] = frozenset({"standings_highlight"})
 
 #: Relative tolerance for the aspect comparison (044, contracts/asset-aspect.md).
 #:

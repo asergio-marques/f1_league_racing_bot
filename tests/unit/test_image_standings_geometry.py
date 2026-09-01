@@ -265,12 +265,13 @@ def test_the_two_grids_may_differ_in_chip_shape():
     """The point of the aspect exemption, asserted so it cannot be quietly undone.
 
     A drivers cell sits in a 32px row band and a constructors cell in a 20px car line. One
-    ratio cannot serve both, which is why `standings_highlight` names none and its slots
-    stretch (Constitution XIV.6, v7.4.0).
+    ratio cannot serve both, which is why a chip slot declares `preserveAspectRatio="none"`
+    and is passed over by the aspect check (Constitution XIV.6, v7.5.0). The exemption is the
+    slot's: `marker` carries a 1:1 aspect for the position-change arrows it also draws.
     """
     from models.image_constants import ASSET_CLASS_ASPECTS
 
-    assert "standings_highlight" not in ASSET_CLASS_ASPECTS
+    assert ASSET_CLASS_ASPECTS["marker"] == pytest.approx(1.0)
 
     shapes = set()
     for key in (DRIVERS, CONSTRUCTORS):

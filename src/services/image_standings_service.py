@@ -57,6 +57,12 @@ class StandingsDataError(Exception):
 #:
 #: Each value doubles as the **stem of the selector** the template is asked for, so
 #: ``f"highlight_{kind}"`` composes without a second table to keep in step.
+#:
+#: A kind is **not** a datum. The datum names the session as well — ``race_p1`` against
+#: ``qualifying_p1`` — because one folder now holds the marks of both, and a bare ``p1.svg``
+#: sitting beside ``qualifying_p1.svg`` said which session it belonged to only by omission.
+#: The kind is what the stylesheet selector is built from, and stays as it was, so a template
+#: written against ``.highlight_p1_text`` is untouched by the datum naming.
 HIGHLIGHT_P1 = "p1"
 HIGHLIGHT_P2 = "p2"
 HIGHLIGHT_P3 = "p3"
@@ -72,26 +78,38 @@ HIGHLIGHT_KINDS: tuple[str, ...] = (
 
 #: The fastest-lap overlay. Not a member of the four above: it is an independent layer and
 #: may stand at the same time as any of them.
+#:
+#: This is the **layer's** name, not the datum. It composes the slot id the template declares —
+#: ``row_<x>_round_<z>_feature_race_fastest_lap`` — where the ``race`` is already the session,
+#: so prefixing it here would name the session twice. The file it draws is
+#: :data:`FASTEST_LAP_DATUM`.
 HIGHLIGHT_FASTEST_LAP = "fastest_lap"
 
 #: The asset class every chip draws. Which chip is drawn is the **datum** — one of the four
 #: kinds above, or the fastest lap — never a class of its own, so a league keeps one folder.
-HIGHLIGHT_ASSET_CLASS = "standings_highlight"
+#: That folder is the **marker** directory, shared with the position-change arrows and with
+#: the attendance sheet's own marks: three vocabularies of the module's own, closed all the
+#: way down, and one folder for a league to draw them in.
+HIGHLIGHT_ASSET_CLASS = "marker"
 
-#: What a qualifying result's datum is prefixed with. The four kinds are the same four a race
-#: result earns, but the mark is a different picture: a small corner triangle drawn a step
-#: darker than the plate of its own placing, where a race result takes the plate itself.
+#: What each session's datum is prefixed with. The four kinds are the same four either
+#: session earns, but the mark is a different picture: a race result takes the plate, and a
+#: qualifying result a small corner triangle drawn a step darker than the plate of its own
+#: placing. The prefixes are what tell the two sets of files apart in one folder.
+RACE_DATUM_PREFIX = "race_"
 QUALIFYING_DATUM_PREFIX = "qualifying_"
+
+#: The file the fastest-lap overlay draws. A race datum like any other, so it carries the race
+#: prefix: only a race confers a fastest lap, and a reader of the folder should not have to
+#: know that to place the file.
+FASTEST_LAP_DATUM = f"{RACE_DATUM_PREFIX}{HIGHLIGHT_FASTEST_LAP}"
 
 #: Every datum the projection can hand to the asset resolver. Named so that a test can hold the
 #: packaged folder to it — a kind added here without a file would resolve to the fallback and
 #: draw the wrong mark rather than fail.
 HIGHLIGHT_DATA: tuple[str, ...] = (
-    HIGHLIGHT_P1,
-    HIGHLIGHT_P2,
-    HIGHLIGHT_P3,
-    HIGHLIGHT_POINTS,
-    HIGHLIGHT_FASTEST_LAP,
+    *(f"{RACE_DATUM_PREFIX}{kind}" for kind in HIGHLIGHT_KINDS),
+    FASTEST_LAP_DATUM,
     *(f"{QUALIFYING_DATUM_PREFIX}{kind}" for kind in HIGHLIGHT_KINDS),
 )
 
@@ -537,7 +555,7 @@ _HIGHLIGHT_SELECTOR = "highlight_"
 def _highlight_paints(root) -> dict[str, str]:
     """Selector stem -> the fill it declares, read from the template's own stylesheet.
 
-    **Text colours only.** The chip itself is artwork of the ``standings_highlight`` class;
+    **Text colours only.** The chip itself is artwork of the ``marker`` class;
     what is left to the stylesheet is the *ink* drawn over it, which no asset could supply —
     the result is a text node of the template, sitting above the image.
 
@@ -583,7 +601,7 @@ def _project_highlight(
 
     Two independent layers, as the specification asks: a **background** drawing the podium or
     points chip, and a **fastest-lap mark** above it that may stand at the same time. Each is
-    an asset of the ``standings_highlight`` class, so what the mark actually looks like is a
+    an asset of the ``marker`` class, so what the mark actually looks like is a
     file a league may replace — which is how the fastest lap became a corner triangle rather
     than a wash over the whole cell.
 
@@ -610,9 +628,8 @@ def _project_highlight(
 
     if cell.highlight:
         slot_id = f"{stem}_mark" if qualifying else f"{stem}_background"
-        datum = (
-            f"{QUALIFYING_DATUM_PREFIX}{cell.highlight}" if qualifying else cell.highlight
-        )
+        prefix = QUALIFYING_DATUM_PREFIX if qualifying else RACE_DATUM_PREFIX
+        datum = f"{prefix}{cell.highlight}"
         if slot_id in declared:
             image_data[slot_id] = (HIGHLIGHT_ASSET_CLASS, datum)
             applied = cell.highlight
@@ -628,7 +645,7 @@ def _project_highlight(
     if cell.fastest_lap:
         overlay_id = f"{stem}_{HIGHLIGHT_FASTEST_LAP}"
         if overlay_id in declared:
-            image_data[overlay_id] = (HIGHLIGHT_ASSET_CLASS, HIGHLIGHT_FASTEST_LAP)
+            image_data[overlay_id] = (HIGHLIGHT_ASSET_CLASS, FASTEST_LAP_DATUM)
             # It does **not** become the applied highlight. See the ink rule below.
 
     if applied is None:
