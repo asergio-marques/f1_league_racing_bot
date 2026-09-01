@@ -102,6 +102,12 @@
 - <NEW COMMAND> A "steward penalty toggle" command will be made available to league managers, which shall have as single input a penalty type (warning points, penalty points, time penalties, qualifying bans, season bans, league bans). This command shall enable that penalty type, if configured, and disable it, if not configured.
   - By default, all are enabled.
   - If a penalty type is toggled off, and any outcome or conduct outcome has that penalty type configured (value > 0), it shall be verified if the conditions for modifying or removing an outcome/conduct outcome are in place (no current deliberations). If not, then the command fails; otherwise, a confirmation message informing the user that the outcomes will lose this penalty types will be posted, with two buttons, "Confirm" and "Cancel". If confirmed, the outcome is then modified accordingly (value = 0).
+- <NEW COMMAND> A "steward penalty season-ban-role" command will be made available to league managers, which shall have as mandatory single input a role to be attributed when any driver is season banned, and removed when any driver's season ban expires or is revoked.
+- <NEW COMMAND> A "steward penalty season-ban-type" command will be made available to league managers, which shall have as single input one of the following behaviors:
+  - Number of races - The season ban expires only after a hard number of races equivalent to the total number of rounds of the season in which the ban was acquired (or the previous season, if for some reason there is no present season)
+  - Season end - The season ban expires only a week after the current season's final scheduled round amidst all divisions takes place (or the next season, if for some reason there is no present season)
+  - Timed - The season ban expires only after a set amount of time, expressed in days. If this option is picked, a modal dialog shall appear for the user to introduce the number of days for the season ban, and if confirmed, it will take effect.
+- <NEW COMMAND> A "steward penalty league-ban-role" command will be made available to league managers, which shall have as mandatory single input a role to be attributed when any driver is season banned, and removed when any driver's league ban is revoked.
 
 ### Stewarding cycle setup
 - <NEW COMMAND> A "steward report-submission-period" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the maximum number of hours during which drivers for that division or users belonging to the steward team (validated by checking whether they have the steward team role) are able to open a report. After this time elapses, the report submission phase is over.
@@ -287,6 +293,37 @@
 - <NEW COMMAND> A "steward auto-rule remove" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog will show up for confirmation of deletion of the auto-rule. Once confirmed, the auto-rule will no longer be active and enforceable, and it will be deleted from the current list.
 - <NEW COMMAND> A "steward auto-rule list" command will be made available to league managers and stewards, which shall have no inputs. In reply, the bot will post a transient (temporary, seen only to the command user) list with all the auto-rules currently available, as a plain text table with the following columns in order: ID, Auto-rule type, Infringement, Number of rounds, Type of infractions committed, No. of infractions committed, penalty given, number of penalties given.
   - For rules of non-multi-round-type, the "number of rounds" column shall be empty.
+
+### Revokement
+- Revoke commands are a last-ditch measure against honest mistakes, and should not be used unless in a pinch.
+- <NEW COMMAND> A "steward revoke warning-point" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, the number of active and total warning points to be revoked from their driver license, and a justification to be available in the steward log.
+  - This command fails if there is no such driver with that ID, if warning points are disabled, or if the driver found does not possess the input number of warning points in their history as per their driver license.
+  - The removal of points will be guarded against underflow, meaning that active and total warning points have a minimum limit of 0.
+  - The warning points to be removed from the record will be those acquired most recently.
+- <NEW COMMAND> A "steward revoke penalty-point" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, the number of active and total penalty points to be revoked from their driver license, and a justification to be available in the steward log.
+  - This command fails if there is no such driver with that ID, if warning points are disabled, or if the driver found does not possess the input number of warning points in their history as per their driver license.
+  - The removal of points will be guarded against underflow, meaning that active and total penalty points have a minimum limit of 0.
+  - The penalty points to be removed from the record will be those acquired most recently.
+- <NEW COMMAND> A "steward revoke discipline-point" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, the number of active and total discipline points to be revoked from their driver license, and a justification to be available in the steward log.
+  - This command fails if there is no such driver with that ID, if the conduct cycle is disabled, or if the driver found does not possess the input number of discipline points in their history as per their driver license.
+  - The removal of points will be guarded against underflow, meaning that active and total discipline points have a minimum limit of 0.
+  - The discipline points to be removed from the record will be those acquired most recently.
+- <NEW COMMAND> A "steward revoke quali-ban" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, and a justification to be available in the steward log.
+  - This command fails if there is no such driver with that ID, if qualifying bans are disabled, or if the driver found does not possess a currently active qualifying ban.
+  - This command can only remove one qualifying ban that is yet to be served. A qualifying ban that has already been served cannot be removed from the record.
+  - If the user has multiple qualifying bans, the one acquired most recently will be the one removed from their driver license.
+- <NEW COMMAND> A "steward revoke race-ban" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, and a justification to be available in the steward log.
+  - This command fails if there is no such driver with that ID, if race bans are disabled, or if the driver found does not possess a currently active race ban.
+  - This command can only remove one race ban that is yet to be served. A race ban that has already been served cannot be removed from the record.
+  - If the user has multiple race bans, the one acquired most recently will be the one removed from their driver license.
+- <NEW COMMAND> A "steward revoke season-ban" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, and a justification to be available in the steward log.
+  - This command fails if there is no such driver with that ID, if season bans are disabled, or if the driver found does not possess a currently active season ban.
+  - This command can only remove one season ban that is yet to be served. A season ban that has already been served cannot be removed from the record.
+  - If the user has multiple season bans, the one acquired most recently will be the one removed from their driver license.
+  - Upon removal of the season ban, if the user does not have at least one active season ban, the season ban role will be removed from them.
+- <NEW COMMAND> A "steward revoke league-ban" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, and a justification to be available in the steward log.
+  - This command fails if there is no such driver with that ID, if league bans are disabled, or if the driver found does not possess a currently active league ban.
+  - Upon removal of the league ban, the league ban role will be removed from them.
 
 ## Stewarding cycle
 - All inputs of the stewarding cycle must be auditable via the steward log channel. Attempts to file a report (and its data), driver addition/removal to tickets, etc etc etc. All logs must include the display name (and user ID) of the input.
@@ -480,7 +517,7 @@
   - If a verdict was changed in an appeal in comparison to the original report, the time penalty value displayed in the appeals column should take the latter into consideration (e.g. a penalty of 5 seconds that was rescinded should show as -5s in the appeal column)
 
 ### Cycle close
-- <NEW COMMAND> steward retract-verdict - lets effective head steward revise the justification in a verdict <tbd, needs ironing out>
+- <NEW COMMAND> steward republish-verdict - lets effective head steward revise the justification in a verdict <tbd, needs ironing out>
 - Once all tickets for a given round of a given division reach this stage, warning points, penalty points, qualifying bans, race bans, season bans and league bans are made effective and added to a driver's license. After this is done, it will be checked whether the driving licenses of any driver infringe upon any of the auto-rules configured.
 - If any auto-rule configured is infringed upon, then an additional automated verdict document will be published by the bot, informing of which rule was broken, and the punishment to be handed out.
   - The structure of this automated verdict document will be outlined in a later section.
@@ -532,7 +569,7 @@
 
 ### Season bans
 - Whether a driver has a season ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
-- If a d
+- If a driver who is participating in 
 
 ### League bans
 - Whether a driver has a league ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
