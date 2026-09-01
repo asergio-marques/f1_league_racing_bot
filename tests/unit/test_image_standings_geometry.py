@@ -269,9 +269,9 @@ def test_the_two_grids_may_differ_in_chip_shape():
     and is passed over by the aspect check (Constitution XIV.6, v7.5.0). The exemption is the
     slot's: `marker` carries a 1:1 aspect for the position-change arrows it also draws.
     """
-    from models.image_constants import ASSET_CLASS_ASPECTS
+    from models.image_constants import PACKAGED_ASSET_ASPECTS
 
-    assert ASSET_CLASS_ASPECTS["marker"] == pytest.approx(1.0)
+    assert PACKAGED_ASSET_ASPECTS["marker"] == pytest.approx(1.0)
 
     shapes = set()
     for key in (DRIVERS, CONSTRUCTORS):

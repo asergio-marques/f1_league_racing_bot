@@ -24,6 +24,7 @@ from services.driver_portrait_service import (  # noqa: E402
     has_own_avatar,
     portrait_path,
     refresh_portraits,
+    portrait_key,
     wrap_png,
 )
 
@@ -95,8 +96,75 @@ def test_the_wrapper_is_a_square_svg_carrying_the_png():
     # Both spellings, as svg_fill._set_href writes for every other asset.
     assert 'xlink:href="data:image/png;base64,' in svg
     assert ' href="data:image/png;base64,' in svg
-    # The authoring rules forbid these even in a file the bot generates.
+    # The authoring rules forbid these even in a file the bot generates. `slice` clips to
+    # the <image> element's own viewport, so no clipPath is needed to make the crop hold.
     assert "clipPath" not in svg and "filter" not in svg
+
+
+def test_the_wrapper_takes_the_shape_it_is_given():
+    """Since 2026-09-01 the driver class is drawn at whatever shape the league's lineup
+    template declares, and the wrapper follows it rather than asserting 1:1."""
+    assert 'viewBox="0 0 96 128"' in wrap_png(PNG, 0.75)
+    assert 'viewBox="0 0 128 85"' in wrap_png(PNG, 1.5)
+    assert 'viewBox="0 0 128 128"' in wrap_png(PNG, 1.0)
+
+
+@pytest.mark.parametrize(
+    ("aspect", "expected"),
+    [(1.0, (128, 128)), (0.75, (96, 128)), (1.5, (128, 85)), (2.0, (128, 64))],
+)
+def test_the_longest_side_is_always_the_portrait_size(aspect, expected):
+    from services.driver_portrait_service import wrap_size
+
+    assert wrap_size(aspect) == expected
+    assert max(wrap_size(aspect)) == 128
+
+
+@pytest.mark.parametrize("aspect", [0, -1.0, None])
+def test_a_nonsensical_shape_falls_back_to_square_rather_than_to_nothing(aspect):
+    """A zero-width document is one the rasteriser rejects outright, which would cost the
+    render rather than the portrait. Every failure in this module lands on 1:1 instead."""
+    from services.driver_portrait_service import wrap_size
+
+    assert wrap_size(aspect) == (128, 128)
+
+
+def test_the_portrait_is_centre_cropped_rather_than_letterboxed():
+    """`slice` covers the box and trims both sides equally; `meet` would pad instead.
+
+    The padding is what makes this matter: the rasteriser fills a letterbox band by carrying
+    the outermost pixels of the image outward rather than leaving it clear, so `meet` on a
+    non-square slot would smear a face sideways. Cropping towards the centre is the better
+    failure of the two.
+    """
+    svg = wrap_png(PNG, 0.75)
+
+    assert 'preserveAspectRatio="xMidYMid slice"' in svg
+    assert "meet" not in svg
+
+
+# ── What is recorded, and when a portrait is therefore re-obtained ────────
+
+
+def test_the_recorded_key_carries_the_shape_as_well_as_the_avatar():
+    from services.driver_portrait_service import portrait_key
+
+    assert portrait_key("abc123", 1.0) == "abc123@1.0000"
+    assert portrait_key("abc123", 0.75) == "abc123@0.7500"
+
+
+def test_re_shaping_the_template_makes_an_unchanged_avatar_stale():
+    """The point of folding the shape in.
+
+    A league that re-shapes its lineup has changed no avatar at all, so on the avatar alone
+    every portrait would read as current and stay at the old shape for as long as its driver
+    kept the same picture. There is no migration for this: an old row simply carries no `@`,
+    matches neither, and is refreshed once.
+    """
+    from services.driver_portrait_service import portrait_key
+
+    assert portrait_key("abc123", 1.0) != portrait_key("abc123", 0.75)
+    assert portrait_key("abc123", 1.0) != "abc123"
 
 
 def test_the_portrait_is_named_as_the_resolver_would_look_for_it():
@@ -130,7 +198,9 @@ async def test_a_first_fetch_writes_the_file_and_the_row(db_path, directory):
     assert written == 1
     assert (directory / "7.svg").is_file()
     assert base64.b64encode(PNG).decode() in (directory / "7.svg").read_text()
-    assert await _rows(db_path) == {"7": ("abc", NOW.isoformat())}
+    # The shape it was wrapped at is part of what is recorded, so a later re-shaping of the
+    # lineup template makes this row stale on its own.
+    assert await _rows(db_path) == {"7": (portrait_key("abc", 1.0), NOW.isoformat())}
 
 
 async def test_an_unchanged_hash_downloads_nothing(db_path, directory):
@@ -152,7 +222,7 @@ async def test_a_changed_hash_refetches(db_path, directory):
 
     assert written == 1
     assert base64.b64encode(b"NEWBYTES").decode() in (directory / "7.svg").read_text()
-    assert (await _rows(db_path))["7"][0] == "def"
+    assert (await _rows(db_path))["7"][0] == portrait_key("def", 1.0)
 
 
 async def test_a_file_the_league_supplied_is_never_touched(db_path, directory):
@@ -460,6 +530,111 @@ async def test_the_daily_refresh_stands_aside_where_the_guild_is_unreachable(tmp
     assert await m.run_daily_refresh(bot, SERVER_ID, now=NOW) == 0
 
 
+# ── Reading the shape off the league's own lineup template ───────────────
+
+
+def _lineup(tmp_path, monkeypatch, *slots):
+    """A template directory holding a lineup whose portrait slots are *slots* of (w, h).
+
+    `PROJECT_ROOT` is moved to *tmp_path* because the shape is read through
+    `resolve_within_project_root`, which refuses a path outside the bot's own folder. Without
+    this the helper would return 1.0 for every case by being refused, and each test below
+    would pass without exercising anything.
+    """
+    import utils.paths as paths_module
+
+    monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path, raising=False)
+    directory = tmp_path / "templates"
+    directory.mkdir(exist_ok=True)
+    body = "".join(
+        f'<image id="team_1_driver_{n}_image" width="{w}" height="{h}"/>'
+        for n, (w, h) in enumerate(slots, start=1)
+    )
+    (directory / "lineup.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400">'
+        f"{body}</svg>",
+        encoding="utf-8",
+    )
+    return SimpleNamespace(
+        template_directory=str(directory), lineup_template="lineup.svg"
+    )
+
+
+def test_the_shape_is_read_from_the_lineup_template(tmp_path, monkeypatch):
+    from services.driver_portrait_service import portrait_aspect
+
+    square = _lineup(tmp_path, monkeypatch, (120, 120), (120, 120))
+    assert portrait_aspect(square) == pytest.approx(1.0)
+
+    tall = _lineup(tmp_path, monkeypatch, (90, 120), (90, 120))
+    assert portrait_aspect(tall) == pytest.approx(0.75)
+
+
+def test_the_majority_shape_wins_where_a_lineup_disagrees_with_itself(
+    tmp_path, monkeypatch
+):
+    """Such a template is refused by Layer 2 anyway; this only decides what is used until
+    someone fixes it, and the answer must not be a crash."""
+    from services.driver_portrait_service import portrait_aspect
+
+    config = _lineup(tmp_path, monkeypatch, (90, 120), (90, 120), (120, 120))
+    assert portrait_aspect(config) == pytest.approx(0.75)
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        None,
+        SimpleNamespace(template_directory=None, lineup_template=None),
+        SimpleNamespace(template_directory="resources", lineup_template="nosuch.svg"),
+    ],
+)
+def test_an_unreadable_lineup_assumes_a_square_portrait(config):
+    """Every failure lands on 1:1 — what the bot shipped with, and what a league that has
+    re-shaped nothing is already using. A portrait never fails a render."""
+    from services.driver_portrait_service import portrait_aspect
+
+    assert portrait_aspect(config) == pytest.approx(1.0)
+
+
+def test_a_lineup_that_will_not_parse_assumes_a_square_portrait(tmp_path, monkeypatch):
+    import utils.paths as paths_module
+
+    from services.driver_portrait_service import portrait_aspect
+
+    monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path, raising=False)
+    directory = tmp_path / "templates"
+    directory.mkdir()
+    (directory / "lineup.svg").write_text("not an svg at all <<<", encoding="utf-8")
+    config = SimpleNamespace(
+        template_directory=str(directory), lineup_template="lineup.svg"
+    )
+
+    assert portrait_aspect(config) == pytest.approx(1.0)
+
+
+def test_a_lineup_declaring_no_portrait_slot_assumes_a_square_portrait(
+    tmp_path, monkeypatch
+):
+    from services.driver_portrait_service import portrait_aspect
+
+    assert portrait_aspect(_lineup(tmp_path, monkeypatch)) == pytest.approx(1.0)
+
+
+def test_the_shipped_lineup_still_draws_square_portraits():
+    """What the packaged artwork is authored at, so nothing moves for an untouched league."""
+    from pathlib import Path
+
+    from services.driver_portrait_service import portrait_aspect
+
+    root = Path(__file__).resolve().parents[2]
+    config = SimpleNamespace(
+        template_directory=str(root / "resources/defaults/templates"),
+        lineup_template="lineup_template.svg",
+    )
+    assert portrait_aspect(config) == pytest.approx(1.0)
+
+
 # ── The assumption the whole wrapper rests on ─────────────────────────────
 
 
@@ -521,6 +696,102 @@ def test_inkscape_draws_a_wrapped_portrait_referenced_as_an_external_file(tmp_pa
     blank = _draw("without_portrait", "file:///no/such/portrait.svg")
 
     assert drawn != blank, "the wrapped portrait drew nothing at all"
+
+
+@pytest.mark.rasteriser
+def test_a_non_square_portrait_is_cropped_to_its_centre_and_stays_inside_its_box(tmp_path):
+    """The one assumption `slice` rests on: Inkscape clips it, and crops towards the middle.
+
+    `preserveAspectRatio="...slice"` scales the avatar to *cover* the wrapper and relies on
+    the `<image>` element's own viewport to trim the overflow. That is what the SVG spec
+    says; whether the rasteriser we actually use does it is not something a browser would
+    tell us, and a browser is explicitly not how this repo verifies an image. If it does not
+    clip, a tall portrait bleeds across the lineup slots beside it -- which no test that only
+    inspects the SVG would ever catch.
+
+    The avatar is three pixels wide: red, green, blue, drawn into a slot a third as wide as
+    it is tall. Cropped to cover, only the middle of it survives, so the slot is green from
+    edge to edge; letterboxed instead, the whole avatar is shrunk to fit and the slot reads
+    red, green, blue across. **The samples are taken near the two edges deliberately** -- at
+    the centre both modes are green, and a test that only read the middle pixel would pass
+    just as happily against `meet`, which is the thing it exists to rule out.
+
+    It is also drawn over a white ground inside a box half the canvas wide, so "did it stay
+    inside its box" is one more pixel read.
+
+    CI cannot run this -- Inkscape is too heavy for a hosted runner and both jobs deselect
+    the `rasteriser` marker -- so it is run by hand on a host that has it.
+    """
+    import struct
+    import subprocess
+    import zlib
+
+    from services.image_render_service import find_converter
+
+    def _png(*pixels: tuple[int, int, int]) -> bytes:
+        """A 1-row PNG of *pixels*, built here so the test carries no image dependency."""
+        raw = b"\x00" + b"".join(bytes(pixel) for pixel in pixels)
+
+        def chunk(tag: bytes, payload: bytes) -> bytes:
+            body = tag + payload
+            return (
+                struct.pack(">I", len(payload))
+                + body
+                + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+            )
+
+        return (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", len(pixels), 1, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw))
+            + chunk(b"IEND", b"")
+        )
+
+    red, green, blue = (255, 0, 0), (0, 255, 0), (0, 0, 255)
+    portrait = tmp_path / "12345.svg"
+    portrait.write_text(wrap_png(_png(red, green, blue), 1 / 3), encoding="utf-8")
+
+    # The portrait fills the left half of a white canvas. Anything in the right half is
+    # overflow that was not clipped.
+    source = tmp_path / "scene.svg"
+    source.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        'xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64">'
+        '<rect width="64" height="64" fill="#ffffff"/>'
+        f'<image x="0" y="0" width="32" height="64" xlink:href="{portrait.as_uri()}"/>'
+        "</svg>",
+        encoding="utf-8",
+    )
+    out = tmp_path / "scene.png"
+    subprocess.run(
+        [
+            find_converter(),
+            str(source),
+            "--export-type=png",
+            f"--export-filename={out}",
+            "--export-width=64",
+            "--export-height=64",
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    from PIL import Image
+
+    with Image.open(out) as image:
+        pixels = image.convert("RGB")
+        assert pixels.size == (64, 64)
+        across = [pixels.getpixel((x, 32)) for x in (8, 16, 24)]
+        outside = pixels.getpixel((56, 32))
+
+    # Green the whole way across, so the avatar was cropped to its middle rather than fitted
+    # whole. Under `meet` these read red, green, blue.
+    for x, pixel in zip((8, 16, 24), across):
+        red, green, blue = pixel
+        assert green > 180 and red < 120 and blue < 120, f"x={x} was {pixel}, not green"
+
+    # Still white, so `slice` was clipped to the slot rather than bleeding across the canvas.
+    assert min(outside) > 240, f"the portrait overflowed its box: {outside}"
 
 
 @pytest.mark.rasteriser

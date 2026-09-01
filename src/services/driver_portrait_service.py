@@ -69,25 +69,98 @@ DEFAULT_RENDER_BUDGET_SECONDS = 2.0
 _UNSET = object()
 
 
-def wrap_png(data: bytes) -> str:
-    """The SVG that carries *data* as a driver portrait.
+def wrap_size(aspect: float) -> tuple[int, int]:
+    """The wrapper's pixel size for a slot of ratio *aspect*, longest side `PORTRAIT_SIZE`.
 
-    Authored at 1:1 with `preserveAspectRatio="xMidYMid meet"`, as the driver class requires
-    of every file in it. No `clipPath` and no filter, per the authoring rules in
-    `resources/README.md`: the wrapper is generated, but it is not exempt from them.
+    Rounded to whole pixels, and never below one, so a preposterous ratio degrades to a
+    sliver rather than to a zero-width document the rasteriser would reject.
+    """
+    if not aspect or aspect <= 0:
+        aspect = 1.0
+    if aspect >= 1.0:
+        return PORTRAIT_SIZE, max(1, round(PORTRAIT_SIZE / aspect))
+    return max(1, round(PORTRAIT_SIZE * aspect)), PORTRAIT_SIZE
+
+
+def wrap_png(data: bytes, aspect: float = 1.0) -> str:
+    """The SVG that carries *data* as a driver portrait, shaped to *aspect*.
+
+    **Authored at the shape the league's own lineup template draws portraits at**, which
+    since 2026-09-01 is the league's to choose. The default of 1:1 is what a league that has
+    changed nothing gets, and what is used whenever the lineup template cannot be read.
+
+    `preserveAspectRatio="xMidYMid slice"` is the centre crop: Discord serves a square
+    avatar, and a non-square slot takes the middle of it and trims both sides equally. The
+    alternative, `meet`, would letterbox instead -- and the rasteriser fills that band by
+    carrying the outermost pixels outward rather than leaving it clear, so a portrait would
+    be smeared rather than merely padded. Cropping a face towards its centre is the better
+    failure of the two.
+
+    No `clipPath` and no filter, per the authoring rules in `resources/README.md`: an
+    `<image>` establishes its own viewport and clips `slice` to it, so none is needed. The
+    wrapper is generated, but it is not exempt from those rules.
     """
     payload = base64.b64encode(data).decode("ascii")
+    width, height = wrap_size(aspect)
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" '
         'xmlns:xlink="http://www.w3.org/1999/xlink" '
-        f'viewBox="0 0 {PORTRAIT_SIZE} {PORTRAIT_SIZE}" '
-        f'width="{PORTRAIT_SIZE}" height="{PORTRAIT_SIZE}">\n'
-        f'  <image width="{PORTRAIT_SIZE}" height="{PORTRAIT_SIZE}" '
-        'preserveAspectRatio="xMidYMid meet" '
+        f'viewBox="0 0 {width} {height}" '
+        f'width="{width}" height="{height}">\n'
+        f'  <image width="{width}" height="{height}" '
+        'preserveAspectRatio="xMidYMid slice" '
         f'xlink:href="data:image/png;base64,{payload}" '
         f'href="data:image/png;base64,{payload}"/>\n'
         "</svg>\n"
     )
+
+
+def portrait_key(avatar_key: str, aspect: float) -> str:
+    """What is recorded for a portrait we obtained: the avatar, and the shape we wrapped it at.
+
+    The shape belongs in the key because the key is what decides whether a portrait is still
+    current. A league that re-shapes its lineup template has not changed a single avatar, so
+    on the avatar alone every portrait would read as unchanged and stay at the old shape for
+    as long as the drivers kept their pictures. Folding the shape in re-wraps them all on the
+    next refresh, and needs no migration: an old row simply carries no `@`, matches nothing,
+    and is refreshed once.
+    """
+    return f"{avatar_key}@{float(aspect):.4f}"
+
+
+def portrait_aspect(config) -> float:
+    """The shape the league's lineup template draws driver portraits at. 1:1 when unreadable.
+
+    The lineup is the only template carrying driver slots, so one file answers this and no
+    survey of the fifteen is needed. Every failure -- no configuration, a template directory
+    that does not resolve, a file that will not parse, a lineup declaring no portrait slot at
+    all -- lands on 1:1, which is what the bot shipped with and what a league that has
+    re-shaped nothing is already using.
+
+    A portrait is never worth an exception: this runs on the way to drawing a graphic, and a
+    lineup template too broken to read is a fault the render itself will report in terms a
+    manager can act on. Reporting it twice, from here, in worse terms, would help nobody.
+    """
+    try:
+        from services.image_validity_service import class_aspect_of
+        from utils.paths import resolve_within_project_root
+        from utils.svg_document import load_svg
+
+        filename = getattr(config, "lineup_template", None)
+        directory = getattr(config, "template_directory", None)
+        if not filename or not directory:
+            return 1.0
+        path = resolve_within_project_root(directory) / filename
+        if not path.is_file():
+            return 1.0
+        found = class_aspect_of(load_svg(path), "lineup_template", "driver")
+        return found if found and found > 0 else 1.0
+    except Exception:  # noqa: BLE001 -- a portrait never fails a render
+        log.debug(
+            "driver portraits: could not read the portrait shape; assuming 1:1",
+            exc_info=True,
+        )
+        return 1.0
 
 
 def portrait_path(directory: Path, discord_user_id: str) -> Path:
@@ -223,7 +296,13 @@ async def run_daily_refresh(bot, server_id: int, *, now: datetime | None = None)
             return 0
 
         return await refresh_portraits(
-            bot.db_path, server_id, members, directory, budget_seconds=None, now=now
+            bot.db_path,
+            server_id,
+            members,
+            directory,
+            aspect=portrait_aspect(config),
+            budget_seconds=None,
+            now=now,
         )
     except Exception:  # noqa: BLE001 -- a scheduled job that raises is a job that stops
         log.warning(
@@ -286,7 +365,14 @@ async def refresh_before_render(
         # problem to solve twice.
         return 0
 
-    return await refresh_portraits(bot.db_path, server_id, members, directory, now=now)
+    return await refresh_portraits(
+        bot.db_path,
+        server_id,
+        members,
+        directory,
+        aspect=portrait_aspect(config),
+        now=now,
+    )
 
 
 async def refresh_portraits(
@@ -295,11 +381,16 @@ async def refresh_portraits(
     members,
     directory,
     *,
+    aspect: float = 1.0,
     budget_seconds: float | None = DEFAULT_RENDER_BUDGET_SECONDS,
     concurrency: int = DEFAULT_CONCURRENCY,
     now: datetime | None = None,
 ) -> int:
     """Bring the portraits of *members* up to date. Returns how many were written.
+
+    *aspect* is the shape the league's lineup template draws portraits at; the avatar is
+    centre-cropped to it. Callers read it with :func:`portrait_aspect`, and 1:1 is what a
+    league that has re-shaped nothing gets.
 
     Never raises for anything a portrait can do: the caller is drawing a graphic, and a
     portrait that cannot be obtained resolves exactly as it would have resolved had this
@@ -325,8 +416,10 @@ async def refresh_portraits(
         if user_id not in owned and path.exists():
             continue  # the league drew this one themselves
 
-        if owned.get(user_id) == member.display_avatar.key and path.is_file():
-            continue  # unchanged since it was obtained
+        if owned.get(user_id) == portrait_key(
+            member.display_avatar.key, aspect
+        ) and path.is_file():
+            continue  # unchanged since it was obtained, and wrapped at the shape in force
 
         stale.append(member)
 
@@ -364,14 +457,18 @@ async def refresh_portraits(
                 return
 
             try:
-                _write_atomically(portrait_path(directory, str(member.id)), wrap_png(data))
+                _write_atomically(
+                    portrait_path(directory, str(member.id)), wrap_png(data, aspect)
+                )
             except OSError:
                 log.warning(
                     "driver portraits: could not write one for %s", member.id, exc_info=True
                 )
                 return
 
-            await _record(db_path, server_id, str(member.id), asset.key, now)
+            await _record(
+                db_path, server_id, str(member.id), portrait_key(asset.key, aspect), now
+            )
             written += 1
 
     tasks = [asyncio.create_task(fetch(member)) for member in stale]

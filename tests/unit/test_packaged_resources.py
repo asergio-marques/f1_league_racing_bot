@@ -17,7 +17,7 @@ from lxml import etree
 
 from models.image_constants import (
     ASSET_ASPECT_TOLERANCE,
-    ASSET_CLASS_ASPECTS,
+    PACKAGED_ASSET_ASPECTS,
     ASPECT_TEMPLATES,
     FALLBACK_ASSET_NAME,
     MYSTERY_ASSET_NAME,
@@ -59,7 +59,7 @@ def test_both_imagery_directories_ship_their_reserved_files(directory):
 )
 @pytest.mark.parametrize("filename", [FALLBACK_ASSET_NAME, MYSTERY_ASSET_NAME])
 def test_a_packaged_asset_carries_its_classs_aspect(directory, asset_class, filename):
-    expected = ASSET_CLASS_ASPECTS[asset_class]
+    expected = PACKAGED_ASSET_ASPECTS[asset_class]
     found = _svg_aspect(RESOURCES / directory / filename)
     assert abs(found - expected) / expected <= ASSET_ASPECT_TOLERANCE, (
         f"{directory}/{filename} is {found:.4f}, expected {expected:.4f}"
@@ -118,11 +118,38 @@ def test_every_image_slot_of_a_shipped_template_carries_its_classs_aspect(path):
     Four types' round headings moved from the track class to the flag class in this
     increment. A slot renamed but left square would letterbox every flag drawn into
     it, and the generator never pads.
-    """
-    from services.image_validity_service import aspect_faults_of
 
-    faults = aspect_faults_of(etree.parse(str(path)).getroot(), path.stem)
+    Two halves since 2026-09-01, when the shape a class carries became the league's to
+    choose. The first is what production still enforces: the slots of a class agree with one
+    another. The second is what production deliberately no longer does -- that the shape they
+    agree *on* is the one our own artwork is drawn at. Nothing in `src/` requires that of the
+    shipped set any more, so this is the only thing holding the fifteen templates and the
+    artwork that fills them together, and it has to be asserted here or not at all.
+    """
+    from models.image_constants import (
+        PACKAGED_ASSET_ASPECTS,
+        RATIO_CONSISTENT_ASSET_CLASSES,
+    )
+    from services.image_validity_service import (
+        class_aspect_faults_of,
+        class_aspect_of,
+        stretch_faults_of,
+    )
+
+    root = etree.parse(str(path)).getroot()
+
+    faults = stretch_faults_of(root, path.stem) + class_aspect_faults_of(root, path.stem)
     assert not faults, "; ".join(faults)
+
+    for asset_class in sorted(RATIO_CONSISTENT_ASSET_CLASSES):
+        found = class_aspect_of(root, path.stem, asset_class)
+        if found is None:
+            continue  # this template draws none of that class
+        expected = PACKAGED_ASSET_ASPECTS[asset_class]
+        assert abs(found - expected) / expected <= 0.01, (
+            f"{path.name} draws {asset_class} at {found:.4f}, but the artwork we ship for "
+            f"it is {expected:.4f} — one of the two has moved without the other"
+        )
 
 
 @pytest.mark.parametrize(
@@ -148,7 +175,7 @@ def test_the_packaged_templates_declare_the_expected_slots(template, field_id, a
     node = root.find(f".//*[@id='{field_id}']")
     assert node is not None, f"{template} declares no {field_id}"
 
-    expected = ASSET_CLASS_ASPECTS[asset_class]
+    expected = PACKAGED_ASSET_ASPECTS[asset_class]
     found = float(node.get("width")) / float(node.get("height"))
     assert abs(found - expected) / expected <= ASSET_ASPECT_TOLERANCE, (
         f"{template}/{field_id} is {found:.4f}, expected {expected:.4f}"

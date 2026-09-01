@@ -35,15 +35,16 @@ from models.image_constants import (
     ASPECT_TEMPLATES,
     ASPECTS,
     ASSET_ASPECT_TOLERANCE,
-    ASSET_CLASS_ASPECTS,
-    STRETCHABLE_ASSET_CLASSES,
     ASSET_DIRECTORIES,
+    RATIO_CONSISTENT_ASSET_CLASSES,
+    STRETCHABLE_ASSET_CLASSES,
     TEMPLATE_COLUMNS,
     TEMPLATE_COMMAND_NAMES,
     TEMPLATE_LABELS,
 )
 from models.image_module import (
     PROBLEM_EXTENSION,
+    PROBLEM_ASPECT_DISAGREEMENT,
     PROBLEM_MISSING_MANDATORY_FIELD,
     PROBLEM_NOT_FOUND,
     PROBLEM_NOT_SVG,
@@ -196,37 +197,22 @@ def _slot_aspect(node) -> float | None:
     return width / height
 
 
-def aspect_faults_of(root, template_key: str) -> list[str]:
-    """Every image slot of *root* declared at an aspect its class does not carry.
+def _class_slots(root, template_key: str) -> dict[str, list[tuple[str, float, bool]]]:
+    """Every image slot of *root* grouped by asset class.
 
-    One class carries one aspect on every template of every image type (XIV.6). A
-    league authors one file per datum, and a class serving slots of two aspects would
-    letterbox that file wherever it did not match.
+    One walk of the tree serving both shape checks, so a template is not iterated twice to
+    ask two questions about the same elements. Each entry is the field id, the ratio it
+    declares, and whether it declares that it stretches.
 
-    **A slot of a stretching class exempts itself.** One carrying
-    ``preserveAspectRatio="none"`` stretches to the box the template gives it, so there is
-    nothing for it to be letterboxed against and the rule has no work to do. The exemption
-    is the slot's and not its class's because that is where the fact lives: `marker` draws
-    the square position-change arrows and the standings and attendance marks alike, and
-    only the marks stretch.
-
-    But only a slot of a class in ``STRETCHABLE_ASSET_CLASSES`` may claim it. The exemption
-    was formerly open to any slot of any class, which let a league's own template declare a
-    driver portrait slot 2:1 and draw every face in the league squashed to half height,
-    unremarked. A class that carries an aspect means it, and a slot saying otherwise is the
-    fault rather than the exception. Note the order below: the class is resolved *before*
-    the exemption is tested, which is the reverse of how this once read.
-
-    The comparison is **relative and tolerant**: template geometry is authored in
-    Inkscape and carries floating-point values, so an exact test would reject every
-    template a human drew. The tolerance still catches a square slot given a 3:2 flag,
-    which is a 50% error.
+    A slot with no usable dimensions is dropped here unless it stretches, rather than
+    defended against downstream: an unmeasurable slot is already a fault of its own in
+    Layer 3, and inventing a shape for it would report the wrong one.
     """
     catalogue = catalogue_for(template_key)
     if catalogue.is_empty:
-        return []
+        return {}
 
-    faults: list[str] = []
+    slots: dict[str, list[tuple[str, float, bool]]] = {}
     for node in root.iter(f"{{{_SVG_NS}}}image"):
         field_id = node.get("id")
         if not field_id:
@@ -234,24 +220,133 @@ def aspect_faults_of(root, template_key: str) -> list[str]:
         asset_class = catalogue.asset_class_for(field_id)
         if asset_class is None:
             continue
-        if (
-            node.get("preserveAspectRatio") == "none"
-            and asset_class in STRETCHABLE_ASSET_CLASSES
-        ):
-            continue
-        expected = ASSET_CLASS_ASPECTS.get(asset_class)
-        if expected is None:
-            continue
         found = _slot_aspect(node)
-        if found is None:
+        stretches = node.get("preserveAspectRatio") == "none"
+        if found is None and not stretches:
             continue
-        if abs(found - expected) / expected > ASSET_ASPECT_TOLERANCE:
+        slots.setdefault(asset_class, []).append(
+            (field_id, found if found is not None else 0.0, stretches)
+        )
+    return slots
+
+
+def stretch_faults_of(root, template_key: str) -> list[str]:
+    """Every slot declaring it stretches whose class is not allowed to (XIV.6).
+
+    Only `marker` may: it draws the standings and attendance marks, which fill the room
+    their cell gives them. Every other class is authored to a shape, and a slot saying
+    otherwise squashes whatever is drawn into it.
+
+    **This is checked in its own right, and must be.** It was formerly enforced only as a
+    side effect of the shape comparison -- the exemption was refused, and the slot then
+    failed the comparison if its shape happened also to be wrong. Now that the shape is
+    taken from the template rather than from a table, that side effect is gone: a lineup
+    whose portrait slots *all* stretch agrees with itself perfectly, is passed over by
+    :func:`class_aspect_faults_of`, and would draw every face in the league squashed with
+    nothing whatever said. So the declaration is the fault, whatever the shape beside it.
+    """
+    faults: list[str] = []
+    for asset_class, slots in sorted(_class_slots(root, template_key).items()):
+        if asset_class in STRETCHABLE_ASSET_CLASSES:
+            continue
+        for field_id, _ratio, stretches in sorted(slots):
+            if stretches:
+                faults.append(
+                    f"`{field_id}` draws the {asset_class} class and declares that it "
+                    f"stretches, which only a marker slot may do. Whatever is drawn into "
+                    f"it would be squashed to the shape of the box, and no artwork could "
+                    f"correct it."
+                )
+    return faults
+
+
+def class_aspect_faults_of(root, template_key: str) -> list[str]:
+    """Every image slot whose shape disagrees with the others of its class (XIV.6).
+
+    One class carries one shape *on the template that draws it*, because a league authors
+    one file per datum and the generator never pads: that one file is letterboxed wherever a
+    slot disagrees with the rest, and no artwork the league could supply would answer it.
+
+    **Which** shape is the league's own business, and this function names none. It reads the
+    reference off the template in hand -- the ratio the most slots of the class declare --
+    and reports the others against it. A template drawing every flag at 2:1 is drawing them
+    correctly; one drawing twenty-three at 2:1 and the twenty-fourth square is not. Until
+    2026-09-01 the reference was a table in `image_constants`, which refused the first of
+    those as readily as the second.
+
+    The mode, rather than a pairwise clustering of the ratios found. Chained near-misses --
+    1.00, 1.005, 1.01 and on -- are each within tolerance of their neighbour while the ends
+    are nowhere near each other, so clustering would let a set drift arbitrarily far apart
+    with every comparison passing. Ties are broken by sorted field id, so the reference does
+    not depend on document order, which differs between authoring tools.
+
+    A stretching slot is passed over: it fills its box whatever shape either is, so there is
+    nothing for it to be letterboxed against. Only `marker` may say so, which
+    :func:`stretch_faults_of` has already established by the time this runs.
+
+    The comparison is **relative and tolerant**: template geometry is authored in Inkscape
+    and carries floating-point values, so an exact test would reject every template a human
+    drew. The tolerance still catches a square slot among 3:2 ones, which is a 50% error.
+    """
+    faults: list[str] = []
+    for asset_class, slots in sorted(_class_slots(root, template_key).items()):
+        if asset_class not in RATIO_CONSISTENT_ASSET_CLASSES:
+            continue
+
+        measured = sorted(
+            (field_id, ratio) for field_id, ratio, stretches in slots if not stretches
+        )
+        if len(measured) < 2:
+            continue  # a single slot has nothing to disagree with
+
+        reference, majority = _modal_ratio(measured)
+        for field_id, ratio in measured:
+            if abs(ratio - reference) / reference <= ASSET_ASPECT_TOLERANCE:
+                continue
             faults.append(
-                f"`{field_id}` draws the {asset_class} class, which is authored at "
-                f"{_ratio_text(expected)}, but the slot is {_ratio_text(found)}. "
-                f"An asset drawn into it would be letterboxed; the generator never pads."
+                f"`{field_id}` draws the {asset_class} class at {_ratio_text(ratio)}, but "
+                f"`{majority}` and the other {asset_class} slots on this template are "
+                f"{_ratio_text(reference)}. One file is drawn into all of them, so it would "
+                f"be letterboxed in one shape or the other; the generator never pads."
             )
     return faults
+
+
+def _modal_ratio(measured: list[tuple[str, float]]) -> tuple[float, str]:
+    """The ratio the most slots declare, and a field id declaring it.
+
+    Ties go to whichever group holds the first field id in sorted order, so the reference is
+    the same on every host and under every authoring tool's element ordering.
+    """
+    tally: dict[float, list[str]] = {}
+    for field_id, ratio in measured:
+        tally.setdefault(round(ratio, 4), []).append(field_id)
+    reference = min(tally, key=lambda key: (-len(tally[key]), tally[key][0]))
+    return reference, tally[reference][0]
+
+
+def class_aspect_of(root, template_key: str, asset_class: str) -> float | None:
+    """The shape *asset_class* is drawn at on this template, or None where it draws none.
+
+    The same reference :func:`class_aspect_faults_of` reports against, exposed for the one
+    caller that wants the shape itself rather than a verdict on it: the portrait service,
+    which wraps a Discord avatar to the shape the league's own lineup template declares.
+    """
+    slots = _class_slots(root, template_key).get(asset_class, [])
+    measured = sorted(
+        (field_id, ratio) for field_id, ratio, stretches in slots if not stretches
+    )
+    if not measured:
+        return None
+    return _modal_ratio(measured)[0]
+
+
+#: Marks a Layer 2 failure as a *shape* fault rather than a missing field, so
+#: :func:`_problem_kind_for` can tell them apart without a new field on `ValidityReport`.
+#: The same trick Layer 1 already uses for "declares no canvas". Stripped before a league
+#: ever sees the sentence -- they are shown `plain_reason` regardless, and the log wants the
+#: precise text, not a marker.
+ASPECT_FAULT_PREFIX = "aspect: "
 
 
 #: The ids the track class is addressed by. Matched **by shape** rather than through the
@@ -375,12 +470,21 @@ class CatalogueLayer:
         if trespass:
             return LayerResult(False, "; ".join(trespass))
 
-        # Every image slot at the aspect its class carries (XIV.6, 044). A slot at another
-        # shape letterboxes every asset drawn into it, and the generator never pads — no
-        # artwork a league could supply would answer it.
-        faults = aspect_faults_of(root, ctx.template_key)
+        # A slot claiming to stretch whose class may not (XIV.6). Checked before the shapes
+        # are compared, and not merely for the better message: a stretching slot is passed
+        # over by the comparison, so a template whose portrait slots all stretch would agree
+        # with itself and pass. The declaration has to be the fault in its own right.
+        stretching = stretch_faults_of(root, ctx.template_key)
+        if stretching:
+            return LayerResult(False, ASPECT_FAULT_PREFIX + "; ".join(stretching))
+
+        # Every slot of a class at the shape its siblings on this template use (XIV.6, 044,
+        # relaxed 2026-09-01). Which shape is the league's to choose; that they agree is not.
+        # One file is drawn into all of them and the generator never pads, so a slot out of
+        # step letterboxes that file with no artwork able to correct it.
+        faults = class_aspect_faults_of(root, ctx.template_key)
         if faults:
-            return LayerResult(False, "; ".join(faults))
+            return LayerResult(False, ASPECT_FAULT_PREFIX + "; ".join(faults))
 
         missing = sorted(name for name in mandatory if index.resolve(name) is None)
         if not missing:
@@ -641,15 +745,20 @@ def check_template(
     # manager naming a file: they are looking at that one template, in the moment they
     # can fix it, and "which field" or "which path" is what they need. The season review
     # and `/images config view` survey fifteen at once and speak plainly instead.
+    detail = report.reason or f"{label} is not usable."
     return Problem(
         kind=_problem_kind_for(report),
-        detail=report.reason or f"{label} is not usable.",
+        # The kind has been read off the marker by now, so it has done its work and would
+        # only be noise in front of the sentence a manager reads.
+        detail=detail.removeprefix(ASPECT_FAULT_PREFIX),
         template_key=template_key,
     )
 
 
 def _problem_kind_for(report: ValidityReport) -> str:
     """Map a failing layer onto a problem kind, keeping the classes distinguishable."""
+    if (report.reason or "").startswith(ASPECT_FAULT_PREFIX):
+        return PROBLEM_ASPECT_DISAGREEMENT
     if report.failed_layer == LAYER_CATALOGUE:
         return PROBLEM_MISSING_MANDATORY_FIELD
     reason = (report.reason or "").lower()
@@ -702,6 +811,9 @@ PLAIN_UNBOUNDED_FIELD = (
 )
 PLAIN_NOT_A_DRAWING = "this file isn't a drawing the bot can read"
 PLAIN_MISSING_FIELD = "the drawing is missing something the bot has to fill in"
+PLAIN_ASPECT_DISAGREEMENT = (
+    "its picture boxes for one kind of picture aren't all the same shape as each other"
+)
 PLAIN_FILE_MISSING = "the drawing file can't be found where the bot was told to look"
 PLAIN_FILE_OUTSIDE = "this file is outside the bot's own folder, so it can't be read"
 PLAIN_UNUSABLE = "this drawing can't be used"
@@ -727,6 +839,8 @@ def plain_reason(report: ValidityReport) -> str:
     kind = _problem_kind_for(report)
     if kind == PROBLEM_NOT_SVG:
         return PLAIN_NOT_A_DRAWING
+    if kind == PROBLEM_ASPECT_DISAGREEMENT:
+        return PLAIN_ASPECT_DISAGREEMENT
     if kind == PROBLEM_MISSING_MANDATORY_FIELD:
         return PLAIN_MISSING_FIELD
     if kind == PROBLEM_NOT_FOUND:
@@ -788,6 +902,8 @@ def plain_remedy(report: ValidityReport) -> str:
     kind = _problem_kind_for(report)
     if kind == PROBLEM_NOT_SVG:
         return f"Save it again as a plain SVG, or name a different file with {naming}."
+    if kind == PROBLEM_ASPECT_DISAGREEMENT:
+        return f"Run {naming} on the same file and the reply names the box at fault."
     if kind == PROBLEM_MISSING_MANDATORY_FIELD:
         return f"Run {naming} on the same file and the reply names what is missing."
     if kind == PROBLEM_NOT_FOUND:

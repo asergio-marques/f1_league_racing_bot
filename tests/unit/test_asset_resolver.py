@@ -660,39 +660,87 @@ def test_a_resolved_asset_is_written_as_a_uri_not_a_path(flags):
 
 
 # --------------------------------------------------------------------------
-# Per-class aspect table (044, Constitution XIV.6)
+# Which classes are held to a shape, and what our own artwork uses
+# (044, Constitution XIV.6, relaxed 2026-09-01)
 # --------------------------------------------------------------------------
 
-def test_every_asset_class_declares_an_aspect():
-    """A class added later must not silently escape the aspect check.
+def test_every_asset_class_is_either_held_to_one_shape_or_allowed_to_stretch():
+    """A class added later must not silently escape the shape check.
 
-    The check reads ASSET_CLASS_ASPECTS by class; a class present in the directory table but
-    absent here would be validated against nothing at all. Every class declares one again
-    since v7.5.0 — the stretching exemption moved from the class to the slot, so no class has
-    a reason to be missing.
+    The two sets partition the seven between them: a class is either held to drawing one
+    shape throughout a template, or it is one whose slots may declare that they stretch. A
+    class in neither would be checked against nothing at all, and one in both would be
+    self-contradictory.
+
+    They are deliberately two constants rather than one derived from the other. Today they
+    happen to be exact complements — `marker` alone stretches, and `marker` alone is
+    unchecked — but they answer different questions, and a later class could be free of a
+    fixed shape without its slots being allowed to stretch.
     """
-    from models.image_constants import ASSET_CLASS_ASPECTS, ASSET_CLASS_DIRECTORIES
+    from models.image_constants import (
+        ASSET_CLASS_DIRECTORIES,
+        RATIO_CONSISTENT_ASSET_CLASSES,
+        STRETCHABLE_ASSET_CLASSES,
+    )
 
-    missing = set(ASSET_CLASS_DIRECTORIES) - set(ASSET_CLASS_ASPECTS)
-    assert not missing, f"asset classes with no declared aspect: {sorted(missing)}"
+    classes = set(ASSET_CLASS_DIRECTORIES)
+    covered = RATIO_CONSISTENT_ASSET_CLASSES | STRETCHABLE_ASSET_CLASSES
 
-    extra = set(ASSET_CLASS_ASPECTS) - set(ASSET_CLASS_DIRECTORIES)
-    assert not extra, f"aspects declared for unknown classes: {sorted(extra)}"
+    missing = classes - covered
+    assert not missing, f"asset classes governed by neither rule: {sorted(missing)}"
+
+    extra = covered - classes
+    assert not extra, f"rules naming unknown classes: {sorted(extra)}"
+
+    both = RATIO_CONSISTENT_ASSET_CLASSES & STRETCHABLE_ASSET_CLASSES
+    assert not both, f"classes both held to a shape and free to stretch: {sorted(both)}"
 
 
-def test_the_flag_class_is_three_by_two_and_the_track_class_square():
-    """The two classes deliberately differ; the constraint is within a class."""
-    from models.image_constants import ASSET_CLASS_ASPECTS
+def test_the_marker_class_is_the_one_left_unchecked():
+    """It draws several shapes at once, so there is no single one for it to agree on.
 
-    assert ASSET_CLASS_ASPECTS["flag"] == pytest.approx(1.5)
-    assert ASSET_CLASS_ASPECTS["track"] == pytest.approx(1.0)
-    assert ASSET_CLASS_ASPECTS["flag"] != ASSET_CLASS_ASPECTS["track"]
+    The 64 x 64 position-change arrows sit in the same class as the standings result marks
+    and the attendance marks, whose cells are 52 x 22, 52 x 18 and 36 x 24. The same fact
+    that gives the class two fallbacks denies it one shape.
+    """
+    from models.image_constants import (
+        RATIO_CONSISTENT_ASSET_CLASSES,
+        STRETCHABLE_ASSET_CLASSES,
+    )
+
+    assert "marker" not in RATIO_CONSISTENT_ASSET_CLASSES
+    assert STRETCHABLE_ASSET_CLASSES == frozenset({"marker"})
+
+
+def test_our_own_artwork_records_a_shape_for_every_class():
+    """`PACKAGED_ASSET_ASPECTS` no longer governs a league, but it still governs us.
+
+    It is what `resources/defaults/` is authored against and what the off-shape render notice
+    compares a slot with, so a class missing from it would ship unverified artwork and raise
+    no notice for it either.
+    """
+    from models.image_constants import ASSET_CLASS_DIRECTORIES, PACKAGED_ASSET_ASPECTS
+
+    missing = set(ASSET_CLASS_DIRECTORIES) - set(PACKAGED_ASSET_ASPECTS)
+    assert not missing, f"classes whose shipped artwork declares no shape: {sorted(missing)}"
+
+    extra = set(PACKAGED_ASSET_ASPECTS) - set(ASSET_CLASS_DIRECTORIES)
+    assert not extra, f"shapes recorded for unknown classes: {sorted(extra)}"
+
+
+def test_the_flag_artwork_is_three_by_two_and_the_track_artwork_square():
+    """The two deliberately differ, and nothing requires two classes to agree."""
+    from models.image_constants import PACKAGED_ASSET_ASPECTS
+
+    assert PACKAGED_ASSET_ASPECTS["flag"] == pytest.approx(1.5)
+    assert PACKAGED_ASSET_ASPECTS["track"] == pytest.approx(1.0)
+    assert PACKAGED_ASSET_ASPECTS["flag"] != PACKAGED_ASSET_ASPECTS["track"]
 
 
 def test_the_aspect_tolerance_admits_authoring_noise_and_catches_a_square_flag():
-    from models.image_constants import ASSET_ASPECT_TOLERANCE, ASSET_CLASS_ASPECTS
+    from models.image_constants import ASSET_ASPECT_TOLERANCE, PACKAGED_ASSET_ASPECTS
 
-    flag = ASSET_CLASS_ASPECTS["flag"]
+    flag = PACKAGED_ASSET_ASPECTS["flag"]
     authored = 120.00001 / 80          # what Inkscape actually writes
     square = 120 / 120                 # a slot left at the track class's shape
 

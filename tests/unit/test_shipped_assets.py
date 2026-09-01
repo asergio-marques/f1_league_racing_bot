@@ -30,7 +30,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from models.image_constants import (  # noqa: E402
-    ASSET_CLASS_ASPECTS,
+    PACKAGED_ASSET_ASPECTS,
     ASSET_ASPECT_TOLERANCE,
     ASSET_CLASS_TO_COLUMN,
     packaged_directory_for,
@@ -104,7 +104,7 @@ def test_every_shipped_asset_declares_its_class_aspect(asset_class, path):
         assert width > 0 and height > 0
         return
 
-    expected = ASSET_CLASS_ASPECTS[asset_class]
+    expected = PACKAGED_ASSET_ASPECTS[asset_class]
     assert abs((width / height) - expected) <= expected * ASSET_ASPECT_TOLERANCE, (
         f"{path.name} is {width}x{height}, which is not {expected}:1 for `{asset_class}`"
     )
@@ -165,7 +165,7 @@ def test_the_shipped_flags_rasterise_to_a_three_by_two_png(tmp_path, name):
     assert out.is_file(), "the rasteriser produced nothing"
     width, height = _png_size(out.read_bytes())
     assert width == 240
-    assert abs((width / height) - ASSET_CLASS_ASPECTS["flag"]) <= 0.01, f"{width}x{height}"
+    assert abs((width / height) - PACKAGED_ASSET_ASPECTS["flag"]) <= 0.01, f"{width}x{height}"
 
 
 @pytest.mark.rasteriser

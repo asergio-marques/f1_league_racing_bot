@@ -1605,7 +1605,9 @@ These sit under `/images template` rather than `/images config` because Discord 
 >
 > Gradients are fine, and so is any shape you like. The packaged qualifying marks are corner triangles that fade inward, each one **a step darker than the plate of its own placing**. That is deliberate two ways: a driver who qualified first *and* won sees the mark merge gently into the plate, while the same gold mark over a *bronze* plate stays plainly gold. If you redraw them, separate a mark from its plate by lightness rather than by hue alone — at 13 px the eye reads the edge from lightness, and a gold mark that differs from bronze only in hue looks like a stain.
 >
-> **The marks stretch to the cell.** They carry no fixed aspect ratio — a cell is a different shape on the drivers grid than on the constructors one, and no single ratio serves both — so draw artwork that survives being squashed a little. A rectangle or a corner shape does; a circle becomes an ellipse. The position-change markers sharing their folder are unaffected: it is the template's slot that stretches, not the folder. **Only a marker slot may declare that it stretches.** A slot of any other class — a driver portrait, a team badge, a flag, a circuit map — is held to its class's aspect whatever it declares, and a template that says otherwise is refused, naming the field. Authoring a portrait slot to stretch would draw every face in your league squashed to the shape of the box, and no artwork you supply could correct it.
+> **The marks stretch to the cell.** They carry no fixed aspect ratio — a cell is a different shape on the drivers grid than on the constructors one, and no single ratio serves both — so draw artwork that survives being squashed a little. A rectangle or a corner shape does; a circle becomes an ellipse. **Only a marker slot may declare that it stretches.** A slot of any other class — a driver portrait, a team badge, a flag, a circuit map — is refused outright if it says it does, naming the field, whatever shape you drew it. Authoring a portrait slot to stretch would draw every face in your league squashed to the shape of the box, and no artwork you supply could correct it.
+>
+> The markers sharing the folder are the reason the whole `markers` class is the one class the bot never checks the shape of: it holds the square position-change arrows *and* the marks that stretch, and no one shape covers both. Draw an arrow at the wrong shape and it will simply be letterboxed, with nothing said.
 >
 > A cell can carry **three** marks at once — the race plate, the fastest lap in one corner and the qualifying mark in the other. That is a win from pole with the fastest lap, and it is why the two corner marks should each leave most of the cell alone.
 >
@@ -1666,7 +1668,17 @@ The subcommands in the table above exist for the league that wants its files som
 - **Whole classes.** `resources/defaults/markers/` carries every mark the bot draws over a cell: the three directions a standing can move — `position_change_gained`, `position_change_lost`, `position_change_none`; the nine a standings result cell can earn — `race_p1`, `race_p2`, `race_p3`, `race_points` and `race_fastest_lap` for the race, and `qualifying_p1` through `qualifying_points` for where the driver qualified; and the two an attendance total can earn — `attendance_limit_near` and `attendance_limit_reached`. `resources/defaults/weather/` carries all eight the bot can ask for — `sunny`, `mixed` and `rain` for a session's type, and `clear`, `light_cloud`, `overcast`, `wet` and `very_wet` for a concrete weather. `resources/defaults/tyres/` carries the five compounds a session can be run on — `soft`, `medium`, `hard`, `intermediate` and `wet`, lettered `S`, `M`, `H`, `I` and `W` — there being no sixth for a league to choose. Every marker, every forecast, every mark and every tyre therefore draws a correct picture out of the box, whatever is or is not in your folder.
 - **Two reserved names inside classes that are otherwise yours.** `mystery`, for a round whose circuit is concealed, and `other`, for a driver who chose no nationality in particular. Your flag folder is full of countries you chose; these two are not among them.
 
-Your own file always wins where you supply one — this only ever fills a gap. Country flags, circuit maps, team badges and portraits are **not** covered by any of this: they are yours, and a missing one draws the placeholder. Replace the reserved artwork freely; keep the filenames. See [resources/README.md](resources/README.md) for the naming rule and the aspect each class expects.
+Your own file always wins where you supply one — this only ever fills a gap. Country flags, circuit maps, team badges and portraits are **not** covered by any of this: they are yours, and a missing one draws the placeholder. Replace the reserved artwork freely; keep the filenames. See [resources/README.md](resources/README.md) for the naming rule and the shape each class is drawn at.
+
+> **The bot's own artwork has a fixed shape, and yours need not match it.** What ships is drawn at 3:2 for flags and square for everything else. If you re-shape a class in your templates — see *The shape of a picture is yours to choose* below — the packaged files keep their own shape and are stretched wherever they stand in for something you have not drawn. The bot says so once per graphic, naming both shapes. Drawing your own file for that class is what stops it.
+
+**The shape of a picture is yours to choose.** The bot ships flags at 3:2 and everything else square, but nothing holds *your* templates to those numbers. What it does hold you to is **consistency inside one drawing**: every flag box on a given template must be the same shape as every other flag box on it, every team badge the same shape as every other team badge, and so on. Draw all twenty-four calendar flags at 2:1 and the bot is perfectly happy. Draw twenty-three at 2:1 and one square, and it refuses the drawing and names the box that is out of step.
+
+The reason is that you supply **one file per thing**. There is a single `united_kingdom.svg`, and it goes into every flag box there is. If two boxes on a drawing are different shapes, that one file is letterboxed in one of them, and no artwork you could draw would fix it — the bot never pads or crops to fit.
+
+> **The bot does not compare one drawing against another.** If your calendar draws flags at 3:2 and your standings draws them at 2:1, both are accepted and your flags are letterboxed on one of them. This is deliberate: checking it would make re-shaping a class impossible, because the first drawing you changed would disagree with the other thirteen and be refused. **So when you change the shape of a class, change it in every drawing that uses it.** Flags appear on fourteen of the fifteen templates and team badges on seven — those two are the ones easy to half-finish.
+
+> **`markers` is the exception, and is never checked at all.** That one folder holds the square position-change arrows *and* the marks that stretch into a result cell, so there is no single shape for it to hold you to.
 
 **A round is pictured two ways, and your template chooses.** A country flag and a circuit map are separate optional slots, so a template can draw either, both, or neither. The map is only offered on the **calendar** and the **check-in call**, where the round is the subject and there is room for an outline to read; on the standings, the attendance sheet and the weather forecasts a round is a column heading, at a size no circuit survives, so those draw the flag. Nothing here is a setting to flip — declare the slot you want in your template and the bot fills it. The calendar decides **per round**, so one round can carry both and the next just a flag.
 
@@ -1719,8 +1731,14 @@ updates keep the folder warm so the first lineup of a season is not the one that
 profile picture where they have set one, and their ordinary Discord picture otherwise. A
 driver who has set neither — carrying only the coloured default Discord generates — has
 nothing fetched, and their seat draws the placeholder as before. Discord stores a square
-picture, and that is what is drawn; the circle you see in the Discord client is its own
-cropping, not part of the file.
+picture; the circle you see in the Discord client is its own cropping, not part of the file.
+
+**A fetched portrait takes the shape your lineup template draws.** The bot reads the shape of
+your portrait boxes and trims the square picture to fit, keeping the middle and taking the
+same amount off both sides — the part of a profile picture worth keeping is nearly always in
+the centre. Square boxes, which is what ships, take the picture whole. If you re-shape your
+portrait boxes later, every fetched portrait is redrawn at the new shape on the next refresh;
+you need do nothing. Portraits you drew yourself are untouched by any of this.
 
 > **Your own artwork always wins.** A portrait file you placed yourself is never overwritten
 > and never fetched over. The bot only ever touches files it created — so you can draw
