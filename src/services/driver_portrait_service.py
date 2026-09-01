@@ -156,6 +156,83 @@ async def _disown(db_path: str, server_id: int, user_id: str) -> None:
         await db.commit()
 
 
+async def assigned_driver_ids(db_path: str, server_id: int) -> list[str]:
+    """The Discord user IDs assigned to a seat in *server_id*'s active season.
+
+    Sorted, so the daily refresh works through a roster in a stable order rather than
+    whatever order SQLite happens to return -- which matters the moment a run is cut short.
+
+    Test drivers are excluded: their IDs are synthetic and resolve to no Discord account, so
+    fetching for them could only ever fail.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT DISTINCT dp.discord_user_id AS uid
+            FROM driver_season_assignments dsa
+            JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+            JOIN seasons s ON s.id = dsa.season_id
+            WHERE s.server_id = ? AND s.status = 'ACTIVE'
+              AND dp.is_test_driver = 0
+            """,
+            (server_id,),
+        )
+        rows = await cursor.fetchall()
+    return sorted(str(row["uid"]) for row in rows)
+
+
+async def run_daily_refresh(bot, server_id: int, *, now: datetime | None = None) -> int:
+    """The daily portrait refresh for one server. Returns how many were written.
+
+    Unlike the pre-render trigger this has no graphic to scope it, so it works through every
+    driver seated in the active season. It also passes no wall-clock budget: nothing is
+    waiting on it, and a roster that takes a minute at 03:00 costs nobody anything.
+
+    Never raises. It is an APScheduler job, and an exception here would be logged into a void
+    the league never reads.
+    """
+    try:
+        config = await bot.image_config_service.get_config(server_id)
+        if config is None or not getattr(config, "use_pfp", False):
+            return 0
+        if not getattr(config, "pfp_daily", False):
+            return 0
+
+        guild = bot.get_guild(server_id)
+        if guild is None:
+            log.warning("driver portraits: server %s is not reachable", server_id)
+            return 0
+
+        from services.image_render_service import resolve_configured_directories
+
+        directories, _faults = resolve_configured_directories(
+            config,
+            (("driver", "driver_image_directory"),),
+            image_type="driver_portraits",
+        )
+        directory = directories.get("driver")
+        if directory is None:
+            return 0
+
+        members = []
+        for user_id in await assigned_driver_ids(bot.db_path, server_id):
+            member = guild.get_member(int(user_id))
+            if member is not None:
+                members.append(member)
+        if not members:
+            return 0
+
+        return await refresh_portraits(
+            bot.db_path, server_id, members, directory, budget_seconds=None, now=now
+        )
+    except Exception:  # noqa: BLE001 -- a scheduled job that raises is a job that stops
+        log.warning(
+            "driver portraits: the daily refresh for server %s failed", server_id,
+            exc_info=True,
+        )
+        return 0
+
+
 async def refresh_before_render(
     bot,
     server_id: int,

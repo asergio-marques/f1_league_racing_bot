@@ -338,3 +338,123 @@ async def test_the_gate_never_raises_on_a_configuration_predating_the_feature(
     # function is called from inside a render and must never be the thing that fails it.
     written, calls = await _gate(monkeypatch, SimpleNamespace(), directory)
     assert (written, calls) == (0, [])
+
+
+# ── The daily refresh ─────────────────────────────────────────────────────
+
+
+async def _season_db(tmp_path, *, uids=("11", "22"), test_uid="99", status="ACTIVE"):
+    """A database carrying just the four tables `assigned_driver_ids` joins."""
+    path = str(tmp_path / "season.db")
+    async with aiosqlite.connect(path) as db:
+        await db.execute("CREATE TABLE seasons (id INTEGER PRIMARY KEY, server_id INTEGER, status TEXT)")
+        await db.execute(
+            "CREATE TABLE driver_profiles (id INTEGER PRIMARY KEY, discord_user_id TEXT,"
+            " is_test_driver INTEGER DEFAULT 0)"
+        )
+        await db.execute(
+            "CREATE TABLE driver_season_assignments (driver_profile_id INTEGER, season_id INTEGER)"
+        )
+        await db.execute(
+            "CREATE TABLE driver_portraits (server_id INTEGER NOT NULL,"
+            " discord_user_id TEXT NOT NULL, avatar_key TEXT NOT NULL,"
+            " fetched_at TEXT NOT NULL, PRIMARY KEY (server_id, discord_user_id))"
+        )
+        await db.execute("INSERT INTO seasons VALUES (1, ?, ?)", (SERVER_ID, status))
+        pid = 0
+        for uid in uids:
+            pid += 1
+            await db.execute("INSERT INTO driver_profiles VALUES (?, ?, 0)", (pid, uid))
+            await db.execute("INSERT INTO driver_season_assignments VALUES (?, 1)", (pid,))
+        if test_uid:
+            pid += 1
+            await db.execute("INSERT INTO driver_profiles VALUES (?, ?, 1)", (pid, test_uid))
+            await db.execute("INSERT INTO driver_season_assignments VALUES (?, 1)", (pid,))
+        await db.commit()
+    return path
+
+
+async def test_assigned_driver_ids_skips_test_drivers_and_sorts(tmp_path):
+    from services.driver_portrait_service import assigned_driver_ids
+
+    path = await _season_db(tmp_path, uids=("22", "11"))
+
+    # Sorted rather than in insertion order: a run cut short must resume predictably.
+    assert await assigned_driver_ids(path, SERVER_ID) == ["11", "22"]
+
+
+async def test_assigned_driver_ids_ignores_a_season_that_is_not_active(tmp_path):
+    from services.driver_portrait_service import assigned_driver_ids
+
+    path = await _season_db(tmp_path, status="COMPLETED")
+
+    assert await assigned_driver_ids(path, SERVER_ID) == []
+
+
+def _daily_bot(db_path, directory, **config_overrides):
+    values = {"use_pfp": True, "pfp_daily": True,
+              "driver_image_directory": str(directory)}
+    values.update(config_overrides)
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.image_config_service.get_config = AsyncMock(return_value=SimpleNamespace(**values))
+    guild = MagicMock()
+    members = {11: _member(11, "k11"), 22: _member(22, "k22")}
+    guild.get_member.side_effect = members.get
+    bot.get_guild.return_value = guild
+    return bot
+
+
+async def test_the_daily_refresh_writes_every_seated_driver(tmp_path, monkeypatch):
+    from services import driver_portrait_service as m
+
+    directory = tmp_path / "drivers"
+    directory.mkdir()
+    path = await _season_db(tmp_path)
+    monkeypatch.setattr("utils.paths.PROJECT_ROOT", tmp_path)
+
+    written = await m.run_daily_refresh(_daily_bot(path, directory), SERVER_ID, now=NOW)
+
+    assert written == 2
+    assert sorted(p.name for p in directory.iterdir()) == ["11.svg", "22.svg"]
+
+
+async def test_the_daily_refresh_stands_aside_when_not_asked_for(tmp_path, monkeypatch):
+    from services import driver_portrait_service as m
+
+    directory = tmp_path / "drivers"
+    directory.mkdir()
+    path = await _season_db(tmp_path)
+    monkeypatch.setattr("utils.paths.PROJECT_ROOT", tmp_path)
+
+    assert await m.run_daily_refresh(
+        _daily_bot(path, directory, pfp_daily=False), SERVER_ID, now=NOW
+    ) == 0
+    assert await m.run_daily_refresh(
+        _daily_bot(path, directory, use_pfp=False), SERVER_ID, now=NOW
+    ) == 0
+    assert list(directory.iterdir()) == []
+
+
+async def test_the_daily_refresh_swallows_a_failure_rather_than_stopping_the_job(tmp_path):
+    from services import driver_portrait_service as m
+
+    bot = MagicMock()
+    bot.db_path = str(tmp_path / "missing.db")
+    bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("boom"))
+
+    # An APScheduler job that raises is logged into a void the league never reads.
+    assert await m.run_daily_refresh(bot, SERVER_ID, now=NOW) == 0
+
+
+async def test_the_daily_refresh_stands_aside_where_the_guild_is_unreachable(tmp_path, monkeypatch):
+    from services import driver_portrait_service as m
+
+    directory = tmp_path / "drivers"
+    directory.mkdir()
+    path = await _season_db(tmp_path)
+    monkeypatch.setattr("utils.paths.PROJECT_ROOT", tmp_path)
+    bot = _daily_bot(path, directory)
+    bot.get_guild.return_value = None
+
+    assert await m.run_daily_refresh(bot, SERVER_ID, now=NOW) == 0

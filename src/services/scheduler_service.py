@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 
 from db.database import get_connection
@@ -60,6 +61,26 @@ async def _signup_close_timer_job(server_id: int) -> None:
     if cb is None:
         log.warning(
             "_signup_close_timer_job: no callback registered (server_id=%s) — skipping",
+            server_id,
+        )
+        return
+    await cb(server_id)
+
+
+async def _portrait_refresh_job(server_id: int) -> None:
+    """Module-level APScheduler callable for the daily portrait refresh — picklable for
+    SQLAlchemyJobStore. Delegates to the registered portrait-refresh callback."""
+    if _GLOBAL_SERVICE is None:
+        log.warning(
+            "_portrait_refresh_job fired but _GLOBAL_SERVICE is None "
+            "(server_id=%s) — skipping",
+            server_id,
+        )
+        return
+    cb = _GLOBAL_SERVICE._portrait_refresh_callback
+    if cb is None:
+        log.warning(
+            "_portrait_refresh_job: no callback registered (server_id=%s) — skipping",
             server_id,
         )
         return
@@ -285,6 +306,7 @@ class SchedulerService:
         self._season_end_callback: "Callable | None" = None
         # Signup auto-close callback injected after bot starts
         self._signup_close_callback: "Callable | None" = None
+        self._portrait_refresh_callback: "Callable | None" = None
         # Mystery notice callback injected after bot starts
         self._mystery_notice_callback: "Callable | None" = None
         # Post-race forecast cleanup callback injected after bot starts
@@ -765,6 +787,48 @@ class SchedulerService:
     # ------------------------------------------------------------------
     # Signup auto-close scheduling
     # ------------------------------------------------------------------
+
+    def register_portrait_refresh_callback(self, callback: Callable) -> None:
+        """Register the coroutine the daily driver-portrait refresh delegates to."""
+        self._portrait_refresh_callback = callback
+
+    def schedule_portrait_refresh(self, server_id: int, time_of_day: str) -> None:
+        """Schedule the daily driver-portrait refresh for *server_id* at *time_of_day* UTC.
+
+        **The one recurring trigger in this service, and deliberately so.** Every other job
+        here is a one-shot ``DateTrigger`` arming a single event of a round or a season, and
+        that shape is right for those: each fires once and is done. This one is a standing
+        instruction rather than an event, and re-arming it from inside its own callback would
+        put the survival of the schedule at the mercy of the job body -- a refresh that raised
+        would silently be the last one. A ``CronTrigger`` is re-armed by APScheduler itself
+        and outlives a failing run.
+
+        *time_of_day* is ``HH:MM`` read as UTC, matching every other trigger in this service.
+        A stored local time would need a zone stored with it and would drift against daylight
+        saving twice a year; the league is told the zone when it names the time.
+
+        ``replace_existing=True`` so that naming a new time re-arms rather than duplicates.
+        """
+        hour, _, minute = time_of_day.partition(":")
+        job_id = f"pfp_daily_{server_id}"
+        self._scheduler.add_job(
+            _portrait_refresh_job,
+            trigger=CronTrigger(hour=int(hour), minute=int(minute), timezone="UTC"),
+            id=job_id,
+            replace_existing=True,
+            name=f"Daily driver portrait refresh for server {server_id}",
+            kwargs={"server_id": server_id},
+        )
+        log.info("Scheduled %s at %s UTC daily", job_id, time_of_day)
+
+    def cancel_portrait_refresh(self, server_id: int) -> None:
+        """Remove the daily portrait refresh for *server_id* if it exists."""
+        job_id = f"pfp_daily_{server_id}"
+        try:
+            self._scheduler.remove_job(job_id)
+            log.info("Removed %s", job_id)
+        except Exception:
+            pass  # Never scheduled, or already removed
 
     def register_signup_close_callback(self, callback: Callable) -> None:
         """Register the async callable invoked when the signup close timer fires.
