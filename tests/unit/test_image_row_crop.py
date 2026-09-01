@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from models.image_constants import NOTICE_CROP_POINT_OFF_CANVAS
 from models.image_catalogues import row_crop_fields
 from utils.svg_document import length
-from utils.svg_fill import FillSpec, _translate_y, fill
+from utils.svg_fill import FillSpec, _path_rule, _translate_y, _translate_y_of, fill
 
 TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
 
@@ -176,6 +176,256 @@ def test_a_footer_group_the_template_does_not_declare_is_reported():
         )
     )
     assert any("footer_group" in reason for reason in result.unresolved)
+
+
+# ── Rules ruled down the rows ─────────────────────────────────────────────
+#
+# A standings grid and an attendance sheet separate their round columns with a line ruled
+# from the headings to just above the caption band. Cropping the canvas alone left it running
+# to the new edge and straight through the band the crop had carried up.
+
+
+def _ruled(**shapes):
+    """A four-row template carrying whatever shapes a test names, keyed by id.
+
+    Each value is the attributes of a `line`, or of a `rect` where it declares a height.
+    """
+    root = _document(rows=4)
+    for element_id, attributes in shapes.items():
+        tag = "rect" if "height" in attributes else "line"
+        node = etree.SubElement(root, tag)
+        node.set("id", element_id)
+        for name, value in attributes.items():
+            node.set(name, str(value))
+    return root
+
+
+def _shape(drawn, element_id):
+    return drawn.xpath(f'//*[@id="{element_id}"]')[0]
+
+
+def test_a_rule_down_the_rows_keeps_the_distance_it_held_from_the_bottom():
+    """The whole of the fault: it was authored to stop above the band, not at the edge."""
+    root = _ruled(separator={"x1": 50, "y1": 20, "x2": 50, "y2": 380})
+    # 400 declared, cut to 100. The rule ended 20 above the bottom and must still.
+    assert _shape(_rendered(root), "separator").get("y2") == "80"
+
+
+def test_a_rule_that_reached_the_canvas_edge_reaches_the_new_one():
+    """What cropping alone already did, so nothing that was right before changes."""
+    root = _ruled(separator={"x1": 50, "y1": 20, "x2": 50, "y2": 400})
+    assert _shape(_rendered(root), "separator").get("y2") == "100"
+
+
+def test_a_rule_that_ends_above_the_cut_is_left_alone():
+    root = _ruled(separator={"x1": 50, "y1": 20, "x2": 50, "y2": 60})
+    assert _shape(_rendered(root), "separator").get("y2") == "60"
+
+
+def test_a_rule_is_never_shortened_past_its_own_top():
+    """A hair of a line is a mark on the picture; a negative one is a rendering fault."""
+    root = _ruled(separator={"x1": 50, "y1": 90, "x2": 50, "y2": 380})
+    assert _shape(_rendered(root), "separator").get("y2") == "90"
+
+
+def test_a_rule_authored_upwards_is_shortened_at_its_lower_end():
+    """y1 and y2 are ends, not an order: an editor writes them either way round."""
+    root = _ruled(separator={"x1": 50, "y1": 380, "x2": 50, "y2": 20})
+    shape = _shape(_rendered(root), "separator")
+    assert (shape.get("y1"), shape.get("y2")) == ("80", "20")
+
+
+def test_a_band_spanning_the_cut_loses_exactly_what_the_crop_removed():
+    root = _ruled(band={"x": 0, "y": 40, "width": 10, "height": 340})
+    assert _shape(_rendered(root), "band").get("height") == "40"
+
+
+def test_a_transformed_subtree_is_left_exactly_as_it_is():
+    """Under a scale or a rotate the element's own y is not a canvas y at all."""
+    root = _document(rows=4)
+    group = etree.SubElement(root, "g")
+    group.set("transform", "scale(2)")
+    line = etree.SubElement(group, "line")
+    line.set("id", "separator")
+    for name, value in (("x1", "50"), ("y1", "20"), ("x2", "50"), ("y2", "380")):
+        line.set(name, value)
+    assert _shape(_rendered(root), "separator").get("y2") == "380"
+
+
+def test_a_rule_inside_the_footer_rides_up_and_is_not_shortened_as_well():
+    """The band moves whole. Shortening a rule within it would take the move twice."""
+    root = _document(rows=4)
+    footer = root.xpath('//*[@id="footer_group"]')[0]
+    line = etree.SubElement(footer, "line")
+    line.set("id", "footer_rule")
+    for name, value in (("x1", "0"), ("y1", "20"), ("x2", "200"), ("y2", "395")):
+        line.set(name, value)
+
+    drawn = _rendered(root)
+
+    assert _shape(drawn, "footer_rule").get("y2") == "395"
+    assert drawn.xpath('//*[@id="footer_group"]')[0].get("transform") == "translate(0,-300)"
+
+
+def test_a_full_size_division_shortens_nothing():
+    """There is nothing to take up, so every rule stands where it was authored."""
+    root = _ruled(separator={"x1": 50, "y1": 20, "x2": 50, "y2": 380})
+    declared = {el.get("id") for el in root.iter() if el.get("id")}
+    result = fill(
+        FillSpec(
+            root=root,
+            image_type="probe",
+            text={f"row_{n}_name": "a" for n in range(1, 5)},
+            **row_crop_fields(declared, drawn=4, capacity=4),
+        )
+    )
+    assert _shape(etree.fromstring(result.svg), "separator").get("y2") == "380"
+
+
+def test_a_rule_inside_a_positioned_layer_is_followed_into():
+    """An editor puts its artwork in a translated layer as a matter of course."""
+    root = _document(rows=4)
+    layer = etree.SubElement(root, "g")
+    layer.set("transform", "translate(0,10)")
+    line = etree.SubElement(layer, "line")
+    line.set("id", "separator")
+    for name, value in (("x1", "50"), ("y1", "10"), ("x2", "50"), ("y2", "370")):
+        line.set(name, value)
+
+    # Drawn at 380 on the canvas, 20 above the bottom, so it ends 20 above the new one —
+    # y=80 in the layer's own coordinates.
+    assert _shape(_rendered(root), "separator").get("y2") == "70"
+
+
+def test_a_rule_drawn_with_a_pen_is_shortened_like_one_drawn_with_a_line():
+    """The commonest export of all: a straight rule written as a path."""
+    root = _ruled()
+    path = etree.SubElement(root, "path")
+    path.set("id", "separator")
+    path.set("d", "M50 20V380")
+
+    assert _shape(_rendered(root), "separator").get("d") == "M50 20V80"
+
+
+def test_a_path_that_draws_more_than_one_straight_rule_is_left_alone():
+    """Its geometry is its own; a lower end cannot be moved without reading the shape."""
+    root = _ruled()
+    for element_id, d in (
+        ("curve", "M50 20C50 100 50 300 50 380"),
+        ("diagonal", "M50 20L120 380"),
+        ("two_segments", "M50 20V380L120 380"),
+    ):
+        path = etree.SubElement(root, "path")
+        path.set("id", element_id)
+        path.set("d", d)
+
+    drawn = _rendered(root)
+
+    assert _shape(drawn, "curve").get("d") == "M50 20C50 100 50 300 50 380"
+    assert _shape(drawn, "diagonal").get("d") == "M50 20L120 380"
+    assert _shape(drawn, "two_segments").get("d") == "M50 20V380L120 380"
+
+
+@pytest.mark.parametrize(
+    "d,shortened",
+    [
+        ("M50 20V380", "M50 20V80"),
+        ("m50 20v360", "M50 20v60"),
+        ("M50 20L50 380", "M50 20L50 80"),
+        ("M50 20l0 360", "M50 20l0 60"),
+        # Drawn upwards: the move is the lower end, so the move is what comes up.
+        ("M50 380V20", "M50 80V20"),
+        ("M50 380l0 -360", "M50 80l0 -60"),
+    ],
+)
+def test_a_rule_is_written_back_in_the_command_it_was_authored_in(d, shortened):
+    """A file keeps the shape its author gave it, absolute or relative, either way up."""
+    rule = _path_rule(d)
+    assert rule is not None
+    top, bottom, rewrite = rule
+    assert (top, bottom) == (20, 380)
+    assert rewrite(80.0) == shortened
+
+
+@pytest.mark.parametrize(
+    "transform,offset",
+    [
+        (None, 0),
+        ("", 0),
+        ("translate(0,10)", 10),
+        ("translate(5)", 0),                      # along x alone
+        ("translate(0,-30) translate(12,0)", -30),  # what _translate_y prepends
+        ("scale(2)", None),
+        ("translate(0,10) scale(2)", None),
+        ("matrix(1,0,0,1,0,10)", None),
+        ("rotate(90) ", None),
+    ],
+)
+def test_only_a_transform_that_purely_translates_is_followed(transform, offset):
+    """Under anything else the element's own y is not a canvas y, and nothing can be read."""
+    assert _translate_y_of(transform) == offset
+
+
+def test_the_geometry_of_a_clip_is_not_shortened_with_the_canvas():
+    """A shape inside a definition is borrowed geometry, not something drawn where it stands.
+
+    An editor exports a frame as a clip over the whole canvas. Shortening its rectangle would
+    cut the content it frames — the opposite of what a shorter canvas asks for — and every
+    template a league draws in Figma or Illustrator carries one.
+    """
+    root = _document(rows=4)
+    defs = etree.SubElement(root, "defs")
+    clip = etree.SubElement(defs, "clipPath")
+    clip.set("id", "frame")
+    shape = etree.SubElement(clip, "rect")
+    shape.set("id", "frame_shape")
+    for name, value in (("x", "0"), ("y", "0"), ("width", "200"), ("height", "400")):
+        shape.set(name, value)
+
+    drawn = _rendered(root)
+
+    assert _shape(drawn, "frame_shape").get("height") == "400"
+
+
+@pytest.mark.parametrize(
+    "name,rows",
+    sorted((n, r) for n, r in ROW_TEMPLATES.items() if n.startswith(("standings", "attendance"))),
+)
+def test_a_shipped_grid_keeps_its_separators_clear_of_the_caption_band(name, rows):
+    """The templates the fault was found on, drawn at two fifths of their rows."""
+    root = etree.parse(str(TEMPLATES / name)).getroot()
+    canvas = length(root.get("height"))
+    authored = {
+        length(line.get("y2"))
+        for line in root.iter("{http://www.w3.org/2000/svg}line")
+        if length(line.get("y1")) is not None
+        and length(line.get("y2")) is not None
+        and length(line.get("y2")) - length(line.get("y1")) > canvas / 4
+    }
+    assert authored, f"{name} rules no column separator to follow the crop"
+    margin = canvas - max(authored)
+
+    drawn = rows * 2 // 5
+    declared = {el.get("id") for el in root.iter() if el.get("id")}
+    result = fill(
+        FillSpec(
+            root=root,
+            image_type="probe",
+            **row_crop_fields(declared, drawn=drawn, capacity=rows),
+        )
+    )
+    finished = etree.fromstring(result.svg)
+    height = length(finished.get("height"))
+    assert height < canvas, "the probe must actually shorten the template"
+
+    ends = {
+        length(line.get("y2"))
+        for line in finished.iter("{http://www.w3.org/2000/svg}line")
+        if length(line.get("y1")) is not None
+        and length(line.get("y2")) is not None
+        and length(line.get("y2")) - length(line.get("y1")) > height / 4
+    }
+    assert ends and max(ends) == height - margin
 
 
 # ── The translation itself ────────────────────────────────────────────────

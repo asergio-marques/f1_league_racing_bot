@@ -1542,7 +1542,9 @@ These sit under `/images template` rather than `/images config` because Discord 
 
 > **Optional: shorten the picture to the rows it actually fills.** A standings, attendance or results template drawn for fifty rows gives a division of twenty thirty rows of empty canvas. Give each row a `row_<x>_vertical_crop_point` — a zero-height shape whose **`y` is where the picture should end when that row is the last one drawn** — and the bot cuts the canvas there. Put the last row's crop point at the height your file declares, so a full-size division is still drawn whole; a file that does not is drawn to its crop point anyway and the log says so.
 >
-> Whatever you draw *below* the rows — a caption, a legend, a rule — goes in a group called `footer_group`, and the bot carries it up with the cut so it still sits under the last row. Anything below the rows and outside that group is cut off.
+> Whatever you draw *below* the rows — a caption, a legend, a rule — goes in a group called `footer_group`, and the bot carries it up with the cut so it still sits under the last row. Anything lying wholly below the rows and outside that group is cut off.
+
+> **A line ruled down the rows is shortened with the picture.** The separators between the round columns of a standings grid or an attendance sheet run past every crop point by design. Draw one to stop where you want it on a full-size picture — just above the caption band, say — and the bot brings its lower end up by exactly what the cut removed, so it stops in the same place on a short one. It works on a line, a rectangle, or a path drawing one straight vertical rule, wherever your editor put it — inside a positioned group is fine. What is left alone: anything inside `footer_group`, which moves as a whole; a shape you have scaled or rotated; and a path drawing more than that one rule, which the bot will not guess at.
 >
 > Both are entirely optional and go together: declare neither and your file is drawn at its full height exactly as it always was. The five shipped templates declare both. The calendar is the exception — it has always required a crop point per round.
 
