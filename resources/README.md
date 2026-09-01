@@ -67,7 +67,10 @@ classes need not match each other, and flags and maps deliberately do not.
 **Shipped:**
 
 - the fifteen default templates in `defaults/templates/`, one per image type;
-- one `fallback.svg` in each asset directory, except `markers/`, which ships two — see below;
+- one `fallback.svg` in each asset directory, except `markers/`, which ships two — see below.
+  The tyre one is a special case worth knowing: since every compound now ships and a
+  submission cannot record anything else, it stands for **no compound recorded** and nothing
+  else, so it is drawn as an empty dashed ring carrying no letter;
 - `defaults/tracks/mystery.svg` and `defaults/flags/mystery.svg`, drawn for a round whose
   track — and with it its country — is concealed until it is run;
 - `defaults/flags/other.svg`, drawn for a driver who stated no nationality in particular;
@@ -76,6 +79,11 @@ classes need not match each other, and flags and maps deliberately do not.
 - the eight `defaults/weather/` icons — `sunny.svg`, `mixed.svg` and `rain.svg` for the type of
   weather drawn for a session, and `clear.svg`, `light_cloud.svg`, `overcast.svg`,
   `wet.svg` and `very_wet.svg` for a concrete weather within one;
+- the five `defaults/tyres/` icons — `soft.svg`, `medium.svg`, `hard.svg`,
+  `intermediate.svg` and `wet.svg`, the compounds a session can be run on. Each is a
+  coloured ring lettered `S`, `M`, `H`, `I` or `W`, with a see-through centre so the card
+  shows through. There is no sixth: a qualifying submission naming anything else is refused
+  rather than recorded;
 - the nine standings marks, in `defaults/markers/` alongside the three above —
   `race_p1.svg`, `race_p2.svg`, `race_p3.svg` and `race_points.svg` for the plate drawn
   beneath a race result, `race_fastest_lap.svg` for the mark drawn in its top-left corner, and
@@ -86,13 +94,14 @@ classes need not match each other, and flags and maps deliberately do not.
   `attendance_limit_reached.svg`, a red one drawn beneath the total of one who has reached it.
   The two are the same weight and are told apart by hue.
 
-**Not shipped:** the assets for any particular circuit, team, driver, country or tyre.
+**Not shipped:** the assets for any particular circuit, team, driver or country.
 Those are a league's own, and the module exists to let each league bring its own design
 language rather than inherit one.
 
-**Why the markers and the weather icons are different.** Those two sets
+**Why the markers, the weather icons and the tyres are different.** Those three sets
 are not a league's values at all — they are the bot's own vocabulary, fixed and closed, and no league chose
-them. A league cannot have an incomplete set of something it did not define, so the module
+them. A tyre compound is what the game offers, five of them and no sixth, in exactly the
+sense that a change of standing position has three directions. A league cannot have an incomplete set of something it did not define, so the module
 ships every file rather than leaving each directory to fall back on every render. The same
 reasoning covers two individual filenames inside classes that are otherwise a league's own —
 `mystery` and `other` — which the bot also named and therefore also supplies. Replace any of
@@ -104,9 +113,9 @@ name. That is chiefly of use for the standings and attendance marks, where a lea
 podium plates and not the points tint, or the sacking mark and not the warning.
 
 So a fresh clone draws every graphic before a league has made anything at all. The markers,
-the weather icons, the standings marks and the two reserved flags are the bot's own artwork,
-drawn properly; the
-circuits, teams, drivers, countries and tyres are placeholders, those being a league's to
+the weather icons, the tyres, the standings marks and the two reserved flags are the bot's
+own artwork, drawn properly; the
+circuits, teams, drivers and countries are placeholders, those being a league's to
 supply. That is the intended starting point: the module works from the first render, and a
 league fills `league/` class by class as it makes its own artwork, seeing its own files
 appear as it goes with nothing to configure.

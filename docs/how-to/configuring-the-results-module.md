@@ -202,6 +202,7 @@ See [Test mode](test-mode.md) for the whole picture.
 - **No more than two lines per team**, counting a reserve standing in for it.
 - **Positions running 1, 2, 3… with no gaps**, and the order of outcomes respected: classified runners first, then lapped ones, then DNF, then DNS, then DSQ.
 - **A driver under the team they are seated in.** Reserves are the exception, and a wide one: a reserve may be submitted under any real team. But not a *different* one in different sessions of the same round — a driver's team must agree across every session of a round, and a submission disagreeing with one already recorded is rejected, naming the driver and the team the earlier session recorded.
+- **On a qualifying session, a tyre the game actually offers** — `Soft`, `Medium`, `Hard`, `Intermediate` or `Wet`, and nothing else. Write them however suits you: case, spacing and punctuation are ignored, and each answers to its plural and its single letter, so `softs`, `S`, `Inter` and `ExWets` are all understood. Whichever you type, the bot records the proper name and draws the right tyre on the graphic. Leave the column blank, or put `N/A`, where you did not note one — that is not an error.
 
 **A rejected block is explained line by line and asked for again.** Nothing is lost, you correct the message and paste it again, and the raw text of both the rejection and the acceptance goes to the log channel with the season, division, round and session named — which is what you go back to when somebody disputes what was submitted.
 

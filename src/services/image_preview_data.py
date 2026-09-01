@@ -70,6 +70,7 @@ from models.session_result import (  # noqa: E402
     QualifyingSessionResult,
     RaceSessionResult,
 )
+from utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
 
 #: The three types a phase 2 forecast draws for a session.
 PHASE2_TYPES = ("sunny", "mixed", "rain")
@@ -109,9 +110,15 @@ def fabricate_qualifying_rows(drivers, team_role_ids, points_map):
 
     Every driver appears exactly once, positions run 1..n with no gap, and the best laps
     ascend with position so the gaps the formatter derives agree with the order.
+
+    The compounds are dealt in turn to the rows that record one, so all five appear on a
+    field of six rather than only those whose position happens to land on them. Same
+    reasoning as PHASE3_SLOTS above: a preview exists to let every icon be judged in one
+    picture, and a compound the fabrication never deals is a compound never seen.
     """
     rows = []
     count = len(drivers)
+    compounds_dealt = 0
     for position, driver in enumerate(drivers, start=1):
         seconds = 88.400 + (position - 1) * 0.400
         best_lap = f"1:{int(seconds - 60):02d}.{int(round((seconds % 1) * 1000)):03d}"
@@ -122,6 +129,13 @@ def fabricate_qualifying_rows(drivers, team_role_ids, points_map):
             outcome = OutcomeModifier.DNS
             best_lap = None
 
+        # P2 records no tyre at all, so the absent-datum case is drawn beside the five.
+        if position == 2:
+            tyre = None
+        else:
+            tyre = TYRE_COMPOUNDS[compounds_dealt % len(TYRE_COMPOUNDS)]
+            compounds_dealt += 1
+
         rows.append(
             QualifyingSessionResult(
                 id=position,
@@ -130,8 +144,7 @@ def fabricate_qualifying_rows(drivers, team_role_ids, points_map):
                 team_role_id=team_role_ids.get(driver.team_name, 0),
                 finishing_position=position,
                 outcome=outcome,
-                # One driver with no tyre recorded, so the absent-datum case is drawn.
-                tyre=None if position == 2 else ("Soft" if position % 2 else "Medium"),
+                tyre=tyre,
                 best_lap=best_lap,
                 points_awarded=points_map.get(position, 0),
             )

@@ -104,9 +104,12 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))
 from models.image_constants import (  # noqa: E402
     ASSET_CLASS_TO_COLUMN,
     ASSET_DIRECTORIES,
+    FALLBACK_ASSET_NAME,
     TEMPLATE_COLUMNS,
     packaged_directory_for,
 )
+from utils.asset_resolver import normalise  # noqa: E402
+from utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
 
 PROJECT_ROOT = _Path(__file__).resolve().parents[2]
 
@@ -197,8 +200,30 @@ def test_the_closed_set_files_ship_beside_their_fallback():
     ):
         assert (root / "weather" / name).is_file(), name
 
+    for compound in TYRE_COMPOUNDS:
+        name = f"{normalise(compound)}.svg"
+        assert (root / "tyres" / name).is_file(), name
+
     assert (root / "tracks" / "mystery.svg").is_file()
     assert (root / "flags" / "mystery.svg").is_file()
+
+
+def test_the_shipped_compounds_are_exactly_the_vocabulary():
+    """No sixth file, and none missing — the drift guard in both directions.
+
+    The loop above proves every compound ships. This proves nothing *else* does, which is
+    the half that matters for a **closed** set: a stray `ultrasoft.svg` in the packaged
+    directory would be drawn under the datum's own name for a compound the vocabulary
+    refuses at submission, so the two would disagree about what the closed set is.
+
+    `fallback.svg` is not of the set and is excluded by name rather than by counting: it
+    stands in for a value the vocabulary no longer admits — a compound recorded before
+    v7.8.0 bound the field — and is required by
+    `test_every_packaged_asset_directory_exists_and_carries_a_fallback` above.
+    """
+    directory = PROJECT_ROOT / packaged_directory_for("tyre")
+    shipped = {p.name for p in directory.glob("*.svg")} - {FALLBACK_ASSET_NAME}
+    assert shipped == {f"{normalise(c)}.svg" for c in TYRE_COMPOUNDS}
 
 
 def test_no_asset_directory_remains_at_the_old_top_level():

@@ -121,7 +121,7 @@ The default date style includes the day of the week, which is usually the bit pe
 
 There are seven folders of artwork, and **the bot is already looking in all of them.** They sit under `resources/league/` on the bot's computer, they start empty, and copying a correctly named file into one is the whole job — there is no command to run afterwards.
 
-Anything you have not supplied is drawn from what the bot ships, so every picture works from the very first post. Most of what you get that way is a plain grey placeholder; the markers, the weather symbols and two reserved flags are the bot's own proper artwork, because you never chose those and are not expected to draw them.
+Anything you have not supplied is drawn from what the bot ships, so every picture works from the very first post. Most of what you get that way is a plain grey placeholder; the markers, the weather symbols, the five tyre compounds and two reserved flags are the bot's own proper artwork, because you never chose those and are not expected to draw them.
 
 | Folder to put your files in | Holds | Size to draw at |
 |---|---|---|
@@ -166,7 +166,7 @@ So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`
 | Country flags | The **country** — `united_kingdom.svg`. Never the nationality: `british.svg` is not looked for. A driver who answered `other` needs `other.svg`; one with nothing recorded draws no flag and needs no file |
 | Driver photos | The driver's **Discord user ID number**, so their photo does not vanish when they change their nickname |
 | Arrows and weather | Fixed names the bot already uses — these come complete, just replace the pictures |
-| Tyre compounds | The compound name — `soft.svg` |
+| Tyre compounds | Fixed names the bot already uses — `soft.svg`, `medium.svg`, `hard.svg`, `intermediate.svg`, `wet.svg`. These come complete, just replace the pictures. The `fallback.svg` beside them is not a sixth compound: it is what a driver with no tyre recorded gets |
 | Standings marks | Fixed names the bot already uses — `race_p1.svg`, `race_p2.svg`, `race_p3.svg`, `race_points.svg`, `race_fastest_lap.svg`, and `qualifying_` versions of the first four. These come complete, just replace the pictures |
 
 > **Guinea-Bissau, the Democratic Republic of the Congo and Dominica each need their own flag file now.** `Guinean`, `Congolese` and `Dominican` used to cover two countries apiece in English and could only ever resolve one — Guinea, Congo and the Dominican Republic. A driver from the other country of each pair has a nationality of their own to select — `Bissau-Guinean`, `Congolese (Kinshasa)` and `Dominican (Dominica)` — so if your league has such a driver, add `guinea_bissau.svg`, `democratic_republic_of_the_congo.svg` or `dominica.svg` alongside the flags you already supply.
@@ -198,8 +198,10 @@ pictures in the first place. Where one of them is missing from your folder the b
 **own correct picture** for that value, not the grey placeholder: its folder is searched for
 your missing value by name, and only then for a placeholder. Two kinds of thing qualify:
 
-- **the markers and the weather symbols**, every one of them, since every value those two can
-  ever be asked for is the bot's own;
+- **the markers, the weather symbols and the tyre compounds**, every one of them, since every
+  value those three can ever be asked for is the bot's own. There are five compounds — soft,
+  medium, hard, intermediate and wet — and a qualifying submission naming anything else is
+  sent back rather than recorded, so the bot can always draw the right one;
 - **two reserved filenames** — `mystery.svg` and `other.svg` — inside folders that are
   otherwise yours: a round whose circuit is kept secret, and a driver who chose no
   nationality in particular.

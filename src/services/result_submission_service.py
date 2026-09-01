@@ -13,6 +13,11 @@ from models.points_config import PointsConfigEntry, PointsConfigFastestLap, Sess
 from models.round import RoundFormat
 from models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
 from utils import results_formatter
+from utils.tyre_compound import (
+    canonicalise_tyre,
+    records_no_tyre,
+    tyre_compound_list,
+)
 
 log = logging.getLogger(__name__)
 
@@ -1143,7 +1148,8 @@ class ParsedQualifyingRow:
     position: int
     driver_user_id: int
     team_role_id: int
-    tyre: str
+    #: The canonical compound, or None where the submission recorded none (v7.8.0).
+    tyre: str | None
     best_lap: str           # time string or DNS/DNF/DSQ (in-game result)
     gap: str                # delta string or "N/A"
     postrace_penalty: str   # "N/A" or "DSQ"
@@ -1167,6 +1173,26 @@ class ParsedRaceRow:
 # ---------------------------------------------------------------------------
 # Validation — per-row functions
 # ---------------------------------------------------------------------------
+
+
+def _tyre_error(tyre: str) -> str | None:
+    """The error a tyre field earns, or None where it is acceptable.
+
+    The five compounds are a closed set the module defines (Constitution XIV.13, v7.8.0),
+    so a submission naming something else names nothing the bot can draw, and is refused
+    here rather than resolved to a placeholder six steps later. What is stored is the
+    canonical spelling from :func:`canonicalise_tyre`, which is what lets the qualifying
+    graphic find its file on every row without the league supplying any tyre artwork.
+
+    An **empty** field is not an error and is stored as null: the submission of a session
+    does not oblige a compound, and its absence is a state the graphic depicts rather than
+    a gap it reports (XIV.13's per-field absent-datum declaration). `N/A` says the same
+    thing and is accepted for it.
+    """
+    if records_no_tyre(tyre) or canonicalise_tyre(tyre) is not None:
+        return None
+    return f"Tyre must be one of {tyre_compound_list()}, got `{tyre}`"
+
 
 def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
     """Parse and validate a single qualifying-result line for the main submission wizard (6 fields).
@@ -1192,6 +1218,10 @@ def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
     if team_role_id is None:
         return f"Team must be a Discord role mention (<@&role_id>), got `{team_str}`"
 
+    tyre_error = _tyre_error(tyre)
+    if tyre_error is not None:
+        return tyre_error
+
     best_lap_upper = best_lap.upper()
     if best_lap_upper not in _OUTCOME_LITERALS and not _ABS_TIME_RE.match(best_lap):
         return f"Best Lap must be a time (e.g. 1:23.456) or DNS/DNF/DSQ, got `{best_lap}`"
@@ -1210,7 +1240,7 @@ def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
         position=position,
         driver_user_id=driver_user_id,
         team_role_id=team_role_id,
-        tyre=tyre,
+        tyre=canonicalise_tyre(tyre),
         best_lap=best_lap,
         gap=gap,
         postrace_penalty="N/A",
@@ -1319,6 +1349,10 @@ def validate_qualifying_row(line: str) -> ParsedQualifyingRow | str:
     if team_role_id is None:
         return f"Team must be a Discord role mention (<@&role_id>), got `{team_str}`"
 
+    tyre_error = _tyre_error(tyre)
+    if tyre_error is not None:
+        return tyre_error
+
     best_lap_upper = best_lap.upper()
     if best_lap_upper not in _OUTCOME_LITERALS and not _ABS_TIME_RE.match(best_lap):
         return (
@@ -1356,7 +1390,7 @@ def validate_qualifying_row(line: str) -> ParsedQualifyingRow | str:
         position=position,
         driver_user_id=driver_user_id,
         team_role_id=team_role_id,
-        tyre=tyre,
+        tyre=canonicalise_tyre(tyre),
         best_lap=best_lap,
         gap=gap,
         postrace_penalty=postrace_penalty,
@@ -2379,7 +2413,10 @@ async def run_result_submission_job(round_id: int, bot) -> None:
         label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
 
         if session_type.is_qualifying:
-            format_hint = "Format: `Position, @Driver, @TeamRole, Tyre, BestLap, Gap`"
+            format_hint = (
+                "Format: `Position, @Driver, @TeamRole, Tyre, BestLap, Gap`\n"
+                f"Tyre: {tyre_compound_list()} (or blank for none recorded)."
+            )
         else:
             format_hint = (
                 "Format: `Position, @Driver, @TeamRole, TotalTime, FastestLap, TimePenalties`\n"
@@ -2716,7 +2753,10 @@ async def _resubmit_collection_task(
     for session_type in sessions:
         label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
         if session_type.is_qualifying:
-            format_hint = "Format: `Position, @Driver, @TeamRole, Tyre, BestLap, Gap`"
+            format_hint = (
+                "Format: `Position, @Driver, @TeamRole, Tyre, BestLap, Gap`\n"
+                f"Tyre: {tyre_compound_list()} (or blank for none recorded)."
+            )
         else:
             format_hint = (
                 "Format: `Position, @Driver, @TeamRole, TotalTime, FastestLap, TimePenalties`\n"

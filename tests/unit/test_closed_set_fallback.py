@@ -7,8 +7,8 @@ did not define. It beats the generic `fallback.svg` every other datum falls back
 
 Two things qualify, and they are one rule at two granularities rather than two rules:
 
-* whole classes, where every datum they can be handed is the module's own — `marker` and
-  `weather` (`CLOSED_SET_ASSET_CLASSES`);
+* whole classes, where every datum they can be handed is the module's own — `marker`,
+  `weather` and `tyre` (`CLOSED_SET_ASSET_CLASSES`);
 * individual reserved slugs, in a class whose other data are the league's own — `mystery`
   and `other` in `flag` and `track` (`CLOSED_SET_ASSET_DATA`).
 
@@ -29,7 +29,8 @@ from models.image_constants import (  # noqa: E402
     FALLBACK_ASSET_NAME,
     is_closed_set_datum,
 )
-from utils.asset_resolver import AssetOutcome, resolve_asset  # noqa: E402
+from utils.asset_resolver import AssetOutcome, normalise, resolve_asset  # noqa: E402
+from utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
 from utils.svg_document import parse_svg_bytes  # noqa: E402
 from utils.svg_fill import FillSpec, fill  # noqa: E402
 
@@ -113,7 +114,7 @@ def test_a_datum_normalising_to_nothing_is_unaffected_by_closed_set(configured, 
     assert resolution.path == packaged / FALLBACK_ASSET_NAME
 
 
-# ── Wired through the fill pipeline (marker and weather asset classes) ─────
+# ── Wired through the fill pipeline (the three closed-set asset classes) ───
 
 
 def _render(asset_class: str, datum: str, directory):
@@ -155,6 +156,8 @@ def real_packaged_project_root(monkeypatch):
     [
         ("marker", "position_change_lost", "position_change_lost.svg"),
         ("weather", "very_wet", "very_wet.svg"),
+        ("tyre", "Soft", "soft.svg"),
+        ("tyre", "Intermediate", "intermediate.svg"),
     ],
 )
 def test_an_incomplete_custom_directory_still_draws_the_real_closed_set_icon(
@@ -187,11 +190,26 @@ def test_an_incomplete_custom_directory_still_draws_the_real_closed_set_icon(
         ("marker", "position_change_none"),
         ("weather", "very_wet"),
         ("weather", "clear"),
+        ("tyre", "soft"),
+        ("tyre", "intermediate"),
     ],
 )
 def test_a_closed_set_class_qualifies_whatever_the_datum(asset_class, slug):
-    """The class settles it: every datum these two can be handed is the module's own."""
+    """The class settles it: every datum these three can be handed is the module's own."""
     assert is_closed_set_datum(asset_class, slug) is True
+
+
+@pytest.mark.parametrize(
+    "slug", [pytest.param(normalise(c), id=c) for c in TYRE_COMPOUNDS]
+)
+def test_every_compound_qualifies_and_none_is_left_out(slug):
+    """Driven from the vocabulary, so a compound added there cannot miss this rule.
+
+    Naming the class is what closes it, so this cannot fail while the class is closed --
+    which is the point. It fails the moment `tyre` leaves `CLOSED_SET_ASSET_CLASSES`, and
+    names the compound that would then be handed a placeholder.
+    """
+    assert is_closed_set_datum("tyre", slug) is True
 
 
 @pytest.mark.parametrize("asset_class", ["flag", "track", "team", "driver", "tyre"])
@@ -209,7 +227,6 @@ def test_a_reserved_slug_qualifies_whatever_the_class(asset_class, slug):
         ("track", "sao_paulo"),
         ("team", "red_bull_racing"),
         ("driver", "123456789"),
-        ("tyre", "soft"),
     ],
 )
 def test_a_leagues_own_value_never_qualifies(asset_class, slug):
@@ -366,3 +383,94 @@ def test_a_genuine_placeholder_still_says_so(tmp_path, real_packaged_project_roo
 
     assert len(result.notices) == 1
     assert "fallback" in result.notices[0].detail.lower()
+
+
+# ── The tyre class, end to end (Constitution v7.8.0) ──────────────────────
+#
+# The behaviour the amendment was made for. Before it, a league that had drawn no tyre
+# artwork got the packaged `fallback.svg` — one grey placeholder for all five compounds —
+# and a notice on every qualifying row, for a vocabulary it never chose.
+
+
+@pytest.fixture()
+def league_tyres(tmp_path):
+    """A league's own tyre directory, empty: the state a fresh clone is actually in."""
+    directory = tmp_path / "league_tyres"
+    directory.mkdir()
+    return directory
+
+
+@pytest.fixture()
+def packaged_tyres(tmp_path):
+    """What the bot ships: a file per compound, beside the generic fallback."""
+    directory = tmp_path / "packaged_tyres"
+    directory.mkdir()
+    (directory / FALLBACK_ASSET_NAME).write_bytes(SVG)
+    for compound in TYRE_COMPOUNDS:
+        (directory / f"{normalise(compound)}.svg").write_bytes(SVG)
+    return directory
+
+
+@pytest.mark.parametrize("compound", TYRE_COMPOUNDS)
+def test_a_compound_draws_the_packaged_file_and_not_the_placeholder(
+    league_tyres, packaged_tyres, compound
+):
+    """Every compound, not a sample: the point is that no league can be short of one."""
+    resolution = resolve_asset(
+        league_tyres,
+        compound,
+        packaged=packaged_tyres,
+        closed_set=is_closed_set_datum("tyre", normalise(compound)),
+    )
+    assert resolution.outcome is AssetOutcome.FALLBACK
+    assert resolution.from_packaged
+    assert resolution.drew_own_file
+    assert resolution.path.name == f"{normalise(compound)}.svg"
+    assert resolution.path.name != FALLBACK_ASSET_NAME
+
+
+def test_a_leagues_own_compound_file_still_wins(league_tyres, packaged_tyres):
+    """The tier order is unchanged: closing the class never overrides a league's artwork."""
+    own = league_tyres / "soft.svg"
+    own.write_bytes(SVG)
+    resolution = resolve_asset(
+        league_tyres, "Soft", packaged=packaged_tyres, closed_set=True
+    )
+    assert resolution.outcome is AssetOutcome.FOUND
+    assert resolution.path == own
+
+
+def test_a_leagues_own_fallback_still_beats_the_packaged_compound(
+    league_tyres, packaged_tyres
+):
+    """Which is how a league suppresses a packaged icon: a fallback of its own.
+
+    The tiers are searched in order and the configured one is searched whole first, so a
+    league wanting its placeholder rather than ours gets it. This is the same mechanism
+    `resources/README.md` documents for the markers and the weather icons, and it is why
+    closing the class takes nothing away from a league that had configured something.
+    """
+    own_fallback = league_tyres / FALLBACK_ASSET_NAME
+    own_fallback.write_bytes(SVG)
+    resolution = resolve_asset(
+        league_tyres, "Soft", packaged=packaged_tyres, closed_set=True
+    )
+    assert resolution.outcome is AssetOutcome.FALLBACK
+    assert resolution.path == own_fallback
+    assert not resolution.from_packaged
+
+
+def test_the_notice_for_a_compound_says_the_bots_own_file_was_drawn(
+    tmp_path, real_packaged_project_root
+):
+    """A notice is still raised — the kind is unchanged, as XIV.13 requires — but it must
+    not send a manager looking for artwork they were never expected to supply.
+    """
+    custom_directory = tmp_path / "league_tyres"
+    custom_directory.mkdir()
+
+    _root, result = _render("tyre", "Soft", custom_directory)
+
+    assert result.unresolved == []
+    assert [n.notice_kind for n in result.notices] == ["ASSET_FALLBACK_USED"]
+    assert "the bot's own `soft.svg` was drawn instead" in result.notices[0].detail
