@@ -259,6 +259,22 @@ To use your own drawing file, put it in that folder and name it:
 
 Before you edit a drawing file, read the **`/images template <kind>`** section of the [main README](../../README.md#images-template-kind--name-the-svg-file-backing-each-image). That explains how the blanks are labelled so the bot can find them, and how a blank declares the room it has.
 
+> **Changing the lettering is a drawing-file job.** There is no command for the font. Open the drawing,
+> find `font-family`, and change it. You can put it on a single blank, on a group of them, or on the
+> drawing as a whole, whichever suits — a blank that names no font of its own uses the one from whatever
+> it sits inside, just as your drawing program treats it, and a blank that names its own wins. The files
+> that come with the bot name theirs once, on the drawing as a whole, so a single edit changes all the
+> lettering in the file.
+>
+> **List more than one, best first.** `Inter, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif` means "Inter if
+> this machine has it, otherwise Segoe UI, otherwise DejaVu Sans", and so on down the list. That list is the
+> whole of the arrangement — there is nothing else to set up, and the bot works out how much room a name
+> needs using the very same font the picture ends up drawn in. Finish the list with a general word like
+> `sans-serif` and the machine has the last word, which it answers differently on Windows and on Linux; so
+> if you want your pictures to come out the same wherever they are drawn, name a font that is installed on
+> every machine that will draw them. Either way the picture still gets drawn, and the log channel tells you
+> which font actually stood in.
+
 > **The lineup drawing works as it comes, like all the others.** It numbers its team blocks — block 1 draws whichever team is first in the division, block 2 the second, and so on — so the same file suits any league. The team's name and badge are the only things that change from block to block. The one that comes with the bot has room for eleven teams of two drivers each, plus ten reserves.
 >
 > **If your league does not put reserves on its lineup, draw none.** A drawing file with no reserve block at all is perfectly good: the picture then never shows reserves, however many your division is carrying, and the bot does not complain — leaving the block out is how you say you do not want it. Ten is only what the shipped file guesses; draw more if your league carries more. What you cannot do is draw *some* and then carry more reserves than you drew room for, which is refused like any other overflow.

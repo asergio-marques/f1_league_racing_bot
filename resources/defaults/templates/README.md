@@ -86,6 +86,29 @@ country, and a weather title stops short of the rain-probability figure and the 
 its right — which is why the same `.track` class carries a different `inline-size` from one
 weather file to the next. Widen one of these and it will run under the picture next to it.
 
+## The font is declared once, and inherits
+
+Every packaged file states its stack once, as a `font-family` on the root `<svg>`:
+
+```
+font-family="Inter, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif"
+```
+
+A field carrying no `font-family` of its own takes the nearest one above it — the root, or any
+group in between — and a field's own declaration overrides what it would inherit, whether that
+declaration is a presentation attribute, a CSS rule or an inline style. Restyling a whole file is
+therefore one edit, and setting one section apart is a `font-family` on the group holding it.
+
+**The stack is the whole of the fallback.** The first family the machine carries is the one used,
+and the bot measures against the same family the rasteriser draws with — which is the point of
+declaring it where both can read it. A generic name closing the stack (`sans-serif`) leaves the
+last word to the host, and the host answers differently on Windows and on Linux, so a file that
+must come out identical everywhere names a face installed everywhere.
+
+`font-weight` and `font-style` inherit the same way, and measurement follows both. The box
+properties above do **not** inherit — `inline-size`, `max-lines` and `shape-inside` each bound one
+field, and a group declaring one would otherwise re-bound every field beneath it.
+
 ## The constructors grid names no driver
 
 `standings_constructors_template.svg` draws two results per round for each of a team's cars —

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -197,6 +198,131 @@ def test_stylesheet_beats_presentation_attribute():
     root = _doc('<style>#plate { fill: #333333; }</style><rect id="plate" fill="#111111"/>')
     element = FieldIndex(root).resolve("plate")
     assert computed_style(element, stylesheet(root))["fill"] == "#333333"
+
+
+# ── Inheritance ───────────────────────────────────────────────────────────
+#
+# `font-family` inherits in SVG, and every shipped template declares it once on the root
+# `<svg>`. Until the ancestor walk existed those declarations reached nothing: each field
+# resolved to no family at all, `resolve_family` reported a `sans-serif` nobody had asked
+# for, and the module measured against a face Inkscape had not been told to draw.
+
+
+def _family_of(root, field_id: str) -> str | None:
+    return computed_style(FieldIndex(root).resolve(field_id), stylesheet(root)).get(
+        "font-family"
+    )
+
+
+def test_font_family_inherits_from_the_root_svg():
+    """The route every shipped template takes."""
+    root = parse_svg_bytes(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" '
+        'font-family="Inter"><text id="name">x</text></svg>'.encode()
+    )
+    assert _family_of(root, "name") == "Inter"
+
+
+def test_font_family_inherits_from_an_intermediate_group():
+    """A `<g>` is as legitimate a place to declare it as the root, and groups are how a
+    league re-authoring a template would set one section's face apart from another."""
+    root = _doc('<g font-family="Inter"><text id="name">x</text></g>')
+    assert _family_of(root, "name") == "Inter"
+
+
+def test_font_family_inherits_from_a_stylesheet_rule_on_an_ancestor():
+    root = _doc('<style>svg { font-family: Inter }</style><text id="name">x</text>')
+    assert _family_of(root, "name") == "Inter"
+
+
+def test_an_elements_own_family_beats_an_inherited_one():
+    root = parse_svg_bytes(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" '
+        'font-family="Inter"><text id="name" font-family="Georgia">x</text></svg>'.encode()
+    )
+    assert _family_of(root, "name") == "Georgia"
+
+
+def test_the_nearest_ancestor_wins():
+    root = parse_svg_bytes(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" '
+        'font-family="Inter"><g font-family="Georgia">'
+        '<text id="name">x</text></g></svg>'.encode()
+    )
+    assert _family_of(root, "name") == "Georgia"
+
+
+def test_the_whole_declared_stack_is_inherited_not_just_its_first_family():
+    """The stack *is* the fallback mechanism, and Inkscape walks all of it — so the module
+    has to receive all of it, or the two disagree about the face from the second entry on.
+    """
+    root = parse_svg_bytes(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" '
+        "font-family=\"Inter, 'Segoe UI', 'DejaVu Sans', sans-serif\">"
+        '<text id="name">x</text></svg>'.encode()
+    )
+    assert _family_of(root, "name") == "Inter, 'Segoe UI', 'DejaVu Sans', sans-serif"
+
+
+def test_opacity_does_not_inherit():
+    """A group's opacity composites its subtree once. Inheriting it would fade every
+    child by the group's factor a second time."""
+    root = _doc('<g opacity="0.5"><rect id="plate"/></g>')
+    style = computed_style(FieldIndex(root).resolve("plate"), stylesheet(root))
+    assert "opacity" not in style
+
+
+def test_a_fields_own_bounds_do_not_inherit():
+    """`inline-size`, `shape-inside` and `max-lines` bound one field's box. A group
+    declaring any of them must not re-bound every field beneath it."""
+    root = _doc(
+        "<style>g { inline-size: 200px; shape-inside: url(#box); max-lines: 2 }</style>"
+        '<g><text id="name">x</text></g>'
+    )
+    style = computed_style(FieldIndex(root).resolve("name"), stylesheet(root))
+    assert "inline-size" not in style
+    assert "shape-inside" not in style
+    assert "max-lines" not in style
+
+
+#: The shipped templates, chosen deterministically rather than in directory order so the
+#: parametrisation reads the same on every host (CLAUDE.md, 2026-08-26).
+_SHIPPED_TEMPLATES = sorted(
+    (Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates").glob(
+        "*.svg"
+    )
+)
+
+
+def test_every_shipped_template_is_found_to_have_templates():
+    """Guards the guard: an empty glob would make the test below vacuously true."""
+    assert len(_SHIPPED_TEMPLATES) == 15
+
+
+@pytest.mark.parametrize("template", _SHIPPED_TEMPLATES, ids=lambda t: t.stem)
+def test_every_text_field_in_a_shipped_template_receives_a_font_family(template):
+    """Each template states its stack once on the root `<svg>`, so this fails for all
+    fifteen at once if the ancestor walk is lost.
+
+    It asserts on the declaration the field *receives*, never on the face a host resolves
+    it to: which of Inter, Segoe UI or DejaVu Sans is installed differs across the Pi, CI
+    and a Windows desktop, and an assertion on that would pass only where its author sat.
+    """
+    root = load_svg(str(template))
+    rules = stylesheet(root)
+    texts = list(root.iter("{http://www.w3.org/2000/svg}text"))
+    assert texts, f"{template.name} declares no text at all"
+
+    without = [
+        t.get("id") or "<unnamed>"
+        for t in texts
+        if not computed_style(t, rules).get("font-family")
+    ]
+    assert not without, (
+        f"{template.name}: {len(without)} text element(s) resolve to no font-family, "
+        f"so the module would measure them against a face the rasteriser was never "
+        f"told to draw — {sorted(set(without))[:5]}"
+    )
 
 
 def test_inline_style_beats_the_stylesheet():

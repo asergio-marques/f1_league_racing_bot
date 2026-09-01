@@ -283,6 +283,98 @@ def test_measurement_errs_narrow_against_what_the_rasteriser_draws():
     )
 
 
+@pytest.mark.rasteriser
+@pytest.mark.parametrize(
+    "where,template",
+    [
+        (
+            "on the text itself",
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="200">'
+            '<text id="probe" x="0" y="100" '
+            'style="font-family:{family};font-size:{size:g}px">{sample}</text></svg>',
+        ),
+        (
+            "inherited from the root",
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="200" '
+            'font-family="{family}">'
+            '<text id="probe" x="0" y="100" '
+            'style="font-size:{size:g}px">{sample}</text></svg>',
+        ),
+        (
+            "inherited from a group",
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="200">'
+            '<g font-family="{family}"><text id="probe" x="0" y="100" '
+            'style="font-size:{size:g}px">{sample}</text></g></svg>',
+        ),
+    ],
+    ids=["own", "root", "group"],
+)
+def test_measurement_errs_narrow_however_the_family_was_declared(where, template):
+    """The companion above proves the resolver; this proves it is fed the right family.
+
+    The resolver was always correct — but it was reached through `computed_style`, which
+    read only the element's own declarations, so a family stated where SVG says it inherits
+    arrived as nothing at all. Measurement then fell to a generic `sans-serif` while the
+    rasteriser obeyed the template, and the two drew apart with every check green. Every
+    shipped template declares its family on the root, so this went unseen: the case the
+    older test builds is the one case that already worked.
+
+    Reading the family back through `computed_style` rather than passing it to
+    `resolve_family` directly is the whole point — it is the step that was broken.
+    """
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    from lxml import etree  # noqa: PLC0415
+
+    from services.image_render_service import find_converter  # noqa: PLC0415
+    from utils.svg_document import computed_style, stylesheet  # noqa: PLC0415
+
+    executable = find_converter()
+
+    family = "DejaVu Sans"
+    if resolve_family(family, bold=False).substituted:
+        pytest.skip(f"{family} is not installed on this host")
+
+    sample = "Handgloves reviewed mixing quartz"
+    size = 40.0
+    svg = template.format(family=family, size=size, sample=sample)
+
+    root = etree.fromstring(svg.encode())
+    probe = root.find(".//{http://www.w3.org/2000/svg}text")
+    declared = computed_style(probe, stylesheet(root)).get("font-family")
+    assert declared == family, (
+        f"the family declared {where} never reached the fill pipeline — it read "
+        f"{declared!r}, so it would measure against a face the rasteriser was not told "
+        f"to draw"
+    )
+
+    resolved = resolve_family(declared, bold=False)
+    assert resolved.path is not None
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "probe.svg"
+        path.write_text(svg, encoding="utf-8")
+        completed = subprocess.run(
+            [executable, str(path), "--query-id=probe", "--query-width"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+
+    if completed.returncode != 0 or not completed.stdout.strip():
+        pytest.skip("the rasteriser could not report a drawn width on this host")
+
+    drawn = float(completed.stdout.strip())
+    measured = measure(sample, resolved, size)
+
+    assert measured >= drawn, (
+        f"measurement must err narrow with the family declared {where}: measured "
+        f"{measured:.2f}px but the rasteriser draws {drawn:.2f}px"
+    )
+
+
 def test_a_condensed_face_never_stands_in_for_its_normal_sibling():
     """Arial Narrow declares "Arial" as its typographic family (name ID 16).
 

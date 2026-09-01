@@ -319,7 +319,36 @@ def computed_style(
 
     Order: presentation attributes, then matching stylesheet rules, then inline
     ``style``. Inline wins, which is why XIV.2 requires a recolour be written there.
+
+    A property the element declares nowhere itself is then inherited from its nearest
+    ancestor that does declare one, for the properties that inherit in SVG and no others
+    (see ``_INHERITED_PROPERTIES``). That walk is what lets a template state its
+    ``font-family`` once, on the root ``<svg>`` or on a group, and have it govern the text
+    beneath — which is where every shipped template states it, and the only place a league
+    re-authoring one would think to look.
+
+    Without the walk such a declaration was invisible here while the rasteriser obeyed it,
+    so the module measured against one face and Inkscape drew another, and every wrap and
+    shrink-to-fit decision was taken against the wrong metrics. The divergence was silent:
+    on a host carrying neither the template's preferred face nor Arial the two happened to
+    land on the same substitute, which is why it survived so long on the Pi.
     """
+    resolved = _declared_on(element, rules)
+
+    ancestor = element.getparent()
+    while ancestor is not None:
+        for name, value in _declared_on(ancestor, rules).items():
+            if name in _INHERITED_PROPERTIES and name not in resolved:
+                resolved[name] = value
+        ancestor = ancestor.getparent()
+
+    return resolved
+
+
+def _declared_on(
+    element: etree._Element, rules: dict[str, dict[str, str]] | None
+) -> dict[str, str]:
+    """The declarations *element* carries in its own right, weakest source first."""
     resolved: dict[str, str] = {}
 
     for name, value in element.attrib.items():
@@ -355,5 +384,31 @@ _PRESENTATION_ATTRIBUTES = frozenset(
         "fill-opacity",
         "letter-spacing",
         "font-variant-numeric",
+    }
+)
+
+#: Of what this module reads, the properties that inherit in SVG — and no others. A
+#: property absent from an element is taken from its nearest ancestor declaring one of
+#: these; anything outside the set is read from the element alone.
+#:
+#: The exclusions are deliberate. ``opacity`` composites a subtree as a whole rather than
+#: descending into it, so inheriting it would apply a group's fade a second time to every
+#: child. ``inline-size``, ``shape-inside`` and ``max-lines`` bound one field's own box:
+#: a group that declared any of them would silently re-bound every field beneath it, and
+#: `max-lines` is the module's own vocabulary rather than a CSS property at all.
+_INHERITED_PROPERTIES = frozenset(
+    {
+        "fill",
+        "fill-opacity",
+        "stroke",
+        "stroke-width",
+        "font-family",
+        "font-size",
+        "font-weight",
+        "font-style",
+        "text-anchor",
+        "letter-spacing",
+        "font-variant-numeric",
+        "line-height",
     }
 )

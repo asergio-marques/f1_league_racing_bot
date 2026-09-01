@@ -1522,6 +1522,23 @@ These sit under `/images template` rather than `/images config` because Discord 
 > justification — work differently and are described in
 > [resources/defaults/templates/README.md](resources/defaults/templates/README.md).
 
+> **The font your graphics are drawn in is your drawing file's business, not a bot setting.** There is no
+> command for it: you set a `font-family`, and you may set it on the text itself, on a group, or on the
+> drawing as a whole, whichever suits you. A blank that names no font of its own takes the one from the
+> nearest thing above it that does — exactly as your drawing program treats it — and a blank that names its
+> own overrides that. The shipped templates state theirs once, on the drawing as a whole, so changing one
+> line changes every text in the file.
+>
+> **Name several, in the order you would prefer them**, as the shipped files do:
+> `font-family="Inter, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif"` means Inter if the machine carries it,
+> otherwise Segoe UI, otherwise DejaVu Sans, and so on. That list is the whole of the fallback — there is
+> nothing else to set up — and the bot measures your text against the same face the converter draws it in,
+> so the two cannot disagree about how much room a name needs. Ending the list with a generic name like
+> `sans-serif` leaves the last word to the machine, which answers differently on Windows and on Linux; a
+> league that wants every machine to draw its graphics identically names a font it has installed on all of
+> them. When a font you named is missing, the drawing still happens and the log channel tells you which face
+> stood in for it.
+
 > **The lineup template works out of the box, like every other.** It addresses its teams by **number** — `team_1_name`, `team_1_driver_1_name`, `team_2_name` — so one file serves any league. Block 1 draws whichever team stands first in the division, block 2 the second, and so on; the team's own name and badge are the whole of what distinguishes one block from another. The shipped `lineup_template.svg` declares eleven blocks of two seats and a reserve block of ten, and names no team of anyone's league.
 >
 > **The reserve block is optional.** Ten slots is the shipped file's guess at how many stand-ins a league carries at once, not a limit: draw as many as you like, numbered from 1 with no gaps. Draw **none at all** — omit `reserve_group` and every `reserve_driver_<y>_` field — and the lineup simply never shows reserves, however many the division is carrying. That is a way of saying you do not want them on the sheet, so the bot says nothing about it. Declare one slot or more, though, and a division with more reserves than you drew slots for is refused, naming the drivers that would have been dropped.
