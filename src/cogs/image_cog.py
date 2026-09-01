@@ -30,8 +30,10 @@ from models.image_constants import (
     TEMPLATE_LABELS,
 )
 from models.image_module import STATE_DISABLED, STATE_ENABLED
+from services.image_config_service import pfp_change_refusal
 from utils.channel_guard import admin_only, channel_guard, server_admin_only
 from utils.paths import PathContainmentError, relative_to_root
+from utils.time_parsing import parse_time_of_day
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +92,77 @@ def toggle_enabled_lines(aspect: str, label: str, blocking: list[str]) -> list[s
     return lines
 
 
+class PortraitTimeModal(discord.ui.Modal, title="Daily portrait updates"):
+    """Names the time of day the daily driver-portrait refresh runs.
+
+    A modal must be the *initial* response to an interaction, so the command that opens this
+    cannot defer first. Submitting it does not commit anything: per the specification the
+    setting is committed only on a confirmation given after the modal, which
+    `PortraitTimeConfirm` collects.
+    """
+
+    time_of_day: discord.ui.TextInput = discord.ui.TextInput(
+        label="Time of day in UTC",
+        placeholder="03:00 — also accepts 3am, 3:30 pm, 1530",
+        required=True,
+        max_length=16,
+    )
+
+    def __init__(self, cog: "ImageCog", current: str) -> None:
+        super().__init__()
+        self._cog = cog
+        # Prefilled with what is stored, so re-running the command shows the standing value
+        # rather than making a manager remember it.
+        self.time_of_day.default = current
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        normalised = parse_time_of_day(str(self.time_of_day.value))
+        if normalised is None:
+            await interaction.response.send_message(
+                f"❌ Could not read `{self.time_of_day.value}` as a time of day. "
+                f"Try `03:00`, `3am` or `1530`. Nothing was changed.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_message(
+            f"Daily driver-portrait updates will run at **{normalised} UTC**.\n"
+            f"The bot runs on UTC, so this is not your local time unless you are on it.\n"
+            f"Confirm to enable them.",
+            view=PortraitTimeConfirm(self._cog, normalised),
+            ephemeral=True,
+        )
+
+
+class PortraitTimeConfirm(discord.ui.View):
+    """The confirmation the specification requires after the time-of-day modal.
+
+    Not persistent, and deliberately: it is a step within one command rather than a control
+    a league comes back to, and an unanswered one simply expires having changed nothing.
+    """
+
+    def __init__(self, cog: "ImageCog", normalised: str) -> None:
+        super().__init__(timeout=120)
+        self._cog = cog
+        self._normalised = normalised
+
+    @discord.ui.button(label="Confirm", style=discord.ButtonStyle.success)
+    async def confirm(
+        self, interaction: discord.Interaction, _button: discord.ui.Button
+    ) -> None:
+        await self._cog.commit_daily_portraits(interaction, self._normalised)
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(
+        self, interaction: discord.Interaction, _button: discord.ui.Button
+    ) -> None:
+        await interaction.response.send_message(
+            "❌ Cancelled. Daily driver-portrait updates are unchanged.", ephemeral=True
+        )
+        self.stop()
+
+
 class ImageCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -113,6 +186,12 @@ class ImageCog(commands.Cog):
     template = app_commands.Group(
         name="template",
         description="Set which SVG file backs each kind of image.",
+        parent=images,
+    )
+
+    use_pfp = app_commands.Group(
+        name="use-pfp",
+        description="Obtain driver portraits from Discord profile pictures.",
         parent=images,
     )
 
@@ -265,6 +344,137 @@ class ImageCog(commands.Cog):
             f"The previously configured filename is still in force.",
         )
         await self._log(interaction, f"{label} template REJECTED — {reason}")
+
+    # ── Driver portraits obtained from Discord ────────────────────────────
+
+    async def _guard_portraits_enabled(self, interaction: discord.Interaction):
+        """The configuration, or None having replied why the command may not proceed.
+
+        The two sub-toggles govern *how* portraits are kept up to date, which is not a
+        question while the bot is not obtaining them at all.
+        """
+        if not await self._guard_module_enabled(interaction):
+            return None
+        config = await self._config_service.get_config(interaction.guild_id)
+        if config is None or not config.use_pfp:
+            await self._reply(
+                interaction,
+                "❌ Driver portraits are not being obtained from Discord. "
+                "Use `/images use-pfp toggle` first.",
+            )
+            return None
+        return config
+
+    async def _apply_pfp_flag(
+        self, interaction: discord.Interaction, config, column: str, enabled: bool, label: str
+    ) -> bool:
+        """Write one toggle, or refuse and leave the configuration as it stood."""
+        refusal = pfp_change_refusal(config, column, enabled)
+        if refusal is not None:
+            await self._reply(interaction, f"❌ {refusal}")
+            return False
+
+        await self._config_service.set_pfp_flag(interaction.guild_id, column, enabled)
+        state = "enabled" if enabled else "disabled"
+        await self._reply(interaction, f"{'✅' if enabled else '❌'} **{label}** {state}.")
+        await self._log(interaction, f"{label} {state}")
+        return True
+
+    async def commit_daily_portraits(
+        self, interaction: discord.Interaction, normalised: str
+    ) -> None:
+        """Enable the daily refresh at *normalised* UTC and arm the scheduled job."""
+        server_id = interaction.guild_id
+        await self._config_service.set_field(server_id, "pfp_daily_time", normalised)
+        await self._config_service.set_pfp_flag(server_id, "pfp_daily", True)
+        try:
+            self.bot.scheduler_service.schedule_portrait_refresh(  # type: ignore[attr-defined]
+                server_id, normalised
+            )
+        except Exception as exc:  # the setting is stored; recovery re-arms it on restart
+            log.error("could not arm the daily portrait refresh: %s", exc)
+        await self._reply(
+            interaction,
+            f"✅ **Daily driver-portrait updates** enabled, running at "
+            f"**{normalised} UTC** each day.",
+        )
+        await self._log(interaction, f"Daily driver-portrait updates enabled at {normalised} UTC")
+
+    @use_pfp.command(
+        name="toggle",
+        description="Obtain driver portraits from their Discord profile pictures.",
+    )
+    @channel_guard
+    @admin_only
+    async def use_pfp_toggle(self, interaction: discord.Interaction) -> None:
+        if not await self._guard_module_enabled(interaction):
+            return
+
+        server_id = interaction.guild_id
+        config = await self._config_service.get_config(server_id)
+        if config is None:
+            await self._reply(interaction, "❌ The image module has no configuration yet.")
+            return
+
+        enabling = not config.use_pfp
+        if not await self._apply_pfp_flag(
+            interaction, config, "use_pfp", enabling, "Discord profile pictures"
+        ):
+            return
+
+        # The daily job is armed by the master toggle as well as by its own, so that turning
+        # the feature off stops the fetching rather than leaving a job running against a
+        # setting that says no.
+        if enabling and config.pfp_daily:
+            self.bot.scheduler_service.schedule_portrait_refresh(  # type: ignore[attr-defined]
+                server_id, config.pfp_daily_time
+            )
+        elif not enabling:
+            self.bot.scheduler_service.cancel_portrait_refresh(server_id)  # type: ignore[attr-defined]
+
+    @use_pfp.command(
+        name="prerender-toggle",
+        description="Update the portraits a graphic needs just before drawing it.",
+    )
+    @channel_guard
+    @admin_only
+    async def use_pfp_prerender_toggle(self, interaction: discord.Interaction) -> None:
+        config = await self._guard_portraits_enabled(interaction)
+        if config is None:
+            return
+        await self._apply_pfp_flag(
+            interaction,
+            config,
+            "pfp_prerender",
+            not config.pfp_prerender,
+            "Pre-render portrait updates",
+        )
+
+    @use_pfp.command(
+        name="daily-toggle",
+        description="Update every driver's portrait once a day, at a time you choose.",
+    )
+    @channel_guard
+    @admin_only
+    async def use_pfp_daily_toggle(self, interaction: discord.Interaction) -> None:
+        config = await self._guard_portraits_enabled(interaction)
+        if config is None:
+            return
+
+        if config.pfp_daily:
+            # Turning it off needs no time and therefore no modal.
+            if await self._apply_pfp_flag(
+                interaction, config, "pfp_daily", False, "Daily driver-portrait updates"
+            ):
+                self.bot.scheduler_service.cancel_portrait_refresh(  # type: ignore[attr-defined]
+                    interaction.guild_id
+                )
+            return
+
+        # A modal must be the initial response, so nothing above this may defer.
+        await interaction.response.send_modal(
+            PortraitTimeModal(self, config.pfp_daily_time)
+        )
 
     async def _log(self, interaction: discord.Interaction, detail: str) -> None:
         """Record a configuration mutation to the calculation log (Principle V)."""
