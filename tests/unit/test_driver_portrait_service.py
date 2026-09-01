@@ -458,3 +458,120 @@ async def test_the_daily_refresh_stands_aside_where_the_guild_is_unreachable(tmp
     bot.get_guild.return_value = None
 
     assert await m.run_daily_refresh(bot, SERVER_ID, now=NOW) == 0
+
+
+# ── The assumption the whole wrapper rests on ─────────────────────────────
+
+
+@pytest.mark.rasteriser
+def test_inkscape_draws_a_wrapped_portrait_referenced_as_an_external_file(tmp_path):
+    """A data-URI PNG, nested one level inside an externally referenced SVG, actually draws.
+
+    This is the single assumption the portrait design rests on, and nothing else verifies
+    it. A graphic references `<discord id>.svg` as a `file://` URI, and *that* file carries
+    the PNG as `data:image/png;base64,...`. Inkscape resolves a broken link silently -- it
+    exits 0 and prints nothing, drawing a blank -- so a failure here would reach a league as
+    a lineup full of holes with no error anywhere.
+
+    CI cannot run this: Inkscape is too heavy for a hosted runner, so both jobs deselect the
+    `rasteriser` marker. It is run by hand on a host that has it.
+
+    The test draws the same scene twice, once against a wrapped portrait and once against a
+    reference that does not resolve, and requires the two to differ. Comparing against a
+    known-bad render rather than asserting "no error" is deliberate: no error is exactly
+    what a silent failure produces.
+    """
+    import subprocess
+
+    from services.image_render_service import find_converter
+
+    # A red square, so a drawn portrait is unmistakably different from a blank one.
+    red_png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmM"
+        "IQAAAABJRU5ErkJggg=="
+    )
+    portrait = tmp_path / "12345.svg"
+    portrait.write_text(wrap_png(red_png), encoding="utf-8")
+
+    def _draw(name: str, href: str) -> bytes:
+        source = tmp_path / f"{name}.svg"
+        source.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" '
+            'xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64">'
+            '<rect width="64" height="64" fill="#ffffff"/>'
+            f'<image x="0" y="0" width="64" height="64" xlink:href="{href}"/></svg>',
+            encoding="utf-8",
+        )
+        out = tmp_path / f"{name}.png"
+        subprocess.run(
+            [
+                find_converter(),
+                str(source),
+                "--export-type=png",
+                f"--export-filename={out}",
+                "--export-width=64",
+                "--export-height=64",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        return out.read_bytes()
+
+    drawn = _draw("with_portrait", portrait.as_uri())
+    blank = _draw("without_portrait", "file:///no/such/portrait.svg")
+
+    assert drawn != blank, "the wrapped portrait drew nothing at all"
+
+
+@pytest.mark.rasteriser
+def test_a_wrapped_portrait_survives_the_whole_fill_and_render_path(tmp_path):
+    """End to end through `svg_fill`, which is what a real lineup actually does.
+
+    The unit above proves Inkscape can follow the two hops. This proves the module hands it
+    the right thing: the portrait is resolved by `resolve_asset`, anchored to a `file://`
+    URI by `_set_href`, and passes `_unreachable_links` -- which is fatal on a link it
+    cannot follow, and is the check that would catch a wrapper written wrongly.
+    """
+    import subprocess
+
+    from services.image_render_service import find_converter
+    from utils.svg_fill import FillSpec, fill
+    from utils.svg_document import parse_svg_bytes
+
+    drivers = tmp_path / "drivers"
+    drivers.mkdir()
+    red_png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmM"
+        "IQAAAABJRU5ErkJggg=="
+    )
+    (drivers / "12345.svg").write_text(wrap_png(red_png), encoding="utf-8")
+
+    root = parse_svg_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">'
+        b'<image id="team_1_driver_1_image" width="64" height="64"/></svg>'
+    )
+    result = fill(
+        FillSpec(
+            root=root,
+            image_type="lineup_template",
+            image_data={"team_1_driver_1_image": ("driver", "12345")},
+            asset_directories={"driver": drivers},
+        )
+    )
+
+    assert result.unresolved == []
+    href = root.find(".//{http://www.w3.org/2000/svg}image").get("href")
+    assert href.startswith("file:///") and href.endswith("12345.svg")
+
+    source = tmp_path / "filled.svg"
+    source.write_bytes(result.svg)
+    out = tmp_path / "filled.png"
+    subprocess.run(
+        [
+            find_converter(), str(source), "--export-type=png",
+            f"--export-filename={out}", "--export-width=64", "--export-height=64",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    assert out.is_file() and out.stat().st_size > 0
