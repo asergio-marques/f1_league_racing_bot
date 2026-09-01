@@ -214,7 +214,7 @@
   - Race ban - 0
   - Season ban - 0
 
-### Automated penalizations
+### Automated penalties
 - <NEW COMMAND> A "steward auto-rule add" command will be made available to league managers, which shall have no inputs. Upon usage of this command, a modal dialog will open, with the following fields:
   - Type - Mandatory - Type of criteria that shall be met. Can be single round, multi round, or accumulatory.
   - ID - String - Unique ID for this rule. Must not overlap with that of other auto rules. Maximum of 12 characters
@@ -226,6 +226,7 @@
   - Number of penalties given - Mandatory - Integer - Quantity of penalties of the type defined in "penalty given" to be bestowed upon a driver when this rule is triggered.
     - This value must not be 0.
 - Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule will be added to the list and made active immediately. 
+- Auto-rules are triggered when the number of infractions committed is equal or greater than that in the rule.
 - <NEW COMMAND> A "steward auto-rule modify" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog similar to that of "steward auto-rule add" will appear, with the data from the auto-rule of the input ID preloaded and modifiable. The ID cannot be modified, hence that field shall be greyed-out.
 - <NEW COMMAND> A "steward auto-rule remove" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog will show up for confirmation of deletion of the auto-rule. Once confirmed, the auto-rule will no longer be active and enforceable, and it will be deleted from the current list.
 - <NEW COMMAND> A "steward auto-rule list" command will be made available to league managers and stewards, which shall have no inputs. In reply, the bot will post a transient (temporary, seen only to the command user) list with all the auto-rules currently available, as a plain text table with the following columns in order: ID, Type of infractions committed, No. of infractions committed, penalty given, number of penalties given.
@@ -337,7 +338,7 @@
 - The report deliberation phase is only considered over once all reports pertaining to a given round of a given division are posted to the appropriate channel.
   - If appeals functionality is enabled, then the stewarding cycle will move on to that phase.
   - Otherwise, then the stewarding cycle is considered closed.
-- Once the report deliberation phase is considered over, the round results and the standings after the round will be reposted, with all accured penalties factored in.
+- Once the report deliberation phase is considered over, the round results and the standings after the round will be reposted, with all accured time penalties factored in exclusively.
   - This functionality is somewhat implemented already, just a matter of reusing it.
   
 ### Appeal submission
@@ -417,13 +418,19 @@
 - After the verdicts are published, a 7 day countdown will be initiated, at the end of which the channel will be deleted.
   - <SKETCH OUT> Is it practical to save these? Perhaps these could be persisted locally on the device running the bot...
 - The appeal deliberation phase is only considered over once all appeals pertaining to a given round of a given division are posted to the appropriate channel.
-- Once the appeal deliberation phase is considered over, the round results and the standings after the round will be reposted with the appeals' results (and penalties) factored in.
+- Once the appeal deliberation phase is considered over, the round results and the standings after the round will be reposted with the appeals' time penalties factored in.
   - This functionality is somewhat implemented already, just a matter of reusing it.
-  - <tbd> if the verdict is changed, the value displayed in the appeals' column in the results should take into consideration the original verdict (e.g. a penalty of 5 seconds that was rescinded should show as -5s in the appeal column...)
+  - If a verdict was changed in an appeal in comparison to the original report, the time penalty value displayed in the appeals column should take the latter into consideration (e.g. a penalty of 5 seconds that was rescinded should show as -5s in the appeal column)
 
 ### Cycle close
-- <NEW COMMAND> steward retract-verdict - lets effective head steward revise the justification in a verdict
-- Only when all tickets for this round reach this stage, are warning points and penalty points applied to a driver's license.
+- <NEW COMMAND> steward retract-verdict - lets effective head steward revise the justification in a verdict <tbd, needs ironing out>
+- Once all tickets for a given round of a given division reach this stage, warning points, penalty points, qualifying bans, race bans, season bans and league bans are made effective and added to a driver's license. After this is done, it will be checked whether the driving licenses of any driver infringe upon any of the auto-rules configured.
+- If any auto-rule configured is infringed upon, then an additional automated verdict document will be published by the bot, informing of which rule was broken, and the punishment to be handed out.
+  - The structure of this automated verdict document will be outlined in a later section.
+- As a way to prevent drivers from being penalized twice for going over a threshold (e.g. an auto rule being triggered when a driver's license reaches 4 penalty points when a driver goes from 2 penalty points to 5, meaning they could be handed out two instances of the automated penalty), thresholds shall function in a flip-flop manner. This means that, in the example given, once a driver goes over the 4 penalty point threshold of the automated penalty, they can only infringe it after their license's active penalty points tally goes under 4 penalty points.
+  - <DISCUSS/WEAK POINT> is this harsh? I mean, it's on the drivers, but I wonder if there's a more robust design here.
+- Once auto-rules are verified, the previous license sheet shall be deleted, and an updated one, with the penalties of the latest round updated, will be posted.
+  - License sheet posting will be specified in another section.
 
 ## Conduct cycle
 ### Trigger
@@ -435,7 +442,51 @@
 ### Investigation deliberation
 - 
 
+## Bans
+### Qualifying bans
+- Whether a driver has a qualifying ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
+- If a driver who is participating in multiple divisions has a qualifying ban, they must serve it in the highest tier division for which they are a full-time driver (assigned to a team that is not the reserve team).
+  - If the driver is not a full-time driver for any division, then they must serve the qualifying ban in the highest tier division for which they are a reserve driver.
+- If the attendance module is enabled and any full-time driver has a qualifying ban to be served in a given division as per the requirement above is checked-in to the next round of that division, at the scheduled time for the round, they will be notified by the bot that they have a qualifying ban to serve.
+  - This message must be deleted alongside the RSVP for the round.
+- If the attendance module is enabled and any reserve driver has a qualifying ban to be served in a given division as per the requirement above is assigned a seat for the next round of that division, at the scheduled time for the round, they will be notified by the bot that they have a qualifying ban to serve.
+  - This message must be deleted alongside the RSVP for the round.
+- The qualifying ban will be considered "served" if the driver is present in the feature qualifying session's results for the round in which they must serve the ban, without any valid lap set (fastest lap = N/A), and also present in the results of at least one other session of that same round, regardless of their final result.
+  - Additionally, a qualifying ban being correctly served will trigger the immediate posting of a verdict to the verdicts channel of the division informing of this. The format of this communication will be specified in a different section.
+- If a driver who has a qualifying ban does not show up for a round (missing in the results of all sessions), then their qualifying ban will be considered unserved, and will carry on to the next round of that division.
+- If a driver who has a qualifying ban fails to serve it properly by setting a valid lap in the feature qualifying session's results, then their qualifying ban will be considered unserved, and will carry on to the next round of that division.
+  - Additionally, the failure to serve a qualifying ban properly will trigger the immediate posting of a verdict to the verdicts channel of the division informing of this. The format of this communication will be specified in a different section.
+- As qualifying bans are assigned to a driver's license, they do not expire upon a season's end, and will be enforced in the following season, in the same division tier as it would have been in the present season.
+  - If the driver does not participate in the same division tier in the follow-up season, whether it be because of happenstance or because the division tier ceases existing in the next season, then the qualifying ban will be "upgraded" to the highest division for which the driver is a full-time driver. If the driver does not have a full-time seat in a follow-up season, then the qualifying ban will be applied to the highest division for which the driver is a reserve driver.
+
+### Race bans
+- Whether a driver has a race ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
+- If a driver who is participating in multiple divisions has a race ban, they must serve it in the highest tier division for which they are a full-time driver (assigned to a team that is not the reserve team).
+- If the attendance module is enabled and any driver has a race ban to be served in a given division as per the requirement above, their vote in the check-in will be immediately discarded/deleted by the bot if present, and a message shall be posted to the check-in channel informing that they cannot check-in due to a race ban.
+  - This driver will not be allowed to vote in the check-in for this round again.
+  - This driver will not be punished with attendance points for failing to RSVP for the round, and will be bestowed with an automatic justification.
+  - This message must be deleted alongside the RSVP for the round.
+- The race ban will be considered "served" if the driver is not listed in the results of any session pertaining to the round in which they must serve the ban.
+  - Additionally, a race ban being correctly served will trigger the immediate posting of a verdict to the verdicts channel of the division informing of this. The format of this communication will be specified in a different section.
+- If a driver who has a race ban fails to serve it properly by being listed in the results of any session pertaining to the round in which they must serve the ban, then their race ban will be considered unserved, and will carry on to the next round of that division.
+  - Additionally, the failure to serve a race ban properly will trigger the immediate posting of a verdict to the verdicts channel of the division informing of this. The format of this communication will be specified in a different section.
+- As race bans are assigned to a driver's license, they do not expire upon a season's end, and will be enforced in the following season, in the same division tier as it would have been in the present season.
+  - If the driver does not participate in the same division tier in the follow-up season, whether it be because of happenstance or because the division tier ceases existing in the next season, then the race ban will be "upgraded" to the highest division for which the driver is a full-time driver. If the driver does not have a full-time seat in a follow-up season, then the race ban will be applied to the highest division for which the driver is a reserve driver.
+
+### Season bans
+- Whether a driver has a season ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
+
+### League bans
+- Whether a driver has a league ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
+
 ## Verdict output
+### Textual
+
+
+### Image
+
+
+## License sheet output
 ### Textual
 
 
