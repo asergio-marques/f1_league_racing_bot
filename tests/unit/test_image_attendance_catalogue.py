@@ -57,10 +57,11 @@ def test_the_sheets_top_level_fields_are_exactly_the_wip_specs():
         "division_tier_group",
         "race_name",
         "race_name_group",
-        "autoreserve_group",
-        "autoreserve_limit",
-        "autosack_group",
-        "autosack_limit",
+        # One limit block, not one per functionality: a league can only have one of the two
+        # thresholds, so the label is a field rather than chrome (v7.5.0).
+        "limit_group",
+        "limit_label",
+        "limit_value",
         # The band beneath the rows, carried up when the sheet is cropped to the drivers
         # it actually holds (XIV.2, v7.1.0).
         "footer_group",
@@ -77,6 +78,7 @@ def test_the_sheets_row_fields_are_exactly_the_wip_specs():
         "team_name",
         "team_image",
         "points",
+        "points_background",
         "sanction",
         # Where the canvas is cut when this row is the last the data fill. Optional: a
         # template declaring none renders at full height, as every one did before v7.1.0.
@@ -85,7 +87,13 @@ def test_the_sheets_row_fields_are_exactly_the_wip_specs():
     assert rows.mandatory_fields == {"group", "driver_name", "points"}
     assert "vertical_crop_point" not in rows.mandatory_fields
     assert "vertical_crop_point" in rows.valueless_fields
-    assert rows.assets == {"driver_flag": "flag", "team_image": "team"}
+    assert rows.assets == {
+        "driver_flag": "flag",
+        "team_image": "team",
+        # The mark beneath the total is artwork of the class the position-change arrows and
+        # the standings result chips also draw, so a league keeps one folder of marks.
+        "points_background": "marker",
+    }
 
 
 def test_the_sheet_draws_no_position_on_any_row():

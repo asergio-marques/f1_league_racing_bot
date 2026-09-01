@@ -45,7 +45,7 @@
 
        Each race cell stands over three <image> slots, all sharing one box: a
        background taking the podium or points plate, a fastest-lap mark, and a
-       qualifying mark. All three draw the standings-highlights asset class, so what
+       qualifying mark. All three draw the marker asset class, so what
        each looks like is a file in that folder and not a colour written here, and
        all three are authored with no href, so a cell that earns no highlight draws
        nothing and is never removed.
@@ -126,7 +126,7 @@
           The ink drawn on a highlight chip.
 
           The chip itself is ARTWORK, not a colour: it is an asset of the
-          standings-highlights class, and which mark is drawn is decided by the
+          marker class, and which mark is drawn is decided by the
           file in that folder rather than by anything here. What a file cannot
           supply is the colour of the result written over it, because that text
           belongs to this template — so these rules, and only these, remain.

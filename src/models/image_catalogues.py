@@ -1064,7 +1064,7 @@ _STANDINGS_CELL_FIELDS = frozenset(
 #: independently so — a template opts in per cell and per kind by declaring the field and a
 #: matching ``.highlight_*`` rule, and one declaring neither renders as it always did.
 #:
-#: **Asset fields**, of the closed-set `standings_highlight` class. The chip is artwork rather
+#: **Asset fields**, of the closed-set `marker` class. The chip is artwork rather
 #: than a colour: a stylesheet can only ever wash the whole cell, where a file can draw a plate,
 #: a corner mark, or whatever else a league wants of it. The five data — `p1`, `p2`, `p3`,
 #: `points`, `fastest_lap` — are the module's own vocabulary, so a league missing one is given
@@ -1090,7 +1090,7 @@ _STANDINGS_CELL_HIGHLIGHTS = frozenset(
 
 #: Every highlight field draws the one class; which chip is drawn is the datum, not the class.
 _STANDINGS_CELL_HIGHLIGHT_ASSETS = {
-    suffix: "standings_highlight" for suffix in _STANDINGS_CELL_HIGHLIGHTS
+    suffix: "marker" for suffix in _STANDINGS_CELL_HIGHLIGHTS
 }
 
 #: The round headings, shared by both standings championships **and by the attendance
@@ -1208,13 +1208,19 @@ STANDINGS_CONSTRUCTORS_CATALOGUE = FieldCatalogue(
 #: it carries no lifecycle label, an attendance record having no phases to stand between.
 _ATTENDANCE_MANDATORY = frozenset({"division_name", "round_number"})
 
-#: The optional headings, each with the group that may wrap it, plus the two **block groups**
-#: (XIV.2) wrapping the point limits. A block group is named for the block and not for a field,
-#: so ``autoreserve_group`` is a catalogue entry in its own right where ``season_number_group``
-#: is the ordinary ``<field>_group`` form; both are declared here so the utility can reach them.
+#: The optional headings, each with the group that may wrap it, plus the **block group**
+#: (XIV.2) wrapping the point limit. A block group is named for the block and not for a field,
+#: so ``limit_group`` is a catalogue entry in its own right where ``season_number_group`` is
+#: the ordinary ``<field>_group`` form; both are declared here so the utility can reach them.
 #:
-#: A limit whose functionality is switched off is a **configured absence** (XIV.4): the group
-#: leaves whole, and no notice is raised for a setting the league chose itself.
+#: **One limit, and its label is a field** (v7.5.0). A league can only have one:
+#: `/attendance config autoreserve` and `/attendance config autosack` refuse each other, so a
+#: sheet declaring a block for each would always draw one and delete the other, leaving a hole
+#: beside the survivor. One block draws whichever is live, and it can only say which that is
+#: because ``limit_label`` is filled rather than painted on as chrome.
+#:
+#: A sheet with neither functionality on is a **configured absence** (XIV.4): the group leaves
+#: whole, and no notice is raised for a setting the league chose itself.
 _ATTENDANCE_OPTIONAL = frozenset(
     {
         "season_number",
@@ -1224,10 +1230,9 @@ _ATTENDANCE_OPTIONAL = frozenset(
         "division_tier_group",
         "race_name",
         "race_name_group",
-        "autoreserve_group",
-        "autoreserve_limit",
-        "autosack_group",
-        "autosack_limit",
+        "limit_group",
+        "limit_label",
+        "limit_value",
     }
 )
 
@@ -1263,13 +1268,23 @@ ATTENDANCE_CATALOGUE = FieldCatalogue(
                 "team_name",
                 "team_image",
                 "points",
+                "points_background",
                 "sanction",
                 _ROW_CROP_FIELD,
             }
         ),
         mandatory_fields=frozenset({"group", "driver_name", "points"}),
         valueless_fields=frozenset({"group", _ROW_CROP_FIELD}),
-        assets={"driver_flag": "flag", "team_image": "team"},
+        # ``points_background`` is the mark drawn beneath the total, warning that a driver is
+        # closing on the limit that costs them their seat. Of the `marker` class, shared with
+        # the standings result chips and the position-change arrows; its slot stretches to the
+        # cell and says so with ``preserveAspectRatio="none"``, which is what exempts it from
+        # the class's 1:1 aspect.
+        assets={
+            "driver_flag": "flag",
+            "team_image": "team",
+            "points_background": "marker",
+        },
         nested=NestedSpec(
             prefix="round",
             capacity=None,

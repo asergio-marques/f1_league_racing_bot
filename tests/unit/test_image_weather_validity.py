@@ -98,7 +98,6 @@ def _config(**overrides) -> ImageConfig:
         marker_directory="resources/defaults/markers",
         weather_icon_directory="resources/defaults/weather",
         tyre_directory="resources/defaults/tyres",
-        standings_highlight_directory="resources/defaults/standings-highlights",
         time_zone="UTC",
         time_format="24H",
         date_format="DDD_DD_MON_YYYY",

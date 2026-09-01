@@ -202,6 +202,12 @@ def aspect_faults_of(root, template_key: str) -> list[str]:
     league authors one file per datum, and a class serving slots of two aspects would
     letterbox that file wherever it did not match.
 
+    **A slot exempts itself.** One carrying ``preserveAspectRatio="none"`` stretches to
+    the box the template gives it, so there is nothing for it to be letterboxed against
+    and the rule has no work to do. The exemption is the slot's and not its class's
+    because that is where the fact lives: `marker` draws the square position-change
+    arrows and the standings and attendance marks alike, and only the marks stretch.
+
     The comparison is **relative and tolerant**: template geometry is authored in
     Inkscape and carries floating-point values, so an exact test would reject every
     template a human drew. The tolerance still catches a square slot given a 3:2 flag,
@@ -215,6 +221,8 @@ def aspect_faults_of(root, template_key: str) -> list[str]:
     for node in root.iter(f"{{{_SVG_NS}}}image"):
         field_id = node.get("id")
         if not field_id:
+            continue
+        if node.get("preserveAspectRatio") == "none":
             continue
         asset_class = catalogue.asset_class_for(field_id)
         if asset_class is None:
@@ -721,7 +729,7 @@ PLAIN_FOLDER_UNSET = "no folder has been set for this"
 
 
 def plain_directory_reason(report: DirectoryReport) -> str:
-    """The same courtesy for the eight asset folders (FR-029)."""
+    """The same courtesy for the seven asset folders (FR-029)."""
     reason = (report.reason or "").lower()
     if "not a directory" in reason:
         return PLAIN_NOT_A_FOLDER
@@ -860,7 +868,7 @@ def _template_directory_problem(config: ImageConfig, root: Path | None) -> str |
 def evaluate_directories(
     config: ImageConfig, *, root: Path | None = None
 ) -> dict[str, DirectoryReport]:
-    """Validity of the eight asset directories, on the same terms (FR-029)."""
+    """Validity of the seven asset directories, on the same terms (FR-029)."""
     reports: dict[str, DirectoryReport] = {}
     for column in ASSET_DIRECTORIES:
         value = getattr(config, column)

@@ -108,12 +108,17 @@ Both standings files stand **three** `<image>` slots beneath each race cell, bef
     row_<x>_round_<z>_<sprint|feature>_race_fastest_lap     top-left corner
     row_<x>_round_<z>_<sprint|feature>_qualifying_mark      top-right corner
 
-and the constructors file the same under `..._driver_<w>_...`. They draw the
-**standings-highlights** class — nine files — so what a mark looks like is artwork in that
-folder and not a colour written into the template.
+and the constructors file the same under `..._driver_<w>_...`. They draw the **marker**
+class — the same folder as the three position-change markers and the two attendance marks — so
+what a mark looks like is artwork in that folder and not a colour written into the template.
+
+The **datum** names the session: a race cell asks for `race_p1`, a qualifying one for
+`qualifying_p1`, because one folder holds both sets. The **kind** does not — the stylesheet
+selectors below stay `.highlight_p1_text`, so a template written before the files were renamed
+still colours its numerals correctly.
 
 They share a box deliberately: **where** a mark sits is the artwork's business. The plate fills
-its box, the packaged `fastest_lap.svg` draws a triangle into the top-left of its own, and
+its box, the packaged `race_fastest_lap.svg` draws a triangle into the top-left of its own, and
 `qualifying_p1.svg` and friends into the top-right. Redraw a file and its mark moves, with no
 template to edit. Giving each a corner-sized slot instead would freeze that arrangement into
 several thousand elements a league could not restyle.
@@ -128,9 +133,12 @@ All three are authored with **no href**, which is why a cell earning no highligh
 and is never removed: an `<image>` carrying no reference draws nothing, and removing the slot
 instead would put thousands of identifiers into every fill spec.
 
-All three carry `preserveAspectRatio="none"`. This class alone has no fixed aspect — the drivers
-chip is 52 × 22 and the constructors chip 52 × 18, shapes fixed by two different row bands — so
-the file stretches to the slot. Draw artwork that survives that.
+All three carry `preserveAspectRatio="none"`, which is what exempts them from the aspect their
+class is otherwise held to — the drivers chip is 52 × 22 and the constructors chip 52 × 18,
+shapes fixed by two different row bands, and the position-change markers beside them in the same
+folder are square. The exemption is the **slot's** and not the class's: declare it and the file
+stretches to the slot, omit it and the slot must match its class. Draw artwork that survives
+being stretched.
 
 What remains in each file's `<style>` is the **ink**: `.highlight_p1_text` and friends colour
 the result itself, and `.highlight_p1_sup_text` the raised qualifying figure, which sits on the
@@ -142,6 +150,39 @@ numerals sit inboard over the plate, so the plate is the only thing they are rea
 was learnt twice: the fastest lap kept taking the ink after it became a triangle and painted
 white numerals onto a gold plate, and the qualifying mark did the same onto the bare row band.
 A template may still name `.highlight_fastest_lap_text`; the render ignores it.
+
+## The mark on an attendance total
+
+The attendance sheet stands one `<image>` slot beneath each driver's total, before the `<text>`
+so it paints under it:
+
+    row_<x>_points_background
+
+It draws the **marker** class as the standings chips do, out of the same folder, and follows the
+same three rules: authored with no href, so a driver earning no mark draws nothing and the slot
+is never removed; `preserveAspectRatio="none"`, so the file stretches to the 36 × 24 box rather
+than being letterboxed into it; and the artwork decides what the mark looks like, the template
+deciding only where it sits.
+
+Two files answer it — `attendance_limit_near.svg` for a driver within two points of the point
+limit and `attendance_limit_reached.svg` for one who has reached it. The packaged pair is amber
+and red at the **same weight**, told apart by hue rather than by strength: a warning drawn as a
+fainter red reads as a weaker version of the sanction, which is not what it means. No stylesheet
+rule goes with them: the total is white and stays white, both marks being washes that fade to
+nothing rather than plates.
+
+## The point limit block
+
+The sheet declares **one** limit block, not one per functionality:
+
+    limit_group      the block, removed whole when no limit is set
+    limit_label      "RESERVE AT" or "SACKED AT"
+    limit_value      the number
+
+The label is a field rather than fixed chrome because a league can only have one limit — the
+auto-reserve and auto-sack commands refuse each other — so a file declaring a block for each
+would always draw one and delete the other, leaving a hole beside the survivor. The unit sits in
+its own `<tspan>` inside the value's element, as the heading composes SEASON and its number.
 
 The class is **closed**, so deleting a file from a league's folder does not suppress that mark —
 the packaged file is drawn in its place, which is the rule that makes a fresh clone work. A

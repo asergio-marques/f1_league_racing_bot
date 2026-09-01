@@ -789,7 +789,6 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
                 ("flag", "flag_directory"),
                 ("track", "track_image_directory"),
                 ("marker", "marker_directory"),
-                ("standings_highlight", "standings_highlight_directory"),
             ),
             image_type=drawing.template_key,
         )
@@ -1267,7 +1266,7 @@ async def _highlighted_svg(tmp_path):
     for drawing in drawings:
         directories, _faults = resolve_configured_directories(
             config,
-            (("standings_highlight", "standings_highlight_directory"),),
+            (("marker", "marker_directory"),),
             image_type=drawing.template_key,
         )
         doc = load_svg(os.path.join(_TEMPLATE_DIR, f"{drawing.template_key}.svg"))
@@ -1283,12 +1282,12 @@ async def test_the_winner_is_given_the_first_place_chip(tmp_path):
     assert _chip_faults(result) == [], _chip_faults(result)
 
     assert spec.image_data["row_1_round_1_feature_race_background"] == (
-        "standings_highlight",
-        "p1",
+        "marker",
+        "race_p1",
     )
     assert spec.image_data["row_1_round_1_feature_race_fastest_lap"] == (
-        "standings_highlight",
-        "fastest_lap",
+        "marker",
+        "race_fastest_lap",
     )
 
 
@@ -1299,7 +1298,7 @@ async def test_the_chip_slot_ends_up_pointing_at_the_packaged_file(tmp_path):
     root, _spec, _result = (await _highlighted_svg(tmp_path))["standings_drivers_template"]
     slot = FieldIndex(root).resolve("row_1_round_1_feature_race_background")
     href = slot.get("href") or slot.get("{http://www.w3.org/1999/xlink}href")
-    assert href and href.endswith("standings-highlights/p1.svg"), href
+    assert href and href.endswith("markers/race_p1.svg"), href
 
 
 async def test_a_cell_that_earns_nothing_is_left_without_an_href(tmp_path):
@@ -1317,8 +1316,8 @@ async def test_the_constructors_cars_carry_the_chips_too(tmp_path):
     root, spec, result = (await _highlighted_svg(tmp_path))["standings_constructors_template"]
     assert _chip_faults(result) == [], _chip_faults(result)
     assert spec.image_data["row_1_round_1_driver_1_feature_race_background"] == (
-        "standings_highlight",
-        "p1",
+        "marker",
+        "race_p1",
     )
 
 

@@ -50,6 +50,26 @@ def _shipped_assets():
 SHIPPED = list(_shipped_assets())
 
 
+def _stretching_data() -> frozenset[str]:
+    """The filenames drawn only into slots that stretch, and so held to no class aspect.
+
+    Composed from the two services' own tables rather than restated, so a mark added there
+    without a shape of its own cannot quietly appear here as one held to 1:1.
+    """
+    from models.image_constants import MARK_FALLBACK_ASSET_NAME
+    from services.image_attendance_service import MARK_DATA
+    from services.image_standings_service import HIGHLIGHT_DATA
+
+    return frozenset(
+        [f"{datum}.svg" for datum in (*HIGHLIGHT_DATA, *MARK_DATA)]
+        # Their fallback stands in for them and is drawn into the same stretching slots.
+        + [MARK_FALLBACK_ASSET_NAME]
+    )
+
+
+STRETCHING_FILES = _stretching_data()
+
+
 def _declared_size(path: Path) -> tuple[float, float]:
     root = ET.parse(path).getroot()
     width, height = root.get("width"), root.get("height")
@@ -68,17 +88,19 @@ def test_there_is_something_to_check():
     ("asset_class", "path"), SHIPPED, ids=[f"{c}/{p.name}" for c, p in SHIPPED]
 )
 def test_every_shipped_asset_declares_its_class_aspect(asset_class, path):
-    """A stretching class is exempt, and its artwork is checked for being drawable instead.
+    """A stretched mark is exempt, and its artwork is checked for being drawable instead.
 
     Nothing can be asserted about the ratio of a file whose slot distorts it to fit — the
-    template decides the shape, and two templates may decide differently (XIV.6, v7.4.0).
+    template decides the shape, and two templates may decide differently (XIV.6, v7.5.0).
     What still binds is that the file declares a size at all, since a viewBox-less asset has
     no intrinsic geometry to stretch.
-    """
-    from models.image_constants import STRETCHING_ASSET_CLASSES
 
+    The exemption is by **datum** and not by class, because `marker` holds both: the square
+    position-change arrows, still held to 1:1, and the standings and attendance marks, whose
+    slots say for themselves that they stretch.
+    """
     width, height = _declared_size(path)
-    if asset_class in STRETCHING_ASSET_CLASSES:
+    if path.name in STRETCHING_FILES:
         assert width > 0 and height > 0
         return
 

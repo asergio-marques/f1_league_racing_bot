@@ -25,10 +25,9 @@ root is accepted — but most leagues never need to run one.
 | Team badges | `league/teams/` | `defaults/teams/` | `/images config team-image-directory` | 120 × 120 |
 | Driver portraits | `league/drivers/` | `defaults/drivers/` | `/images config driver-image-directory` | 120 × 120 |
 | Country flags | `league/flags/` | `defaults/flags/` | `/images config flag-directory` | 120 × 80 |
-| Movement markers | `league/markers/` | `defaults/markers/` | `/images config marker-directory` | 64 × 64 |
+| Markers and marks | `league/markers/` | `defaults/markers/` | `/images config marker-directory` | 64 × 64 for the movement markers; the marks **stretch** — see below |
 | Weather icons | `league/weather/` | `defaults/weather/` | `/images config weather-icon-directory` | 64 × 64 |
 | Tyre compounds | `league/tyres/` | `defaults/tyres/` | `/images config tyre-directory` | 64 × 64 |
-| Standings marks | `league/standings-highlights/` | `defaults/standings-highlights/` | `/images config standings-highlight-directory` | **stretches** — see below |
 
 **Templates are the exception in the table.** They have nothing to fall back to — the folder
 you configure is the only place a template is searched — so their folder is still
@@ -68,25 +67,30 @@ classes need not match each other, and flags and maps deliberately do not.
 **Shipped:**
 
 - the fifteen default templates in `defaults/templates/`, one per image type;
-- one `fallback.svg` in each asset directory;
+- one `fallback.svg` in each asset directory, except `markers/`, which ships two — see below;
 - `defaults/tracks/mystery.svg` and `defaults/flags/mystery.svg`, drawn for a round whose
   track — and with it its country — is concealed until it is run;
 - `defaults/flags/other.svg`, drawn for a driver who stated no nationality in particular;
-- `defaults/markers/gained.svg`, `lost.svg` and `unchanged.svg`, the three directions
-  a standing position can move;
+- `defaults/markers/position_change_gained.svg`, `position_change_lost.svg` and
+  `position_change_none.svg`, the three directions a standing position can move;
 - the eight `defaults/weather/` icons — `sunny.svg`, `mixed.svg` and `rain.svg` for the type of
   weather drawn for a session, and `clear.svg`, `light_cloud.svg`, `overcast.svg`,
   `wet.svg` and `very_wet.svg` for a concrete weather within one;
-- the nine `defaults/standings-highlights/` marks — `p1.svg`, `p2.svg`, `p3.svg` and
-  `points.svg` for the plate drawn beneath a race result, `fastest_lap.svg` for the mark drawn
-  in its top-left corner, and `qualifying_p1.svg` through `qualifying_points.svg` for the mark
-  drawn in its top-right, which stands for where the driver qualified.
+- the nine standings marks, in `defaults/markers/` alongside the three above —
+  `race_p1.svg`, `race_p2.svg`, `race_p3.svg` and `race_points.svg` for the plate drawn
+  beneath a race result, `race_fastest_lap.svg` for the mark drawn in its top-left corner, and
+  `qualifying_p1.svg` through `qualifying_points.svg` for the mark drawn in its top-right,
+  which stands for where the driver qualified;
+- the two attendance marks, also in `defaults/markers/` — `attendance_limit_near.svg`, an amber
+  wash drawn beneath the total of a driver within two points of the limit you set, and
+  `attendance_limit_reached.svg`, a red one drawn beneath the total of one who has reached it.
+  The two are the same weight and are told apart by hue.
 
 **Not shipped:** the assets for any particular circuit, team, driver, country or tyre.
 Those are a league's own, and the module exists to let each league bring its own design
 language rather than inherit one.
 
-**Why the markers, the weather icons and the standings marks are different.** Those three sets
+**Why the markers and the weather icons are different.** Those two sets
 are not a league's values at all — they are the bot's own vocabulary, fixed and closed, and no league chose
 them. A league cannot have an incomplete set of something it did not define, so the module
 ships every file rather than leaving each directory to fall back on every render. The same
@@ -96,8 +100,8 @@ them freely; keep the filenames, the aspect and the no-text rule below.
 
 It follows that **deleting a file of one of these sets does not remove what it draws** — the
 packaged file is drawn in its place. To suppress one, supply a fully transparent SVG under its
-name. That is chiefly of use for the standings marks, where a league may want the podium plates
-and not the points tint.
+name. That is chiefly of use for the standings and attendance marks, where a league may want the
+podium plates and not the points tint, or the sacking mark and not the warning.
 
 So a fresh clone draws every graphic before a league has made anything at all. The markers,
 the weather icons, the standings marks and the two reserved flags are the bot's own artwork,
@@ -148,6 +152,34 @@ ours.
 The packaged directory is consulted for a **fallback and nothing else**. A file sitting in
 `defaults/teams/` under the same name as one of your teams is never drawn for you — only
 what you supplied, or a placeholder.
+
+> **Every file in `markers/` says which of the three it belongs to** — `position_change_*`,
+> `race_*`, `qualifying_*`, `attendance_*`. One folder holds three vocabularies, and a bare
+> `p1.svg` beside `gained.svg` said which only by omission. The prefix is part of the name the
+> bot looks for, so keep it.
+
+### `markers/` has two, because its files are not one shape
+
+One fallback per directory answers a class whose files are all drawn at one size. `markers/`
+is not: it holds the 64 × 64 movement markers *and* the standings and attendance marks, which
+stretch to whatever cell holds them. A single stand-in cannot be right for both — it would be
+drawn as a 64 × 64 arrow squashed into a 52 × 22 result cell, or as a wide plate shrunk into a
+square marker slot. So the folder ships two, and the bot picks by which kind of file is
+missing:
+
+| Missing file | Stand-in drawn |
+|---|---|
+| `position_change_gained.svg`, `position_change_lost.svg`, `position_change_none.svg` | `position_change_fallback.svg` |
+| Any standings or attendance mark | `standings_attendance_fallback.svg` |
+
+Both follow the two-tier rule above — yours first, the bot's second. A plain `fallback.svg`
+you put in `league/markers/` is still honoured, but only after the matching one of the two, so
+naming your stand-in for the shape it stands in for is what gets it drawn where you meant.
+
+**This is worth doing rather than optional.** Your own folder's fallback is consulted *before*
+the bot's copy of the missing file itself. Drop one unnamed `fallback.svg` into
+`league/markers/` and it answers for a missing arrow and a missing podium plate alike — in
+preference to the bot's own correct artwork for either.
 
 **What the bot named, the bot supplies** — the one exception, for the reason given above.
 Where a value is the bot's own vocabulary rather than one you chose, and your folder holds
@@ -206,12 +238,17 @@ lettering as paths.
 Authored at exactly the aspect of the slot, padded with transparent margins where the subject
 does not fill it.
 
-**One class stretches instead**, and the table above marks it: the standings marks. A result
-cell is a different shape on the drivers grid than on the constructors one, and no single ratio
-serves both, so those slots draw the file to the room they have rather than fitting it inside.
+**The marks stretch instead**, and the table above says so: the nine standings marks and the
+two attendance ones. A result cell is a different shape on the drivers grid than on the
+constructors one, the attendance total's box is a third shape again, and no single ratio serves
+all three — so those slots draw the file to the room they have rather than fitting it inside.
 Author at whatever size suits the artwork — the shipped set is 128 × 56 — and draw something
 that survives being squashed a little. A rectangle or a corner shape does; a circle becomes an
-ellipse. This is the only class exempt from the rule above.
+ellipse.
+
+It is the **slot** that stretches and not the folder: the movement markers sitting beside them
+in `markers/` are still held to 64 × 64, because their slots are square and say nothing about
+stretching. Everything else in this file is authored at its class's aspect as above.
 
 The full authoring contract — template field naming, removable groups, text bounds — is in
 the main [README](../README.md) under **Image Module → Templates: what the bot expects**.

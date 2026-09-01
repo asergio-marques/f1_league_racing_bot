@@ -84,6 +84,9 @@ async def render_sheet(
             (
                 ("team", "team_image_directory"),
                 ("flag", "flag_directory"),
+                # The marks drawn beneath a driver's total, sharing the class and the folder
+                # with the standings result chips and the position-change arrows.
+                ("marker", "marker_directory"),
             ),
             image_type=ATTENDANCE_TEMPLATE_KEY,
         )

@@ -19,6 +19,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from pathlib import Path  # noqa: E402
+
 from services import attendance_service  # noqa: E402
 from services.image_attendance_post import (  # noqa: E402
     SheetRender,
@@ -71,6 +73,20 @@ async def test_a_reader_that_raises_never_breaks_the_posting():
 
 
 # ── The render outcome ────────────────────────────────────────────────────
+
+
+def test_the_sheet_resolves_the_folder_its_marks_are_drawn_from():
+    """The mark beneath a total is artwork, so its class must reach the resolver.
+
+    Asserted against the source because ``render_sheet`` builds the pairs inline: a class the
+    sheet projects but never resolves draws nothing at all, silently, and no fixture would
+    say so.
+    """
+    from services import image_attendance_post
+    from services.image_attendance_service import MARK_ASSET_CLASS
+
+    source = inspect.getsource(image_attendance_post.render_sheet)
+    assert f'("{MARK_ASSET_CLASS}", "marker_directory")' in source
 
 
 def test_a_render_with_no_png_does_not_draw():
@@ -178,3 +194,132 @@ def test_the_drawing_helper_contains_no_raise_at_all():
         for instruction in dis.get_instructions(attendance_service._sheet_attachment)
     }
     assert "RAISE_VARARGS" not in opcodes
+
+
+# ── The marks, as pixels ──────────────────────────────────────────────────
+
+
+def _rendered_sheet(tmp_path):
+    """The sample sheet, filled out of the packaged assets and rasterised."""
+    from lxml import etree
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from tests.support.image_sample_data import build_attendance_drawing
+
+    from services.image_attendance_service import build_fill_spec
+    from services.image_render_service import rasterise
+    from utils.paths import PROJECT_ROOT
+    from utils.svg_document import canvas_of
+    from utils.svg_fill import fill as fill_spec_onto
+
+    class _Team:
+        def __init__(self, name, reserve=False):
+            self.name, self.is_reserve = name, reserve
+
+    packaged = Path(PROJECT_ROOT) / "resources" / "defaults"
+    root = etree.parse(
+        str(packaged / "templates" / "attendance_template.svg")
+    ).getroot()
+    drawing = build_attendance_drawing(
+        root, [_Team("Alpha"), _Team("Bravo"), _Team("Charlie"), _Team("Reserve", True)]
+    )
+    spec = build_fill_spec(drawing, root)
+    spec.asset_directories = {
+        "marker": packaged / "markers",
+        "flag": packaged / "flags",
+        "team": packaged / "teams",
+    }
+    result = fill_spec_onto(spec)
+    png = rasterise(
+        result.svg, tmp_path / "attendance.png", result.canvas or canvas_of(root)
+    )
+    return root, drawing, png
+
+
+def _lightness(rgb):
+    """CIE L* of an sRGB triple.
+
+    Used here to prove each mark is *present* — a wash over a near-black band raises the
+    lightness of the box it fills, and nothing else on the row does. It is deliberately **not**
+    what tells the two marks apart: they are drawn at one weight, so their lightness is
+    near-identical by design and the hue is what carries the difference.
+    """
+    def _linear(channel):
+        channel /= 255.0
+        return (
+            channel / 12.92
+            if channel <= 0.04045
+            else ((channel + 0.055) / 1.055) ** 2.4
+        )
+
+    red, green, blue = (_linear(float(c)) for c in rgb)
+    y = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    return 116 * (y ** (1 / 3)) - 16 if y > 0.008856 else 903.3 * y
+
+
+@pytest.mark.rasteriser
+def test_the_two_marks_reach_the_raster_and_are_told_apart_by_hue(tmp_path):
+    """Rule XIV.14 — the marks are verified as pixels, never as markup.
+
+    Only the raster proves the mark was drawn *where and how* the artwork says: an href the
+    rasteriser cannot follow, a slot authored after its text rather than before it, or a
+    `preserveAspectRatio` that letterboxes instead of stretching all leave correct-looking
+    markup and a wrong picture.
+
+    Every coordinate is read out of the template rather than assumed, and the samples are
+    taken in the corners, well clear of the glyph — whose width depends on which font the
+    host resolved.
+    """
+    from utils.svg_document import FieldIndex
+
+    from PIL import Image  # noqa: PLC0415
+
+    root, drawing, png = _rendered_sheet(tmp_path)
+    image = Image.open(png).convert("RGB")
+    index = FieldIndex(root)
+
+    def corners(ordinal):
+        slot = index.resolve(f"row_{ordinal}_points_background")
+        left, top = float(slot.get("x")), float(slot.get("y"))
+        width, height = float(slot.get("width")), float(slot.get("height"))
+        return (
+            image.getpixel((int(left + width) - 2, int(top) + 2)),      # opaque corner
+            image.getpixel((int(left) + 2, int(top + height) - 2)),     # clear corner
+        )
+
+    # The sample is pitched at exactly this: the first row on the limit, the second one point
+    # short of it, the third earning nothing.
+    marks = [entry.mark for entry in drawing.entries[:3]]
+    assert marks == ["attendance_limit_reached", "attendance_limit_near", None]
+
+    reached_top, reached_bottom = corners(1)
+    near_top, near_bottom = corners(2)
+    bare_top, bare_bottom = corners(3)
+
+    band = _lightness(bare_top)
+    assert _lightness(bare_bottom) == pytest.approx(band, abs=1.0), (
+        "an unmarked row is not the bare band, so something was drawn into it"
+    )
+
+    # Both marks are plainly present against the band.
+    for opaque in (near_top, reached_top):
+        assert _lightness(opaque) - band > 15
+
+    # **And they are told apart by hue, not by weight.** The two stand at one lightness on
+    # purpose: a warning drawn as a fainter sanction reads as a weaker sanction, which is not
+    # what it means. Pinned because it is the kind of intent a later eye tidies away — dropping
+    # one of them a step would look like an improvement and would silently undo it.
+    assert _lightness(reached_top) == pytest.approx(_lightness(near_top), abs=4.0)
+
+    # Amber for the warning, red for the sanction. Both are warm, so red leads in each; what
+    # separates them is the green channel, which the amber carries and the red does not.
+    for opaque in (near_top, reached_top):
+        assert opaque[0] > opaque[2], "a mark that is not warm at all"
+    assert near_top[1] > reached_top[1] * 2, (
+        f"the near mark {near_top} is not plainly amber beside the reached one {reached_top}"
+    )
+
+    # The gradient runs to full transparency in the opposite corner: the bottom-left of a
+    # marked cell is the row band again, whichever mark it carries.
+    for clear in (reached_bottom, near_bottom):
+        assert _lightness(clear) - band < 2

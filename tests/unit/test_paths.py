@@ -135,10 +135,25 @@ def test_the_packaged_directory_is_never_the_default_one():
 
 
 def test_every_packaged_asset_directory_exists_and_carries_a_fallback():
+    """A fallback for every datum the class can be handed, not merely one file named so.
+
+    `marker` ships two and no generic `fallback.svg` at all, its data being of two shapes.
+    Asking `fallback_names_for` rather than testing the literal filename is what makes this
+    hold for a class that answers its data with more than one.
+    """
+    from models.image_constants import POSITION_CHANGE_DATA, fallback_names_for
+
+    probes = {
+        "marker": sorted(POSITION_CHANGE_DATA) + ["race_p1", "attendance_limit_near"]
+    }
     for asset_class in ASSET_CLASS_TO_COLUMN:
         directory = PROJECT_ROOT / packaged_directory_for(asset_class)
         assert directory.is_dir(), asset_class
-        assert (directory / "fallback.svg").is_file(), asset_class
+        for slug in probes.get(asset_class, [""]):
+            names = fallback_names_for(asset_class, slug)
+            assert any((directory / name).is_file() for name in names), (
+                f"{asset_class}/{slug or '*'}: none of {names} ships"
+            )
 
 
 def test_the_reserved_flag_assets_ship():
@@ -169,7 +184,11 @@ def test_the_closed_set_files_ship_beside_their_fallback():
     """FR-039: nothing shipped changes in kind, only where it sits."""
     root = PROJECT_ROOT / "resources" / "defaults"
 
-    for name in ("gained.svg", "lost.svg", "unchanged.svg"):
+    for name in (
+        "position_change_gained.svg",
+        "position_change_lost.svg",
+        "position_change_none.svg",
+    ):
         assert (root / "markers" / name).is_file(), name
 
     for name in (

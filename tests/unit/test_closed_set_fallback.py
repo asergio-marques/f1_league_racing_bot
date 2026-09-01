@@ -153,7 +153,7 @@ def real_packaged_project_root(monkeypatch):
 @pytest.mark.parametrize(
     ("asset_class", "datum", "expected_file"),
     [
-        ("marker", "lost", "lost.svg"),
+        ("marker", "position_change_lost", "position_change_lost.svg"),
         ("weather", "very_wet", "very_wet.svg"),
     ],
 )
@@ -183,8 +183,8 @@ def test_an_incomplete_custom_directory_still_draws_the_real_closed_set_icon(
 @pytest.mark.parametrize(
     ("asset_class", "slug"),
     [
-        ("marker", "gained"),
-        ("marker", "unchanged"),
+        ("marker", "position_change_gained"),
+        ("marker", "position_change_none"),
         ("weather", "very_wet"),
         ("weather", "clear"),
     ],

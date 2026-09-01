@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="56" viewBox="0 0 128 56">
+  <defs>
+    <linearGradient id="limitNearFade" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FF8C00" stop-opacity=".45"/>
+      <stop offset=".6" stop-color="#FF8C00" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#FF8C00" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="56" rx="4" fill="url(#limitNearFade)"/>
+</svg>

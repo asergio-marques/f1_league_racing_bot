@@ -182,6 +182,10 @@ Out of the box, the check-in call is an embed and the attendance sheet is a list
 
 `attendance` **replaces** the sheet's list with a drawn table — flags, team badges, and a column per round showing what each round cost. `rsvp` **adds** a graphic to the check-in call naming the round, its sessions, its date and the moment check-in closes; everything else about the call is unchanged, including the roster and the three buttons.
 
+> **The drawn sheet warns before the limit does.** If you set a threshold in step 6, the picture puts a wash behind the total of anyone near it: **amber** for a driver **within two points** of the limit, **red** once they have **reached** it. The two are the same weight and are told apart by colour, so the warning stands out rather than looking like a weaker version of the sanction. It is a warning a manager can read at a glance, a round or two before the bot acts. A driver on zero is never marked, however low you set the limit, and if you set no threshold nothing is marked at all. The plain text list carries no such warning — this is one of the things the picture adds.
+>
+> The sheet also shows the limit itself, on a single plate naming whichever of the two you set: `RESERVE AT 5`, or `SACKED AT 8`. One plate, because you can only have one threshold.
+
 Follow [Setting up the image module](configuring-the-image-module.md) for the order — the drawing files, the flags and the badges.
 
 > **A picture never delays or changes a sanction.** Auto-reserve and auto-sack are enforced and announced exactly as they would be with the images module switched off, and a sheet that cannot be drawn falls back to the list with the reason in the log channel.
@@ -218,7 +222,7 @@ Pressing one updates the roster in the message itself, so the division can see a
 
 **The close**, at the deadline. The buttons disappear from the call, and the bot posts what the reserves did — each one placed into a named team, or told they are on standby because there was no seat for them. If nobody in the Reserve team accepted, or every seat was already filled, it posts a line saying no reserves were placed and all seats are filled. That single message covers both cases, so it appears even when seats were in fact empty and nobody volunteered.
 
-**The sheet**, after a round's post-race penalties are approved. It goes to the attendance channel, sorted worst first, one line per driver with their total. If you have set a threshold, the footer says what happens at it. Each new sheet replaces the last, so the channel always holds exactly one.
+**The sheet**, after a round's post-race penalties are approved. It goes to the attendance channel, sorted worst first, one line per driver with their total. If you have set a threshold, the footer says what happens at it — and with the images module on, the drawn sheet marks the drivers who are closing on it. Each new sheet replaces the last, so the channel always holds exactly one.
 
 ---
 

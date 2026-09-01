@@ -1,6 +1,58 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-01 — v7.4.0 → v7.5.0: MINOR — the stretching exemption moves from the class to the slot]
+  Version change    : 7.4.0 → 7.5.0
+  Bump rationale    : MINOR. One change to Principle XIV, Rule 6, and it **narrows the scope of an
+                      exemption while widening what may claim it**. Neither removes a principle nor
+                      redefines one incompatibly.
+
+                      Nothing conforming to v7.4.0 becomes non-conforming. v7.4.0 already required
+                      every slot of an exempt class to be authored `preserveAspectRatio="none"`, so
+                      every slot that was exempt under it declares exactly what v7.5.0 asks of it
+                      and stays exempt. What changes is the bookkeeping around them: the class-level
+                      enumeration is withdrawn and every class declares an aspect again, which makes
+                      the aspect table complete rather than deliberately gapped.
+
+                      It is MINOR rather than PATCH because a class MAY now do something it could
+                      not before — carry slots of its own aspect and stretching slots at once —
+                      which is materially expanded guidance and not a clarification.
+
+  Motivation        : `marker` came to draw three vocabularies at once: the square position-change
+                      markers, the standings result marks, and the attendance limit marks. Their
+                      cells are three different shapes. Under v7.4.0 the only way to admit them to
+                      one class was to declare the whole class exempt, which would have taken the
+                      markers' 1:1 check away as collateral. Locating the exemption on the slot —
+                      where the author who chose the box already declares it — keeps every check
+                      that still has something to check.
+
+  Modified sections :
+    - Principle XIV, Rule 6, the stretching paragraphs: rewritten from a class-level exemption to a
+      slot-level one. The requirement to enumerate exempt classes and hold two tables to each other
+      is struck, replaced by the requirement that every class declare an aspect and that a class
+      missing one be refused. A paragraph is added admitting one class serving fixed-shape and
+      stretching slots together.
+    - Principle XIV, Rule 6, Rationale: one sentence added, stating why a stretching slot escapes
+      the one-file-per-datum argument rather than weakening it.
+  Added sections    : none
+  Removed sections  : none
+  Deferred items    : none. No placeholder tokens remain in the document.
+  Templates review  : `.specify/templates/` states neither rule and needed no change. The
+                      module-facing restatements were amended in the same change:
+                      `src/models/image_constants.py` (STRETCHING_ASSET_CLASSES deleted, every class
+                      given an aspect), `src/services/image_validity_service.py` (`aspect_faults_of`
+                      passes over a stretching slot), `resources/README.md`,
+                      `resources/defaults/templates/README.md`, `README.md`,
+                      `docs/how-to/configuring-the-image-module.md` and
+                      `docs/wip-specs/image_module_specification.md`. The two tests that held the
+                      old enumerations — `test_every_asset_class_declares_an_aspect_or_is_declared_exempt`
+                      and the shipped-asset aspect check — were rewritten to the slot rule and the
+                      per-datum exemption respectively.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-08-31 — v7.3.0 → v7.4.0: MINOR — a class whose slots stretch, and the withdrawal of the
  gradient prohibition]
   Version change    : 7.3.0 → 7.4.0
@@ -4612,25 +4664,34 @@ filter are untouched, as is the requirement that an asset carry no text.
 of every image type.** A template declaring a slot of a class at any other aspect is invalid, and
 Layer 2 MUST refuse it, naming the offending field.
 
-**A class MAY instead declare that its slots stretch**, in which case the rule above does not
-bind it (v7.4.0). Every slot of such a class MUST be authored `preserveAspectRatio="none"`, so
-the asset is drawn to the box the template gives it rather than fitted inside one. The
-letterboxing the one-aspect rule exists to prevent therefore cannot arise, which is the whole of
-why the exemption is sound; the generator still MUST NOT pad. What follows is that the artwork is
-the league's to draw for a shape that varies, and the module MUST say so wherever it documents
-that class.
+**A slot MAY instead declare that it stretches**, in which case the rule above does not bind
+that slot (v7.5.0). It declares this by being authored `preserveAspectRatio="none"`, so the asset
+is drawn to the box the template gives it rather than fitted inside one. The letterboxing the
+one-aspect rule exists to prevent therefore cannot arise, which is the whole of why the exemption
+is sound; the generator still MUST NOT pad. What follows is that the artwork is the league's to
+draw for a shape that varies, and the module MUST say so wherever it documents the data drawn
+into such slots.
 
-A class is exempt **only by being declared so**, never by an aspect having been forgotten. The
-absence of an aspect is the mechanism by which the check is skipped, so an undeclared omission
-would escape it in silence; the exempt classes MUST therefore be enumerated separately, and the
-two enumerations MUST be held to each other by a test.
+**The exemption belongs to the slot and never to the class** (v7.5.0). Every class MUST declare
+an aspect, and a class present in the asset directory table but absent from the aspect table is
+an omission a test MUST refuse. The declaration `preserveAspectRatio="none"` is the sole
+mechanism by which the check is skipped, and it is made where the fact lives — in the template,
+by the author who chose the box — so it cannot be forgotten in the way an absent aspect could,
+and it cannot silently disarm the check for slots of the same class that do not stretch.
+
+A single class MAY therefore serve slots of differing shape provided every such slot declares
+that it stretches, and MAY do so alongside slots of its own aspect that do not. This is what
+allows one closed-set class to carry both artwork with a fixed shape and artwork drawn into a box
+the template decides.
 
 **Rationale**: a league authors **one file per datum of a class**, and the rule above forbids the
 generator to pad. A class serving slots of two aspects would therefore letterbox that one file
 wherever it did not match, and no artwork a league could supply would answer it — the same
 `united_kingdom.svg` cannot be correct in a 3:2 slot and a 1:1 one at once. Per-slot authoring
 (the paragraph above) and per-class files are only reconcilable if the class is uniform, so this
-is that rule carried to its conclusion rather than a second one.
+is that rule carried to its conclusion rather than a second one. A stretching slot escapes the
+argument entirely rather than weakening it: the file it draws is not fitted to a shape at all,
+so there is no shape for it to be wrong about.
 
 **Two classes need not match each other, and the flag and track classes deliberately do not.**
 A country flag is drawn at 3:2 and a circuit map at 1:1, wherever each appears. A template drawing
@@ -6409,4 +6470,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.4.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-08-31
+**Version**: 7.5.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-01

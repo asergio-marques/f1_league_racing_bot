@@ -130,15 +130,15 @@ Anything you have not supplied is drawn from what the bot ships, so every pictur
 | `resources/league/drivers` | Driver photos | 120 × 120 |
 | `resources/league/flags` | Country flags — drivers **and** rounds | 120 × 80 |
 | `resources/league/markers` | Standings movement markers — up, down and unchanged | 64 × 64 |
+| `resources/league/markers` — same folder | Marks on a standings result cell and on an attendance total | any — these stretch |
 | `resources/league/weather` | Weather symbols | 64 × 64 |
 | `resources/league/tyres` | Tyre compounds | 64 × 64 |
-| `resources/league/standings-highlights` | Marks on a standings result cell | any — these stretch |
 
 **`resources/league/` is yours and the bot never touches it.** Updating the bot cannot overwrite what is in it. That also means nothing is backing it up — keep your original artwork somewhere of your own.
 
 **Never put your files in `resources/defaults/`.** That folder is the bot's, and updating the bot replaces it wholesale, taking anything you put there with it.
 
-**If you want your artwork somewhere else entirely**, there is a command per folder — `/images config track-image-directory`, `/images config team-image-directory`, and so on for all eight. Most leagues never need one. Two things if you do use them: the folder has to sit inside the bot's own project folder, and anything outside it is refused with your existing setting left alone; and a folder that does not exist yet is accepted anyway, with a warning, because files put there later are picked up on their own.
+**If you want your artwork somewhere else entirely**, there is a command per folder — `/images config track-image-directory`, `/images config team-image-directory`, and so on for all seven. Most leagues never need one. Two things if you do use them: the folder has to sit inside the bot's own project folder, and anything outside it is refused with your existing setting left alone; and a folder that does not exist yet is accepted anyway, with a warning, because files put there later are picked up on their own.
 
 ### Which pictures use which folder
 
@@ -167,7 +167,7 @@ So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`
 | Driver photos | The driver's **Discord user ID number**, so their photo does not vanish when they change their nickname |
 | Arrows and weather | Fixed names the bot already uses — these come complete, just replace the pictures |
 | Tyre compounds | The compound name — `soft.svg` |
-| Standings marks | Fixed names the bot already uses — `p1.svg`, `p2.svg`, `p3.svg`, `points.svg`, `fastest_lap.svg`, and `qualifying_` versions of the first four. These come complete, just replace the pictures |
+| Standings marks | Fixed names the bot already uses — `race_p1.svg`, `race_p2.svg`, `race_p3.svg`, `race_points.svg`, `race_fastest_lap.svg`, and `qualifying_` versions of the first four. These come complete, just replace the pictures |
 
 > **Guinea-Bissau, the Democratic Republic of the Congo and Dominica each need their own flag file now.** `Guinean`, `Congolese` and `Dominican` used to cover two countries apiece in English and could only ever resolve one — Guinea, Congo and the Dominican Republic. A driver from the other country of each pair has a nationality of their own to select — `Bissau-Guinean`, `Congolese (Kinshasa)` and `Dominican (Dominica)` — so if your league has such a driver, add `guinea_bissau.svg`, `democratic_republic_of_the_congo.svg` or `dominica.svg` alongside the flags you already supply.
 
@@ -211,6 +211,10 @@ grey placeholder, because that flag is yours to supply.
 **If neither folder has one, the bot gives up and posts nothing as a picture.** It will not post a card with a hole in it. Since a `fallback.svg` ships in every folder the bot brings, you reach this only by pointing a kind of picture at a folder of your own *and* deleting the bot's.
 
 Three filenames are spoken for: `fallback.svg`; `mystery.svg`, in **both** the track folder and the flag folder, used for a round whose track — and so whose country — is kept secret; and `other.svg`, in the flag folder, for a driver who chose no nationality in particular. All of them come with the bot. Replace the pictures if you like, but keep the names.
+
+> **The markers folder has two stand-ins, not one.** It holds the 64 × 64 movement markers alongside the standings and attendance marks, which stretch to whatever cell holds them, and no single placeholder can be right for both shapes. So a missing `position_change_gained.svg`, `position_change_lost.svg` or `position_change_none.svg` draws `position_change_fallback.svg`, and a missing standings or attendance mark draws `standings_attendance_fallback.svg`. A plain `fallback.svg` you put there is still read, but only after whichever of the two matches.
+>
+> Name yours for the shape it stands in for. Your folder's stand-in is checked *before* the bot's own copy of the missing file, so one unnamed `fallback.svg` in `resources/league/markers` would be drawn for a missing arrow and a missing podium plate alike — in preference to the bot's correct artwork for either.
 
 ---
 
@@ -286,19 +290,19 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 
 > **The standings grids mark out their race cells, and the marks are files you can replace.** Both standings drawings show where the season's results fell: a gold, silver or bronze plate behind a podium finish, a green tint behind any other points finish, a small purple triangle in the **top-left** corner for the fastest lap, and a gold, silver, bronze or green triangle in the **top-right** for where the driver **qualified**, each a shade darker than the plate of the same placing. The drawings that come with the bot do this already.
 >
-> **To change how a mark looks, replace its file.** They live in `resources/league/standings-highlights`:
+> **To change how a mark looks, replace its file.** They live in `resources/league/markers`, beside the movement markers and the attendance marks:
 >
 > | File | Drawn for |
 > |---|---|
-> | `p1.svg` `p2.svg` `p3.svg` `points.svg` | The race result — a plate behind the number |
-> | `fastest_lap.svg` | The fastest lap — top-left corner |
+> | `race_p1.svg` `race_p2.svg` `race_p3.svg` `race_points.svg` | The race result — a plate behind the number |
+> | `race_fastest_lap.svg` | The fastest lap — top-left corner |
 > | `qualifying_p1.svg` `qualifying_p2.svg` `qualifying_p3.svg` `qualifying_points.svg` | The qualifying result — top-right corner |
 >
 > Drop your own in under one of those names and it is drawn; leave the folder empty and the bot's own marks are used. There is no command and no colour setting for this — it is artwork, like your team badges.
 >
 > **The qualifying mark sits on the race cell**, in the corner nearest the small raised number it stands for. That number shares one run of text with the race result and has no fixed position, so nothing can go *behind* it — a corner of the cell can, which is what makes qualifying markable at all. A cell showing all three marks at once is a win from pole with the fastest lap.
 >
-> **These marks stretch to fit the cell**, unlike every other folder, where the size in the table above is a rule. A cell is a slightly different shape on the drivers drawing than on the constructors one, so draw something that survives being squashed a little — a rectangle or a corner shape does, a circle turns into an ellipse.
+> **These marks stretch to fit the cell**, unlike the rest of your artwork, where the size in the table above is a rule. A cell is a slightly different shape on the drivers drawing than on the constructors one, so draw something that survives being squashed a little — a rectangle or a corner shape does, a circle turns into an ellipse. The movement markers sharing the folder are unaffected and are still drawn at 64 × 64: it is the slot in the drawing that stretches, not the folder.
 >
 > **The numbers on top stay in the drawing file.** A picture cannot colour text laid over it, so the ink is still a `.highlight_p1_text` rule in the drawing's stylesheet, with `.highlight_p1_sup_text` for the small qualifying number raised beside the result — which sits on the plate and would otherwise stay grey. Name no rule and the number keeps the colour it already has.
 >
@@ -310,13 +314,24 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 > <svg xmlns="http://www.w3.org/2000/svg" width="128" height="56" viewBox="0 0 128 56"/>
 > ```
 >
-> Put that in `resources/league/standings-highlights/points.svg` and points finishes stop being marked, while podiums and fastest laps carry on. Do it for all five and nothing is marked at all.
+> Put that in `resources/league/markers/race_points.svg` and points finishes stop being marked, while podiums and fastest laps carry on. Do it for all five and nothing is marked at all.
 >
 > **To remove the feature outright**, take the `..._background` and `..._fastest_lap` slots out of the drawing file. The grid then draws exactly as it did before any of this existed — which is also why an older drawing of your own keeps working untouched.
 >
 > **What counts as a points finish is whatever your points configuration pays for**, so this follows your league rather than a fixed top ten. The fastest lap is only marked where your configuration actually awards a fastest-lap bonus for that session and the driver finished inside any position limit you set: a league that awards none marks nothing, which is right rather than broken. A driver disqualified from a win is drawn `DSQ` and gets no gold.
 >
 > **A qualifying position counts as a points one if your configuration pays for it.** A league that awards no qualifying points sees no qualifying mark below the podium, and one awarding none at all sees no qualifying mark whatever — the same rule as the race, applied to the session before it.
+
+> **The attendance sheet marks a driver closing on the limit.** If you have set an auto-reserve or an auto-sack threshold, the sheet draws a wash behind that driver's total: **amber** for anyone **within two points** of the limit, **red** once they have **reached** it. Both are drawn at the same weight and told apart by colour. A total of zero is never marked, however low you set the limit, and setting no limit marks nobody.
+>
+> They are two more files in `resources/league/markers`, and they work exactly as the standings marks above do — replace one to redraw it, save a fully transparent SVG under its name to switch it off:
+>
+> | File | Drawn for |
+> |---|---|
+> | `attendance_limit_near.svg` | A total within two points of the limit |
+> | `attendance_limit_reached.svg` | A total that has reached it |
+>
+> **The sheet shows one limit, because you can only set one.** Auto-reserve and auto-sack refuse each other, so the sheet has a single plate that names whichever you set — `RESERVE AT 5`, `SACKED AT 8` — and the marks are measured against that same number. Set neither and the plate leaves the picture entirely rather than standing there empty. If you have re-laid an attendance drawing of your own, it wants one `limit_group` holding `limit_label` and `limit_value`, and a `row_<x>_points_background` slot behind each total; the older pair of `autoreserve_*` and `autosack_*` blocks is no longer read.
 
 > **The standings drawings got wider.** They are now 1728 px across, from 1200 and 1128. The old columns could not hold the widest thing a cell can be asked to show — a `DSQ` with another outcome raised beside it — so it ran over into the next round, and nothing said so. Each session column is now 54 px wide. If you have re-laid a standings drawing of your own, give your columns the same room; nothing can check this for you.
 
