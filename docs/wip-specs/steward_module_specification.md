@@ -61,12 +61,13 @@
 - Discipline point - A possible direct outcome of a verdict for a CoC investigation. Discipline points are accumulated on a driver's license, and may not expire at all, or expire only after a fixed period of time. Depending on configuration, the accumulation of discipline points may lead to additional sanctions being applied to a driver. Like CoC investigations, this functionality is optional and is disabled by default.
 - Qualifying ban - A possible direct or indirect outcome of a verdict for all ticket types. Qualifying bans are appended to a driver's license. The driver that receives this sanction is thereby forbidden from taking part in all qualifying sessions in the next round they participate in of the division in which they received a qualifying ban for, be it in the current season, or the next. This means that they may not set a valid lap in any of the qualifying sessions, but they must be present in the classification of the qualifying and race sessions. If configured, the bot may automatically detect a failure to serve a qualifying ban via a round's results, and automatically open a steward team report againt the offending driver. Qualifying bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
 - Race ban - A possible direct or indirect outcome of a verdict for all ticket types. Race bans are appended to a driver's license. The driver that receives this sanction is thereby forbidden from taking part in the next round of the division in which they received a qualifying ban for, be it in the current season, or the next. This means that they may not be present in the classification of any sessions for the round they are banned for. If configured, the bot may automatically detect a failure to serve a race ban via a round's results, and automatically open a steward team report againt the offending driver. Race bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
-- Season ban - A possible direct or indirect outcome of a verdict for all ticket types. Season bans are appended to a driver's license. The driver that receives this sanction loses all their current seats for all divisions, full-time and reserve both. Drivers with a season ban will be assigned a special role, and will be unable to engage with the signup wizard. A season ban will expire after a set number of races (which may be a hard-bound value or the length of the current season), upon the current season's end (or the next season's end, if received on the final round), or after a fixed period of time. If configured, the bot may automatically detect if a driver has a given number of multiple season bans, and automatically open a steward team report against the offending driver with a view at bestowing a league ban. Season bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
+- Season ban - A possible direct or indirect outcome of a verdict for all ticket types. Season bans are appended to a driver's license. The driver that receives this sanction loses all their current seats for all divisions, full-time and reserve both. Drivers with a season ban will be assigned a special role, and will be unable to engage with the signup wizard. A season ban will expire after a set number of races (which may be a hard-bound value or the length of the current season), upon the current season's end (or the next season's end, if received on the final round), or after a fixed period of time. Season bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
 - League ban - A possible direct or indirect outcome of a verdict for all ticket types. League bans are appended to a driver's license. The driver that receives this sanction thereby loses all their current seats for all divisions, full-time and reserve both. A driver that receives a league ban will be banned from the league server for a configured duration of time. Upon rejoining the server, all users that receive a league ban will be assigned a special role, and will be unable to engage with the signup wizard. League bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
-- Auto-rule - A predefined, league-configured automated penalty handed out by the bot if a driver meets the criteria configured in the rule. These rules can be one of three types:
-  - Single round - Rules that verify only multiples of a specific penalty accured in a single round.
-  - Multi round - Rules that verify only multiples of a specific penalty accured across multiple rounds.
-  - Accumulatory - Rules that verify only the accumulation of a specific penalty on a driver's license.
+- Auto-rule - A predefined, league-configured automated penalty handed out by the bot if a driver meets the criteria configured in the rule. These rules can be one of four types:
+  - Single round - Rules that verify only multiples of a specific penalty accured in a single round for one driver.
+  - Multi round - Rules that verify only multiples of a specific penalty accured across multiple rounds for one driver.
+  - Active accumulation - Rules that verify only the accumulation of a specific active penalty on a driver's license.
+  - Historical accumulation - Rules that verify the total accumulation of a specific penalty across a driver's license history, active, expired or served.
 
 ## Configuring the stewarding module
 - All configuration changes must be logged to the standard log channel.
@@ -95,6 +96,11 @@
   - The head steward does not lose any of their powers with the exception of the voting tie-breaking capabilities, which are from then-on solely held by the temporary head steward.
 - <NEW COMMAND> A "steward remove-temp-head" command will be made available to the head steward to be utilized in the channel configured by "steward command-channel" exclusively, which will have no input. This command will remove the temporary head steward status from the user currently possessing it.
   - This command is only valid if the temporary head steward role configured by "steward temp-head-role" is not empty.
+
+### Penalty types
+- <NEW COMMAND> A "steward penalty toggle" command will be made available to league managers, which shall have as single input a penalty type (warning points, penalty points, time penalties, qualifying bans, season bans, league bans). This command shall enable that penalty type, if configured, and disable it, if not configured.
+  - By default, all are enabled.
+  - If a penalty type is toggled off, and any outcome or conduct outcome has that penalty type configured (value > 0), it shall be verified if the conditions for modifying or removing an outcome/conduct outcome are in place (no current deliberations). If not, then the command fails; otherwise, a confirmation message informing the user that the outcomes will lose this penalty types will be posted, with two buttons, "Confirm" and "Cancel". If confirmed, the outcome is then modified accordingly (value = 0).
 
 ### Stewarding cycle setup
 - <NEW COMMAND> A "steward report-submission-period" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the maximum number of hours during which drivers for that division or users belonging to the steward team (validated by checking whether they have the steward team role) are able to open a report. After this time elapses, the report submission phase is over.
@@ -152,9 +158,11 @@
   - Season ban - Optional - Checkbox that, if ticked, means that the offending driver's license will accrue a ban lasted for one season.
   - League ban - Optional - Checkbox that, if ticked, means that the offending driver's license will accrue a league ban.
   - Contrary to the others, this command may be accepted if any report deliberation or appeal deliberation phases are on-going. This means that the outcome object must be appended to all ticket data objects that are not in status "closed".
+  - This command shall fail if the outcome has any disabled penalty types.
   - At least one of the "Time penalty", "Warning point", "Penalty point", "Qualifying ban", "Race ban", "Season ban", "League ban" fields must be different from 0.
 - <NEW COMMAND> A "steward outcome modify" command will be made available to league managers, which shall have as input a string standing for an outcome's ID. If this ID is valid, then a modal dialog much like the one opened by "steward outcome add" shall open, prefilled with the values of the outcome of the input ID. All fields with the exception of the ID can be modified.
   - This command shall fail if any report deliberation or appeal deliberation phases are on-going.
+  - This command shall fail if the outcome has any disabled penalty types.
   - At least one of the "Time penalty", "Warning point", "Penalty point", "Qualifying ban", "Race ban", "Season ban", "League ban" fields must be different from 0.
 - <NEW COMMAND> A "steward outcome remove" command will be made available to league managers, which shall have as input a string standing for an outcome's ID. If this ID is valid, then a modal dialog asking for confirmation of deletion of the outcome will appear. If accepted, then the outcome shall be removed from the list.
   - This command shall fail if any report deliberation or appeal deliberation phases are on-going.
@@ -189,14 +197,16 @@
   - ID - Mandatory - Unique ID for the conduct outcome. ap with that of other outcomes. Maximum of 12 characters.
   - Brief - Mandatory - Unique short description of the conduct outcome. Maximum of 50 characters.
   - Description - Optional - Long form description of the conduct outcome. Maximum of 250 characters.
-  - Discipline points - Optional - Integer input only. Number of warning points added to the driver license of the offending driver.
+  - Discipline points - Optional - Integer input only. Number of discipline points added to the driver license of the offending driver.
   - Race bans - Optional - Integer input only. Number of race bans added to the driver license of the offending driver.
   - Season ban - Optional - Checkbox that, if ticked, means that the offending driver's license will accrue a ban lasted for one season.
   - League ban - Optional - Checkbox that, if ticked, means that the offending driver's license will accrue a league ban.
   - Contrary to the others, this command may be accepted if any report investigation deliberation phase is on-going.
+  - This command shall fail if the outcome has any disabled penalty types.
   - At least one of the "Discipline points", "Qualifying bans", "Race bans", "Season ban", "League ban" fields must be different from 0.
 - <NEW COMMAND> A "steward conduct-outcome modify" command will be made available to league managers, which shall have as input a string standing for an conduct outcome's ID. If this ID is valid, then a modal dialog much like the one opened by "steward conduct-outcome add" shall open, prefilled with the values of the conduct outcome of the input ID. All fields with the exception of the ID can be modified.
   - This command shall fail if any investigation deliberation phase is on-going.
+  - This command shall fail if the outcome has any disabled penalty types.
   - At least one of the "Discipline points", "Qualifying bans", "Race bans", "Season ban", "League ban" fields must be different from 0.
 - <NEW COMMAND> A "steward conduct-outcome remove" command will be made available to league managers, which shall have as input a string standing for an conduct outcome's ID. If this ID is valid, then a modal dialog asking for confirmation of deletion of the conduct outcome will appear. If accepted, then the conduct outcome shall be removed from the list.
   - This command shall fail if any investigation deliberation phase is on-going.
@@ -205,7 +215,7 @@
     - ID: <id>
     - Rule description: <description, if not empty, otherwise this line is skipped>
     - Associated outcome: <all penalties associated with the outcome, comma concatenated>
-- By default, a permanent, unremovable, unmodifiable cpmdict outcome with the following values is added to the list, which has the following data:
+- By default, a permanent, unremovable, unmodifiable conduct outcome with the following values is added to the list, which has the following data:
   - ID - NFA (special reserved ID)
   - Brief - No Further Action
   - Description - Outcome which means there is not actionable disciplinary offense in the reported incident, and therefore no punishment is passed upon any individual.
@@ -215,7 +225,7 @@
   - Season ban - 0
 
 ### Automated penalties
-- <NEW COMMAND> A "steward auto-rule add" command will be made available to league managers, which shall have no inputs. Upon usage of this command, a modal dialog will open, with the following fields:
+- <NEW COMMAND> A "steward auto-rule add-single-round" command will be made available to league managers, which shall have no inputs. Upon usage of this command, a modal dialog will open, with the following fields:
   - Type - Mandatory - Type of criteria that shall be met. Can be single round, multi round, or accumulatory.
   - ID - String - Unique ID for this rule. Must not overlap with that of other auto rules. Maximum of 12 characters
   - Type of infractions committed - Mandatory - Dropdown - Type of penalty that must be given out to a driver in the quantity above for this rule to be triggered.
@@ -225,8 +235,18 @@
     - This value must not be the same as defined in "Type of infractions committed"
   - Number of penalties given - Mandatory - Integer - Quantity of penalties of the type defined in "penalty given" to be bestowed upon a driver when this rule is triggered.
     - This value must not be 0.
-- Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule will be added to the list and made active immediately. 
-- Auto-rules are triggered when the number of infractions committed is equal or greater than that in the rule.
+  - Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule will be added to the list and made active immediately.
+
+- <NEW COMMAND> A "steward auto-rule add-multi-round" command will be made available to league managers, which shall have no inputs. Upon usage of this command, a modal dialog will open, with the following fields:
+  - <TBD>
+
+- <NEW COMMAND> A "steward auto-rule add-active-acc-round" command will be made available to league managers, which shall have no inputs. Upon usage of this command, a modal dialog will open, with the following fields:
+  - <TBD>
+
+- <NEW COMMAND> A "steward auto-rule add-history-acc-round" command will be made available to league managers, which shall have no inputs. Upon usage of this command, a modal dialog will open, with the following fields:
+  - <TBD>
+
+- Auto-rules are triggered when the number of infractions committed is equal or greater than that in the rule. <NEEDS MODIFICATION>
 - <NEW COMMAND> A "steward auto-rule modify" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog similar to that of "steward auto-rule add" will appear, with the data from the auto-rule of the input ID preloaded and modifiable. The ID cannot be modified, hence that field shall be greyed-out.
 - <NEW COMMAND> A "steward auto-rule remove" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog will show up for confirmation of deletion of the auto-rule. Once confirmed, the auto-rule will no longer be active and enforceable, and it will be deleted from the current list.
 - <NEW COMMAND> A "steward auto-rule list" command will be made available to league managers and stewards, which shall have no inputs. In reply, the bot will post a transient (temporary, seen only to the command user) list with all the auto-rules currently available, as a plain text table with the following columns in order: ID, Type of infractions committed, No. of infractions committed, penalty given, number of penalties given.
@@ -475,6 +495,7 @@
 
 ### Season bans
 - Whether a driver has a season ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
+- 
 
 ### League bans
 - Whether a driver has a league ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
