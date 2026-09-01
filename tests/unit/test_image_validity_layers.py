@@ -1396,11 +1396,61 @@ def test_a_slot_that_declares_it_stretches_is_passed_over_whatever_its_shape():
     it, so there is nothing for it to be letterboxed against. Declaring it per slot is what
     lets one class draw both the square position-change arrows and the marks, whose cells are
     three different shapes across the standings grids and the attendance sheet.
+
+    Drawn on a `marker` slot, that being the only class the exemption is open to -- see the
+    test below, which is the half of this rule that was missing.
     """
     from services.image_validity_service import aspect_faults_of
 
-    root = _root_with([("round_1_flag", 120, 120)], stretching=("round_1_flag",))
-    assert aspect_faults_of(root, "calendar_template") == []
+    mark = "row_1_points_background"
+    root = _root_with([(mark, 120, 120)], stretching=(mark,))
+    assert aspect_faults_of(root, "attendance_template") == []
+
+
+@pytest.mark.parametrize(
+    "template_key,field_id,width,height",
+    [
+        ("lineup_template", "team_1_driver_1_image", 100, 50),   # a driver portrait
+        ("calendar_template", "round_1_flag", 120, 120),         # a country flag
+        ("lineup_template", "team_1_image", 100, 50),            # a team badge
+    ],
+)
+def test_a_slot_of_a_class_that_does_not_stretch_may_not_exempt_itself(
+    template_key, field_id, width, height
+):
+    """Narrowed 2026-09-01, when driver portraits began being obtained from Discord.
+
+    The exemption was open to any slot of any class, so a league authoring its own lineup
+    template could declare a portrait slot 2:1, claim it stretches, and be told nothing --
+    drawing every face in the league squashed to half height, which no artwork the league
+    supplies can correct. A class that carries an aspect means it.
+    """
+    from services.image_validity_service import aspect_faults_of
+
+    faults = aspect_faults_of(
+        _root_with([(field_id, width, height)], stretching=(field_id,)), template_key
+    )
+
+    assert len(faults) == 1
+    assert field_id in faults[0]
+
+
+def test_the_shipped_templates_hold_no_portrait_slot_that_claims_to_stretch():
+    """The narrowing above must not invalidate anything the bot ships."""
+    from lxml import etree
+
+    from models.image_constants import STRETCHABLE_ASSET_CLASSES
+    from services.image_validity_service import aspect_faults_of
+    from utils.paths import PROJECT_ROOT
+
+    assert STRETCHABLE_ASSET_CLASSES == frozenset({"marker"})
+
+    templates = sorted((PROJECT_ROOT / "resources" / "defaults" / "templates").glob("*.svg"))
+    assert templates, "the packaged templates are missing"
+    for path in templates:
+        key = path.stem
+        root = etree.parse(str(path)).getroot()
+        assert aspect_faults_of(root, key) == [], f"{path.name} became invalid"
 
 
 def test_a_slot_without_that_declaration_is_still_judged():
