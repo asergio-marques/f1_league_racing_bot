@@ -420,15 +420,24 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
     context.nationality_collected = await _nationality_collected(bot, context.server_id)
 
     # The first link of the name chain is the account's display name on the server at the
-    # moment of generation, which only the guild can answer.
-    if guild is not None:
-        for team in teams:
-            for seat in team.seats:
-                if seat.discord_user_id is None:
-                    continue
-                member = guild.get_member(int(seat.discord_user_id))
-                if member is not None:
-                    context.display_names[str(seat.discord_user_id)] = member.display_name
+    # moment of generation, which only the guild can answer. Read through the same helper the
+    # posting path uses, this loop having been a verbatim copy of that one.
+    from services.image_lineup_post import seated_members
+
+    members = seated_members(guild, teams)
+    for user_id, member in members.items():
+        context.display_names[user_id] = member.display_name
+
+    # A preview draws the portraits a posting would, so it obtains them on the same terms.
+    # `context.asset_directories` was resolved by `resolve_context` before this ran.
+    from services.driver_portrait_service import refresh_before_render
+
+    await refresh_before_render(
+        bot,
+        context.server_id,
+        list(members.values()),
+        directory=context.asset_directories.get("driver"),
+    )
 
     context.drivers, context.fabricated_drivers = _drivers_from_teams(
         teams, context.display_names, collected=context.nationality_collected

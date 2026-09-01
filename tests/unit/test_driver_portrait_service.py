@@ -11,6 +11,7 @@ import base64
 import os
 import sys
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import aiosqlite
@@ -267,3 +268,73 @@ async def test_no_partial_file_is_left_behind(db_path, directory):
     await refresh_portraits(db_path, SERVER_ID, [_member(7, "abc")], directory, now=NOW)
 
     assert sorted(p.name for p in directory.iterdir()) == ["7.svg"]
+
+
+# ── The pre-render gate ───────────────────────────────────────────────────
+
+
+def _config(**overrides):
+    values = {
+        "use_pfp": True,
+        "pfp_prerender": True,
+        "driver_image_directory": "resources/league/drivers",
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+async def _gate(monkeypatch, config, directory, members=None):
+    """Run refresh_before_render with refresh_portraits captured rather than performed."""
+    from services import driver_portrait_service as m
+
+    calls = []
+
+    async def _fake(db_path, server_id, members, directory, **kwargs):
+        calls.append((server_id, list(members), directory))
+        return len(list(members))
+
+    monkeypatch.setattr(m, "refresh_portraits", _fake)
+    bot = MagicMock()
+    bot.db_path = ":memory:"
+    written = await m.refresh_before_render(
+        bot, SERVER_ID, members if members is not None else [_member(1)],
+        config=config, directory=directory,
+    )
+    return written, calls
+
+
+async def test_the_gate_refreshes_when_the_league_asked_for_it(monkeypatch, directory):
+    written, calls = await _gate(monkeypatch, _config(), directory)
+
+    assert written == 1
+    assert calls and calls[0][0] == SERVER_ID and calls[0][2] == directory
+
+
+async def test_the_gate_is_shut_while_portraits_are_disabled(monkeypatch, directory):
+    written, calls = await _gate(monkeypatch, _config(use_pfp=False), directory)
+    assert (written, calls) == (0, [])
+
+
+async def test_the_gate_is_shut_while_prerender_updates_are_disabled(monkeypatch, directory):
+    written, calls = await _gate(monkeypatch, _config(pfp_prerender=False), directory)
+    assert (written, calls) == (0, [])
+
+
+async def test_the_gate_is_shut_where_the_directory_was_rejected(monkeypatch):
+    # The render reports the rejected directory itself, in terms a manager can act on.
+    written, calls = await _gate(monkeypatch, _config(), None)
+    assert (written, calls) == (0, [])
+
+
+async def test_the_gate_is_shut_where_no_seat_has_a_member(monkeypatch, directory):
+    written, calls = await _gate(monkeypatch, _config(), directory, members=[])
+    assert (written, calls) == (0, [])
+
+
+async def test_the_gate_never_raises_on_a_configuration_predating_the_feature(
+    monkeypatch, directory
+):
+    # A config object carrying neither field reads as off rather than exploding: this
+    # function is called from inside a render and must never be the thing that fails it.
+    written, calls = await _gate(monkeypatch, SimpleNamespace(), directory)
+    assert (written, calls) == (0, [])

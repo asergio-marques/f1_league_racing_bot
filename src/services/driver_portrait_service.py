@@ -62,6 +62,12 @@ DEFAULT_CONCURRENCY = 8
 #: nothing waiting on it.
 DEFAULT_RENDER_BUDGET_SECONDS = 2.0
 
+#: Distinguishes "the caller did not resolve a directory" from "the caller resolved one and
+#: it was rejected". The two must not be conflated: a rejected directory reaches
+#: `refresh_before_render` as None, and re-resolving it there would obtain portraits into the
+#: very directory the render had just refused.
+_UNSET = object()
+
 
 def wrap_png(data: bytes) -> str:
     """The SVG that carries *data* as a driver portrait.
@@ -148,6 +154,62 @@ async def _disown(db_path: str, server_id: int, user_id: str) -> None:
             (server_id, str(user_id)),
         )
         await db.commit()
+
+
+async def refresh_before_render(
+    bot,
+    server_id: int,
+    members,
+    *,
+    config=None,
+    directory=_UNSET,
+    now: datetime | None = None,
+) -> int:
+    """Refresh the portraits a graphic is about to draw, where the league asked for that.
+
+    The gate for the pre-render trigger, in one place: both the posting path and the preview
+    path call this rather than each deciding for itself whether the feature is on.
+
+    *config* and *directory* are accepted because the posting path has already read and
+    resolved both, and resolving twice per render would be waste; either may be omitted and
+    is then worked out here.
+
+    Passing ``directory=None`` is **not** the same as omitting it. None means the caller
+    resolved the driver directory and it was rejected, and the gate shuts: obtaining
+    portraits into a directory the render has just refused would be worse than obtaining
+    none. Omitting the argument entirely means the caller has not looked, and it is resolved
+    here.
+
+    Returns the number of portraits written, and never raises.
+    """
+    if config is None:
+        config = await bot.image_config_service.get_config(server_id)
+    # `getattr` rather than attribute access: this function promises never to raise, and a
+    # configuration object predating migration 047 carries neither field. Absent reads as
+    # off, which is the same answer the defaults give.
+    if config is None or not getattr(config, "use_pfp", False):
+        return 0
+    if not getattr(config, "pfp_prerender", False):
+        return 0
+    if not members:
+        return 0
+
+    if directory is _UNSET:
+        from services.image_render_service import resolve_configured_directories
+
+        directories, _faults = resolve_configured_directories(
+            config,
+            (("driver", "driver_image_directory"),),
+            image_type="driver_portraits",
+        )
+        directory = directories.get("driver")
+    if directory is None:
+        # The configured directory was rejected. The render reports that fault itself, in
+        # the terms a manager can act on; obtaining portraits into it is not this module's
+        # problem to solve twice.
+        return 0
+
+    return await refresh_portraits(bot.db_path, server_id, members, directory, now=now)
 
 
 async def refresh_portraits(
