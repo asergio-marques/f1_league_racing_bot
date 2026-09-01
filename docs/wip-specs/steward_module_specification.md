@@ -517,7 +517,6 @@
   - If a verdict was changed in an appeal in comparison to the original report, the time penalty value displayed in the appeals column should take the latter into consideration (e.g. a penalty of 5 seconds that was rescinded should show as -5s in the appeal column)
 
 ### Cycle close
-- <NEW COMMAND> steward republish-verdict - lets effective head steward revise the justification in a verdict <tbd, needs ironing out>
 - Once all tickets for a given round of a given division reach this stage, warning points, penalty points, qualifying bans, race bans, season bans and league bans are made effective and added to a driver's license. After this is done, it will be checked whether the driving licenses of any driver infringe upon any of the auto-rules configured.
 - If any auto-rule configured is infringed upon, then an additional automated verdict document will be published by the bot, informing of which rule was broken, and the punishment to be handed out.
   - The structure of this automated verdict document will be outlined in a later section.
@@ -525,6 +524,11 @@
   - <DISCUSS/WEAK POINT> is this harsh? I mean, it's on the drivers, but I wonder if there's a more robust design here.
 - Once auto-rules are verified, the previous license sheet shall be deleted, and an updated one, with the penalties of the latest round updated, will be posted.
   - License sheet posting will be specified in another section.
+- <NEW COMMAND> A "steward republish-verdict" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory input the unique ID for a report or appeal. If the input ID was indeed a valid one, then a modal dialog will show up, containing the original information of the report/appeal chosen (ID, involved drivers, outcome, driver struck with outcome, justification). Of these, all but justification will be greyed-out, and this exception shall be only modifiable aspect. The user must confirm before validation of the change is done.
+  - If there was an actual modification to the justification, and if this field is not empty/whitespace, the verdict image for the repost in question shall be rendered again, and the message in which the verdict was originally posted edited to remove the old verdict image, and attach the new one.
+    - If this is not technically feasible due to Discord API limitations, all verdict messages shall be deleted, rerendered, and reposted, so that the republishing of this verdict is "seamless".
+  - It shall not be possible to execute this command on a report if the stewarding cycle of the round to which it pertains has ended.
+  - It shall not be possible to execute this command on an appeal if the stewarding cycle of the round after the one to which the appeal pertains has moved past the report deliberation phase.
 
 ## Conduct cycle
 ### Trigger
