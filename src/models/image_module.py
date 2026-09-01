@@ -79,9 +79,6 @@ class RenderNotice:
     notice_kind: str
     detail: str
     field_id: str | None = None
-    rendered_at: str | None = None   # set on persistence
-    id: int | None = None
-    server_id: int | None = None
 
 
 # ── Problems (Constitution XIV.4) ─────────────────────────────────────────

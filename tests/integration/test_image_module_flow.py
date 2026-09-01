@@ -143,27 +143,6 @@ async def test_disable_preserves_every_settable_column(module_service, config_se
     assert all((await config_service.get_toggles(SERVER_ID)).values())
 
 
-async def test_disable_retains_notice_history(module_service, config_service, db_path):
-    await _enable(module_service, config_service)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO image_render_notices "
-            "(server_id, image_type, rendered_at, notice_kind, field_id, detail) "
-            "VALUES (?, 'calendar_template', '2026-08-10T00:00:00+00:00', "
-            "'FONT_SUBSTITUTED', 'driver_1', 'Inter unavailable')",
-            (SERVER_ID,),
-        )
-        await db.commit()
-
-    await module_service.set_images_enabled(SERVER_ID, False)
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT COUNT(*) FROM image_render_notices WHERE server_id = ?", (SERVER_ID,)
-        )
-        assert (await cursor.fetchone())[0] == 1
-
-
 # ── T013 ──────────────────────────────────────────────────────────────────
 
 
@@ -657,12 +636,12 @@ def _validity_service(config_service, module_service):
     return ImageValidityService(config_service, module_service)
 
 
-def _render_service(db_path, config_service, module_service):
+def _render_service(config_service, module_service):
     from services.image_render_service import ImageRenderService
     from services.image_validity_service import ImageValidityService
 
     return ImageRenderService(
-        db_path, config_service, ImageValidityService(config_service, module_service)
+        config_service, ImageValidityService(config_service, module_service)
     )
 
 
@@ -700,7 +679,7 @@ async def test_render_without_season(
             b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'
         )
 
-    service = _render_service(db_path, config_service, module_service)
+    service = _render_service(config_service, module_service)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM seasons WHERE server_id = ?", (SERVER_ID,))
@@ -791,7 +770,7 @@ async def test_absent_converter_is_reported_and_no_render_attempted(
         lambda *a, **k: attempted.append(1),
     )
 
-    service = _render_service(db_path, config_service, module_service)
+    service = _render_service(config_service, module_service)
     outcome = await service.render(
         SERVER_ID, "calendar_template", lambda root: None, output_dir=tmp_path
     )
@@ -859,7 +838,7 @@ async def test_render_raises_notices_without_failing(
 
     from tests.support.image_sample_data import build_spec
 
-    service = _render_service(db_path, config_service, module_service)
+    service = _render_service(config_service, module_service)
     # The DSQ case carries the justification fabricated an order of magnitude too long for
     # any box a league would draw, so RICH_TEMPLATE's 300x80 rectangle cuts it at the floor
     # and raises its notice — which is the degradation this test is about (043 FR-018).
@@ -875,12 +854,11 @@ async def test_render_raises_notices_without_failing(
     kinds = {n.notice_kind for n in outcome.notices}
     assert "FIELD_REDUCED" in kinds
 
-    # Notices are persisted for the audit trail (Principle V, XIV.4).
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT COUNT(*) FROM image_render_notices WHERE server_id = ?", (SERVER_ID,)
-        )
-        assert (await cursor.fetchone())[0] == len(outcome.notices) > 0
+    # Every notice is carried on the outcome, which is the whole of what XIV.4 requires:
+    # the render survives, and `post_notices` reports them to the calculation log channel.
+    # Nothing is written to the database — the audit table was withdrawn in migration 046.
+    assert len(outcome.notices) > 0
+    assert all(n.detail for n in outcome.notices)
 
 
 async def test_render_problem_yields_no_image(
@@ -892,7 +870,7 @@ async def test_render_problem_yields_no_image(
     await config_service.set_field(SERVER_ID, "template_directory", "templates")
     await config_service.set_field(SERVER_ID, "calendar_template", "absent.svg")
 
-    service = _render_service(db_path, config_service, module_service)
+    service = _render_service(config_service, module_service)
     outcome = await service.render(
         SERVER_ID, "calendar_template", lambda root: None, output_dir=tmp_path
     )
@@ -934,7 +912,7 @@ async def test_render_is_off_the_event_loop(
 
     monkeypatch.setattr(render_module, "rasterise", _recording)
 
-    service = _render_service(db_path, config_service, module_service)
+    service = _render_service(config_service, module_service)
     outcome = await service.render(
         SERVER_ID,
         "calendar_template",
@@ -1560,7 +1538,7 @@ from services.image_render_service import (  # noqa: E402
 @pytest.fixture()
 def failing_render_service(db_path, config_service, module_service, monkeypatch):
     """A render service whose renders always meet the same fatal fault."""
-    service = _render_service(db_path, config_service, module_service)
+    service = _render_service(config_service, module_service)
 
     async def always_fails(server_id, image_type, spec_builder, **kwargs):
         from models.image_module import PROBLEM_NOT_FOUND, Problem, RenderOutcome
@@ -1645,7 +1623,7 @@ async def test_an_internal_problem_tells_the_user_nothing_to_act_on(
 
     monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
 
-    service = _render_service(db_path, config_service, module_service)
+    service = _render_service(config_service, module_service)
 
     decision = await service.render_for_posting(
         SERVER_ID, "no_such_template", lambda root: None,
@@ -1670,7 +1648,7 @@ async def test_a_clean_render_posts_the_image(
     await _enable(module_service, config_service)
     await config_service.set_field(SERVER_ID, "template_directory", "templates")
 
-    service = _render_service(db_path, config_service, module_service)
+    service = _render_service(config_service, module_service)
     # `output_dir` so the render lands under pytest's own directory. Without it this test
     # is a caller that never posts and so never discards, and it litters the host's
     # temporary directory on every run.
@@ -1864,9 +1842,7 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
             "module_service": module_service,
             "image_config_service": config_service,
             "image_validity_service": _validity_service(config_service, module_service),
-            "image_render_service": _render_service(
-                db_path, config_service, module_service
-            ),
+            "image_render_service": _render_service(config_service, module_service),
             "output_router": None,
         },
     )()
@@ -1920,9 +1896,7 @@ async def test_the_verdict_toggle_off_posts_the_textual_announcement(
             "module_service": module_service,
             "image_config_service": config_service,
             "image_validity_service": _validity_service(config_service, module_service),
-            "image_render_service": _render_service(
-                db_path, config_service, module_service
-            ),
+            "image_render_service": _render_service(config_service, module_service),
         },
     )()
 

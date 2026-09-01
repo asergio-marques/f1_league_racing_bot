@@ -758,9 +758,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
         db_path=db_path,
         image_config_service=config_service,
         image_validity_service=validity_service,
-        image_render_service=ImageRenderService(
-            db_path, config_service, validity_service
-        ),
+        image_render_service=ImageRenderService(config_service, validity_service),
     )
 
     drawings = await build_drawings(

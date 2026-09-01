@@ -178,11 +178,29 @@ Clears any guild-scoped command overrides and pushes the latest global slash com
 | `interaction_role` | Role | ✅ | The Discord role permitted to use bot commands |
 | `interaction_channel` | Channel | ✅ | The only channel where bot commands are accepted |
 | `log_channel` | Channel | ✅ | Channel where computation audit logs are posted |
-| `force` | Boolean | — | Set `True` to overwrite an existing configuration (default: `False`) |
 
 Exempt from the interaction-channel rule, since no channel is configured until it has run. Requires **Manage Server** instead.
 
-On the **first** run for a server it also seeds the team list with the **Reserve** team, which has unlimited seats and cannot be removed or renamed. No other team is created — build the rest of the list with `/team add`.
+**It runs once.** A second `/bot-init` on a configured server is refused, not applied — it names the three commands below instead. To start over entirely, `/bot-reset full:True` removes the configuration first.
+
+It also seeds the team list with the **Reserve** team, which has unlimited seats and cannot be removed or renamed. No other team is created — build the rest of the list with `/team add`.
+
+---
+
+### `/bot-log-channel`, `/bot-interaction-channel`, `/bot-interaction-role` — Change one setting
+*Access: Server administrator (Manage Server permission) · Can be run from any channel*
+
+| Command | Parameter | Changes |
+|---|---|---|
+| `/bot-log-channel` | `channel` | Where the bot writes its calculation log |
+| `/bot-interaction-channel` | `channel` | The only channel where bot commands are accepted |
+| `/bot-interaction-role` | `role` | The role permitted to use bot commands |
+
+Each changes **one** setting and leaves everything else exactly as it stands — the other two settings, your module switches, and test mode.
+
+> **These are deliberately usable from any channel, by anyone holding Manage Server.** They exist for when one of the three settings is wrong — a log channel deleted, an interaction channel archived, a role removed by mistake. Requiring the interaction channel or the interaction role to run them would lock you out of the very failure they repair. Manage Server is the gate instead.
+
+If the bot has never been configured on the server, these refuse and point you at `/bot-init`.
 
 ---
 

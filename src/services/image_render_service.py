@@ -16,12 +16,10 @@ import shutil
 import subprocess
 import tempfile
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 from dataclasses import dataclass, field as dataclass_field
 
-from db.database import get_connection
 from models.image_module import (
     PROBLEM_NOT_SVG,
     PROBLEM_RASTERISER,
@@ -590,8 +588,7 @@ def grouped_notice_lines(notices: list[RenderNotice]) -> list[str]:
 class ImageRenderService:
     """Fill a template and rasterise it, reporting problems and notices separately."""
 
-    def __init__(self, db_path: str, config_service, validity_service) -> None:
-        self._db_path = db_path
+    def __init__(self, config_service, validity_service) -> None:
         self._config_service = config_service
         self._validity_service = validity_service
 
@@ -602,7 +599,6 @@ class ImageRenderService:
         spec_builder,
         *,
         output_dir: Path | None = None,
-        persist_notices: bool = True,
         filename_stem: str | None = None,
     ) -> RenderOutcome:
         """Render one template.
@@ -698,8 +694,6 @@ class ImageRenderService:
         # Constitution XIV.3: an unresolved field aborts the render. Notices raised
         # before the problem are still reported, so an operator sees the whole picture.
         if result.unresolved:
-            if persist_notices:
-                await self._persist(server_id, result.notices)
             return RenderOutcome(
                 problem=Problem(
                     kind=PROBLEM_UNRESOLVED_VALUE,
@@ -719,8 +713,6 @@ class ImageRenderService:
             # in-flight interaction for its duration.
             png = await asyncio.to_thread(rasterise, result.svg, destination, result.canvas)
         except RasterisationError as exc:
-            if persist_notices:
-                await self._persist(server_id, result.notices)
             return RenderOutcome(
                 problem=Problem(
                     kind=PROBLEM_RASTERISER,
@@ -730,34 +722,7 @@ class ImageRenderService:
                 notices=result.notices,
             )
 
-        if persist_notices:
-            await self._persist(server_id, result.notices)
-
         return RenderOutcome(png_paths=[png], notices=result.notices)
-
-    async def _persist(self, server_id: int, notices: list[RenderNotice]) -> None:
-        """Append every notice to image_render_notices (Principle V, XIV.4)."""
-        if not notices:
-            return
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self._db_path) as db:
-            await db.executemany(
-                "INSERT INTO image_render_notices "
-                "(server_id, image_type, rendered_at, notice_kind, field_id, detail) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                [
-                    (
-                        server_id,
-                        notice.image_type,
-                        notice.rendered_at or now,
-                        notice.notice_kind,
-                        notice.field_id,
-                        notice.detail,
-                    )
-                    for notice in notices
-                ],
-            )
-            await db.commit()
 
     @staticmethod
     def format_notices(notices: list[RenderNotice], *, subject: str | None = None) -> str:

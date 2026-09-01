@@ -41,21 +41,28 @@ class ConfigService:
             signup_module_enabled=bool(row["signup_module_enabled"]),
         )
 
-    async def save_server_config(self, cfg: ServerConfig) -> None:
-        """Insert or replace the ServerConfig row."""
+    async def save_server_config(self, cfg: ServerConfig) -> bool:
+        """Create the ServerConfig row for a server that has none. Returns whether it did.
+
+        Insert-only, and deliberately so. `/bot-init` is the sole caller and runs once per
+        server; every later change to one of the three settings goes through the setters
+        below, which write a single column each.
+
+        An upsert here used to overwrite `test_mode_active` from whatever the caller's
+        `ServerConfig` happened to carry. `/bot-init` builds one without reading the stored
+        row first, so its `force` path silently switched test mode off while leaving the
+        test drivers seated. Refusing to update at all makes that unreachable rather than
+        merely corrected, which is why the conflict clause does nothing.
+        """
         async with get_connection(self._db_path) as db:
-            await db.execute(
+            cursor = await db.execute(
                 """
                 INSERT INTO server_configs
                     (server_id, interaction_role_id, interaction_channel_id,
                      log_channel_id, test_mode_active, test_mode_nationality_required,
                      weather_module_enabled, signup_module_enabled)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(server_id) DO UPDATE SET
-                    interaction_role_id    = excluded.interaction_role_id,
-                    interaction_channel_id = excluded.interaction_channel_id,
-                    log_channel_id         = excluded.log_channel_id,
-                    test_mode_active       = excluded.test_mode_active
+                ON CONFLICT(server_id) DO NOTHING
                 """,
                 (
                     cfg.server_id,
@@ -63,15 +70,42 @@ class ConfigService:
                     cfg.interaction_channel_id,
                     cfg.log_channel_id,
                     int(cfg.test_mode_active),
-                    # Left out of the DO UPDATE SET deliberately, as the module flags are:
-                    # only its own toggle writes it, so a save from a command that built a
-                    # ServerConfig without reading one first cannot silently reset it.
                     int(cfg.test_mode_nationality_required),
                     int(cfg.weather_module_enabled),
                     int(cfg.signup_module_enabled),
                 ),
             )
             await db.commit()
+            return cursor.rowcount > 0
+
+    #: The three settings `/bot-init` establishes and the three commands beside it repair.
+    #: Named here rather than interpolated from the caller so that no command can reach a
+    #: column of its own choosing.
+    _SETTABLE_COLUMNS = {
+        "interaction_role_id",
+        "interaction_channel_id",
+        "log_channel_id",
+    }
+
+    async def set_core_setting(self, server_id: int, column: str, value: int) -> bool:
+        """Write one core-config column, leaving every other column untouched.
+
+        One column at a time is the point: test mode, the module flags and the other two
+        settings are each written by their own command, and a whole-row save from any of
+        them would carry stale values over the others.
+
+        Returns False where the server has no configuration row to amend.
+        """
+        if column not in self._SETTABLE_COLUMNS:
+            raise ValueError(f"{column!r} is not a core setting")
+
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                f"UPDATE server_configs SET {column} = ? WHERE server_id = ?",
+                (value, server_id),
+            )
+            await db.commit()
+            return cursor.rowcount > 0
 
     # ------------------------------------------------------------------
     # Validation helpers (require a live guild object)
