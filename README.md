@@ -1702,7 +1702,7 @@ A season that has been completed or cancelled is not previewable; a server holdi
 
 Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four `weather-*` — so they work on a server that has configured no teams at all. The other five need a roster and are refused until you have added teams.
 
-**What is real, and what is invented.** Everything a league configures is real: the division and its tier, the season number, the calendar, the teams, the seated drivers and their nationalities, and the artwork in the folders you set. What the bot invents is only what a round that has not been run cannot have — the finishing order, the forecast, the attendance points and the steward's verdict. A division with no seated driver at all has drivers invented for it as well, and the reply says so.
+**What is real, and what is invented.** Everything a league configures is real: the division and its tier, the season number, the calendar, the teams, the seated drivers and their nationalities, and the artwork in the folders you set. What the bot invents is only what a round that has not been run cannot have — the finishing order, the forecast, the attendance points and the steward's verdict. The attendance sheet's point limit is invented with the points, rather than read from what you configured, so that the sheet always carries a driver over the limit, one approaching it and rows marked neither way. A division with no seated driver at all has drivers invented for it as well, and the reply says so.
 
 **Sanctions a preview can draw.** A fabricated verdict carries five seconds added, ten seconds added, three seconds removed, or a disqualification. Those are the sanctions the bot can record and issue; a preview never draws one it cannot.
 

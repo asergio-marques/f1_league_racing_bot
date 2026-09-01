@@ -409,6 +409,54 @@ class TestAttendancePreview:
         for record in records:
             assert all(ordinal <= 2 for ordinal in record.round_points)
 
+    async def test_the_drawn_sheet_carries_both_marks(self, bot, league):
+        """The marks are the whole of what the sheet says beyond its numbers.
+
+        A preview seeded from one narrow band of totals paints a single mark down the column
+        — or none at all — and leaves the two artworks and the unmarked row unjudged.
+        """
+        from pathlib import Path
+
+        from services.image_attendance_service import (
+            MARK_ASSET_CLASS,
+            MARK_NEAR,
+            MARK_REACHED,
+        )
+        from utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_attendance_preview(bot, context)
+
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "attendance_template.svg")
+        spec = requests[0][2](root)
+
+        marks = {
+            value
+            for name, value in spec.image_data.items()
+            if name.endswith("_points_background")
+        }
+
+        assert (MARK_ASSET_CLASS, MARK_REACHED) in marks
+        assert (MARK_ASSET_CLASS, MARK_NEAR) in marks
+
+    async def test_the_drawn_sheet_leaves_a_row_unmarked(self, bot, league):
+        """A driver earning no mark is drawn as one, and the sheet must show that too."""
+        context = await _context(bot, round_number=2, require_teams=True)
+
+        requests = await build_attendance_preview(bot, context)
+
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "attendance_template.svg")
+        spec = requests[0][2](root)
+
+        marked = [n for n in spec.image_data if n.endswith("_points_background")]
+        assert len(marked) < len(context.drivers)
+
     async def test_a_league_that_collects_no_nationality_draws_no_flag(self, bot, league, db_path):
         """FR-028 — the sheet does carry a flag element, and it obeys the switch."""
         async with get_connection(db_path) as db:

@@ -1058,7 +1058,7 @@ These hold for every image type of the module and are stated here rather than re
     - The "images test attendance" and "images test rsvp" commands are the one exception, having no textual counterpart to fall back to. A fatal error met by one of them shall be reported to the league manager who invoked it and no image posted.
 
 ### Test data
-- The "images test attendance" command shall generate a sheet drawn for the division named, holding the calendar that division configures and standing after the round named, so that the emptying of the cells of a round yet to be run may be evaluated alongside those already finalized. The point limit is drawn as the division configures it.
+- The "images test attendance" command shall generate a sheet drawn for the division named, holding the calendar that division configures and standing after the round named, so that the emptying of the cells of a round yet to be run may be evaluated alongside those already finalized. The point limit is fabricated alongside the records and not read from the configuration of the division, and shall be a limit the rounds run can confer upon a driver, so that both marks are drawn whatever the division configures and however few rounds have been run.
 - Attendance records shall be fabricated for every round of that calendar up to and including the round named, and for none after it.
 - The drivers drawn shall be the drivers of the division named.
 - The drivers fabricated shall include, insofar as the number of rows declared allows:
@@ -1070,6 +1070,7 @@ These hold for every image type of the module and are stated here rather than re
     - two drivers level on totals, so that the alphabetical ordering of drivers level may be evaluated;
     - a driver of the reserve team distributed into a seat for one of the rounds run;
     - a driver who took no part in one of the rounds run and holds no record for it.
+- The totals fabricated shall differ across the field, spanning the point limit and the ground beneath it, so that no two marks and no unmarked row are absent from a sheet a driver count of four or more allows.
 - The cases listed above shall be drawn insofar as the driver count and the round count of the division named allow. None is fabricated into existence to reach one.
 - The sheet draws a driver's flag where the league collects a nationality and draws none where it does not, as a posted sheet does.
 - Should the division named hold no team beyond the reserve team, the command shall be rejected with a clear error, as there is no sheet to be drawn.

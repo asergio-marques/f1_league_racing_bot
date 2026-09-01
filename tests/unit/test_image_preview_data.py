@@ -163,3 +163,122 @@ class TestStandingsScatter:
         rows = fabricate_race_rows(self._drivers(20), {"Team": 900}, {})
         holder = [row for row in rows if row.fastest_lap_bonus]
         assert [row.finishing_position for row in holder] == [2]
+
+
+# ---------------------------------------------------------------------------
+# The attendance sheet's totals and the marks they earn
+# ---------------------------------------------------------------------------
+
+
+class TestAttendanceFabrication:
+    """A preview sheet must exercise both marks and the absence of one.
+
+    Totals cut from one narrow band draw a column of identical numbers under a single mark —
+    a picture that tells a manager judging the template nothing about the two marks, the
+    unmarked row, or how the sheet orders a field that actually differs.
+    """
+
+    @staticmethod
+    def _drivers(count: int):
+        from types import SimpleNamespace
+
+        return [
+            SimpleNamespace(key=n, team_name="Team", seat_number=1)
+            for n in range(1, count + 1)
+        ]
+
+    @staticmethod
+    def _marks(records, limit):
+        from services.image_attendance_service import mark_for
+
+        return {mark_for(record.total, limit) for record in records}
+
+    def _sheet(self, driver_count: int, round_count: int):
+        from services.image_preview_data import (
+            fabricate_attendance_limit,
+            fabricate_attendance_records,
+        )
+
+        ordinals = list(range(1, round_count + 1))
+        limit = fabricate_attendance_limit(ordinals)
+        records = fabricate_attendance_records(
+            self._drivers(driver_count), ordinals, limit
+        )
+        return records, limit
+
+    def test_both_marks_and_an_unmarked_row_appear_together(self):
+        from services.image_attendance_service import MARK_NEAR, MARK_REACHED
+
+        records, limit = self._sheet(20, 12)
+
+        assert self._marks(records, limit) == {MARK_REACHED, MARK_NEAR, None}
+
+    def test_the_marks_survive_a_field_of_four_and_a_single_round_run(self):
+        """A preview is asked for at round one as often as at round twelve."""
+        from services.image_attendance_service import MARK_NEAR, MARK_REACHED
+
+        for driver_count, round_count in ((4, 1), (4, 2), (20, 1), (20, 2), (20, 24)):
+            records, limit = self._sheet(driver_count, round_count)
+            assert self._marks(records, limit) == {MARK_REACHED, MARK_NEAR, None}, (
+                f"{driver_count} drivers over {round_count} rounds"
+            )
+
+    def test_the_totals_are_not_all_alike(self):
+        records, _limit = self._sheet(20, 12)
+
+        assert len({record.total for record in records}) >= 10
+
+    def test_a_total_never_disagrees_with_the_cells_beneath_it(self):
+        """The mark is read off the total and the row off the cells: they are one number."""
+        records, _limit = self._sheet(20, 12)
+
+        for record in records:
+            assert record.total == sum(
+                value or 0 for value in record.round_points.values()
+            )
+
+    def test_no_round_confers_more_than_a_round_can(self):
+        from services.image_preview_data import MAX_ROUND_PENALTY
+
+        records, _limit = self._sheet(20, 12)
+        values = {
+            value or 0 for record in records for value in record.round_points.values()
+        }
+
+        assert values == set(range(MAX_ROUND_PENALTY + 1))
+
+    def test_the_sanctioned_driver_has_reached_the_limit(self):
+        """The annotation and the mark answer to the same number and must agree."""
+        from services.image_attendance_service import MARK_REACHED, mark_for
+
+        records, limit = self._sheet(20, 12)
+
+        sanctioned = [record for record in records if record.sanctioned]
+        assert sanctioned
+        assert all(mark_for(r.total, limit) == MARK_REACHED for r in sanctioned)
+
+    def test_one_driver_holds_nothing_at_all(self):
+        records, _limit = self._sheet(20, 12)
+
+        assert any(not record.round_points for record in records)
+
+    def test_the_limit_falls_to_what_the_rounds_run_can_confer(self):
+        """Ten points over one round run would leave every row unmarked."""
+        from services.image_preview_data import (
+            MAX_ROUND_PENALTY,
+            NOMINAL_ATTENDANCE_LIMIT,
+            fabricate_attendance_limit,
+        )
+
+        assert fabricate_attendance_limit([1]) == MAX_ROUND_PENALTY
+        assert fabricate_attendance_limit([1, 2]) == 2 * MAX_ROUND_PENALTY
+        assert fabricate_attendance_limit(range(1, 13)) == NOMINAL_ATTENDANCE_LIMIT
+
+    def test_the_records_are_the_same_on_every_invocation(self):
+        """A manager comparing two drawings needs the same numbers in both."""
+        first, _limit = self._sheet(20, 12)
+        second, _limit = self._sheet(20, 12)
+
+        assert [(r.key, r.total, dict(r.round_points)) for r in first] == [
+            (r.key, r.total, dict(r.round_points)) for r in second
+        ]

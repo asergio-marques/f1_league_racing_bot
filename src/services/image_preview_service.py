@@ -1056,7 +1056,10 @@ async def build_attendance_preview(bot, context: PreviewContext):
         build_fill_spec,
         resolve_drawing,
     )
-    from services.image_preview_data import fabricate_attendance_records
+    from services.image_preview_data import (
+        fabricate_attendance_limit,
+        fabricate_attendance_records,
+    )
     from services.image_calendar_service import MYSTERY_DATUM
 
     names, _teams, flags, _role_of = _driver_maps(context)
@@ -1088,7 +1091,11 @@ async def build_attendance_preview(bot, context: PreviewContext):
         for heading in headings
         if int(heading.number) <= int(round_obj.round_number)
     ]
-    records = fabricate_attendance_records(context.drivers, run_ordinals)
+    # The limit and the totals are fabricated together, so that the sheet carries a driver
+    # past the limit, one on it, one inside the near band and several clear of it however
+    # many rounds of the calendar have been run.
+    limit = fabricate_attendance_limit(run_ordinals)
+    records = fabricate_attendance_records(context.drivers, run_ordinals, limit)
 
     drawing = resolve_drawing(
         division_name=context.division_name,
@@ -1102,7 +1109,7 @@ async def build_attendance_preview(bot, context: PreviewContext):
         # each other, and a preview seeding both would draw a plate and a set of marks no
         # league could ever see.
         autoreserve_threshold=None,
-        autosack_threshold=10,
+        autosack_threshold=limit,
         division_tier=context.division_tier,
         season_number=context.season_number,
         race_name=_race_name(context),
