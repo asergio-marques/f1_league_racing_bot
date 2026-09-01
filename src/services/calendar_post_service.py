@@ -162,9 +162,11 @@ async def render_calendar_image(
     # this one cannot use: its two callers differ in origin — the calendar of record is
     # scheduled and falls back to text, `/season review`'s copy is commanded and rejects —
     # and both read a `RenderOutcome` rather than a `PostingDecision`. So the report is
-    # made here instead, because a notice that reaches only the `image_render_notices`
-    # table reaches nobody. That is why an entire league's circuit maps could go missing
-    # from a calendar with not one word said about it anywhere a manager looks.
+    # made here instead, because a notice that is not reported reaches nobody at all — the
+    # log channel and a commanding command's output are the only places one is seen, and
+    # since 046 they are the only places one goes. That is why an entire league's circuit
+    # maps could go missing from a calendar with not one word said about it anywhere a
+    # manager looks.
     if outcome.notices:
         from services.image_render_service import ImageRenderService
 

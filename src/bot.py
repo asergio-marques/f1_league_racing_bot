@@ -96,7 +96,6 @@ async def main() -> None:
     from services.image_render_service import ImageRenderService
 
     bot.image_render_service = ImageRenderService(  # type: ignore[attr-defined]
-        DB_PATH,
         bot.image_config_service,  # type: ignore[attr-defined]
         bot.image_validity_service,  # type: ignore[attr-defined]
     )

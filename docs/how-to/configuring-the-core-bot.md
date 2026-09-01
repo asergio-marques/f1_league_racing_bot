@@ -75,14 +75,27 @@ Run it anywhere; it is one of only two commands that do not require the command 
 | `/season status`, and `/division weather-channel`, `results-channel` and `standings-channel` | The interaction role alone |
 | `/module enable` and `/module disable` | Discord's **Administrator** permission |
 | `/bot-init` and `/bot-reset` | **Manage Server**, from any channel |
+| `/bot-log-channel`, `/bot-interaction-channel`, `/bot-interaction-role` | **Manage Server**, from any channel |
 
 So the interaction role is not a licence to reconfigure the league — it is the gate everything else sits behind. Drivers do not need it.
 
-Run `/bot-init` again with `force:True` to change any of the three later.
+**`/bot-init` runs once.** Run it a second time and it politely refuses — it will not overwrite what is already there. To change one of the three settings afterwards, use the command for that setting:
+
+```
+/bot-log-channel channel:#new-bot-logs
+/bot-interaction-channel channel:#new-bot-commands
+/bot-interaction-role role:@NewStewards
+```
+
+Each changes that one setting and touches nothing else.
+
+> **These work from any channel, and need only Manage Server.** That is on purpose. They exist for the day something goes wrong with the three settings themselves — somebody deletes the log channel, archives the command channel, or removes the steward role. If they needed the command channel or the role to run, the one thing you could not repair would be the thing that had broken. So they sit behind Manage Server instead, which is the permission that let you set the bot up in the first place.
+
+If you would rather start over from nothing, `/bot-reset full:True` clears the configuration and `/bot-init` becomes available again.
 
 > **A command run in the wrong channel is refused, not ignored.** You get a short message only you can see. If a command seems to do nothing, check which channel you are in first.
 
-**One team already exists.** The first `/bot-init` creates the **Reserve** team, which has unlimited seats and belongs to every division. You cannot remove or rename it. Nothing else is created — your team list starts empty apart from it.
+**One team already exists.** `/bot-init` creates the **Reserve** team, which has unlimited seats and belongs to every division. You cannot remove or rename it. Nothing else is created — your team list starts empty apart from it.
 
 ---
 

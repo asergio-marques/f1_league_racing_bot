@@ -206,7 +206,6 @@ async def test_the_render_service_names_the_png_from_the_stem(tmp_path, monkeypa
         _UNCATALOGUED,
         lambda root: FillSpec(root=root, image_type=_UNCATALOGUED),
         output_dir=tmp_path / "out",
-        persist_notices=False,
         filename_stem="season1_division1_lineup",
     )
 
@@ -245,7 +244,6 @@ async def test_no_stem_still_falls_back_to_the_template_key(tmp_path, monkeypatc
         _UNCATALOGUED,
         lambda root: FillSpec(root=root, image_type=_UNCATALOGUED),
         output_dir=tmp_path / "out",
-        persist_notices=False,
     )
 
     assert outcome.png_paths[0].name == f"{_UNCATALOGUED}.png"

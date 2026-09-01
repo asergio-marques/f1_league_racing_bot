@@ -1,6 +1,70 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-01 — v7.6.0 → v7.7.0: MINOR — the render-notice audit record is withdrawn; the log channel is the record]
+  Version change    : 7.6.0 → 7.7.0
+  Bump rationale    : MINOR. No Core Principle is removed and none is redefined, which is what this
+                      document reserves MAJOR for. Principle XIV stands, Rule XIV.4 stands, and
+                      XIV.4's "Where each is reported" — the operative obligation — is unchanged to
+                      the word: the calculation log channel always, a commanding command's output
+                      additionally, never a channel the drivers read.
+
+                      Nothing conforming to v7.6.0 becomes non-conforming. An obligation is
+                      withdrawn, not imposed, and nothing is forbidden that was previously required.
+
+                      It is MINOR rather than PATCH because a requirement genuinely goes rather than
+                      being reworded, as the narrowing at v7.5.0 was MINOR for the same reason. The
+                      policy's MINOR wording speaks of guidance *expanded*, which does not literally
+                      describe a withdrawal; of the three slots this document offers it is
+                      nonetheless the right one, MAJOR being reserved for Core Principles and PATCH
+                      for changes carrying no semantic weight.
+
+  Motivation        : The record was never read. `_persist` was its only writer, no SELECT against
+                      `image_render_notices` existed anywhere in `src/`, and the index it carried on
+                      (server_id, rendered_at) served a reader that was never built. It had no
+                      retention rule and grew one row per field per render — some 1,599 for a single
+                      standings image — reaching 4.8 MB of the first production database's 5.3 MB,
+                      or 91.6% of it, against some 450 KB for the entire league it was supposedly
+                      auditing. Dropping it returned that database to 0.44 MB.
+
+                      The requirement was also asserted rather than stated. XIV.4 requires a notice
+                      be *reported*, and names the two destinations; it never required one be
+                      stored. The obligation to store came from the data model appendix describing
+                      the entity as "the audit record required by Principle XIV.4" — a requirement
+                      the rule's own text does not contain.
+
+  Modified sections :
+    - Principle XIV, Rule 4, "How they are reported": the closing sentence no longer presupposes a
+      stored record. It still says the grouping is presentational — that notices are grouped for the
+      message and not merged — which is the load-bearing half of what it said.
+    - Data model appendix: the **RenderNotice** entity and its seven columns are replaced by a
+      statement that notices are not persisted, naming where they are reported instead. This makes
+      them symmetrical with render *problems*, which the paragraph beneath already declared
+      unpersisted for much the same reason.
+
+  Not changed, and deliberately:
+    - Principle XIV, Rule 4, "Where each is reported". It is now the whole of the obligation, and it
+      needed no amendment to become so.
+    - The four notice kinds, and what each of them means.
+    - Principle V. Its subject is configuration mutations and weather computations, and its
+      rationale already asks for a record that is channel-visible.
+
+  Added sections    : none
+  Removed sections  : the RenderNotice entity in the data model appendix.
+  Deferred items    : none. No placeholder tokens remain in the document.
+
+  Follow-up TODOs   : None. Migration 046 drops `image_render_notices` and its index; `_persist`,
+                      the `db_path` the render service held only for it, and the three model columns
+                      that existed only to be written there go with them. The reporting path —
+                      `grouped_notice_lines`, `format_notices`, `post_notices` — is untouched.
+                      `README.md` and `docs/how-to/configuring-the-core-bot.md` are brought into
+                      step by the same change, per the close-out discipline in CLAUDE.md. The image
+                      module wip-spec never described the table and needs no correction.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-01 — v7.5.0 → v7.6.0: MINOR — the vertical crop carries up what spans it, not the footer alone]
   Version change    : 7.5.0 → 7.6.0
   Bump rationale    : MINOR. One change to Principle XIV, Rule 2, and it **states a third effect of
@@ -4604,7 +4668,8 @@ place of the fields. The message MUST name what was being drawn, the kind of tem
 distinguishing one posting from another in a log holding many. Where a command triggered the
 generation, its output MUST carry a link to that logged message, which is therefore written before
 the output is composed; a log channel that cannot be written to costs the link and nothing else.
-This governs presentation only: the record kept of the notices holds one entry for each.
+This governs presentation only: the notices of a generation are grouped for the message and
+not merged, the render having met each one of them.
 
 **Rejection at the earliest moment.** A problem traceable to something a user configured or
 commanded MUST reject that input wherever the module is in a position to detect it: a command
@@ -6371,18 +6436,13 @@ not a table: eight aspects cover fifteen templates (weather alone accounts for s
 no command addresses an individual template's toggle. `source_module` is likewise a
 constant per aspect rather than a stored column, since it never varies per server.
 
-**RenderNotice** (append-only, per render — the audit record required by Principle XIV.4):
-- `notice_id` (INTEGER PK, server-scoped auto-increment)
-- `server_id` (TEXT)
-- `image_type` (TEXT)
-- `rendered_at` (TEXT — UTC ISO 8601)
-- `notice_kind` (ENUM: FONT_SUBSTITUTED / WRAP_TRUNCATED / INLINE_SIZE_TRUNCATED /
-  ASSET_FALLBACK_USED / OPTIONAL_FIELD_EMPTIED)
-- `field_id` (TEXT, nullable) — the template `@id` the notice concerns; null for
-  render-wide notices.
-- `detail` (TEXT) — human-readable description posted to the calculation log channel.
+Render *notices* (Principle XIV.4) are not persisted as their own entity. A notice is carried
+on the outcome of the render that raised it and reported where XIV.4 requires — the calculation
+log channel always, and the output of a commanding command additionally. Those destinations are
+the whole of the obligation; the log channel is the durable record, and a log channel that cannot
+be written to is itself reported in the interaction channel rather than passing silently.
 
-Render *problems* (Principle XIV.4) are not persisted as their own entity: a problem aborts
+Render *problems* (Principle XIV.4) are not persisted as their own entity either: a problem aborts
 the render, falls back to text output, and is recorded in the existing audit log
 (Principle V) alongside the source module's own output entry.
 
@@ -6541,4 +6601,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.6.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-01
+**Version**: 7.7.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-01

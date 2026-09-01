@@ -98,9 +98,7 @@ async def bot(db_path):
         season_service=SeasonService(db_path),
         image_config_service=config_service,
         image_validity_service=validity_service,
-        image_render_service=ImageRenderService(
-            db_path, config_service, validity_service
-        ),
+        image_render_service=ImageRenderService(config_service, validity_service),
         attendance_service=SimpleNamespace(get_division_config=_none),
     )
 
