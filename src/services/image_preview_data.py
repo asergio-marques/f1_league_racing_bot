@@ -288,23 +288,125 @@ def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team
 # ── Attendance (FR-027) ───────────────────────────────────────────────────
 
 
-def fabricate_attendance_records(drivers, round_ordinals):
+#: The most a single round can confer on one driver. The module's own defaults are a point
+#: for failing to check in and a point for being absent, and nothing stacks a third onto a
+#: round, so a fabricated cell never shows a number a real round could not produce.
+MAX_ROUND_PENALTY = 2
+
+#: The sack threshold a preview seeds where the calendar is long enough to reach it. A round
+#: of ten is what a league most often sets, and it leaves the near band well clear of zero.
+NOMINAL_ATTENDANCE_LIMIT = 10
+
+
+def fabricate_attendance_limit(round_ordinals) -> int:
+    """The point limit a preview seeds, for the rounds run so far.
+
+    The limit and the totals must be fabricated together: the marks are the whole of what an
+    attendance sheet says beyond its numbers, and a limit of ten over two rounds run — four
+    points between every driver on the sheet — leaves every row unmarked and the graphic
+    unjudged. So where the rounds run cannot confer ten points on anyone, the limit falls to
+    what they can, and the tiers of the mark come down with it.
+    """
+    ceiling = MAX_ROUND_PENALTY * max(1, len(list(round_ordinals)))
+    return max(1, min(NOMINAL_ATTENDANCE_LIMIT, ceiling))
+
+
+def _attendance_totals(count: int, limit: int) -> list[int]:
+    """The total each fabricated driver carries, in driver order.
+
+    The last four drivers are placed deliberately: past the limit, on it, and at both values
+    inside the near band, so that a sheet drawn from these exercises the reached mark, the
+    near mark and their absence in one picture rather than painting one mark down the column.
+    The rest descend through the band below, cycling so that no two adjacent drivers share a
+    total — a field where everyone holds the same number tells a manager nothing about how
+    the sheet orders or draws it.
+    """
+    from services.image_attendance_service import MARK_NEAR_BAND
+
+    if count <= 0:
+        return []
+
+    totals = [0] * count
+    marked = set()
+    # Worst first, from the end of the field: the sanctioned driver is the last of them.
+    for offset, value in enumerate((limit + 1, limit, limit - 1, limit - 2)):
+        index = count - 1 - offset
+        if index <= 0:  # never the driver drawn holding nothing at all
+            break
+        totals[index] = max(1, value)
+        marked.add(index)
+
+    # Everyone else sits below the near band, where a real field mostly does, descending so
+    # that adjacent rows differ and the sheet's ordering can be read off the column.
+    band = list(range(max(1, limit - MARK_NEAR_BAND - 1), 0, -1))
+    unmarked = [index for index in range(1, count) if index not in marked]
+    for position, index in enumerate(unmarked):
+        totals[index] = band[position % len(band)]
+
+    return totals
+
+
+def _scatter_penalties(
+    total: int, ordinals, offset: int, doubled: bool = False
+) -> dict[int, int | None]:
+    """*total* points spread over *ordinals*, at most `MAX_ROUND_PENALTY` in any one round.
+
+    The round the spreading starts from rotates with the driver, so the penalties fall across
+    the grid rather than stacking into the same early columns for every row. *doubled* fills
+    each round to the maximum before moving to the next, which is how a cell showing two ever
+    reaches a long calendar: spread thin over twenty rounds, no driver's total would ever
+    double up, and the sheet would draw one number in every filled cell.
+
+    A total larger than the rounds can carry is simply cut short — the record's total is read
+    back off the cells afterwards, so the number above a row can never disagree with the row.
+    """
+    ordinals = list(ordinals)
+    points: dict[int, int | None] = {ordinal: 0 for ordinal in ordinals}
+    if not ordinals:
+        return points
+
+    remaining = total
+    for step in range(MAX_ROUND_PENALTY * len(ordinals)):
+        if remaining <= 0:
+            break
+        column = step // MAX_ROUND_PENALTY if doubled else step
+        points[ordinals[(offset + column) % len(ordinals)]] += 1
+        remaining -= 1
+    return points
+
+
+def fabricate_attendance_records(drivers, round_ordinals, limit: int | None = None):
     """One record per driver over *round_ordinals*, covering the range a sheet carries.
 
     The states drawn, as far as the driver count allows: a driver holding nothing at all, one
-    absent from a round entirely, and one carrying the sanction annotation.
+    absent from a round entirely, one carrying the sanction annotation, and — through
+    `_attendance_totals` — a driver at each tier of the limit mark and several at none of them.
+
+    *limit* is the threshold the sheet is drawn against, and defaults to the one
+    `fabricate_attendance_limit` seeds for the same rounds. A caller passing its own must pass
+    that same number to ``resolve_drawing``, or the marks will answer to a limit the plate
+    above them does not name.
     """
     from services.image_attendance_service import DriverRecord
 
+    ordinals = list(round_ordinals)
+    limit = fabricate_attendance_limit(ordinals) if limit is None else limit
+    totals = _attendance_totals(len(drivers), limit)
+
     records = []
     for index, driver in enumerate(drivers):
-        points: dict[int, int | None] = {}
-        for offset, ordinal in enumerate(round_ordinals):
-            if index == 0:
-                continue  # holds nothing at all: every cell of the row empty
-            if index == 1 and offset == 0:
-                continue  # took no part in one of the rounds run
-            points[ordinal] = (index + offset) % 3
+        if index == 0:
+            points: dict[int, int | None] = {}  # holds nothing at all: every cell empty
+        else:
+            # The second driver took no part in the first round run, which is not the same
+            # as a round that conferred nothing on them: that column carries no cell at all.
+            # Not where one round has been run, though — that would leave them holding no
+            # cell at all, which is the first driver's case and not this one.
+            absent = index == 1 and len(ordinals) > 1
+            available = ordinals[1:] if absent else ordinals
+            points = _scatter_penalties(
+                totals[index], available, index, doubled=index % 2 == 1
+            )
 
         records.append(
             DriverRecord(

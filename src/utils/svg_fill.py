@@ -61,6 +61,28 @@ _SHAPE_INSIDE_RE = re.compile(r"url\(\s*#([^)\s]+)\s*\)")
 #: the off-canvas notice already tolerates (FR-026).
 _CROP_EPSILON = 0.5
 
+#: Elements whose subtree is a **definition** rather than something drawn where it stands. A
+#: shape inside one is geometry another element borrows — the rectangle of a clip, the ramp of
+#: a mask — and its coordinates answer to whatever refers to it, not to the canvas. The crop
+#: leaves them all alone: shortening the rectangle of a clip would cut the content it frames,
+#: which is not what a shorter canvas asks for. An editor's export is full of these; the
+#: packaged templates carry none.
+_DEFINITION_TAGS = frozenset(
+    {"defs", "clipPath", "mask", "symbol", "marker", "pattern", "linearGradient",
+     "radialGradient", "filter"}
+)
+
+#: One transform function and its arguments, for reading a `transform` attribute as a list.
+_TRANSFORM_RE = re.compile(r"([A-Za-z]+)\s*\(([^)]*)\)")
+
+#: A path that draws one straight vertical rule and nothing else: a move, then a single
+#: vertical segment, with an optional close. Anything richer — a second segment, a curve, a
+#: diagonal — is left alone, its shape being its own (see `_path_rule`).
+_PATH_RULE_RE = re.compile(
+    r"^\s*[Mm]\s*(-?[\d.]+)[\s,]+(-?[\d.]+)\s*"
+    r"([VvLl])\s*(-?[\d.]+)(?:[\s,]+(-?[\d.]+))?\s*[Zz]?\s*$"
+)
+
 
 @dataclass
 class FillSpec:
@@ -262,16 +284,23 @@ def fill(spec: FillSpec) -> FillResult:
                 # the height the crop is about to remove. A template that declares none
                 # is cropped as it always was, and a full-size division moves nothing:
                 # its crop point stands at the canvas height and the delta is nought.
+                footer_node: etree._Element | None = None
                 if spec.footer is not None and declared_height is not None:
                     delta = declared_height - crop_y
-                    node = index.resolve(spec.footer)
-                    if node is None:
+                    footer_node = index.resolve(spec.footer)
+                    if footer_node is None:
                         unresolved.append(
                             f"unknown footer group `{spec.footer}` "
                             f"(template declares no such id)"
                         )
                     elif delta > _CROP_EPSILON:
-                        _translate_y(node, -delta)
+                        _translate_y(footer_node, -delta)
+                # Rules ruled down the rows follow the band they were authored to stop
+                # short of, rather than running on to the cut edge.
+                if declared_height is not None:
+                    _shorten_across_crop(
+                        root, crop_y, declared_height - crop_y, footer_node
+                    )
                 _crop_to(root, crop_y)
 
     canvas = canvas_of(root)
@@ -915,6 +944,203 @@ def _translate_y(element: etree._Element, offset: float) -> None:
     existing = (element.get("transform") or "").strip()
     shift = f"translate(0,{offset:g})"
     element.set("transform", f"{shift} {existing}".strip())
+
+
+def _shorten_across_crop(
+    root: etree._Element,
+    crop_y: float,
+    delta: float,
+    footer: etree._Element | None,
+) -> None:
+    """Pull the lower end of everything spanning *crop_y* up by *delta* (XIV.2).
+
+    A rule ruled down a column of rows — the vertical separators of a standings grid or an
+    attendance sheet — is authored to stop just short of the footer band, not at the canvas
+    edge. Cropping the canvas alone leaves it running to the new edge and straight through the
+    band the crop has just carried up, which is the one place the template said it must not
+    reach.
+
+    So a shape crossing the crop point keeps the distance it was authored to hold from the
+    bottom of the canvas, exactly as the footer does. A shape that already ended at the canvas
+    edge ends at the new one, which is what cropping alone did, so nothing that was right
+    before changes.
+
+    Lines, rectangles, and a path drawing one straight vertical rule — the three ways an
+    editor writes a separator. A path holding anything more is left alone: its geometry is its
+    own and cannot be shortened without understanding what it draws.
+
+    What is exempt, and how a translated layer is followed into: see `_canvas_offset`.
+    """
+    if delta <= _CROP_EPSILON:
+        return
+
+    for element in root.iter():
+        if not isinstance(element.tag, str):
+            continue
+        offset = _canvas_offset(element, footer)
+        if offset is None:
+            continue
+
+        # The comparison is made in canvas coordinates and the shortening applied in the
+        # element's own. A translate shifts the two apart but does not scale between them,
+        # so the delta itself needs no conversion.
+        def spans(upper: float, lower: float) -> bool:
+            return upper + offset < crop_y - _CROP_EPSILON < lower + offset
+
+        tag = etree.QName(element).localname
+        if tag == "line":
+            top, bottom = length(element.get("y1")), length(element.get("y2"))
+            if top is None or bottom is None:
+                continue
+            name = "y2" if bottom >= top else "y1"
+            lower, upper = max(top, bottom), min(top, bottom)
+            if spans(upper, lower):
+                element.set(name, f"{max(upper, lower - delta):g}")
+        elif tag == "rect":
+            top, height = length(element.get("y")), length(element.get("height"))
+            if top is None or height is None:
+                continue
+            if spans(top, top + height):
+                element.set("height", f"{max(0.0, height - delta):g}")
+        elif tag == "path":
+            rule = _path_rule(element.get("d"))
+            if rule is None:
+                continue
+            top, bottom, rewrite = rule
+            if spans(top, bottom):
+                element.set("d", rewrite(max(top, bottom - delta)))
+
+
+def _canvas_offset(
+    element: etree._Element, footer: etree._Element | None
+) -> float | None:
+    """How far below its own coordinates *element* is drawn, or None where it is exempt.
+
+    One walk up the tree, answering both questions the shortening asks.
+
+    **Translates are followed.** An editor puts its artwork inside a positioned layer as a
+    matter of course, and a rule inside one is still a rule ruled down the rows; the offset
+    is the sum of the translates above it, and its own y plus that offset is where it lands
+    on the canvas. Any other transform — a scale, a rotate, a matrix — exempts the element:
+    its own y is then not a canvas y at all, and no reading of "shorten by delta" survives.
+
+    **The footer's own subtree** is exempt: it has already been carried up whole, and
+    shortening a rule inside it would take the move twice.
+
+    **A definition** above it is exempt — see `_DEFINITION_TAGS`.
+
+    Ancestry is walked with ``is`` rather than compared by identity value — lxml builds an
+    element proxy on demand and frees it again, so ``id()`` over a subtree collects addresses
+    that later proxies are free to reuse, and a set of them silently matches the wrong nodes.
+    """
+    offset = 0.0
+    node: etree._Element | None = element
+    while node is not None:
+        if node is footer:
+            return None
+        if node is not element and isinstance(node.tag, str):
+            if etree.QName(node).localname in _DEFINITION_TAGS:
+                return None
+        shift = _translate_y_of(node.get("transform"))
+        if shift is None:
+            return None
+        offset += shift
+        node = node.getparent()
+    return offset
+
+
+def _translate_y_of(transform: str | None) -> float | None:
+    """The y a transform attribute translates by, or None where it does more than translate.
+
+    A bare `translate(x)` translates along x alone and contributes nothing. Several functions
+    in one attribute are composed left to right — which is what `_translate_y` itself leaves
+    behind when it prepends to a transform the template already had — and translates compose
+    by addition, so their sum is the whole of it.
+    """
+    raw = (transform or "").strip()
+    if not raw:
+        return 0.0
+
+    total = 0.0
+    consumed = 0
+    for match in _TRANSFORM_RE.finditer(raw):
+        if match.group(1) != "translate":
+            return None
+        arguments = re.split(r"[\s,]+", match.group(2).strip())
+        if len(arguments) > 2:
+            return None
+        if len(arguments) == 2:
+            value = length(arguments[1])
+            if value is None:
+                return None
+            total += value
+        consumed = match.end()
+    # Anything the function pattern did not account for is something unread, and a transform
+    # this cannot read in full is one it must not act on.
+    if consumed != len(raw):
+        return None
+    return total
+
+
+def _path_rule(
+    d: str | None,
+) -> tuple[float, float, Callable[[float], str]] | None:
+    """A path drawing one straight vertical rule, as (top, bottom, rewrite), else None.
+
+    A rule drawn with a pen rather than a line tool is what an editor commonly exports, and
+    without this the shortening would pass over the very shapes it exists for. Only the plain
+    cases are read — a move and one vertical segment, absolute or relative — because a path
+    holding anything else is a shape whose meaning is its own, and a lower end cannot be
+    moved without knowing what it draws.
+
+    The rewrite hands back the same path with its lower end at the y it is given, in the same
+    command the author wrote it in.
+    """
+    match = _PATH_RULE_RE.match(d or "")
+    if match is None:
+        return None
+
+    start_x, start_y = length(match.group(1)), length(match.group(2))
+    command = match.group(3)
+    first, second = length(match.group(4)), length(match.group(5))
+    if start_x is None or start_y is None or first is None:
+        return None
+
+    if command == "V":
+        end = first
+    elif command == "v":
+        end = start_y + first
+    elif command in {"L", "l"} and second is not None:
+        # A diagonal is not a rule down the rows, whatever else it may be.
+        across = first if command == "L" else start_x + first
+        if abs(across - start_x) > _CROP_EPSILON:
+            return None
+        end = second if command == "L" else start_y + second
+    else:
+        return None
+
+    if abs(end - start_y) <= _CROP_EPSILON:
+        return None
+
+    def rewrite(bottom: float) -> str:
+        """The same rule with its lower end at *bottom*, whichever end that is.
+
+        A rule drawn upwards has its lower end at the move, so the move is what changes and
+        the segment follows it. Either way the pair is written back in the command the author
+        used, so a file keeps the shape of the one that was authored.
+        """
+        # Which end is the lower one is fixed by the geometry, not by the order written.
+        head, tail = (start_y, bottom) if end > start_y else (bottom, end)
+        across = match.group(4)
+        if command == "V":
+            return f"M{match.group(1)} {head:g}V{tail:g}"
+        if command == "v":
+            return f"M{match.group(1)} {head:g}v{tail - head:g}"
+        if command == "L":
+            return f"M{match.group(1)} {head:g}L{across} {tail:g}"
+        return f"M{match.group(1)} {head:g}l{across} {tail - head:g}"
+
+    return min(start_y, end), max(start_y, end), rewrite
 
 
 def _crop_to(root: etree._Element, crop_y: float) -> None:

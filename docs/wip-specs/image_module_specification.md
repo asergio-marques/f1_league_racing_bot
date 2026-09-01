@@ -231,9 +231,14 @@ These hold for every image type of the module and are stated here rather than re
 - The cut shall be taken at the Y coordinate of the "<collection>_<x>_vertical_crop_point" field of the last member the data fill, <x> being the ordinal of that member.
 - The cut shall be applied to the SVG before its conversion to PNG, by the height and the view box declared on the root of the document being rewritten to that coordinate. The width is unaffected.
 - Where the template declares a "footer_group" field — the band of static chrome standing beneath the collection, such as a caption naming the graphic — that group shall be carried up by the difference between the height the template declares and the coordinate of the cut, and shall be carried up before the cut is made, so that a graphic drawn short keeps the band beneath its rows rather than losing it off the bottom.
+- An element spanning the cut shall have its lower end carried up by that same difference, so that it keeps the distance from the foot of the canvas at which it was drawn. A rule ruled down the members — the separator between the round columns of a standings grid or an attendance sheet — shall therefore stop above the footer band of a graphic drawn short exactly as it does of one drawn whole, rather than running on to the cut.
+    - A line, a rectangle, and a path drawing one straight vertical rule and nothing else are carried up in this way, those being the forms in which a template draws a rule. A path drawing anything more shall be left as it stands, its shape not being one whose lower end can be moved without reading it.
+    - An element within a group the template merely positions shall be carried up as one at the top of the canvas is, the position of the group being read and its coordinates followed. An element the template has scaled or rotated shall be left as it stands, its coordinates not being those of the canvas.
+    - An element within the footer group shall be left as it stands, that group being carried up whole. So shall an element within a definition — a clipping path, a mask, a symbol, a gradient — the geometry of which is borrowed by whatever refers to it and is not drawn where it stands.
+    - An element spanning the cut and already reaching the foot of the canvas reaches the new foot, which is what the cut alone did to it.
 - The crop point of the last member a template declares shall stand at the height that template declares, so that a division holding as many members as the template declares is drawn whole.
     - Where it does not, the image shall be cut at that crop point all the same and a non-fatal error reported naming the template. Such a template is not rejected, drawing correctly as it does for every division smaller than the number of members it declares.
-- Anything a template draws below the crop point of a member, and outside its "footer_group", is absent from every image cut at that point. A template shall therefore draw nothing there.
+- Anything a template draws wholly below the crop point of a member, and outside its "footer_group", is absent from every image cut at that point. A template shall therefore draw nothing there but what spans the cut from above it.
 - The crop point and the footer group are mandatory of the calendar template alone and optional of every other. A template declaring neither is drawn at the full height it declares, and is not at fault for declaring neither.
 - A graphic the data fill no member of shall not be cut. There is no crop point of a member that does not exist, and a single empty member band states something untrue of a division holding nobody.
 
@@ -458,7 +463,7 @@ These hold for every image type of the module and are stated here rather than re
 - The crop point is mandatory of a calendar template, which is the one image type of which this is true.
 - A round beyond the final round of the division whose every field falls below the cut shall be left as the template holds it, the cut being what removes it. A round beyond the final round of the division any field of which stands above the cut, which is any round a template places alongside the final one rather than below it, shall have its "round_<x>_group" field removed in its entirety, or every field bearing its ordinal removed one by one where the template declares no such group.
 - The crop and the group therefore divide the work between them: the crop removes what a template draws below the final round of the division, and the group what it draws beside it.
-- No element of a calendar template shall span the crop point of any round.
+- No element of a calendar template shall span the crop point of any round, the background of the canvas excepted. The shortening of a spanning line or rectangle defined in the conventions applies to a calendar as to any other graphic, and is what draws that background to the cut.
 - A template placing more than one round abreast shall place them in the order in which they are run, read across and then down, so that the rounds a division does not hold are those the cut and the group between them remove. A template running its rounds down one column and then down the next cannot be cropped, the cut removing the foot of every column alike.
 
 ### Resolution of the data to be placed
@@ -1058,7 +1063,7 @@ These hold for every image type of the module and are stated here rather than re
     - The "images test attendance" and "images test rsvp" commands are the one exception, having no textual counterpart to fall back to. A fatal error met by one of them shall be reported to the league manager who invoked it and no image posted.
 
 ### Test data
-- The "images test attendance" command shall generate a sheet drawn for the division named, holding the calendar that division configures and standing after the round named, so that the emptying of the cells of a round yet to be run may be evaluated alongside those already finalized. The point limit is drawn as the division configures it.
+- The "images test attendance" command shall generate a sheet drawn for the division named, holding the calendar that division configures and standing after the round named, so that the emptying of the cells of a round yet to be run may be evaluated alongside those already finalized. The point limit is fabricated alongside the records and not read from the configuration of the division, and shall be a limit the rounds run can confer upon a driver, so that both marks are drawn whatever the division configures and however few rounds have been run.
 - Attendance records shall be fabricated for every round of that calendar up to and including the round named, and for none after it.
 - The drivers drawn shall be the drivers of the division named.
 - The drivers fabricated shall include, insofar as the number of rows declared allows:
@@ -1070,6 +1075,7 @@ These hold for every image type of the module and are stated here rather than re
     - two drivers level on totals, so that the alphabetical ordering of drivers level may be evaluated;
     - a driver of the reserve team distributed into a seat for one of the rounds run;
     - a driver who took no part in one of the rounds run and holds no record for it.
+- The totals fabricated shall differ across the field, spanning the point limit and the ground beneath it, so that no two marks and no unmarked row are absent from a sheet a driver count of four or more allows.
 - The cases listed above shall be drawn insofar as the driver count and the round count of the division named allow. None is fabricated into existence to reach one.
 - The sheet draws a driver's flag where the league collects a nationality and draws none where it does not, as a posted sheet does.
 - Should the division named hold no team beyond the reserve team, the command shall be rejected with a clear error, as there is no sheet to be drawn.
