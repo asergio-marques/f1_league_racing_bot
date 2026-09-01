@@ -282,3 +282,57 @@ class TestAttendanceFabrication:
         assert [(r.key, r.total, dict(r.round_points)) for r in first] == [
             (r.key, r.total, dict(r.round_points)) for r in second
         ]
+
+
+class TestFabricatedTyreCompounds:
+    """FR-031's reasoning, applied to the tyres: every icon judged in one picture.
+
+    A preview exists so a manager can see how their template handles what the bot will
+    actually draw. The compounds became a closed set the module ships at Constitution
+    v7.8.0, so all five are now the bot's own artwork — and a compound the fabrication
+    never deals is a compound a manager never sees before a real round draws it.
+    """
+
+    @staticmethod
+    def _drivers(count: int):
+        from types import SimpleNamespace
+
+        return [
+            SimpleNamespace(key=n, team_name="Team", seat_number=1)
+            for n in range(1, count + 1)
+        ]
+
+    def _tyres(self, count: int):
+        from services.image_preview_data import fabricate_qualifying_rows
+
+        rows = fabricate_qualifying_rows(self._drivers(count), {"Team": 900}, {})
+        return [row.tyre for row in rows]
+
+    def test_all_five_compounds_are_drawn_on_a_field_of_six(self):
+        """Six, because one row records none — the smallest field that can show them all.
+
+        Dealt in turn rather than keyed on the position, which would skip whichever
+        compounds no position happened to land on.
+        """
+        from utils.tyre_compound import TYRE_COMPOUNDS
+
+        assert set(self._tyres(6)) == {None, *TYRE_COMPOUNDS}
+
+    def test_one_row_records_no_compound_at_all(self):
+        """The absent-datum case is drawn beside the five, being a state of its own.
+
+        A qualifying submission does not oblige a tyre, and the field is declared
+        `fallback_when_absent`, so a template is judged on how it draws that too.
+        """
+        assert self._tyres(6).count(None) == 1
+
+    def test_every_compound_dealt_is_one_the_vocabulary_admits(self):
+        """A fabricated value outside the set would draw the placeholder in a preview and
+        so misreport the template a manager is judging."""
+        from utils.tyre_compound import TYRE_COMPOUNDS
+
+        assert {t for t in self._tyres(20) if t is not None} <= set(TYRE_COMPOUNDS)
+
+    def test_a_field_too_small_to_show_them_all_still_deals_without_repeating(self):
+        dealt = [t for t in self._tyres(4) if t is not None]
+        assert len(dealt) == len(set(dealt))

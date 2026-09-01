@@ -324,7 +324,7 @@ ASSET_CLASS_DIRECTORIES: dict[str, str] = {
 #: incomplete against it, so the packaged directory of one of these classes is searched for
 #: the datum's own file — not only its `fallback.svg` — whether or not the league has pointed
 #: the class at a directory of its own. Every other class is never searched this way.
-CLOSED_SET_ASSET_CLASSES: frozenset[str] = frozenset({"marker", "weather"})
+CLOSED_SET_ASSET_CLASSES: frozenset[str] = frozenset({"marker", "weather", "tyre"})
 
 #: Slugs that are the module's own vocabulary wherever they appear, in a class whose data
 #: are otherwise the league's own. `mystery` stands for a round concealed until it is run
@@ -343,13 +343,20 @@ def is_closed_set_datum(asset_class: str, slug: str) -> bool:
     generic placeholder.
 
     It has two ways of being true because the classes differ in kind, not because there
-    are two rules. `marker` and `weather` are closed all the way down -- every datum they
-    can be handed comes from the module -- so the class settles it, and naming the class
-    is also what keeps those two vocabularies from being restated here where they would
-    drift from the services that define them. `flag` and `track` name countries and
-    circuits a league chose, and reserve two names within that, so there the datum settles
-    it: asserting the whole class would hand a league our file for a country it simply had
-    not drawn yet.
+    are two rules. `marker`, `weather` and `tyre` are closed all the way down -- every
+    datum they can be handed comes from the module -- so the class settles it, and naming
+    the class is also what keeps those three vocabularies from being restated here where
+    they would drift from the modules that define them: the position-change data in
+    `standings_service`, the weathers in `math_utils`, the five compounds in
+    `utils.tyre_compound`. `flag` and `track` name countries and circuits a league chose,
+    and reserve two names within that, so there the datum settles it: asserting the whole
+    class would hand a league our file for a country it simply had not drawn yet.
+
+    A tyre compound joined the first kind at Constitution v7.8.0, having sat in the second
+    by an accident of which list it was written into. It is what the game offers -- five
+    and no sixth -- so a league can no more be incomplete against it than against the three
+    directions a standing position can move, and leaving it there put a grey placeholder
+    and a notice on every qualifying row of a league that had drawn no tyre artwork.
     """
     return asset_class in CLOSED_SET_ASSET_CLASSES or slug in CLOSED_SET_ASSET_DATA
 

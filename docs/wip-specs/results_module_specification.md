@@ -239,6 +239,12 @@
     - All drivers are assigned to the division of the round;
     - The role in the Team column of every line does indeed belong to one of the teams;
     - For every entry, the driver in the Driver column is assigned to the team identified in the Team column OR is assigned to the reserve team;
+    - For every entry, the Tyre column either records no compound at all — being empty or "N/A" — OR names one of the five compounds a session may be run on;
+        - The five are "Soft", "Medium", "Hard", "Intermediate" and "Wet", and there is no sixth. They are a closed set the bot itself defines and no league chooses.
+        - Each is accepted under any of its spellings, matched without regard to case, spacing or punctuation: "Soft", "Softs" or "S"; "Medium", "Mediums" or "M"; "Hard", "Hards" or "H"; "Intermediate", "Intermediates", "Inter", "Inters" or "I"; "Wet", "Wets", "ExWets" or "W".
+        - The compound recorded shall be the canonical name of the five, whichever spelling was submitted.
+        - A compound outside the set shall be rejected, naming the five, rather than recorded.
+        - An entry recording no compound is not an error. A tyre is a value the submission of a session need not carry.
     - For every entry, the Best Lap column either contains the strings "DNS", "DNF" or "DSQ" OR follows one of the following formats:
         - "seconds.milisseconds";
         - "minutes:seconds.milisseconds";

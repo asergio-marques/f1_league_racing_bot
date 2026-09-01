@@ -1,6 +1,83 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-01 — v7.7.0 → v7.8.0: MINOR — the tyre class is closed, and the module supplies the five compounds]
+  Version change    : 7.7.0 → 7.8.0
+  Bump rationale    : MINOR. No Core Principle is removed and none is redefined. Rule XIV.13's
+                      closed-set clause is unchanged in its statement, its granularity and its
+                      consequence; one class moves across the line the clause already drew, and the
+                      data model gains a constraint on one nullable column.
+
+                      Nothing conforming to v7.7.0 becomes non-conforming. Every resolution that
+                      succeeded before succeeds identically: a league's own file still wins, its own
+                      fallback still beats the packaged tier, and the notice kind is unchanged. Only
+                      a render that would have drawn a **generic placeholder** for a compound now
+                      draws the module's own correct file for it — an improvement in what is drawn,
+                      never a refusal of anything previously accepted.
+
+                      It is MINOR rather than PATCH because the tyre class genuinely changes side:
+                      the packaged directory is now searched under the datum's own name for it,
+                      which it was expressly forbidden to be. It is not MAJOR because that is
+                      reserved for Core Principles, and because the change is permissive.
+
+  Motivation        : A tyre compound is not a value a league named. It is what the game offers —
+                      five of them and no sixth — in exactly the sense the "class settles it"
+                      granularity already describes for the three directions of a change of standing
+                      position and the eight weathers. The clause's own test is whether the league
+                      chose the vocabulary and can be incomplete against it, and against five fixed
+                      compounds it cannot be.
+
+                      The consequence of having it on the wrong side was concrete: `resources/
+                      defaults/tyres/` shipped a `fallback.svg` and nothing else, so a league that
+                      had not drawn five icons got a grey placeholder and a notice on **every**
+                      qualifying row — for artwork it was never expected to supply. That is the
+                      "three identical arrows and a notice apiece" outcome the clause's closing
+                      paragraph already names as the thing it exists to prevent, arrived at for
+                      tyres by an accident of which list the class sat in.
+
+  Modified sections :
+    - Principle XIV, Rule 13, "The class settles it" bullet: gains the five tyre compounds
+      (`soft`, `medium`, `hard`, `intermediate`, `wet`) beside the position-change directions and
+      the weather vocabularies. The bullet's rule is unchanged; a third vocabulary meets it.
+    - Principle XIV, Rule 13, the MUST NOT sentence: `tyre` is struck from the list of classes whose
+      data are values a league named. It now reads "and likewise team and driver". The sentence's
+      reasoning — a league supplying most of its country flags must not be handed ours for the
+      remainder — is untouched and still governs flag, track, team and driver.
+    - Data model appendix, qualifying session result: the `tyre` column is constrained to the five
+      compounds or null, as `outcome_modifier` beside it is constrained to its four values. Null
+      keeps its existing meaning: the submission recorded no compound.
+
+  Not changed, and deliberately:
+    - The four resolution outcomes, and the rule that the datum's own file is sought in the
+      configured directory alone. The closed-set bullet remains the sole exception to it.
+    - Rule XIV.13's per-field absent-datum declaration and its worked example — "A qualifying entry
+      for which no tyre was recorded draws the tyre fallback, the submission of a session not
+      obliging one". A vocabulary constrains what a compound may **be**, never whether one was
+      recorded, so an absent tyre is unaffected and still reports nothing.
+    - Rule XIV.13's normalisation rule, which already names a tyre compound among the data one rule
+      serves. It is what makes the accepted spellings of a compound and its filename the same rule.
+    - Principle XIV's "imagery that identifies" clause, which already classes a tyre compound as a
+      picture of a **fact** rather than of an entity — the reading this amendment follows to its
+      conclusion rather than departs from.
+    - `ASSET_CLASS_ASPECTS`, the seven asset directories, and the `tyre-directory` configuration
+      command. A closed-set class keeps its directory command: `marker` and `weather` have theirs.
+
+  Added sections    : none
+  Removed sections  : none
+  Deferred items    : none. No placeholder tokens remain in the document.
+
+  Follow-up TODOs   : None. `resources/defaults/tyres/` gains `soft.svg`, `medium.svg`, `hard.svg`,
+                      `intermediate.svg` and `wet.svg` beside its `fallback.svg`;
+                      `CLOSED_SET_ASSET_CLASSES` gains `tyre`; and the qualifying submission parsers
+                      canonicalise the compound so a stored value is always one the artwork answers.
+                      `README.md`, `resources/README.md`, the image and results wip-specs and the
+                      image and results how-to guides are brought into step by the same change, per
+                      the close-out discipline in CLAUDE.md.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-01 — v7.6.0 → v7.7.0: MINOR — the render-notice audit record is withdrawn; the log channel is the record]
   Version change    : 7.6.0 → 7.7.0
   Bump rationale    : MINOR. No Core Principle is removed and none is redefined, which is what this
@@ -5402,16 +5479,18 @@ asset class. Resolution MUST be deterministic and documented:
   from the class it sits in:
 
   - **The class settles it**, where every datum the class can be handed is the module's own: the
-    three directions of a change of standing position (`gained`, `lost`, `unchanged`), and the three
+    three directions of a change of standing position (`gained`, `lost`, `unchanged`); the three
     types of weather a session may be drawn (`sunny`, `mixed`, `rain`) together with the five
-    concrete weathers a slot may carry (`clear`, `light_cloud`, `overcast`, `wet`, `very_wet`).
+    concrete weathers a slot may carry (`clear`, `light_cloud`, `overcast`, `wet`, `very_wet`); and
+    the five tyre compounds a session may be run on (`soft`, `medium`, `hard`, `intermediate`,
+    `wet`).
   - **The datum settles it**, where the class's other data are the league's own but the module
     reserves a filename within it: `mystery`, for a round concealed until it is run, and `other`,
     for a driver who stated no nationality in particular. Both are reserved in the flag class, and
     `mystery` in the track class besides.
 
   A class whose data are values a league named — the countries of the flag class, the circuits of
-  the track class, and likewise team, driver and tyre — MUST NOT be declared closed-set as a whole,
+  the track class, and likewise team and driver — MUST NOT be declared closed-set as a whole,
   however many reserved filenames it carries. A league supplying most of its country flags would
   otherwise be handed the module's file for the remainder, under a name the league chose and for
   artwork it did not; that a file happens not to ship under such a name today is an accident of what
@@ -6178,7 +6257,8 @@ Standings module):
 - `team_id` (INTEGER, FK → Team — the team the driver represented in this session)
 - `finishing_position` (INTEGER, 1-indexed; null for CANCELLED sessions)
 - `outcome_modifier` (ENUM: CLASSIFIED / DNF / DNS / DSQ)
-- `tyre` (TEXT, nullable — qualifying sessions only)
+- `tyre` (TEXT, nullable — qualifying sessions only; one of the five compounds a session may
+  be run on, or null where the submission recorded none)
 - `best_lap` (TEXT, nullable — lap time string or DNS/DNF/DSQ marker; qualifying sessions)
 - `gap` (TEXT, nullable — qualifying sessions)
 - `total_time` (TEXT, nullable — race sessions)
@@ -6601,4 +6681,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.7.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-01
+**Version**: 7.8.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-01

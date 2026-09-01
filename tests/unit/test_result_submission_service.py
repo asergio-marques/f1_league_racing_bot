@@ -16,12 +16,14 @@ from services.result_submission_service import (
     ParsedRaceRow,
     _format_time_ms,
     _parse_time_to_ms,
+    _validate_qualifying_row_wizard,
     extract_fl_override,
     get_sessions_for_format,
     validate_qualifying_row,
     validate_race_row,
     validate_submission_block,
 )
+from utils.tyre_compound import TYRE_COMPOUNDS
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +91,84 @@ def test_validate_qualifying_row_dns():
     line = "1, <@100>, <@&200>, N/A, DNS, N/A, N/A, N/A"
     result = validate_qualifying_row(line)
     assert isinstance(result, ParsedQualifyingRow)
+
+
+# ---------------------------------------------------------------------------
+# The tyre compound (Constitution XIV.13, v7.8.0)
+#
+# The five compounds are a closed set the module defines, so a submission naming
+# something else names nothing the bot can draw. What is stored is always the canonical
+# spelling, which is what lets the qualifying graphic find its file on every row without
+# the league supplying any tyre artwork at all.
+#
+# Both parsers are exercised for each rule: the six-field wizard a steward submits with,
+# and the eight-field form the amend path uses. They are separate functions and a check
+# added to one has been left out of the other before.
+# ---------------------------------------------------------------------------
+
+def _wizard(tyre: str) -> ParsedQualifyingRow | str:
+    return _validate_qualifying_row_wizard(f"1, <@123>, <@&456>, {tyre}, 1:23.456, N/A")
+
+
+def _amend(tyre: str) -> ParsedQualifyingRow | str:
+    return validate_qualifying_row(
+        f"1, <@123>, <@&456>, {tyre}, 1:23.456, N/A, N/A, N/A"
+    )
+
+
+@pytest.mark.parametrize("parse", [_wizard, _amend], ids=["wizard", "amend"])
+@pytest.mark.parametrize(
+    ("written", "expected"),
+    [
+        ("Soft", "Soft"), ("softs", "Soft"), ("S", "Soft"),
+        ("Mediums", "Medium"), ("M", "Medium"),
+        ("hard", "Hard"), ("H", "Hard"),
+        ("Inter", "Intermediate"), ("Intermediates", "Intermediate"), ("I", "Intermediate"),
+        ("ExWets", "Wet"), ("wets", "Wet"), ("W", "Wet"),
+    ],
+)
+def test_an_accepted_spelling_is_stored_canonically(parse, written, expected):
+    """A steward writes what they like of the accepted forms; one spelling is stored.
+
+    Storing the canonical name is what makes the graphic's lookup total: `softs` would
+    resolve to `softs.svg`, which does not ship and never will.
+    """
+    result = parse(written)
+    assert isinstance(result, ParsedQualifyingRow), result
+    assert result.tyre == expected
+
+
+@pytest.mark.parametrize("parse", [_wizard, _amend], ids=["wizard", "amend"])
+@pytest.mark.parametrize("written", ["Ultrasoft", "Supersoft", "C3", "Slick", "banana"])
+def test_a_compound_outside_the_set_is_refused(parse, written):
+    """Refused at submission rather than resolved to a placeholder six steps later."""
+    result = parse(written)
+    assert isinstance(result, str)
+    assert "Tyre must be one of" in result
+    assert written in result
+
+
+@pytest.mark.parametrize("parse", [_wizard, _amend], ids=["wizard", "amend"])
+def test_the_refusal_names_every_compound_a_steward_may_write(parse):
+    """The error is the only place a steward is told what the set is, so it lists it."""
+    result = parse("Ultrasoft")
+    assert isinstance(result, str)
+    for compound in TYRE_COMPOUNDS:
+        assert compound in result
+
+
+@pytest.mark.parametrize("parse", [_wizard, _amend], ids=["wizard", "amend"])
+@pytest.mark.parametrize("written", ["", "   ", "N/A"])
+def test_a_row_recording_no_compound_is_accepted_and_stores_none(parse, written):
+    """A closed vocabulary constrains what a compound may be, not whether one was given.
+
+    The submission of a session does not oblige a tyre, and the qualifying catalogue
+    declares the field `fallback_when_absent` on that basis — so an empty field is a state
+    to draw, never a line to send back.
+    """
+    result = parse(written)
+    assert isinstance(result, ParsedQualifyingRow), result
+    assert result.tyre is None
 
 
 # ---------------------------------------------------------------------------
