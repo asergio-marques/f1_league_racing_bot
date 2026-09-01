@@ -22,11 +22,14 @@ from pathlib import Path
 from lxml import etree
 
 from models.image_constants import (
+    ASSET_ASPECT_TOLERANCE,
     NOTICE_ASSET_FALLBACK_USED,
     NOTICE_CROP_POINT_OFF_CANVAS,
     NOTICE_FIELD_REDUCED,
     NOTICE_FONT_SUBSTITUTED,
     NOTICE_OPTIONAL_FIELD_EMPTIED,
+    NOTICE_PACKAGED_ASSET_OFF_SHAPE,
+    PACKAGED_ASSET_ASPECTS,
     fallback_names_for,
     is_closed_set_datum,
 )
@@ -430,6 +433,11 @@ def fill(spec: FillSpec) -> FillResult:
         if resolution.used_fallback:
             _set_href(target, str(resolution.path))
             consumed.add(field_id)
+            off_shape = _packaged_shape_notice(
+                target, asset_class, resolution, spec.image_type, field_id
+            )
+            if off_shape is not None:
+                notices.append(off_shape)
             if not depicts_absence:
                 # What was actually drawn, not what the tier was called. A closed-set hit
                 # in the packaged directory drew the module's **own correct file** for the
@@ -819,6 +827,67 @@ def _as_href(value: str) -> str:
     if not candidate.is_absolute():
         candidate = Path(paths.PROJECT_ROOT) / candidate
     return candidate.as_uri()
+
+
+def _packaged_shape_notice(
+    target: etree._Element,
+    asset_class: str,
+    resolution,
+    image_type: str,
+    field_id: str,
+) -> RenderNotice | None:
+    """Report a **packaged** file drawn into a slot it was not authored for.
+
+    A league chooses the shape of each asset class for itself and its own templates are held
+    only to agreeing with themselves. The artwork the bot ships cannot follow: it is drawn at
+    one shape per class and answers for every datum the league has not drawn yet. Re-shape a
+    class and each of those is stretched, which is worth saying once -- the league can fix it
+    only by drawing its own file, and nothing else in the module would mention it.
+
+    Silent in the three cases where there is nothing to report: the league's own file (which
+    its templates already agree with), a slot that stretches (which letterboxes nothing), and
+    a slot that happens to match what we ship anyway -- which is every league that has not
+    re-shaped anything, and so almost all of them.
+    """
+    if not getattr(resolution, "from_packaged", False):
+        return None
+    if target.get("preserveAspectRatio") == "none":
+        return None
+
+    packaged = PACKAGED_ASSET_ASPECTS.get(asset_class)
+    if packaged is None:
+        return None
+    try:
+        width = float(target.get("width"))
+        height = float(target.get("height"))
+    except (TypeError, ValueError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+
+    slot = width / height
+    if abs(slot - packaged) / packaged <= ASSET_ASPECT_TOLERANCE:
+        return None
+
+    return RenderNotice(
+        image_type=image_type,
+        notice_kind=NOTICE_PACKAGED_ASSET_OFF_SHAPE,
+        detail=(
+            f"the bot's own `{asset_class}` artwork is drawn at "
+            f"{_shape_text(packaged)} and this slot is {_shape_text(slot)}, so it is "
+            f"stretched. Supply your own `{asset_class}` file at your own shape and this "
+            f"stops."
+        ),
+        field_id=field_id,
+    )
+
+
+def _shape_text(value: float) -> str:
+    """A ratio a template author can act on: ``3:2`` rather than ``1.5``."""
+    for width, height in ((1, 1), (3, 2), (4, 3), (16, 9), (2, 1)):
+        if abs(value - width / height) < 0.005:
+            return f"{width}:{height}"
+    return f"{value:.3f}:1"
 
 
 def _set_href(element: etree._Element, href: str) -> None:

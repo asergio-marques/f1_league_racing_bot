@@ -1,6 +1,76 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-01 — v7.9.0 → v7.10.0: MINOR — a class's aspect is the league's to choose, and must
+merely be consistent within one template]
+  Version change    : 7.9.0 → 7.10.0
+  Bump rationale    : MINOR. One change to Principle XIV, Rule 6. No Core Principle is removed and
+                      none is redefined, and MAJOR is reserved for those.
+
+                      **Predominantly a relaxation**: templates refused under v7.9.0 are now
+                      accepted. A league drawing every flag slot at 2:1 was refused against a table
+                      that said flags are 3:2; it is now valid. Nothing the module ships changes
+                      shape, and a league that has re-shaped nothing sees no difference whatever.
+
+                      One tightening travels with it, and it breaks no rule that was not already
+                      written. v7.9.0 stated that a `preserveAspectRatio="none"` slot of a
+                      non-stretching class is "not exempt but **invalid**". The implementation only
+                      ever enforced that indirectly — the exemption was refused and the slot then
+                      failed the *aspect* comparison, so such a slot at the class's own aspect
+                      passed. It is now refused on the declaration alone. This is the code being
+                      brought up to governance already in force, not new governance.
+
+  Motivation        : The rule was stricter than its own Rationale required. That Rationale argues
+                      from one file per datum and a generator that never pads: the same
+                      `united_kingdom.svg` cannot be correct in a 3:2 slot and a 1:1 one at once.
+                      What that argues for is **agreement** among the slots one file is drawn into.
+                      It never argued for any particular number, and the rule asserted one anyway —
+                      binding a template a league had authored itself, against artwork the league
+                      had also authored to match it. Recorded as an owed decision in
+                      `known_issues.md` under P3 on 2026-09-01, and settled here the same day.
+
+                      The tightening is a consequence of the relaxation rather than a separate
+                      thought. Once the reference is read from the template instead of from a table,
+                      a template declaring *every* driver portrait slot stretching agrees with
+                      itself perfectly, is passed over by the comparison, and draws every face in
+                      the league squashed with nothing said. The indirect enforcement that sufficed
+                      under a fixed table does not survive a derived one.
+
+  Modified sections :
+    - Principle XIV, Rule 6, the one-aspect paragraph: the aspect binds within a single template
+      rather than across every template of every image type, and is read from the template being
+      validated rather than named by the module. A paragraph is added forbidding any check of
+      agreement *between* templates, with its reason.
+    - Principle XIV, Rule 6, the enumeration paragraphs: a second enumeration is required, naming
+      the classes held to one aspect at all. `marker` leaves that enumeration entirely — it is now
+      exempt from the aspect rule outright rather than merely permitted to claim a per-slot
+      exemption. The "every class MUST declare an aspect" requirement is withdrawn and replaced by
+      a partition requirement over the two enumerations.
+    - Principle XIV, Rule 6: the refusal of a `preserveAspectRatio="none"` slot outside the
+      stretching enumeration is restated as a standalone obligation on Layer 2, discharged on the
+      declaration alone and independently of any aspect comparison.
+    - Principle XIV, Rule 6: a paragraph is added on the module's own artwork, which carries a
+      fixed aspect per class a league cannot alter, and the notice owed where it is drawn stretched.
+    - Principle XIV, Rule 6, Rationale: corrected to say that the argument compels agreement and
+      never a number.
+  Added sections    : none
+  Removed sections  : none
+  Deferred items    : none. No placeholder tokens remain in the document.
+  Templates review  : `.specify/templates/` states neither rule and needed no change. The
+                      module-facing restatements were amended in the same change:
+                      `src/models/image_constants.py` (`RATIO_CONSISTENT_ASSET_CLASSES` added;
+                      `ASSET_CLASS_ASPECTS` renamed `PACKAGED_ASSET_ASPECTS` and redocumented as our
+                      own artwork's shape rather than a league's rule;
+                      `NOTICE_PACKAGED_ASSET_OFF_SHAPE` added),
+                      `src/services/image_validity_service.py` (`aspect_faults_of` replaced by
+                      `class_aspect_faults_of`, `stretch_faults_of` and `class_aspect_of`),
+                      `src/models/image_module.py` (`PROBLEM_ASPECT_DISAGREEMENT`),
+                      `src/utils/svg_fill.py` (the off-shape notice), `README.md`,
+                      `resources/README.md`, `resources/defaults/templates/README.md`,
+                      `docs/how-to/configuring-the-image-module.md`,
+                      `docs/wip-specs/image_module_specification.md` and
+                      `docs/wip-specs/known_issues.md` (P3 retired as answered).
+
 [2026-09-01 — v7.8.0 → v7.9.0: MINOR — only a stretching class's slots may claim the stretch exemption]
   Version change    : 7.8.0 → 7.9.0
   Bump rationale    : MINOR. One change to Principle XIV, Rule 6. No Core Principle is removed and
@@ -4944,9 +5014,23 @@ not exist in this pipeline: two assets whose gradients carry the *same* identifi
 independently, the rasteriser drawing each referenced file as its own document. `clipPath` and
 filter are untouched, as is the requirement that an asset carry no text.
 
-**One class carries one aspect, and every slot of that class MUST carry it — on every template,
-of every image type.** A template declaring a slot of a class at any other aspect is invalid, and
-Layer 2 MUST refuse it, naming the offending field.
+**One class carries one aspect throughout a single template, and every non-stretching slot of
+that class on that template MUST carry it** (relaxed v7.10.0). A template declaring a slot at an
+aspect its class does not carry on that template is invalid, and Layer 2 MUST refuse it, naming
+the offending field and reporting it as a fault of shape rather than as a missing field.
+
+**The aspect itself is the league's to choose, and this Constitution names no number.** The
+reference MUST be read from the template being validated — the aspect the greater part of that
+class's slots on it declare — and never from a table in the module. A template drawing every flag
+slot at 2:1 is valid; one drawing most of them at 2:1 and one at 1:1 is not. Until v7.10.0 the
+module asserted a number and refused the first of those as readily as the second.
+
+**Agreement between templates MUST NOT be required, and MUST NOT be checked.** A class drawn by
+several templates MAY be drawn at a different aspect on each, and a league doing so has one file
+letterboxed wherever the aspects differ, unremarked. Requiring agreement would refuse the first
+template of any re-shaping — the others still disagreeing with it — so no league could move a
+class off the aspect it began with. The consequence MUST be documented to leagues rather than
+refused.
 
 **A slot of a stretching class MAY instead declare that it stretches**, in which case the rule
 above does not bind that slot (v7.5.0, narrowed v7.9.0). It declares this by being authored
@@ -4956,16 +5040,39 @@ which is the whole of why the exemption is sound; the generator still MUST NOT p
 is that the artwork is the league's to draw for a shape that varies, and the module MUST say so
 wherever it documents the data drawn into such slots.
 
-**Which classes stretch MUST be enumerated, and that enumeration is closed** (v7.9.0). A class
-absent from it carries its aspect absolutely: every slot of that class MUST match it, and a slot
-of such a class authored `preserveAspectRatio="none"` is not exempt but **invalid**, which Layer 2
-MUST refuse naming that field. A class MUST NOT be admitted to the enumeration because one
-template found its aspect inconvenient — only where the data it draws genuinely have no shape of
-their own, the box being decided by the template rather than by the subject.
+**Two enumerations MUST exist, and both are closed** (v7.10.0). The first names the classes
+**held to one aspect** within a template; the second names the classes **whose slots may declare
+that they stretch**. Every asset class MUST be named by exactly one of them: a class in neither
+would be checked against nothing at all, and one in both would be self-contradictory. A test MUST
+refuse either omission.
 
-**The exemption is claimed by the slot and never by the class** (v7.5.0, qualified v7.9.0). Every
-class MUST declare an aspect, and a class present in the asset directory table but absent from the
-aspect table is an omission a test MUST refuse. Within a stretching class the declaration
+A class MUST NOT be admitted to the stretching enumeration because one template found its aspect
+inconvenient — only where the data it draws genuinely have no shape of their own, the box being
+decided by the template rather than by the subject. A class MUST NOT be left out of the first
+enumeration for that reason either: it is left out only where the class serves slots of several
+shapes at once and no one aspect could serve them, so that there is nothing for its slots to
+agree on.
+
+**The `marker` class is held to no aspect at all** (v7.10.0). It draws the square markers of a
+change of standing position and the stretching marks of a standings result cell and of an
+attendance total out of one directory, and no one aspect serves all three. A marker slot at an
+aspect its fellows do not share MUST be permitted, and is letterboxed. This is a widening of
+v7.9.0, under which the class carried an aspect its non-stretching slots were held to; the cost —
+that a movement marker drawn to the wrong box is now distorted with nothing reported — is
+accepted, one directory serving three shapes admitting no better answer.
+
+**A slot outside the stretching enumeration authored `preserveAspectRatio="none"` MUST be refused
+on that declaration alone** (v7.9.0, made a standalone obligation v7.10.0). Layer 2 MUST discharge
+this check independently of any aspect comparison and MUST NOT rely on the comparison to catch it,
+naming the offending field whatever aspect the slot declares beside it. The reliance was sound
+only while the aspect came from a fixed table: with the reference read from the template, a
+template declaring *every* slot of a class stretching agrees with itself, is passed over by the
+comparison, and would be told nothing.
+
+**The exemption is claimed by the slot and never by the class** (v7.5.0, qualified v7.9.0 and
+v7.10.0). Every class MUST be named by exactly one of the two enumerations above, and a class
+present in the asset directory table but absent from both — or present in both — is an omission a
+test MUST refuse. Within a stretching class the declaration
 `preserveAspectRatio="none"` remains the sole mechanism by which the check is skipped, and it is
 made where the fact lives — in the template, by the author who chose the box — so it cannot be
 forgotten in the way an absent aspect could, and it cannot silently disarm the check for slots of
@@ -4981,7 +5088,15 @@ artwork drawn into a box the template decides.
 **Rationale**: a league authors **one file per datum of a class**, and the rule above forbids the
 generator to pad. A class serving slots of two aspects would therefore letterbox that one file
 wherever it did not match, and no artwork a league could supply would answer it — the same
-`united_kingdom.svg` cannot be correct in a 3:2 slot and a 1:1 one at once. Per-slot authoring
+`united_kingdom.svg` cannot be correct in a 3:2 slot and a 1:1 one at once.
+
+**What that argument compels is agreement, and never a number** (corrected v7.10.0). It is
+indifferent to which aspect the slots of a class settle on, requiring only that they settle on
+one; a league drawing every flag slot at 2:1 satisfies it exactly as one drawing them all at 3:2
+does. Until v7.10.0 the module asserted a number anyway, binding a template a league had authored
+itself against artwork the league had authored to match it. It is also indifferent to what a
+*second* template does, one file being letterboxed only among the slots of one graphic — which is
+why agreement between templates is left unchecked. Per-slot authoring
 (the paragraph above) and per-class files are only reconcilable if the class is uniform, so this
 is that rule carried to its conclusion rather than a second one. A stretching slot escapes the
 argument entirely rather than weakening it: the file it draws is not fitted to a shape at all,
@@ -4994,6 +5109,14 @@ face in a league distorted, and was refused nothing, because the slot's own clai
 sufficient. A class that carries an aspect means it, and the slot does not get to say otherwise —
 a subject with a shape of its own cannot be drawn to a box that disagrees, however the box is
 declared.
+
+**The artwork the module itself supplies carries a fixed aspect per class, which a league cannot
+alter** (v7.10.0). That artwork stands in for any datum a league has not drawn, so a league that
+re-shapes a class keeps receiving it at the shape it was authored at. Where such a file is drawn
+into a slot of another aspect it is stretched, and the module MUST raise a notice naming both
+aspects and saying that supplying the league's own file for that class answers it. The aspects the
+packaged artwork carries are a fact about that artwork and MUST NOT be read as a rule binding a
+league's templates.
 
 **Two classes need not match each other, and the flag and track classes deliberately do not.**
 A country flag is drawn at 3:2 and a circuit map at 1:1, wherever each appears. A template drawing
@@ -6770,4 +6893,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.9.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-01
+**Version**: 7.10.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-01

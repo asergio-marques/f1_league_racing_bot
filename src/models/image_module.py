@@ -95,6 +95,11 @@ PROBLEM_EXTENSION = "EXTENSION"
 PROBLEM_NOT_FOUND = "NOT_FOUND"
 PROBLEM_NOT_SVG = "NOT_SVG"
 PROBLEM_MISSING_MANDATORY_FIELD = "MISSING_MANDATORY_FIELD"
+#: Slots of one asset class drawn at shapes that disagree with each other, or a slot
+#: claiming to stretch whose class may not (XIV.6, 2026-09-01). Its own kind because a
+#: shape fault is not a missing field: it reported as one until now, and told a league
+#: their drawing was "missing something the bot has to fill in" when nothing was missing.
+PROBLEM_ASPECT_DISAGREEMENT = "ASPECT_DISAGREEMENT"
 PROBLEM_UNRESOLVED_VALUE = "UNRESOLVED_VALUE"
 PROBLEM_UNKNOWN_FIELD = "UNKNOWN_FIELD"
 PROBLEM_ASSET_UNRESOLVED = "ASSET_UNRESOLVED"

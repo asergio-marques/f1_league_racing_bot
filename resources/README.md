@@ -18,7 +18,7 @@ The **Looks in** column is where the bot searches unless you tell it otherwise. 
 configurable per server with `/images config <directory>`, and any path inside the project
 root is accepted — but most leagues never need to run one.
 
-| Class | Looks in | Falls back to | Set it with | Aspect |
+| Class | Looks in | Falls back to | Set it with | What ships is drawn at |
 |---|---|---|---|---|
 | Templates | `defaults/templates/` | — nothing | `/images config template-directory` | declared by each template |
 | Circuit maps | `league/tracks/` | `defaults/tracks/` | `/images config track-image-directory` | 120 × 120 |
@@ -56,11 +56,30 @@ keep your source files somewhere of your own.**
 Every other graphic pictures a round with its country flag from `defaults/flags/`, which serves a
 driver's flag and a round's alike.
 
-**The aspect in this table is per class and is enforced.** Every slot of a class carries it
-on every template — flags 3:2, everything else 1:1 — and the bot refuses a template whose
-slot is the wrong shape for its class. You author one file per value, so a class serving
-two shapes would letterbox that file somewhere with no artwork able to fix it. The two
-classes need not match each other, and flags and maps deliberately do not.
+**The sizes in this table are what the bot's own artwork is drawn at, not a rule you must
+follow.** Your templates may draw a class at any shape you like — flags at 2:1, portraits at
+3:4, whatever suits your design.
+
+**What *is* enforced is that one class keeps one shape throughout a single template.** Every
+flag box on a drawing must be the same shape as every other flag box on it, and the bot
+refuses a drawing where one is out of step, naming it. You author one file per value — a
+single `united_kingdom.svg` for every flag box there is — so a class drawn at two shapes on
+one graphic would letterbox that file in one of them, and no artwork of yours could fix it.
+Two different classes need not match each other, and flags and maps deliberately do not.
+
+> **The bot does not compare one template against another.** Draw flags 3:2 on your calendar
+> and 2:1 on your standings and both are accepted, with your flags letterboxed on one of
+> them. So when you change a class's shape, change it in *every* template that draws it —
+> flags appear on fourteen of the fifteen, team badges on seven.
+
+> **The `markers` class is held to nothing at all.** One folder carries the square movement
+> arrows and the marks that stretch into a result cell, so no one shape covers it. An arrow
+> at the wrong shape is letterboxed with nothing said.
+
+> **Re-shape a class and the bot's own artwork no longer fits it.** What ships keeps the
+> sizes in the table, and stands in for anything you have not drawn — so a 3:2 packaged flag
+> in a 2:1 box of yours is stretched. The bot raises a notice saying so, naming both shapes.
+> Drawing your own file for that class is what stops it.
 
 ## What ships here, and what does not
 
@@ -257,8 +276,10 @@ happen to name it the same thing.
 rasterise differently on the machine that drew it and the machine that serves it. Draw
 lettering as paths.
 
-Authored at exactly the aspect of the slot, padded with transparent margins where the subject
-does not fill it.
+Authored at exactly the aspect of the slot it goes into, padded with transparent margins where
+the subject does not fill it. The bot never pads or crops to fit, so a file of another shape is
+letterboxed — and the rasteriser fills the band by smearing the outermost pixels outward rather
+than leaving it clear.
 
 **The marks stretch instead**, and the table above says so: the nine standings marks and the
 two attendance ones. A result cell is a different shape on the drivers grid than on the
@@ -269,14 +290,16 @@ that survives being squashed a little. A rectangle or a corner shape does; a cir
 ellipse.
 
 It is the **slot** that stretches and not the folder: the movement markers sitting beside them
-in `markers/` are still held to 64 × 64, because their slots are square and say nothing about
-stretching. Everything else in this file is authored at its class's aspect as above.
+in `markers/` are drawn square, because their slots are square and say nothing about
+stretching. The bot holds the `markers` class to no shape at all — one folder cannot serve
+both kinds — so an arrow drawn at the wrong shape is letterboxed and nothing is said.
 
 **Only a marker slot may stretch.** If you author your own template, a slot of any other
-class — driver portrait, team badge, flag, circuit map — is held to its class's aspect
-whatever it declares, and a template saying otherwise is refused with the field named. A
-portrait slot authored to stretch would draw every face in your league distorted to the shape
-of the box, which no artwork you supply could correct.
+class — driver portrait, team badge, flag, circuit map — is refused outright if it says it
+stretches, with the field named, whatever shape you drew it. A portrait slot authored to
+stretch would draw every face in your league distorted to the shape of the box, which no
+artwork you supply could correct — and if the bot merely ignored the declaration, a template
+saying it of *every* portrait slot would slip past the shape check entirely.
 
 The full authoring contract — template field naming, removable groups, text bounds — is in
 the main [README](../README.md) under **Image Module → Templates: what the bot expects**.

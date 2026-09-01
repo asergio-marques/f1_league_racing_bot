@@ -175,7 +175,7 @@ So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`
 
 Say your league has a team called **Red Bull** and you have its badge ready.
 
-1. **Save it as an SVG at 120 × 120.** Keep it simple — no filters, no clipping, and no lettering (fonts differ from one machine to the next, so draw any text as shapes). Gradients are fine. If the badge is not square, add see-through space around it to make it square. The bot never pads pictures for you, and a picture of the wrong shape gets stretched and smeared.
+1. **Save it as an SVG at 120 × 120**, unless you have changed the shape of the team-badge blanks in your own drawings — in which case match whatever shape you gave them. 120 × 120 is what the drawings that ship with the bot use. Keep it simple — no filters, no clipping, and no lettering (fonts differ from one machine to the next, so draw any text as shapes). Gradients are fine. If the badge does not fill that shape, add see-through space around it until it does. The bot never pads or crops pictures for you, and a picture of the wrong shape gets stretched and smeared.
 2. **Do not put any words in the artwork.** Text inside a badge can come out in the wrong typeface on a different computer. Keep lettering as shapes, or leave it out.
 3. **Work out the filename**: `Red Bull` becomes `red_bull.svg`.
 4. **Copy it onto the bot's computer**, into `resources/league/teams`. That is the whole of it — the bot is already looking there, and there is no command to run. Do not put it in `resources/defaults/teams`: that folder is the bot's and is replaced when you update it. This is the by-hand step — there is no command for it.
@@ -212,8 +212,12 @@ would mean no photo is ever fetched — which is what `/images use-pfp toggle` a
   they set one, otherwise their ordinary Discord picture.
 - **A driver with no picture of their own gets the grey placeholder**, exactly as before.
   Discord's coloured default is not a photo, and the bot does not treat it as one.
-- **The pictures are square**, because that is how Discord stores them. The circle you see in
-  Discord is the app's own cropping, not part of the file.
+- **The pictures arrive square**, because that is how Discord stores them. The circle you see
+  in Discord is the app's own cropping, not part of the file.
+- **They are trimmed to fit your portrait blanks**, keeping the middle and taking the same
+  amount off each side. Square blanks — what the bot's own drawing uses — take the picture
+  whole. Re-shape your portrait blanks later and every fetched picture is redrawn to match at
+  the next refresh, with nothing for you to do.
 - **A driver who removes their Discord picture** loses the fetched photo too, and goes back to
   the placeholder at the next lineup.
 
@@ -331,7 +335,9 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 > would know of it is your league looking at the result. Point it at a path inside the bot's own
 > project folder; a path written without a leading slash is read from there.
 
-> **A blank has to be the right shape for what goes in it.** Flag blanks are 3:2 and every other kind is square. The bot refuses a drawing file whose blank is the wrong shape, and tells you which blank, what shape it wanted and what it found — because it never stretches or pads a picture to fit, so a wrongly shaped blank would smear every flag you ever draw into it and no artwork of yours could put it right. The rule and the sizes are in [main README](../../README.md#image-module).
+> **The blanks for one kind of picture all have to be the same shape as each other.** The shape itself is yours to pick — draw every flag blank on a drawing at 2:1 and the bot is content. What it refuses is a drawing where they disagree: twenty-three flag blanks at 2:1 and one square. It names the odd one out, what shape it is, and what shape the rest are. The reason is that you supply one file per country, and it goes into every flag blank there is — so if two blanks differ, that file is stretched in one of them and no artwork of yours could put it right.
+>
+> Two things follow. **The bot does not compare one drawing against another**, so if you change a blank's shape, change it in every drawing that uses it — flags appear on fourteen of the fifteen. And **the bot's own stand-in pictures keep their original shape** (flags 3:2, the rest square), so after you re-shape a kind, anything you have not drawn yourself is stretched, and the bot says so on the graphic. The rule and the sizes are in [main README](../../README.md#image-module).
 
 > **The weather drawings have a minimum.** Phases 2 and 3 each have two versions — one for sprint weekends, one for everything else — because a sprint weekend has more sessions to show. If a file does not have room for enough sessions, the bot refuses it straight away and tells you how many it needs. Having room to spare is fine; the extra is simply hidden.
 

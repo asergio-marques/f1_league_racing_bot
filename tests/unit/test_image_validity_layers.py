@@ -1318,7 +1318,8 @@ def test_the_two_results_templates_are_reported_separately(tmp_path, templates):
 
 
 # --------------------------------------------------------------------------
-# 044 — per-class aspect, and the two types that may draw a circuit map
+# 044 — one shape per class per template (relaxed 2026-09-01), and the two
+# types that may draw a circuit map
 # --------------------------------------------------------------------------
 
 def _root_with(images, *, stretching=()):
@@ -1335,157 +1336,285 @@ def _root_with(images, *, stretching=()):
     for field_id, width, height in images:
         node = etree.SubElement(root, f"{{{ns}}}image")
         node.set("id", field_id)
-        node.set("width", str(width))
-        node.set("height", str(height))
+        if width is not None:
+            node.set("width", str(width))
+        if height is not None:
+            node.set("height", str(height))
         if field_id in stretching:
             node.set("preserveAspectRatio", "none")
     return root
 
 
-def test_a_flag_slot_at_three_by_two_passes():
-    from services.image_validity_service import aspect_faults_of
-
-    root = _root_with([("round_1_flag", 120, 80)])
-    assert aspect_faults_of(root, "calendar_template") == []
+def _flags(*shapes):
+    """Flag slots on the calendar, as (width, height) pairs, numbered from one."""
+    return [(f"round_{n}_flag", w, h) for n, (w, h) in enumerate(shapes, start=1)]
 
 
-def test_a_flag_slot_left_square_is_refused_and_names_what_is_wrong():
-    """The likeliest defect of the conversion: an id renamed, the slot not reshaped."""
-    from services.image_validity_service import aspect_faults_of
+# ── the shape is the league's to choose ──────────────────────────────────
 
-    faults = aspect_faults_of(_root_with([("round_1_flag", 120, 120)]), "calendar_template")
+def test_flag_slots_that_agree_with_each_other_pass_whatever_shape_they_agree_on():
+    """The headline of the 2026-09-01 relaxation.
+
+    Every one of these was refused before it, against a table that said flags are 3:2 and
+    nothing else. A league drawing all of its flags 2:1 is drawing them correctly: one file
+    per country goes into all of them and none of it is letterboxed.
+    """
+    from services.image_validity_service import class_aspect_faults_of
+
+    for shape in ((120, 80), (120, 60), (120, 120), (80, 120), (200, 41)):
+        root = _root_with(_flags(shape, shape, shape))
+        assert class_aspect_faults_of(root, "calendar_template") == [], shape
+
+
+def test_a_flag_slot_out_of_step_with_its_siblings_is_refused_and_named():
+    from services.image_validity_service import class_aspect_faults_of
+
+    root = _root_with(_flags((120, 60), (120, 60), (120, 120)))
+    faults = class_aspect_faults_of(root, "calendar_template")
+
     assert len(faults) == 1
-    message = faults[0]
-    assert "round_1_flag" in message      # the field
-    assert "flag" in message              # the class
-    assert "3:2" in message               # what was expected
-    assert "1:1" in message               # what was found
+    assert "round_3_flag" in faults[0]
+    assert "flag" in faults[0]
+    assert "1:1" in faults[0]          # what the odd one out declares
+    assert "2:1" in faults[0]          # what the others declare
+    assert "letterboxed" in faults[0]
 
 
-def test_a_track_slot_at_three_by_two_is_refused():
-    from services.image_validity_service import aspect_faults_of
+def test_the_majority_sets_the_reference_rather_than_the_first_slot():
+    """Document order must not decide it; twenty-three slots outvote the one before them."""
+    from services.image_validity_service import class_aspect_faults_of
 
-    faults = aspect_faults_of(_root_with([("round_1_image", 120, 80)]), "calendar_template")
+    root = _root_with(_flags((120, 120), *[(120, 60)] * 23))
+    faults = class_aspect_faults_of(root, "calendar_template")
+
     assert len(faults) == 1
-    assert "round_1_image" in faults[0]
+    assert "round_1_flag" in faults[0]
+
+
+def test_a_tie_is_broken_by_field_id_so_the_reference_is_the_same_everywhere():
+    """Two shapes, one slot each. Either could be called the odd one out, so it must not
+    depend on which the parser handed over first — the suite runs on three unlike hosts."""
+    from services.image_validity_service import class_aspect_faults_of
+
+    forwards = class_aspect_faults_of(
+        _root_with(_flags((120, 60), (120, 120))), "calendar_template"
+    )
+    backwards = class_aspect_faults_of(
+        _root_with([("round_2_flag", 120, 120), ("round_1_flag", 120, 60)]),
+        "calendar_template",
+    )
+    assert len(forwards) == 1
+    assert forwards == backwards
+    assert "round_2_flag" in forwards[0]
+
+
+def test_two_classes_on_one_template_need_not_agree_with_each_other():
+    """The constraint is within a class, never across two — flags and maps still differ."""
+    from services.image_validity_service import class_aspect_faults_of
+
+    root = _root_with(
+        _flags((120, 60), (120, 60))
+        + [("round_1_image", 120, 120), ("round_2_image", 120, 120)]
+    )
+    assert class_aspect_faults_of(root, "calendar_template") == []
+
+
+def test_a_class_drawing_a_single_slot_has_nothing_to_disagree_with():
+    from services.image_validity_service import class_aspect_faults_of
+
+    root = _root_with([("round_1_flag", 200, 41)])
+    assert class_aspect_faults_of(root, "calendar_template") == []
 
 
 def test_authoring_noise_inside_the_tolerance_passes():
-    """The case a naive implementation fails.
+    """120.00001 / 80 is what Inkscape writes, and is not exactly 1.5 in binary floating
+    point. An exact comparison would reject every template a human drew."""
+    from services.image_validity_service import class_aspect_faults_of
 
-    Inkscape writes floating-point geometry, so 120.00001 / 80 is not exactly 1.5 in
-    binary floating point. An exact comparison would reject every hand-drawn template.
-    """
-    from services.image_validity_service import aspect_faults_of
-
-    root = _root_with([("round_1_flag", 120.00001, 80)])
-    assert aspect_faults_of(root, "calendar_template") == []
+    root = _root_with(_flags((120, 80), (120.00001, 80)))
+    assert class_aspect_faults_of(root, "calendar_template") == []
 
 
 def test_a_slot_declaring_no_usable_dimensions_defers_rather_than_dividing_by_zero():
-    from services.image_validity_service import aspect_faults_of
+    from services.image_validity_service import class_aspect_faults_of
 
-    root = _root_with([("round_1_flag", 0, 0)])
-    assert aspect_faults_of(root, "calendar_template") == []
-
-
-def test_a_slot_that_declares_it_stretches_is_passed_over_whatever_its_shape():
-    """The exemption is the slot's, not its class's (Constitution XIV.6, v7.5.0).
-
-    A slot carrying ``preserveAspectRatio="none"`` stretches to the box the template gives
-    it, so there is nothing for it to be letterboxed against. Declaring it per slot is what
-    lets one class draw both the square position-change arrows and the marks, whose cells are
-    three different shapes across the standings grids and the attendance sheet.
-
-    Drawn on a `marker` slot, that being the only class the exemption is open to -- see the
-    test below, which is the half of this rule that was missing.
-    """
-    from services.image_validity_service import aspect_faults_of
-
-    mark = "row_1_points_background"
-    root = _root_with([(mark, 120, 120)], stretching=(mark,))
-    assert aspect_faults_of(root, "attendance_template") == []
-
-
-@pytest.mark.parametrize(
-    "template_key,field_id,width,height",
-    [
-        ("lineup_template", "team_1_driver_1_image", 100, 50),   # a driver portrait
-        ("calendar_template", "round_1_flag", 120, 120),         # a country flag
-        ("lineup_template", "team_1_image", 100, 50),            # a team badge
-    ],
-)
-def test_a_slot_of_a_class_that_does_not_stretch_may_not_exempt_itself(
-    template_key, field_id, width, height
-):
-    """Narrowed 2026-09-01, when driver portraits began being obtained from Discord.
-
-    The exemption was open to any slot of any class, so a league authoring its own lineup
-    template could declare a portrait slot 2:1, claim it stretches, and be told nothing --
-    drawing every face in the league squashed to half height, which no artwork the league
-    supplies can correct. A class that carries an aspect means it.
-    """
-    from services.image_validity_service import aspect_faults_of
-
-    faults = aspect_faults_of(
-        _root_with([(field_id, width, height)], stretching=(field_id,)), template_key
-    )
-
-    assert len(faults) == 1
-    assert field_id in faults[0]
-
-
-def test_the_shipped_templates_hold_no_portrait_slot_that_claims_to_stretch():
-    """The narrowing above must not invalidate anything the bot ships."""
-    from lxml import etree
-
-    from models.image_constants import STRETCHABLE_ASSET_CLASSES
-    from services.image_validity_service import aspect_faults_of
-    from utils.paths import PROJECT_ROOT
-
-    assert STRETCHABLE_ASSET_CLASSES == frozenset({"marker"})
-
-    templates = sorted((PROJECT_ROOT / "resources" / "defaults" / "templates").glob("*.svg"))
-    assert templates, "the packaged templates are missing"
-    for path in templates:
-        key = path.stem
-        root = etree.parse(str(path)).getroot()
-        assert aspect_faults_of(root, key) == [], f"{path.name} became invalid"
-
-
-def test_a_slot_without_that_declaration_is_still_judged():
-    """The guard above must not have quietly exempted every slot."""
-    from services.image_validity_service import aspect_faults_of
-
-    assert aspect_faults_of(_root_with([("round_1_flag", 120, 120)]), "calendar_template")
-
-
-def test_the_attendance_marks_stretch_and_the_arrows_beside_them_do_not():
-    """One class, two shapes, and the aspect check still reaches the arrows.
-
-    `marker` draws the position-change arrows at 1:1 and the standings and attendance marks
-    into whatever cell holds them. Merging the marks into the arrows' class would have been a
-    way to lose the arrows' check; this holds both halves at once.
-    """
-    from models.image_constants import ASSET_CLASS_ASPECTS
-    from services.image_validity_service import aspect_faults_of
-
-    assert ASSET_CLASS_ASPECTS["marker"] == pytest.approx(1.0)
-
-    mark = "row_1_points_background"
-    root = _root_with([(mark, 36, 24)], stretching=(mark,))
-    assert aspect_faults_of(root, "attendance_template") == []
-
-    faults = aspect_faults_of(_root_with([(mark, 36, 24)]), "attendance_template")
-    assert len(faults) == 1
-    assert mark in faults[0]
+    for images in (
+        [("round_1_flag", 120, 80), ("round_2_flag", None, None)],
+        [("round_1_flag", 120, 80), ("round_2_flag", 120, 0)],
+    ):
+        assert class_aspect_faults_of(_root_with(images), "calendar_template") == []
 
 
 def test_an_unknown_field_is_not_judged():
-    from services.image_validity_service import aspect_faults_of
+    from services.image_validity_service import class_aspect_faults_of
 
     root = _root_with([("not_a_catalogue_field", 120, 120)])
-    assert aspect_faults_of(root, "calendar_template") == []
+    assert class_aspect_faults_of(root, "calendar_template") == []
+
+
+# ── what is deliberately NOT checked: agreement between templates ────────
+
+def test_two_templates_may_disagree_with_each_other_about_a_class(tmp_path):
+    """A decided gap, not an oversight (2026-09-01) — do not "fix" this test.
+
+    `flag` is drawn by fourteen of the fifteen templates from one file per country, so a
+    league shaping flags 3:2 on the calendar and 2:1 on the standings genuinely does get that
+    file letterboxed on one of them, and is not told. Checking it would refuse the first file
+    of any re-shaping — the other thirteen would still disagree with it — and a league could
+    never move a class off the shape it started on. The gap is documented to leagues instead.
+    """
+    from services.image_validity_service import class_aspect_faults_of
+
+    calendar = _root_with(_flags((120, 80), (120, 80)))
+    standings = _root_with([("round_1_flag", 120, 60), ("round_2_flag", 120, 60)])
+
+    assert class_aspect_faults_of(calendar, "calendar_template") == []
+    assert class_aspect_faults_of(standings, "standings_drivers_template") == []
+
+
+# ── only a marker slot may declare that it stretches ─────────────────────
+
+def test_a_marker_slot_may_stretch_and_its_shape_is_then_not_judged():
+    from services.image_validity_service import (
+        class_aspect_faults_of,
+        stretch_faults_of,
+    )
+
+    marks = [("round_1_background", 36, 24), ("round_2_background", 300, 10)]
+    root = _root_with(marks, stretching=[field for field, _w, _h in marks])
+
+    assert stretch_faults_of(root, "attendance_template") == []
+    assert class_aspect_faults_of(root, "attendance_template") == []
+
+
+def test_the_marker_class_is_not_held_to_one_shape_even_when_it_does_not_stretch():
+    """Decided 2026-09-01: it carries several kinds of marker, so there is no shape for it
+    to agree on. The 64 x 64 arrows sit in the same class as the marks."""
+    from services.image_validity_service import class_aspect_faults_of
+
+    root = _root_with(
+        [("round_1_position_change", 64, 64), ("round_2_position_change", 128, 64)]
+    )
+    assert class_aspect_faults_of(root, "standings_drivers_template") == []
+
+
+def test_a_slot_of_a_class_that_does_not_stretch_may_not_say_that_it_does():
+    """Refused on the declaration alone, whatever shape sits beside it.
+
+    This is the case the old code could not catch. It refused the *exemption* and then
+    compared the shape against a table, so a stretching slot that happened to match the table
+    passed. With the shape now taken from the template, a lineup whose portrait slots all
+    stretch agrees with itself perfectly and would draw every face in the league squashed.
+    """
+    from services.image_validity_service import stretch_faults_of
+
+    cases = [
+        ("lineup_template", "team_1_driver_1_image", 100, 50),   # wrong shape and stretching
+        ("lineup_template", "team_1_driver_1_image", 120, 120),  # right shape, still refused
+        ("calendar_template", "round_1_flag", 120, 80),
+        ("lineup_template", "team_1_image", 120, 120),
+    ]
+    for template_key, field_id, width, height in cases:
+        root = _root_with([(field_id, width, height)], stretching=[field_id])
+        faults = stretch_faults_of(root, template_key)
+        assert len(faults) == 1, (template_key, field_id, width, height)
+        assert field_id in faults[0]
+        assert "only a marker slot" in faults[0]
+
+
+def test_a_uniformly_stretching_portrait_set_is_caught_by_the_stretch_check_alone():
+    """The loophole spelled out: the shape check has nothing to say about these."""
+    from services.image_validity_service import (
+        class_aspect_faults_of,
+        stretch_faults_of,
+    )
+
+    slots = [(f"team_1_driver_{n}_image", 100, 50) for n in (1, 2)]
+    root = _root_with(slots, stretching=[field for field, _w, _h in slots])
+
+    assert class_aspect_faults_of(root, "lineup_template") == []
+    assert len(stretch_faults_of(root, "lineup_template")) == 2
+
+
+def test_the_shipped_templates_hold_no_slot_that_wrongly_claims_to_stretch():
+    from pathlib import Path
+
+    from lxml import etree
+
+    from models.image_constants import TEMPLATE_LABELS
+    from services.image_validity_service import stretch_faults_of
+
+    directory = Path(__file__).resolve().parents[2] / "resources/defaults/templates"
+    for key in sorted(TEMPLATE_LABELS):
+        root = etree.parse(str(directory / f"{key}.svg")).getroot()
+        assert stretch_faults_of(root, key) == [], key
+
+
+def test_the_attendance_marks_stretch_and_the_arrows_beside_them_do_not():
+    """One class, two kinds of slot, and only the marks say they stretch."""
+    from services.image_validity_service import stretch_faults_of
+
+    root = _root_with(
+        [("round_1_background", 36, 24), ("round_1_position_change", 64, 64)],
+        stretching=["round_1_background"],
+    )
+    assert stretch_faults_of(root, "attendance_template") == []
+
+
+# ── the fault reaches a league as a shape fault, not a missing field ─────
+
+def test_a_shape_fault_is_reported_as_its_own_kind():
+    """It read as "the drawing is missing something the bot has to fill in" until now,
+    which told a manager to look for a field when nothing was missing."""
+    from models.image_module import PROBLEM_ASPECT_DISAGREEMENT, ValidityReport
+    from services.image_validity_service import (
+        ASPECT_FAULT_PREFIX,
+        LAYER_CATALOGUE,
+        PLAIN_ASPECT_DISAGREEMENT,
+        _problem_kind_for,
+        plain_reason,
+        plain_remedy,
+    )
+
+    report = ValidityReport(
+        template_key="calendar_template",
+        resolved_path=None,
+        valid=False,
+        depth_checked=2,
+        failed_layer=LAYER_CATALOGUE,
+        reason=ASPECT_FAULT_PREFIX + "`round_3_flag` draws the flag class at 1:1",
+    )
+
+    assert _problem_kind_for(report) == PROBLEM_ASPECT_DISAGREEMENT
+    assert plain_reason(report) == PLAIN_ASPECT_DISAGREEMENT
+    assert "shape" in PLAIN_ASPECT_DISAGREEMENT
+    assert "/images template calendar" in plain_remedy(report)
+
+
+def test_the_marker_never_reaches_the_manager_who_named_the_file(tmp_path):
+    """`check_template` answers with the precise sentence; the prefix is machinery.
+
+    A manager naming a file is looking at that file, in the moment they can fix it, so this
+    surface still speaks precisely rather than plainly — and "aspect: " in front of the
+    sentence would be the module talking to itself.
+    """
+    from lxml import etree
+
+    from models.image_module import PROBLEM_ASPECT_DISAGREEMENT
+    from services.image_validity_service import ASPECT_FAULT_PREFIX, check_template
+
+    directory = tmp_path / "templates"
+    directory.mkdir()
+    root = _root_with(_flags((120, 80), (120, 120)))
+    (directory / "calendar.svg").write_bytes(etree.tostring(root))
+
+    config = _config(str(directory), calendar_template="calendar.svg")
+    problem = check_template(config, "calendar_template", root=tmp_path)
+
+    assert problem is not None
+    assert problem.kind == PROBLEM_ASPECT_DISAGREEMENT
+    assert not problem.detail.startswith(ASPECT_FAULT_PREFIX)
+    assert "round_2_flag" in problem.detail
 
 
 def test_only_the_calendar_and_check_in_may_declare_a_circuit_map():

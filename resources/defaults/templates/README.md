@@ -156,12 +156,16 @@ All three are authored with **no href**, which is why a cell earning no highligh
 and is never removed: an `<image>` carrying no reference draws nothing, and removing the slot
 instead would put thousands of identifiers into every fill spec.
 
-All three carry `preserveAspectRatio="none"`, which is what exempts them from the aspect their
-class is otherwise held to — the drivers chip is 52 × 22 and the constructors chip 52 × 18,
-shapes fixed by two different row bands, and the position-change markers beside them in the same
-folder are square. The exemption is the **slot's** and not the class's: declare it and the file
-stretches to the slot, omit it and the slot must match its class. Draw artwork that survives
-being stretched.
+All three carry `preserveAspectRatio="none"`, which is what makes the file stretch to the slot
+rather than being letterboxed inside it — the drivers chip is 52 × 22 and the constructors chip
+52 × 18, shapes fixed by two different row bands, and the position-change markers beside them in
+the same folder are square. Draw artwork that survives being stretched.
+
+`marker` is the one class the shape check ignores entirely, precisely because it holds both
+kinds at once. It is also the **only** class whose slots may carry that declaration: a slot of
+any other class declaring it is refused outright, whatever its shape. Were it merely ignored, a
+template declaring it of every driver portrait slot would sail past the shape check and draw
+every face in the league squashed.
 
 What remains in each file's `<style>` is the **ink**: `.highlight_p1_text` and friends colour
 the result itself, and `.highlight_p1_sup_text` the raised qualifying figure, which sits on the

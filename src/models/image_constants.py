@@ -294,6 +294,19 @@ NOTICE_FONT_SUBSTITUTED = "FONT_SUBSTITUTED"
 NOTICE_FIELD_REDUCED = "FIELD_REDUCED"
 
 NOTICE_ASSET_FALLBACK_USED = "ASSET_FALLBACK_USED"
+
+#: A **packaged** file was drawn into a slot of a shape it was not authored at (2026-09-01).
+#:
+#: A league chooses the shape of each class for itself, but the artwork the bot ships is
+#: drawn at one fixed shape per class -- see `PACKAGED_ASSET_ASPECTS` -- and answers for any
+#: datum the league has not drawn. Re-shape a class and every one of those is stretched.
+#:
+#: Its own kind rather than a rider on `ASSET_FALLBACK_USED`, which fires constantly and
+#: benignly wherever a league has simply not drawn a country yet. This one says something a
+#: league can act on and that will not go away on its own: draw your own file for this class,
+#: at the shape your templates use.
+NOTICE_PACKAGED_ASSET_OFF_SHAPE = "PACKAGED_ASSET_OFF_SHAPE"
+
 NOTICE_OPTIONAL_FIELD_EMPTIED = "OPTIONAL_FIELD_EMPTIED"
 
 #: The last member a template declares should put its crop point at the declared canvas
@@ -421,65 +434,85 @@ MYSTERY_ASSET_NAME = "mystery.svg"
 #: field, where one recording `Other` is drawn with this.
 OTHER_ASSET_NAME = "other.svg"
 
-#: Asset class -> the aspect ratio (width / height) every slot of that class must
-#: declare, on every template of every image type (Constitution XIV.6).
+#: Asset classes whose slots must agree with one another on the shape they draw
+#: (Constitution XIV.6, relaxed 2026-09-01).
 #:
-#: The *ratio* binds, not the pixel size: a template may draw a flag slot at any
-#: dimensions so long as they are 3:2. One class carries one aspect because a league
-#: authors one file per datum and the generator never pads -- a class serving slots
-#: of two aspects would letterbox that one file wherever it did not match, and no
-#: artwork the league could supply would answer it.
+#: **The reference is the template, never this module.** Every non-stretching slot of one of
+#: these classes must declare the ratio its siblings declare *on the template that holds
+#: them*, and any ratio will do. A league drawing its flags 2:1 throughout is drawing them
+#: correctly; one drawing twenty-three at 2:1 and the twenty-fourth square is not.
 #:
-#: **Every class declares one, and a slot of a stretching class opts out for itself**
-#: (v7.5.0, narrowed 2026-09-01). A slot carrying `preserveAspectRatio="none"` stretches to
-#: the box it is given, so there is no ratio for it to be letterboxed against and
-#: `aspect_faults_of` passes over it whatever its shape. The exemption belongs to the slot
-#: because that is where the fact lives: `marker` draws both the square position-change
-#: arrows and the standings and attendance marks, whose cells are 52 x 22, 52 x 18 and
-#: 36 x 24 -- three shapes no single class ratio could serve, and which the slots themselves
-#: already declare they stretch to fill. An earlier version made whole classes exempt
-#: instead, which cost a class of its own for the marks and left the arrows beside them
-#: unchecked the moment the two were put in one folder.
+#: The rule exists because a league authors **one file per datum** -- a single
+#: `united_kingdom.svg` for every flag slot in the bot -- and the generator never pads. That
+#: one file is letterboxed wherever a slot disagrees with the others, and no artwork the
+#: league could supply would answer it. What that argument requires is *agreement*. It never
+#: required a particular number, though this module asserted one anyway until 2026-09-01:
+#: flags at 3:2 and everything else at 1:1, refused on any template, including one a league
+#: had authored itself. That was stricter than its own reason, and is withdrawn. The numbers
+#: survive at `PACKAGED_ASSET_ASPECTS`, describing our own artwork rather than governing a
+#: league's.
 #:
-#: But the exemption was available to *any* slot, of any class, and that was too wide. A
-#: league authoring its own lineup template could put `preserveAspectRatio="none"` on a
-#: driver portrait slot, shape it 2:1, and be told nothing -- drawing every face in the
-#: league squashed to half height, which no artwork the league supplies can correct. So a
-#: slot may claim the exemption only where its class is one that stretches; see
-#: ``STRETCHABLE_ASSET_CLASSES``.
+#: `marker` is absent, and unchecked altogether. It is the one class that genuinely draws
+#: several shapes at once -- the 64 x 64 position-change arrows beside the standings and
+#: attendance marks, whose cells are 52 x 22, 52 x 18 and 36 x 24 -- and the same fact that
+#: gives it two fallbacks (see `fallback_names_for`) denies it a single shape to agree on.
+#: The cost is accepted: an arrow slot drawn at the wrong shape letterboxes with nothing
+#: said.
 #:
-#: Two classes need not match each other, and flag and track deliberately do not.
-#: The constraint is *within* a class, never *across* two.
+#: **What is deliberately not checked** (decided 2026-09-01): agreement *between* templates.
+#: `flag` is drawn by fourteen of the fifteen and `team` by seven, all from the same one file
+#: per datum, so a league shaping flags 3:2 on the calendar and 2:1 on the standings has that
+#: file letterboxed on one of them and is not told. Checking it would refuse the first file
+#: of any re-shaping -- the other thirteen would still disagree with it -- and a league could
+#: never move a class off the shape it started on. The gap is real and is documented to
+#: leagues rather than closed.
+RATIO_CONSISTENT_ASSET_CLASSES: frozenset[str] = frozenset(
+    {"track", "team", "flag", "driver", "weather", "tyre"}
+)
+
+#: The only class whose slots may declare `preserveAspectRatio="none"` (v7.5.0, narrowed
+#: 2026-09-01, made a check in its own right 2026-09-01).
 #:
-#: XIV.6 leaves these numbers out of governance on purpose ("The aspect a class
-#: carries is not fixed by this Principle"), so this table is the authority and
-#: ``resources/README.md`` is its league-facing statement.
-#: Asset classes whose slots may declare that they stretch, and so opt out of their class's
-#: aspect. Only `marker` does: it holds the 64 x 64 position-change arrows *and* the
-#: standings and attendance marks, which are drawn to the room their cell gives them.
+#: Such a slot stretches to fill the box the template gives it rather than being letterboxed
+#: inside it. `marker` needs that: the standings result marks and the attendance ones are
+#: drawn to the room their cell gives them, and those cells are three different shapes.
 #:
-#: Every other class is held to its aspect whatever a slot declares. A portrait, a badge, a
-#: flag or a circuit map drawn to a box of the wrong shape is simply distorted, and the
-#: league authoring the template is told so rather than discovering it in a posted graphic.
+#: **No other class may claim it, and that is enforced directly.** It was formerly enforced
+#: only as a side effect of the shape comparison -- a driver slot that stretched but happened
+#: to be square passed -- and once the shape is taken from the template rather than from a
+#: table, the side effect disappears entirely: a lineup whose portrait slots *all* stretch
+#: would agree with itself, be passed over by the agreement check, and draw every face in the
+#: league squashed to the shape of the box with nothing said. So a stretching slot outside
+#: this set is a fault of its own, reported before the shapes are compared at all.
 STRETCHABLE_ASSET_CLASSES: frozenset[str] = frozenset({"marker"})
 
-ASSET_CLASS_ASPECTS: dict[str, float] = {
+#: Asset class -> the aspect ratio the bot's **own** packaged artwork is drawn at.
+#:
+#: Not a rule any template must obey. `RATIO_CONSISTENT_ASSET_CLASSES` carries what is
+#: enforced, and it names no numbers at all. This table does two other jobs.
+#:
+#: It is what `resources/defaults/` is authored and verified against, so the fifteen shipped
+#: templates and the artwork that fills them stay coherent with one another now that nothing
+#: in production forces it. And it is what a slot is compared with when a **packaged** file is
+#: drawn into it: a league that re-shapes a class still gets our 3:2 flags for every country
+#: it has not drawn itself, stretched, and `NOTICE_PACKAGED_ASSET_OFF_SHAPE` says so.
+PACKAGED_ASSET_ASPECTS: dict[str, float] = {
     "track": 1.0,          # 120 x 120 -- circuit maps
     "team": 1.0,           # 120 x 120
     "flag": 1.5,           # 120 x  80 -- country flags, 3:2
     "driver": 1.0,         # 120 x 120
-    "marker": 1.0,         #  64 x  64
+    "marker": 1.0,         #  64 x  64 -- the arrows; the marks stretch and have no shape
     "weather": 1.0,        #  64 x  64
     "tyre": 1.0,           #  64 x  64
 }
 
-#: Relative tolerance for the aspect comparison (044, contracts/asset-aspect.md).
+#: Relative tolerance for every aspect comparison (044, contracts/asset-aspect.md).
 #:
 #: Required rather than convenient. Template geometry is authored in Inkscape and
 #: carries floating-point values -- 120.00001 / 80 is not exactly 1.5 in binary
 #: floating point -- so an exact comparison would reject every template a human
-#: drew. 1% admits honest authoring and still catches a square slot given a 3:2
-#: flag, which is a 50% error. No plausible authoring mistake lands inside it.
+#: drew. 1% admits honest authoring and still catches a square slot among 3:2 ones,
+#: which is a 50% error. No plausible authoring mistake lands inside it.
 ASSET_ASPECT_TOLERANCE = 0.01
 
 
