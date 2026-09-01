@@ -302,6 +302,14 @@ Found on 2026-08-18 while building the `/images test` previews. **All three were
 - `build_standings_preview` in `src/services/image_preview_service.py` fabricates `120 - (position - 1) * 9` for drivers and `200 - (position - 1) * 17` for teams. Both are strictly descending, so no two entries are ever level and that case is never drawn.
 - Every other case the spec lists for those two previews *is* drawn. Cosmetic and preview-only: no posting is affected, and nothing is scored wrongly.
 
+**P3 — a class's aspect is enforced against a league's own template as strictly as against the shipped ones, and a league cannot declare a slot of another shape.**
+- Found on 2026-09-01 while planning the driver portrait work. Raised by the user as a question for a later session; recorded here rather than settled.
+- `ImageValidityService.template_reports` resolves the template directory and the fifteen filenames from the *server's* configuration, so `aspect_faults_of` runs over whatever templates a league is actually using. The shipped fifteen are only the default value of that setting.
+- `ASSET_CLASS_ASPECTS` therefore binds a template a league authored itself: a lineup template placing a 3:2 driver portrait slot is refused, naming the field, and no configuration makes it acceptable. The reasoning for the rule is sound where the module supplies the artwork policy — one file per datum cannot serve two shapes without letterboxing, and the generator never pads — but a league authoring both its template *and* its portraits has already answered that for itself.
+- What a league sees: `/season review` reports the template as invalid and withholds approval, and `/images config template-directory` refuses the directory outright, for a template that would have drawn correctly against artwork the league authored to match it.
+- Not silent and not destructive: the offending field is named, and the league can reshape the slot. It is recorded because the constraint is stricter than the reason for it requires, and whether it should bind a custom template is a decision owed rather than a defect settled.
+- Note that the related *slot-level* loophole was closed on 2026-09-01: a slot carrying `preserveAspectRatio="none"` formerly exempted itself whatever its class, which let a custom template squash driver portraits. That exemption is now available only to a class declared to stretch. The narrowing does not touch the question above, which is about the aspect rule itself.
+
 ## Core setup and access
 
 Found on 2026-08-17 while writing the core configuration how-to guide.
