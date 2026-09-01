@@ -290,7 +290,7 @@ class SeasonCog(commands.Cog):
 
         Two things are bought by it. A review of five divisions posted its ten graphics
         roughly nine seconds apart, because each was drawn inside the posting loop; now the
-        blocks go out at message speed. And ``image_fault`` — which withholds the approve
+        blocks go out at message speed. And ``approval_blockers`` — which withholds the approve
         button — is settled before the first division block is sent rather than part-way
         through, so a manager is not reading a review that is still deciding whether to
         offer them the button at the end of it.
@@ -1025,8 +1025,60 @@ class SeasonCog(commands.Cog):
                         f"{plain_remedy(report)}"
                     )
 
+        lines += await self._portrait_review_lines(server_id)
+
         lines.append(f"  _{ImageValidityService.depth_summary(reports)}_")
         lines.append("")
+        return lines
+
+    async def _portrait_configuration_blocker(self, server_id: int) -> str | None:
+        """The portrait-settings reason approval must be withheld, or None.
+
+        Read by `/season review` and by `/season approve` alike, so the two cannot disagree
+        about whether a season may be approved.
+        """
+        from services.image_config_service import portrait_configuration_fault
+
+        try:
+            if not await self.bot.module_service.is_images_enabled(server_id):  # type: ignore[attr-defined]
+                return None
+            config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
+        except Exception as exc:  # never block a season because this could not be read
+            log.error("season review: portrait blocker failed: %s", exc)
+            return None
+        return portrait_configuration_fault(config)
+
+    async def _portrait_review_lines(self, server_id: int) -> list[str]:
+        """How driver portraits are being obtained, for `/season review`.
+
+        Always stated, including when the feature is off: a manager reading the review is
+        deciding whether the season is configured, and "the bot is not obtaining portraits"
+        is an answer to that rather than an absence of one.
+        """
+        from services.image_config_service import portrait_configuration_fault
+
+        try:
+            config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
+        except Exception as exc:  # a review must never fail because of this section
+            log.error("season review: portrait settings failed: %s", exc)
+            return ["  ⚠️ Driver portraits: could not be read."]
+
+        if config is None or not getattr(config, "use_pfp", False):
+            return ["  ❌ Driver portraits from Discord: disabled"]
+
+        triggers = []
+        if getattr(config, "pfp_prerender", False):
+            triggers.append("before each render")
+        if getattr(config, "pfp_daily", False):
+            triggers.append(f"daily at {getattr(config, 'pfp_daily_time', '?')} UTC")
+
+        lines = [
+            "  ✅ Driver portraits from Discord: enabled"
+            + (f" — updated {', and '.join(triggers)}" if triggers else "")
+        ]
+        fault = portrait_configuration_fault(config)
+        if fault is not None:
+            lines.append(f"      ⛔ {fault}")
         return lines
 
     @season.command(
@@ -1064,12 +1116,18 @@ class SeasonCog(commands.Cog):
 
         view = _ApproveView(self)
 
+        # Why the approve button must be withheld, if it must. A list rather than a flag
+        # because there is more than one cause and they read differently: a graphic that
+        # could not be drawn is a template or an asset to fix, while an invalid portrait
+        # configuration is a setting to change. A single flag reported the second as the
+        # first, and sent a manager looking for artwork that was not the problem.
+        #
         # Raised by any division whose lineup or calendar graphic was wanted and could not
         # be drawn. The section's text still stands in, so the review is a complete
         # picture of the season, but the approve button is withheld: a season approved now
         # would post that fault to the league's own channels, and the manager reading this
         # is the one person able to fix it.
-        image_fault = False
+        approval_blockers: list[str] = []
 
         # Load from DB to get tier and team roster data
         if cfg.season_id != 0:
@@ -1111,6 +1169,15 @@ class SeasonCog(commands.Cog):
             # uses, so the two surfaces cannot drift.
             if images_on:
                 image_lines += await self._build_image_review_section(interaction.guild_id)
+
+                # The portrait settings block approval on their own terms: nothing about a
+                # graphic is wrong, so this must not be reported as a graphic that would
+                # not draw.
+                _portrait_fault = await self._portrait_configuration_blocker(
+                    interaction.guild_id
+                )
+                if _portrait_fault is not None:
+                    approval_blockers.append(_portrait_fault)
                 image_lines += await self._calendar_capacity_warning(
                     interaction.guild_id, cfg.season_id
                 )
@@ -1331,7 +1398,11 @@ class SeasonCog(commands.Cog):
                         prepared=prepared.pop((div.id, "calendar"), None),
                     )
                     if cal_state == REVIEW_IMAGE_FAULT:
-                        image_fault = True
+                        approval_blockers.append(
+                            "One or more graphics could not be drawn for this review — "
+                            "the fault is reported above, and the section was shown as "
+                            "text instead. Correct the template or the assets it names."
+                        )
                     if cal_state != REVIEW_IMAGE_DREW:
                         cal_lines: list[str] = ["\U0001f4c5 **Calendar**"]
                         for r in rounds_db:
@@ -1362,7 +1433,11 @@ class SeasonCog(commands.Cog):
                         interaction, div, prepared=prepared.pop((div.id, "lineup"), None)
                     )
                     if lineup_state == REVIEW_IMAGE_FAULT:
-                        image_fault = True
+                        approval_blockers.append(
+                            "One or more graphics could not be drawn for this review — "
+                            "the fault is reported above, and the section was shown as "
+                            "text instead. Correct the template or the assets it names."
+                        )
 
                     if lineup_state == REVIEW_IMAGE_DREW:
                         if role_warning is not None:
@@ -1431,14 +1506,17 @@ class SeasonCog(commands.Cog):
                     f"⚠️ {_unassigned_row['cnt']} driver(s) UNASSIGNED — placement incomplete",
                     ephemeral=False,
                 )
-            if image_fault:
+            if approval_blockers:
+                # De-duplicated: five divisions failing to draw is one thing to fix, and
+                # saying it five times buries anything else in the list.
+                reasons = list(dict.fromkeys(approval_blockers))
+                body = "\n".join(f"• {reason}" for reason in reasons)
                 await interaction.followup.send(
-                    "\u26d4 **The image module is not correctly configured.** One or more "
-                    "graphics could not be drawn for this review — the fault is reported "
-                    "above, and the section was shown as text instead.\n"
+                    "\u26d4 **The image module is not correctly configured.**\n"
+                    f"{body}\n"
                     "The season is **not** offered for approval while that stands, and "
-                    "`/season approve` will refuse it for the same reason. Correct the "
-                    "template or the assets it names, then run `/season review` again.",
+                    "`/season approve` will refuse it for the same reason. Put it right, "
+                    "then run `/season review` again.",
                     ephemeral=True,
                 )
             else:
@@ -4078,6 +4156,21 @@ class SeasonCog(commands.Cog):
                 f"again."
             )
             await interaction.followup.send(msg, ephemeral=True)
+            return
+
+        # ── Gate 4c: the driver portrait settings ─────────────────────────────
+        #
+        # Nothing about a graphic is wrong here, so this is its own gate rather than a
+        # finding of 4b: with portraits enabled and neither update trigger on, no portrait
+        # would ever be fetched, and the season would run drawing the placeholder for every
+        # driver while the configuration said otherwise. Read through the same helper
+        # `/season review` reads, so the two cannot disagree.
+        portrait_fault = await self._portrait_configuration_blocker(cfg.server_id)
+        if portrait_fault is not None:
+            await interaction.followup.send(
+                f"\u274c Season cannot be approved \u2014 {portrait_fault}",
+                ephemeral=True,
+            )
             return
 
         # ── Gate 3: signup module config prerequisites ────────────────────────

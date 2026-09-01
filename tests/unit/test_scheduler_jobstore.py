@@ -157,3 +157,101 @@ def test_a_jobstore_in_a_missing_directory_is_created(tmp_path):
 
     assert os.path.exists(path)
     _remove_database(path)
+
+
+# ── The daily driver-portrait refresh ─────────────────────────────────────
+#
+# The one recurring trigger in this service. Every other job is a one-shot DateTrigger, so
+# these pin the departure deliberately: a later reader finding a CronTrigger among them
+# should find a test saying it is meant.
+
+
+def test_the_portrait_refresh_is_a_recurring_daily_trigger(workspace):
+    from apscheduler.triggers.cron import CronTrigger
+
+    _db_path, build = workspace
+    service = build()
+
+    service.schedule_portrait_refresh(4242, "03:00")
+
+    job = service._scheduler.get_job("pfp_daily_4242")
+    assert job is not None
+    assert isinstance(job.trigger, CronTrigger)
+    fields = {f.name: str(f) for f in job.trigger.fields}
+    assert (fields["hour"], fields["minute"]) == ("3", "0")
+    assert job.kwargs == {"server_id": 4242}
+
+
+def test_the_portrait_refresh_is_scheduled_in_utc(workspace):
+    # The league is told the zone when it names the time; a stored local time would need a
+    # zone stored with it and would drift against daylight saving twice a year.
+    _db_path, build = workspace
+    service = build()
+
+    service.schedule_portrait_refresh(4242, "23:30")
+
+    assert str(service._scheduler.get_job("pfp_daily_4242").trigger.timezone) == "UTC"
+
+
+async def test_naming_a_new_time_re_arms_rather_than_duplicating(workspace):
+    """Started, because a stopped scheduler queues `add_job` and applies
+    `replace_existing` only when it flushes -- so a stopped one shows two pending jobs
+    under one id and would pass this test for the wrong reason."""
+    from services import scheduler_service as m
+
+    _db_path, build = workspace
+    service = build()
+    service.start()
+    try:
+        service.schedule_portrait_refresh(4242, "03:00")
+        service.schedule_portrait_refresh(4242, "07:45")
+
+        jobs = [j for j in service._scheduler.get_jobs() if j.id.startswith("pfp_daily_")]
+        assert len(jobs) == 1
+        fields = {f.name: str(f) for f in jobs[0].trigger.fields}
+        assert (fields["hour"], fields["minute"]) == ("7", "45")
+    finally:
+        m._GLOBAL_SERVICE = None
+
+
+def test_cancelling_the_portrait_refresh_removes_it_and_tolerates_a_second_call(workspace):
+    _db_path, build = workspace
+    service = build()
+    service.schedule_portrait_refresh(4242, "03:00")
+
+    service.cancel_portrait_refresh(4242)
+    service.cancel_portrait_refresh(4242)  # never scheduled is not an error
+
+    assert service._scheduler.get_job("pfp_daily_4242") is None
+
+
+async def test_the_job_delegates_to_the_registered_callback(workspace):
+    from services import scheduler_service as m
+
+    _db_path, build = workspace
+    service = build()
+    seen: list[int] = []
+
+    async def _cb(server_id: int) -> None:
+        seen.append(server_id)
+
+    service.register_portrait_refresh_callback(_cb)
+    m._GLOBAL_SERVICE = service
+    try:
+        await m._portrait_refresh_job(4242)
+    finally:
+        m._GLOBAL_SERVICE = None
+
+    assert seen == [4242]
+
+
+async def test_the_job_is_silent_where_no_callback_was_registered(workspace):
+    from services import scheduler_service as m
+
+    _db_path, build = workspace
+    service = build()
+    m._GLOBAL_SERVICE = service
+    try:
+        await m._portrait_refresh_job(4242)  # must not raise
+    finally:
+        m._GLOBAL_SERVICE = None

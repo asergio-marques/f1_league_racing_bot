@@ -1605,7 +1605,7 @@ These sit under `/images template` rather than `/images config` because Discord 
 >
 > Gradients are fine, and so is any shape you like. The packaged qualifying marks are corner triangles that fade inward, each one **a step darker than the plate of its own placing**. That is deliberate two ways: a driver who qualified first *and* won sees the mark merge gently into the plate, while the same gold mark over a *bronze* plate stays plainly gold. If you redraw them, separate a mark from its plate by lightness rather than by hue alone — at 13 px the eye reads the edge from lightness, and a gold mark that differs from bronze only in hue looks like a stain.
 >
-> **The marks stretch to the cell.** They carry no fixed aspect ratio — a cell is a different shape on the drivers grid than on the constructors one, and no single ratio serves both — so draw artwork that survives being squashed a little. A rectangle or a corner shape does; a circle becomes an ellipse. The position-change markers sharing their folder are unaffected: it is the template's slot that stretches, not the folder.
+> **The marks stretch to the cell.** They carry no fixed aspect ratio — a cell is a different shape on the drivers grid than on the constructors one, and no single ratio serves both — so draw artwork that survives being squashed a little. A rectangle or a corner shape does; a circle becomes an ellipse. The position-change markers sharing their folder are unaffected: it is the template's slot that stretches, not the folder. **Only a marker slot may declare that it stretches.** A slot of any other class — a driver portrait, a team badge, a flag, a circuit map — is held to its class's aspect whatever it declares, and a template that says otherwise is refused, naming the field. Authoring a portrait slot to stretch would draw every face in your league squashed to the shape of the box, and no artwork you supply could correct it.
 >
 > A cell can carry **three** marks at once — the race plate, the fastest lap in one corner and the qualifying mark in the other. That is a win from pole with the fastest lap, and it is why the two corner marks should each leave most of the cell alone.
 >
@@ -1655,7 +1655,7 @@ Every directory is a path relative to the project root, and one that resolves ou
 
 The subcommands in the table above exist for the league that wants its files somewhere else entirely — any path inside the project root is accepted. Most leagues never need to run one.
 
-**What is already there.** A clone ships the fifteen default templates and a fallback per asset class — two for `markers/`, whose files are not all one shape — so the module draws every graphic from the first render, entirely out of placeholders, before you have made anything. It also ships the five tyre compounds in full, those being the bot's own vocabulary rather than your league's. No circuit, team or driver artwork ships: that is your league's to make, and you replace the placeholders a class at a time, seeing your own files appear as you go.
+**What is already there.** A clone ships the fifteen default templates and a fallback per asset class — two for `markers/`, whose files are not all one shape — so the module draws every graphic from the first render, entirely out of placeholders, before you have made anything. It also ships the five tyre compounds in full, those being the bot's own vocabulary rather than your league's. No circuit, team or driver artwork ships: that is your league's to make, and you replace the placeholders a class at a time, seeing your own files appear as you go. **Driver portraits are the one class you need not draw at all** — the bot can obtain them from your drivers' Discord profile pictures instead. See *Driver portraits from Discord* below.
 
 **A set of filenames is reserved** besides `fallback.svg`, and they are the bot's rather than your league's: `tracks/mystery.svg` and `flags/mystery.svg`, drawn for a round whose circuit is concealed until it is run; `flags/other.svg`, drawn for a driver who chose no nationality in particular; the whole of `tyres/` — `soft.svg`, `medium.svg`, `hard.svg`, `intermediate.svg` and `wet.svg`; and the whole of `markers/` — `position_change_gained.svg`, `position_change_lost.svg` and `position_change_none.svg` for the three directions a standing position can move, the nine standings result marks, and the two attendance limit marks. Every name there says which of the three it belongs to, because one folder holds all three. Replace the artwork freely; keep the names, or the bot will not find them.
 
@@ -1681,6 +1681,54 @@ Your own file always wins where you supply one — this only ever fills a gap. C
 > **Guinea-Bissau, the Democratic Republic of the Congo and Dominica now have their own flag.** Until now `Guinean`, `Congolese` and `Dominican` each covered two countries in English, and could only ever resolve one of them — Guinea, Congo and the Dominican Republic. A driver from the other country of each pair now has a distinct nationality of their own — `Bissau-Guinean`, `Congolese (Kinshasa)` and `Dominican (Dominica)` — resolving `guinea_bissau.svg`, `democratic_republic_of_the_congo.svg` and `dominica.svg`. The bare adjectives still resolve exactly as before.
 
 Placing your own files is the operator's job; the bot resolves the paths and reports what it finds.
+
+#### `/images use-pfp` — Driver portraits from Discord
+*Access: Trusted admin*
+
+The lineup graphic draws a portrait for every seated driver, and looks for it in your driver
+image directory under the driver's **Discord user ID** — `198273645123456789.svg`, not their
+name. Supply nothing and every seat draws the packaged placeholder.
+
+**The bot can fill that folder for you**, from the profile picture each driver presents on
+your server. This is **off by default** and does nothing until you turn it on.
+
+| Subcommand | Default | What it governs |
+|------------|---------|-----------------|
+| `toggle` | Off | Whether the bot may obtain portraits from Discord at all |
+| `prerender-toggle` | On | Update the portraits a graphic needs just before drawing it |
+| `daily-toggle` | Off | Update every seated driver's portrait once a day |
+
+**Turn it on with `/images use-pfp toggle`** and the rest follows: pre-render updates are on
+out of the box, so portraits are correct at the moment a lineup is posted. The bot only
+downloads a picture that has actually changed, so a lineup that changes nothing costs nothing.
+
+> **At least one of the two update methods must be on** while portraits are enabled. With
+> neither, no picture would ever be fetched — which is what turning the feature off already
+> does. A command that would leave neither on is refused and nothing is changed; enable the
+> other one first, or turn the whole feature off.
+
+**`/images use-pfp daily-toggle` asks you for a time** in a pop-up box, then asks you to
+confirm. **That time is UTC**, not your local time, and the box says so — the bot schedules
+everything in UTC. It defaults to `03:00`. Most spellings work: `3`, `03:00`, `3am`, `1530`.
+Turning the daily updates back off needs no time and asks for nothing.
+
+Both methods can be on at once. Pre-render updates keep a posted lineup current; daily
+updates keep the folder warm so the first lineup of a season is not the one that waits.
+
+**Which picture is used.** The one the driver presents on your server: their server-specific
+profile picture where they have set one, and their ordinary Discord picture otherwise. A
+driver who has set neither — carrying only the coloured default Discord generates — has
+nothing fetched, and their seat draws the placeholder as before. Discord stores a square
+picture, and that is what is drawn; the circle you see in the Discord client is its own
+cropping, not part of the file.
+
+> **Your own artwork always wins.** A portrait file you placed yourself is never overwritten
+> and never fetched over. The bot only ever touches files it created — so you can draw
+> portraits for some drivers and let the bot fetch the rest, and hand-drawn ones stay put.
+
+A driver who removes their Discord picture has the fetched portrait removed too, and their
+seat reverts to the placeholder. `/season review` states all three settings, and refuses to
+offer the approve button while the configuration is one that could never fetch anything.
 
 #### `/images config` — Presentation
 *Access: Trusted admin*

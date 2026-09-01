@@ -169,7 +169,7 @@ async def test_the_lineup_render_body_runs_and_labels_itself_with_its_template(
     monkeypatch.setattr(
         image_lineup_post,
         "build_drawing",
-        AsyncMock(return_value=({"name": "Main"}, SimpleNamespace())),
+        AsyncMock(return_value=({"name": "Main"}, SimpleNamespace(), [])),
     )
 
     decision = await image_lineup_post.render_png(

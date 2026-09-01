@@ -1,6 +1,77 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-01 — v7.8.0 → v7.9.0: MINOR — only a stretching class's slots may claim the stretch exemption]
+  Version change    : 7.8.0 → 7.9.0
+  Bump rationale    : MINOR. One change to Principle XIV, Rule 6. No Core Principle is removed and
+                      none is redefined, and MAJOR is reserved for those.
+
+                      **Unlike v7.5.0, this one can make a previously accepted template
+                      non-conforming, and that is its purpose.** A template authored under v7.5.0
+                      that declared a slot of a non-stretching class `preserveAspectRatio="none"` was
+                      accepted; it is now refused, naming the field. This is recorded plainly rather
+                      than glossed: the version is MINOR by this project's convention that MAJOR is
+                      reserved for Core Principles, not because nothing breaks.
+
+                      What is affected in practice is narrow. Nothing the module ships is touched —
+                      every slot carrying the declaration across all fifteen packaged templates
+                      belongs to `marker`, verified by a test added with this amendment. Only a
+                      league-authored template can be caught, and only where it was already drawing
+                      distorted artwork with nothing reported.
+
+  Motivation        : The exemption was open to any slot of any class, and a slot's own claim was
+                      taken as sufficient. A league authoring its own lineup template could declare
+                      a driver portrait slot at 2:1, tell it to stretch, and be told nothing — every
+                      face in the league drawn squashed to half height, which no artwork the league
+                      supplies could correct. The check existed precisely to catch that, and the
+                      declaration had become a way to opt out of it.
+
+                      Reachable rather than theoretical as of this date: driver portraits are now
+                      obtained from Discord profile pictures, so the class draws real faces for every
+                      league rather than a grey placeholder nobody would look twice at.
+
+                      The v7.5.0 reasoning is preserved entire. That amendment moved the exemption to
+                      the slot so that admitting the standings marks to `marker` would not take the
+                      position-change arrows' 1:1 check away as collateral. It still does not: within
+                      `marker` the arrows are checked exactly as before, because membership of the
+                      enumeration is permission to claim the exemption and never the exemption
+                      itself. What is withdrawn is only its availability to classes whose data have a
+                      shape of their own.
+
+  Modified sections :
+    - Principle XIV, Rule 6, the stretching paragraphs: the exemption is now available only to a
+      slot whose class is enumerated as stretching. A paragraph is added requiring that enumeration
+      to exist and be closed, and making a `preserveAspectRatio="none"` slot of a non-enumerated
+      class invalid rather than exempt. The "sole mechanism" and "never to the class" statements are
+      restated rather than struck: the declaration remains the sole mechanism and the slot remains
+      the claimant, within a class permitted to claim.
+    - Principle XIV, Rule 6, Rationale: one paragraph added, stating why the escape must be closed
+      to classes whose subjects have a shape of their own.
+  Added sections    : none
+  Removed sections  : none
+  Deferred items    : none. No placeholder tokens remain in the document.
+  Templates review  : `.specify/templates/` states neither rule and needed no change. The
+                      module-facing restatements were amended in the same change:
+                      `src/models/image_constants.py` (`STRETCHABLE_ASSET_CLASSES` added, holding
+                      `marker` alone), `src/services/image_validity_service.py` (`aspect_faults_of`
+                      now resolves the asset class *before* testing the exemption, the reverse of how
+                      it read), `README.md`, `resources/README.md`,
+                      `docs/how-to/configuring-the-image-module.md` and
+                      `docs/wip-specs/image_module_specification.md`.
+                      `resources/defaults/templates/README.md` states the slot-level rule and is
+                      **left as it stands**: every slot it describes belongs to `marker`, so every
+                      sentence in it remains true.
+                      Three tests were added: a non-stretching slot claiming the exemption is now a
+                      fault (driver portrait, flag and team badge), the `marker` case still passes,
+                      and every packaged template is asserted to remain valid under the narrower rule.
+                      `docs/wip-specs/known_issues.md` records the open question this does *not*
+                      settle — whether a class's aspect ought to bind a template a league authored
+                      itself at all.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-01 — v7.7.0 → v7.8.0: MINOR — the tyre class is closed, and the module supplies the five compounds]
   Version change    : 7.7.0 → 7.8.0
   Bump rationale    : MINOR. No Core Principle is removed and none is redefined. Rule XIV.13's
@@ -4877,25 +4948,35 @@ filter are untouched, as is the requirement that an asset carry no text.
 of every image type.** A template declaring a slot of a class at any other aspect is invalid, and
 Layer 2 MUST refuse it, naming the offending field.
 
-**A slot MAY instead declare that it stretches**, in which case the rule above does not bind
-that slot (v7.5.0). It declares this by being authored `preserveAspectRatio="none"`, so the asset
-is drawn to the box the template gives it rather than fitted inside one. The letterboxing the
-one-aspect rule exists to prevent therefore cannot arise, which is the whole of why the exemption
-is sound; the generator still MUST NOT pad. What follows is that the artwork is the league's to
-draw for a shape that varies, and the module MUST say so wherever it documents the data drawn
-into such slots.
+**A slot of a stretching class MAY instead declare that it stretches**, in which case the rule
+above does not bind that slot (v7.5.0, narrowed v7.9.0). It declares this by being authored
+`preserveAspectRatio="none"`, so the asset is drawn to the box the template gives it rather than
+fitted inside one. The letterboxing the one-aspect rule exists to prevent therefore cannot arise,
+which is the whole of why the exemption is sound; the generator still MUST NOT pad. What follows
+is that the artwork is the league's to draw for a shape that varies, and the module MUST say so
+wherever it documents the data drawn into such slots.
 
-**The exemption belongs to the slot and never to the class** (v7.5.0). Every class MUST declare
-an aspect, and a class present in the asset directory table but absent from the aspect table is
-an omission a test MUST refuse. The declaration `preserveAspectRatio="none"` is the sole
-mechanism by which the check is skipped, and it is made where the fact lives — in the template,
-by the author who chose the box — so it cannot be forgotten in the way an absent aspect could,
-and it cannot silently disarm the check for slots of the same class that do not stretch.
+**Which classes stretch MUST be enumerated, and that enumeration is closed** (v7.9.0). A class
+absent from it carries its aspect absolutely: every slot of that class MUST match it, and a slot
+of such a class authored `preserveAspectRatio="none"` is not exempt but **invalid**, which Layer 2
+MUST refuse naming that field. A class MUST NOT be admitted to the enumeration because one
+template found its aspect inconvenient — only where the data it draws genuinely have no shape of
+their own, the box being decided by the template rather than by the subject.
 
-A single class MAY therefore serve slots of differing shape provided every such slot declares
-that it stretches, and MAY do so alongside slots of its own aspect that do not. This is what
-allows one closed-set class to carry both artwork with a fixed shape and artwork drawn into a box
-the template decides.
+**The exemption is claimed by the slot and never by the class** (v7.5.0, qualified v7.9.0). Every
+class MUST declare an aspect, and a class present in the asset directory table but absent from the
+aspect table is an omission a test MUST refuse. Within a stretching class the declaration
+`preserveAspectRatio="none"` remains the sole mechanism by which the check is skipped, and it is
+made where the fact lives — in the template, by the author who chose the box — so it cannot be
+forgotten in the way an absent aspect could, and it cannot silently disarm the check for slots of
+the same class that do not stretch. Membership of the enumeration is **permission to claim** the
+exemption and never the exemption itself: a slot of a stretching class that does not declare it is
+held to its class's aspect exactly as any other slot is.
+
+A single class MAY therefore serve slots of differing shape provided it is one that stretches and
+every such slot declares that it stretches, and MAY do so alongside slots of its own aspect that
+do not. This is what allows one closed-set class to carry both artwork with a fixed shape and
+artwork drawn into a box the template decides.
 
 **Rationale**: a league authors **one file per datum of a class**, and the rule above forbids the
 generator to pad. A class serving slots of two aspects would therefore letterbox that one file
@@ -4905,6 +4986,14 @@ wherever it did not match, and no artwork a league could supply would answer it 
 is that rule carried to its conclusion rather than a second one. A stretching slot escapes the
 argument entirely rather than weakening it: the file it draws is not fitted to a shape at all,
 so there is no shape for it to be wrong about.
+
+The enumeration exists because that escape is only available to data that genuinely have no shape.
+Left open to every class, the declaration became a way for a template to opt out of a check that
+was protecting it: a driver portrait slot authored at any ratio and told to stretch drew every
+face in a league distorted, and was refused nothing, because the slot's own claim was taken as
+sufficient. A class that carries an aspect means it, and the slot does not get to say otherwise —
+a subject with a shape of its own cannot be drawn to a box that disagrees, however the box is
+declared.
 
 **Two classes need not match each other, and the flag and track classes deliberately do not.**
 A country flag is drawn at 3:2 and a circuit map at 1:1, wherever each appears. A template drawing
@@ -6681,4 +6770,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.8.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-01
+**Version**: 7.9.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-01

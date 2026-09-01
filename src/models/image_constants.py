@@ -430,15 +430,23 @@ OTHER_ASSET_NAME = "other.svg"
 #: of two aspects would letterbox that one file wherever it did not match, and no
 #: artwork the league could supply would answer it.
 #:
-#: **Every class declares one, and a slot opts out for itself** (v7.5.0). A slot carrying
-#: `preserveAspectRatio="none"` stretches to the box it is given, so there is no ratio for
-#: it to be letterboxed against and `aspect_faults_of` passes over it whatever its shape.
-#: The exemption belongs to the slot because that is where the fact lives: `marker` draws
-#: both the square position-change arrows and the standings and attendance marks, whose
-#: cells are 52 x 22, 52 x 18 and 36 x 24 -- three shapes no single class ratio could serve,
-#: and which the slots themselves already declare they stretch to fill. An earlier version
-#: made whole classes exempt instead, which cost a class of its own for the marks and left
-#: the arrows beside them unchecked the moment the two were put in one folder.
+#: **Every class declares one, and a slot of a stretching class opts out for itself**
+#: (v7.5.0, narrowed 2026-09-01). A slot carrying `preserveAspectRatio="none"` stretches to
+#: the box it is given, so there is no ratio for it to be letterboxed against and
+#: `aspect_faults_of` passes over it whatever its shape. The exemption belongs to the slot
+#: because that is where the fact lives: `marker` draws both the square position-change
+#: arrows and the standings and attendance marks, whose cells are 52 x 22, 52 x 18 and
+#: 36 x 24 -- three shapes no single class ratio could serve, and which the slots themselves
+#: already declare they stretch to fill. An earlier version made whole classes exempt
+#: instead, which cost a class of its own for the marks and left the arrows beside them
+#: unchecked the moment the two were put in one folder.
+#:
+#: But the exemption was available to *any* slot, of any class, and that was too wide. A
+#: league authoring its own lineup template could put `preserveAspectRatio="none"` on a
+#: driver portrait slot, shape it 2:1, and be told nothing -- drawing every face in the
+#: league squashed to half height, which no artwork the league supplies can correct. So a
+#: slot may claim the exemption only where its class is one that stretches; see
+#: ``STRETCHABLE_ASSET_CLASSES``.
 #:
 #: Two classes need not match each other, and flag and track deliberately do not.
 #: The constraint is *within* a class, never *across* two.
@@ -446,6 +454,15 @@ OTHER_ASSET_NAME = "other.svg"
 #: XIV.6 leaves these numbers out of governance on purpose ("The aspect a class
 #: carries is not fixed by this Principle"), so this table is the authority and
 #: ``resources/README.md`` is its league-facing statement.
+#: Asset classes whose slots may declare that they stretch, and so opt out of their class's
+#: aspect. Only `marker` does: it holds the 64 x 64 position-change arrows *and* the
+#: standings and attendance marks, which are drawn to the room their cell gives them.
+#:
+#: Every other class is held to its aspect whatever a slot declares. A portrait, a badge, a
+#: flag or a circuit map drawn to a box of the wrong shape is simply distorted, and the
+#: league authoring the template is told so rather than discovering it in a posted graphic.
+STRETCHABLE_ASSET_CLASSES: frozenset[str] = frozenset({"marker"})
+
 ASSET_CLASS_ASPECTS: dict[str, float] = {
     "track": 1.0,          # 120 x 120 -- circuit maps
     "team": 1.0,           # 120 x 120

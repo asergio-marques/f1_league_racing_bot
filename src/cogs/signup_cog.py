@@ -32,6 +32,7 @@ from db.database import get_connection
 from models.driver_profile import DriverState
 from models.signup_module import SignupModuleConfig, SignupModuleSettings
 from services import track_service
+from utils.time_parsing import parse_time_of_day
 from utils.channel_guard import admin_only, channel_guard, server_admin_only
 from utils.message_builder import discord_ts
 
@@ -55,27 +56,13 @@ _MAX_SLOTS = 25
 
 
 def _parse_time(raw: str) -> str | None:
-    """Parse HH:MM or h:mm am/pm → normalised HH:MM. Returns None on failure."""
-    raw = raw.strip()
-    # 24h HH:MM
-    m24 = re.fullmatch(r"(\d{1,2}):(\d{2})", raw)
-    if m24:
-        h, mn = int(m24.group(1)), int(m24.group(2))
-        if 0 <= h <= 23 and 0 <= mn <= 59:
-            return f"{h:02d}:{mn:02d}"
-        return None
-    # 12h with am/pm
-    m12 = re.fullmatch(r"(\d{1,2}):(\d{2})\s*(am|pm)", raw, re.IGNORECASE)
-    if m12:
-        h, mn, meridiem = int(m12.group(1)), int(m12.group(2)), m12.group(3).lower()
-        if not (1 <= h <= 12 and 0 <= mn <= 59):
-            return None
-        if meridiem == "am":
-            h = 0 if h == 12 else h
-        else:
-            h = 12 if h == 12 else h + 12
-        return f"{h:02d}:{mn:02d}"
-    return None
+    """Parse a time of day to a normalised ``HH:MM``. Returns None on failure.
+
+    Delegates to the shared parser: a league that learns `7pm` works when naming the daily
+    portrait-refresh time will type it here too, and two parsers would have disagreed. This
+    accepts everything the previous local one did, and more besides.
+    """
+    return parse_time_of_day(raw)
 
 
 def _format_slots(slots: list) -> str:

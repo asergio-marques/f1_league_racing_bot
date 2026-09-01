@@ -175,6 +175,41 @@ async def main() -> None:
 
         bot.scheduler_service.register_season_end_callback(_season_end_cb)
 
+        # Register the daily driver-portrait refresh and re-arm it after a restart. Unlike
+        # every other job here the trigger is recurring, so recovery re-adds it rather than
+        # working out whether it was missed: a cron job that did not fire while the bot was
+        # down simply fires at its next due time.
+        async def _portrait_refresh_cb(server_id: int) -> None:
+            from services.driver_portrait_service import run_daily_refresh
+            await run_daily_refresh(bot, server_id)
+
+        bot.scheduler_service.register_portrait_refresh_callback(_portrait_refresh_cb)
+
+        async def _recover_portrait_refresh_jobs() -> None:
+            from db.database import get_connection as _gc
+            async with _gc(DB_PATH) as _db:
+                _cur = await _db.execute(
+                    "SELECT server_id, pfp_daily_time FROM image_config "
+                    "WHERE use_pfp = 1 AND pfp_daily = 1"
+                )
+                _rows = await _cur.fetchall()
+            for _row in _rows:
+                try:
+                    bot.scheduler_service.schedule_portrait_refresh(
+                        _row["server_id"], _row["pfp_daily_time"]
+                    )
+                except Exception:
+                    log.warning(
+                        "Failed to re-arm the daily portrait refresh for server %s",
+                        _row["server_id"],
+                        exc_info=True,
+                    )
+
+        try:
+            await _recover_portrait_refresh_jobs()
+        except Exception:
+            log.warning("Portrait refresh recovery failed", exc_info=True)
+
         # Register signup auto-close callback and recover any timers lost on restart (T021)
         from services.signup_module_service import SignupModuleService as _SignupModuleSvc
         from db.database import get_connection as _get_conn

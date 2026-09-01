@@ -98,6 +98,11 @@ classes need not match each other, and flags and maps deliberately do not.
 Those are a league's own, and the module exists to let each league bring its own design
 language rather than inherit one.
 
+**Driver portraits are the one class you need not author at all.** The bot can obtain them
+from Discord — see above — so `league/drivers/` may be left empty and still draw real faces.
+Nothing is shipped for it either way: what appears there is your league's own, whether you
+drew it or the bot fetched it on your behalf.
+
 **Why the markers, the weather icons and the tyres are different.** Those three sets
 are not a league's values at all — they are the bot's own vocabulary, fixed and closed, and no league chose
 them. A tyre compound is what the game offers, five of them and no sixth, in exactly the
@@ -134,7 +139,15 @@ The bot takes the value it wants to draw, normalises it, and appends `.svg`:
 So `Red Bull Racing` is looked up as `red_bull_racing.svg` in whichever directory the team
 badge class points at, and `São Paulo` as `sao_paulo.svg` in the track directory. A name may
 begin with a digit: `2Fast Motorsport` is looked up as `2fast_motorsport.svg`. Driver portraits are the one exception: they are keyed on the
-Discord user ID, so a portrait does not go missing when a driver changes their nickname.
+Discord user ID. The ID is immutable, where both a Discord username and the display name an
+account carries on your server can be changed by the driver at any moment — a portrait keyed
+on either would go missing the day they changed it, so neither is worth keying on.
+
+**The bot can fill `league/drivers/` for you.** `/images use-pfp toggle` lets it obtain each
+driver's portrait from the profile picture they present on your server, saving it under that
+same Discord user ID. It is off by default. A file you placed yourself is never overwritten
+and never fetched over, so hand-drawn portraits and fetched ones can sit side by side. See
+**Image Module → `/images use-pfp`** in the main [README](../README.md).
 
 **Flags are keyed on a country**, never on a nationality. A driver who signed up as `British`
 draws `united_kingdom.svg` from the flag directory — the bot maps the nationality to its country first — and a
@@ -258,6 +271,12 @@ ellipse.
 It is the **slot** that stretches and not the folder: the movement markers sitting beside them
 in `markers/` are still held to 64 × 64, because their slots are square and say nothing about
 stretching. Everything else in this file is authored at its class's aspect as above.
+
+**Only a marker slot may stretch.** If you author your own template, a slot of any other
+class — driver portrait, team badge, flag, circuit map — is held to its class's aspect
+whatever it declares, and a template saying otherwise is refused with the field named. A
+portrait slot authored to stretch would draw every face in your league distorted to the shape
+of the box, which no artwork you supply could correct.
 
 The full authoring contract — template field naming, removable groups, text bounds — is in
 the main [README](../README.md) under **Image Module → Templates: what the bot expects**.

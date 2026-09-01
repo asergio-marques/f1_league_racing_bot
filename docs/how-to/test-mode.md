@@ -100,6 +100,11 @@ Real drivers are the awkward part of testing placement, results and attendance: 
 
 The team must already exist in that division and have a free seat — this goes through the same seating path a real placement does, so seat-count and team-existence failures surface here exactly as they would in production.
 
+No Discord account sits behind a synthetic driver, so `/images use-pfp` never obtains a
+portrait for one: their lineup seat draws whatever is in the driver image folder under their
+synthetic ID, and the packaged placeholder otherwise. That is deliberate — the fetch resolves
+each driver through the guild, and a synthetic ID resolves to nobody.
+
 The response includes a **synthetic mention string** (`<@…>` with the fake profile's ID). That is the value to paste into a result submission; result parsing does not care that no account sits behind it.
 
 | Command | Notes |

@@ -16,6 +16,8 @@ import ast
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -285,3 +287,33 @@ def test_season_review_subsections_do_not_share_a_list():
         assert collected_into == expected, (
             f"{marker} is collected into {collected_into}, not {expected}"
         )
+
+
+# ── Portraits are refreshed for the seats about to be drawn ───────────────
+
+
+def test_seated_members_reads_every_occupied_seat():
+    from services.image_lineup_post import seated_members
+
+    guild = MagicMock()
+    members = {5: MagicMock(name="a"), 6: MagicMock(name="b")}
+    guild.get_member.side_effect = members.get
+    teams = [
+        SimpleNamespace(seats=[
+            SimpleNamespace(discord_user_id="5"),
+            SimpleNamespace(discord_user_id=None),      # unoccupied
+        ]),
+        SimpleNamespace(seats=[
+            SimpleNamespace(discord_user_id="6"),
+            SimpleNamespace(discord_user_id="99"),      # a driver who has left
+        ]),
+    ]
+
+    assert sorted(seated_members(guild, teams)) == ["5", "6"]
+
+
+def test_seated_members_is_empty_without_a_guild():
+    from services.image_lineup_post import seated_members
+
+    teams = [SimpleNamespace(seats=[SimpleNamespace(discord_user_id="5")])]
+    assert seated_members(None, teams) == {}

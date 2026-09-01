@@ -77,6 +77,30 @@ async def lineup_enabled(bot, server_id: int) -> bool:
         return False
 
 
+def seated_members(guild, teams) -> dict[str, object]:
+    """The Discord member behind each occupied seat, as user id -> Member.
+
+    One reader for what the posting path and the preview path both need. Both once carried
+    this loop verbatim, and both now want the Member for a second purpose -- the display name
+    it answers, and the profile picture the portrait is obtained from -- so a second divergent
+    copy would have been two.
+
+    A seat with no driver, a driver the guild cannot resolve (they have left), and a mock
+    driver carrying a synthetic id all simply do not appear.
+    """
+    members: dict[str, object] = {}
+    if guild is None:
+        return members
+    for team in teams:
+        for seat in team.seats:
+            if seat.discord_user_id is None:
+                continue
+            member = guild.get_member(int(seat.discord_user_id))
+            if member is not None:
+                members[str(seat.discord_user_id)] = member
+    return members
+
+
 async def build_drawing(bot, guild, division_id: int):
     """Resolve the division into a LineupDrawing, or raise LineupDataError."""
     from services.image_lineup_service import resolve_drawing
@@ -154,23 +178,22 @@ async def build_drawing(bot, guild, division_id: int):
 
     # The first link of the name chain is the account's display name on the server *at the
     # moment of generation*, which only the guild can answer (research R9).
-    display_names: dict[str, str] = {}
-    if guild is not None:
-        for team in teams:
-            for seat in team.seats:
-                if seat.discord_user_id is None:
-                    continue
-                member = guild.get_member(int(seat.discord_user_id))
-                if member is not None:
-                    display_names[str(seat.discord_user_id)] = member.display_name
+    members = seated_members(guild, teams)
+    display_names = {
+        user_id: member.display_name for user_id, member in members.items()
+    }
 
-    return division, resolve_drawing(
-        division_name=division["name"],
-        division_tier=division["tier"],
-        season_number=division["season_number"],
-        teams=teams,
-        display_names=display_names,
-        nationality_collected=collected,
+    return (
+        division,
+        resolve_drawing(
+            division_name=division["name"],
+            division_tier=division["tier"],
+            season_number=division["season_number"],
+            teams=teams,
+            display_names=display_names,
+            nationality_collected=collected,
+        ),
+        list(members.values()),
     )
 
 
@@ -182,7 +205,7 @@ async def render_png(bot, server_id: int, guild, division_id: int, origin: Posti
         spec_builder_with_faults,
     )
 
-    _division, drawing = await build_drawing(bot, guild, division_id)
+    _division, drawing, members = await build_drawing(bot, guild, division_id)
 
     config = await bot.image_config_service.get_config(server_id)
     directories, directory_faults = resolve_configured_directories(
@@ -193,6 +216,16 @@ async def render_png(bot, server_id: int, guild, division_id: int, origin: Posti
             ("driver", "driver_image_directory"),
         ),
         image_type=LINEUP_TEMPLATE_KEY,
+    )
+
+    # Bring the portraits up to date before the fill looks for them, where the league asked
+    # for that. The drawing is already built, but it carries the user id as the datum and the
+    # file is not read until the fill -- so this is still in time. Never raises: a portrait
+    # that cannot be obtained resolves exactly as it would have done otherwise.
+    from services.driver_portrait_service import refresh_before_render
+
+    await refresh_before_render(
+        bot, server_id, members, config=config, directory=directories.get("driver")
     )
 
     from utils.image_naming import stem_for_drawing

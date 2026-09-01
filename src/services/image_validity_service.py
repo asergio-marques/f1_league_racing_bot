@@ -36,6 +36,7 @@ from models.image_constants import (
     ASPECTS,
     ASSET_ASPECT_TOLERANCE,
     ASSET_CLASS_ASPECTS,
+    STRETCHABLE_ASSET_CLASSES,
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
     TEMPLATE_COMMAND_NAMES,
@@ -202,11 +203,19 @@ def aspect_faults_of(root, template_key: str) -> list[str]:
     league authors one file per datum, and a class serving slots of two aspects would
     letterbox that file wherever it did not match.
 
-    **A slot exempts itself.** One carrying ``preserveAspectRatio="none"`` stretches to
-    the box the template gives it, so there is nothing for it to be letterboxed against
-    and the rule has no work to do. The exemption is the slot's and not its class's
-    because that is where the fact lives: `marker` draws the square position-change
-    arrows and the standings and attendance marks alike, and only the marks stretch.
+    **A slot of a stretching class exempts itself.** One carrying
+    ``preserveAspectRatio="none"`` stretches to the box the template gives it, so there is
+    nothing for it to be letterboxed against and the rule has no work to do. The exemption
+    is the slot's and not its class's because that is where the fact lives: `marker` draws
+    the square position-change arrows and the standings and attendance marks alike, and
+    only the marks stretch.
+
+    But only a slot of a class in ``STRETCHABLE_ASSET_CLASSES`` may claim it. The exemption
+    was formerly open to any slot of any class, which let a league's own template declare a
+    driver portrait slot 2:1 and draw every face in the league squashed to half height,
+    unremarked. A class that carries an aspect means it, and a slot saying otherwise is the
+    fault rather than the exception. Note the order below: the class is resolved *before*
+    the exemption is tested, which is the reverse of how this once read.
 
     The comparison is **relative and tolerant**: template geometry is authored in
     Inkscape and carries floating-point values, so an exact test would reject every
@@ -222,10 +231,13 @@ def aspect_faults_of(root, template_key: str) -> list[str]:
         field_id = node.get("id")
         if not field_id:
             continue
-        if node.get("preserveAspectRatio") == "none":
-            continue
         asset_class = catalogue.asset_class_for(field_id)
         if asset_class is None:
+            continue
+        if (
+            node.get("preserveAspectRatio") == "none"
+            and asset_class in STRETCHABLE_ASSET_CLASSES
+        ):
             continue
         expected = ASSET_CLASS_ASPECTS.get(asset_class)
         if expected is None:
