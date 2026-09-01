@@ -59,6 +59,12 @@
        The sanction column is wide enough for "Reached point limit", which is
        the one annotation the field ever carries.
 
+       The round's grand prix name is **not** drawn here (2026-09-01). This
+       graphic stands after a whole season and names the round it stands after
+       by number; naming the one round's grand prix under that heading read as
+       a subtitle for the table, which it is not. `race_name` stays in the
+       catalogue for a league that wants it, and this file simply declines it.
+
        Mandatory : division_name, round_number, row_<x>_group,
                    row_<x>_driver_name, row_<x>_points,
                    round_<z>_number (of every round declared)
@@ -123,7 +129,6 @@
     <tspan>AFTER ROUND&#160;</tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">9</tspan>
   </text>
   <text class="track" x="48" y="188">Attendance</text>
-  <text id="race_name" inkscape:label="race_name" class="sub" x="48" y="220">Grand Prix Name</text>
 
   <!--  the one limit, removable in its entirety  -->
   <g id="limit_group" inkscape:label="limit_group">

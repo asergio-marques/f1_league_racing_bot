@@ -210,3 +210,44 @@ def test_the_two_map_bearing_templates_are_exactly_the_calendar_and_the_check_in
                      path.read_text(encoding="utf-8"))
     }
     assert bearing == {"calendar_template", "rsvp_template"}
+
+
+# --------------------------------------------------------------------------
+# The grand prix name, drawn only where one round is the subject (2026-09-01)
+# --------------------------------------------------------------------------
+
+#: The sheets that stand after a whole season. Each names the round it stands after by
+#: number, and naming that one round's grand prix beneath the heading read as a subtitle
+#: for the table rather than as a fact about it.
+SEASON_SHEETS = (
+    "attendance_template",
+    "standings_drivers_template",
+    "standings_constructors_template",
+)
+
+
+@pytest.mark.parametrize("template", SEASON_SHEETS)
+def test_a_season_sheet_does_not_name_a_grand_prix(template):
+    """``race_name`` stays in each catalogue; these files decline to declare it."""
+    text = (RESOURCES / "templates" / f"{template}.svg").read_text(encoding="utf-8")
+    assert 'id="race_name"' not in text
+
+
+def test_every_other_round_scoped_template_still_names_its_grand_prix():
+    """The check-in, the results sheets, the verdict and the forecasts each draw one round."""
+    naming = {
+        path.stem
+        for path in _template_paths()
+        if 'id="race_name"' in path.read_text(encoding="utf-8")
+    }
+    assert naming == {
+        "rsvp_template",
+        "results_qualifying_template",
+        "results_race_template",
+        "verdicts_template",
+        "weather_p1_template",
+        "weather_p2_template",
+        "weather_p2_sprint_template",
+        "weather_p3_template",
+        "weather_p3_sprint_template",
+    }

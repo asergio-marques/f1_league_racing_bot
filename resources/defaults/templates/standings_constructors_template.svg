@@ -91,6 +91,12 @@
        outcome literal with another raised beside it - "DSQ" over "DSQ" - which
        measures about 46. Narrow them and that pair overruns the next round.
 
+       The round's grand prix name is **not** drawn here (2026-09-01). This
+       graphic stands after a whole season and names the round it stands after
+       by number; naming the one round's grand prix under that heading read as
+       a subtitle for the table, which it is not. `race_name` stays in the
+       catalogue for a league that wants it, and this file simply declines it.
+
        Mandatory : division_name, round_number, result_status,
                    row_<x>_group, row_<x>_position, row_<x>_team_name,
                    row_<x>_team_image, row_<x>_points,
@@ -200,7 +206,6 @@
     <tspan>ROUND </tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">10</tspan>
   </text>
   <text class="track" x="48" y="188">Constructor Standings</text>
-  <text id="race_name" inkscape:label="race_name" class="sub" x="48" y="220">Grand Prix Name</text>
   <line x1="48" y1="252" x2="1680" y2="252" stroke="#262B33" stroke-width="1"/>
 
   <!--  column headers  -->
