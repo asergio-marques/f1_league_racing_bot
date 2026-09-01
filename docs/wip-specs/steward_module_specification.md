@@ -11,7 +11,7 @@
 - This module must work with the fake driver rosters used in test mode.
 
 ## Concepts
-- Driver license - A individual record of a driver's history in the league, onto which the current amount of warning/penalty/discipline points and their history (and each of those points' expirations dates), plus qualifying/race/season/league ban current information and history is appended to.
+- Driver license - A individual record of a driver's history in the league, onto which the driver's history of warning points, penalty points, discipline points, qualifying bans, race bans, season bans and league bans, including active status and date of incidence, is recorded. Likewise, a tally of the total of each penalty type is kept.
 - Steward - A trusted user denoted with a special role which may be different from that of league managers, which are able to see tickets and pass judgement on them.
 - Head steward - A privileged user denoted with a special role that serves as the leader of the stewarding team. It is mandatory that a stewarding team has a head steward. They may confer acting head steward responsabilities onto another member of the stewarding team for a temporary period. By default, the head steward is the effective head steward for all tickets.
 - Acting head steward - Also referred to as temporary or temp head steward. A privileged user denoted with a special role with similar privileges as the head steward, which lasts only for a limited amount of time, as a result of being deferred head steward responsabilities temporarily. While a temporary head steward is active, the head steward loses their default status as effective head steward on all tickets and the ability to use commands which require head steward privilege.
@@ -68,6 +68,7 @@
   - Multi round - Rules that verify only multiples of a specific penalty accured across multiple rounds for one driver.
   - Active accumulation - Rules that verify only the accumulation of a specific active penalty on a driver's license.
   - Historical accumulation - Rules that verify the total accumulation of a specific penalty across a driver's license history, active, expired or served.
+- Active penalty - A penalty instance that is still active, and is yet to be served, yet to expire, or yet to be revoked. Applies to warning points, penalty points, discipline points, qualifying bans, race bans, season bans and league bans.
 
 ## Configuring the stewarding module
 - All configuration changes must be logged to the standard log channel.
@@ -225,31 +226,67 @@
   - Season ban - 0
 
 ### Automated penalties
-- <NEW COMMAND> A "steward auto-rule add-single-round" command will be made available to league managers, which shall have no inputs. Upon usage of this command, a modal dialog will open, with the following fields:
-  - Type - Mandatory - Type of criteria that shall be met. Can be single round, multi round, or accumulatory.
-  - ID - String - Unique ID for this rule. Must not overlap with that of other auto rules. Maximum of 12 characters
+- <NEW COMMAND> A "steward auto-rule add-single-round" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks for configured criteria on the outcomes of that round exclusively upon the closing of the stewarding cycle of any given round. Upon usage of this command, a modal dialog will open, with the following fields:
+  - ID - Mandatory - String - Unique ID for this rule. Must not overlap with that of other auto rules, regardless of type. Maximum of 12 characters.
+  - Infringement - Optional - String - An optional string for league managers to add a rule number to be printed out in the verdict.
   - Type of infractions committed - Mandatory - Dropdown - Type of penalty that must be given out to a driver in the quantity above for this rule to be triggered.
-  - Number of infractions committed - Mandatory - Integer - Quantity of penalties of a certain type that must be given out to a driver in the quantity above for this rule to be triggered.
-    - This value must not be 0.
+    - This value must not be the same as defined in "Penalty given".
+  - Number of infractions committed - Mandatory - Integer - Quantity of penalties of a certain type that a driver must have received in the latest round in the quantity above for the auto-rule to be triggered.
+    - This value must be greater than 0.
   - Penalty given - Mandatory - Dropdown - Type of penalty to be bestowed upon a driver when this rule is triggered.
-    - This value must not be the same as defined in "Type of infractions committed"
+    - This value must not be the same as defined in "Type of infractions committed".
   - Number of penalties given - Mandatory - Integer - Quantity of penalties of the type defined in "penalty given" to be bestowed upon a driver when this rule is triggered.
-    - This value must not be 0.
-  - Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule will be added to the list and made active immediately.
-
-- <NEW COMMAND> A "steward auto-rule add-multi-round" command will be made available to league managers, which shall have no inputs. Upon usage of this command, a modal dialog will open, with the following fields:
-  - <TBD>
-
-- <NEW COMMAND> A "steward auto-rule add-active-acc-round" command will be made available to league managers, which shall have no inputs. Upon usage of this command, a modal dialog will open, with the following fields:
-  - <TBD>
-
-- <NEW COMMAND> A "steward auto-rule add-history-acc-round" command will be made available to league managers, which shall have no inputs. Upon usage of this command, a modal dialog will open, with the following fields:
-  - <TBD>
-
-- Auto-rules are triggered when the number of infractions committed is equal or greater than that in the rule. <NEEDS MODIFICATION>
-- <NEW COMMAND> A "steward auto-rule modify" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog similar to that of "steward auto-rule add" will appear, with the data from the auto-rule of the input ID preloaded and modifiable. The ID cannot be modified, hence that field shall be greyed-out.
+    - This value must be greater than 0.
+  - Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule will be added to the list with the "single-round" type and made active immediately.
+- As configured, a single-round rule will be interpreted as meaning "if a driver receives a certain amount of pre-defined penalty type in a single round, they will be handed out a number of penalties of a certain, different, kind".
+- <NEW COMMAND> A "steward auto-rule add-multi-round" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks for configured criteria on the outcomes of a previous number of rounds, the latest round completed included, upon the closing of the stewarding cycle of any given round. Upon usage of this command, a modal dialog will open, with the following fields:
+  - ID - String - Unique ID for this rule. Must not overlap with that of other auto rules, regardless of type. Maximum of 12 characters.
+  - Infringement - Optional - String - An optional string for league managers to add a rule number to be printed out in the verdict.
+  - Number of rounds - Integer - Number of previous rounds' outcomes that will be checked for the type of infractions committed by a same driver.
+    - This value must be greater than 1.
+  - Type of infractions committed - Mandatory - Dropdown - Type of penalty to be detected in the driver's record in the previous rounds.
+    - This value must not be the same as defined in "Penalty given".
+  - Number of infractions committed - Mandatory - Integer - Quantity of penalties of a certain type that a driver must have received in the latest rounds in the quantity above for the auto-rule to be triggered.
+    - This value must be greater than 0.
+  - Penalty given - Mandatory - Dropdown - Type of penalty to be bestowed upon a driver when this rule is triggered.
+    - This value must not be the same as defined in "Type of infractions committed".
+  - Number of penalties given - Mandatory - Integer - Quantity of penalties of the type defined in "penalty given" to be bestowed upon a driver when this rule is triggered.
+    - This value must be greater than 0.
+  - Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule will be added to the list with the "multi-round" type and made active immediately.
+- As configured, a multi-round rule will be interpreted as meaning "if a driver receives a certain amount of pre-defined penalty type across the last X rounds, they will be handed out a number of penalties of a certain, different, kind".
+- <NEW COMMAND> A "steward auto-rule add-active-acc-round" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks the drivers' licenses for a given number of active penalties (that is, penalties that are yet to serve or expire) of a certain kind, upon the closing of the stewarding cycle of any given round. Upon usage of this command, a modal dialog will open, with the following fields:
+  - ID - Mandatory - String - Unique ID for this rule. Must not overlap with that of other auto rules, regardless of type. Maximum of 12 characters.
+  - Infringement - Optional - String - An optional string for league managers to add a rule number to be printed out in the verdict.
+  - Type of infractions committed - Mandatory - Dropdown - Type of penalty that must be active in a driver's license.
+    - This value must not be the same as defined in "Penalty given".
+  - Number of infractions committed - Mandatory - Integer - Quantity of penalties of a certain type that must be active in a driver's license for the auto-rule to be triggered.
+    - This value must be greater than 0.
+  - Penalty given - Mandatory - Dropdown - Type of penalty to be bestowed upon a driver when this rule is triggered.
+    - This value must not be the same as defined in "Type of infractions committed".
+  - Number of penalties given - Mandatory - Integer - Quantity of penalties of the type defined in "penalty given" to be bestowed upon a driver when this rule is triggered.
+    - This value must be greater than 0.
+  - Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule will be added to the list with the "active accumulation" type and made active immediately.
+- As configured, an accumulation of active penalties rule will be interpreted as meaning "if a driver's license holds a certain amount of active penalties, meaning penalties not served or expired, of a pre-defined type, they will be handed out a number of penalties of a certain, different, kind".
+- <NEW COMMAND> A "steward auto-rule add-history-acc-round" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks the drivers' licenses for a given number of penalties of a certain kind across their whole history in the server, upon the closing of the stewarding cycle of any given round. Upon usage of this command, a modal dialog will open, with the following fields:
+  - ID - Mandatory - String - Unique ID for this rule. Must not overlap with that of other auto rules, regardless of type. Maximum of 12 characters.
+  - Infringement - Optional - String - An optional string for league managers to add a rule number to be printed out in the verdict.
+  - Type of infractions committed - Mandatory - Dropdown - Type of penalty conferred to a driver's license throughout their lifetime in the present league.
+    - This value must not be the same as defined in "Penalty given".
+  - Number of infractions committed - Mandatory - Integer - Quantity of penalties of a certain type that has to have been conferred to a driver's license throughout their lifetime in the present league.
+    - This value must be greater than 0.
+  - Penalty given - Mandatory - Dropdown - Type of penalty to be bestowed upon a driver when this rule is triggered.
+    - This value must not be the same as defined in "Type of infractions committed".
+  - Number of penalties given - Mandatory - Integer - Quantity of penalties of the type defined in "penalty given" to be bestowed upon a driver when this rule is triggered.
+    - This value must be greater than 0.
+  - Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule will be added to the list with the "active accumulation" type and made active immediately.
+- As configured, an accumulation of penalties across one's career in the league rule will be interpreted as meaning "if a driver has received a certain amount of penalties of a pre-defined type, active or not, throughout their in the league as shown by their driver's license, they will be handed out a number of penalties of a certain, different, kind".
+- It is possible to trigger multiple auto-rules of different kinds after the same round.
+- It is possible that the triggering an auto-rule of one kind triggers an auto-rule of one kind.
+  - This works in both "ways"; an multi-round rule being triggered can cause the triggering of an active accumulation rule, and vice-versa, for example.
+- <NEW COMMAND> A "steward auto-rule modify" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog similar to the one triggered when a user attempts to add an auto-rule of the same type as the one coded by the ID input will appear, with the data from the input auto-rule preloaded and modifiable. The ID cannot be modified, hence that field shall be greyed-out.
 - <NEW COMMAND> A "steward auto-rule remove" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog will show up for confirmation of deletion of the auto-rule. Once confirmed, the auto-rule will no longer be active and enforceable, and it will be deleted from the current list.
-- <NEW COMMAND> A "steward auto-rule list" command will be made available to league managers and stewards, which shall have no inputs. In reply, the bot will post a transient (temporary, seen only to the command user) list with all the auto-rules currently available, as a plain text table with the following columns in order: ID, Type of infractions committed, No. of infractions committed, penalty given, number of penalties given.
+- <NEW COMMAND> A "steward auto-rule list" command will be made available to league managers and stewards, which shall have no inputs. In reply, the bot will post a transient (temporary, seen only to the command user) list with all the auto-rules currently available, as a plain text table with the following columns in order: ID, Auto-rule type, Infringement, Number of rounds, Type of infractions committed, No. of infractions committed, penalty given, number of penalties given.
+  - For rules of non-multi-round-type, the "number of rounds" column shall be empty.
 
 ## Stewarding cycle
 - All inputs of the stewarding cycle must be auditable via the steward log channel. Attempts to file a report (and its data), driver addition/removal to tickets, etc etc etc. All logs must include the display name (and user ID) of the input.
@@ -436,7 +473,7 @@
   - The format of the final output is determined in another section.
 - Only after the final output is determined for all appeals pertaining to a given round of a given division, will they be posted, in appeal ID alphabetical order (which will coincide with the submission order of the original reports), in the verdicts channel.
 - After the verdicts are published, a 7 day countdown will be initiated, at the end of which the channel will be deleted.
-  - <SKETCH OUT> Is it practical to save these? Perhaps these could be persisted locally on the device running the bot...
+  - <SKETCH OUT> Is it practical to save these? Perhaps the channels could be exported onto a Json or text file, on the device running the bot, or even uploaded to a drive of sorts...
 - The appeal deliberation phase is only considered over once all appeals pertaining to a given round of a given division are posted to the appropriate channel.
 - Once the appeal deliberation phase is considered over, the round results and the standings after the round will be reposted with the appeals' time penalties factored in.
   - This functionality is somewhat implemented already, just a matter of reusing it.
@@ -495,7 +532,7 @@
 
 ### Season bans
 - Whether a driver has a season ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
-- 
+- If a d
 
 ### League bans
 - Whether a driver has a league ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
