@@ -55,6 +55,12 @@ class ImageConfig:
     weather_icon_directory: str
     tyre_directory: str
 
+    # Driver portraits obtained from Discord
+    use_pfp: bool
+    pfp_prerender: bool
+    pfp_daily: bool
+    pfp_daily_time: str       # 'HH:MM', read as UTC
+
     # Presentation preferences
     time_zone: str
     time_format: str          # '12H' | '24H'

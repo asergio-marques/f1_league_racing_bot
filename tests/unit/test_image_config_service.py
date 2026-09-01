@@ -11,13 +11,18 @@ import sys
 import aiosqlite
 import pytest
 
+from types import SimpleNamespace
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS  # noqa: E402
+from models.image_module import ImageConfig  # noqa: E402
 from services.image_config_service import (  # noqa: E402
+    PFP_FLAG_COLUMNS,
     SETTABLE_COLUMNS,
     ImageConfigService,
     UnknownConfigField,
+    pfp_change_refusal,
 )
 
 _MIGRATIONS_DIR = os.path.join(
@@ -32,6 +37,7 @@ _MIGRATIONS = (
     "043_league_asset_directories.sql",
     "044_standings_highlight_directory.sql",
     "045_marks_join_the_markers.sql",
+    "047_driver_portraits.sql",
 )
 
 
@@ -72,6 +78,16 @@ async def test_create_with_defaults_sets_every_packaged_default(service):
     assert cfg.fastest_lap_colour == "#A020F0"
 
 
+async def test_create_with_defaults_leaves_portraits_opt_in(service):
+    """Migration 047's defaults: off, but a working configuration the moment it is enabled."""
+    cfg = await service.create_with_defaults(1)
+
+    assert cfg.use_pfp is False
+    assert cfg.pfp_prerender is True
+    assert cfg.pfp_daily is False
+    assert cfg.pfp_daily_time == "03:00"
+
+
 async def test_create_with_defaults_inserts_exactly_eight_disabled_toggles(service):
     await service.create_with_defaults(1)
     toggles = await service.get_toggles(1)
@@ -108,9 +124,12 @@ async def test_set_field_rejects_column_outside_allow_list(service):
 
 
 async def test_allow_list_covers_all_settable_columns(service):
-    # 1 template dir + 15 filenames + 7 asset dirs + 4 preferences = 27 scalar columns.
-    # With the 8 toggles that is 35 configuration values in total (SC-008).
-    assert len(SETTABLE_COLUMNS) == 27
+    # 1 template dir + 15 filenames + 7 asset dirs + 4 preferences + the portrait time
+    # = 28 scalar columns. With the 8 toggles that is 36 configuration values in total
+    # (SC-008). The three portrait toggles are booleans and are deliberately outside this
+    # set -- they are written through `set_pfp_flag`, not the string-valued `set_field`.
+    assert len(SETTABLE_COLUMNS) == 28
+    assert not (SETTABLE_COLUMNS & PFP_FLAG_COLUMNS)
     await service.create_with_defaults(1)
     for column in SETTABLE_COLUMNS:
         await service.set_field(1, column, "probe")
@@ -406,6 +425,10 @@ def _make_config(template_directory="templates", **overrides) -> _ImageConfig:
         marker_directory="resources/defaults/markers",
         weather_icon_directory="resources/defaults/weather",
         tyre_directory="resources/defaults/tyres",
+        use_pfp=False,
+        pfp_prerender=True,
+        pfp_daily=False,
+        pfp_daily_time="03:00",
         time_zone="UTC",
         time_format="24H",
         date_format="DDD_DD_MON_YYYY",
@@ -537,3 +560,72 @@ def test_candidate_override_does_not_mutate_the_stored_config():
 
     assert proposed.calendar_template == "other.svg"
     assert config.calendar_template == "calendar_template.svg"
+
+
+# ── The portrait toggles and the at-least-one rule ────────────────────────
+
+
+async def test_set_pfp_flag_writes_each_toggle(service):
+    await service.create_with_defaults(1)
+
+    await service.set_pfp_flag(1, "use_pfp", True)
+    await service.set_pfp_flag(1, "pfp_daily", True)
+    await service.set_pfp_flag(1, "pfp_prerender", False)
+
+    cfg = await service.get_config(1)
+    assert (cfg.use_pfp, cfg.pfp_daily, cfg.pfp_prerender) == (True, True, False)
+
+
+async def test_set_pfp_flag_refuses_a_column_outside_the_three(service):
+    await service.create_with_defaults(1)
+    # The string-valued time is not a flag, and no other column is reachable this way.
+    for forbidden in ("pfp_daily_time", "module_enabled", "server_id", "time_zone"):
+        with pytest.raises(UnknownConfigField):
+            await service.set_pfp_flag(1, forbidden, True)
+
+
+def _pfp_config(**overrides) -> ImageConfig:
+    """A config carrying only the fields `pfp_change_refusal` reads."""
+    values = {"use_pfp": True, "pfp_prerender": True, "pfp_daily": False}
+    values.update(overrides)
+    return SimpleNamespace(**values)  # type: ignore[return-value]
+
+
+@pytest.mark.parametrize("column", ["use_pfp", "pfp_prerender", "pfp_daily"])
+def test_enabling_anything_is_never_refused(column):
+    # Including from the state the rule exists to forbid: nothing is ever made worse by
+    # switching something on, so the rule only ever inspects a disable.
+    both_off = _pfp_config(pfp_prerender=False, pfp_daily=False)
+    assert pfp_change_refusal(both_off, column, True) is None
+
+
+def test_disabling_the_master_toggle_is_never_refused():
+    # Turning the feature off wholesale is what an "invalid" configuration was an awkward
+    # spelling of, so it cannot itself be invalid.
+    cfg = _pfp_config(pfp_prerender=False, pfp_daily=False)
+    assert pfp_change_refusal(cfg, "use_pfp", False) is None
+
+
+def test_disabling_the_only_remaining_trigger_is_refused():
+    cfg = _pfp_config(pfp_prerender=True, pfp_daily=False)
+    message = pfp_change_refusal(cfg, "pfp_prerender", False)
+    assert message is not None
+    assert "daily updates" in message
+
+    cfg = _pfp_config(pfp_prerender=False, pfp_daily=True)
+    message = pfp_change_refusal(cfg, "pfp_daily", False)
+    assert message is not None
+    assert "pre-render updates" in message
+
+
+def test_disabling_one_trigger_is_allowed_while_the_other_stands():
+    both_on = _pfp_config(pfp_prerender=True, pfp_daily=True)
+    assert pfp_change_refusal(both_on, "pfp_prerender", False) is None
+    assert pfp_change_refusal(both_on, "pfp_daily", False) is None
+
+
+def test_the_rule_does_not_bind_while_portraits_are_disabled():
+    # The two sub-toggles refuse outright while the master is off, so this state is not
+    # reachable by command; the rule still declines to invent a refusal for it.
+    off = _pfp_config(use_pfp=False, pfp_prerender=True, pfp_daily=False)
+    assert pfp_change_refusal(off, "pfp_prerender", False) is None
