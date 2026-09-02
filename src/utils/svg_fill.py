@@ -78,12 +78,12 @@ _DEFINITION_TAGS = frozenset(
 #: One transform function and its arguments, for reading a `transform` attribute as a list.
 _TRANSFORM_RE = re.compile(r"([A-Za-z]+)\s*\(([^)]*)\)")
 
-#: A path that draws one straight vertical rule and nothing else: a move, then a single
-#: vertical segment, with an optional close. Anything richer — a second segment, a curve, a
-#: diagonal — is left alone, its shape being its own (see `_path_rule`).
+#: A path that draws one straight rule and nothing else: a move, then a single segment,
+#: with an optional close. Anything richer — a second segment, a curve, a diagonal — is left
+#: alone, its shape being its own (see `_path_rule` and `_path_rule_x`).
 _PATH_RULE_RE = re.compile(
     r"^\s*[Mm]\s*(-?[\d.]+)[\s,]+(-?[\d.]+)\s*"
-    r"([VvLl])\s*(-?[\d.]+)(?:[\s,]+(-?[\d.]+))?\s*[Zz]?\s*$"
+    r"([HhVvLl])\s*(-?[\d.]+)(?:[\s,]+(-?[\d.]+))?\s*[Zz]?\s*$"
 )
 
 
@@ -114,6 +114,23 @@ class FillSpec:
     #: their y would carry up whatever happened to sit low on the canvas, and a template
     #: author would have no way to say otherwise.
     footer: str | None = None
+
+    #: The horizontal crop, which is the vertical crop turned on its side (2026-09-02).
+    #:
+    #: A sheet drawing one column per round of the division is built for as many columns as
+    #: a long season runs. A division running fewer leaves the surplus columns removed and
+    #: their width standing empty, which is the same waste down the canvas that the vertical
+    #: crop exists to remove — so the same cut is made across it.
+    #:
+    #: Names the ``<collection>_<x>_horizontal_crop_point`` of the **last column the data
+    #: fill**. Everything drawn wholly to the right of it is carried left by the width the
+    #: cut removes, and everything spanning it has its right end pulled in by the same,
+    #: before the canvas is rewritten.
+    crop_x: str | None = None
+
+    #: True where ``crop_x`` names the crop point of the last column the **template**
+    #: declares, and only then is that point expected to stand at the declared width.
+    crop_x_is_final: bool = False
 
     #: Fields whose value could not be determined. Each is emptied, or its `_group`
     #: removed where the template declares one (FR-013, FR-023).
@@ -305,6 +322,51 @@ def fill(spec: FillSpec) -> FillResult:
                         root, crop_y, declared_height - crop_y, footer_node
                     )
                 _crop_to(root, crop_y)
+
+    # The same cut across the other axis, for a sheet built for more rounds than the
+    # division runs (2026-09-02). Independent of the vertical crop and applied after it:
+    # each rewrites one dimension, and neither reads what the other wrote.
+    if spec.crop_x:
+        node = index.resolve(spec.crop_x)
+        if node is None:
+            unresolved.append(
+                f"unknown crop point `{spec.crop_x}` (template declares no such id)"
+            )
+        else:
+            # Two coordinates, because the cut and the carry are at different x. The
+            # point's own x is the right edge of the column band — the boundary chrome
+            # is carried in from — and x plus its width is where the canvas edge falls.
+            # On a sheet with nothing beside its columns the width is the right margin
+            # alone and the two differ by that; on the attendance sheet the sanction
+            # column stands between them and rides in.
+            boundary = _element_x(node)
+            span = length(node.get("width")) or 0.0
+            if boundary is None:
+                unresolved.append(f"crop point `{spec.crop_x}` declares no x")
+            else:
+                crop_x = boundary + span
+                declared_width = length(root.get("width"))
+                if (
+                    spec.crop_x_is_final
+                    and declared_width is not None
+                    and abs(crop_x - declared_width) > 0.5
+                ):
+                    notices.append(
+                        RenderNotice(
+                            image_type=spec.image_type,
+                            notice_kind=NOTICE_CROP_POINT_OFF_CANVAS,
+                            field_id=spec.crop_x,
+                            detail=(
+                                f"the last declared round's horizontal crop point sits at "
+                                f"x={crop_x:g} but the template declares a width of "
+                                f"{declared_width:g}. A season as long as the template "
+                                f"draws is cut to the crop point, not to the canvas."
+                            ),
+                        )
+                    )
+                if declared_width is not None:
+                    _carry_left_of_crop(root, boundary, declared_width - crop_x)
+                _crop_to_x(root, crop_x)
 
     canvas = canvas_of(root)
 
@@ -1224,6 +1286,254 @@ def _crop_to(root: etree._Element, crop_y: float) -> None:
         parts = re.split(r"[\s,]+", view_box.strip())
         if len(parts) == 4:
             root.set("viewBox", f"{parts[0]} {parts[1]} {parts[2]} {int(round(crop_y))}")
+
+
+# ── The horizontal crop ───────────────────────────────────────────────────
+#
+# Everything below mirrors the vertical crop above it, across the other axis. The rules are
+# the same rules and the reasoning in each docstring up there holds here unchanged; only the
+# axis differs, so these say what is *different* rather than restating it.
+#
+# One thing genuinely is different. The vertical crop carries a **named** footer group up,
+# because the chrome beneath a list of rows is a band a template author can point at. The
+# chrome to the *right* of a column band is not: on the attendance sheet the sanction column
+# is a heading plus one cell inside every row group, interleaved with the rows rather than
+# gathered beside them. So this carries left by geometry — everything drawn wholly right of
+# the cut — where the vertical crop carries up by name.
+
+
+def _element_x(element: etree._Element) -> float | None:
+    """The element's own x, or the smallest x among its descendants."""
+    own = length(element.get("x"))
+    if own is not None:
+        return own
+    candidates = [
+        length(descendant.get("x"))
+        for descendant in element.iter()
+        if descendant.get("x") is not None
+    ]
+    candidates = [value for value in candidates if value is not None]
+    return min(candidates) if candidates else None
+
+
+#: Attributes an element's leftmost ink can be declared in. ``x`` alone is not enough here
+#: as it is for the crop point: the sanction column's divider is a `line`, which carries no
+#: ``x`` at all, and reading only ``x`` left it standing where it was drawn while the heading
+#: above it and the plate beside it rode in without it.
+_LEFT_EDGE_ATTRIBUTES = ("x", "x1", "x2", "cx")
+
+
+def _left_edge(element: etree._Element) -> float | None:
+    """The leftmost x *element* or anything under it is drawn at.
+
+    Distinct from `_element_x`, which reads the crop point's own ``x`` and must not wander
+    into a subtree. This one answers "is all of this beyond the boundary", so it takes the
+    least x anywhere in the element, in whichever attribute the shape declares it.
+    """
+    candidates: list[float] = []
+    for node in element.iter():
+        if not isinstance(node.tag, str):
+            continue
+        for name in _LEFT_EDGE_ATTRIBUTES:
+            value = length(node.get(name))
+            if value is not None:
+                candidates.append(value)
+    return min(candidates) if candidates else None
+
+
+def _translate_x(element: etree._Element, offset: float) -> None:
+    """Move *element* and its subtree by *offset* along x. See `_translate_y`."""
+    existing = (element.get("transform") or "").strip()
+    shift = f"translate({offset:g},0)"
+    element.set("transform", f"{shift} {existing}".strip())
+
+
+def _translate_x_of(transform: str | None) -> float | None:
+    """The x a transform attribute translates by, else None. See `_translate_y_of`.
+
+    A bare ``translate(x)`` translates along x alone, so unlike its vertical twin this one
+    counts the single-argument form.
+    """
+    raw = (transform or "").strip()
+    if not raw:
+        return 0.0
+
+    total = 0.0
+    consumed = 0
+    for match in _TRANSFORM_RE.finditer(raw):
+        if match.group(1) != "translate":
+            return None
+        arguments = re.split(r"[\s,]+", match.group(2).strip())
+        if len(arguments) > 2 or not arguments:
+            return None
+        value = length(arguments[0])
+        if value is None:
+            return None
+        total += value
+        consumed = match.end()
+    if consumed != len(raw):
+        return None
+    return total
+
+
+def _canvas_offset_x(element: etree._Element) -> float | None:
+    """How far right of its own coordinates *element* is drawn, or None where exempt.
+
+    See `_canvas_offset`. There is no carried group to exempt here — the carry is decided by
+    geometry, and an element already moved is one this walk never visits twice.
+    """
+    offset = 0.0
+    node: etree._Element | None = element
+    while node is not None:
+        if node is not element and isinstance(node.tag, str):
+            if etree.QName(node).localname in _DEFINITION_TAGS:
+                return None
+        shift = _translate_x_of(node.get("transform"))
+        if shift is None:
+            return None
+        offset += shift
+        node = node.getparent()
+    return offset
+
+
+def _path_rule_x(
+    d: str | None,
+) -> tuple[float, float, Callable[[float], str]] | None:
+    """A path drawing one straight **horizontal** rule, as (left, right, rewrite).
+
+    The mirror of `_path_rule`: a move and one horizontal segment, absolute or relative.
+    """
+    match = _PATH_RULE_RE.match(d or "")
+    if match is None:
+        return None
+
+    start_x, start_y = length(match.group(1)), length(match.group(2))
+    command = match.group(3)
+    first, second = length(match.group(4)), length(match.group(5))
+    if start_x is None or start_y is None or first is None:
+        return None
+
+    if command == "H":
+        end = first
+    elif command == "h":
+        end = start_x + first
+    elif command in {"L", "l"} and second is not None:
+        down = second if command == "L" else start_y + second
+        if abs(down - start_y) > _CROP_EPSILON:
+            return None
+        end = first if command == "L" else start_x + first
+    else:
+        return None
+
+    if abs(end - start_x) <= _CROP_EPSILON:
+        return None
+
+    def rewrite(right: float) -> str:
+        """The same rule with its right end at *right*, whichever end that is."""
+        head, tail = (start_x, right) if end > start_x else (right, end)
+        if command == "H":
+            return f"M{head:g} {match.group(2)}H{tail:g}"
+        if command == "h":
+            return f"M{head:g} {match.group(2)}h{tail - head:g}"
+        if command == "L":
+            return f"M{head:g} {match.group(2)}L{tail:g} {match.group(5)}"
+        return f"M{head:g} {match.group(2)}l{tail - head:g} {match.group(5)}"
+
+    return min(start_x, end), max(start_x, end), rewrite
+
+
+def _carry_left_of_crop(
+    root: etree._Element, crop_x: float, delta: float
+) -> None:
+    """Carry everything right of *crop_x* left by *delta*, and pull in what spans it.
+
+    Two jobs, one walk, mirroring `_shorten_across_crop` and the footer carry together:
+
+    * a shape **spanning** the cut keeps the distance it was authored to hold from the right
+      edge — the horizontal rules ruled across a table, which stop at the right margin and
+      must go on stopping there;
+    * an element drawn **wholly right** of the cut is chrome standing beside the columns, and
+      is carried left so it keeps its place beside the last of them.
+
+    The two are exclusive by construction, and an element left of the cut is neither.
+
+    Only the outermost element of a carried subtree is moved: the walk skips into no node it
+    has already carried, or the move would be taken once per level.
+    """
+    if delta <= _CROP_EPSILON:
+        return
+
+    carried: list[etree._Element] = []
+
+    def already_carried(node: etree._Element) -> bool:
+        parent: etree._Element | None = node
+        while parent is not None:
+            if any(parent is done for done in carried):
+                return True
+            parent = parent.getparent()
+        return False
+
+    for element in root.iter():
+        if not isinstance(element.tag, str):
+            continue
+        if element is root:
+            continue
+        if (element.get("id") or "").endswith(("_horizontal_crop_point",
+                                               "_vertical_crop_point")):
+            continue
+        offset = _canvas_offset_x(element)
+        if offset is None:
+            continue
+
+        def spans(left: float, right: float) -> bool:
+            return left + offset < crop_x - _CROP_EPSILON < right + offset
+
+        tag = etree.QName(element).localname
+        if tag == "line":
+            near, far = length(element.get("x1")), length(element.get("x2"))
+            if near is None or far is None:
+                continue
+            name = "x2" if far >= near else "x1"
+            right, left = max(near, far), min(near, far)
+            if spans(left, right):
+                element.set(name, f"{max(left, right - delta):g}")
+                continue
+        elif tag == "rect":
+            left, width = length(element.get("x")), length(element.get("width"))
+            if left is None or width is None:
+                continue
+            if spans(left, left + width):
+                element.set("width", f"{max(0.0, width - delta):g}")
+                continue
+        elif tag == "path":
+            rule = _path_rule_x(element.get("d"))
+            if rule is not None:
+                left, right, rewrite = rule
+                if spans(left, right):
+                    element.set("d", rewrite(max(left, right - delta)))
+                    continue
+
+        # Not spanning the cut. Anything standing wholly beyond it is carried in.
+        if already_carried(element):
+            continue
+        near_edge = _left_edge(element)
+        if near_edge is None:
+            continue
+        if near_edge + offset >= crop_x - _CROP_EPSILON:
+            _translate_x(element, -delta)
+            carried.append(element)
+
+
+def _crop_to_x(root: etree._Element, crop_x: float) -> None:
+    """Rewrite the root's width and viewBox to *crop_x*. See `_crop_to`."""
+    root.set("width", str(int(round(crop_x))))
+    view_box = root.get("viewBox")
+    if view_box:
+        parts = re.split(r"[\s,]+", view_box.strip())
+        if len(parts) == 4:
+            root.set(
+                "viewBox", f"{parts[0]} {parts[1]} {int(round(crop_x))} {parts[3]}"
+            )
 
 
 def _is_bold(style: dict[str, str]) -> bool:

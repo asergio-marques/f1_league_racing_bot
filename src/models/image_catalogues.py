@@ -1107,14 +1107,20 @@ _STANDINGS_CELL_HIGHLIGHT_ASSETS = {
 #: many words: the attendance sheet's round group "contains the fields of the round named
 #: below and no field of any row, **as it does on the standings graphics**". One function so
 #: that a change to the heading cannot reach one type and miss another.
+#: The point at which a sheet is cut when the division runs fewer rounds than the template
+#: draws columns for (2026-09-02). Geometry the render *reads*, never text it writes, so it
+#: is valueless — the same classification ``vertical_crop_point`` carries on a row.
+_COLUMN_CROP_FIELD = "horizontal_crop_point"
+
+
 def _round_heading_columns() -> RowSpec:
     return RowSpec(
         prefix="round",
         capacity=None,
         optional_unit=True,
-        fields=frozenset({"group", "number", "flag"}),
+        fields=frozenset({"group", "number", "flag", _COLUMN_CROP_FIELD}),
         mandatory_fields=frozenset({"number"}),
-        valueless_fields=frozenset({"group"}),
+        valueless_fields=frozenset({"group", _COLUMN_CROP_FIELD}),
         assets={"flag": "flag"},
     )
 
@@ -1790,6 +1796,38 @@ def row_crop_fields(
         "crop": crop_id if crop_id in names else None,
         "crop_is_final": drawn == capacity,
         "footer": FOOTER_GROUP_FIELD if FOOTER_GROUP_FIELD in names else None,
+    }
+
+
+def column_crop_fields(
+    declared: Iterable[str], *, drawn: int, capacity: int, prefix: str = "round"
+) -> dict:
+    """The crop keywords for a sheet drawn as a band of round columns (2026-09-02).
+
+    `row_crop_fields` turned on its side, and it answers the same way. A sheet built for a
+    twelve-round season and drawn for a division running eight left four columns' width
+    standing empty beside the eighth; this cuts it there instead.
+
+    * ``crop_x`` — the crop point of the **last column the data filled**, or None where the
+      template declares no such point. A template that declares none renders at its full
+      width exactly as it did.
+    * ``crop_x_is_final`` — whether that column is also the last the *template* declares,
+      which is the only case in which the crop point is expected to stand at the declared
+      width. A shorter season cuts further in by design and must raise nothing.
+
+    **A sheet drawing no column at all is not cut.** A division whose rounds a template
+    draws none of, or one whose template declares no column band, keeps its full width:
+    there is no ``round_0`` crop point, and cutting at the first column's would leave a
+    sheet with a heading and no season.
+    """
+    names = set(declared)
+    if drawn < 1:
+        return {}
+
+    crop_id = f"{prefix}_{drawn}_{_COLUMN_CROP_FIELD}"
+    return {
+        "crop_x": crop_id if crop_id in names else None,
+        "crop_x_is_final": drawn == capacity,
     }
 
 

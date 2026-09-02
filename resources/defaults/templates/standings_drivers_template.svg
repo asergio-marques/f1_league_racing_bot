@@ -6984,6 +6984,7 @@
     <image id="round_1_flag" inkscape:label="round_1_flag" x="405" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="388" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="442" y="318" text-anchor="middle">F</text>
+    <rect id="round_1_horizontal_crop_point" inkscape:label="round_1_horizontal_crop_point" x="470" y="252" width="48" height="0" fill="none"/>
   </g>
   <g id="round_2_group" inkscape:label="round_2_group">
     <line x1="470" y1="262" x2="470" y2="1936" stroke="#262B33" stroke-width="1"/>
@@ -6991,6 +6992,7 @@
     <image id="round_2_flag" inkscape:label="round_2_flag" x="515" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="498" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="552" y="318" text-anchor="middle">F</text>
+    <rect id="round_2_horizontal_crop_point" inkscape:label="round_2_horizontal_crop_point" x="580" y="252" width="48" height="0" fill="none"/>
   </g>
   <g id="round_3_group" inkscape:label="round_3_group">
     <line x1="580" y1="262" x2="580" y2="1936" stroke="#262B33" stroke-width="1"/>
@@ -6998,6 +7000,7 @@
     <image id="round_3_flag" inkscape:label="round_3_flag" x="625" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="608" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="662" y="318" text-anchor="middle">F</text>
+    <rect id="round_3_horizontal_crop_point" inkscape:label="round_3_horizontal_crop_point" x="690" y="252" width="48" height="0" fill="none"/>
   </g>
   <g id="round_4_group" inkscape:label="round_4_group">
     <line x1="690" y1="262" x2="690" y2="1936" stroke="#262B33" stroke-width="1"/>
@@ -7005,6 +7008,7 @@
     <image id="round_4_flag" inkscape:label="round_4_flag" x="735" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="718" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="772" y="318" text-anchor="middle">F</text>
+    <rect id="round_4_horizontal_crop_point" inkscape:label="round_4_horizontal_crop_point" x="800" y="252" width="48" height="0" fill="none"/>
   </g>
   <g id="round_5_group" inkscape:label="round_5_group">
     <line x1="800" y1="262" x2="800" y2="1936" stroke="#262B33" stroke-width="1"/>
@@ -7012,6 +7016,7 @@
     <image id="round_5_flag" inkscape:label="round_5_flag" x="845" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="828" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="882" y="318" text-anchor="middle">F</text>
+    <rect id="round_5_horizontal_crop_point" inkscape:label="round_5_horizontal_crop_point" x="910" y="252" width="48" height="0" fill="none"/>
   </g>
   <g id="round_6_group" inkscape:label="round_6_group">
     <line x1="910" y1="262" x2="910" y2="1936" stroke="#262B33" stroke-width="1"/>
@@ -7019,6 +7024,7 @@
     <image id="round_6_flag" inkscape:label="round_6_flag" x="955" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="938" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="992" y="318" text-anchor="middle">F</text>
+    <rect id="round_6_horizontal_crop_point" inkscape:label="round_6_horizontal_crop_point" x="1020" y="252" width="48" height="0" fill="none"/>
   </g>
   <g id="round_7_group" inkscape:label="round_7_group">
     <line x1="1020" y1="262" x2="1020" y2="1936" stroke="#262B33" stroke-width="1"/>
@@ -7026,6 +7032,7 @@
     <image id="round_7_flag" inkscape:label="round_7_flag" x="1065" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="1048" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="1102" y="318" text-anchor="middle">F</text>
+    <rect id="round_7_horizontal_crop_point" inkscape:label="round_7_horizontal_crop_point" x="1130" y="252" width="48" height="0" fill="none"/>
   </g>
   <g id="round_8_group" inkscape:label="round_8_group">
     <line x1="1130" y1="262" x2="1130" y2="1936" stroke="#262B33" stroke-width="1"/>
@@ -7033,6 +7040,7 @@
     <image id="round_8_flag" inkscape:label="round_8_flag" x="1175" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="1158" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="1212" y="318" text-anchor="middle">F</text>
+    <rect id="round_8_horizontal_crop_point" inkscape:label="round_8_horizontal_crop_point" x="1240" y="252" width="48" height="0" fill="none"/>
   </g>
   <g id="round_9_group" inkscape:label="round_9_group">
     <line x1="1240" y1="262" x2="1240" y2="1936" stroke="#262B33" stroke-width="1"/>
@@ -7040,6 +7048,7 @@
     <image id="round_9_flag" inkscape:label="round_9_flag" x="1285" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="1268" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="1322" y="318" text-anchor="middle">F</text>
+    <rect id="round_9_horizontal_crop_point" inkscape:label="round_9_horizontal_crop_point" x="1350" y="252" width="48" height="0" fill="none"/>
   </g>
   <g id="round_10_group" inkscape:label="round_10_group">
     <line x1="1350" y1="262" x2="1350" y2="1936" stroke="#262B33" stroke-width="1"/>
@@ -7047,6 +7056,7 @@
     <image id="round_10_flag" inkscape:label="round_10_flag" x="1395" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="1378" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="1432" y="318" text-anchor="middle">F</text>
+    <rect id="round_10_horizontal_crop_point" inkscape:label="round_10_horizontal_crop_point" x="1460" y="252" width="48" height="0" fill="none"/>
   </g>
   <g id="round_11_group" inkscape:label="round_11_group">
     <line x1="1460" y1="262" x2="1460" y2="1936" stroke="#262B33" stroke-width="1"/>
@@ -7054,6 +7064,7 @@
     <image id="round_11_flag" inkscape:label="round_11_flag" x="1505" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="1488" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="1542" y="318" text-anchor="middle">F</text>
+    <rect id="round_11_horizontal_crop_point" inkscape:label="round_11_horizontal_crop_point" x="1570" y="252" width="48" height="0" fill="none"/>
   </g>
   <g id="round_12_group" inkscape:label="round_12_group">
     <line x1="1570" y1="262" x2="1570" y2="1936" stroke="#262B33" stroke-width="1"/>
@@ -7061,6 +7072,7 @@
     <image id="round_12_flag" inkscape:label="round_12_flag" x="1615" y="289.333" width="20" height="13.3333" preserveAspectRatio="xMidYMid meet"/>
     <text class="colhead" x="1598" y="318" text-anchor="middle">S</text>
     <text class="colhead" x="1652" y="318" text-anchor="middle">F</text>
+    <rect id="round_12_horizontal_crop_point" inkscape:label="round_12_horizontal_crop_point" x="1680" y="252" width="48" height="0" fill="none"/>
   </g>
 
   <!--  footer  -->
