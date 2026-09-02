@@ -734,8 +734,20 @@ def _driver_maps(context: PreviewContext, drivers=None):
     return names, teams, flags, role_of
 
 
-def _race_name(context: PreviewContext) -> str:
-    """What the round is called, as a posting would name it."""
+async def _race_name(bot, context: PreviewContext) -> str:
+    """The grand prix the round is, as a posting would name it.
+
+    Every posting path reads this from the **track registry** — ``tracks.gp_name`` — and
+    never from the round, which records the circuit and not the event run on it. This
+    read the round instead, so every preview drew the circuit name under the heading
+    naming the grand prix; on the check-in call, which names both, it drew the circuit
+    name twice (corrected 2026-09-01).
+
+    A track the registry does not hold falls back to the circuit name rather than to
+    nothing: ``race_name`` is mandatory on the check-in call, and a preview is not the
+    place to empty it.
+    """
+    from services.calendar_post_service import tracks_by_name
     from services.image_rsvp_service import MYSTERY_RACE_NAME
 
     round_obj = context.round
@@ -743,7 +755,11 @@ def _race_name(context: PreviewContext) -> str:
         return ""
     if _format_of(round_obj) == "MYSTERY":
         return MYSTERY_RACE_NAME
-    return getattr(round_obj, "track_name", None) or MYSTERY_RACE_NAME
+
+    track_name = getattr(round_obj, "track_name", None)
+    tracks = await tracks_by_name(bot.db_path)
+    record = tracks.get(track_name) if track_name else None
+    return getattr(record, "gp_name", None) or track_name or ""
 
 
 # ── Check-in call ─────────────────────────────────────────────────────────
@@ -780,7 +796,7 @@ async def build_rsvp_preview(bot, context: PreviewContext):
         scheduled_at=scheduled_at,
         deadline_at=derive_checkin_deadline(scheduled_at, deadline_hours),
         track_name=None if is_mystery else getattr(round_obj, "track_name", None),
-        race_name=_race_name(context),
+        race_name=await _race_name(bot, context),
         country_name=await _country_of(bot, round_obj),
         is_mystery=is_mystery,
         division_tier=context.division_tier,
@@ -861,7 +877,7 @@ async def build_results_preview(bot, context: PreviewContext):
             result_status="FINAL",
             division_name=context.division_name,
             round_number=round_obj.round_number,
-            race_name=_race_name(context),
+            race_name=await _race_name(bot, context),
             driver_rows=rows,
             points_map={row.driver_user_id: row.points_awarded for row in rows},
             driver_names=names,
@@ -1006,7 +1022,7 @@ async def build_standings_preview(bot, context: PreviewContext):
         result_status="FINAL",
         division_tier=context.division_tier,
         season_number=context.season_number,
-        race_name=_race_name(context),
+        race_name=await _race_name(bot, context),
         nationality_collected=context.nationality_collected,
         rounds=headings,
         round_session_results=round_session_results,
@@ -1121,7 +1137,7 @@ async def build_attendance_preview(bot, context: PreviewContext):
         autosack_threshold=limit,
         division_tier=context.division_tier,
         season_number=context.season_number,
-        race_name=_race_name(context),
+        race_name=await _race_name(bot, context),
         nationality_collected=context.nationality_collected,
     )
 
@@ -1179,7 +1195,7 @@ async def build_verdict_preview(bot, context: PreviewContext):
             justification=case["justification"],
             season_number=context.season_number,
             division_tier=context.division_tier,
-            race_name=_race_name(context),
+            race_name=await _race_name(bot, context),
             session_name=case["session_name"],
             team_name=driver.team_name,
             driver_nationality=driver.nationality,
@@ -1233,7 +1249,7 @@ async def build_weather_preview(bot, context: PreviewContext, *, phase: int):
         round_number=round_obj.round_number,
         round_format=round_format,
         track_name=None if is_mystery else getattr(round_obj, "track_name", None),
-        race_name=_race_name(context),
+        race_name=await _race_name(bot, context),
         country_name=await _country_of(bot, round_obj),
         rain_probability=rain,
         sessions=sessions,

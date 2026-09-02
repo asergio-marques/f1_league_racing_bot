@@ -42,7 +42,7 @@ HEADING = (
     '<text id="division_name">D</text>'
     '<text id="phase_description">P</text>'
     '<text id="round_number">1</text>'
-    '<text id="track_name">T</text>'
+    '<text id="race_name">R</text>'
 )
 
 
@@ -93,7 +93,30 @@ def test_every_phase_catalogue_carries_the_heading_fields():
         if key == "weather_mystery_template":
             continue
         mandatory = catalogue_for(key).mandatory
-        assert {"division_name", "phase_description", "round_number", "track_name"} <= mandatory
+        assert {"division_name", "phase_description", "round_number", "race_name"} <= mandatory
+
+
+def test_the_grand_prix_name_is_mandatory_and_the_circuit_name_optional():
+    """2026-09-01 — the classification was the reverse, and was wrong that way round.
+
+    A forecast was obliged to name the tarmac and free to omit the race. The grand prix is
+    what identifies a round to a league, and a circuit hosting two of them in a season
+    identifies neither on its own. The check-in call and the results sheets already ranked
+    the two this way.
+
+    A league's weather template that names only the circuit is refused from here, when the
+    file is named and again at season review.
+    """
+    for key in WEATHER_KEYS:
+        if key == "weather_mystery_template":
+            continue
+        cat = catalogue_for(key)
+        assert "race_name" in cat.mandatory, key
+        assert "track_name" not in cat.mandatory, key
+        assert "track_name" in cat.optional, key
+        assert "track_name_group" in cat.optional, key
+        # XIV.2 — a group may wrap a field of either classification.
+        assert "race_name_group" in cat.optional, key
 
 
 def test_rain_probability_is_mandatory_on_phase_one_alone():

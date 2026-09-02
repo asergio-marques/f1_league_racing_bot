@@ -30,7 +30,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from models.image_catalogues import CapacityError, catalogue_for, row_crop_fields
+from models.image_catalogues import (
+    CapacityError,
+    catalogue_for,
+    column_crop_fields,
+    row_crop_fields,
+)
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
 from utils.country_data import country_for_nationality
@@ -528,6 +533,12 @@ def build_fill_spec(
         # caption band beneath them up with it (XIV.2, v7.1.0). A template declaring no
         # crop point is drawn at its full height, exactly as before.
         **row_crop_fields(declared, drawn=len(drawn), capacity=capacity),
+        # Narrow the canvas to the rounds this division actually runs, carrying the
+        # sanction column in beside them (2026-09-02). A template declaring no horizontal
+        # crop point is drawn at its full width, exactly as before.
+        **column_crop_fields(
+            declared, drawn=len(drawn_rounds), capacity=round_capacity
+        ),
     )
     if asset_directories:
         spec.asset_directories = dict(asset_directories)

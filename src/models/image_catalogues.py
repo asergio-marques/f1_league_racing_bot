@@ -782,7 +782,7 @@ class FieldCatalogue:
 #: runs, so the capacity is counted from the file rather than declared here (XIV.12, and
 #: see specs/037-calendar-image-generation/contracts/calendar-catalogue.md).
 #:
-#: The three mystery-round literals are not in this catalogue: "Mystery GP" and the rest
+#: The three mystery-round literals are not in this catalogue: "Mystery Grand Prix" and the rest
 #: are *values*, and a catalogue classifies fields. They live with the resolution, in
 #: ``services/image_calendar_service.py``.
 CALENDAR_CATALOGUE = FieldCatalogue(
@@ -817,6 +817,24 @@ CALENDAR_CATALOGUE = FieldCatalogue(
 )
 
 
+#: The crop point and the footer band, which every image type drawn as a **list of rows** may
+#: declare (Constitution XIV.2, v7.1.0) so that a division of twenty drivers is not drawn on a
+#: canvas built for fifty.
+#:
+#: **Optional, deliberately.** A league's own template authored before v7.1.0 declares neither
+#: and must go on rendering at full height; making the crop point mandatory would invalidate
+#: every one of them at the moment it was named. The calendar is the exception and keeps its own
+#: mandatory crop point: it has required one since 037, and no template of it exists that does
+#: not declare one.
+#:
+#: The crop point is `valueless` for the same reason the calendar's is — geometry the render
+#: reads, never text it writes — so Rule 3's "its value could not be determined" cannot apply.
+_ROW_CROP_FIELD = "vertical_crop_point"
+
+#: The footer band is a whole-graphic field, not a per-row one: there is one of it.
+FOOTER_GROUP_FIELD = "footer_group"
+
+
 #: The lineup's catalogue. It was once the one image type whose fields were named after a
 #: league's own data; since v6.0.0 it names none, and one shipped file serves every league.
 #:
@@ -832,7 +850,7 @@ CALENDAR_CATALOGUE = FieldCatalogue(
 #: specs/038-lineup-image-generation/contracts/lineup-catalogue.md.
 LINEUP_CATALOGUE = FieldCatalogue(
     mandatory=frozenset({"division_name"}),
-    optional=frozenset({"season_number", "division_tier"}),
+    optional=frozenset({"season_number", "division_tier", FOOTER_GROUP_FIELD}),
     # Ordinal since v6.0.0. The team collection was **keyed** by the normalised team name,
     # which made this the one template of the module authored against a league's own data:
     # no shipped file could draw a league whose teams it did not know, and every division
@@ -844,8 +862,9 @@ LINEUP_CATALOGUE = FieldCatalogue(
         # Counted from the template, contiguous from 1. The division is measured against
         # it, and a division fielding fewer blocks than the file declares is ordinary.
         capacity=None,
-        fields=frozenset({"name", "image", "group"}),
+        fields=frozenset({"name", "image", "group", _ROW_CROP_FIELD}),
         mandatory_fields=frozenset({"name"}),
+        valueless_fields=frozenset({_ROW_CROP_FIELD}),
         assets={"image": "team"},
         nested=NestedSpec(
             prefix="driver",
@@ -881,22 +900,6 @@ LINEUP_CATALOGUE = FieldCatalogue(
 )
 
 
-#: The crop point and the footer band, which every image type drawn as a **list of rows** may
-#: declare (Constitution XIV.2, v7.1.0) so that a division of twenty drivers is not drawn on a
-#: canvas built for fifty.
-#:
-#: **Optional, deliberately.** A league's own template authored before v7.1.0 declares neither
-#: and must go on rendering at full height; making the crop point mandatory would invalidate
-#: every one of them at the moment it was named. The calendar is the exception and keeps its own
-#: mandatory crop point: it has required one since 037, and no template of it exists that does
-#: not declare one.
-#:
-#: The crop point is `valueless` for the same reason the calendar's is — geometry the render
-#: reads, never text it writes — so Rule 3's "its value could not be determined" cannot apply.
-_ROW_CROP_FIELD = "vertical_crop_point"
-
-#: The footer band is a whole-graphic field, not a per-row one: there is one of it.
-FOOTER_GROUP_FIELD = "footer_group"
 
 #: What both results templates address, whatever the session they draw. Declared once and
 #: composed into each of the two catalogues below (XIV.10, v4.4.0: siblings may share the
@@ -1107,14 +1110,20 @@ _STANDINGS_CELL_HIGHLIGHT_ASSETS = {
 #: many words: the attendance sheet's round group "contains the fields of the round named
 #: below and no field of any row, **as it does on the standings graphics**". One function so
 #: that a change to the heading cannot reach one type and miss another.
+#: The point at which a sheet is cut when the division runs fewer rounds than the template
+#: draws columns for (2026-09-02). Geometry the render *reads*, never text it writes, so it
+#: is valueless — the same classification ``vertical_crop_point`` carries on a row.
+_COLUMN_CROP_FIELD = "horizontal_crop_point"
+
+
 def _round_heading_columns() -> RowSpec:
     return RowSpec(
         prefix="round",
         capacity=None,
         optional_unit=True,
-        fields=frozenset({"group", "number", "flag"}),
+        fields=frozenset({"group", "number", "flag", _COLUMN_CROP_FIELD}),
         mandatory_fields=frozenset({"number"}),
-        valueless_fields=frozenset({"group"}),
+        valueless_fields=frozenset({"group", _COLUMN_CROP_FIELD}),
         assets={"flag": "flag"},
     )
 
@@ -1401,18 +1410,31 @@ _PLAIN_SESSIONS_FLOOR, _PLAIN_SLOTS_FLOOR = _weather_floors(("NORMAL", "ENDURANC
 
 #: The heading fields every phase graphic carries. The mystery notice carries four of them and
 #: nothing else — it announces that no forecast is coming, and has nothing else to say.
+#:
+#: The **grand prix name** is the mandatory one and the circuit name the optional one
+#: (2026-09-01). It was the other way round, which had the forecast obliged to name the
+#: tarmac and free to omit the race: the grand prix is what identifies a round to a league,
+#: and a circuit that hosts two of them in a season identifies nothing on its own. The
+#: check-in call and the results sheets already classified the two this way; this brings the
+#: forecasts into line with them.
+#:
+#: A league whose weather template names the circuit and not the grand prix is refused when
+#: the file is named and at season review, and must declare `race_name` to be accepted.
 _WEATHER_HEADING_MANDATORY = frozenset(
-    {"division_name", "phase_description", "round_number", "track_name"}
+    {"division_name", "phase_description", "round_number", "race_name"}
 )
 
+#: ``race_name_group`` is here though its field is mandatory — XIV.2 lets a group wrap a
+#: field of either classification, and declaring it is what lets the utility reach it.
 _WEATHER_HEADING_OPTIONAL = frozenset(
     {
         "season_number",
         "season_number_group",
         "division_tier",
         "division_tier_group",
-        "race_name",
         "race_name_group",
+        "track_name",
+        "track_name_group",
         "country_name",
         "country_name_group",
         "track_flag",
@@ -1777,6 +1799,38 @@ def row_crop_fields(
         "crop": crop_id if crop_id in names else None,
         "crop_is_final": drawn == capacity,
         "footer": FOOTER_GROUP_FIELD if FOOTER_GROUP_FIELD in names else None,
+    }
+
+
+def column_crop_fields(
+    declared: Iterable[str], *, drawn: int, capacity: int, prefix: str = "round"
+) -> dict:
+    """The crop keywords for a sheet drawn as a band of round columns (2026-09-02).
+
+    `row_crop_fields` turned on its side, and it answers the same way. A sheet built for a
+    twelve-round season and drawn for a division running eight left four columns' width
+    standing empty beside the eighth; this cuts it there instead.
+
+    * ``crop_x`` — the crop point of the **last column the data filled**, or None where the
+      template declares no such point. A template that declares none renders at its full
+      width exactly as it did.
+    * ``crop_x_is_final`` — whether that column is also the last the *template* declares,
+      which is the only case in which the crop point is expected to stand at the declared
+      width. A shorter season cuts further in by design and must raise nothing.
+
+    **A sheet drawing no column at all is not cut.** A division whose rounds a template
+    draws none of, or one whose template declares no column band, keeps its full width:
+    there is no ``round_0`` crop point, and cutting at the first column's would leave a
+    sheet with a heading and no season.
+    """
+    names = set(declared)
+    if drawn < 1:
+        return {}
+
+    crop_id = f"{prefix}_{drawn}_{_COLUMN_CROP_FIELD}"
+    return {
+        "crop_x": crop_id if crop_id in names else None,
+        "crop_x_is_final": drawn == capacity,
     }
 
 

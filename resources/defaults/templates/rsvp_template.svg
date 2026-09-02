@@ -23,24 +23,40 @@
        is a fatal error. A round of any other format runs two, and
        session_3_group / session_4_group are removed in their entirety.
 
-       The country is given a cell of its own rather than a place beside the
-       grand prix name, which is how the weather templates compose the two. A
-       round of the mystery format empties the race name and the country
-       together, and a separator drawn between them would be left stranded
-       between two empty fields. Every field here that can be emptied stands
-       alone or under a label of its own for that reason.
+       The country is drawn as its flag and is not written out beside it
+       (2026-09-01). Naming it under a card of its own said a second time what
+       the flag already says, and cost the three facts that remain — the
+       format, the date and the start time — a quarter of the row they now
+       share. `country_name` stays in the catalogue for a league that would
+       rather read the name than the flag; this template simply declines it,
+       and the flag resolves from the round's country either way.
 
-       The track name and not the grand prix name takes the large line,
-       because it is the field that carries "Mystery" for a round of the
-       mystery format and so is the one that always reads.
+       The grand prix name takes the large line and the circuit name the line
+       under it (2026-09-01): the grand prix is what a league calls the round,
+       and the circuit is where it is run. Both always read — a round of the
+       mystery format carries "Mystery Grand Prix" above "Mystery" — so
+       neither line can be left standing empty by the other's absence.
+
+       Every field here that can be emptied stands alone or under a label of
+       its own, no separator being drawn between two fields either of which
+       may go: chrome must not survive the emptying of what it divides.
+
+       The heading keeps the module's shared rhythm: the round label, the
+       title 48 below it, the line under the title 32 below that, and the rule
+       32 below again. This file and the forecasts had drifted to 62 between
+       the title and the line under it, left from when the title held the
+       circuit name and was allowed to wrap to two lines; the grand prix name
+       that replaced it is short, so the title is drawn on one line like every
+       other template's (2026-09-02).
 
        Mandatory : division_name, round_number, race_name, round_format,
                    round_date, round_time, session_<x>_group,
                    session_<x>_name
        Optional  : season_number, division_tier, track_name, country_name,
-                   track_image, deadline_date, deadline_time,
-                   season_number_group, division_tier_group,
-                   race_name_group, country_name_group, track_image_group
+                   track_flag, track_image, deadline_date, deadline_time,
+                   season_number_group, division_tier_group, race_name_group,
+                   track_name_group, country_name_group, track_flag_group,
+                   track_image_group
        =================================================================== -->
 
   <defs>
@@ -50,8 +66,8 @@
       .phase    { font-size:16px; fill:#8A94A3; letter-spacing:.16em; font-weight:600 }
       .roundlbl { font-size:17px; fill:#8A94A3; letter-spacing:.20em; font-weight:600 }
       .roundnum { font-size:17px; fill:#E8113C; letter-spacing:.20em; font-weight:700 }
-      .track    { font-size:42px; line-height:1.05; inline-size:800px; max-lines:2; fill:#F2F5F8; font-weight:700 }
-      .sub      { font-size:19px; fill:#8A94A3 }
+      .track    { font-size:42px; inline-size:800px; max-lines:1; fill:#F2F5F8; font-weight:700 }
+      .sub      { font-size:19px; fill:#8A94A3; inline-size:800px; max-lines:1 }
       .celllbl  { font-size:12px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
       .cellval  { font-size:24px; line-height:1.1; fill:#F2F5F8; font-weight:700 }
       .note     { font-size:15px; fill:#8A94A3 }
@@ -80,12 +96,12 @@
   <rect x="0" y="93" width="1200" height="3" fill="#E8113C"/>
 
   <!--  round block  -->
-  <text class="roundlbl" x="48" y="124">
+  <text class="roundlbl" x="48" y="140">
     <tspan>ROUND&#160;</tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">1</tspan>
   </text>
-  <text id="track_name" inkscape:label="track_name" class="track" x="48" y="188">Track Name</text>
-  <g id="race_name_group" inkscape:label="race_name_group">
-    <text id="race_name" inkscape:label="race_name" class="sub" x="48" y="250" style="line-height:1.1;inline-size:800px;max-lines:2">Grand Prix Name</text>
+  <text id="race_name" inkscape:label="race_name" class="track" x="48" y="188">Grand Prix Name</text>
+  <g id="track_name_group" inkscape:label="track_name_group">
+    <text id="track_name" inkscape:label="track_name" class="sub" x="48" y="220">Track Name</text>
   </g>
 
   <!--  The plate is inside the group with the image it frames. A round of the
@@ -94,11 +110,17 @@
   <!--  the round's country flag.  Optional and independent of the circuit map beside
         it: a league may declare either, both, or neither (Constitution XIV.13).  The
         flag class is authored at 3:2 on every template, the track class at 1:1, and the
-        two deliberately differ (XIV.6).  -->
+        two deliberately differ (XIV.6).
+
+        The two **plates** are the same 136 square all the same (2026-09-02). The
+        artwork inside them cannot match — one is 3:2 and the other 1:1 — but the
+        frames are what a reader sees side by side, and a shorter frame beside a
+        taller one read as a mistake rather than as two shapes. The flag sits
+        centred in its plate; the map fills its own.  -->
   <g id="track_flag_group" inkscape:label="track_flag_group">
-    <rect x="864" y="100" width="136" height="97" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <rect x="864" y="100" width="136" height="136" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
     <image id="track_flag" inkscape:label="track_flag"
-           x="874" y="110" width="116" height="77.3333" preserveAspectRatio="xMidYMid meet"/>
+           x="874" y="129.3333" width="116" height="77.3333" preserveAspectRatio="xMidYMid meet"/>
   </g>
 
   <g id="track_image_group" inkscape:label="track_image_group">
@@ -109,27 +131,21 @@
 
   <line x1="48" y1="252" x2="1152" y2="252" stroke="#262B33" stroke-width="1"/>
 
-  <!--  the round, four facts to a cell, each under a label of its own  -->
-  <rect x="48" y="272" width="264" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+  <!--  the round, three facts to a cell, each under a label of its own. The
+        country had a fourth and gave it up to the flag (see the note above),
+        so each of these is 358 wide where it was 264 — enough for a date in
+        any of the configured formats to stand on one line.  -->
+  <rect x="48" y="272" width="358" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
   <text class="celllbl" x="72" y="306">FORMAT</text>
-  <text id="round_format" inkscape:label="round_format" class="cellval" x="72" y="346" style="inline-size:216px;max-lines:2">Format</text>
+  <text id="round_format" inkscape:label="round_format" class="cellval" x="72" y="346" style="inline-size:310px;max-lines:2">Format</text>
 
-  <!--  The card and its label are inside the group. A round of the mystery
-        format names no country, and the card was left standing empty under a
-        label naming what is not there.  -->
-  <g id="country_name_group" inkscape:label="country_name_group">
-    <rect x="328" y="272" width="264" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
-    <text class="celllbl" x="352" y="306">COUNTRY</text>
-    <text id="country_name" inkscape:label="country_name" class="cellval" x="352" y="346" style="inline-size:216px;max-lines:2">Country</text>
-  </g>
+  <rect x="421" y="272" width="358" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+  <text class="celllbl" x="445" y="306">DATE</text>
+  <text id="round_date" inkscape:label="round_date" class="cellval" x="445" y="346" style="inline-size:310px;max-lines:2">01 Jan 2025</text>
 
-  <rect x="608" y="272" width="264" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
-  <text class="celllbl" x="632" y="306">DATE</text>
-  <text id="round_date" inkscape:label="round_date" class="cellval" x="632" y="346" style="inline-size:216px;max-lines:2">01 Jan 2025</text>
-
-  <rect x="888" y="272" width="264" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
-  <text class="celllbl" x="912" y="306">START TIME</text>
-  <text id="round_time" inkscape:label="round_time" class="cellval" x="912" y="346" style="inline-size:216px;max-lines:2">00:00 UTC</text>
+  <rect x="794" y="272" width="358" height="104" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+  <text class="celllbl" x="818" y="306">START TIME</text>
+  <text id="round_time" inkscape:label="round_time" class="cellval" x="818" y="346" style="inline-size:310px;max-lines:2">00:00 UTC</text>
 
   <!--  the deadline, which is the one thing the call adds to the calendar  -->
   <rect x="48" y="396" width="1104" height="88" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>

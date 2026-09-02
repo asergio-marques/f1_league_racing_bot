@@ -321,8 +321,8 @@ def build_fill_spec(
 
     if not drawing.is_mystery:
         put("phase_description", drawing.phase_description)
-        put("track_name", drawing.track_name)
-        put_optional("race_name", drawing.race_name)
+        put("race_name", drawing.race_name)
+        put_optional("track_name", drawing.track_name)
         put_optional("country_name", drawing.country_name)
         put_optional("rain_probability", drawing.rain_probability)
 

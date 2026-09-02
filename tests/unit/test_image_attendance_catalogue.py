@@ -127,7 +127,9 @@ def test_the_round_cells_hang_off_the_row_and_the_headings_stand_at_top_level():
 
     columns = ATTENDANCE_CATALOGUE.columns
     assert columns.prefix == "round"
-    assert columns.fields == {"group", "number", "flag"}
+    # ``horizontal_crop_point`` joined the column in 2026-09-02: geometry the render reads
+    # to cut a sheet built for more rounds than the division runs, never text it writes.
+    assert columns.fields == {"group", "number", "flag", "horizontal_crop_point"}
     assert columns.mandatory_fields == {"number"}
     assert columns.assets == {"flag": "flag"}
 

@@ -241,10 +241,11 @@ These hold for every image type of the module and are stated here rather than re
 
 ### The canvas
 - The width and the height a template declares are the width and the height at which it is drawn, and the conversion to PNG shall honour them. No canvas is assumed of any template.
-- The vertical crop defined below is the sole exception, and shortens the height alone.
+- The vertical crop and the horizontal crop defined below are the sole exceptions; each shortens one dimension and neither reads what the other did.
 
 ### The vertical crop
-- A graphic whose collection is drawn as a list of rows, and the calendar, shall be cut to the members the data actually fill, so that a division of twenty drivers is not drawn upon a canvas built for fifty.
+- A graphic whose collection is drawn as a list of rows, the lineup graphic, and the calendar, shall be cut to the members the data actually fill, so that a division of twenty drivers is not drawn upon a canvas built for fifty.
+    - The members the lineup graphic is cut to are its **teams**, its collection being drawn as a block per team. The reserve block stands beneath them and rides up with the band, being a part of the lineup and not chrome beneath it; a lineup drawn short that lost its reserves would be a different graphic and not a shorter one. Where the division fields no reserve driver at all the block is removed as it always was, and the space it would have taken is the margin of the graphic.
 - The cut shall be taken at the Y coordinate of the "<collection>_<x>_vertical_crop_point" field of the last member the data fill, <x> being the ordinal of that member.
 - The cut shall be applied to the SVG before its conversion to PNG, by the height and the view box declared on the root of the document being rewritten to that coordinate. The width is unaffected.
 - Where the template declares a "footer_group" field — the band of static chrome standing beneath the collection, such as a caption naming the graphic — that group shall be carried up by the difference between the height the template declares and the coordinate of the cut, and shall be carried up before the cut is made, so that a graphic drawn short keeps the band beneath its rows rather than losing it off the bottom.
@@ -258,6 +259,24 @@ These hold for every image type of the module and are stated here rather than re
 - Anything a template draws wholly below the crop point of a member, and outside its "footer_group", is absent from every image cut at that point. A template shall therefore draw nothing there but what spans the cut from above it.
 - The crop point and the footer group are mandatory of the calendar template alone and optional of every other. A template declaring neither is drawn at the full height it declares, and is not at fault for declaring neither.
 - A graphic the data fill no member of shall not be cut. There is no crop point of a member that does not exist, and a single empty member band states something untrue of a division holding nobody.
+
+### The horizontal crop
+- A graphic drawing one column per round of the division shall be cut to the rounds the division actually holds, so that a division running eight rounds is not drawn upon a canvas built for twelve.
+- The cut shall be taken at the "<collection>_<x>_horizontal_crop_point" field of the last round the data fill, <x> being the ordinal of that round. That field declares two coordinates and both are read:
+    - its X coordinate is the **boundary**, which is the right edge of the column band, and
+    - its X coordinate plus its width is the **edge**, at which the canvas is cut.
+    - The two differ by whatever stands between the columns and the edge of the canvas: on a sheet drawing nothing beside its columns that is the margin alone, and on the attendance sheet it is the sanction column as well.
+- The cut shall be applied to the SVG before its conversion to PNG, by the width and the view box declared on the root of the document being rewritten to the edge. The height is unaffected.
+- Everything drawn wholly beyond the boundary shall be carried in by the difference between the width the template declares and the edge, and shall be carried before the cut is made, so that a graphic drawn narrow keeps the chrome standing beside its columns rather than losing it off the side. The chrome is identified by where it is drawn and not by a group it is named in, a sheet's chrome to the right of its columns being interleaved with its rows rather than gathered beside them.
+    - Only the outermost element of a subtree so carried shall be moved, so that the carry is not taken once for every level of it.
+- An element spanning the boundary shall have its right end carried in by that same difference, so that it keeps the distance from the side of the canvas at which it was drawn. A rule ruled across the sheet shall therefore stop at the margin of a graphic drawn narrow exactly as it does of one drawn whole.
+    - A line, a rectangle, and a path drawing one straight horizontal rule and nothing else are carried in this way, those being the forms in which a template draws such a rule. A path drawing anything more shall be left as it stands.
+    - An element the template has scaled or rotated shall be left as it stands, and so shall one within a definition, on the same terms as the vertical crop leaves them.
+    - A crop point shall never itself be carried nor shortened, being geometry the render reads rather than anything it draws.
+- The crop point of the last column a template declares shall end at the width that template declares, so that a division running as long a season as the template draws is drawn whole.
+    - Where it does not, the image shall be cut at that crop point all the same and a non-fatal error reported naming the template, as the vertical crop reports one.
+- A graphic the data fill no column of shall not be cut. There is no crop point of a round that does not exist, and cutting at the first round's would leave a sheet carrying a heading and no season.
+- The crop point is optional of every template. One declaring none is drawn at the full width it declares, and is not at fault for declaring none.
 
 ### The rendered file
 - A graphic is drawn to a file on the machine running the bot, in a directory of its own beneath that machine's temporary directory.
@@ -407,7 +426,7 @@ These hold for every image type of the module and are stated here rather than re
 ### A round of the mystery format
 - A round of the mystery format conceals its track until it is run and records none. It is drawn all the same and marked as such, and is never a reason for a graphic to be refused.
 - Upon such a round every graphic shall place, on whichever of these fields it declares:
-    - "Mystery GP" upon the field naming the grand prix of the round;
+    - "Mystery Grand Prix" upon the field naming the grand prix of the round;
     - "Mystery" upon the field naming the country of the round;
     - "Mystery" upon the field naming the track of the round, which is the value the round object records as its location.
 - Such a round conceals its country with its track. Both the flag and the track map of such a round are resolved as the conventions above require from the datum "Mystery", drawing the "mystery.svg" file of the directory configured for that class, so that a league decides by the files it places there how a concealed round is depicted.
@@ -552,6 +571,7 @@ These hold for every image type of the module and are stated here rather than re
     - division_tier - Optional - Field on which the tier given to the division at "division add" is placed
     - For each team of ordinal <x>:
         - team_<x>_group - Optional - Field acting as a container for every other field of the team, which shall be removed in its entirety when the division fields no team of that ordinal. Where the template declares no such group, every field bearing that ordinal shall be removed one by one instead
+        - team_<x>_vertical_crop_point - Optional - Field on whose Y coordinate the image will be cropped if team block X is the final one the division fields, as the vertical crop above defines
         - team_<x>_name - Mandatory - Field on which the name of the team, read from the team object of the division, is placed as text
         - team_<x>_image - Optional - Field on which an image representing the team (e.g. logo, badge, car) will be placed, searched for in the directory configured via "images config team-image-directory"
         - team_<x>_driver_<y>_name - Mandatory - Field on which the name of the driver occupying seat number <y> of the team is placed as text
@@ -569,7 +589,7 @@ These hold for every image type of the module and are stated here rather than re
 - Every division holds a reserve team, created together with the division and removable by no command, but a league is not thereby obliged to display it. Declaring the reserve block is how a template asks for reserves to be drawn: a template declaring no reserve slot draws no reserves, whatever the division fields, and reports nothing about it. A league that does display the block is likewise not forced to display it empty, as "reserve_group" is removed whenever the division fields no reserve drivers.
 - A driver may occupy at most one seat of one team of a given division, the reserve team included, and shall therefore never be placed twice in the same graphic. A driver assigned in more than one division shall be placed in the graphic of each of them.
 - The divisions of a season may field different teams, and different numbers of seats in each. One template file serves them all regardless, a block being filled from whichever team stands at its ordinal in the division being drawn, and a block beyond the teams of that division being removed. No requirement of uniformity is placed upon a season on account of this graphic.
-- The default filename "lineup_template.svg" names a file that serves any league, as every other template of the module does. It is authored against a count of teams and of seats and never against a team list, so a file shipped with the bot draws a league whose teams it does not know. It declares eleven team blocks of two seat slots each, beside its reserve block of ten slots, and declares "team_<x>_group" for each of those blocks. Ten bounds that file alone: a league authoring its own may declare any number of reserve slots, or none.
+- The default filename "lineup_template.svg" names a file that serves any league, as every other template of the module does. It is authored against a count of teams and of seats and never against a team list, so a file shipped with the bot draws a league whose teams it does not know. It declares eleven team blocks of two seat slots each, beside its reserve block of ten slots, and declares "team_<x>_group" and "team_<x>_vertical_crop_point" for each of those blocks, its reserve block and its caption standing together in "footer_group". Ten bounds that file alone: a league authoring its own may declare any number of reserve slots, or none.
 - A team of the division that seats no driver is drawn as a team whose every seat is unoccupied, and is not removed. It is a team the division fields, and the ordinal it stands at is therefore filled. "team_<x>_group" removes an ordinal the division fields no team at, and never a team that fields no driver: the group belongs to a place in the layout and not to a team, so a league can no longer decide by the template whether a team that has recruited nobody is drawn.
 
 ### Resolution of the data to be placed
@@ -787,6 +807,7 @@ These hold for every image type of the module and are stated here rather than re
             - round_<z>_group - Optional - Field acting as a container for the heading of the round, which shall be removed in its entirety when the division holds no round of that ordinal. It contains the fields of the round named below and no field of any row: a result cell belongs to its row and to its round both, and a node of an SVG file has one parent
             - round_<z>_number - Mandatory - Field on which the human-readable number of the round is placed as text. A round a template draws shall always be identified by its number, the image below standing in addition to it and never in its place
             - round_<z>_flag - Optional - Field on which the flag of the country of the round will be placed, searched for in the directory configured via "images config flag-directory". A round drawn as a column heading carries no track map, at a size no circuit outline survives
+            - round_<z>_horizontal_crop_point - Optional - Field whose X coordinate and width the image will be cut by if round number Z is the final one the division holds, as the horizontal crop above defines
         - The graphic carries no grand prix name of any round of the grid. A round of the grid is identified by its number, and by its image where the template declares one.
         - For each row of ordinal <x> and each round of ordinal <z>:
             - row_<x>_round_<z>_group - Optional - Field acting as a container for every result cell of that round on that row, which shall be removed in its entirety when the division holds no round of that ordinal. Where the template declares no such group, every result cell bearing that ordinal shall be removed one by one instead
@@ -822,6 +843,7 @@ These hold for every image type of the module and are stated here rather than re
             - round_<z>_group - Optional - Field acting as a container for the heading of the round, which shall be removed in its entirety when the division holds no round of that ordinal. It contains the fields of the round named below and no field of any row, for the reason given on the drivers graphic
             - round_<z>_number - Mandatory - Field on which the human-readable number of the round is placed as text. A round a template draws shall always be identified by its number, the image below standing in addition to it and never in its place
             - round_<z>_flag - Optional - Field on which the flag of the country of the round will be placed, searched for in the directory configured via "images config flag-directory". A round drawn as a column heading carries no track map, at a size no circuit outline survives
+            - round_<z>_horizontal_crop_point - Optional - Field whose X coordinate and width the image will be cut by if round number Z is the final one the division holds, as the horizontal crop above defines
         - The graphic carries no grand prix name of any round of the grid, as the drivers graphic carries none.
         - For each row of ordinal <x>, each round of ordinal <z> and each car of ordinal <w>:
             - row_<x>_round_<z>_driver_<w>_group - Optional - Field acting as a container for every other field bearing that ordinal, which shall be removed in its entirety when no driver drove that car of the team in that round, and when the division holds no round of that ordinal
@@ -991,6 +1013,7 @@ These hold for every image type of the module and are stated here rather than re
             - round_<z>_group - Optional - Field acting as a container for the heading of the round, which shall be removed in its entirety when the division holds no round of that ordinal. It contains the fields of the round named below and no field of any row, as it does on the standings graphics. A round the division holds but whose attendance has yet to be finalized keeps its group and is drawn with its cells emptied
             - round_<z>_number - Mandatory - Field on which the human-readable number of the round is placed as text. A round a template draws shall always be identified by its number, the image below standing in addition to it and never in its place
             - round_<z>_flag - Optional - Field on which the flag of the country of the round will be placed, searched for in the directory configured via "images config flag-directory". A round drawn as a column heading carries no track map, at a size no circuit outline survives
+            - round_<z>_horizontal_crop_point - Optional - Field whose X coordinate and width the image will be cut by if round number Z is the final one the division holds, as the horizontal crop above defines
         - The sheet carries no grand prix name of any round of the grid, as the standings graphics carry none.
         - For each row of ordinal <x> and each round of ordinal <z>:
             - row_<x>_round_<z>_points - Optional - Field on which the attendance points that round conferred upon the driver of the row are placed as text, which shall be removed when the division holds no round of that ordinal
@@ -1041,7 +1064,7 @@ These hold for every image type of the module and are stated here rather than re
 - The name of a driver shall be resolved as it is for the lineup graphic, and their flag image searched for as it is for the lineup graphic. Where the nationality is absent the field shall be removed and a non-fatal error reported; where one is recorded, its image is resolved as the conventions above require.
 - The team of a row is the team of the division seating the driver at the moment of generation, which for a reserve driver is the reserve team. It is not the team whose car the driver drove in any single round. The team image shall be searched for as it is for the lineup graphic.
 - The image of a round shall be searched for as it is for the calendar graphic, the number of the round standing for the field in any error reported.
-- A round of the mystery format is drawn as the conventions above require, its race name field reading "Mystery GP" and its image resolved from the datum "Mystery". The sheet standing after such a round names it as it names any other.
+- A round of the mystery format is drawn as the conventions above require, its race name field reading "Mystery Grand Prix" and its image resolved from the datum "Mystery". The sheet standing after such a round names it as it names any other.
 - The check-in graphic re-presents the values the embed of the check-in call shows and never derives them by rules of its own.
 - The format of the round is "Normal", "Sprint", "Endurance" or "Mystery", which is the text the embed carries.
 - The name of the track is that recorded for the round, which is the value the embed carries as its location. The grand prix name and the country are read from the track object of the round. A round of the mystery format is drawn as the conventions above require, its track name, race name and country name fields carrying the values named there and its flag and track map alike resolved from the datum "Mystery". No mandatory field of this graphic is emptied for want of a track.
@@ -1125,11 +1148,12 @@ These hold for every image type of the module and are stated here rather than re
     - division_tier - Optional - Field on which the tier given to the division at "division add" is placed
     - phase_description - Mandatory - Field on which the description of the phase the graphic stands for is placed as text
     - round_number - Mandatory - Field on which the human-readable number of the round the forecast pertains to is placed as text, read from the round object definition
-    - track_name - Mandatory - Field on which the name of the track of the round is placed as text, read from the track object definition
-    - race_name - Optional - Field on which the grand prix name of the round is placed as text, read from the track object definition
+    - race_name - Mandatory - Field on which the grand prix name of the round is placed as text, read from the track object definition
+    - track_name - Optional - Field on which the name of the track of the round is placed as text, read from the track object definition
     - country_name - Optional - Field on which the country where the track of the round is located is placed as text, read from the track object definition
     - track_flag - Optional - Field on which the flag of the country of the round will be placed, searched for in the directory configured via "images config flag-directory"
     - rain_probability - Mandatory on the phase 1 template, optional on the other two - Field on which the likelihood of rain calculated for the round is placed as text
+- The grand prix name is the mandatory of the two names a forecast carries and the track name the optional one. A circuit hosting two grand prix of one season identifies neither round on its own, and the name that identifies the round is the one a forecast shall carry. A weather template naming the track and not the grand prix shall be refused when the file is named and at season review alike.
 - The phase 1 template holds no field beyond those above.
 - The phase 2 template may additionally have, for each session of ordinal <x>:
     - session_<x>_group - Mandatory - Field acting as a container for every other field of the session, which shall be removed in its entirety when the round holds no session of that ordinal
@@ -1261,7 +1285,7 @@ These hold for every image type of the module and are stated here rather than re
 - A Discord mention appearing within any text the graphic places shall be replaced by the name of the driver it addresses, resolved as the name of a driver is resolved elsewhere. The justification the attendance module composes for a sacking and for a move to the reserve team is written around such a mention and shall carry the name alone. The graphic mentions nobody; it is the message the graphic is attached to that mentions the driver the verdict pertains to.
 - The team is the team the driver drove for in the session the verdict pertains to, which for a reserve driver standing in for another is the team whose car they drove and never the reserve team. The name to be placed, and the name to be normalized to search for the team image, shall be resolved as they are for the results graphic: the team of the division holding the Discord role the result records, falling back to the name of the role itself should the division hold no such team.
 - A verdict of an attendance sanction names no team. Its team name field shall be emptied and its team image field removed, and no error shall be reported. A template drawing a label above them, or above the session name field emptied for the same reason, shall declare the removable group of those fields defined in the conventions above, so that the label does not stand over nothing.
-- The number of the round is read from the round object and the grand prix name from the track object of the round. A round of the mystery format is drawn as the conventions above require, its race name field reading "Mystery GP".
+- The number of the round is read from the round object and the grand prix name from the track object of the round. A round of the mystery format is drawn as the conventions above require, its race name field reading "Mystery Grand Prix".
 - Where a value does not apply, the text of the corresponding field shall be emptied rather than filled with a dash. A field carrying an image is removed rather than emptied.
 
 ### Handling of mismatches between verdict and template

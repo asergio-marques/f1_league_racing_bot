@@ -32,7 +32,7 @@ HEADING = (
     b'<text id="division_name">D</text>'
     b'<text id="phase_description">P</text>'
     b'<text id="round_number">1</text>'
-    b'<text id="track_name">T</text>'
+    b'<text id="race_name">R</text>'
 )
 
 
