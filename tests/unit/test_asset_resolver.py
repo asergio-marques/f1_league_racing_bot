@@ -664,18 +664,37 @@ def test_a_resolved_asset_is_written_as_a_uri_not_a_path(flags):
 # (044, Constitution XIV.6, relaxed 2026-09-01)
 # --------------------------------------------------------------------------
 
+#: The classes deliberately governed by neither shape rule, and why (2026-09-02).
+#:
+#: Restated here rather than imported, so adding a class to a constant in `image_constants` is
+#: not by itself enough to escape the shape check: the exemption has to be claimed twice, once
+#: beside the code and once beside the test that would otherwise catch it.
+SHAPELESS_ASSET_CLASSES = {
+    "division_logo": (
+        "one file per division rather than one file per class, so slots of it on the same "
+        "template have no shared file to agree with"
+    ),
+}
+
+
 def test_every_asset_class_is_either_held_to_one_shape_or_allowed_to_stretch():
     """A class added later must not silently escape the shape check.
 
-    The two sets partition the seven between them: a class is either held to drawing one
-    shape throughout a template, or it is one whose slots may declare that they stretch. A
-    class in neither would be checked against nothing at all, and one in both would be
-    self-contradictory.
+    A class is held to drawing one shape throughout a template, or its slots may declare that
+    they stretch, or it is named in `SHAPELESS_ASSET_CLASSES` above with a reason. A class in
+    none of the three would be checked against nothing at all with nobody having decided that,
+    and one in the first two at once would be self-contradictory.
 
-    They are deliberately two constants rather than one derived from the other. Today they
-    happen to be exact complements — `marker` alone stretches, and `marker` alone is
-    unchecked — but they answer different questions, and a later class could be free of a
-    fixed shape without its slots being allowed to stretch.
+    They are deliberately two constants rather than one derived from the other. Until
+    2026-09-02 they happened to be exact complements — `marker` alone stretched, and `marker`
+    alone was unchecked — and this test read them as a strict partition while its own prose
+    anticipated the exception: "a later class could be free of a fixed shape without its slots
+    being allowed to stretch". `division_logo` is that class, so the partition is now a
+    three-way one and the escape has to be declared to be taken.
+
+    **This is the one assertion the division-logo work loosened**, and the third set is what
+    keeps the loosening honest: a ninth class cannot fall out of the check by omission, only by
+    someone writing down why it should.
     """
     from models.image_constants import (
         ASSET_CLASS_DIRECTORIES,
@@ -684,7 +703,11 @@ def test_every_asset_class_is_either_held_to_one_shape_or_allowed_to_stretch():
     )
 
     classes = set(ASSET_CLASS_DIRECTORIES)
-    covered = RATIO_CONSISTENT_ASSET_CLASSES | STRETCHABLE_ASSET_CLASSES
+    covered = (
+        RATIO_CONSISTENT_ASSET_CLASSES
+        | STRETCHABLE_ASSET_CLASSES
+        | set(SHAPELESS_ASSET_CLASSES)
+    )
 
     missing = classes - covered
     assert not missing, f"asset classes governed by neither rule: {sorted(missing)}"
@@ -694,6 +717,26 @@ def test_every_asset_class_is_either_held_to_one_shape_or_allowed_to_stretch():
 
     both = RATIO_CONSISTENT_ASSET_CLASSES & STRETCHABLE_ASSET_CLASSES
     assert not both, f"classes both held to a shape and free to stretch: {sorted(both)}"
+
+    claimed = set(SHAPELESS_ASSET_CLASSES) & (
+        RATIO_CONSISTENT_ASSET_CLASSES | STRETCHABLE_ASSET_CLASSES
+    )
+    assert not claimed, (
+        f"classes claiming an exemption they do not need: {sorted(claimed)}"
+    )
+
+
+def test_a_shapeless_class_may_still_not_stretch():
+    """Free of a fixed shape is not licence to squash.
+
+    `stretch_faults_of` refuses `preserveAspectRatio="none"` on any slot outside
+    `STRETCHABLE_ASSET_CLASSES`, and a shapeless class is outside it. A league's crest
+    letterboxes into whatever box its template gives it; only which box is free.
+    """
+    from models.image_constants import STRETCHABLE_ASSET_CLASSES
+
+    for asset_class in SHAPELESS_ASSET_CLASSES:
+        assert asset_class not in STRETCHABLE_ASSET_CLASSES, asset_class
 
 
 def test_the_marker_class_is_the_one_left_unchecked():
@@ -721,11 +764,18 @@ def test_our_own_artwork_records_a_shape_for_every_class():
     """
     from models.image_constants import ASSET_CLASS_DIRECTORIES, PACKAGED_ASSET_ASPECTS
 
-    missing = set(ASSET_CLASS_DIRECTORIES) - set(PACKAGED_ASSET_ASPECTS)
+    # A shapeless class is exempt, and for the same reason it is exempt from the check above:
+    # what we ship for `division_logo` is a file with nothing drawn in it, which has no shape
+    # to be authored against and cannot be letterboxed wrongly into anything (2026-09-02).
+    expected = set(ASSET_CLASS_DIRECTORIES) - set(SHAPELESS_ASSET_CLASSES)
+
+    missing = expected - set(PACKAGED_ASSET_ASPECTS)
     assert not missing, f"classes whose shipped artwork declares no shape: {sorted(missing)}"
 
-    extra = set(PACKAGED_ASSET_ASPECTS) - set(ASSET_CLASS_DIRECTORIES)
-    assert not extra, f"shapes recorded for unknown classes: {sorted(extra)}"
+    extra = set(PACKAGED_ASSET_ASPECTS) - expected
+    assert not extra, (
+        f"shapes recorded for unknown or shapeless classes: {sorted(extra)}"
+    )
 
 
 def test_the_flag_artwork_is_three_by_two_and_the_track_artwork_square():

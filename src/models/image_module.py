@@ -54,6 +54,7 @@ class ImageConfig:
     marker_directory: str
     weather_icon_directory: str
     tyre_directory: str
+    division_logo_directory: str
 
     # Driver portraits obtained from Discord
     use_pfp: bool

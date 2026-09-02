@@ -20,7 +20,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_constants import TEMPLATE_COLUMNS  # noqa: E402
+from models.image_constants import (  # noqa: E402
+    ASSET_DIRECTORIES,
+    TEMPLATE_COLUMNS,
+)
 from models.image_module import DirectoryReport, ImageConfig, ValidityReport  # noqa: E402
 from services.image_validity_service import (  # noqa: E402
     LAYER_BOUNDS,
@@ -67,13 +70,17 @@ def _config(template_directory: str, **overrides) -> ImageConfig:
         server_id=1,
         module_enabled=True,
         template_directory=template_directory,
-        track_image_directory="resources/defaults/tracks",
-        team_image_directory="resources/defaults/teams",
-        flag_directory="resources/defaults/flags",
-        driver_image_directory="resources/defaults/drivers",
-        marker_directory="resources/defaults/markers",
-        weather_icon_directory="resources/defaults/weather",
-        tyre_directory="resources/defaults/tyres",
+        # Every asset directory, pointed at the **packaged** folder rather than the
+        # league one the column actually defaults to. `resources/defaults/` is tracked
+        # and identical on every host; `resources/league/` is gitignored and holds
+        # whatever the machine running this happens to carry.
+        #
+        # Derived rather than listed, so an asset class added later arrives here on its
+        # own. Listing them is what made the eighth class break five fixtures at once.
+        **{
+            column: packaged
+            for column, (_cmd, _league, packaged) in ASSET_DIRECTORIES.items()
+        },
         use_pfp=False,
         pfp_prerender=True,
         pfp_daily=False,
