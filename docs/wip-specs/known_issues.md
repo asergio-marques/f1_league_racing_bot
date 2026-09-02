@@ -425,6 +425,19 @@ Found on 2026-08-26, alongside the autocomplete investigation above.
 - The ordering invariant, the minimum of 1, the active-season refusal and the three phase draws therefore have no automated cover at all, while `math_utils`, `message_builder`, `forecast_cleanup`, `mystery_notice` and the image weather path are all well covered.
 - This cuts against the standing rule that every implementation task carries the unit test that covers it.
 
+**P3 — A rasteriser test resolves its artwork out of the league's own folder, so it passes or fails according to what the host happens to carry.**
+- Found on 2026-09-02 while adding the division-logo asset class; the coupling itself was spotted by a parallel session.
+- `_highlighted_svg` in `tests/unit/test_image_standings_post.py:1202` calls `create_with_defaults`, whose `marker_directory` default is `resources/league/markers` per migration 043, and then resolves it against the real project root. Its own docstring says the chips resolve "against the packaged artwork", which is true only on a machine whose league folder is empty.
+- On the development Raspberry Pi, where the league has drawn three of its own marks, `test_the_three_marks_reach_the_raster_in_their_own_corners:1336` samples the plate colour and reads `(186, 93, 185)` where it expects `(230, 197, 90)`. **The test carries the `rasteriser` marker, so CI never runs it and nothing else will catch this.**
+- `resources/league/` is gitignored, unversioned and different on every machine, which is exactly what the standing rule against host-dependent tests forbids. Pointing the fixture at `packaged_directory_for("marker")` would make its docstring true and the result the same everywhere.
+- A sweep of the rest of the suite on the same day found **no second instance**: `tests/support/image_sample_data.py`, `test_image_results_fill.py`, `test_packaged_fallback_per_graphic.py`, `test_closed_set_fallback.py` and the six `ImageConfig` fixtures all name `resources/defaults/` explicitly, and `test_image_module_flow.py:1100` redirects `PROJECT_ROOT` to a `tmp_path` before using the league defaults at all. The four preview modules resolve league directories but assert only that a render succeeds, which league artwork does not change.
+
+**P4 — Three rasteriser tests exceed Inkscape's 120-second budget on the Raspberry Pi and fail there alone.**
+- Found on 2026-09-02, on a full-suite baseline taken before unrelated work.
+- `test_image_preview_render.py::test_every_preview_reaches_a_png[weather-p3]`, `test_image_preview_render.py::test_the_standings_preview_draws_the_whole_grid` and `test_image_standings_geometry.py::test_the_widest_cell_a_grid_can_carry_stays_inside_its_column` each end in `RASTERISER / Inkscape did not finish within 120s`, the last as a raw `subprocess.TimeoutExpired`.
+- Nothing is wrong with the drawings: the standings templates are 1728 x 1980 with fifty rows, and the Pi is simply slower than the timeout assumes. All three carry the `rasteriser` marker and so never run in CI.
+- Recorded rather than fixed because raising the timeout is a tuning decision with a live consequence — the same budget governs a real posting, where a longer wait is a league watching nothing happen.
+
 **P4 — Two tests in `tests/unit/test_forecast_cleanup.py` are named for behaviour that no longer exists.**
 - `test_test_mode_suppresses_delete_keeps_row` and `test_delete_forecast_message_skips_in_test_mode` both assert that deletion **does** happen in test mode, and their docstrings say so.
 - The names are left over from the removed test-mode guard. They pass, so nothing fails, but a reader scanning test names is told the opposite of what the suite checks.
