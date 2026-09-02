@@ -21,7 +21,9 @@ This is a developer and maintainer document. For configuring a league, see [Conf
 
 There is no on/off parameter — it flips, and the new state is persisted to `server_configs.test_mode_active`, so it survives a restart. Every command below refuses unless the flag is set.
 
-**A server holding real drivers cannot enter test mode.** Enabling is refused, naming the count, while any real driver profile stands at anything other than Not Signed Up — mid-signup, unassigned, assigned or banned. A profile retained at Not Signed Up is a former driver who has left, and does not stand in the way, so a league between seasons can still test. Leaving test mode is never refused, whatever the server holds.
+**A server holding real drivers cannot enter test mode.** Enabling is refused, naming the count, while any real driver profile stands at anything other than Not Signed Up — mid-signup, unassigned, assigned or banned. A profile retained at Not Signed Up is a former driver who has left, and does not stand in the way, so a league between seasons can still test.
+
+**A running season holding fake drivers holds test mode on.** Disabling is refused, naming the count, while a season is ACTIVE and any fake driver exists; `/season complete` releases it. This is not a nicety: disabling deletes every fake driver, and a driver the season has raced cannot be deleted — the check-in, the standings and the season's end each write a row carrying a foreign key to the profile. Before the guard, the delete raised *after* the flag had been persisted, leaving the server out of test mode with its roster still seated and the command replying nothing at all. A season in SETUP has raced nobody and lets go freely; a COMPLETED season deletes nothing, so its fake drivers stay in the database until `/bot-reset`.
 
 **An open signup window is refused too**, on the same footing as `/signup open` refusing under test mode: a window left open would have its button posted and pinging the base role while rejecting every driver who pressed it. Close it with `/signup close` first. The toggle does not close it for you — that posts a public notice in a channel a league reads, which is not something a flag flip should do.
 
@@ -190,7 +192,7 @@ Nothing a preview does is written back, so previewing at any point in the order 
 4. `/test-mode advance` repeatedly, checking each posted message as it appears.
 5. For attendance rounds, `/test-mode rsvp set-status` once the check-in has been advanced into existence.
 6. `/season complete` when `advance` reports nothing left.
-7. `/test-mode toggle` off — remembering it takes the fake drivers with it.
+7. `/test-mode toggle` off — which is refused until step 6 is done, and takes the fake drivers with it where the season never started.
 8. `/bot-reset confirm:CONFIRM` to clear the season and go again.
 
 ---

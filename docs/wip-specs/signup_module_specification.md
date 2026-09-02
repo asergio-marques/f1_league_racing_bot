@@ -49,7 +49,8 @@ A server shall be either running a real league or under test, never both.
 - Test mode shall not be enabled while the server holds a real driver whose state is anything other than Not Signed Up. A driver profile retained at Not Signed Up is a former driver and shall not stand in the way.
     - The refusal shall name how many real drivers the server holds, and the state of test mode shall be left unchanged.
 - Test mode shall not be enabled while the signup window is open. The refusal shall direct the administrator to close the window, and the window shall be left open — enabling test mode shall not close it.
-- Test mode shall never be refused on the way out: a server shall always be able to leave it, whatever it holds.
+- Test mode shall not be disabled while a season that has started holds a driver created by test mode. Such a season shall hold test mode open until it is completed, and the refusal shall direct the administrator to complete it.
+    - Neither a season yet to start nor a completed one shall stand in the way.
 - While test mode is enabled:
     - A real driver shall not begin a signup. The sign-up button shall refuse them, and the "signup open" command shall refuse to open a signup window.
     - A real driver shall not be assigned to a team. A driver created by test mode shall still be assigned freely.

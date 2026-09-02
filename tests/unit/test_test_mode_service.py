@@ -16,6 +16,7 @@ from services.test_mode_service import (
     toggle_test_mode,
     toggle_test_mode_nationality,
     count_live_real_drivers,
+    count_test_drivers_in_a_started_season,
     get_next_pending_phase,
     build_review_summary,
 )
@@ -217,6 +218,71 @@ async def test_another_servers_drivers_do_not_count() -> None:
             await db.commit()
 
         assert await count_live_real_drivers(1, db_path) == 0
+    finally:
+        os.unlink(db_path)
+
+
+# ---------------------------------------------------------------------------
+# count_test_drivers_in_a_started_season
+# ---------------------------------------------------------------------------
+
+async def _set_season_status(db_path: str, status: str) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE seasons SET status = ? WHERE server_id = 1", (status,))
+        await db.commit()
+
+
+async def test_a_running_season_holding_fake_drivers_counts_them() -> None:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        await _seed(db_path, [])  # seeds an ACTIVE season
+        await _add_driver(db_path, "9000000000000000001", "ASSIGNED", test=True)
+        await _add_driver(db_path, "9000000000000000002", "ASSIGNED", test=True)
+
+        assert await count_test_drivers_in_a_started_season(1, db_path) == 2
+    finally:
+        os.unlink(db_path)
+
+
+async def test_real_drivers_are_not_counted() -> None:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        await _seed(db_path, [])
+        await _add_driver(db_path, "5005", "ASSIGNED")
+
+        assert await count_test_drivers_in_a_started_season(1, db_path) == 0
+    finally:
+        os.unlink(db_path)
+
+
+@pytest.mark.parametrize("status", ["SETUP", "COMPLETED"])
+async def test_a_season_that_is_not_running_counts_nothing(status: str) -> None:
+    """A season not yet started, or finished with, is safe to leave test mode from."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        await _seed(db_path, [])
+        await _add_driver(db_path, "9000000000000000001", "ASSIGNED", test=True)
+        await _set_season_status(db_path, status)
+
+        assert await count_test_drivers_in_a_started_season(1, db_path) == 0
+    finally:
+        os.unlink(db_path)
+
+
+async def test_a_running_season_with_no_fake_drivers_counts_nothing() -> None:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        await _seed(db_path, [])
+
+        assert await count_test_drivers_in_a_started_season(1, db_path) == 0
     finally:
         os.unlink(db_path)
 

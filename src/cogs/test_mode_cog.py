@@ -12,9 +12,9 @@ APScheduler triggers:
   /test-mode rsvp …            — set the RSVP status of fake drivers
 
 All commands are gated by @channel_guard (interaction role + channel).
-Every command but toggle additionally requires test mode to be active, and toggle
-itself refuses to *enable* test mode while the server holds real drivers or its
-signup window is open.
+Every command but toggle additionally requires test mode to be active. Toggle itself
+refuses to *enable* test mode while the server holds real drivers or its signup window
+is open, and to *disable* it while a running season holds fake drivers.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from services.test_mode_service import (
     toggle_test_mode,
     toggle_test_mode_nationality,
     count_live_real_drivers,
+    count_test_drivers_in_a_started_season,
     get_next_pending_phase,
     build_review_summary,
 )
@@ -68,8 +69,14 @@ class TestModeCog(commands.Cog):
         Test mode may not be switched on over a real league: disabling it again deletes
         every fake driver on the server without confirmation, and while it is on the
         signup and placement paths refuse real drivers outright, so a league that enabled
-        it mid-season would find itself unable to run. Switching test mode *off* is never
-        refused — a server must always be able to leave it.
+        it mid-season would find itself unable to run.
+
+        Leaving is refused in one case only: a season that has started while holding fake
+        drivers keeps test mode on until it is completed. Disabling deletes every fake
+        driver, and one that has raced cannot be deleted — the check-in, the standings and
+        the season's end each write a row carrying a foreign key to the profile — so the
+        delete raised after the flag had already been flipped, stranding the server out of
+        test mode with its roster still seated and no reply sent.
 
         An open signup window is refused for the same reason. `/signup open` will not run
         under test mode, and it would be inconsistent to leave a window already open —
@@ -104,6 +111,21 @@ class TestModeCog(commands.Cog):
                     "No real driver may sign up under test mode, so the button would "
                     "refuse everyone who pressed it. Close the window with "
                     "`/signup close` first.",
+                    ephemeral=True,
+                )
+                return
+
+        if config is not None and config.test_mode_active:
+            seated = await count_test_drivers_in_a_started_season(
+                interaction.guild_id,
+                self.bot.db_path,  # type: ignore[attr-defined]
+            )
+            if seated:
+                await interaction.response.send_message(
+                    f"⛔ Test mode cannot be disabled while a running season holds "
+                    f"**{seated}** fake driver(s).\n"
+                    "Disabling deletes them, and a driver the season has raced cannot be "
+                    "deleted. Finish the season with `/season complete` first.",
                     ephemeral=True,
                 )
                 return

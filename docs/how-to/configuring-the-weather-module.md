@@ -150,7 +150,7 @@ You are not going to wait five days to find out whether any of this works.
 
 `advance` fires the next scheduled event due — often the next weather phase, but equally a results collection or a check-in call where those modules are on — straight away, and posts it to the real channels so you see exactly what your drivers will see. Run it again for the next one. `/test-mode review` shows what is still pending. [Testing with test mode](test-mode.md) covers the whole of it.
 
-> **Test mode is only available before your league has real drivers.** The bot refuses to turn it on while any driver is signed up, unassigned, assigned or banned, or while your signup window is open, and while it is on no real driver may sign up or be placed. Former drivers from a finished season do not stand in the way. Do this step before you open signups.
+> **Test mode is only available before your league has real drivers.** The bot refuses to turn it on while any driver is signed up, unassigned, assigned or banned, or while your signup window is open, and while it is on no real driver may sign up or be placed. Former drivers from a finished season do not stand in the way. Do this step before you open signups — and note that once a season is running with fake drivers in it, test mode stays on until you `/season complete`.
 
 > **Turning test mode off clears out every forecast the bot is holding**, not only the ones it posted while you were testing, and it deletes every fake driver on the server at the same time. On a season that has not started that is exactly what you want. On a season already running it will take down forecasts your drivers were reading, and the bot will not put them back — only the next phase will. Do your testing before the season is approved.
 

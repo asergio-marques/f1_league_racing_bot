@@ -4,6 +4,8 @@ Provides five async functions consumed by TestModeCog:
   - toggle_test_mode:             flip the test_mode_active flag in server_configs
   - toggle_test_mode_nationality: flip whether mock drivers carry a nationality
   - count_live_real_drivers:      how many real drivers stand in the way of enabling test mode
+  - count_test_drivers_in_a_started_season:
+                                  how many fake drivers stand in the way of disabling it
   - get_next_pending_phase:       find the earliest un-executed phase across all rounds
   - build_review_summary:         format a full season/division/round status string
 """
@@ -114,6 +116,32 @@ async def count_live_real_drivers(server_id: int, db_path: str) -> int:
         cursor = await db.execute(
             "SELECT COUNT(*) AS n FROM driver_profiles "
             "WHERE server_id = ? AND is_test_driver = 0 AND current_state != 'NOT_SIGNED_UP'",
+            (server_id,),
+        )
+        row = await cursor.fetchone()
+
+    return int(row["n"]) if row is not None else 0
+
+
+async def count_test_drivers_in_a_started_season(server_id: int, db_path: str) -> int:
+    """Return how many fake drivers this server holds while a season is running.
+
+    Zero unless a season is ACTIVE: a season in SETUP has not started, and one that has
+    been completed is finished with. Both are safe to leave test mode from.
+
+    Disabling test mode deletes every fake driver, and a driver who has raced cannot be
+    deleted: the check-in writes a `driver_round_attendance` row for them, the standings
+    and the season's end write their own, and all three carry a foreign key to the profile.
+    The delete raised, after the flag had already been persisted, and left the server out
+    of test mode with its fake roster still seated and no reply sent. So a started season
+    holds test mode open until it is completed.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS n FROM driver_profiles dp "
+            "WHERE dp.server_id = ? AND dp.is_test_driver = 1 "
+            "  AND EXISTS (SELECT 1 FROM seasons s "
+            "              WHERE s.server_id = dp.server_id AND s.status = 'ACTIVE')",
             (server_id,),
         )
         row = await cursor.fetchone()

@@ -3,8 +3,11 @@
 Test mode and a real roster may not share a server: switching test mode off deletes every
 fake driver on it without confirmation, and while it is on the signup and placement paths
 refuse real drivers outright. An open signup window is refused on the same footing — its
-button would reject every driver who pressed it. So the toggle is guarded on the way *in*
-only — leaving test mode is never refused.
+button would reject every driver who pressed it.
+
+Leaving is refused in one case only: a season that has started while holding fake drivers
+keeps test mode on until it is completed, because a driver the season has raced cannot be
+deleted and the delete is what disabling does.
 
 The callback runs against a migrated database with Discord stubbed, and the guards are
 unwrapped the way the other cog suites unwrap them.
@@ -81,6 +84,88 @@ async def _flag(db_path: str) -> bool:
         )
         row = await cursor.fetchone()
     return bool(row["test_mode_active"])
+
+
+async def _season(db_path: str, status: str) -> int:
+    """A season of *status* with one division, one team and two seats. Returns the team id."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO seasons (server_id, start_date, status, season_number) "
+            "VALUES (?, '2026-03-01', ?, 1)",
+            (SERVER_ID, status),
+        )
+        season_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id, status, tier) "
+            "VALUES (?, 'Division One', 1, 'ACTIVE', 1)",
+            (season_id,),
+        )
+        division_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
+            "VALUES (?, 'Redline', 2, 0)",
+            (division_id,),
+        )
+        team_id = cursor.lastrowid
+        for seat_number in (1, 2):
+            await db.execute(
+                "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, ?)",
+                (team_id, seat_number),
+            )
+        await db.commit()
+    return team_id
+
+
+async def _seat_a_test_driver(db_path: str, team_id: int) -> None:
+    """A fake driver in the first free seat of *team_id*, as `/test-mode roster add` leaves one."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
+            "is_test_driver, test_display_name) "
+            "VALUES (?, '9000000000000000001', 'ASSIGNED', 1, 'Mock Alpha')",
+            (SERVER_ID,),
+        )
+        profile_id = cursor.lastrowid
+        cursor = await db.execute(
+            "SELECT id FROM team_seats WHERE team_instance_id = ? "
+            "AND driver_profile_id IS NULL ORDER BY seat_number LIMIT 1",
+            (team_id,),
+        )
+        seat_id = (await cursor.fetchone())["id"]
+        await db.execute(
+            "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?", (profile_id, seat_id)
+        )
+        cursor = await db.execute(
+            "SELECT ti.division_id, d.season_id FROM team_instances ti "
+            "JOIN divisions d ON d.id = ti.division_id WHERE ti.id = ?",
+            (team_id,),
+        )
+        row = await cursor.fetchone()
+        await db.execute(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
+            "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
+            (profile_id, row["season_id"], row["division_id"], seat_id),
+        )
+        await db.commit()
+
+
+async def _in_test_mode(db_path: str) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE server_configs SET test_mode_active = 1 WHERE server_id = ?",
+            (SERVER_ID,),
+        )
+        await db.commit()
+
+
+async def _fake_drivers(db_path: str) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS n FROM driver_profiles "
+            "WHERE server_id = ? AND is_test_driver = 1",
+            (SERVER_ID,),
+        )
+        return (await cursor.fetchone())["n"]
 
 
 async def _open_signups(db_path: str) -> None:
@@ -238,16 +323,128 @@ class TestAnOpenSignupWindow:
 
 
 class TestLeaving:
-    async def test_nothing_holds_a_server_in_test_mode(self, cog, db_path, monkeypatch):
-        """The guard is on the way in only — a server must always be able to leave."""
+    async def test_the_entry_guards_do_not_hold_a_server_in_test_mode(
+        self, cog, db_path, monkeypatch
+    ):
+        """Neither an open window nor a real driver keeps a server under test."""
+        await _in_test_mode(db_path)
         await _open_signups(db_path)
+        await _add_driver(db_path, "4006", "ASSIGNED")
+        monkeypatch.setattr(
+            "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
+        )
+
+        interaction = await _toggle(cog)
+
+        assert "**disabled**" in interaction.reply
+        assert await _flag(db_path) is False
+
+    async def test_a_running_season_holding_fake_drivers_refuses_it(
+        self, cog, db_path, monkeypatch
+    ):
+        await _in_test_mode(db_path)
+        team_id = await _season(db_path, "ACTIVE")
+        await _seat_a_test_driver(db_path, team_id)
+        monkeypatch.setattr(
+            "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
+        )
+
+        interaction = await _toggle(cog)
+
+        assert "cannot be disabled" in interaction.reply
+        assert "`/season complete`" in interaction.reply
+        assert await _flag(db_path) is True
+
+    async def test_the_roster_is_left_where_it_is(self, cog, db_path, monkeypatch):
+        """Refusing must not run the deletion it exists to hold back."""
+        await _in_test_mode(db_path)
+        team_id = await _season(db_path, "ACTIVE")
+        await _seat_a_test_driver(db_path, team_id)
+        monkeypatch.setattr(
+            "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
+        )
+
+        await _toggle(cog)
+
+        assert await _fake_drivers(db_path) == 1
+
+    async def test_a_driver_who_has_raced_no_longer_strands_the_server(
+        self, cog, db_path, monkeypatch
+    ):
+        """The failure this guard exists for: the check-in row that blocks the delete.
+
+        `bulk_insert_attendance_rows` writes one of these for every driver in a division
+        when the check-in posts. It carries a foreign key to the profile, so deleting the
+        driver raised — after the flag had been flipped — and the command died in silence.
+        """
+        await _in_test_mode(db_path)
+        team_id = await _season(db_path, "ACTIVE")
+        await _seat_a_test_driver(db_path, team_id)
         async with get_connection(db_path) as db:
-            await db.execute(
-                "UPDATE server_configs SET test_mode_active = 1 WHERE server_id = ?",
+            cursor = await db.execute(
+                "SELECT ti.division_id FROM team_instances ti WHERE ti.id = ?", (team_id,)
+            )
+            division_id = (await cursor.fetchone())["division_id"]
+            cursor = await db.execute(
+                "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
+                "VALUES (?, 1, 'STANDARD', '2026-06-01T18:00:00')",
+                (division_id,),
+            )
+            round_id = cursor.lastrowid
+            cursor = await db.execute(
+                "SELECT id FROM driver_profiles WHERE server_id = ? AND is_test_driver = 1",
                 (SERVER_ID,),
             )
+            profile_id = (await cursor.fetchone())["id"]
+            await db.execute(
+                "INSERT INTO driver_round_attendance (round_id, division_id, "
+                "driver_profile_id, rsvp_status) VALUES (?, ?, ?, 'ACCEPTED')",
+                (round_id, division_id, profile_id),
+            )
             await db.commit()
-        await _add_driver(db_path, "4006", "ASSIGNED")
+        monkeypatch.setattr(
+            "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
+        )
+
+        interaction = await _toggle(cog)
+
+        assert "cannot be disabled" in interaction.reply
+        assert await _flag(db_path) is True
+        assert await _fake_drivers(db_path) == 1
+
+    async def test_a_season_still_in_setup_does_not_refuse_it(
+        self, cog, db_path, monkeypatch
+    ):
+        """A season that has not started has raced nobody, so its roster deletes cleanly."""
+        await _in_test_mode(db_path)
+        team_id = await _season(db_path, "SETUP")
+        await _seat_a_test_driver(db_path, team_id)
+        monkeypatch.setattr(
+            "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
+        )
+
+        interaction = await _toggle(cog)
+
+        assert "**disabled**" in interaction.reply
+        assert await _fake_drivers(db_path) == 0
+
+    async def test_a_completed_season_does_not_refuse_it(self, cog, db_path, monkeypatch):
+        await _in_test_mode(db_path)
+        team_id = await _season(db_path, "COMPLETED")
+        await _seat_a_test_driver(db_path, team_id)
+        monkeypatch.setattr(
+            "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
+        )
+
+        interaction = await _toggle(cog)
+
+        assert "**disabled**" in interaction.reply
+
+    async def test_a_running_season_with_no_fake_drivers_does_not_refuse_it(
+        self, cog, db_path, monkeypatch
+    ):
+        await _in_test_mode(db_path)
+        await _season(db_path, "ACTIVE")
         monkeypatch.setattr(
             "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
         )

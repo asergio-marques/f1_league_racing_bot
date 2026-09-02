@@ -183,7 +183,7 @@ Two things about test mode matter here specifically. **Enabling it attaches poin
 
 See [Test mode](test-mode.md) for the whole picture.
 
-> **Test mode is only available before your league has real drivers.** The bot refuses to turn it on while any driver is signed up, unassigned, assigned or banned, or while your signup window is open, and while it is on no real driver may sign up or be placed. Former drivers from a finished season do not stand in the way. Do this step before you open signups.
+> **Test mode is only available before your league has real drivers.** The bot refuses to turn it on while any driver is signed up, unassigned, assigned or banned, or while your signup window is open, and while it is on no real driver may sign up or be placed. Former drivers from a finished season do not stand in the way. Do this step before you open signups — and note that once a season is running with fake drivers in it, test mode stays on until you `/season complete`.
 
 > **A round that has been submitted but not settled blocks `/test-mode advance`.** Finish the penalty and appeals stages first; the refusal tells you which round is waiting.
 
