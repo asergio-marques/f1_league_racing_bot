@@ -208,6 +208,8 @@ You are not going to wait five days to find out whether any of this works, and y
 
 See [Test mode](test-mode.md) for the whole picture, including the synthetic drivers you will need first.
 
+> **Test mode is only available before your league has real drivers.** The bot refuses to turn it on while any driver is signed up, unassigned, assigned or banned, or while your signup window is open, and while it is on no real driver may sign up or be placed. Former drivers from a finished season do not stand in the way. Do this step before you open signups — and note that once a season is running with fake drivers in it, test mode stays on until you `/season complete`.
+
 > **Turning test mode off deletes every fake driver on the server**, across all divisions, without asking. Build your test roster expecting to lose it.
 
 ---

@@ -545,6 +545,39 @@ class PlacementService:
                 f"the standings would silently drop a driver."
             )
 
+    async def _guard_test_mode(self, server_id: int, driver_profile_id: int) -> None:
+        """Refuse to seat a *real* driver while the server is in test mode.
+
+        Test mode and a real league may not share a server, so a real driver never enters
+        a division while the flag is on: their signup is refused at the button, and their
+        placement here. A fake driver is untouched by this — the roster commands seat them
+        by another path, but attendance autoreserve moves them through this very call.
+
+        Unlike the capacity guards above, this is a genuine precondition rather than a
+        best-effort check, so it does **not** swallow its own errors: a fault reading the
+        flag must not be the thing that lets a real driver through.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT (SELECT test_mode_active FROM server_configs WHERE server_id = ?) "
+                "           AS test_mode_active, "
+                "       dp.is_test_driver "
+                "FROM driver_profiles dp WHERE dp.id = ? AND dp.server_id = ?",
+                (server_id, driver_profile_id, server_id),
+            )
+            row = await cursor.fetchone()
+
+        if row is None:
+            # No such profile: assign_driver reports that itself, in its own words.
+            return
+        if row["is_test_driver"]:
+            return
+        if row["test_mode_active"]:
+            raise ValueError(
+                "Test mode is active — a real driver cannot be assigned to a team. "
+                "Turn it off with `/test-mode toggle` first."
+            )
+
     async def _guard_image_capacity(
         self, server_id: int, division_id: int, season_id: int
     ) -> None:
@@ -637,6 +670,11 @@ class PlacementService:
         # division, so guarding it covers the signup wizard, manual placement and bulk
         # import alike. Inert while every catalogue is empty.
         await self._guard_image_capacity(server_id, division_id, season_id)
+
+        # A real driver may not be seated while the server is in test mode: the same
+        # choke point keeps the manual command, the signup path and attendance's
+        # autoreserve alike from mixing a real roster into a test one.
+        await self._guard_test_mode(server_id, driver_profile_id)
 
         async with get_connection(self._db_path) as db:
             # 1. Fetch profile and validate state

@@ -12,7 +12,9 @@ APScheduler triggers:
   /test-mode rsvp …            — set the RSVP status of fake drivers
 
 All commands are gated by @channel_guard (interaction role + channel).
-Every command but toggle additionally requires test mode to be active.
+Every command but toggle additionally requires test mode to be active. Toggle itself
+refuses to *enable* test mode while the server holds real drivers or its signup window
+is open, and to *disable* it while a running season holds fake drivers.
 """
 
 from __future__ import annotations
@@ -26,6 +28,8 @@ from discord.ext import commands
 from services.test_mode_service import (
     toggle_test_mode,
     toggle_test_mode_nationality,
+    count_live_real_drivers,
+    count_test_drivers_in_a_started_season,
     get_next_pending_phase,
     build_review_summary,
 )
@@ -60,6 +64,72 @@ class TestModeCog(commands.Cog):
     @channel_guard
     @admin_only
     async def toggle(self, interaction: discord.Interaction) -> None:
+        """Flip test mode, refusing to enable it while the server holds real drivers.
+
+        Test mode may not be switched on over a real league: disabling it again deletes
+        every fake driver on the server without confirmation, and while it is on the
+        signup and placement paths refuse real drivers outright, so a league that enabled
+        it mid-season would find itself unable to run.
+
+        Leaving is refused in one case only: a season that has started while holding fake
+        drivers keeps test mode on until it is completed. Disabling deletes every fake
+        driver, and one that has raced cannot be deleted — the check-in, the standings and
+        the season's end each write a row carrying a foreign key to the profile — so the
+        delete raised after the flag had already been flipped, stranding the server out of
+        test mode with its roster still seated and no reply sent.
+
+        An open signup window is refused for the same reason. `/signup open` will not run
+        under test mode, and it would be inconsistent to leave a window already open —
+        one whose button is posted and pinging the base role — silently rejecting every
+        driver who pressed it. The window is not closed here: that posts a public notice
+        in a channel a league reads, which is not something a flag flip should do.
+        """
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is not None and not config.test_mode_active:
+            real_drivers = await count_live_real_drivers(
+                interaction.guild_id,
+                self.bot.db_path,  # type: ignore[attr-defined]
+            )
+            if real_drivers:
+                await interaction.response.send_message(
+                    f"⛔ Test mode cannot be enabled while this server has "
+                    f"**{real_drivers}** real driver(s).\n"
+                    "Test mode is for an empty league — disabling it deletes every fake "
+                    "driver, and while it is on no real driver may sign up or be placed.",
+                    ephemeral=True,
+                )
+                return
+
+            signups_open = await self.bot.signup_module_service.get_window_state(  # type: ignore[attr-defined]
+                interaction.guild_id
+            )
+            if signups_open:
+                await interaction.response.send_message(
+                    "⛔ Test mode cannot be enabled while signups are open.\n"
+                    "No real driver may sign up under test mode, so the button would "
+                    "refuse everyone who pressed it. Close the window with "
+                    "`/signup close` first.",
+                    ephemeral=True,
+                )
+                return
+
+        if config is not None and config.test_mode_active:
+            seated = await count_test_drivers_in_a_started_season(
+                interaction.guild_id,
+                self.bot.db_path,  # type: ignore[attr-defined]
+            )
+            if seated:
+                await interaction.response.send_message(
+                    f"⛔ Test mode cannot be disabled while a running season holds "
+                    f"**{seated}** fake driver(s).\n"
+                    "Disabling deletes them, and a driver the season has raced cannot be "
+                    "deleted. Finish the season with `/season complete` first.",
+                    ephemeral=True,
+                )
+                return
+
         new_state = await toggle_test_mode(
             interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]

@@ -337,6 +337,14 @@ Found on 2026-08-18 while auditing the how-to guides against the implementation.
 - `_guard_reserve_capacity`, `_guard_sheet_capacity` and `_guard_standings_capacity` (`src/services/placement_service.py:395`, `:444` and `:494`) are called from the assignment path at `:566-574`. `add_test_driver` in `src/services/test_roster_service.py` writes `driver_profiles`, `team_seats` and `driver_season_assignments` directly and never goes through it, so none of the three runs.
 - What a maintainer sees: a mock roster larger than the lineup, attendance or driver-standings template declares is accepted in silence, and the overflow surfaces later as a `CAPACITY_EXCEEDED` fallback at the first posting — which is the moment XIV.12 exists to move the rejection away from.
 
+**P2 — Removing a fake driver fails, in silence, once the season has raced them.**
+- Found on 2026-09-02 while guarding the test-mode toggle.
+- `_delete_test_drivers_in_division` (`src/services/test_roster_service.py:380`) and `remove_test_driver` (`:304`) clear the seat and the season assignment, but three other tables carry a `NO ACTION` foreign key to `driver_profiles(id)` and are left alone: `driver_round_attendance`, `driver_standings_snapshots` and `driver_history_entries`. Foreign keys are enforced, so the delete raises `IntegrityError: FOREIGN KEY constraint failed`. Verified on a migrated database.
+- The attendance row is the reachable one: `bulk_insert_attendance_rows` (`src/services/attendance_service.py:243`) writes one for **every** driver in the division when the check-in embed posts, so on an attendance-enabled league a fake driver acquires one at the first check-in.
+- What a maintainer sees: `/test-mode roster remove` and `/test-mode roster clear` never reply. There is no `on_app_command_error` handler in `src/`, so only the bot's log carries the traceback. Nothing is damaged — the statement rolls back with its transaction — but there is no command that can remove the driver, short of `/bot-reset`.
+- `/test-mode toggle` reached the same delete and was the worse case, stranding the server out of test mode with its roster seated. That path is now guarded: a running season holding fake drivers refuses to leave test mode, and a completed season deletes nothing.
+
+
 ## Season lifecycle
 
 **P2 — `get_setup_or_active_season` picks between a running season and a pending one arbitrarily.**
