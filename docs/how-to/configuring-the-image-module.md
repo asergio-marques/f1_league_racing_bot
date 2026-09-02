@@ -119,7 +119,7 @@ The default date style includes the day of the week, which is usually the bit pe
 
 ## Step 4 — Put in your own artwork
 
-There are seven folders of artwork, and **the bot is already looking in all of them.** They sit under `resources/league/` on the bot's computer, they start empty, and copying a correctly named file into one is the whole job — there is no command to run afterwards.
+There are eight folders of artwork, and **the bot is already looking in all of them.** They sit under `resources/league/` on the bot's computer, they start empty, and copying a correctly named file into one is the whole job — there is no command to run afterwards.
 
 Anything you have not supplied is drawn from what the bot ships, so every picture works from the very first post. Most of what you get that way is a plain grey placeholder; the markers, the weather symbols, the five tyre compounds and two reserved flags are the bot's own proper artwork, because you never chose those and are not expected to draw them.
 
@@ -133,12 +133,27 @@ Anything you have not supplied is drawn from what the bot ships, so every pictur
 | `resources/league/markers` — same folder | Marks on a standings result cell and on an attendance total | any — these stretch |
 | `resources/league/weather` | Weather symbols | 64 × 64 |
 | `resources/league/tyres` | Tyre compounds | 64 × 64 |
+| `resources/league/division-logos` | Division logos — **optional**, and used only if you ask for one in a drawing file of your own | any — see below |
 
 **`resources/league/` is yours and the bot never touches it.** Updating the bot cannot overwrite what is in it. That also means nothing is backing it up — keep your original artwork somewhere of your own.
 
 **Never put your files in `resources/defaults/`.** That folder is the bot's, and updating the bot replaces it wholesale, taking anything you put there with it.
 
-**If you want your artwork somewhere else entirely**, there is a command per folder — `/images config track-image-directory`, `/images config team-image-directory`, and so on for all seven. Most leagues never need one. Two things if you do use them: the folder has to sit inside the bot's own project folder, and anything outside it is refused with your existing setting left alone; and a folder that does not exist yet is accepted anyway, with a warning, because files put there later are picked up on their own.
+**If you want your artwork somewhere else entirely**, there is a command per folder — `/images config track-image-directory`, `/images config team-image-directory`, and so on for all eight. Most leagues never need one. Two things if you do use them: the folder has to sit inside the bot's own project folder, and anything outside it is refused with your existing setting left alone; and a folder that does not exist yet is accepted anyway, with a warning, because files put there later are picked up on their own.
+
+### Division logos, if you want them
+
+This folder is unlike the other seven, and you can skip it entirely — nothing the bot ships uses it.
+
+**You have to ask for it in a drawing file.** None of the fifteen drawings the bot ships has anywhere to put a logo, so copying files into `resources/league/division-logos` on its own changes nothing. Open a drawing file of your own, add an image box with the id `division_logo` wherever you want the logo to sit, and that is what turns the folder on. Any of the fifteen kinds of picture can carry one, and you choose which — brand your standings and leave your calendar plain if that is what you want. Adding a box to a drawing file belongs to step 5 below; come back here once you have.
+
+**One file per division, named for the division.** `Division 1` needs `division_1.svg`, `Tier 2 — Pro` needs `tier_2_pro.svg` — the same naming rule as everything else.
+
+**A division you draw no logo for gets nothing, and the bot will not mention it.** Every other folder tells you when it fell back to a placeholder. This one does not, because having no logo is normal rather than a gap, and being told on every picture you post would be noise. The catch is that a **typo is silent in exactly the same way**: if a logo does not appear, check the filename against the division's name before you look anywhere else.
+
+> **Renaming a division breaks the link.** The filename comes from the name, so renaming `Division 1` to `Div 1` means the bot starts looking for `div_1.svg` and your logo quietly disappears. Rename the file to match.
+
+**Draw it at whatever shape suits you.** This is the one folder with no size in the table, and the one class the shape rule in step 5 does not apply to — two logo boxes on the same drawing can be different shapes, because each division supplies its own file for both.
 
 ### Which pictures use which folder
 
@@ -168,6 +183,7 @@ So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`
 | Arrows and weather | Fixed names the bot already uses — these come complete, just replace the pictures |
 | Tyre compounds | Fixed names the bot already uses — `soft.svg`, `medium.svg`, `hard.svg`, `intermediate.svg`, `wet.svg`. These come complete, just replace the pictures. The `fallback.svg` beside them is not a sixth compound: it is what a driver with no tyre recorded gets |
 | Standings marks | Fixed names the bot already uses — `race_p1.svg`, `race_p2.svg`, `race_p3.svg`, `race_points.svg`, `race_fastest_lap.svg`, and `qualifying_` versions of the first four. These come complete, just replace the pictures |
+| Division logos | The **division's name** — `Division 1` needs `division_1.svg`. Nothing ships here but an empty picture, so a division you draw no logo for simply has none |
 
 > **Guinea-Bissau, the Democratic Republic of the Congo and Dominica each need their own flag file now.** `Guinean`, `Congolese` and `Dominican` used to cover two countries apiece in English and could only ever resolve one — Guinea, Congo and the Dominican Republic. A driver from the other country of each pair has a nationality of their own to select — `Bissau-Guinean`, `Congolese (Kinshasa)` and `Dominican (Dominica)` — so if your league has such a driver, add `guinea_bissau.svg`, `democratic_republic_of_the_congo.svg` or `dominica.svg` alongside the flags you already supply.
 
@@ -268,7 +284,7 @@ That folder is `resources/defaults/templates`, and `/images config template-dire
 1. Put **all fifteen** drawing files in your new folder first.
 2. *Then* run `/images config template-directory`.
 
-The command checks every one of the fifteen before it stores anything, exactly as `/season review` does. If any is missing or unusable it **refuses** the change, tells you which ones and why, and leaves your existing folder in force. An empty artwork folder is harmless — the bot falls back to what it ships — but there is nothing behind a missing drawing file, so a half-filled folder would stop every picture being produced at all. That is why this one is checked and the other seven are not.
+The command checks every one of the fifteen before it stores anything, exactly as `/season review` does. If any is missing or unusable it **refuses** the change, tells you which ones and why, and leaves your existing folder in force. An empty artwork folder is harmless — the bot falls back to what it ships — but there is nothing behind a missing drawing file, so a half-filled folder would stop every picture being produced at all. That is why this one is checked and the other eight are not.
 
 It must still sit inside the bot's own project folder.
 

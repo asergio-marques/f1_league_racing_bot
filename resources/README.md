@@ -28,6 +28,7 @@ root is accepted — but most leagues never need to run one.
 | Markers and marks | `league/markers/` | `defaults/markers/` | `/images config marker-directory` | 64 × 64 for the movement markers; the marks **stretch** — see below |
 | Weather icons | `league/weather/` | `defaults/weather/` | `/images config weather-icon-directory` | 64 × 64 |
 | Tyre compounds | `league/tyres/` | `defaults/tyres/` | `/images config tyre-directory` | 64 × 64 |
+| Division logos | `league/division-logos/` | `defaults/division-logos/` | `/images config division-logo-directory` | **any shape you like** — see below |
 
 **Templates are the exception in the table.** They have nothing to fall back to — the folder
 you configure is the only place a template is searched — so their folder is still
@@ -198,6 +199,36 @@ what you supplied, or a placeholder.
 > `race_*`, `qualifying_*`, `attendance_*`. One folder holds three vocabularies, and a bare
 > `p1.svg` beside `gained.svg` said which only by omission. The prefix is part of the name the
 > bot looks for, so keep it.
+
+### `division-logos/` is optional, silent, and shaped however you like
+
+This class is not like the other seven, in three ways worth knowing before you use it.
+
+**Nothing draws it until you say so.** None of the fifteen templates the bot ships declares a
+division logo, so the class does nothing at all on a stock installation. To use it, add an
+image node with the id `division_logo` to a template of your own, anywhere you like on the
+canvas, and the logo appears there. Leave it out of a template and that graphic simply carries
+no logo.
+
+**The filename comes from the division's name**, through the same rule as every other class —
+`Division 1` looks for `division_1.svg`, `Tier 2 — Pro` for `tier_2_pro.svg`. One file per
+division, in `league/division-logos/`.
+
+**A division with no logo is drawn with nothing, and you are not told.** What ships in
+`defaults/division-logos/fallback.svg` is a genuinely empty picture, and unlike every other
+class, drawing it raises no notice. Having no logo is the ordinary state here rather than a
+gap, and a warning on every graphic you post — for something you never asked for — would be
+noise. The cost is that a **misspelt filename is silent too**: if a logo does not appear,
+check the name against the division's name before looking anywhere else.
+
+> Renaming a division changes the file the bot looks for. Rename `Division 1` to `Div 1` and
+> `division_1.svg` stops being drawn, with nothing said. Rename the file to match.
+
+**No shape is imposed on it, and none is checked.** Every other class must draw at one shape
+throughout a template, because one file is drawn into all of its slots. A division logo is one
+file *per division*, so two slots on the same template may be any two shapes and each division
+supplies artwork for both. What you cannot do is declare `preserveAspectRatio="none"` on the
+slot: like every class but `markers`, a logo letterboxes into its box rather than squashing.
 
 ### `markers/` has two, because its files are not one shape
 
