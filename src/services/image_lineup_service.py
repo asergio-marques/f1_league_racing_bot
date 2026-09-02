@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from models.image_catalogues import RESERVE_KEY, catalogue_for
+from models.image_catalogues import RESERVE_KEY, catalogue_for, row_crop_fields
 from utils.asset_resolver import normalise
 from utils.country_data import country_for_nationality
 from utils.svg_document import FieldIndex
@@ -457,6 +457,14 @@ def build_fill_spec(
         remove=remove,
         image_data=image_data,
         catalogue=catalogue,
+        # Shorten the canvas to the teams the division actually fields, as the standings
+        # and the attendance sheet already do (2026-09-02). The reserve block, the rule
+        # above it and the caption all stand *beneath* the team blocks and ride up
+        # together in ``footer_group``: they belong to the division as much as the teams
+        # do, and a lineup drawn short that lost its reserves would be a different sheet.
+        **row_crop_fields(
+            declared, drawn=len(drawing.teams), capacity=blocks, prefix="team"
+        ),
     )
     # The division's team count, measured against the block count by the generic capacity
     # guard in `image_render_service` — the same route a calendar's rounds take.

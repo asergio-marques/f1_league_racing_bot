@@ -817,6 +817,24 @@ CALENDAR_CATALOGUE = FieldCatalogue(
 )
 
 
+#: The crop point and the footer band, which every image type drawn as a **list of rows** may
+#: declare (Constitution XIV.2, v7.1.0) so that a division of twenty drivers is not drawn on a
+#: canvas built for fifty.
+#:
+#: **Optional, deliberately.** A league's own template authored before v7.1.0 declares neither
+#: and must go on rendering at full height; making the crop point mandatory would invalidate
+#: every one of them at the moment it was named. The calendar is the exception and keeps its own
+#: mandatory crop point: it has required one since 037, and no template of it exists that does
+#: not declare one.
+#:
+#: The crop point is `valueless` for the same reason the calendar's is — geometry the render
+#: reads, never text it writes — so Rule 3's "its value could not be determined" cannot apply.
+_ROW_CROP_FIELD = "vertical_crop_point"
+
+#: The footer band is a whole-graphic field, not a per-row one: there is one of it.
+FOOTER_GROUP_FIELD = "footer_group"
+
+
 #: The lineup's catalogue. It was once the one image type whose fields were named after a
 #: league's own data; since v6.0.0 it names none, and one shipped file serves every league.
 #:
@@ -832,7 +850,7 @@ CALENDAR_CATALOGUE = FieldCatalogue(
 #: specs/038-lineup-image-generation/contracts/lineup-catalogue.md.
 LINEUP_CATALOGUE = FieldCatalogue(
     mandatory=frozenset({"division_name"}),
-    optional=frozenset({"season_number", "division_tier"}),
+    optional=frozenset({"season_number", "division_tier", FOOTER_GROUP_FIELD}),
     # Ordinal since v6.0.0. The team collection was **keyed** by the normalised team name,
     # which made this the one template of the module authored against a league's own data:
     # no shipped file could draw a league whose teams it did not know, and every division
@@ -844,8 +862,9 @@ LINEUP_CATALOGUE = FieldCatalogue(
         # Counted from the template, contiguous from 1. The division is measured against
         # it, and a division fielding fewer blocks than the file declares is ordinary.
         capacity=None,
-        fields=frozenset({"name", "image", "group"}),
+        fields=frozenset({"name", "image", "group", _ROW_CROP_FIELD}),
         mandatory_fields=frozenset({"name"}),
+        valueless_fields=frozenset({_ROW_CROP_FIELD}),
         assets={"image": "team"},
         nested=NestedSpec(
             prefix="driver",
@@ -881,22 +900,6 @@ LINEUP_CATALOGUE = FieldCatalogue(
 )
 
 
-#: The crop point and the footer band, which every image type drawn as a **list of rows** may
-#: declare (Constitution XIV.2, v7.1.0) so that a division of twenty drivers is not drawn on a
-#: canvas built for fifty.
-#:
-#: **Optional, deliberately.** A league's own template authored before v7.1.0 declares neither
-#: and must go on rendering at full height; making the crop point mandatory would invalidate
-#: every one of them at the moment it was named. The calendar is the exception and keeps its own
-#: mandatory crop point: it has required one since 037, and no template of it exists that does
-#: not declare one.
-#:
-#: The crop point is `valueless` for the same reason the calendar's is — geometry the render
-#: reads, never text it writes — so Rule 3's "its value could not be determined" cannot apply.
-_ROW_CROP_FIELD = "vertical_crop_point"
-
-#: The footer band is a whole-graphic field, not a per-row one: there is one of it.
-FOOTER_GROUP_FIELD = "footer_group"
 
 #: What both results templates address, whatever the session they draw. Declared once and
 #: composed into each of the two catalogues below (XIV.10, v4.4.0: siblings may share the

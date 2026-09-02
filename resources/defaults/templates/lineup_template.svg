@@ -131,6 +131,7 @@
     <image id="team_1_driver_2_image" inkscape:label="team_1_driver_2_image" x="756" y="312" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>
     <image id="team_1_driver_2_flag" inkscape:label="team_1_driver_2_flag" x="812" y="327" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="team_1_driver_2_name" inkscape:label="team_1_driver_2_name" class="dname" x="842" y="340">Driver Name</text>
+    <rect id="team_1_vertical_crop_point" inkscape:label="team_1_vertical_crop_point" x="48" y="644" width="1104" height="0" fill="none"/>
   </g>
   <!--  team block 2  -->
   <g id="team_2_group" inkscape:label="team_2_group">
@@ -145,6 +146,7 @@
     <image id="team_2_driver_2_image" inkscape:label="team_2_driver_2_image" x="756" y="380" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>
     <image id="team_2_driver_2_flag" inkscape:label="team_2_driver_2_flag" x="812" y="395" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="team_2_driver_2_name" inkscape:label="team_2_driver_2_name" class="dname" x="842" y="408">Driver Name</text>
+    <rect id="team_2_vertical_crop_point" inkscape:label="team_2_vertical_crop_point" x="48" y="712" width="1104" height="0" fill="none"/>
   </g>
   <!--  team block 3  -->
   <g id="team_3_group" inkscape:label="team_3_group">
@@ -158,6 +160,7 @@
     <image id="team_3_driver_2_image" inkscape:label="team_3_driver_2_image" x="756" y="448" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>
     <image id="team_3_driver_2_flag" inkscape:label="team_3_driver_2_flag" x="812" y="463" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="team_3_driver_2_name" inkscape:label="team_3_driver_2_name" class="dname" x="842" y="476">Driver Name</text>
+    <rect id="team_3_vertical_crop_point" inkscape:label="team_3_vertical_crop_point" x="48" y="780" width="1104" height="0" fill="none"/>
   </g>
   <!--  team block 4  -->
   <g id="team_4_group" inkscape:label="team_4_group">
@@ -172,6 +175,7 @@
     <image id="team_4_driver_2_image" inkscape:label="team_4_driver_2_image" x="756" y="516" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>
     <image id="team_4_driver_2_flag" inkscape:label="team_4_driver_2_flag" x="812" y="531" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="team_4_driver_2_name" inkscape:label="team_4_driver_2_name" class="dname" x="842" y="544">Driver Name</text>
+    <rect id="team_4_vertical_crop_point" inkscape:label="team_4_vertical_crop_point" x="48" y="848" width="1104" height="0" fill="none"/>
   </g>
   <!--  team block 5  -->
   <g id="team_5_group" inkscape:label="team_5_group">
@@ -185,6 +189,7 @@
     <image id="team_5_driver_2_image" inkscape:label="team_5_driver_2_image" x="756" y="584" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>
     <image id="team_5_driver_2_flag" inkscape:label="team_5_driver_2_flag" x="812" y="599" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="team_5_driver_2_name" inkscape:label="team_5_driver_2_name" class="dname" x="842" y="612">Driver Name</text>
+    <rect id="team_5_vertical_crop_point" inkscape:label="team_5_vertical_crop_point" x="48" y="916" width="1104" height="0" fill="none"/>
   </g>
   <!--  team block 6  -->
   <g id="team_6_group" inkscape:label="team_6_group">
@@ -199,6 +204,7 @@
     <image id="team_6_driver_2_image" inkscape:label="team_6_driver_2_image" x="756" y="652" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>
     <image id="team_6_driver_2_flag" inkscape:label="team_6_driver_2_flag" x="812" y="667" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="team_6_driver_2_name" inkscape:label="team_6_driver_2_name" class="dname" x="842" y="680">Driver Name</text>
+    <rect id="team_6_vertical_crop_point" inkscape:label="team_6_vertical_crop_point" x="48" y="984" width="1104" height="0" fill="none"/>
   </g>
   <!--  team block 7  -->
   <g id="team_7_group" inkscape:label="team_7_group">
@@ -212,6 +218,7 @@
     <image id="team_7_driver_2_image" inkscape:label="team_7_driver_2_image" x="756" y="720" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>
     <image id="team_7_driver_2_flag" inkscape:label="team_7_driver_2_flag" x="812" y="735" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="team_7_driver_2_name" inkscape:label="team_7_driver_2_name" class="dname" x="842" y="748">Driver Name</text>
+    <rect id="team_7_vertical_crop_point" inkscape:label="team_7_vertical_crop_point" x="48" y="1052" width="1104" height="0" fill="none"/>
   </g>
   <!--  team block 8  -->
   <g id="team_8_group" inkscape:label="team_8_group">
@@ -226,6 +233,7 @@
     <image id="team_8_driver_2_image" inkscape:label="team_8_driver_2_image" x="756" y="788" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>
     <image id="team_8_driver_2_flag" inkscape:label="team_8_driver_2_flag" x="812" y="803" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="team_8_driver_2_name" inkscape:label="team_8_driver_2_name" class="dname" x="842" y="816">Driver Name</text>
+    <rect id="team_8_vertical_crop_point" inkscape:label="team_8_vertical_crop_point" x="48" y="1120" width="1104" height="0" fill="none"/>
   </g>
   <!--  team block 9  -->
   <g id="team_9_group" inkscape:label="team_9_group">
@@ -239,6 +247,7 @@
     <image id="team_9_driver_2_image" inkscape:label="team_9_driver_2_image" x="756" y="856" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>
     <image id="team_9_driver_2_flag" inkscape:label="team_9_driver_2_flag" x="812" y="871" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="team_9_driver_2_name" inkscape:label="team_9_driver_2_name" class="dname" x="842" y="884">Driver Name</text>
+    <rect id="team_9_vertical_crop_point" inkscape:label="team_9_vertical_crop_point" x="48" y="1188" width="1104" height="0" fill="none"/>
   </g>
   <!--  team block 10  -->
   <g id="team_10_group" inkscape:label="team_10_group">
@@ -253,6 +262,7 @@
     <image id="team_10_driver_2_image" inkscape:label="team_10_driver_2_image" x="756" y="924" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>
     <image id="team_10_driver_2_flag" inkscape:label="team_10_driver_2_flag" x="812" y="939" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="team_10_driver_2_name" inkscape:label="team_10_driver_2_name" class="dname" x="842" y="952">Driver Name</text>
+    <rect id="team_10_vertical_crop_point" inkscape:label="team_10_vertical_crop_point" x="48" y="1256" width="1104" height="0" fill="none"/>
   </g>
   <!--  team block 11  -->
   <g id="team_11_group" inkscape:label="team_11_group">
@@ -266,16 +276,22 @@
     <image id="team_11_driver_2_image" inkscape:label="team_11_driver_2_image" x="756" y="992" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>
     <image id="team_11_driver_2_flag" inkscape:label="team_11_driver_2_flag" x="812" y="1007" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="team_11_driver_2_name" inkscape:label="team_11_driver_2_name" class="dname" x="842" y="1020">Driver Name</text>
+    <rect id="team_11_vertical_crop_point" inkscape:label="team_11_vertical_crop_point" x="48" y="1324" width="1104" height="0" fill="none"/>
   </g>
 
   <line x1="342" y1="300" x2="342" y2="1048" stroke="#262B33" stroke-width="1"/>
   <line x1="750" y1="300" x2="750" y2="1048" stroke="#262B33" stroke-width="1"/>
 
   <!-- ================= the reserve team =================
-       Removed in its entirety when the division fields no reserve drivers,
-       which is why it sits at the foot of the canvas: the canvas cannot
-       shrink with it, so a block that may vanish belongs where its absence
-       reads as margin. -->
+       Removed in its entirety when the division fields no reserve drivers.
+
+       It stands inside `footer_group` (2026-09-02), which the vertical crop
+       carries up whole. The canvas shortens to the team blocks the division
+       actually fills, and the reserves belong beneath them wherever that
+       falls — a lineup drawn short that lost its reserves off the bottom
+       would be a different sheet, not a shorter one. The note that used to
+       stand here said the canvas could not shrink, which is no longer so. -->
+  <g id="footer_group" inkscape:label="footer_group">
   <g id="reserve_group" inkscape:label="reserve_group">
     <line x1="48" y1="1088" x2="1152" y2="1088" stroke="#262B33" stroke-width="1"/>
     <image id="reserve_image" inkscape:label="reserve_image" x="48" y="1104" width="36" height="36" preserveAspectRatio="xMidYMid meet"/>
@@ -324,5 +340,6 @@
   </g>
 
   <text class="foot" x="48" y="1292">LEAGUE RACING BOT   ·   DIVISION LINEUP</text>
+  </g>
 
 </svg>

@@ -27,13 +27,16 @@ from utils.svg_fill import FillSpec, _path_rule, _translate_y, _translate_y_of, 
 
 TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
 
-#: Every shipped template that shortens itself, and the rows each declares.
+#: Every shipped template that shortens itself: the members each declares, and the prefix
+#: its collection is named for. The lineup joined them on 2026-09-02 — it repeats **teams**
+#: rather than rows, which is why the prefix is carried here rather than assumed.
 ROW_TEMPLATES = {
-    "standings_drivers_template.svg": 50,
-    "attendance_template.svg": 50,
-    "results_qualifying_template.svg": 22,
-    "results_race_template.svg": 22,
-    "standings_constructors_template.svg": 11,
+    "standings_drivers_template.svg": (50, "row"),
+    "attendance_template.svg": (50, "row"),
+    "results_qualifying_template.svg": (22, "row"),
+    "results_race_template.svg": (22, "row"),
+    "standings_constructors_template.svg": (11, "row"),
+    "lineup_template.svg": (11, "team"),
 }
 
 
@@ -389,7 +392,10 @@ def test_the_geometry_of_a_clip_is_not_shortened_with_the_canvas():
 
 @pytest.mark.parametrize(
     "name,rows",
-    sorted((n, r) for n, r in ROW_TEMPLATES.items() if n.startswith(("standings", "attendance"))),
+    sorted(
+        (n, r) for n, (r, _) in ROW_TEMPLATES.items()
+        if n.startswith(("standings", "attendance"))
+    ),
 )
 def test_a_shipped_grid_keeps_its_separators_clear_of_the_caption_band(name, rows):
     """The templates the fault was found on, drawn at two fifths of their rows."""
@@ -447,28 +453,31 @@ def test_a_translation_onto_a_bare_element_leaves_no_stray_space():
 # ── The shipped templates ─────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("name,rows", sorted(ROW_TEMPLATES.items()))
-def test_every_row_template_declares_a_contiguous_run_of_crop_points(name, rows):
+@pytest.mark.parametrize("name,rows,prefix", sorted(
+    (n, r, p) for n, (r, p) in ROW_TEMPLATES.items()))
+def test_every_row_template_declares_a_contiguous_run_of_crop_points(name, rows, prefix):
     root = etree.parse(str(TEMPLATES / name)).getroot()
     found = {
         int(m.group(1))
         for el in root.iter()
         if el.get("id")
-        for m in [re.match(r"^row_(\d+)_vertical_crop_point$", el.get("id"))]
+        for m in [re.match(rf"^{prefix}_(\d+)_vertical_crop_point$", el.get("id"))]
         if m
     }
     assert found == set(range(1, rows + 1))
 
 
-@pytest.mark.parametrize("name,rows", sorted(ROW_TEMPLATES.items()))
-def test_the_last_row_s_crop_point_stands_at_the_declared_canvas_height(name, rows):
+@pytest.mark.parametrize("name,rows,prefix", sorted(
+    (n, r, p) for n, (r, p) in ROW_TEMPLATES.items()))
+def test_the_last_row_s_crop_point_stands_at_the_declared_canvas_height(name, rows, prefix):
     """FR-026 — otherwise a full-size division is drawn short, and said to be."""
     root = etree.parse(str(TEMPLATES / name)).getroot()
-    point = root.xpath(f'//*[@id="row_{rows}_vertical_crop_point"]')[0]
+    point = root.xpath(f'//*[@id="{prefix}_{rows}_vertical_crop_point"]')[0]
     assert length(point.get("y")) == length(root.get("height"))
 
 
-@pytest.mark.parametrize("name,rows", sorted(ROW_TEMPLATES.items()))
+@pytest.mark.parametrize("name,rows", sorted(
+    (n, r) for n, (r, _) in ROW_TEMPLATES.items()))
 def test_every_row_template_carries_its_caption_band_in_a_footer_group(name, rows):
     """Without it the crop would cut the captions off the bottom of every short graphic."""
     root = etree.parse(str(TEMPLATES / name)).getroot()
@@ -485,3 +494,108 @@ def test_every_row_template_carries_its_caption_band_in_a_footer_group(name, row
         for el in root.iter()
         if el.get("class") == "foot" and el not in set(footer[0].iter())
     ], f"{name} draws a caption outside its footer_group, which the crop would cut off"
+
+
+# --------------------------------------------------------------------------
+# The lineup, which crops on its teams (2026-09-02)
+# --------------------------------------------------------------------------
+#
+# It declares eleven team blocks and a league fielding five was drawn on all eleven — six
+# blocks of empty canvas, the same waste every other sheet had stopped producing.
+#
+# What is different here is what rides up. The other templates carry a caption band; this one
+# carries the **reserve roster** as well, which is data rather than chrome. It belongs beneath
+# the teams wherever they end: a lineup drawn short that lost its reserves off the bottom
+# would be a different sheet rather than a shorter one.
+
+LINEUP = "lineup_template.svg"
+LINEUP_BLOCKS = 11
+LINEUP_PITCH = 68
+
+
+def _lineup(teams: int, *, reserves: bool):
+    """The shipped lineup, filled for *teams* teams, as the projection fills it."""
+    from models.image_catalogues import row_crop_fields
+    from utils.svg_document import FieldIndex
+
+    root = etree.parse(str(TEMPLATES / LINEUP)).getroot()
+    declared = FieldIndex(root).declared()
+    remove = [f"team_{z}_group" for z in range(teams + 1, LINEUP_BLOCKS + 1)]
+    text = {f"team_{z}_name": f"Team {z}" for z in range(1, teams + 1)}
+    if reserves:
+        text["reserve_name"] = "Reserve"
+        text["reserve_driver_1_name"] = "A Driver"
+    else:
+        remove.append("reserve_group")
+    result = fill(
+        FillSpec(
+            root=root,
+            image_type="lineup_template",
+            text=text,
+            remove=remove,
+            **row_crop_fields(
+                declared, drawn=teams, capacity=LINEUP_BLOCKS, prefix="team"
+            ),
+        )
+    )
+    return etree.fromstring(result.svg)
+
+
+def _drawn_y(root, field_id: str) -> float | None:
+    """Where *field_id* lands, following the translate the crop left on it."""
+    found = root.xpath(f'//*[@id="{field_id}"]')
+    if not found:
+        return None
+    node = found[0]
+    total = length(node.get("y")) or 0.0
+    while node is not None:
+        shift = _translate_y_of(node.get("transform"))
+        if shift:
+            total += shift
+        node = node.getparent()
+    return total
+
+
+@pytest.mark.parametrize("teams,height", [(11, 1324), (8, 1120), (5, 916), (3, 780)])
+def test_the_lineup_is_cut_to_the_teams_the_division_fields(teams, height):
+    root = _lineup(teams, reserves=True)
+    assert int(root.get("height")) == height
+
+
+def test_the_lineup_sheds_exactly_one_block_per_team_it_does_not_field():
+    heights = [int(_lineup(n, reserves=True).get("height")) for n in (11, 10, 9)]
+    assert [a - b for a, b in zip(heights, heights[1:])] == [LINEUP_PITCH, LINEUP_PITCH]
+
+
+@pytest.mark.parametrize("teams", [11, 8, 5, 3])
+def test_the_reserve_roster_stays_beneath_the_last_team(teams):
+    """The whole point of the footer group here: the reserves are not chrome."""
+    root = _lineup(teams, reserves=True)
+    last_team_bottom = 300 + teams * LINEUP_PITCH
+    assert _drawn_y(root, "reserve_image") - last_team_bottom == 56
+
+
+@pytest.mark.parametrize("teams", [11, 5])
+def test_the_reserve_roster_is_drawn_inside_the_cut_canvas(teams):
+    root = _lineup(teams, reserves=True)
+    assert _drawn_y(root, "reserve_driver_1_name") < int(root.get("height"))
+
+
+def test_a_division_fielding_no_reserve_still_crops_on_its_teams():
+    """The block leaves and its space reads as margin, as the template always intended."""
+    root = _lineup(5, reserves=False)
+    assert int(root.get("height")) == 916
+    assert root.xpath('//*[@id="reserve_group"]') == []
+
+
+def test_the_seat_separators_stop_where_the_teams_do():
+    """They are ruled down every block and must not run on to the cut edge."""
+    root = _lineup(5, reserves=True)
+    verticals = [
+        el for el in root.iter()
+        if isinstance(el.tag, str)  # comments carry a callable tag
+        and etree.QName(el).localname == "line"
+        and el.get("x1") == el.get("x2")
+    ]
+    assert verticals, "the lineup rules no separator down its seats"
+    assert all(length(el.get("y2")) <= 300 + 5 * LINEUP_PITCH + 1 for el in verticals)

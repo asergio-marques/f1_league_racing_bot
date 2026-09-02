@@ -109,7 +109,12 @@ def test_no_id_bears_a_team_name():
 
     assert not any("red_bull" in name or "ferrari" in name for name in ids)
     assert all(
-        name.startswith(("team_1", "team_2", "team_3", "reserve", "division", "season"))
+        name.startswith(
+            # `footer_group` joined the catalogue on 2026-09-02, when the lineup began
+            # cropping to the teams a division fields. It names a band of the layout,
+            # which is what every id here does and what none of them names a league by.
+            ("team_1", "team_2", "team_3", "reserve", "division", "season", "footer")
+        )
         for name in ids
     )
 
