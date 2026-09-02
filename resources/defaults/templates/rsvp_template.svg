@@ -41,6 +41,14 @@
        its own, no separator being drawn between two fields either of which
        may go: chrome must not survive the emptying of what it divides.
 
+       The heading keeps the module's shared rhythm: the round label, the
+       title 48 below it, the line under the title 32 below that, and the rule
+       32 below again. This file and the forecasts had drifted to 62 between
+       the title and the line under it, left from when the title held the
+       circuit name and was allowed to wrap to two lines; the grand prix name
+       that replaced it is short, so the title is drawn on one line like every
+       other template's (2026-09-02).
+
        Mandatory : division_name, round_number, race_name, round_format,
                    round_date, round_time, session_<x>_group,
                    session_<x>_name
@@ -58,8 +66,8 @@
       .phase    { font-size:16px; fill:#8A94A3; letter-spacing:.16em; font-weight:600 }
       .roundlbl { font-size:17px; fill:#8A94A3; letter-spacing:.20em; font-weight:600 }
       .roundnum { font-size:17px; fill:#E8113C; letter-spacing:.20em; font-weight:700 }
-      .track    { font-size:42px; line-height:1.05; inline-size:800px; max-lines:2; fill:#F2F5F8; font-weight:700 }
-      .sub      { font-size:19px; fill:#8A94A3 }
+      .track    { font-size:42px; inline-size:800px; max-lines:1; fill:#F2F5F8; font-weight:700 }
+      .sub      { font-size:19px; fill:#8A94A3; inline-size:800px; max-lines:1 }
       .celllbl  { font-size:12px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
       .cellval  { font-size:24px; line-height:1.1; fill:#F2F5F8; font-weight:700 }
       .note     { font-size:15px; fill:#8A94A3 }
@@ -88,12 +96,12 @@
   <rect x="0" y="93" width="1200" height="3" fill="#E8113C"/>
 
   <!--  round block  -->
-  <text class="roundlbl" x="48" y="124">
+  <text class="roundlbl" x="48" y="140">
     <tspan>ROUND&#160;</tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">1</tspan>
   </text>
   <text id="race_name" inkscape:label="race_name" class="track" x="48" y="188">Grand Prix Name</text>
   <g id="track_name_group" inkscape:label="track_name_group">
-    <text id="track_name" inkscape:label="track_name" class="sub" x="48" y="250" style="line-height:1.1;inline-size:800px;max-lines:2">Track Name</text>
+    <text id="track_name" inkscape:label="track_name" class="sub" x="48" y="220">Track Name</text>
   </g>
 
   <!--  The plate is inside the group with the image it frames. A round of the
@@ -102,11 +110,17 @@
   <!--  the round's country flag.  Optional and independent of the circuit map beside
         it: a league may declare either, both, or neither (Constitution XIV.13).  The
         flag class is authored at 3:2 on every template, the track class at 1:1, and the
-        two deliberately differ (XIV.6).  -->
+        two deliberately differ (XIV.6).
+
+        The two **plates** are the same 136 square all the same (2026-09-02). The
+        artwork inside them cannot match — one is 3:2 and the other 1:1 — but the
+        frames are what a reader sees side by side, and a shorter frame beside a
+        taller one read as a mistake rather than as two shapes. The flag sits
+        centred in its plate; the map fills its own.  -->
   <g id="track_flag_group" inkscape:label="track_flag_group">
-    <rect x="864" y="100" width="136" height="97" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <rect x="864" y="100" width="136" height="136" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
     <image id="track_flag" inkscape:label="track_flag"
-           x="874" y="110" width="116" height="77.3333" preserveAspectRatio="xMidYMid meet"/>
+           x="874" y="129.3333" width="116" height="77.3333" preserveAspectRatio="xMidYMid meet"/>
   </g>
 
   <g id="track_image_group" inkscape:label="track_image_group">

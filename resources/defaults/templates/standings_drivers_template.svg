@@ -81,6 +81,14 @@
        a subtitle for the table, which it is not. `race_name` stays in the
        catalogue for a league that wants it, and this file simply declines it.
 
+       The two heading lines are set 12px lower than the other templates set
+       theirs (2026-09-02). Those carry a third line — the grand prix name —
+       under the title, which fills the band down to the rule at y=252. This
+       sheet withdrew that line, and the pair left behind sat against the top
+       of the band with a hole beneath them. The band itself is unchanged, so
+       the rule and everything under it still line up with every other
+       template; only the text inside it is re-centred.
+
        Mandatory : division_name, round_number, result_status,
                    row_<x>_group, row_<x>_position, row_<x>_driver_name,
                    row_<x>_team_name, row_<x>_team_image, row_<x>_points,
@@ -179,10 +187,10 @@
   <rect x="0" y="93" width="1728" height="3" fill="#E8113C"/>
 
   <!--  round block  -->
-  <text class="roundlbl" x="48" y="140">
+  <text class="roundlbl" x="48" y="152">
     <tspan>ROUND </tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">10</tspan>
   </text>
-  <text class="track" x="48" y="188">Driver Standings</text>
+  <text class="track" x="48" y="200">Driver Standings</text>
   <line x1="48" y1="252" x2="1680" y2="252" stroke="#262B33" stroke-width="1"/>
 
   <!--  column headers  -->

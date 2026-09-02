@@ -132,7 +132,7 @@
 
   <!--  fastest lap of the session: the holder of the bonus, not a column  -->
   <g id="fastest_lap_group" inkscape:label="fastest_lap_group">
-    <rect x="792" y="108" width="360" height="120" rx="14" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <rect x="792" y="108" width="360" height="120" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
     <text class="statlbl" x="1128" y="137" text-anchor="end">FASTEST LAP</text>
     <text id="fastest_lap_driver_name" inkscape:label="fastest_lap_driver_name" class="fldrv" x="1128" y="173" text-anchor="end">Driver Name</text>
     <text id="fastest_lap_time" inkscape:label="fastest_lap_time" class="fltime" x="1128" y="207" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>

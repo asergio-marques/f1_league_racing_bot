@@ -65,6 +65,14 @@
        a subtitle for the table, which it is not. `race_name` stays in the
        catalogue for a league that wants it, and this file simply declines it.
 
+       The two heading lines are set 12px lower than the other templates set
+       theirs (2026-09-02). Those carry a third line — the grand prix name —
+       under the title, which fills the band down to the rule at y=252. This
+       sheet withdrew that line, and the pair left behind sat against the top
+       of the band with a hole beneath them. The band itself is unchanged, so
+       the rule and everything under it still line up with every other
+       template; only the text inside it is re-centred.
+
        Mandatory : division_name, round_number, row_<x>_group,
                    row_<x>_driver_name, row_<x>_points,
                    round_<z>_number (of every round declared)
@@ -125,17 +133,17 @@
   <rect x="0" y="93" width="1200" height="3" fill="#E8113C"/>
 
   <!--  round block  -->
-  <text class="roundlbl" x="48" y="140">
+  <text class="roundlbl" x="48" y="152">
     <tspan>AFTER ROUND&#160;</tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">9</tspan>
   </text>
-  <text class="track" x="48" y="188">Attendance</text>
+  <text class="track" x="48" y="200">Attendance</text>
 
   <!--  the one limit, removable in its entirety  -->
   <g id="limit_group" inkscape:label="limit_group">
-    <rect x="1020" y="110" width="132" height="100" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
-    <text class="statlbl" x="1086" y="146" text-anchor="middle"
+    <rect x="1020" y="122" width="132" height="100" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <text class="statlbl" x="1086" y="158" text-anchor="middle"
       ><tspan id="limit_label" inkscape:label="limit_label">SACKED AT</tspan></text>
-    <text class="statval" x="1086" y="192" text-anchor="middle" style="font-variant-numeric:tabular-nums"
+    <text class="statval" x="1086" y="204" text-anchor="middle" style="font-variant-numeric:tabular-nums"
       ><tspan id="limit_value" inkscape:label="limit_value">12</tspan
       ><tspan class="statunit">&#160;PTS</tspan></text>
   </g>
