@@ -2,8 +2,9 @@
 
 Test mode and a real roster may not share a server: switching test mode off deletes every
 fake driver on it without confirmation, and while it is on the signup and placement paths
-refuse real drivers outright. So the toggle is guarded on the way *in* only — leaving test
-mode is never refused.
+refuse real drivers outright. An open signup window is refused on the same footing — its
+button would reject every driver who pressed it. So the toggle is guarded on the way *in*
+only — leaving test mode is never refused.
 
 The callback runs against a migrated database with Discord stubbed, and the guards are
 unwrapped the way the other cog suites unwrap them.
@@ -22,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from cogs import test_mode_cog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.config_service import ConfigService  # noqa: E402
+from services.signup_module_service import SignupModuleService  # noqa: E402
 
 SERVER_ID = 7272
 
@@ -81,6 +83,15 @@ async def _flag(db_path: str) -> bool:
     return bool(row["test_mode_active"])
 
 
+async def _open_signups(db_path: str) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE signup_module_config SET signups_open = 1 WHERE server_id = ?",
+            (SERVER_ID,),
+        )
+        await db.commit()
+
+
 async def _add_driver(db_path: str, user_id: str, state: str, *, test: bool = False) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
@@ -105,6 +116,11 @@ async def db_path(tmp_path):
             "VALUES (?, 1, 2, 3, 0)",
             (SERVER_ID,),
         )
+        await db.execute(
+            "INSERT INTO signup_module_config (server_id, signup_channel_id, base_role_id, "
+            "signed_up_role_id, signups_open) VALUES (?, 11, 12, 13, 0)",
+            (SERVER_ID,),
+        )
         await db.commit()
     return path
 
@@ -115,6 +131,7 @@ def cog(db_path):
         SimpleNamespace(
             db_path=db_path,
             config_service=ConfigService(db_path),
+            signup_module_service=SignupModuleService(db_path),
             output_router=SimpleNamespace(post_log=AsyncMock()),
         )
     )
@@ -170,14 +187,60 @@ class TestEnabling:
         assert "**2** real driver" in interaction.reply
 
 
+class TestAnOpenSignupWindow:
+    async def test_it_refuses_the_toggle(self, cog, db_path):
+        await _open_signups(db_path)
+
+        interaction = await _toggle(cog)
+
+        assert "signups are open" in interaction.reply
+        assert "`/signup close`" in interaction.reply
+
+    async def test_the_flag_is_left_alone(self, cog, db_path):
+        await _open_signups(db_path)
+
+        await _toggle(cog)
+
+        assert await _flag(db_path) is False
+
+    async def test_the_window_is_not_closed_for_them(self, cog, db_path):
+        """A flag flip must not post a public notice in a channel a league reads."""
+        await _open_signups(db_path)
+
+        await _toggle(cog)
+
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT signups_open FROM signup_module_config WHERE server_id = ?",
+                (SERVER_ID,),
+            )
+            row = await cursor.fetchone()
+        assert bool(row["signups_open"]) is True
+
+    async def test_a_closed_window_does_not_stand_in_the_way(self, cog, db_path):
+        interaction = await _toggle(cog)
+
+        assert "**enabled**" in interaction.reply
+
+    async def test_a_server_without_the_signup_module_is_not_held_up(self, cog, db_path):
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "DELETE FROM signup_module_config WHERE server_id = ?", (SERVER_ID,)
+            )
+            await db.commit()
+
+        interaction = await _toggle(cog)
+
+        assert "**enabled**" in interaction.reply
+
+
 # ── Leaving ───────────────────────────────────────────────────────────────
 
 
 class TestLeaving:
-    async def test_a_real_driver_does_not_hold_a_server_in_test_mode(
-        self, cog, db_path, monkeypatch
-    ):
+    async def test_nothing_holds_a_server_in_test_mode(self, cog, db_path, monkeypatch):
         """The guard is on the way in only — a server must always be able to leave."""
+        await _open_signups(db_path)
         async with get_connection(db_path) as db:
             await db.execute(
                 "UPDATE server_configs SET test_mode_active = 1 WHERE server_id = ?",

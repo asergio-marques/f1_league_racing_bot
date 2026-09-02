@@ -499,6 +499,8 @@ No parameters. Flips test mode on/off; state persists across bot restarts.
 
 **Test mode cannot be enabled while your league has real drivers.** A server is either running a real league or being tested, never both, and the command refuses — naming how many drivers stand in the way — if any driver profile is signed up, unassigned, assigned or banned. Former drivers who have left do not count. Turning test mode *off* is never refused, whatever the server holds.
 
+**Nor while your signup window is open.** Nobody real may sign up under test mode, so the button would refuse everyone who pressed it; close the window with `/signup close` first. The command does not close it for you — that would post a public notice in your signup channel off the back of a flag flip.
+
 Enabling it seeds the **Standard** and **Half Points** points configurations onto the current season if none are attached. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**.
 
 #### `/test-mode nationality` — Toggle nationality for fake drivers
@@ -578,7 +580,7 @@ Opens a modal for setting the RSVP status of every test driver in the division's
 |-----------|------|----------|-------------|
 | `division` | String | ✅ | Division name; the division must be in the active season and have an open RSVP |
 
-> Turning test mode **off** deletes every fake driver on the server, across all divisions. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached, and is refused outright while the server holds real drivers.
+> Turning test mode **off** deletes every fake driver on the server, across all divisions. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached, and is refused outright while the server holds real drivers or its signup window is open.
 
 > While test mode is on, no real driver may sign up or be placed: the Sign Up button, `/signup open` and `/driver assign` all refuse them. Fake drivers are unaffected.
 

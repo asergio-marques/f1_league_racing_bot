@@ -150,7 +150,7 @@ Both parameters are optional.
 
 The bot checks things in order and stops at the first problem: test mode must be off, the module must be configured, the window must not already be open, all three of channel and roles must be set, there must be at least one slot, the close time must parse and be in the future, and every track ID must exist.
 
-> **Test mode blocks the window.** No real driver may sign up while the server is in test mode — the Sign Up button refuses them too — so `/test-mode toggle` it off before you open. Do your testing first, as Step 9 describes: once a real driver has signed up, test mode cannot be turned back on.
+> **Test mode blocks the window, and an open window blocks test mode.** No real driver may sign up while the server is in test mode — the Sign Up button refuses them too — so `/test-mode toggle` it off before you open. It will not go back on until you have closed the window again with `/signup close`, and not at all once a real driver has signed up. Do your testing first, as Step 9 describes.
 
 When it goes through, the bot posts a green **Driver Signups Are Open!** message in your signup channel listing your slots, the tracks, the time type, whether a screenshot is needed, whether nationality is asked, and the auto-close time if you set one. Underneath is the **Sign Up** button, and the message pings your base role.
 
@@ -266,7 +266,7 @@ Every assignment and removal deletes the division's lineup message and posts a f
 
 You will want to see the wizard before your league does. Test mode lets you seat fake drivers and walk the flow without waiting on anybody — see [Test mode](test-mode.md).
 
-**Do this before Step 5, not after.** Test mode and a real league cannot share a server: the bot refuses to turn test mode on once you hold a real driver — anyone signed up, unassigned, assigned or banned — and while it is on, nobody real can sign up or be placed. Former drivers from a finished season do not stand in the way, so you can test again between seasons. Turning test mode off deletes every fake driver, which is the tidy-up you want before opening the real window.
+**Do this before Step 5, not after.** Test mode and a real league cannot share a server: the bot refuses to turn test mode on while your signup window is open, or once you hold a real driver — anyone signed up, unassigned, assigned or banned — and while it is on, nobody real can sign up or be placed. Former drivers from a finished season do not stand in the way, so you can test again between seasons. Turning test mode off deletes every fake driver, which is the tidy-up you want before opening the real window.
 
 The one thing you cannot fake is a second person pressing the button, so it is worth asking one other admin to run a signup through end to end before you announce it.
 

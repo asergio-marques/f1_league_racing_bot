@@ -23,6 +23,8 @@ There is no on/off parameter — it flips, and the new state is persisted to `se
 
 **A server holding real drivers cannot enter test mode.** Enabling is refused, naming the count, while any real driver profile stands at anything other than Not Signed Up — mid-signup, unassigned, assigned or banned. A profile retained at Not Signed Up is a former driver who has left, and does not stand in the way, so a league between seasons can still test. Leaving test mode is never refused, whatever the server holds.
 
+**An open signup window is refused too**, on the same footing as `/signup open` refusing under test mode: a window left open would have its button posted and pinging the base role while rejecting every driver who pressed it. Close it with `/signup close` first. The toggle does not close it for you — that posts a public notice in a channel a league reads, which is not something a flag flip should do.
+
 **And while test mode is on, no real driver may join.** The Sign Up button and `/signup open` both refuse, and `assign_driver` — the single choke point every placement passes through, so `/driver assign` and attendance's autoreserve alike — refuses any driver that is not a fake one. The two rules together keep a real roster and a test roster from ever mixing, which matters because leaving test mode deletes the fake half without asking.
 
 Two side effects on **enable**, both aimed at getting to a testable season quickly:

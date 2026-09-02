@@ -48,6 +48,7 @@ When test mode is enabled, it shall be possible for a system administrator to ma
 A server shall be either running a real league or under test, never both.
 - Test mode shall not be enabled while the server holds a real driver whose state is anything other than Not Signed Up. A driver profile retained at Not Signed Up is a former driver and shall not stand in the way.
     - The refusal shall name how many real drivers the server holds, and the state of test mode shall be left unchanged.
+- Test mode shall not be enabled while the signup window is open. The refusal shall direct the administrator to close the window, and the window shall be left open — enabling test mode shall not close it.
 - Test mode shall never be refused on the way out: a server shall always be able to leave it, whatever it holds.
 - While test mode is enabled:
     - A real driver shall not begin a signup. The sign-up button shall refuse them, and the "signup open" command shall refuse to open a signup window.

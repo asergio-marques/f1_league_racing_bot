@@ -13,7 +13,8 @@ APScheduler triggers:
 
 All commands are gated by @channel_guard (interaction role + channel).
 Every command but toggle additionally requires test mode to be active, and toggle
-itself refuses to *enable* test mode while the server holds real drivers.
+itself refuses to *enable* test mode while the server holds real drivers or its
+signup window is open.
 """
 
 from __future__ import annotations
@@ -69,6 +70,12 @@ class TestModeCog(commands.Cog):
         signup and placement paths refuse real drivers outright, so a league that enabled
         it mid-season would find itself unable to run. Switching test mode *off* is never
         refused — a server must always be able to leave it.
+
+        An open signup window is refused for the same reason. `/signup open` will not run
+        under test mode, and it would be inconsistent to leave a window already open —
+        one whose button is posted and pinging the base role — silently rejecting every
+        driver who pressed it. The window is not closed here: that posts a public notice
+        in a channel a league reads, which is not something a flag flip should do.
         """
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
             interaction.guild_id
@@ -84,6 +91,19 @@ class TestModeCog(commands.Cog):
                     f"**{real_drivers}** real driver(s).\n"
                     "Test mode is for an empty league — disabling it deletes every fake "
                     "driver, and while it is on no real driver may sign up or be placed.",
+                    ephemeral=True,
+                )
+                return
+
+            signups_open = await self.bot.signup_module_service.get_window_state(  # type: ignore[attr-defined]
+                interaction.guild_id
+            )
+            if signups_open:
+                await interaction.response.send_message(
+                    "⛔ Test mode cannot be enabled while signups are open.\n"
+                    "No real driver may sign up under test mode, so the button would "
+                    "refuse everyone who pressed it. Close the window with "
+                    "`/signup close` first.",
                     ephemeral=True,
                 )
                 return
