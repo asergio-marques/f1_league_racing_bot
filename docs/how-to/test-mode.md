@@ -21,6 +21,10 @@ This is a developer and maintainer document. For configuring a league, see [Conf
 
 There is no on/off parameter — it flips, and the new state is persisted to `server_configs.test_mode_active`, so it survives a restart. Every command below refuses unless the flag is set.
 
+**A server holding real drivers cannot enter test mode.** Enabling is refused, naming the count, while any real driver profile stands at anything other than Not Signed Up — mid-signup, unassigned, assigned or banned. A profile retained at Not Signed Up is a former driver who has left, and does not stand in the way, so a league between seasons can still test. Leaving test mode is never refused, whatever the server holds.
+
+**And while test mode is on, no real driver may join.** The Sign Up button and `/signup open` both refuse, and `assign_driver` — the single choke point every placement passes through, so `/driver assign` and attendance's autoreserve alike — refuses any driver that is not a fake one. The two rules together keep a real roster and a test roster from ever mixing, which matters because leaving test mode deletes the fake half without asking.
+
 Two side effects on **enable**, both aimed at getting to a testable season quickly:
 
 - Where a season is in SETUP or ACTIVE, **Standard** and **Half Points** are created and attached unless a config of that exact name is already linked. This runs unconditionally — a season already carrying configurations of its own gains these two on top of them, rather than being left alone.
@@ -178,7 +182,7 @@ Nothing a preview does is written back, so previewing at any point in the order 
 
 ## A workable order
 
-1. `/test-mode toggle` — before `/season approve`, so the points configurations get seeded.
+1. `/test-mode toggle` — before `/season approve`, so the points configurations get seeded, and before any real driver signs up, since a server holding one is refused.
 2. Build and approve a season as normal.
 3. `/test-mode roster add` until each division is seated — with a `nationality` on each if you mean to look at the graphics. `/test-mode roster list` to collect the mention strings.
 4. `/test-mode advance` repeatedly, checking each posted message as it appears.

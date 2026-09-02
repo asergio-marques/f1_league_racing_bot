@@ -123,6 +123,17 @@ class SignupButtonView(discord.ui.View):
         server_id: int = interaction.guild.id
         discord_user_id = str(interaction.user.id)
 
+        # A real driver never joins a server that is under test: test mode and a real
+        # league may not share one, and leaving test mode deletes every fake driver.
+        server_cfg = await bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
+        if server_cfg is not None and server_cfg.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ Signups are closed while this server is in test mode. "
+                "Ask an admin to turn it off.",
+                ephemeral=True,
+            )
+            return
+
         profile = await bot.driver_service.get_profile(server_id, discord_user_id)  # type: ignore[attr-defined]
         if profile is not None and profile.driver_state != DriverState.NOT_SIGNED_UP:
             _IN_PROGRESS_STATES = {
@@ -1240,6 +1251,18 @@ class SignupCog(commands.Cog):
         close_time: str | None = None,
     ) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        # Refused under test mode, for the same reason the Sign Up button is: no real
+        # driver may sign up while the server is under test, so a window opened now
+        # would be one nobody could use.
+        server_cfg = await self.bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
+        if server_cfg is not None and server_cfg.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ Signups cannot be opened while test mode is active. "
+                "Turn it off with `/test-mode toggle` first.",
+                ephemeral=True,
+            )
+            return
 
         cfg = await self.bot.signup_module_service.get_config(server_id)
         if cfg is None:

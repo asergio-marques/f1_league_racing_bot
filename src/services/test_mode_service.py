@@ -1,8 +1,9 @@
 """test_mode_service — Test mode state management and phase queue.
 
-Provides four async functions consumed by TestModeCog:
+Provides five async functions consumed by TestModeCog:
   - toggle_test_mode:             flip the test_mode_active flag in server_configs
   - toggle_test_mode_nationality: flip whether mock drivers carry a nationality
+  - count_live_real_drivers:      how many real drivers stand in the way of enabling test mode
   - get_next_pending_phase:       find the earliest un-executed phase across all rounds
   - build_review_summary:         format a full season/division/round status string
 """
@@ -94,6 +95,30 @@ async def toggle_test_mode_nationality(server_id: int, db_path: str) -> bool:
         )
         return False
     return bool(row["test_mode_nationality_required"])
+
+
+async def count_live_real_drivers(server_id: int, db_path: str) -> int:
+    """Return how many *live* real drivers this server holds.
+
+    A live real driver is a driver_profiles row with is_test_driver = 0 whose state is
+    anything but NOT_SIGNED_UP: someone mid-signup, unassigned, assigned or banned. A row
+    sitting at NOT_SIGNED_UP is a retained former driver — the profile of someone who has
+    left, kept only for their history — and is not in the league, so it does not count.
+
+    Test mode and a real league may not share a server: toggling test mode off deletes
+    every fake driver on it, unscoped and unconfirmed, and a mixed roster corrupts the
+    standings, the attendance sheets and the lineup graphics alike. This count is what
+    /test-mode toggle refuses on.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS n FROM driver_profiles "
+            "WHERE server_id = ? AND is_test_driver = 0 AND current_state != 'NOT_SIGNED_UP'",
+            (server_id,),
+        )
+        row = await cursor.fetchone()
+
+    return int(row["n"]) if row is not None else 0
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,8 @@ APScheduler triggers:
   /test-mode rsvp …            — set the RSVP status of fake drivers
 
 All commands are gated by @channel_guard (interaction role + channel).
-Every command but toggle additionally requires test mode to be active.
+Every command but toggle additionally requires test mode to be active, and toggle
+itself refuses to *enable* test mode while the server holds real drivers.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from discord.ext import commands
 from services.test_mode_service import (
     toggle_test_mode,
     toggle_test_mode_nationality,
+    count_live_real_drivers,
     get_next_pending_phase,
     build_review_summary,
 )
@@ -60,6 +62,32 @@ class TestModeCog(commands.Cog):
     @channel_guard
     @admin_only
     async def toggle(self, interaction: discord.Interaction) -> None:
+        """Flip test mode, refusing to enable it while the server holds real drivers.
+
+        Test mode may not be switched on over a real league: disabling it again deletes
+        every fake driver on the server without confirmation, and while it is on the
+        signup and placement paths refuse real drivers outright, so a league that enabled
+        it mid-season would find itself unable to run. Switching test mode *off* is never
+        refused — a server must always be able to leave it.
+        """
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is not None and not config.test_mode_active:
+            real_drivers = await count_live_real_drivers(
+                interaction.guild_id,
+                self.bot.db_path,  # type: ignore[attr-defined]
+            )
+            if real_drivers:
+                await interaction.response.send_message(
+                    f"⛔ Test mode cannot be enabled while this server has "
+                    f"**{real_drivers}** real driver(s).\n"
+                    "Test mode is for an empty league — disabling it deletes every fake "
+                    "driver, and while it is on no real driver may sign up or be placed.",
+                    ephemeral=True,
+                )
+                return
+
         new_state = await toggle_test_mode(
             interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]

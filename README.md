@@ -497,6 +497,8 @@ Test mode drives the season's scheduled events on demand, without waiting for th
 
 No parameters. Flips test mode on/off; state persists across bot restarts.
 
+**Test mode cannot be enabled while your league has real drivers.** A server is either running a real league or being tested, never both, and the command refuses — naming how many drivers stand in the way — if any driver profile is signed up, unassigned, assigned or banned. Former drivers who have left do not count. Turning test mode *off* is never refused, whatever the server holds.
+
 Enabling it seeds the **Standard** and **Half Points** points configurations onto the current season if none are attached. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**.
 
 #### `/test-mode nationality` — Toggle nationality for fake drivers
@@ -576,7 +578,9 @@ Opens a modal for setting the RSVP status of every test driver in the division's
 |-----------|------|----------|-------------|
 | `division` | String | ✅ | Division name; the division must be in the active season and have an open RSVP |
 
-> Turning test mode **off** deletes every fake driver on the server, across all divisions. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached.
+> Turning test mode **off** deletes every fake driver on the server, across all divisions. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached, and is refused outright while the server holds real drivers.
+
+> While test mode is on, no real driver may sign up or be placed: the Sign Up button, `/signup open` and `/driver assign` all refuse them. Fake drivers are unaffected.
 
 See [Testing with test mode](docs/how-to/test-mode.md) for how these fit together.
 
@@ -696,6 +700,8 @@ Places an Unassigned driver into a specific team seat within a division. Require
 **When roles are granted depends on the season state.** For an **ACTIVE** season the division role and the team role (if configured via `/team add`) are granted immediately. For a **SETUP** season no roles are granted at assignment; they are granted in bulk to every placed driver at `/season approve`.
 
 A driver may hold at most one seat per division. Non-Reserve teams run out of seats; the Reserve team always has room.
+
+Refused while test mode is active: a real driver is never seated in a division under test. Fake drivers added by `/test-mode roster add` are unaffected.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -888,7 +894,7 @@ No parameters.
 | `track_ids` | String | — | Space- or comma-separated track IDs for required lap times (e.g. `01 03 12`). Omit to require no specific tracks. |
 | `close_time` | String | — | Auto-close instant as an ISO 8601 UTC datetime (e.g. `2026-09-01T20:00:00`). Must be in the future; a value with no timezone is read as UTC. Omit to leave the window open until closed by hand. |
 
-Refused unless the signup channel, base role and completion role are all set and at least one availability time slot exists. Opening with no `track_ids` collects no lap times, so approved drivers have no total to seed on.
+Refused unless the signup channel, base role and completion role are all set and at least one availability time slot exists. Also refused while test mode is active — no real driver may sign up under test mode, so the window would be one nobody could use. Opening with no `track_ids` collects no lap times, so approved drivers have no total to seed on.
 
 #### `/signup close` — Close the signup window
 *Access: Trusted admin*
