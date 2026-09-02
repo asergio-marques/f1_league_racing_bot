@@ -18,6 +18,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from models.image_catalogues import (  # noqa: E402
+    DIVISION_LOGO_ASSET,
+    DIVISION_LOGO_FIELD,
     CATALOGUES,
     catalogue_for,
     sibling_fields_declared,
@@ -52,6 +54,8 @@ EXPECTED_OPTIONAL = {
     "session_name_group",
     "driver_flag",
     "team_image",
+    # Every catalogue admits one (2026-09-02). No template the bot ships declares the slot.
+    DIVISION_LOGO_FIELD,
 }
 
 
@@ -86,7 +90,13 @@ def test_session_name_is_mandatory_though_it_may_be_drawn_empty():
 
 
 def test_the_two_image_fields_name_their_asset_classes():
-    assert _catalogue().assets == {"driver_flag": "flag", "team_image": "team"}
+    # `division_logo` is on every catalogue (2026-09-02); the two named here are the
+    # verdict graphic's own.
+    assert _catalogue().assets == {
+        "driver_flag": "flag",
+        "team_image": "team",
+        DIVISION_LOGO_FIELD: DIVISION_LOGO_ASSET,
+    }
 
 
 def test_no_collection_of_any_kind_is_declared():

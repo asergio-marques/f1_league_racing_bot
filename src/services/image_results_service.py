@@ -21,7 +21,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from models.image_catalogues import CapacityError, catalogue_for, row_crop_fields
+from models.image_catalogues import (
+    DIVISION_LOGO_ASSET,
+    DIVISION_LOGO_FIELD,
+    CapacityError,
+    catalogue_for,
+    row_crop_fields,
+)
 from models.points_config import SessionType
 from utils.results_formatter import (
     NOT_APPLICABLE,
@@ -369,6 +375,10 @@ def build_fill_spec(
             empty.append(field_id)
 
     put("division_name", drawing.division_name)
+
+    # The division's logo, where a league's own template declares the slot (2026-09-02).
+    if DIVISION_LOGO_FIELD in declared:
+        image_data[DIVISION_LOGO_FIELD] = (DIVISION_LOGO_ASSET, drawing.division_name)
     put("round_number", drawing.round_number)
     put("race_name", drawing.race_name)
     put("session_name", drawing.session_name)

@@ -18,7 +18,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from models.image_catalogues import (  # noqa: E402
+from models.image_catalogues import (
+    DIVISION_LOGO_ASSET,
+    DIVISION_LOGO_FIELD,  # noqa: E402
     ATTENDANCE_CATALOGUE,
     RSVP_CATALOGUE,
     CapacityError,
@@ -65,6 +67,8 @@ def test_the_sheets_top_level_fields_are_exactly_the_wip_specs():
         # The band beneath the rows, carried up when the sheet is cropped to the drivers
         # it actually holds (XIV.2, v7.1.0).
         "footer_group",
+        # Every catalogue admits one (2026-09-02); no shipped template declares it.
+        DIVISION_LOGO_FIELD,
     }
 
 
@@ -178,8 +182,14 @@ def test_the_calls_top_level_fields_are_exactly_the_wip_specs():
         "track_image_group",
         "deadline_date",
         "deadline_time",
+        # Every catalogue admits one (2026-09-02); no shipped template declares it.
+        DIVISION_LOGO_FIELD,
     }
-    assert RSVP_CATALOGUE.assets == {"track_flag": "flag", "track_image": "track"}
+    assert RSVP_CATALOGUE.assets == {
+        "track_flag": "flag",
+        "track_image": "track",
+        DIVISION_LOGO_FIELD: DIVISION_LOGO_ASSET,
+    }
 
 
 def test_the_calls_sessions_are_an_ordinal_collection_optional_as_a_unit():

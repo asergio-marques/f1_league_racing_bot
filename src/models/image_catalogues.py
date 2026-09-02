@@ -21,7 +21,7 @@ renderer (XIV.10).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Iterable, Mapping
 
 from models.image_constants import TEMPLATE_COLUMNS
@@ -520,6 +520,11 @@ class SingletonSpec:
 
 RESERVE_KEY = "reserve"
 
+#: The whole-graphic field a league's own template may declare to draw its division's logo,
+#: and the asset class it resolves in (2026-09-02).
+DIVISION_LOGO_FIELD = "division_logo"
+DIVISION_LOGO_ASSET = "division_logo"
+
 
 @dataclass(frozen=True)
 class FieldCatalogue:
@@ -783,9 +788,34 @@ class FieldCatalogue:
 #: see specs/037-calendar-image-generation/contracts/calendar-catalogue.md).
 #:
 #: The three mystery-round literals are not in this catalogue: "Mystery Grand Prix" and the rest
+def _with_division_logo(catalogue: FieldCatalogue) -> FieldCatalogue:
+    """Admit an optional division-logo slot to *catalogue*, and return it.
+
+    Applied to all fifteen rather than to the handful whose graphics seem to want one:
+    which aspects carry a logo is a league's choice, expressed by which of their own
+    templates declare the slot. Nothing the bot ships declares it.
+
+    Written once and wrapped around each constructor, rather than two more keywords in
+    fifteen calls. Fifteen is fifteen chances to miss one, and a catalogue quietly lacking
+    the field would not fail -- it would leave that one image type drawing no logo with
+    nothing said, which is exactly what this class is least able to report (see
+    `BLANK_FALLBACK_ASSET_CLASSES`). It wraps the call rather than rewriting the registry
+    afterwards so that the name and the registry entry stay the same object.
+
+    **Optional, and only ever optional.** A template declaring no such id is not faulty, and
+    each builder guards on what its template declares, so a league that wants no logo simply
+    does not draw the slot and never meets the class at all.
+    """
+    return replace(
+        catalogue,
+        optional=catalogue.optional | {DIVISION_LOGO_FIELD},
+        assets={**catalogue.assets, DIVISION_LOGO_FIELD: DIVISION_LOGO_ASSET},
+    )
+
+
 #: are *values*, and a catalogue classifies fields. They live with the resolution, in
 #: ``services/image_calendar_service.py``.
-CALENDAR_CATALOGUE = FieldCatalogue(
+CALENDAR_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=frozenset({"division_name"}),
     optional=frozenset({"season_number", "division_tier"}),
     rows=RowSpec(
@@ -814,7 +844,7 @@ CALENDAR_CATALOGUE = FieldCatalogue(
         valueless_fields=frozenset({"vertical_crop_point"}),
         assets={"flag": "flag", "image": "track"},
     ),
-)
+))
 
 
 #: The crop point and the footer band, which every image type drawn as a **list of rows** may
@@ -848,7 +878,7 @@ FOOTER_GROUP_FIELD = "footer_group"
 #: **values**, not fields, and live with the resolution in
 #: ``services/image_lineup_service.py``. See
 #: specs/038-lineup-image-generation/contracts/lineup-catalogue.md.
-LINEUP_CATALOGUE = FieldCatalogue(
+LINEUP_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=frozenset({"division_name"}),
     optional=frozenset({"season_number", "division_tier", FOOTER_GROUP_FIELD}),
     # Ordinal since v6.0.0. The team collection was **keyed** by the normalised team name,
@@ -897,7 +927,7 @@ LINEUP_CATALOGUE = FieldCatalogue(
             assets={"flag": "flag", "image": "driver"},
         ),
     ),
-)
+))
 
 
 
@@ -959,7 +989,7 @@ _RESULTS_ROW_ASSETS = {"driver_flag": "flag", "team_image": "team"}
 #: from that ordinal with no reconciliation attempted (XIV.11, v4.4.0).
 #:
 #: See specs/039-results-image-generation/contracts/results-catalogue.md.
-RESULTS_QUALIFYING_CATALOGUE = FieldCatalogue(
+RESULTS_QUALIFYING_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=_RESULTS_MANDATORY,
     optional=_RESULTS_OPTIONAL,
     rows=RowSpec(
@@ -973,7 +1003,7 @@ RESULTS_QUALIFYING_CATALOGUE = FieldCatalogue(
         # state worth depicting rather than a gap worth reporting (XIV.13, v4.4.0).
         fallback_when_absent=frozenset({"tyre"}),
     ),
-)
+))
 
 
 #: The race results catalogue. Identical to its qualifying sibling but for the columns of its
@@ -982,7 +1012,7 @@ RESULTS_QUALIFYING_CATALOGUE = FieldCatalogue(
 #:
 #: ``row_<x>_fastest_lap`` is the module's only data-driven recolour. A recolour does not
 #: consume the field: it is filled as any other (XIV.2).
-RESULTS_RACE_CATALOGUE = FieldCatalogue(
+RESULTS_RACE_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=_RESULTS_MANDATORY,
     optional=_RESULTS_OPTIONAL
     | {
@@ -1003,7 +1033,7 @@ RESULTS_RACE_CATALOGUE = FieldCatalogue(
         valueless_fields=frozenset({"group", _ROW_CROP_FIELD}),
         assets=dict(_RESULTS_ROW_ASSETS),
     ),
-)
+))
 
 
 #: The heading fields both standings championships share. The lifecycle label is drawn on
@@ -1137,7 +1167,7 @@ def _round_heading_columns() -> RowSpec:
 #: not one — XIV.12's "one capacity may govern several id families".
 #:
 #: See specs/040-standings-image-generation/contracts/standings-catalogue.md.
-STANDINGS_DRIVERS_CATALOGUE = FieldCatalogue(
+STANDINGS_DRIVERS_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=_STANDINGS_MANDATORY,
     optional=_STANDINGS_OPTIONAL,
     columns=_round_heading_columns(),
@@ -1164,7 +1194,7 @@ STANDINGS_DRIVERS_CATALOGUE = FieldCatalogue(
             assets=dict(_STANDINGS_CELL_HIGHLIGHT_ASSETS),
         ),
     ),
-)
+))
 
 
 #: The constructor standings catalogue. Its row carries no driver name and no flag, and its
@@ -1173,7 +1203,7 @@ STANDINGS_DRIVERS_CATALOGUE = FieldCatalogue(
 #: That third level is the first collection whose data-fixed capacity varies by containing
 #: member (XIV.12, v4.5.0) — the seats configured for the team on *this* row. One template
 #: draws every row, so the cars it declares are a ceiling rather than a count.
-STANDINGS_CONSTRUCTORS_CATALOGUE = FieldCatalogue(
+STANDINGS_CONSTRUCTORS_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=_STANDINGS_MANDATORY,
     optional=_STANDINGS_OPTIONAL,
     columns=_round_heading_columns(),
@@ -1210,7 +1240,7 @@ STANDINGS_CONSTRUCTORS_CATALOGUE = FieldCatalogue(
             ),
         ),
     ),
-)
+))
 
 
 #: The attendance sheet's heading fields. It stands **after** a round and names that round;
@@ -1262,7 +1292,7 @@ _ATTENDANCE_OPTIONAL = frozenset(
 #: concrete data, as the calendar's is — a statement about the data and not about the template.
 #:
 #: See specs/041-attendance-image-generation/contracts/attendance-catalogues.md.
-ATTENDANCE_CATALOGUE = FieldCatalogue(
+ATTENDANCE_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=_ATTENDANCE_MANDATORY,
     optional=_ATTENDANCE_OPTIONAL,
     columns=_round_heading_columns(),
@@ -1302,7 +1332,7 @@ ATTENDANCE_CATALOGUE = FieldCatalogue(
             mandatory_fields=frozenset(),
         ),
     ),
-)
+))
 
 
 #: The check-in call's heading fields. The grand prix name is **mandatory** here where it is
@@ -1357,7 +1387,7 @@ _RSVP_OPTIONAL = frozenset(
 #: the result is a stale picture under a current message that reports nothing.
 #:
 #: See specs/041-attendance-image-generation/contracts/attendance-catalogues.md.
-RSVP_CATALOGUE = FieldCatalogue(
+RSVP_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=_RSVP_MANDATORY,
     optional=_RSVP_OPTIONAL,
     assets={"track_flag": "flag", "track_image": "track"},
@@ -1369,7 +1399,7 @@ RSVP_CATALOGUE = FieldCatalogue(
         mandatory_fields=frozenset({"group", "name"}),
         valueless_fields=frozenset({"group"}),
     ),
-)
+))
 
 
 # ── Weather ───────────────────────────────────────────────────────────────
@@ -1489,43 +1519,43 @@ def _p3_sessions(minimum: int, slot_minimum: int) -> RowSpec:
 
 #: Phase 1 — the likelihood of rain, and the heading. It holds no session, so no floor and no
 #: variant arise: one template serves every format.
-WEATHER_P1_CATALOGUE = FieldCatalogue(
+WEATHER_P1_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=_WEATHER_HEADING_MANDATORY | {"rain_probability"},
     optional=_WEATHER_HEADING_OPTIONAL,
     assets={"track_flag": "flag"},
-)
+))
 
 #: Phase 2 — one weather type per session. ``rain_probability`` is optional from here on: the
 #: value is phase 1's, carried forward because XIV.7 (v4.7.0) admits a value the text path
 #: published in **another message of the same flow**.
-WEATHER_P2_CATALOGUE = FieldCatalogue(
+WEATHER_P2_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=_WEATHER_HEADING_MANDATORY,
     optional=_WEATHER_HEADING_OPTIONAL | {"rain_probability", "rain_probability_group"},
     assets={"track_flag": "flag"},
     rows=_p2_sessions(_PLAIN_SESSIONS_FLOOR),
-)
+))
 
-WEATHER_P2_SPRINT_CATALOGUE = FieldCatalogue(
+WEATHER_P2_SPRINT_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=_WEATHER_HEADING_MANDATORY,
     optional=_WEATHER_HEADING_OPTIONAL | {"rain_probability", "rain_probability_group"},
     assets={"track_flag": "flag"},
     rows=_p2_sessions(_SPRINT_SESSIONS_FLOOR),
-)
+))
 
 #: Phase 3 — the sequence drawn within each session.
-WEATHER_P3_CATALOGUE = FieldCatalogue(
+WEATHER_P3_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=_WEATHER_HEADING_MANDATORY,
     optional=_WEATHER_HEADING_OPTIONAL | {"rain_probability", "rain_probability_group"},
     assets={"track_flag": "flag"},
     rows=_p3_sessions(_PLAIN_SESSIONS_FLOOR, _PLAIN_SLOTS_FLOOR),
-)
+))
 
-WEATHER_P3_SPRINT_CATALOGUE = FieldCatalogue(
+WEATHER_P3_SPRINT_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=_WEATHER_HEADING_MANDATORY,
     optional=_WEATHER_HEADING_OPTIONAL | {"rain_probability", "rain_probability_group"},
     assets={"track_flag": "flag"},
     rows=_p3_sessions(_SPRINT_SESSIONS_FLOOR, _SPRINT_SLOTS_FLOOR),
-)
+))
 
 #: The notice of a round of the mystery format — the first image type in the module that
 #: exists for a **kind of record** rather than for an output aspect (XIV.3, v4.7.0).
@@ -1533,7 +1563,7 @@ WEATHER_P3_SPRINT_CATALOGUE = FieldCatalogue(
 #: Such a round conceals its track, runs no session and computes no forecast. The notice says
 #: a forecast is not coming, so it shares with a forecast only the heading fields naming who
 #: and when. It is not an exemption: it draws every field of its own catalogue in full.
-WEATHER_MYSTERY_CATALOGUE = FieldCatalogue(
+WEATHER_MYSTERY_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=frozenset({"division_name", "round_number"}),
     optional=frozenset(
         {
@@ -1543,7 +1573,7 @@ WEATHER_MYSTERY_CATALOGUE = FieldCatalogue(
             "division_tier_group",
         }
     ),
-)
+))
 
 
 # ── Verdicts ──────────────────────────────────────────────────────────────
@@ -1596,11 +1626,11 @@ _VERDICTS_OPTIONAL = frozenset(
     }
 )
 
-VERDICTS_CATALOGUE = FieldCatalogue(
+VERDICTS_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=_VERDICTS_MANDATORY,
     optional=_VERDICTS_OPTIONAL,
     assets={"driver_flag": "flag", "team_image": "team"},
-)
+))
 
 
 #: Template column → its catalogue. Fifteen entries, one per image type; all fifteen — the

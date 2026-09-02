@@ -19,7 +19,11 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-from models.image_catalogues import catalogue_for
+from models.image_catalogues import (
+    DIVISION_LOGO_ASSET,
+    DIVISION_LOGO_FIELD,
+    catalogue_for,
+)
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
 from utils.country_data import country_for_nationality
@@ -221,6 +225,10 @@ def build_fill_spec(
     # The heading.
     place("season_number", drawing.season_number)
     place("division_name", drawing.division_name)
+
+    # The division's logo, where a league's own template declares the slot (2026-09-02).
+    if DIVISION_LOGO_FIELD in declared:
+        image_data[DIVISION_LOGO_FIELD] = (DIVISION_LOGO_ASSET, drawing.division_name)
     place("division_tier", drawing.division_tier)
     place("round_number", drawing.round_number)
     place("race_name", drawing.race_name)

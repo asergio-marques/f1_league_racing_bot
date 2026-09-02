@@ -21,7 +21,12 @@ from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from models.image_catalogues import CapacityError, catalogue_for
+from models.image_catalogues import (
+    DIVISION_LOGO_ASSET,
+    DIVISION_LOGO_FIELD,
+    CapacityError,
+    catalogue_for,
+)
 from models.image_constants import DATE_FORMATS, TIME_FORMATS
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
@@ -265,6 +270,13 @@ def build_fill_spec(
             empty.append(field_id)
 
     put("division_name", drawing.division_name)
+
+    # A league's own template may carry its division's logo, keyed on the division's name
+    # (2026-09-02). Nothing the bot ships declares the slot, so this is inert until a league
+    # draws one into a template of its own -- and a division with no artwork gets the packaged
+    # blank, silently, which is the ordinary state rather than a gap worth reporting.
+    if DIVISION_LOGO_FIELD in declared:
+        image_data[DIVISION_LOGO_FIELD] = (DIVISION_LOGO_ASSET, drawing.division_name)
     put("season_number", drawing.season_number or "")
     put("division_tier", drawing.division_tier or "")
 

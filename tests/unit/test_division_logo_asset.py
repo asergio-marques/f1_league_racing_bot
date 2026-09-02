@@ -253,3 +253,98 @@ def test_the_shipped_fallback_has_nothing_drawn_in_it():
 def test_the_class_records_no_shape_for_its_own_artwork():
     """Nothing to author against, so nothing recorded — and nothing to compare a slot with."""
     assert "division_logo" not in PACKAGED_ASSET_ASPECTS
+
+
+# ── the wiring: catalogues, builders, directory resolution ────────────────
+
+
+def test_every_image_type_admits_the_field():
+    """All fifteen, not the handful whose graphics seem to want one.
+
+    Which aspects carry a logo is a league's choice, expressed by which of their own
+    templates declare the slot. A catalogue quietly lacking the field would leave one aspect
+    unable to draw it with nothing said — and saying nothing is precisely what this class
+    does, so nobody would find out.
+    """
+    from models.image_catalogues import CATALOGUES, DIVISION_LOGO_ASSET
+
+    assert len(CATALOGUES) == 15
+    for key, catalogue in sorted(CATALOGUES.items()):
+        assert "division_logo" in catalogue.optional, key
+        assert catalogue.asset_class_for("division_logo") == DIVISION_LOGO_ASSET, key
+
+
+def test_the_field_is_optional_on_every_type_and_mandatory_on_none():
+    """A template declaring no such id is not faulty — that is what makes it opt-in."""
+    from models.image_catalogues import CATALOGUES
+
+    for key, catalogue in sorted(CATALOGUES.items()):
+        assert "division_logo" not in catalogue.mandatory, key
+
+
+def test_an_unknown_template_key_is_left_without_it():
+    """`catalogue_for` returns an empty catalogue meaning "no specification at all".
+
+    A field on it would make `is_empty` false, and layer 2 passes an empty catalogue over
+    rather than reporting a depth nothing was checked to.
+    """
+    from models.image_catalogues import catalogue_for
+
+    assert catalogue_for("no_such_template").is_empty
+
+
+def test_every_posting_path_resolves_the_directory_whatever_else_it_draws():
+    """Added by the shared resolver, so a posting path added later cannot omit it."""
+    from types import SimpleNamespace
+
+    from services.image_render_service import resolve_configured_directories
+
+    config = SimpleNamespace(
+        flag_directory="resources/defaults/flags",
+        division_logo_directory="resources/defaults/division-logos",
+    )
+
+    directories, faults = resolve_configured_directories(
+        config, (("flag", "flag_directory"),), image_type="calendar_template"
+    )
+
+    assert faults == {}
+    assert "division_logo" in directories
+
+
+def test_the_preview_resolves_every_class_there_is():
+    """A preview is a diagnostic: a class it did not resolve would be reported as
+    unconfigured, which is a lie a manager would act on."""
+    from models.image_constants import ASSET_CLASS_TO_COLUMN
+    from services.image_preview_service import ASSET_CLASS_COLUMNS
+
+    assert dict(ASSET_CLASS_COLUMNS) == ASSET_CLASS_TO_COLUMN
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        "image_calendar_service",
+        "image_lineup_service",
+        "image_results_service",
+        "image_standings_service",
+        "image_attendance_service",
+        "image_rsvp_service",
+        "image_weather_service",
+        "image_verdict_service",
+    ],
+)
+def test_every_builder_offers_the_division_name_as_the_key(module):
+    """Eight builders, one idiom, guarded on what the template declares.
+
+    A source-level check rather than a render: each builder needs a whole drawing, a
+    template and a database to run, and what is being pinned is that none of the eight was
+    missed — which is a fact about the source, not about one render.
+    """
+    import importlib
+    import inspect
+
+    source = inspect.getsource(importlib.import_module(f"services.{module}"))
+
+    assert "DIVISION_LOGO_FIELD in declared" in source, module
+    assert "DIVISION_LOGO_ASSET, drawing.division_name" in source, module
