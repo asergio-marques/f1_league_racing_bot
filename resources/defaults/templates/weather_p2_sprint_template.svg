@@ -10,12 +10,19 @@
        weather_p2_template.svg, chosen by the format of the round at generation.
        All four cards are always drawn, this file serving one format alone.
 
-       Mandatory : division_name, phase_description, round_number, track_name,
+       The country is drawn as its flag and is not written out beside it
+       (2026-09-01). Naming it said a second time what the flag already says,
+       and it held the circuit name to a quarter of the row it now has to
+       itself. `country_name` stays in the catalogue for a league that would
+       rather read the name; this file simply declines it, and the flag
+       resolves from the round's country either way.
+
+       Mandatory : division_name, phase_description, round_number, race_name,
                    session_<x>_group, session_<x>_name, session_<x>_slot_type
-       Optional  : season_number, division_tier, race_name, country_name,
+       Optional  : season_number, division_tier, track_name, country_name,
                    track_flag, rain_probability, session_<x>_slot_type_icon,
                    season_number_group, division_tier_group,
-                   race_name_group, country_name_group, track_flag_group
+                   race_name_group, track_name_group, country_name_group, track_flag_group
        =================================================================== -->
 
   <defs>
@@ -57,15 +64,15 @@
   <text class="roundlbl" x="48" y="124">
     <tspan>ROUND </tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">4</tspan>
   </text>
-  <text id="track_name" inkscape:label="track_name" class="track" x="48" y="188">Track Name</text>
-  <!--  The grand prix name and the country each carry their own group. Run
-        together with a separator between them, as they were, the separator
-        survived the emptying of either and floated in the middle of the line.  -->
-  <g id="race_name_group" inkscape:label="race_name_group">
-    <text id="race_name" inkscape:label="race_name" class="sub" x="48" y="250" style="line-height:1.1;inline-size:244px;max-lines:2">Grand Prix Name</text>
-  </g>
-  <g id="country_name_group" inkscape:label="country_name_group">
-    <text id="country_name" inkscape:label="country_name" class="sub" x="300" y="250" style="line-height:1.1;inline-size:852px;max-lines:2">Country</text>
+  <!--  The grand prix takes the headline and the circuit the line under it
+        (2026-09-01), as the check-in call composes the same two names. The
+        grand prix is the mandatory one of the pair and never leaves, so it
+        carries no group; the circuit name is optional and carries one, so a
+        round whose track matches no record on the server drops the line
+        rather than leaving it blank.  -->
+  <text id="race_name" inkscape:label="race_name" class="track" x="48" y="188">Grand Prix Name</text>
+  <g id="track_name_group" inkscape:label="track_name_group">
+    <text id="track_name" inkscape:label="track_name" class="sub" x="48" y="250" style="line-height:1.1;inline-size:1104px;max-lines:2">Track Name</text>
   </g>
 
   <text class="statlbl" x="976" y="152" text-anchor="end">RAIN PROBABILITY</text>

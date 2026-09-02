@@ -1401,18 +1401,31 @@ _PLAIN_SESSIONS_FLOOR, _PLAIN_SLOTS_FLOOR = _weather_floors(("NORMAL", "ENDURANC
 
 #: The heading fields every phase graphic carries. The mystery notice carries four of them and
 #: nothing else — it announces that no forecast is coming, and has nothing else to say.
+#:
+#: The **grand prix name** is the mandatory one and the circuit name the optional one
+#: (2026-09-01). It was the other way round, which had the forecast obliged to name the
+#: tarmac and free to omit the race: the grand prix is what identifies a round to a league,
+#: and a circuit that hosts two of them in a season identifies nothing on its own. The
+#: check-in call and the results sheets already classified the two this way; this brings the
+#: forecasts into line with them.
+#:
+#: A league whose weather template names the circuit and not the grand prix is refused when
+#: the file is named and at season review, and must declare `race_name` to be accepted.
 _WEATHER_HEADING_MANDATORY = frozenset(
-    {"division_name", "phase_description", "round_number", "track_name"}
+    {"division_name", "phase_description", "round_number", "race_name"}
 )
 
+#: ``race_name_group`` is here though its field is mandatory — XIV.2 lets a group wrap a
+#: field of either classification, and declaring it is what lets the utility reach it.
 _WEATHER_HEADING_OPTIONAL = frozenset(
     {
         "season_number",
         "season_number_group",
         "division_tier",
         "division_tier_group",
-        "race_name",
         "race_name_group",
+        "track_name",
+        "track_name_group",
         "country_name",
         "country_name_group",
         "track_flag",

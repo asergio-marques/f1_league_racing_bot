@@ -251,3 +251,68 @@ def test_every_other_round_scoped_template_still_names_its_grand_prix():
         "weather_p3_template",
         "weather_p3_sprint_template",
     }
+
+
+# --------------------------------------------------------------------------
+# The weather heading — grand prix over circuit, country as a flag (2026-09-01)
+# --------------------------------------------------------------------------
+
+#: The five phase templates. The mystery notice declares none of these fields: it announces
+#: that no forecast is coming for a round whose circuit is concealed.
+WEATHER_PHASES = (
+    "weather_p1_template",
+    "weather_p2_template",
+    "weather_p2_sprint_template",
+    "weather_p3_template",
+    "weather_p3_sprint_template",
+)
+
+
+def _weather_root(template):
+    return etree.parse(str(RESOURCES / "templates" / f"{template}.svg")).getroot()
+
+
+def _field(root, field_id):
+    found = root.xpath(f'//*[@id="{field_id}"]')
+    return found[0] if found else None
+
+
+@pytest.mark.parametrize("template", WEATHER_PHASES)
+def test_a_forecast_leads_with_the_grand_prix(template):
+    root = _weather_root(template)
+    assert (_field(root, "race_name").get("class") or "").split() == ["track"]
+
+
+@pytest.mark.parametrize("template", WEATHER_PHASES)
+def test_a_forecast_puts_the_circuit_beneath_the_grand_prix(template):
+    root = _weather_root(template)
+    circuit = _field(root, "track_name")
+    assert (circuit.get("class") or "").split() == ["sub"]
+    assert float(circuit.get("y")) > float(_field(root, "race_name").get("y"))
+
+
+@pytest.mark.parametrize("template", WEATHER_PHASES)
+def test_the_circuit_line_has_the_whole_row(template):
+    """The country gave up its half of this line; the circuit took all of it."""
+    circuit = _field(_weather_root(template), "track_name")
+    assert "inline-size:1104px" in circuit.get("style")
+
+
+@pytest.mark.parametrize("template", WEATHER_PHASES)
+def test_the_mandatory_headline_needs_no_group_and_the_optional_line_carries_one(template):
+    """``race_name`` is mandatory here and ``track_name`` optional, as on the check-in call.
+
+    The headline never leaves, so a group for it would be chrome with nothing to remove. The
+    circuit line does leave — a round whose track matches no record on the server resolves
+    no circuit name — and its group is what takes it off cleanly.
+    """
+    root = _weather_root(template)
+    assert _field(root, "race_name_group") is None
+    assert _field(root, "track_name_group") is not None
+
+
+@pytest.mark.parametrize("template", WEATHER_PHASES + ("weather_mystery_template",))
+def test_no_forecast_writes_the_country_out(template):
+    text = (RESOURCES / "templates" / f"{template}.svg").read_text(encoding="utf-8")
+    assert 'id="country_name"' not in text
+    assert 'id="track_flag"' in text or template == "weather_mystery_template"

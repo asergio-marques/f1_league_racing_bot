@@ -133,7 +133,7 @@ Out of the box, forecasts are text. With the image module on and the weather out
 
 There are **six** weather drawing files, not three: one per phase, a sprint version of phases 2 and 3 — because a sprint weekend has four sessions to show rather than two — and one for the mystery-round notice. The bot picks by the round's format and nothing else.
 
-Follow [Setting up the image module](configuring-the-image-module.md) for the order — the drawing files, the weather symbols, and the flags a forecast draws for the round's country.
+Follow [Setting up the image module](configuring-the-image-module.md) for the order — the drawing files, the weather symbols, and the flags a forecast draws for the round's country. A forecast leads with the **grand prix** and puts the **circuit** on the line beneath it, and names the country nowhere: that is what the flag is for.
 
 > **A picture never delays or changes a forecast.** The bot works the weather out, saves it and logs it first, and only then draws. If the drawing fails for any reason — the module off, a drawing file the bot will not accept, the converter missing — the text forecast is posted exactly as it always was, and the reason goes to the log channel. Your drivers always get a forecast.
 

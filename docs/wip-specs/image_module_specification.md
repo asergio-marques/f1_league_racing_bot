@@ -1125,11 +1125,12 @@ These hold for every image type of the module and are stated here rather than re
     - division_tier - Optional - Field on which the tier given to the division at "division add" is placed
     - phase_description - Mandatory - Field on which the description of the phase the graphic stands for is placed as text
     - round_number - Mandatory - Field on which the human-readable number of the round the forecast pertains to is placed as text, read from the round object definition
-    - track_name - Mandatory - Field on which the name of the track of the round is placed as text, read from the track object definition
-    - race_name - Optional - Field on which the grand prix name of the round is placed as text, read from the track object definition
+    - race_name - Mandatory - Field on which the grand prix name of the round is placed as text, read from the track object definition
+    - track_name - Optional - Field on which the name of the track of the round is placed as text, read from the track object definition
     - country_name - Optional - Field on which the country where the track of the round is located is placed as text, read from the track object definition
     - track_flag - Optional - Field on which the flag of the country of the round will be placed, searched for in the directory configured via "images config flag-directory"
     - rain_probability - Mandatory on the phase 1 template, optional on the other two - Field on which the likelihood of rain calculated for the round is placed as text
+- The grand prix name is the mandatory of the two names a forecast carries and the track name the optional one. A circuit hosting two grand prix of one season identifies neither round on its own, and the name that identifies the round is the one a forecast shall carry. A weather template naming the track and not the grand prix shall be refused when the file is named and at season review alike.
 - The phase 1 template holds no field beyond those above.
 - The phase 2 template may additionally have, for each session of ordinal <x>:
     - session_<x>_group - Mandatory - Field acting as a container for every other field of the session, which shall be removed in its entirety when the round holds no session of that ordinal

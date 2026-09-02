@@ -111,8 +111,42 @@ def test_the_heading_fields_are_filled():
     assert spec.text["division_name"] == "Test Division"
     assert spec.text["round_number"] == "1"
     assert spec.text["phase_description"] == "Initial session forecast"
+    assert spec.text["race_name"] == "British Grand Prix"
     assert spec.text["track_name"] == "Silverstone Circuit"
     assert spec.text["rain_probability"] == "30%"
+
+
+def test_the_grand_prix_name_is_the_mandatory_one_of_the_two_names():
+    """2026-09-01 — a forecast must name the race; naming the tarmac is its option.
+
+    A circuit hosting two grand prix in a season identifies neither on its own, so the
+    obligation sits on the name that does identify the round.
+    """
+    root = _p2_template(4)
+    spec = build_fill_spec(_drawing(2, "SPRINT", SPRINT_SESSIONS, race_name=None), root)
+    # Mandatory: emptied where the data hold none, never removed with a group.
+    assert "race_name" in spec.empty_quietly
+    assert "race_name" not in spec.remove
+
+
+def test_the_circuit_name_leaves_with_its_group_where_the_round_records_none():
+    body = (
+        '<text id="division_name">D</text><text id="phase_description">P</text>'
+        '<text id="round_number">1</text><text id="race_name">R</text>'
+        '<g id="track_name_group"><text id="track_name">T</text></g>'
+        '<g id="session_1_group"><text id="session_1_name">S</text>'
+        '<text id="session_1_slot_type">T</text></g>'
+        '<g id="session_2_group"><text id="session_2_name">S</text>'
+        '<text id="session_2_slot_type">T</text></g>'
+    )
+    root = etree.fromstring(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        f"{body}</svg>".encode()
+    )
+    spec = build_fill_spec(
+        _drawing(2, "ENDURANCE", ENDURANCE_SESSIONS, track_name=None), root
+    )
+    assert "track_name_group" in spec.remove
 
 
 def test_the_round_flag_is_placed_by_its_datum_and_class():
@@ -126,7 +160,7 @@ def test_the_round_flag_is_placed_by_its_datum_and_class():
 def test_an_optional_without_a_value_leaves_with_its_group():
     body = (
         '<text id="division_name">D</text><text id="phase_description">P</text>'
-        '<text id="round_number">1</text><text id="track_name">T</text>'
+        '<text id="round_number">1</text><text id="race_name">R</text>'
         '<g id="division_tier_group"><text id="division_tier">1</text></g>'
         '<g id="session_1_group"><text id="session_1_name">S</text>'
         '<text id="session_1_slot_type">T</text></g>'
