@@ -343,13 +343,21 @@ def build_fill_spec(
     )
     # Each class draws from its own configured directory, and never from the other's
     # (044). A flag that does not resolve draws the flag directory's fallback, never a
-    # circuit map, and the reverse. Only the two classes this graphic draws are taken from
+    # circuit map, and the reverse. Only the classes this graphic draws are taken from
     # the map, so a caller handing over the whole configuration cannot widen what the
     # calendar reaches for.
+    #
+    # **The set must name every class this builder puts into `image_data`** (2026-09-02).
+    # This is the only builder that narrows the map -- the other seven pass it through
+    # whole -- and narrowing it without the division logo populated the field and then
+    # removed the directory it resolves in, so `svg_fill` reported the class as "not
+    # configured" and abandoned every calendar render of any league whose template declared
+    # the slot. A field written above and a class named here are two halves of one
+    # statement; changing either alone is what breaks it.
     directories = {
         asset_class: directory
         for asset_class, directory in (asset_directories or {}).items()
-        if asset_class in ("track", "flag") and directory is not None
+        if asset_class in ("track", "flag", DIVISION_LOGO_ASSET) and directory is not None
     }
     if directories:
         spec.asset_directories = directories

@@ -348,3 +348,140 @@ def test_every_builder_offers_the_division_name_as_the_key(module):
 
     assert "DIVISION_LOGO_FIELD in declared" in source, module
     assert "DIVISION_LOGO_ASSET, drawing.division_name" in source, module
+
+
+# ── a builder must not narrow the directory away again ────────────────────
+
+
+def _calendar_template_declaring_a_logo():
+    """A league's own calendar template: one round, and a division logo slot."""
+    from lxml import etree
+
+    ns = "http://www.w3.org/2000/svg"
+    root = etree.Element(f"{{{ns}}}svg")
+    root.set("width", "400")
+    root.set("height", "200")
+    root.set("viewBox", "0 0 400 200")
+
+    heading = etree.SubElement(root, f"{{{ns}}}text")
+    heading.set("id", "division_name")
+    heading.set("y", "10")
+
+    logo = etree.SubElement(root, f"{{{ns}}}image")
+    logo.set("id", "division_logo")
+    logo.set("width", "120")
+    logo.set("height", "120")
+
+    for suffix in ("number", "country_name", "race_name", "date", "vertical_crop_point"):
+        cell = etree.SubElement(root, f"{{{ns}}}text")
+        cell.set("id", f"round_1_{suffix}")
+        cell.set("y", "200")
+    return root
+
+
+def test_the_calendar_keeps_the_division_logo_directory_it_was_handed():
+    """**Regression, 2026-09-02.** The calendar is the only builder that narrows the map.
+
+    `build_fill_spec` filters `asset_directories` down to the classes the graphic draws, so
+    that a caller handing over the whole configuration cannot widen what the calendar reaches
+    for (044). When the division logo was added, the field was written into `image_data` and
+    the class was left out of that filter — so the directory was removed from under a field
+    that had just been populated, `svg_fill` reported the class as "not configured", and
+    **every calendar render of any league whose template declared the slot was abandoned**.
+
+    The field and the filter are two halves of one statement. This test fails if either half
+    is changed alone.
+    """
+    from datetime import datetime, timezone
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from services.image_calendar_service import build_fill_spec, resolve_drawing
+
+    root = _calendar_template_declaring_a_logo()
+    drawing = resolve_drawing(
+        division_name="Division 1",
+        division_tier=1,
+        season_number=1,
+        rounds=[
+            SimpleNamespace(
+                round_number=1,
+                format="NORMAL",
+                track_name="Silverstone Circuit",
+                scheduled_at=datetime(2026, 6, 4, 20, 0, tzinfo=timezone.utc),
+            )
+        ],
+        tracks={
+            "Silverstone Circuit": SimpleNamespace(
+                name="Silverstone Circuit",
+                gp_name="British Grand Prix",
+                country="United Kingdom",
+            )
+        },
+    )
+
+    project_root = Path(__file__).resolve().parents[2]
+    spec = build_fill_spec(
+        drawing,
+        root,
+        asset_directories={
+            asset_class: project_root / packaged_directory_for(asset_class)
+            for asset_class in ("track", "flag", "division_logo")
+        },
+    )
+
+    assert "division_logo" in spec.image_data, "the field was not populated at all"
+    assert "division_logo" in spec.asset_directories, (
+        "the builder narrowed away the directory the field it just wrote resolves in"
+    )
+
+    result = fill(spec)
+    assert result.unresolved == [], result.unresolved
+
+    # FONT_SUBSTITUTED is dropped rather than asserted against: whether a font is installed
+    # is a fact about the host, not about this resolution. Everything else must be silent.
+    raised = {
+        notice.notice_kind
+        for notice in result.notices
+        if notice.notice_kind != "FONT_SUBSTITUTED"
+    }
+    assert raised == set(), raised
+
+
+def test_no_builder_narrows_the_asset_directories_without_naming_the_logo():
+    """Whichever builder narrows the map next must name the class, as the calendar now does.
+
+    A source-level check, because what went wrong was not a value but an omission: seven
+    builders pass the map through whole and the eighth filters it, so nothing in the shape of
+    the code makes the filter obvious to whoever adds the ninth.
+    """
+    import importlib
+    import inspect
+
+    builders = (
+        "image_calendar_service",
+        "image_lineup_service",
+        "image_results_service",
+        "image_standings_service",
+        "image_attendance_service",
+        "image_rsvp_service",
+        "image_weather_service",
+        "image_verdict_service",
+    )
+    narrowing = []
+    for module in builders:
+        source = inspect.getsource(importlib.import_module(f"services.{module}"))
+        for line in source.splitlines():
+            if "if asset_class in" in line:
+                narrowing.append((module, line.strip()))
+
+    assert narrowing, "no builder narrows any more — retire this test rather than weaken it"
+    for module, line in narrowing:
+        # The **filter line itself**, not the module: the class is named three times in the
+        # calendar already — the import, the `image_data` write, and this — so asking whether
+        # the module mentions it at all passes while the filter still omits it. That is the
+        # exact shape of the defect, so the check has to look where the omission was.
+        assert "DIVISION_LOGO_ASSET" in line, (
+            f"{module} filters asset_directories without naming the division logo "
+            f"class: {line}"
+        )
