@@ -140,7 +140,13 @@ def test_a_division_without_a_logo_is_told_nothing_at_all(league_logos, packaged
 
     assert result.unresolved == []
     assert result.notices == []
-    assert str(packaged["division_logo"]) in _href(root)
+
+    # Compared as a URI, never as a path substring. `_as_href` returns `Path.as_uri()`, and
+    # on Windows `str(path)` is `C:\\...` with backslashes while the URI is `file:///C:/...`
+    # with forward slashes — so a substring check passes on Linux, where the path happens to
+    # appear verbatim inside the URI, and can never pass on Windows. That is what broke the
+    # `windows-latest` job on 2026-09-03.
+    assert _href(root) == (packaged["division_logo"] / FALLBACK_ASSET_NAME).as_uri()
 
 
 def test_the_blank_is_silent_however_the_slot_is_shaped(league_logos, packaged):
