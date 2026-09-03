@@ -3899,6 +3899,10 @@ class SeasonCog(commands.Cog):
         for div in new_divisions:
             await self.bot.team_service.seed_division_teams(div.id, cfg.server_id)
 
+        # Only now do the teams exist to seat them in: put back the mock drivers the
+        # snapshot displaced, so a test-mode roster survives every wizard command.
+        await self.bot.season_service.restore_test_driver_seats(cfg.season_id)
+
     async def _reload_pending_from_db(self, cfg: PendingConfig) -> None:
         """Resync the in-memory PendingConfig.divisions from DB (after direct DB operations)."""
         if cfg.season_id == 0:

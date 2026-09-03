@@ -21,6 +21,9 @@ class SeasonImmutableError(Exception):
 class SeasonService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
+        # Mock drivers displaced by the most recent save_pending_snapshot, awaiting
+        # restore_test_driver_seats once the caller has re-seeded the new teams.
+        self._pending_test_seats: dict[str, list[dict]] = {}
 
     # ------------------------------------------------------------------
     # Season
@@ -269,6 +272,9 @@ class SeasonService:
 
                 saved_channel_cfg: dict[int, dict] = {}  # div_id → config row
                 saved_div_names: dict[int, str] = {}     # div_id → name
+                # division name → seated mock drivers, restored once the new
+                # divisions and their teams exist again.
+                seats_by_division: dict[str, list[dict]] = {}
                 for div_row in div_rows:
                     old_div_id = div_row[0]
                     cursor2 = await db.execute(
@@ -338,7 +344,9 @@ class SeasonService:
                     # that were placed in this division during SETUP.
                     cursor2 = await db.execute(
                         """
-                        SELECT dp.id AS profile_id
+                        SELECT dp.id     AS profile_id,
+                               ti.name   AS team_name,
+                               ts.seat_number
                         FROM driver_profiles dp
                         JOIN team_seats ts ON ts.driver_profile_id = dp.id
                         JOIN team_instances ti ON ti.id = ts.team_instance_id
@@ -348,7 +356,21 @@ class SeasonService:
                     )
                     test_profile_rows = await cursor2.fetchall()
                     if test_profile_rows:
-                        test_ids = [r[0] for r in test_profile_rows]
+                        # The profiles themselves survive: a mock roster seated during
+                        # SETUP is a league manager's work, not scratch state to rebuild.
+                        # Only the seats and assignments pointing at rows about to be
+                        # deleted are released, and both are restored by name afterwards.
+                        div_name = saved_div_names.get(old_div_id)
+                        if div_name is not None:
+                            seats_by_division.setdefault(div_name, []).extend(
+                                {
+                                    "profile_id": r["profile_id"],
+                                    "team_name": r["team_name"],
+                                    "seat_number": r["seat_number"],
+                                }
+                                for r in test_profile_rows
+                            )
+                        test_ids = [r["profile_id"] for r in test_profile_rows]
                         ph = ",".join("?" * len(test_ids))
                         await db.execute(
                             f"DELETE FROM driver_season_assignments WHERE driver_profile_id IN ({ph})",
@@ -357,10 +379,6 @@ class SeasonService:
                         await db.execute(
                             f"UPDATE team_seats SET driver_profile_id = NULL "
                             f"WHERE driver_profile_id IN ({ph})",
-                            test_ids,
-                        )
-                        await db.execute(
-                            f"DELETE FROM driver_profiles WHERE id IN ({ph})",
                             test_ids,
                         )
 
@@ -395,6 +413,7 @@ class SeasonService:
             else:
                 channels_by_name = {}
                 saved_config_names = []
+                seats_by_division = {}
 
             cursor = await db.execute(
                 "INSERT INTO seasons (server_id, start_date, status, season_number, game_edition) "
@@ -487,7 +506,84 @@ class SeasonService:
                     )
 
             await db.commit()
+
+        # The teams a mock driver was seated in do not exist yet — the caller re-seeds
+        # them from the server defaults once this returns. Reseating therefore waits for
+        # restore_test_driver_seats(), which the caller invokes at that point.
+        self._pending_test_seats = seats_by_division
         return new_season_id, season_number
+
+    async def restore_test_driver_seats(self, season_id: int) -> None:
+        """Reseat the mock drivers that the last snapshot of *season_id* displaced.
+
+        Pairs with save_pending_snapshot: it releases the seats of every mock driver in
+        a SETUP season before deleting the division rows they hang off, and this puts
+        them back once the divisions and their teams have been re-created. Matching is
+        by division name, team name and seat number, the same way channel configuration
+        is carried across the rebuild — the row IDs are all new.
+
+        A driver whose team or seat no longer exists (the league manager renamed the
+        team, or shrank it) is left unseated rather than moved somewhere arbitrary.
+        """
+        seats_by_division = self._pending_test_seats
+        if not seats_by_division:
+            return
+        self._pending_test_seats = {}
+
+        async with get_connection(self._db_path) as db:
+            for div_name, seats in seats_by_division.items():
+                cursor = await db.execute(
+                    "SELECT id FROM divisions WHERE season_id = ? AND name = ?",
+                    (season_id, div_name),
+                )
+                div_row = await cursor.fetchone()
+                if div_row is None:
+                    continue
+                div_id = div_row[0]
+
+                for seat in seats:
+                    cursor = await db.execute(
+                        "SELECT id, is_reserve FROM team_instances "
+                        "WHERE division_id = ? AND LOWER(name) = LOWER(?)",
+                        (div_id, seat["team_name"]),
+                    )
+                    team_row = await cursor.fetchone()
+                    if team_row is None:
+                        continue
+                    team_id, is_reserve = team_row[0], bool(team_row[1])
+
+                    cursor = await db.execute(
+                        "SELECT id FROM team_seats "
+                        "WHERE team_instance_id = ? AND seat_number = ? "
+                        "  AND driver_profile_id IS NULL",
+                        (team_id, seat["seat_number"]),
+                    )
+                    seat_row = await cursor.fetchone()
+                    if seat_row is None:
+                        if not is_reserve:
+                            continue
+                        # The reserve team carries no fixed seat count, so its seats are
+                        # re-created on demand exactly as add_test_driver creates them.
+                        cursor = await db.execute(
+                            "INSERT INTO team_seats "
+                            "(team_instance_id, seat_number, driver_profile_id) "
+                            "VALUES (?, ?, NULL)",
+                            (team_id, seat["seat_number"]),
+                        )
+                        seat_id = cursor.lastrowid
+                    else:
+                        seat_id = seat_row[0]
+
+                    await db.execute(
+                        "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
+                        (seat["profile_id"], seat_id),
+                    )
+                    await db.execute(
+                        "INSERT INTO driver_season_assignments "
+                        "(driver_profile_id, season_id, division_id) VALUES (?, ?, ?)",
+                        (seat["profile_id"], season_id, div_id),
+                    )
+            await db.commit()
 
     async def load_all_setup_seasons(self) -> list[dict]:
         """Return raw data for every SETUP-status season to rebuild PendingConfig on startup."""
