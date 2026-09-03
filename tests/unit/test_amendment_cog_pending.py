@@ -46,7 +46,10 @@ def _make_interaction(guild_id: int = 1) -> MagicMock:
     interaction = MagicMock()
     interaction.guild_id = guild_id
     interaction.user.id = 42
-    interaction.response.send_message = AsyncMock()
+    # These commands defer before doing any work — the snapshot rebuild outlasts
+    # Discord's three-second window — so every reply arrives as a followup.
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
     return interaction
 
 
@@ -99,8 +102,8 @@ async def test_pending_amend_track_change() -> None:
     rnd = next(r for r in div.rounds if r["round_number"] == 1)
     assert rnd["track_name"] == "Australia"
     # Confirm success message sent
-    interaction.response.send_message.assert_called_once()
-    args, kwargs = interaction.response.send_message.call_args
+    interaction.followup.send.assert_called_once()
+    args, kwargs = interaction.followup.send.call_args
     assert "✅" in (args[0] if args else kwargs.get("content", ""))
     assert kwargs.get("ephemeral") is True
 
@@ -123,7 +126,7 @@ async def test_pending_amend_scheduled_at_change() -> None:
     # verify that exactly one round now has the new scheduled_at.
     amended = [r for r in div.rounds if r["scheduled_at"] == datetime.fromisoformat(new_dt)]
     assert len(amended) == 1, "Exactly one round should have the new scheduled_at"
-    interaction.response.send_message.assert_called_once()
+    interaction.followup.send.assert_called_once()
 
 
 async def test_pending_amend_format_to_mystery_clears_track() -> None:
@@ -143,7 +146,7 @@ async def test_pending_amend_format_to_mystery_clears_track() -> None:
     rnd = next(r for r in div.rounds if r["round_number"] == 1)
     assert rnd["format"] == RoundFormat.MYSTERY
     assert rnd["track_name"] is None
-    interaction.response.send_message.assert_called_once()
+    interaction.followup.send.assert_called_once()
 
 
 async def test_pending_amend_format_away_from_mystery_no_track_empty_stored_rejects() -> None:
@@ -160,7 +163,7 @@ async def test_pending_amend_format_away_from_mystery_no_track_empty_stored_reje
         # track intentionally omitted
     )
 
-    args, kwargs = interaction.response.send_message.call_args
+    args, kwargs = interaction.followup.send.call_args
     msg = args[0] if args else kwargs.get("content", "")
     assert "❌" in msg
     assert "track" in msg.lower()
@@ -189,7 +192,7 @@ async def test_pending_amend_format_away_from_mystery_preserves_existing_track()
         # track omitted — should preserve "Australia"
     )
 
-    args, kwargs = interaction.response.send_message.call_args
+    args, kwargs = interaction.followup.send.call_args
     msg = args[0] if args else kwargs.get("content", "")
     assert "✅" in msg
     # Track preserved, format updated
@@ -213,7 +216,7 @@ async def test_pending_amend_division_not_found() -> None:
         track="Australia",
     )
 
-    args, kwargs = interaction.response.send_message.call_args
+    args, kwargs = interaction.followup.send.call_args
     msg = args[0] if args else kwargs.get("content", "")
     assert "❌" in msg
     assert "Nonexistent" in msg
@@ -231,7 +234,7 @@ async def test_pending_amend_round_not_found() -> None:
         track="Australia",
     )
 
-    args, kwargs = interaction.response.send_message.call_args
+    args, kwargs = interaction.followup.send.call_args
     msg = args[0] if args else kwargs.get("content", "")
     assert "❌" in msg
     assert "99" in msg
@@ -249,7 +252,7 @@ async def test_pending_amend_no_fields_supplied() -> None:
         # all defaults (empty strings)
     )
 
-    args, kwargs = interaction.response.send_message.call_args
+    args, kwargs = interaction.followup.send.call_args
     msg = args[0] if args else kwargs.get("content", "")
     assert "❌" in msg
 

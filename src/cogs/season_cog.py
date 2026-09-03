@@ -149,10 +149,14 @@ class SeasonCog(commands.Cog):
         game_edition: app_commands.Range[int, 1, 9999],
     ) -> None:
         """Begin season setup."""
+        # Deferred before any work: the snapshot rebuild below rewrites the whole
+        # SETUP season, which outlasts Discord's three-second window on a season of
+        # any size, and the reply then lands on an expired token.
+        await interaction.response.defer(ephemeral=True)
         server_id = interaction.guild_id
 
         if self._get_pending_for_server(server_id) is not None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c A season setup is already in progress for this server. "
                 "Use `/season review` to approve, or `/bot-reset` to cancel it first.",
                 ephemeral=True,
@@ -160,7 +164,7 @@ class SeasonCog(commands.Cog):
             return
 
         if await self.bot.season_service.get_active_season(server_id) is not None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c A season is currently active for this server. "
                 "Complete it before starting a new one.",
                 ephemeral=True,
@@ -168,7 +172,7 @@ class SeasonCog(commands.Cog):
             return
 
         if await self.bot.season_service.get_setup_season(server_id) is not None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c A season setup is already in progress for this server. "
                 "Use `/season review` to continue, or cancel it first.",
                 ephemeral=True,
@@ -179,7 +183,7 @@ class SeasonCog(commands.Cog):
         self._pending[interaction.user.id] = cfg
         await self._snapshot_pending(cfg)
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"\u2705 Season setup started. **Season #{cfg.season_number} (F1 {cfg.game_edition})** is being configured.\n\n"
             "Use `/division add` for each division, then `/round add` for each round.\n"
             "When done, run `/season review` to review and approve.",
@@ -1742,30 +1746,35 @@ class SeasonCog(commands.Cog):
         role: discord.Role,
         tier: int,
     ) -> None:
+        # Deferred before any work: the snapshot rebuild below rewrites the whole
+        # SETUP season, which outlasts Discord's three-second window once the season
+        # holds a division or two, and the reply then lands on an expired token.
+        await interaction.response.defer(ephemeral=True)
+
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c No pending season setup. Run `/season setup` first.",
                 ephemeral=True,
             )
             return
 
         if tier < 1:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u26d4 Tier must be 1 or higher.",
                 ephemeral=True,
             )
             return
 
         if any(d.name.lower() == name.lower() for d in cfg.divisions if d.name):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u274c A division named **{name}** already exists in this setup.",
                 ephemeral=True,
             )
             return
 
         if any(d.tier == tier for d in cfg.divisions if d.name):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u26d4 A division with tier **{tier}** already exists in this setup.",
                 ephemeral=True,
             )
@@ -1781,7 +1790,7 @@ class SeasonCog(commands.Cog):
 
         await self._snapshot_pending(cfg)
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"\u2705 Division **{name}** (Tier {tier}) added.\n"
             f"Role: {role.mention}\n\n"
             + format_division_list(_pending_to_division_models(cfg)),
@@ -2866,9 +2875,15 @@ class SeasonCog(commands.Cog):
         scheduled_at: str,
         track: str = "",
     ) -> None:
+        # Deferred before any work: the snapshot rebuild and the calendar capacity
+        # guard below both outlast Discord's three-second window on a season of any
+        # size, and the reply then lands on an expired token (404 Unknown interaction)
+        # while the round itself has already been written.
+        await interaction.response.defer(ephemeral=True)
+
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c No pending season setup. Run `/season setup` first.",
                 ephemeral=True,
             )
@@ -2877,7 +2892,7 @@ class SeasonCog(commands.Cog):
         try:
             fmt = RoundFormat(format.upper())
         except ValueError:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u274c Invalid format `{format}`. Choose from: NORMAL, SPRINT, MYSTERY, ENDURANCE.",
                 ephemeral=True,
             )
@@ -2886,7 +2901,7 @@ class SeasonCog(commands.Cog):
         track_name = track.strip() or None
 
         if fmt != RoundFormat.MYSTERY and not track_name:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u274c A track is required for `{fmt.value}` rounds. "
                 "Leave track blank only for `MYSTERY` rounds.",
                 ephemeral=True,
@@ -2895,24 +2910,20 @@ class SeasonCog(commands.Cog):
 
         if track_name:
             async with get_connection(self.bot.db_path) as _tdb:
-                if track_name.isdigit():
-                    _tcur = await _tdb.execute("SELECT name FROM tracks WHERE id = ?", (int(track_name),))
-                else:
-                    _tcur = await _tdb.execute("SELECT name FROM tracks WHERE name = ?", (track_name,))
-                _trow = await _tcur.fetchone()
-            if _trow is None:
-                await interaction.response.send_message(
+                _resolved = await track_service.resolve_track_name(_tdb, track_name)
+            if _resolved is None:
+                await interaction.followup.send(
                     f"\u274c Unknown track `{track_name}`.\n"
                     "Use `/round add` and type a number or name \u2014 autocomplete will guide you.",
                     ephemeral=True,
                 )
                 return
-            track_name = _trow["name"]
+            track_name = _resolved
 
         try:
             sched = datetime.fromisoformat(scheduled_at)
         except ValueError:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c Invalid datetime. Use ISO format: `YYYY-MM-DDTHH:MM:SS`",
                 ephemeral=True,
             )
@@ -2920,7 +2931,7 @@ class SeasonCog(commands.Cog):
 
         div = next((d for d in cfg.divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u274c Division `{division_name}` not found in pending setup.",
                 ephemeral=True,
             )
@@ -2933,7 +2944,7 @@ class SeasonCog(commands.Cog):
             interaction.guild_id, len(div.rounds) + 1
         )
         if _overflow is not None:
-            await interaction.response.send_message(_overflow, ephemeral=True)
+            await interaction.followup.send(_overflow, ephemeral=True)
             return
 
         new_round: dict[str, Any] = {
@@ -2962,7 +2973,7 @@ class SeasonCog(commands.Cog):
             )
             for r in div.rounds
         ]
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"\u2705 Round **{assigned_number}** added to **{div.name}**.\n"
             f"Format: {fmt.value} | Track: {track_name or 'Mystery'} | {discord_ts(sched)}\n\n"
             + format_round_list(round_models),
@@ -3026,8 +3037,14 @@ class SeasonCog(commands.Cog):
         scheduled_at: str = "",
         format: str = "",
     ) -> None:
+        # Deferred before any work: the snapshot rebuild and the calendar capacity
+        # guard below both outlast Discord's three-second window on a season of any
+        # size, and the reply then lands on an expired token (404 Unknown interaction)
+        # while the round itself has already been written.
+        await interaction.response.defer(ephemeral=True)
+
         if not any([track, scheduled_at, format]):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c Provide at least one field to amend: `track`, `scheduled_at`, or `format`.",
                 ephemeral=True,
             )
@@ -3041,7 +3058,7 @@ class SeasonCog(commands.Cog):
                 None,
             )
             if pend_div is None:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"\u274c Division `{division_name}` not found in pending setup.",
                     ephemeral=True,
                 )
@@ -3052,7 +3069,7 @@ class SeasonCog(commands.Cog):
                 None,
             )
             if pend_rnd is None:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"\u274c Round {round_number} not found in division `{division_name}` of the pending setup.",
                     ephemeral=True,
                 )
@@ -3061,25 +3078,21 @@ class SeasonCog(commands.Cog):
             new_track: str | None = ...
             if track:
                 async with get_connection(self.bot.db_path) as _tdb:
-                    if track.isdigit():
-                        _tcur = await _tdb.execute("SELECT name FROM tracks WHERE id = ?", (int(track),))
-                    else:
-                        _tcur = await _tdb.execute("SELECT name FROM tracks WHERE name = ?", (track,))
-                    _trow = await _tcur.fetchone()
-                if _trow is None:
-                    await interaction.response.send_message(
+                    _resolved = await track_service.resolve_track_name(_tdb, track)
+                if _resolved is None:
+                    await interaction.followup.send(
                         f"\u274c Unknown track `{track}`. Use autocomplete to pick a valid track.",
                         ephemeral=True,
                     )
                     return
-                new_track = _trow["name"]
+                new_track = _resolved
 
             new_dt = ...
             if scheduled_at:
                 try:
                     new_dt = datetime.fromisoformat(scheduled_at)
                 except ValueError:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         "\u274c Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.",
                         ephemeral=True,
                     )
@@ -3090,7 +3103,7 @@ class SeasonCog(commands.Cog):
                 try:
                     new_fmt = RoundFormat(format.upper())
                 except ValueError:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"\u274c Invalid format `{format}`. Use NORMAL, SPRINT, MYSTERY, or ENDURANCE.",
                         ephemeral=True,
                     )
@@ -3099,7 +3112,7 @@ class SeasonCog(commands.Cog):
             effective_fmt = new_fmt if new_fmt is not ... else pend_rnd["format"]
             effective_track = new_track if new_track is not ... else pend_rnd["track_name"]
             if effective_fmt != RoundFormat.MYSTERY and not effective_track:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"\u274c Format `{effective_fmt.value}` requires a track. "
                     "Supply a `track` value or change format to MYSTERY.",
                     ephemeral=True,
@@ -3134,7 +3147,7 @@ class SeasonCog(commands.Cog):
                 )
                 for r in pend_div.rounds
             ]
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u2705 Round {round_number} in **{pend_div.name}** updated in pending setup "
                 f"(no DB write \u2014 use `/season approve` to commit).\n\n"
                 + format_round_list(round_models),
@@ -3151,13 +3164,13 @@ class SeasonCog(commands.Cog):
         # Active-season DB path
         season = await self.bot.season_service.get_active_season(interaction.guild_id)
         if season is None:
-            await interaction.response.send_message("\u274c No active season found.", ephemeral=True)
+            await interaction.followup.send("\u274c No active season found.", ephemeral=True)
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u274c Division `{division_name}` not found.", ephemeral=True
             )
             return
@@ -3165,7 +3178,7 @@ class SeasonCog(commands.Cog):
         rounds = await self.bot.season_service.get_division_rounds(div.id)
         rnd = next((r for r in rounds if r.round_number == round_number), None)
         if rnd is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u274c Round {round_number} not found in division `{division_name}`.",
                 ephemeral=True,
             )
@@ -3175,24 +3188,20 @@ class SeasonCog(commands.Cog):
 
         if track:
             async with get_connection(self.bot.db_path) as _tdb:
-                if track.isdigit():
-                    _tcur = await _tdb.execute("SELECT name FROM tracks WHERE id = ?", (int(track),))
-                else:
-                    _tcur = await _tdb.execute("SELECT name FROM tracks WHERE name = ?", (track,))
-                _trow = await _tcur.fetchone()
-            if _trow is None:
-                await interaction.response.send_message(
+                _resolved = await track_service.resolve_track_name(_tdb, track)
+            if _resolved is None:
+                await interaction.followup.send(
                     f"\u274c Unknown track `{track}`. Use autocomplete to pick a valid track.",
                     ephemeral=True,
                 )
                 return
-            amendments.append(("track_name", _trow["name"]))
+            amendments.append(("track_name", _resolved))
 
         if scheduled_at:
             try:
                 new_dt = datetime.fromisoformat(scheduled_at)
             except ValueError:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "\u274c Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.",
                     ephemeral=True,
                 )
@@ -3203,7 +3212,7 @@ class SeasonCog(commands.Cog):
             try:
                 new_fmt = RoundFormat(format.upper())
             except ValueError:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"\u274c Invalid format `{format}`. Use NORMAL, SPRINT, MYSTERY, or ENDURANCE.",
                     ephemeral=True,
                 )
@@ -3221,7 +3230,7 @@ class SeasonCog(commands.Cog):
             round_id=rnd.id,
             amendments=amendments,
         )
-        await interaction.response.send_message("\n".join(summary_lines), view=view, ephemeral=True)
+        await interaction.followup.send("\n".join(summary_lines), view=view, ephemeral=True)
 
     # One callback, both parameters. Registered here rather than by decorator because
     # `round_amend` is only defined further up the class body than `_track_autocomplete`.

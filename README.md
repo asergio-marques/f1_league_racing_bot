@@ -308,7 +308,7 @@ Round numbers are **auto-assigned** by sorting all rounds in the division by `sc
 | `division_name` | String | ✅ | Exact name of the division this round belongs to |
 | `format` | String | ✅ | Race format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE` |
 | `scheduled_at` | String | ✅ | Race date and time in ISO format: `YYYY-MM-DDTHH:MM:SS` (UTC) |
-| `track` | String | — | Track ID or exact circuit name — use the autocomplete dropdown (e.g. `12` or `Silverstone Circuit`). Required for every format except `MYSTERY`, where it must be omitted. |
+| `track` | String | — | Track ID or circuit name — use the autocomplete dropdown (e.g. `12` or `Silverstone Circuit`). What the dropdown displays (`12 – Silverstone Circuit`) is accepted too, so a pasted or retyped entry works; circuit names are matched regardless of case. Required for every format except `MYSTERY`, where it must be omitted. |
 
 #### `/round delete` — Remove a round from setup
 *Access: Trusted admin · Setup only*
@@ -374,7 +374,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 |-----------|------|----------|-------------|
 | `division_name` | String | ✅ | Name of the division containing the round |
 | `round_number` | Integer | ✅ | The round number to amend |
-| `track` | String | — | New track — track ID or exact circuit name, use the autocomplete dropdown (e.g. `4` or `Bahrain International Circuit`). Amending invalidates prior weather phases. |
+| `track` | String | — | New track — track ID or circuit name, use the autocomplete dropdown (e.g. `4` or `Bahrain International Circuit`). What the dropdown displays (`04 – Bahrain International Circuit`) is accepted too, and names are matched regardless of case. Amending invalidates prior weather phases. |
 | `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC). Amending re-triggers the scheduler and renumbers rounds. |
 | `format` | String | — | New format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE`. Amending invalidates prior weather phases. |
 

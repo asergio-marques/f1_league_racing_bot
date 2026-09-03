@@ -89,3 +89,63 @@ class TestGetTrackByName:
         assert row is None
 
 
+
+
+# ---------------------------------------------------------------------------
+# resolve_track_name
+# ---------------------------------------------------------------------------
+
+class TestResolveTrackName:
+    """The forms `/round add track:` and `/round amend track:` actually receive.
+
+    The autocomplete offers "05 - Belgium" as the display label and "Belgium" as the
+    value, so picking a suggestion sends the name. Typing or pasting the label — or
+    editing a previous command in place — sends the label, which used to be rejected
+    as an unknown track even though it is exactly what the bot had just displayed.
+    """
+
+    async def test_bare_id(self, db) -> None:
+        from services.track_service import resolve_track_name
+        assert await resolve_track_name(db, "5") == "Belgium"
+
+    async def test_zero_padded_id_as_the_label_shows_it(self, db) -> None:
+        from services.track_service import resolve_track_name
+        assert await resolve_track_name(db, "05") == "Belgium"
+
+    async def test_canonical_name(self, db) -> None:
+        from services.track_service import resolve_track_name
+        assert await resolve_track_name(db, "Belgium") == "Belgium"
+
+    async def test_name_in_any_case(self, db) -> None:
+        from services.track_service import resolve_track_name
+        assert await resolve_track_name(db, "bELGIUM") == "Belgium"
+
+    async def test_the_autocomplete_label_with_an_en_dash(self, db) -> None:
+        """The bug: the label the autocomplete itself displays was refused."""
+        from services.track_service import resolve_track_name
+        assert await resolve_track_name(db, "05 \u2013 Belgium") == "Belgium"
+
+    async def test_the_label_with_a_hyphen_a_keyboard_produces(self, db) -> None:
+        from services.track_service import resolve_track_name
+        assert await resolve_track_name(db, "5 - Belgium") == "Belgium"
+
+    async def test_the_id_wins_over_a_mismatched_name_beside_it(self, db) -> None:
+        """The id is authoritative; the text after the dash was only ever displayed."""
+        from services.track_service import resolve_track_name
+        assert await resolve_track_name(db, "3 \u2013 Belgium") == "Australia"
+
+    async def test_surrounding_whitespace_is_ignored(self, db) -> None:
+        from services.track_service import resolve_track_name
+        assert await resolve_track_name(db, "  Belgium  ") == "Belgium"
+
+    async def test_unknown_name(self, db) -> None:
+        from services.track_service import resolve_track_name
+        assert await resolve_track_name(db, "Unknown Circuit") is None
+
+    async def test_unknown_id(self, db) -> None:
+        from services.track_service import resolve_track_name
+        assert await resolve_track_name(db, "99") is None
+
+    async def test_empty_is_no_track(self, db) -> None:
+        from services.track_service import resolve_track_name
+        assert await resolve_track_name(db, "   ") is None

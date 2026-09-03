@@ -319,6 +319,21 @@ Found on 2026-08-17 while writing the core configuration how-to guide.
 - `src/cogs/init_cog.py` calls `seed_default_teams_if_empty` under the comment "Seed default F1 teams + Reserve". The method inserts the Reserve team and nothing else.
 - The behaviour is defensible — a league names its own teams — but a reader of the cog is told a full grid ships, and does not.
 
+**Fixed — the four season-setup wizard commands did their work before answering, so the reply hit an expired interaction token.**
+- Found on 2026-09-03, reported as `/round add` either failing or not responding, with the round nonetheless present in the calendar.
+- `/season setup`, `/division add`, `/round add` and `/round amend` all replied with `interaction.response.send_message` and none deferred. Each calls `_snapshot_pending`, which deletes and re-inserts the entire SETUP season and then re-seeds every division's teams over a fresh connection apiece; `/round add` additionally runs `_calendar_round_overflow`, which loads and parses the calendar SVG from disk. Past Discord's three-second window the token is dead and the reply raises `404 Unknown interaction`.
+- The work is already committed by then, which is why the round appears in the calendar while the command looks like it failed. Nothing is lost and nothing needs re-running — the only casualty is the reply.
+- It worsens with the size of the season, because the rebuild is proportional to it: the first division of a fresh season is quick, and the second or third is not. That is the reported "always in the ones created second or later".
+- Sits alongside the `## Database contention` P2 below, which records the same commands holding the write lock for their whole length. That is not fixed; deferring only stops the *reply* depending on how long the lock is held.
+- **Fixed** on 2026-09-03 by deferring at the top of all four commands, ahead of any query, and sending every reply — errors included — through `followup`. Covered by `tests/unit/test_season_wizard_defers.py`.
+
+**Fixed — the track the autocomplete displayed was refused when typed rather than clicked.**
+- Found on 2026-09-03, reported against `14 – Hungaroring` and `13 – Circuit de Spa-Francorchamps`.
+- `/round add` and both branches of `/round amend` resolved the track with `WHERE id = ?` when the value was all digits and `WHERE name = ?` otherwise. The autocomplete offers `f"{id:02d} – {name}"` as each choice's *display name* and the bare name as its *value*, so choosing a suggestion sent a name that matched, while typing or pasting the line shown on screen — or editing a previous command in place — sent a label matching neither branch.
+- The exact-name branch was also case-sensitive, so `hungaroring` was refused as an unknown track.
+- What a league manager sees: "❌ Unknown track `14 – Hungaroring`. Use `/round add` and type a number or name — autocomplete will guide you", naming the very string the autocomplete had just shown them.
+- **Fixed** on 2026-09-03 by `track_service.resolve_track_name`, which accepts a bare or zero-padded id, a name in any case, and the displayed label with either an en dash or a hyphen — taking the id as authoritative where both appear, and treating a hyphen as a separator only after a numeric head so that `Circuit de Spa-Francorchamps` is not split. All three call sites now use it. Covered by `TestResolveTrackName` in `tests/unit/test_track_service.py`.
+
 ## Test mode
 
 Found on 2026-08-18 while auditing the how-to guides against the implementation.

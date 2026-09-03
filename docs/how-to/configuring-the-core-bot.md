@@ -167,7 +167,7 @@ Adding a team while a season is in setup also seats it in every division of that
 /track list
 ```
 
-The bot carries **28 circuits**, each with an ID and a full name — `12` is Silverstone Circuit, `22` is Autódromo José Carlos Pace. You use either when adding a round, and autocomplete offers them as you type.
+The bot carries **28 circuits**, each with an ID and a full name — `12` is Silverstone Circuit, `22` is Autódromo José Carlos Pace. You use either when adding a round, and autocomplete offers them as you type. Picking a suggestion is the easiest route, but you are not tied to it: the ID on its own, the name in any capitalisation, and the whole line as the dropdown shows it (`12 – Silverstone Circuit`) all work, so retyping or pasting an entry is safe. Where an ID and a name appear together, the ID decides.
 
 **The list is fixed.** You cannot add a circuit of your own, rename one, or change how wet the bot thinks it is. Each circuit's rainfall behaviour ships with the bot and is the same on every server.
 
