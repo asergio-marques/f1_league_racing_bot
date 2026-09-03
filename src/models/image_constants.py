@@ -190,6 +190,11 @@ ASSET_DIRECTORIES: dict[str, tuple[str, str, str]] = {
     "tyre_directory": (
         "tyre-directory", "resources/league/tyres", "resources/defaults/tyres",
     ),
+    "division_logo_directory": (
+        "division-logo-directory",
+        "resources/league/division-logos",
+        "resources/defaults/division-logos",
+    ),
 }
 
 #: Asset class -> the configuration column naming its directory. Kept beside
@@ -203,6 +208,7 @@ ASSET_CLASS_TO_COLUMN: dict[str, str] = {
     "marker": "marker_directory",
     "weather": "weather_icon_directory",
     "tyre": "tyre_directory",
+    "division_logo": "division_logo_directory",
 }
 
 
@@ -237,6 +243,7 @@ ASSET_LABELS: dict[str, str] = {
     "marker_directory": "Markers and result marks",
     "weather_icon_directory": "Weather icons",
     "tyre_directory": "Tyre compounds",
+    "division_logo_directory": "Division logos",
 }
 
 
@@ -330,6 +337,7 @@ ASSET_CLASS_DIRECTORIES: dict[str, str] = {
     "marker": "marker_directory",
     "weather": "weather_icon_directory",
     "tyre": "tyre_directory",
+    "division_logo": "division_logo_directory",
 }
 
 #: Asset classes whose data are a closed set the module itself defines, not values a league
@@ -372,6 +380,29 @@ def is_closed_set_datum(asset_class: str, slug: str) -> bool:
     and a notice on every qualifying row of a league that had drawn no tyre artwork.
     """
     return asset_class in CLOSED_SET_ASSET_CLASSES or slug in CLOSED_SET_ASSET_DATA
+
+
+#: Asset classes whose fallback stands for "nothing is drawn here" rather than for artwork a
+#: league was expected to supply, so drawing it is reported to nobody (decided 2026-09-02).
+#:
+#: Every other class answers a datum the bot went looking for on the league's behalf -- a
+#: country, a circuit, a compound -- and a fallback drawn there is a gap in the league's asset
+#: set, worth naming once so it can be closed. `division_logo` is not that. It is decoration a
+#: league opts into by declaring the slot in a template of its own, and the state of having
+#: drawn no logo is the ordinary one rather than an omission. Reporting it would put a notice
+#: on every graphic the league posts, for an element they never asked for, and the only way to
+#: silence it would be to drop a blank `fallback.svg` of their own into the folder -- which is
+#: the file we already ship.
+#:
+#: **The cost is real and is accepted.** A misnamed file, or a division renamed after its logo
+#: was drawn, is silent: the artwork simply does not appear and nothing anywhere says why. That
+#: is the price of the class being optional, and it is why the shipped fallback must be
+#: genuinely empty -- a grey placeholder drawn silently would be worse than either.
+#:
+#: Consumed by `svg_fill`, which suppresses both `NOTICE_ASSET_FALLBACK_USED` and
+#: `NOTICE_PACKAGED_ASSET_OFF_SHAPE` for a class named here. The second follows from the first:
+#: a file with nothing drawn in it cannot be the wrong shape for a slot.
+BLANK_FALLBACK_ASSET_CLASSES: frozenset[str] = frozenset({"division_logo"})
 
 #: The reserved filename standing in for a datum with no file of its own
 #: (Constitution XIV.13). One per asset directory; optional.
@@ -466,6 +497,17 @@ OTHER_ASSET_NAME = "other.svg"
 #: of any re-shaping -- the other thirteen would still disagree with it -- and a league could
 #: never move a class off the shape it started on. The gap is real and is documented to
 #: leagues rather than closed.
+#:
+#: **`division_logo` is outside this set, and outside `STRETCHABLE_ASSET_CLASSES` too**
+#: (2026-09-02). It is the first class governed by neither, which the partition test in
+#: `test_asset_resolver` was written to anticipate. Agreement between slots is still a rule
+#: about shape: it says one file is drawn into all of them, so they had better be the shape
+#: that file is. A division logo is not one file -- it is one file *per division* -- and a
+#: league drawing its crest large in a header and small in a corner of the same template is
+#: doing nothing wrong, because each division supplies artwork for both. Nothing here has a
+#: shape to hold it to. Stretching is still refused: `stretch_faults_of` faults any slot
+#: declaring `preserveAspectRatio="none"` outside `STRETCHABLE_ASSET_CLASSES`, so the logo
+#: letterboxes like everything else and only the box it letterboxes into is free.
 RATIO_CONSISTENT_ASSET_CLASSES: frozenset[str] = frozenset(
     {"track", "team", "flag", "driver", "weather", "tyre"}
 )
@@ -484,6 +526,11 @@ RATIO_CONSISTENT_ASSET_CLASSES: frozenset[str] = frozenset(
 #: would agree with itself, be passed over by the agreement check, and draw every face in the
 #: league squashed to the shape of the box with nothing said. So a stretching slot outside
 #: this set is a fault of its own, reported before the shapes are compared at all.
+#:
+#: This is what still governs `division_logo`, which is held to no shape at all otherwise
+#: (2026-09-02). Being free of a fixed shape is not licence to squash: a league's crest
+#: letterboxes into whatever box its template gives it, and a slot claiming otherwise is a
+#: fault here as it would be for a driver portrait.
 STRETCHABLE_ASSET_CLASSES: frozenset[str] = frozenset({"marker"})
 
 #: Asset class -> the aspect ratio the bot's **own** packaged artwork is drawn at.
@@ -496,6 +543,11 @@ STRETCHABLE_ASSET_CLASSES: frozenset[str] = frozenset({"marker"})
 #: in production forces it. And it is what a slot is compared with when a **packaged** file is
 #: drawn into it: a league that re-shapes a class still gets our 3:2 flags for every country
 #: it has not drawn itself, stretched, and `NOTICE_PACKAGED_ASSET_OFF_SHAPE` says so.
+#: **`division_logo` is deliberately absent.** What we ship for it is a file with nothing drawn
+#: in it, which has no shape to author against and cannot be letterboxed wrongly into anything;
+#: recording 1:1 for it would be a fiction, and the two jobs above would both act on that
+#: fiction. `_packaged_shape_notice` reads this table with `.get()` and says nothing for a class
+#: it does not find, which is the right answer here rather than an oversight (2026-09-02).
 PACKAGED_ASSET_ASPECTS: dict[str, float] = {
     "track": 1.0,          # 120 x 120 -- circuit maps
     "team": 1.0,           # 120 x 120

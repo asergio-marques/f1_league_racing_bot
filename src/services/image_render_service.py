@@ -105,6 +105,10 @@ _cache: tuple[float, str | None] | None = None
 
 # ── The league's own asset directories ────────────────────────────────────
 
+#: The one (asset class, column) pair every image type resolves, whatever else it draws.
+#: See :func:`resolve_configured_directories`.
+DIVISION_LOGO_PAIR: tuple[str, str] = ("division_logo", "division_logo_directory")
+
 
 def resolve_configured_directories(
     config,
@@ -126,6 +130,14 @@ def resolve_configured_directories(
     A configured directory is only rejected for containment or emptiness; a directory that
     simply does not exist resolves and is returned, its assets falling back as XIV.13
     requires.
+
+    **The division-logo directory is added to whatever *pairs* names** (2026-09-02). Every
+    image type may draw one, because every catalogue admits the field and it is a league's own
+    template that decides where -- so unlike the classes a caller lists, there is no graphic
+    this one does not apply to. Adding it here rather than to eight tuples means a posting
+    path added later cannot omit it and leave one aspect quietly unable to draw a logo, which
+    is a failure this class in particular could not report: an unresolvable class is reported,
+    but a league would have to notice the absence themselves.
     """
     from utils.paths import resolve_within_project_root
 
@@ -134,6 +146,15 @@ def resolve_configured_directories(
 
     if config is None:
         return directories, faults
+
+    # Only where the configuration actually carries the column. A config object that does not
+    # have it is not a league with an unset directory -- it is a caller who assembled a
+    # partial config for some other purpose -- and manufacturing "Directory cannot be empty"
+    # for a class they never asked about would report a fault that is not one. An attribute
+    # that is present but unusable still faults, like every other class.
+    _class, _column = DIVISION_LOGO_PAIR
+    if DIVISION_LOGO_PAIR not in pairs and hasattr(config, _column):
+        pairs = pairs + (DIVISION_LOGO_PAIR,)
 
     for asset_class, column in pairs:
         configured = getattr(config, column, None)

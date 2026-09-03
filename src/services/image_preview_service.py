@@ -21,7 +21,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from db.database import get_connection
-from models.image_constants import PREVIEW_KINDS
+from models.image_constants import ASSET_CLASS_TO_COLUMN, PREVIEW_KINDS
 
 log = logging.getLogger(__name__)
 
@@ -533,14 +533,14 @@ async def _nationality_collected(bot, server_id: int) -> bool:
 
 #: Asset class -> the configuration column naming its directory. The same pairing every
 #: posting path makes, gathered here once so a preview cannot resolve a different set.
-ASSET_CLASS_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("track", "track_image_directory"),
-    ("team", "team_image_directory"),
-    ("flag", "flag_directory"),
-    ("driver", "driver_image_directory"),
-    ("marker", "marker_directory"),
-    ("weather", "weather_icon_directory"),
-    ("tyre", "tyre_directory"),
+#:
+#: **Every** class, derived from the one table that defines them rather than listed
+#: (2026-09-02). A preview is a diagnostic: a class missing from here would resolve to nothing
+#: and be reported as unconfigured, which is a lie a manager would then act on. Listing them
+#: is also what would have to be remembered for a ninth class, and this file is not where
+#: anyone would think to look. Sorted for a deterministic order rather than taking the dict's.
+ASSET_CLASS_COLUMNS: tuple[tuple[str, str], ...] = tuple(
+    sorted(ASSET_CLASS_TO_COLUMN.items())
 )
 
 

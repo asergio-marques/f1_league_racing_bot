@@ -29,7 +29,12 @@ from pathlib import Path
 from typing import Mapping, Sequence
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from models.image_catalogues import CapacityError, catalogue_for
+from models.image_catalogues import (
+    DIVISION_LOGO_ASSET,
+    DIVISION_LOGO_FIELD,
+    CapacityError,
+    catalogue_for,
+)
 from models.image_constants import DATE_FORMATS, TIME_FORMATS
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
@@ -301,6 +306,10 @@ def build_fill_spec(
             empty.append(field_id)
 
     put("division_name", drawing.division_name)
+
+    # The division's logo, where a league's own template declares the slot (2026-09-02).
+    if DIVISION_LOGO_FIELD in declared:
+        image_data[DIVISION_LOGO_FIELD] = (DIVISION_LOGO_ASSET, drawing.division_name)
     put("round_number", drawing.round_number)
     put("race_name", drawing.race_name)
     put("round_format", drawing.round_format)

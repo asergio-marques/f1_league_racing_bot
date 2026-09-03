@@ -38,6 +38,7 @@ _MIGRATIONS = (
     "044_standings_highlight_directory.sql",
     "045_marks_join_the_markers.sql",
     "047_driver_portraits.sql",
+    "048_division_logo_directory.sql",
 )
 
 
@@ -124,11 +125,12 @@ async def test_set_field_rejects_column_outside_allow_list(service):
 
 
 async def test_allow_list_covers_all_settable_columns(service):
-    # 1 template dir + 15 filenames + 7 asset dirs + 4 preferences + the portrait time
-    # = 28 scalar columns. With the 8 toggles that is 36 configuration values in total
+    # 1 template dir + 15 filenames + 8 asset dirs + 4 preferences + the portrait time
+    # = 29 scalar columns. With the 8 toggles that is 37 configuration values in total
     # (SC-008). The three portrait toggles are booleans and are deliberately outside this
     # set -- they are written through `set_pfp_flag`, not the string-valued `set_field`.
-    assert len(SETTABLE_COLUMNS) == 28
+    # The eighth asset directory is the division logo, added 2026-09-02.
+    assert len(SETTABLE_COLUMNS) == 29
     assert not (SETTABLE_COLUMNS & PFP_FLAG_COLUMNS)
     await service.create_with_defaults(1)
     for column in SETTABLE_COLUMNS:
@@ -418,13 +420,17 @@ def _make_config(template_directory="templates", **overrides) -> _ImageConfig:
         server_id=1,
         module_enabled=True,
         template_directory=template_directory,
-        track_image_directory="resources/defaults/tracks",
-        team_image_directory="resources/defaults/teams",
-        flag_directory="resources/defaults/flags",
-        driver_image_directory="resources/defaults/drivers",
-        marker_directory="resources/defaults/markers",
-        weather_icon_directory="resources/defaults/weather",
-        tyre_directory="resources/defaults/tyres",
+        # Every asset directory, pointed at the **packaged** folder rather than the
+        # league one the column actually defaults to. `resources/defaults/` is tracked
+        # and identical on every host; `resources/league/` is gitignored and holds
+        # whatever the machine running this happens to carry.
+        #
+        # Derived rather than listed, so an asset class added later arrives here on its
+        # own. Listing them is what made the eighth class break five fixtures at once.
+        **{
+            column: packaged
+            for column, (_cmd, _league, packaged) in ASSET_DIRECTORIES.items()
+        },
         use_pfp=False,
         pfp_prerender=True,
         pfp_daily=False,

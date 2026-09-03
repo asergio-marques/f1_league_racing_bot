@@ -254,9 +254,19 @@ def test_no_per_driver_datum_can_reach_the_utility_at_all():
 
 def test_the_catalogue_declares_both_imagery_classes():
     """The check-in graphic is one of the two types that may draw a circuit map."""
-    from models.image_catalogues import RSVP_CATALOGUE
+    from models.image_catalogues import (
+        DIVISION_LOGO_ASSET,
+        DIVISION_LOGO_FIELD,
+        RSVP_CATALOGUE,
+    )
 
-    assert RSVP_CATALOGUE.assets == {"track_flag": "flag", "track_image": "track"}
+    # `division_logo` is on every catalogue (2026-09-02); the two this test is about are
+    # the imagery classes the check-in graphic draws for the round itself.
+    assert RSVP_CATALOGUE.assets == {
+        "track_flag": "flag",
+        "track_image": "track",
+        DIVISION_LOGO_FIELD: DIVISION_LOGO_ASSET,
+    }
     for field_id in ("track_flag", "track_flag_group", "track_image", "track_image_group"):
         assert field_id in RSVP_CATALOGUE.optional, f"{field_id} must be optional"
 

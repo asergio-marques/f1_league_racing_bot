@@ -137,7 +137,15 @@ def test_phase_one_declares_no_session():
 
 
 def test_the_mystery_notice_declares_four_fields_and_nothing_else():
-    """FR-006 — it says a forecast is not coming, and has nothing else to say."""
+    """FR-006 — it says a forecast is not coming, and has nothing else to say.
+
+    The division logo is the one addition it takes, and takes for the same reason every other
+    catalogue does (2026-09-02): whether a graphic carries a league's crest is the league's
+    choice, made by declaring the slot in a template of their own, and a mystery notice is as
+    much theirs to brand as any other. It does not make the notice a forecast.
+    """
+    from models.image_catalogues import DIVISION_LOGO_ASSET, DIVISION_LOGO_FIELD
+
     cat = catalogue_for("weather_mystery_template")
     assert cat.mandatory == {"division_name", "round_number"}
     assert cat.optional == {
@@ -145,9 +153,10 @@ def test_the_mystery_notice_declares_four_fields_and_nothing_else():
         "season_number_group",
         "division_tier",
         "division_tier_group",
+        DIVISION_LOGO_FIELD,
     }
     assert cat.rows is None and cat.columns is None
-    assert cat.assets == {}
+    assert cat.assets == {DIVISION_LOGO_FIELD: DIVISION_LOGO_ASSET}
     # No track, no grand prix, no country, no rain likelihood, no session, no slot.
     everything = cat.mandatory | cat.optional
     for absent in (

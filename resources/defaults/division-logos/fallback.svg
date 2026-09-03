@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <!-- Deliberately empty.
+
+       Every other class ships a grey placeholder here, because a missing flag or badge is a
+       gap in a league's asset set and drawing something visible is what tells them so. A
+       division logo is decoration a league opts into, and having drawn none is the ordinary
+       state rather than an omission. This file is therefore drawn on every graphic of every
+       league that has supplied no logo, and it must add nothing to any of them.
+
+       It carries a size and a viewBox and no marks at all: enough intrinsic geometry to
+       letterbox into a slot of any shape, and nothing to see when it does. `svg_fill`
+       suppresses the fallback and off-shape notices for this class to match, via
+       BLANK_FALLBACK_ASSET_CLASSES. Drawing anything in here would break both halves of
+       that at once. -->
+</svg>

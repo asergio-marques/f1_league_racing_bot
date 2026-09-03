@@ -31,6 +31,8 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from models.image_catalogues import (
+    DIVISION_LOGO_ASSET,
+    DIVISION_LOGO_FIELD,
     CapacityError,
     catalogue_for,
     column_crop_fields,
@@ -404,6 +406,10 @@ def build_fill_spec(
             empty.append(field_id)
 
     put("division_name", drawing.division_name)
+
+    # The division's logo, where a league's own template declares the slot (2026-09-02).
+    if DIVISION_LOGO_FIELD in declared:
+        image_data[DIVISION_LOGO_FIELD] = (DIVISION_LOGO_ASSET, drawing.division_name)
     put("round_number", drawing.round_number)
     put_optional("season_number", drawing.season_number)
     put_optional("division_tier", drawing.division_tier)

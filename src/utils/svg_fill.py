@@ -23,6 +23,7 @@ from lxml import etree
 
 from models.image_constants import (
     ASSET_ASPECT_TOLERANCE,
+    BLANK_FALLBACK_ASSET_CLASSES,
     NOTICE_ASSET_FALLBACK_USED,
     NOTICE_CROP_POINT_OFF_CANVAS,
     NOTICE_FIELD_REDUCED,
@@ -495,12 +496,22 @@ def fill(spec: FillSpec) -> FillResult:
         if resolution.used_fallback:
             _set_href(target, str(resolution.path))
             consumed.add(field_id)
-            off_shape = _packaged_shape_notice(
-                target, asset_class, resolution, spec.image_type, field_id
-            )
-            if off_shape is not None:
-                notices.append(off_shape)
-            if not depicts_absence:
+
+            # A class whose fallback **is** the intended state says nothing at all when it is
+            # drawn (2026-09-02). The file is still drawn -- that is what keeps a declared slot
+            # from becoming an unresolved-field fatality -- but a league that has drawn no
+            # division logo is not being told about it on every graphic they post. The
+            # off-shape notice goes with it: a file with nothing in it cannot be letterboxed
+            # into the wrong shape.
+            blank_fallback = asset_class in BLANK_FALLBACK_ASSET_CLASSES
+
+            if not blank_fallback:
+                off_shape = _packaged_shape_notice(
+                    target, asset_class, resolution, spec.image_type, field_id
+                )
+                if off_shape is not None:
+                    notices.append(off_shape)
+            if not depicts_absence and not blank_fallback:
                 # What was actually drawn, not what the tier was called. A closed-set hit
                 # in the packaged directory drew the module's **own correct file** for the
                 # datum — calling that "the fallback was drawn" would send a manager

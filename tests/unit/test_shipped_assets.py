@@ -98,9 +98,14 @@ def test_every_shipped_asset_declares_its_class_aspect(asset_class, path):
     The exemption is by **datum** and not by class, because `marker` holds both: the square
     position-change arrows, still held to 1:1, and the standings and attendance marks, whose
     slots say for themselves that they stretch.
+
+    A class recording no shape at all is exempt on the same terms (2026-09-02). `division_logo`
+    ships one file with nothing drawn in it, letterboxed into whatever a league's template
+    gives it, so there is no ratio for it to be authored at — but it still has to declare a
+    size, for exactly the reason a stretching mark does.
     """
     width, height = _declared_size(path)
-    if path.name in STRETCHING_FILES:
+    if path.name in STRETCHING_FILES or asset_class not in PACKAGED_ASSET_ASPECTS:
         assert width > 0 and height > 0
         return
 

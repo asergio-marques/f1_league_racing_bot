@@ -1,6 +1,74 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-02 — v7.10.0 → v7.11.0: MINOR — a class may be held to no aspect where its artwork is
+per-datum, and a class's fallback may stand for the absence of artwork]
+  Version change    : 7.10.0 → 7.11.0
+  Bump rationale    : MINOR. Two changes to Principle XIV — one to Rule 6, one to Rule 13. No Core
+                      Principle is removed and none is redefined, and MAJOR is reserved for those.
+
+                      **Both are relaxations, and neither invalidates an existing template or asset
+                      set.** Rule 6 admitted only two states for an asset class; it now admits a
+                      third, and the seven classes that existed before are all still named by
+                      exactly one enumeration and are governed precisely as they were. Rule 13
+                      raised a notice whenever a fallback was drawn; it now permits a class to be
+                      declared silent, and no class that existed before is so declared. A league
+                      that upgrades sees no change to any graphic it already posts.
+
+  Modified principles: XIV Rule 6 (asset aspect) — "Two enumerations MUST exist, and both are
+                       closed" widened. The requirement was that **every** asset class be named by
+                       exactly one enumeration, enforced by a test refusing any omission. It is now
+                       that no class leave the check **unremarked**: a class may be named by
+                       neither where the exemption is *declared* with its ground, and the test
+                       refuses an **undeclared** omission. The declaration must be written twice —
+                       beside the code and beside the test — so that a class escapes the check only
+                       by someone recording why, never by being forgotten.
+
+                       The ground for the new exemption is stated narrowly and is **not** marker's.
+                       A class qualifies only where a league supplies one file **per datum** rather
+                       than one per class, so slots of differing shape are each answered by artwork
+                       of their own — which is the exact circumstance in which the one-aspect rule's
+                       reasoning (one file letterboxed wherever a slot disagrees) has nothing to
+                       bite on. `marker` remains exempt on its own separate ground, one directory
+                       serving three shapes at once, and the two grounds are deliberately kept
+                       apart so neither can be read as the general case.
+
+                       Guarded against the obvious misreading: a class is **not** exempt because a
+                       template author would prefer two shapes. And a class held to no aspect MUST
+                       STILL NOT declare `preserveAspectRatio="none"` — the stretching enumeration
+                       stays exclusive to `marker`. Freedom from one aspect is freedom to choose
+                       the box, not licence to distort what goes in it.
+
+                       XIV Rule 13 (asset resolution) — a class may be declared one whose fallback
+                       stands for the **absence** of artwork rather than for artwork that should
+                       have been supplied, whereupon drawing it raises no notice at all, neither
+                       ASSET_FALLBACK_USED nor PACKAGED_ASSET_OFF_SHAPE. A class qualifies only
+                       where it is drawn solely where a league's own template declares its field,
+                       the module shipping no template that declares one, so a league meets the
+                       class only by asking for it; having asked and drawn nothing is then the
+                       ordinary state of the class and not an incomplete one. Such a class MUST
+                       ship a fallback with nothing drawn upon it — the silence is defensible only
+                       because what is drawn is nothing.
+
+                       The cost is recorded rather than glossed: a misnamed file is silent too, and
+                       so is renaming a datum after its artwork was drawn.
+
+  Added sections     : none
+  Removed sections   : none
+
+  Occasioned by      : the `division_logo` class, added 2026-09-02. A league had no way to put its
+                       identity on a generated graphic short of baking a mark into every template
+                       at build time, which fixes it for the whole league and cannot differ between
+                       divisions. The class is keyed on the division's name and is the first that is
+                       optional decoration rather than data the module went looking for — which is
+                       what made both of the above rules bind wrongly. It is the only class named by
+                       neither aspect enumeration and the only one declared silent. The count of
+                       asset classes in Rule 13's packaged-directory paragraph is corrected from
+                       seven to eight in consequence; that rule is otherwise unchanged.
+
+  Follow-up TODOs    : none. The implementation, its tests and the league-facing documents were
+                       brought into line in the same change.
+
 [2026-09-01 — v7.9.0 → v7.10.0: MINOR — a class's aspect is the league's to choose, and must
 merely be consistent within one template]
   Version change    : 7.9.0 → 7.10.0
@@ -5040,23 +5108,53 @@ which is the whole of why the exemption is sound; the generator still MUST NOT p
 is that the artwork is the league's to draw for a shape that varies, and the module MUST say so
 wherever it documents the data drawn into such slots.
 
-**Two enumerations MUST exist, and both are closed** (v7.10.0). The first names the classes
-**held to one aspect** within a template; the second names the classes **whose slots may declare
-that they stretch**. Every asset class MUST be named by exactly one of them: a class in neither
-would be checked against nothing at all, and one in both would be self-contradictory. A test MUST
-refuse either omission.
+**Two enumerations MUST exist, and both are closed** (v7.10.0, widened v7.11.0). The first names
+the classes **held to one aspect** within a template; the second names the classes **whose slots
+may declare that they stretch**. A class MUST NOT be named by both, which would be
+self-contradictory, and a test MUST refuse that.
+
+**A class MAY be named by neither, and only where it is declared shapeless with its ground**
+(v7.11.0). Under v7.10.0 every class had to be named by exactly one, on the reasoning that a class
+in neither would be checked against nothing at all. That reasoning holds against a class falling
+out by *omission*; it does not hold against one deliberately placed outside both. The requirement
+is therefore not that every class be enumerated, but that no class leave the check unremarked: the
+exemption MUST be **declared**, and the test MUST refuse an **undeclared** omission exactly as it
+formerly refused any omission.
+
+The declaration MUST be written in two places — beside the code the exemption governs, and beside
+the test that would otherwise catch it — each carrying the ground. One place would let a later
+edit lift the exemption into effect while the test still described the old state; two mean a class
+can escape the check only by someone recording why, never by being forgotten.
 
 A class MUST NOT be admitted to the stretching enumeration because one template found its aspect
 inconvenient — only where the data it draws genuinely have no shape of their own, the box being
 decided by the template rather than by the subject. A class MUST NOT be left out of the first
-enumeration for that reason either: it is left out only where the class serves slots of several
-shapes at once and no one aspect could serve them, so that there is nothing for its slots to
-agree on.
+enumeration for that reason either. It is left out on one of exactly two grounds, both stated
+below and neither of them convenience: that the class serves slots of several shapes at once and
+no one aspect could serve them, so there is nothing for its slots to agree on; or that its artwork
+is supplied per datum rather than per class, so slots of differing shape are each answered by a
+file of their own.
 
-**The `marker` class is held to no aspect at all** (v7.10.0). It draws the square markers of a
-change of standing position and the stretching marks of a standings result cell and of an
-attendance total out of one directory, and no one aspect serves all three. A marker slot at an
-aspect its fellows do not share MUST be permitted, and is letterboxed. This is a widening of
+**A class qualifies for that exemption on one ground and no other** (v7.11.0): that a league
+supplies **one file per datum** of the class rather than one file for the class, so that slots of
+differing shape are each answered by artwork of their own. The one-aspect rule exists because a
+single file is drawn into every slot of its class and is letterboxed wherever a slot disagrees;
+where the artwork is per-datum, that reasoning has nothing to bite on and two slots of differing
+shape are each drawn correctly.
+
+This MUST NOT be read as licence to exempt a class whose aspect a template merely found
+inconvenient. It is not enough that a template author would prefer two shapes; the class must be
+one whose data each carry their own file, so that both shapes are genuinely served.
+
+**The `division_logo` class is held to no aspect on that ground** (v7.11.0). A league draws one
+logo per division, so two logo slots on one template are answered by two files of that division's
+own and neither is letterboxed.
+
+**The `marker` class is held to no aspect at all** (v7.10.0), on a different ground, which is why
+the two MUST NOT be collapsed into one rule. It draws the square markers of a change of standing
+position and the stretching marks of a standings result cell and of an attendance total out of one
+directory, and no one aspect serves all three. A marker slot at an aspect its fellows do not share
+MUST be permitted, and is letterboxed. This is a widening of
 v7.9.0, under which the class carried an aspect its non-stretching slots were held to; the cost —
 that a movement marker drawn to the wrong box is now distorted with nothing reported — is
 accepted, one directory serving three shapes admitting no better answer.
@@ -5109,6 +5207,13 @@ face in a league distorted, and was refused nothing, because the slot's own clai
 sufficient. A class that carries an aspect means it, and the slot does not get to say otherwise —
 a subject with a shape of its own cannot be drawn to a box that disagrees, however the box is
 declared.
+
+**A class held to no aspect MUST STILL NOT declare that it stretches** (v7.11.0). The stretching
+enumeration remains exclusive to `marker`, and a slot of a shapeless class authored
+`preserveAspectRatio="none"` MUST be refused as any other slot outside that enumeration is.
+Freedom from one aspect is freedom to choose the box, not licence to distort what goes in it: the
+artwork still letterboxes, and a league's crest squashed to a box it does not fit is exactly the
+outcome Rule 6 exists to prevent.
 
 **The artwork the module itself supplies carries a fixed aspect per class, which a league cannot
 alter** (v7.10.0). That artwork stands in for any datum a league has not drawn, so a league that
@@ -5669,7 +5774,7 @@ asset class. Resolution MUST be deterministic and documented:
 - The **packaged directory** of a class is the directory shipped with the module for it —
   `resources/defaults/<class>` — and carries that class's own `fallback.svg`. It is distinct from
   the directory a league has configured for the class, which a league is free to point elsewhere.
-  The two MUST NOT be the same directory. The configured directory of each of the seven asset
+  The two MUST NOT be the same directory. The configured directory of each of the eight asset
   classes defaults to `resources/league/<class>` — the folder a league fills with its own artwork,
   which an update to the bot MUST NOT overwrite — so the two tiers stand apart whether or not a
   league has configured anything, and a league that places a file there has it drawn without
@@ -5736,6 +5841,28 @@ Resolution has exactly **four** outcomes, and no others:
   requiring the same notice on either tier; its wording MUST say that the module's own file was
   drawn, nothing having been substituted. A league told otherwise would go looking for artwork it
   was never expected to supply.
+- **A class MAY be declared one whose fallback stands for the absence of artwork** rather than for
+  artwork that should have been supplied, whereupon the fallback is drawn and **no notice whatever
+  is raised** — neither that a fallback was drawn, nor that a packaged file was drawn off the shape
+  of its slot (v7.11.0). The two rows of the table above that raise a notice do not raise one for
+  such a class; every other part of the resolution is unchanged, the file still being drawn and the
+  field still resolving.
+    - A class qualifies only where it is drawn **solely** where a league's own template declares its
+      field — the module shipping no template that declares one — so that a league meets the class
+      at all only by asking for it. A league that has asked for it and drawn artwork for none of its
+      data is then in the **ordinary** state of the class rather than an incomplete one, and a
+      notice on every graphic it posts would name nothing it could act upon: the only remedy
+      available would be to supply the very file the module already ships.
+    - Such a class MUST ship a fallback with **nothing drawn upon it**, carrying a size and no mark.
+      The silence is defensible only because what is drawn in the absence of artwork is nothing; a
+      visible placeholder drawn silently would be worse than either reporting it or drawing nothing.
+    - The cost MUST be accepted knowingly and documented to leagues: a **misnamed file is silent
+      too**, as is a datum renamed after its artwork was drawn. The artwork simply does not appear
+      and nothing says why.
+    - `division_logo` is such a class and is at present the only one. The declaration is made for
+      the class as a whole, where the silence of an **absent datum** below is declared field by
+      field; the two are distinct, that one governing a datum never supplied and this one a datum
+      supplied for which the league has drawn nothing.
 - Wherever else this constitution speaks of a directory **holding**, or not holding, a fallback, it
   means this two-tier check taken as a whole and not the configured directory alone.
 - A league whose configured directory carries no `fallback.svg` of its own therefore no longer
@@ -6893,4 +7020,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.10.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-01
+**Version**: 7.11.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-02

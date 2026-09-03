@@ -1205,8 +1205,18 @@ async def _highlighted_svg(tmp_path):
     No rasteriser is touched, so this runs in CI: `build_drawings` reads the database and
     `build_fill_spec` resolves the chips against the packaged artwork. The pixels are checked
     separately by the marked test below.
+
+    **The marker directory is pinned to the packaged one, and must stay pinned** (2026-09-02).
+    `create_with_defaults` gives every asset class the default migration 043 set, which is
+    `resources/league/<class>` — gitignored, unversioned, and holding whatever artwork the
+    machine running the suite happens to carry. This fixture claims above to resolve "against
+    the packaged artwork", and until it was pinned that claim was true only on a host whose
+    league folder was empty: a league that had drawn three of its own marks, which the README
+    explicitly invites, turned the marked test below red with a plate colour of its own. The
+    `rasteriser` marker keeps that test out of CI, so nothing else would ever have caught it.
     """
     from db.database import get_connection
+    from models.image_constants import packaged_directory_for
     from services.image_config_service import ImageConfigService
     from services.image_render_service import resolve_configured_directories
     from services.image_standings_post import build_drawings
@@ -1241,6 +1251,8 @@ async def _highlighted_svg(tmp_path):
     bot = _bot(db_path)
     config_service = ImageConfigService(db_path)
     await config_service.create_with_defaults(1)
+    # See the docstring: the default points into the league's own gitignored folder.
+    await config_service.set_field(1, "marker_directory", packaged_directory_for("marker"))
     bot.image_config_service = config_service
 
     drawings = await build_drawings(

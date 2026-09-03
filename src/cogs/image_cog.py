@@ -181,8 +181,11 @@ class ImageCog(commands.Cog):
 
     # The fifteen template filename setters live in their own group rather than under
     # `config`. Discord allows at most 25 subcommands per group and forbids a third
-    # nesting level, and `config` would otherwise carry 29: 1 template directory +
-    # 15 filenames + 7 asset directories + 4 preferences + toggle + view.
+    # nesting level, and `config` would otherwise carry 30: 1 template directory +
+    # 15 filenames + 8 asset directories + 4 preferences + toggle + view.
+    #
+    # As split, `config` carries 15 of the 25 and `template` the other 15. Each asset class
+    # added costs `config` one, so the arithmetic is worth redoing rather than assuming.
     template = app_commands.Group(
         name="template",
         description="Set which SVG file backs each kind of image.",
@@ -227,7 +230,7 @@ class ImageCog(commands.Cog):
     async def _set_directory(
         self, interaction: discord.Interaction, column: str, value: str, label: str
     ) -> None:
-        """Shared body for the template directory and the seven asset directories.
+        """Shared body for the eight asset directories.
 
         A path that escapes the project root is rejected here, at the point of
         configuration, rather than surfacing as a render failure later (FR-011, FR-016).
@@ -756,7 +759,7 @@ class ImageCog(commands.Cog):
     async def config_verdicts_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "verdicts_template", filename)
 
-    # ── The seven asset directory commands ───────────────────────────────
+    # ── The eight asset directory commands ───────────────────────────────
     #
     # Identical in shape to `template-directory`; only the column differs. Each is
     # subject to the same project-root containment rejection (FR-016).
@@ -830,6 +833,16 @@ class ImageCog(commands.Cog):
     @server_admin_only
     async def config_tyre_directory(self, interaction: discord.Interaction, directory: str) -> None:
         await self._set_directory(interaction, "tyre_directory", directory, "Tyre compounds")
+
+    @config.command(
+        name="division-logo-directory",
+        description="Set the folder searched for division logos.",
+    )
+    @app_commands.describe(directory="Path relative to the project root.")
+    @channel_guard
+    @server_admin_only
+    async def config_division_logo_directory(self, interaction: discord.Interaction, directory: str) -> None:
+        await self._set_directory(interaction, "division_logo_directory", directory, "Division logos")
 
     # ── /images config toggle ─────────────────────────────────────────────
 

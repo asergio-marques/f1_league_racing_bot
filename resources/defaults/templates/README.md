@@ -161,11 +161,15 @@ rather than being letterboxed inside it — the drivers chip is 52 × 22 and the
 52 × 18, shapes fixed by two different row bands, and the position-change markers beside them in
 the same folder are square. Draw artwork that survives being stretched.
 
-`marker` is the one class the shape check ignores entirely, precisely because it holds both
-kinds at once. It is also the **only** class whose slots may carry that declaration: a slot of
-any other class declaring it is refused outright, whatever its shape. Were it merely ignored, a
-template declaring it of every driver portrait slot would sail past the shape check and draw
-every face in the league squashed.
+`marker` is the **only** class whose slots may carry that declaration: a slot of any other
+class declaring it is refused outright, whatever its shape. Were it merely ignored, a template
+declaring it of every driver portrait slot would sail past the shape check and draw every face
+in the league squashed.
+
+The shape check ignores `marker` entirely, precisely because it holds both kinds at once. It
+ignores one other class, for an unrelated reason — `division_logo`, added 2026-09-02, whose
+files come one per division rather than one per class, so two slots of it on one template need
+not agree. That class may not stretch: freedom from one shape is not licence to distort.
 
 What remains in each file's `<style>` is the **ink**: `.highlight_p1_text` and friends colour
 the result itself, and `.highlight_p1_sup_text` the raised qualifying figure, which sits on the
@@ -229,3 +233,22 @@ because SVG text simply overruns and reports nothing. Narrow them again and it w
 `tools/relayout_standings_grid.py` computes the whole grid from those constants and is
 idempotent; `tests/unit/test_image_standings_geometry.py` asserts the shipped files against the
 same numbers from the other side, including a rasterised check that no text reaches a divider.
+
+## None of these files draws a division logo, and yours may
+
+`division_logo` is an optional whole-graphic field every one of the fifteen catalogues admits,
+and which no file here declares. Add an `<image id="division_logo">` to a copy of any of these
+templates and the bot fills it from `resources/league/division-logos/`, keyed on the division's
+name — `Division 1` looks for `division_1.svg`.
+
+Three things separate it from every other image field, and all three follow from its being
+decoration a league opts into rather than data the bot went looking for:
+
+- **It is never mandatory**, on any template. Leaving the id out is not a fault, which is what
+  keeps these fifteen files valid without it.
+- **Nothing is reported when a division has no logo.** The packaged `fallback.svg` for the
+  class has nothing drawn in it, and unlike every other class, drawing it raises no notice at
+  all. A misnamed file is therefore silent too.
+- **It is held to no shape.** Two logo slots on one template may be any two shapes, because a
+  league supplies one file per division rather than one per class. It still may not carry
+  `preserveAspectRatio="none"` — see the marker section above for why that stays exclusive.

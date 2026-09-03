@@ -20,6 +20,7 @@ from lxml import etree
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from models.image_catalogues import (
+    DIVISION_LOGO_FIELD,
     CALENDAR_CATALOGUE,
     CATALOGUES,
     CapacityError,
@@ -67,7 +68,11 @@ def test_calendar_catalogue_is_registered_and_not_empty():
 
 def test_calendar_catalogue_classifies_its_whole_graphic_fields():
     assert CALENDAR_CATALOGUE.mandatory == frozenset({"division_name"})
-    assert CALENDAR_CATALOGUE.optional == frozenset({"season_number", "division_tier"})
+    # `division_logo` joins every catalogue's optional set (2026-09-02) — a league may
+    # declare the slot on any of its own templates, and the bot ships none that do.
+    assert CALENDAR_CATALOGUE.optional == frozenset(
+        {"season_number", "division_tier", DIVISION_LOGO_FIELD}
+    )
 
 
 def test_calendar_rows_are_named_round_not_row():

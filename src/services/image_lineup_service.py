@@ -22,7 +22,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from models.image_catalogues import RESERVE_KEY, catalogue_for, row_crop_fields
+from models.image_catalogues import (
+    DIVISION_LOGO_ASSET,
+    DIVISION_LOGO_FIELD,
+    RESERVE_KEY,
+    catalogue_for,
+    row_crop_fields,
+)
 from utils.asset_resolver import normalise
 from utils.country_data import country_for_nationality
 from utils.svg_document import FieldIndex
@@ -314,6 +320,10 @@ def build_fill_spec(
             remove.append(field_id)
 
     put("division_name", drawing.division_name)
+
+    # The division's logo, where a league's own template declares the slot (2026-09-02).
+    if DIVISION_LOGO_FIELD in declared:
+        image_data[DIVISION_LOGO_FIELD] = (DIVISION_LOGO_ASSET, drawing.division_name)
     put("season_number", drawing.season_number or "")
     put("division_tier", drawing.division_tier or "")
 
