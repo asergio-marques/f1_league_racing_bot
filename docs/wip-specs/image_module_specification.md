@@ -451,9 +451,8 @@ These hold for every image type of the module and are stated here rather than re
 
 ### The test commands
 - The commands of the "images test" family exist so that a league manager may judge the configuration of their own league before a posting path acts upon it. Each shall therefore draw the league's own data wherever the league holds it, and fabricate only what a league cannot have configured in advance.
-- The season a command of this family draws shall be the approved season of the server where there is one, and the season pending approval where there is none approved. A season that is completed or cancelled shall not be drawn, and a server holding only such seasons holds none.
+- The season a command of this family draws shall be the live season of the server — the one season that is approved or pending approval, a server holding at most one of them. A season that is completed or cancelled shall not be drawn, and a server holding only such seasons holds none.
 - A season pending approval shall be drawn exactly as an approved season is, in its divisions, its rounds, its teams, its seats and its seated drivers. No datum of it shall be substituted, and nothing shall be fabricated over it, on account of its status alone.
-- Where the server holds both an approved season and a later season pending approval, the approved season shall be drawn.
 - The reply shall name the number of the season drawn, and shall state where that season is pending approval.
 - The name of a division shall be resolved among the divisions of the season drawn. A name matching no such division shall be rejected with a clear error. The completion offered for the parameter shall list the divisions of that same season.
 - A division recorded as cancelled shall be offered and drawn as any other is. A command of this family posts nothing to a channel a driver reads, so the withdrawal of a division is no reason to withhold a preview of it, and a cancelled division is often the one a manager most wants to draw a template against. This is the one place a cancelled division is not filtered out, and it is deliberate.
@@ -465,7 +464,7 @@ These hold for every image type of the module and are stated here rather than re
     - "images test weather-mystery" shall be rejected where the round named is not of the mystery format.
 - Every rejection above shall be determined before a generation is attempted, so that a fault of configuration is never reported as a failure to render.
 - The name of a division and the number of a round shall each be an optional parameter. Where the server holds a season, a command invoked without the parameter it requires shall be rejected with a clear error naming the input that is wanting, and no division, round, calendar, format or team list shall be fabricated to stand in for configuration that is absent.
-- Where the server holds neither an approved season nor a season pending approval, a command of this family shall draw a fabricated league rather than be rejected, and:
+- Where the server holds no live season, a command of this family shall draw a fabricated league rather than be rejected, and:
     - the number of the season shall be one higher than the highest season number the server has already committed, and shall be 1 where the server has committed none;
     - the teams shall be those of the team list of the server, the reserve team excepted, each carrying the count of seats that list gives it;
     - the name of the division, the tier of the division, the calendar, the formats of its rounds, the number of the round drawn, the track and the schedule of that round, and the names of the drivers shall all be randomised;

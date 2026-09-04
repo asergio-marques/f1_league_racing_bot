@@ -349,6 +349,8 @@ Things change. During an active season:
 
 An archived season cannot be edited. Start the next one with `/season setup` and a new game edition; your team list, your modules and your `/bot-init` settings all carry over.
 
+**You cannot build next season while this one is still running.** A server holds one live season at a time — one being set up, or one running, never both — so the running season has to be completed (or cancelled) before `/season setup` will start another. Archived seasons are not live and never get in the way: every completed and cancelled season you have ever run stays in the database, with its rounds, results, standings and driver histories intact, and the stats commands keep reading them.
+
 If you need to abandon a season rather than finish it:
 
 ```

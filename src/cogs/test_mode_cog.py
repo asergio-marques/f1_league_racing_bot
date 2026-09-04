@@ -34,6 +34,7 @@ from services.test_mode_service import (
     build_review_summary,
 )
 from utils.channel_guard import channel_guard, admin_only
+from utils.message_builder import paginate_fenced
 
 log = logging.getLogger(__name__)
 
@@ -778,11 +779,16 @@ class TestModeCog(commands.Cog):
         interaction: discord.Interaction,
         division: str,
     ) -> None:
+        # A division's roster outgrows one Discord message somewhere past twenty
+        # drivers, and the listing is then sent as several — so the reply is deferred
+        # and every page goes out through followup.
+        await interaction.response.defer(ephemeral=True)
+
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
             interaction.guild_id
         )
         if config is None or not config.test_mode_active:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "⛔ This command is only available when test mode is enabled.",
                 ephemeral=True,
             )
@@ -797,34 +803,33 @@ class TestModeCog(commands.Cog):
         )
 
         if isinstance(result, str):
-            await interaction.response.send_message(f"⛔ {result}", ephemeral=True)
+            await interaction.followup.send(f"⛔ {result}", ephemeral=True)
             return
 
         if not result:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"ℹ️ No fake drivers in **{division}**. Use `/test-mode roster add` to create some.",
                 ephemeral=True,
             )
             return
 
-        lines = [f"**Fake Driver Roster — {division}**\n"]
-        lines.append(f"{'Name':<20} {'Mention':<30} {'Team':<20} Nationality")
-        lines.append("-" * 86)
+        body = [f"{'Name':<20} {'Mention':<30} {'Team':<20} Nationality", "-" * 86]
         for driver in result:
             mention = f"<@{driver['discord_user_id']}>"
-            lines.append(
+            body.append(
                 f"{driver['display_name']:<20} {mention:<30} "
                 f"{driver['team_name']:<20} {driver['nationality'] or '—'}"
             )
-        lines.append(
-            "\nCopy mention strings above when submitting results in the format:\n"
-            "`Position, <@user_id>, <@&role_id>, ...`"
-        )
 
-        await interaction.response.send_message(
-            "```\n" + "\n".join(lines) + "\n```",
-            ephemeral=True,
-        )
+        for page in paginate_fenced(
+            header=f"**Fake Driver Roster — {division}**",
+            body_lines=body,
+            footer=(
+                "Copy mention strings above when submitting results in the format:\n"
+                "`Position, <@user_id>, <@&role_id>, ...`"
+            ),
+        ):
+            await interaction.followup.send(page, ephemeral=True)
 
     # /test-mode roster clear ----------------------------------------------
 

@@ -652,20 +652,24 @@ class TestWhichSeasonIsDrawn:
 
         assert context.season_pending_approval is False
 
-    async def test_an_approved_season_outranks_a_later_pending_one(self, bot, db_path):
-        """A-002. The ACTIVE season's divisions are the ones offered and drawn."""
+    async def test_a_preview_never_faces_a_choice_of_two_live_seasons(self, bot, db_path):
+        """The server cannot hold both, so the preview has one season to resolve against.
+
+        This replaced a test asserting that an ACTIVE season outranked a later SETUP one.
+        A server now holds at most one live season — migration 049 enforces it with a
+        partial unique index — so the precedence it pinned arbitrates a state that cannot
+        occur, and what is worth pinning instead is that the state is refused.
+        """
         await _seed_league(db_path, status="ACTIVE", season_number=4, name="Running")
-        await _seed_league(db_path, status="SETUP", season_number=5, name="NextYear")
+
+        with pytest.raises(aiosqlite.IntegrityError):
+            await _seed_league(
+                db_path, status="SETUP", season_number=5, name="NextYear"
+            )
 
         context = await resolve_context(bot, SERVER_ID, "Running")
-
         assert context.season_number == 4
         assert context.season_pending_approval is False
-
-        # And the pending season's division is not reachable while the approved one stands.
-        with pytest.raises(PreviewRefused) as excinfo:
-            await resolve_context(bot, SERVER_ID, "NextYear")
-        assert excinfo.value.reason == REASON_NO_DIVISION
 
     @pytest.mark.parametrize("status", ["COMPLETED", "CANCELLED"])
     async def test_a_finished_season_is_not_drawn(self, bot, db_path, status):

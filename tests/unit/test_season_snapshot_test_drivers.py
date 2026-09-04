@@ -166,6 +166,43 @@ async def test_season_assignment_is_restored_under_the_new_season(db_path):
     assert rows[0]["division_id"] == new_div_id
 
 
+async def test_the_restored_assignment_carries_its_team_seat_id(db_path):
+    """`team_seat_id` must name the seat the driver actually sits in.
+
+    Everything that reads a seated driver joins `team_seats` through this column —
+    `/season review`'s lineup block and the whole attendance module among them — so an
+    assignment restored without it is invisible to every one of them. The driver is
+    seated, `/test-mode roster list` shows them, and the review reports the division
+    empty. That is what a NULL here looks like from the outside.
+    """
+    season_id = await _seed_setup_season(db_path)
+    added = await add_test_driver(SERVER_ID, "Mock Alpha", "Redline", DIVISION, db_path)
+    profile_id = added["profile_id"]
+
+    await _snapshot(SeasonService(db_path), db_path, season_id)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT ts.id AS seat_id, ts.seat_number, ti.name AS team_name
+            FROM driver_season_assignments dsa
+            JOIN team_seats ts     ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            WHERE dsa.driver_profile_id = ?
+            """,
+            (profile_id,),
+        )
+        joined = await cursor.fetchall()
+        cursor = await db.execute(
+            "SELECT id FROM team_seats WHERE driver_profile_id = ?", (profile_id,)
+        )
+        occupied_seat = (await cursor.fetchone())[0]
+
+    assert len(joined) == 1, "the join every reader makes must find exactly this driver"
+    assert joined[0]["seat_id"] == occupied_seat, "names a different seat than it occupies"
+    assert joined[0]["team_name"] == "Redline"
+
+
 async def test_repeated_snapshots_do_not_accumulate_assignments(db_path):
     """Several wizard commands in a row leave one assignment, not one per command."""
     season_id = await _seed_setup_season(db_path)

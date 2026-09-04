@@ -119,7 +119,7 @@ The response includes a **synthetic mention string** (`<@…>` with the fake pro
 |---|---|
 | `/test-mode roster add` | `driver_name`, `team_name`, `division` required; `nationality` optional |
 | `/test-mode roster remove` | Takes the synthetic `user_id`, not a name |
-| `/test-mode roster list` | Per division. The cheat sheet — reprints every mention string, with team and nationality |
+| `/test-mode roster list` | Per division. The cheat sheet — reprints every mention string, with team and nationality. A long roster arrives as several messages, each one a complete table |
 | `/test-mode roster clear` | Empties one division |
 
 Fake drivers show up in `/season review`'s lineup block with their display name beside the mention, which is the quickest way to confirm a division is fully seated — provided the lineup is being shown as text. With the `lineup` image output switched on, the review draws the picture instead, which carries the driver's display name and not the mention; switch that output off, or use `/test-mode roster list`, to read the mentions back.

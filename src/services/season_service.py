@@ -30,7 +30,14 @@ class SeasonService:
     # ------------------------------------------------------------------
 
     async def create_season(self, server_id: int, start_date: date | None = None) -> Season:
-        """Insert a new SETUP season and return it."""
+        """Insert a new SETUP season and return it.
+
+        Raises ``sqlite3.IntegrityError`` where the server already holds a live season:
+        migration 049 permits one SETUP-or-ACTIVE row per server, and this method applies
+        none of the checks `/season setup` makes before reaching the wizard. Nothing in
+        ``src/`` calls it — the wizard writes its season through
+        :meth:`save_pending_snapshot` — so any new caller wants those checks first.
+        """
         if start_date is None:
             start_date = date.today()
         async with get_connection(self._db_path) as db:
@@ -80,11 +87,20 @@ class SeasonService:
         return _row_to_season(row)
 
     async def get_setup_or_active_season(self, server_id: int) -> Season | None:
-        """Return the SETUP or ACTIVE season for *server_id*, or None."""
+        """Return the live (SETUP or ACTIVE) season for *server_id*, or None.
+
+        A server holds at most one, enforced by the partial unique index migration 049
+        builds, so the two states cannot both be present and there is nothing to choose
+        between. The ordering is stated anyway: this was a bare ``LIMIT 1`` over both
+        states, which returned an uncontracted row wherever the invariant had been
+        broken, and matching :meth:`get_previewable_season` keeps every reader of a
+        league's current season agreeing on which one that is.
+        """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, server_id, start_date, status, season_number FROM seasons "
-                "WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') LIMIT 1",
+                "WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') "
+                "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
                 (server_id,),
             )
             row = await cursor.fetchone()
@@ -95,14 +111,14 @@ class SeasonService:
     async def get_previewable_season(self, server_id: int) -> Season | None:
         """Return the season an `/images test` preview draws, or None.
 
-        The approved season where there is one, and the season pending approval where
-        there is none approved. A COMPLETED or CANCELLED season is never previewable: a
-        preview is a check on what the league is running or about to run.
+        The server's one live season — SETUP or ACTIVE. A COMPLETED or CANCELLED season is
+        never previewable: a preview is a check on what the league is running or about to
+        run, and a server keeps its whole archive besides.
 
-        Deliberately **not** `get_setup_or_active_season`, which is `LIMIT 1` with no
-        `ORDER BY` — where a league builds next season while this one runs, both rows match
-        and which comes back is uncontracted. Here the precedence is the whole point, so it
-        is written into the query.
+        A server holds at most one live season (migration 049), so the ACTIVE-before-SETUP
+        ordering below no longer arbitrates anything and is kept as defence: it costs
+        nothing, and it means this and every other reader of "the season of this server"
+        answer the same row even on a database that predates the constraint.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -580,8 +596,9 @@ class SeasonService:
                     )
                     await db.execute(
                         "INSERT INTO driver_season_assignments "
-                        "(driver_profile_id, season_id, division_id) VALUES (?, ?, ?)",
-                        (seat["profile_id"], season_id, div_id),
+                        "(driver_profile_id, season_id, division_id, team_seat_id) "
+                        "VALUES (?, ?, ?, ?)",
+                        (seat["profile_id"], season_id, div_id, seat_id),
                     )
             await db.commit()
 

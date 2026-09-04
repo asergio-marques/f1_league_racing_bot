@@ -82,10 +82,22 @@ async def _next_synthetic_id(db_path: str) -> int:
 
 
 async def _get_active_season_id(server_id: int, db_path: str) -> int | None:
-    """Return the active or setup season ID for a server, or None if none exists."""
+    """Return the live season ID for a server, or None if it has none.
+
+    A server holds at most one live (SETUP or ACTIVE) season — migration 049 enforces it
+    with a partial unique index, and `/season setup` refuses to start a second — so this
+    reads at most one row and needs no precedence between the two states.
+
+    The ordering is written in regardless, because it costs nothing and the query used to
+    be a bare ``LIMIT 1`` over both states. Which row that returned was uncontracted, and
+    on a server that held two it seated a mock driver in one season's divisions while
+    `/season review` drew the other's: a full `roster list` beside an empty lineup, with
+    neither command reporting a fault.
+    """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP')",
+            "SELECT id FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
+            "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
             (server_id,),
         )
         row = await cursor.fetchone()

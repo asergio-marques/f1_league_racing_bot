@@ -236,7 +236,7 @@ Season configuration is a multi-step flow: run `/season setup`, add divisions wi
 #### `/season setup` — Start season configuration
 *Access: Trusted admin*
 
-Creates a pending season tied to today's date and enables the `/division` and `/round` setup commands. Refused if a season is already in setup or active for this server.
+Creates a pending season tied to today's date and enables the `/division` and `/round` setup commands. Refused if a season is already in setup or active for this server — a server holds **one** live season at a time, so finish the running one with `/season complete` (or approve or cancel the pending one) before starting another. Completed and cancelled seasons do not count and are kept indefinitely.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -564,7 +564,7 @@ A fake driver has no signup record behind it, so the nationality is recorded on 
 |-----------|------|----------|-------------|
 | `division` | String | ✅ | Division name |
 
-Prints each fake driver with their synthetic user ID, their team and their nationality — the cheat sheet for result submission. A driver recorded with no nationality shows a dash.
+Prints each fake driver with their synthetic user ID, their team and their nationality — the cheat sheet for result submission. A driver recorded with no nationality shows a dash. A roster too long for one Discord message is sent as several, each a complete table with the heading repeated.
 
 #### `/test-mode roster clear` — Remove every fake driver from a division
 *Access: Trusted admin · Requires test mode active*

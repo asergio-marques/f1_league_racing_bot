@@ -86,25 +86,22 @@ class TestPreviewableSeason:
         assert season.season_number == 1
         assert season.status is SeasonStatus.SETUP
 
-    async def test_an_approved_season_outranks_a_later_pending_one(self, service, db_path):
-        """A-002. The season a league is running is the one its templates are judged by."""
-        await _seed(db_path, "ACTIVE", 4)
-        await _seed(db_path, "SETUP", 5)
+    @pytest.mark.parametrize(
+        "first, second", [("ACTIVE", "SETUP"), ("SETUP", "ACTIVE"), ("SETUP", "SETUP")]
+    )
+    async def test_a_server_cannot_hold_two_live_seasons(self, db_path, first, second):
+        """The state the preview used to arbitrate is now refused by the database.
 
-        season = await service.get_previewable_season(SERVER_ID)
+        A live season is one that is approved or pending approval, and a server holds at
+        most one. Migration 049 enforces it with a partial unique index rather than
+        leaving it to the command that starts a season — every reader of "the season of
+        this server" depends on there being exactly one, and `/season setup`'s own guard
+        cannot speak for the stored data.
+        """
+        await _seed(db_path, first, 4)
 
-        assert season.season_number == 4
-        assert season.status is SeasonStatus.ACTIVE
-
-    async def test_the_precedence_holds_whichever_order_the_rows_were_written_in(
-        self, service, db_path
-    ):
-        """The SETUP row is written *first* here, so a query relying on insertion order
-        would return it. `get_setup_or_active_season` is exactly that query."""
-        await _seed(db_path, "SETUP", 5)
-        await _seed(db_path, "ACTIVE", 4)
-
-        assert (await service.get_previewable_season(SERVER_ID)).status is SeasonStatus.ACTIVE
+        with pytest.raises(aiosqlite.IntegrityError):
+            await _seed(db_path, second, 5)
 
     @pytest.mark.parametrize("status", ["COMPLETED", "CANCELLED"])
     async def test_a_finished_season_is_never_previewable(self, service, db_path, status):
@@ -196,16 +193,23 @@ class TestPreviewableDivisions:
 
         assert [d.name for d in divisions] == ["Premier", "Academy"]
 
-    async def test_an_approved_season_wins_over_one_pending_approval(self, service, db_path):
-        """The same precedence `get_previewable_season` applies, through the joined query."""
-        pending = await _seed(db_path, "SETUP", 4)
-        active = await _seed(db_path, "ACTIVE", 3)
-        await _seed_division(db_path, pending, "Next Season Division", 1)
-        await _seed_division(db_path, active, "Running Division", 1)
+    async def test_the_one_live_season_is_the_one_whose_divisions_are_offered(
+        self, service, db_path
+    ):
+        """An archived season's divisions are never offered beside the live one's.
+
+        This replaced a test that seeded an ACTIVE season beside a SETUP one to prove
+        which won. A server can no longer hold both, so what remains worth pinning is
+        that the archive does not leak into the completion.
+        """
+        done = await _seed(db_path, "COMPLETED", 3)
+        live = await _seed(db_path, "SETUP", 4)
+        await _seed_division(db_path, done, "Last Season Division", 1)
+        await _seed_division(db_path, live, "This Season Division", 1)
 
         divisions = await service.get_previewable_divisions(SERVER_ID)
 
-        assert [d.name for d in divisions] == ["Running Division"]
+        assert [d.name for d in divisions] == ["This Season Division"]
 
     async def test_a_season_pending_approval_is_used_when_none_is_approved(
         self, service, db_path
