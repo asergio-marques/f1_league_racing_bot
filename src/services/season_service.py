@@ -21,9 +21,9 @@ class SeasonImmutableError(Exception):
 class SeasonService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
-        # Mock drivers displaced by the most recent save_pending_snapshot, awaiting
-        # restore_test_driver_seats once the caller has re-seeded the new teams.
-        self._pending_test_seats: dict[str, list[dict]] = {}
+        # Drivers displaced by the most recent save_pending_snapshot — real and mock
+        # alike — awaiting restore_driver_seats once the caller has re-seeded the teams.
+        self._pending_driver_seats: dict[str, list[dict]] = {}
 
     # ------------------------------------------------------------------
     # Season
@@ -34,8 +34,8 @@ class SeasonService:
 
         Raises ``sqlite3.IntegrityError`` where the server already holds a live season:
         migration 049 permits one SETUP-or-ACTIVE row per server, and this method applies
-        none of the checks `/season setup` makes before reaching the wizard. Nothing in
-        ``src/`` calls it — the wizard writes its season through
+        none of the checks `/season setup` makes before its own writes. Nothing in
+        ``src/`` calls it — season setup writes its season through
         :meth:`save_pending_snapshot` — so any new caller wants those checks first.
         """
         if start_date is None:
@@ -259,6 +259,31 @@ class SeasonService:
         and re-inserts the full pending config.  Sessions are NOT created here —
         they are created at approve time.
 
+        **Everything not held in the PendingConfig must be carried across by hand.**
+        The rebuild drops every division, team, seat and round and re-inserts them with
+        new row ids, so anything hanging off the old ids is lost unless it is saved
+        before the teardown and restored after it, keyed by division *name* rather than
+        by id. What that covers, audited 2026-09-04:
+
+        - the divisions row itself — name, role, tier and the weather forecast channel
+          come back through the PendingConfig; ``lineup_channel_id`` and
+          ``calendar_channel_id`` are saved and restored here;
+        - ``division_results_config`` — results, standings and penalty channels, and
+          the reserves-in-standings flag;
+        - ``attendance_division_config`` — the RSVP and attendance channels;
+        - ``season_points_links`` — the points configurations attached to the season;
+        - every seated driver, real and mock alike, by team name and seat number.
+
+        Three things are deliberately **not** carried, each harmless: ``lineup_message_id``
+        and ``calendar_message_id`` (nothing has been posted for a season still in setup,
+        so they are null); ``signup_division_config`` (two keys and a vestigial column,
+        recreated with ``INSERT OR IGNORE`` whenever it is next wanted); and
+        ``season_amendment_state`` (an amendment runs against a season that is already
+        approved, which this never rewrites).
+
+        A new per-division or per-season setting added anywhere in the bot belongs in
+        the list above, or it will be silently destroyed by the next `/round add`.
+
         Returns (new_season_id, season_number) so callers can update their in-memory state.
         """
         async with get_connection(self._db_path) as db:
@@ -356,8 +381,20 @@ class SeasonService:
                 for div_row in div_rows:
                     old_div_id = div_row[0]
 
-                    # Remove any test driver profiles (and their season assignments/seats)
-                    # that were placed in this division during SETUP.
+                    # Every driver seated in this division, mock or real. The rows they
+                    # sit in are about to be deleted and re-created with new ids, so the
+                    # placement is recorded by name — division, team, seat number — and
+                    # restored once the new rows exist.
+                    #
+                    # Real drivers are captured for exactly the same reason mock ones
+                    # are, and the distinction that used to be drawn here was a defect:
+                    # `is_test_driver = 1` was captured and restored while a real
+                    # driver's assignment was deleted by division and restored by
+                    # nothing. A league that placed its grid during SETUP and then ran
+                    # `/round add` had every placement silently destroyed — the profile
+                    # surviving, so nobody appeared to be missing, while the seat and the
+                    # assignment were gone. A season-setup command shapes divisions and rounds;
+                    # it must not unplace anybody.
                     cursor2 = await db.execute(
                         """
                         SELECT dp.id     AS profile_id,
@@ -366,16 +403,12 @@ class SeasonService:
                         FROM driver_profiles dp
                         JOIN team_seats ts ON ts.driver_profile_id = dp.id
                         JOIN team_instances ti ON ti.id = ts.team_instance_id
-                        WHERE ti.division_id = ? AND dp.is_test_driver = 1
+                        WHERE ti.division_id = ?
                         """,
                         (old_div_id,),
                     )
-                    test_profile_rows = await cursor2.fetchall()
-                    if test_profile_rows:
-                        # The profiles themselves survive: a mock roster seated during
-                        # SETUP is a league manager's work, not scratch state to rebuild.
-                        # Only the seats and assignments pointing at rows about to be
-                        # deleted are released, and both are restored by name afterwards.
+                    seated_rows = await cursor2.fetchall()
+                    if seated_rows:
                         div_name = saved_div_names.get(old_div_id)
                         if div_name is not None:
                             seats_by_division.setdefault(div_name, []).extend(
@@ -384,21 +417,20 @@ class SeasonService:
                                     "team_name": r["team_name"],
                                     "seat_number": r["seat_number"],
                                 }
-                                for r in test_profile_rows
+                                for r in seated_rows
                             )
-                        test_ids = [r["profile_id"] for r in test_profile_rows]
-                        ph = ",".join("?" * len(test_ids))
-                        await db.execute(
-                            f"DELETE FROM driver_season_assignments WHERE driver_profile_id IN ({ph})",
-                            test_ids,
-                        )
+                        seated_ids = [r["profile_id"] for r in seated_rows]
+                        ph = ",".join("?" * len(seated_ids))
                         await db.execute(
                             f"UPDATE team_seats SET driver_profile_id = NULL "
                             f"WHERE driver_profile_id IN ({ph})",
-                            test_ids,
+                            seated_ids,
                         )
 
-                    # Remove any real driver_season_assignments for this division
+                    # The assignments of this division go with the division row. Those of
+                    # a seated driver are re-created by restore_driver_seats; one
+                    # belonging to a driver who sat in no seat has nothing to restore it
+                    # to, and is the same row the division's deletion would orphan.
                     await db.execute(
                         "DELETE FROM driver_season_assignments WHERE division_id = ?",
                         (old_div_id,),
@@ -525,26 +557,34 @@ class SeasonService:
 
         # The teams a mock driver was seated in do not exist yet — the caller re-seeds
         # them from the server defaults once this returns. Reseating therefore waits for
-        # restore_test_driver_seats(), which the caller invokes at that point.
-        self._pending_test_seats = seats_by_division
+        # restore_driver_seats(), which the caller invokes at that point.
+        self._pending_driver_seats = seats_by_division
         return new_season_id, season_number
 
-    async def restore_test_driver_seats(self, season_id: int) -> None:
-        """Reseat the mock drivers that the last snapshot of *season_id* displaced.
+    async def restore_driver_seats(self, season_id: int) -> None:
+        """Reseat the drivers that the last snapshot of *season_id* displaced.
 
-        Pairs with save_pending_snapshot: it releases the seats of every mock driver in
-        a SETUP season before deleting the division rows they hang off, and this puts
-        them back once the divisions and their teams have been re-created. Matching is
-        by division name, team name and seat number, the same way channel configuration
-        is carried across the rebuild — the row IDs are all new.
+        Pairs with save_pending_snapshot: it releases the seat of every driver in a SETUP
+        season before deleting the division rows they hang off, and this puts them back
+        once the divisions and their teams have been re-created. Matching is by division
+        name, team name and seat number, the same way channel configuration is carried
+        across the rebuild — the row IDs are all new.
+
+        **Real and mock drivers alike.** The snapshot used to capture only
+        ``is_test_driver = 1`` while deleting a real driver's assignment by division and
+        restoring nothing, so a league that placed its grid during SETUP lost every
+        placement to the next `/round add` — silently, the profile surviving while the
+        seat and the assignment did not.
 
         A driver whose team or seat no longer exists (the league manager renamed the
-        team, or shrank it) is left unseated rather than moved somewhere arbitrary.
+        team, or shrank it) is left unseated rather than moved somewhere arbitrary. That
+        is a placement the manager must make again, and it is the one case this cannot
+        carry across; it is never a deletion of the driver.
         """
-        seats_by_division = self._pending_test_seats
+        seats_by_division = self._pending_driver_seats
         if not seats_by_division:
             return
-        self._pending_test_seats = {}
+        self._pending_driver_seats = {}
 
         async with get_connection(self._db_path) as db:
             for div_name, seats in seats_by_division.items():

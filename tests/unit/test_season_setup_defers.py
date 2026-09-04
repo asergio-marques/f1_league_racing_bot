@@ -1,4 +1,4 @@
-"""The season-setup wizard commands defer before they do their work.
+"""The season-setup commands defer before they do their work.
 
 Each of `/season setup`, `/division add`, `/round add` and `/round amend` rewrites the
 whole SETUP season through `_snapshot_pending` — every division, team, seat and round
@@ -55,7 +55,7 @@ def _bot() -> MagicMock:
     bot.season_service.get_setup_season = AsyncMock(return_value=None)
     bot.season_service.save_pending_snapshot = AsyncMock(return_value=(42, 1))
     bot.season_service.get_divisions = AsyncMock(return_value=[])
-    bot.season_service.restore_test_driver_seats = AsyncMock()
+    bot.season_service.restore_driver_seats = AsyncMock()
     bot.team_service.seed_division_teams = AsyncMock()
     bot.output_router.post_log = AsyncMock()
     return bot
@@ -137,7 +137,7 @@ async def test_round_add_defers_before_touching_the_database(monkeypatch):
         ("round_amend", {}),
     ],
 )
-def test_every_wizard_command_defers_first(command, kwargs):
+def test_every_setup_command_defers_first(command, kwargs):
     """A source-level check: the defer is the first statement that awaits anything.
 
     Driving all four through their real bodies would need four different sets of
@@ -159,7 +159,7 @@ def test_every_wizard_command_defers_first(command, kwargs):
 @pytest.mark.parametrize(
     "command", ["season_setup", "division_add", "round_add", "round_amend"]
 )
-def test_no_wizard_command_replies_through_response(command):
+def test_no_setup_command_replies_through_response(command):
     """After a defer the only valid reply is a followup; send_message would 404."""
     import inspect
 
