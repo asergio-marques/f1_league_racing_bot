@@ -208,3 +208,45 @@ def test_helper_passes_an_unmapped_value_through_rather_than_raising():
     from utils.country_data import country_for_nationality
 
     assert country_for_nationality("Atlantean") == "Atlantean"
+
+
+# --------------------------------------------------------------------------
+# Nationalities held by no UN member state
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "stated, country",
+    [
+        ("Palestinian", "Palestine"),
+        ("Taiwanese", "Taiwan"),
+    ],
+)
+def test_a_nationality_outside_un_membership_still_resolves(stated, country):
+    """UN membership is not the test for inclusion — a driver states what they hold.
+
+    The map was filled from the 193 member states, which left Palestine out until a
+    league asked for it. Taiwan had always been carried. Both are pinned here so that
+    a later pass over the map by membership does not quietly drop either: the rule is
+    what a driver can state, not who sits in the General Assembly.
+    """
+    from utils.country_data import country_for_nationality
+
+    assert country_for_nationality(stated) == country
+    assert NATIONALITY_COUNTRIES[stated] == country
+
+
+@pytest.mark.parametrize(
+    "typed",
+    ["Palestinian", "palestinian", "PALESTINIAN", "Palestine", "palestine",
+     "State of Palestine", "  palestine  "],
+)
+def test_the_wizard_accepts_every_form_of_palestinian(typed):
+    """The adjective, the country name, its official long form, and any casing."""
+    assert NATIONALITY_LOOKUP.get(typed.strip().lower()) == "Palestinian"
+
+
+def test_palestinian_resolves_one_flag_slug():
+    """A driver's flag and a round's would share this file, as V-4 requires of any country."""
+    from utils.country_data import country_for_nationality
+
+    assert normalise(country_for_nationality("Palestinian")) == "palestine"

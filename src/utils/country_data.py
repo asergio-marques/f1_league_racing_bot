@@ -65,8 +65,9 @@ def country_for_nationality(nationality: str | None) -> str | None:
 #: country and gains none -- it is carried through unchanged so that such a driver
 #: resolves ``other.svg`` exactly as before the class was rekeyed.
 #:
-#: This map now covers all 193 UN member states. Three of them share an English
-#: demonym with a sibling country and would otherwise collide on one adjective:
+#: This map covers all 193 UN member states, plus Palestine and Taiwan. Three of the
+#: members share an English demonym with a sibling country and would otherwise
+#: collide on one adjective:
 #: ``Dominican`` (Dominica / Dominican Republic), ``Congolese`` (Congo / the
 #: Democratic Republic of the Congo), and ``Guinean`` (Guinea / Guinea-Bissau).
 #: Each pair's bare adjective still resolves to the country it always has --
@@ -75,9 +76,11 @@ def country_for_nationality(nationality: str | None) -> str | None:
 #: (``Dominican (Dominica)``, ``Congolese (Kinshasa)``, ``Bissau-Guinean``) rather
 #: than being silently drawn with the wrong flag.
 #:
-#: Taiwan is carried over even though it is not a UN member: removing an
-#: already-supported nationality is a separate decision from adding the ones that
-#: were missing, and nobody has asked for it.
+#: UN membership is not the test for inclusion, only the bulk of what was added at
+#: once. Palestine and Taiwan are both here and are neither of them members: a driver
+#: states the nationality they hold, and a league that has one is not served by being
+#: told to pick ``Other``. Removing an already-supported nationality would likewise be
+#: a separate decision from adding a missing one, and nobody has asked for it.
 NATIONALITY_COUNTRIES: dict[str, str] = {
     "Afghan":             "Afghanistan",
     "Albanian":           "Albania",
@@ -215,6 +218,7 @@ NATIONALITY_COUNTRIES: dict[str, str] = {
     "Other":              "Other",
     "Pakistani":          "Pakistan",
     "Palauan":            "Palau",
+    "Palestinian":        "Palestine",
     "Panamanian":         "Panama",
     "Papua New Guinean":  "Papua New Guinea",
     "Paraguayan":         "Paraguay",

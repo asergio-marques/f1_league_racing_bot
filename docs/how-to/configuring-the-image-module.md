@@ -187,6 +187,8 @@ So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`
 
 > **Guinea-Bissau, the Democratic Republic of the Congo and Dominica each need their own flag file now.** `Guinean`, `Congolese` and `Dominican` used to cover two countries apiece in English and could only ever resolve one — Guinea, Congo and the Dominican Republic. A driver from the other country of each pair has a nationality of their own to select — `Bissau-Guinean`, `Congolese (Kinshasa)` and `Dominican (Dominica)` — so if your league has such a driver, add `guinea_bissau.svg`, `democratic_republic_of_the_congo.svg` or `dominica.svg` alongside the flags you already supply.
 
+> **`Palestinian` is selectable, and draws `palestine.svg`.** A driver may state it as `Palestinian`, `Palestine` or `State of Palestine`; all three record the same nationality and resolve the same one file. Add `palestine.svg` to your flag folder if your league has such a driver — like every other country flag, the artwork is your league's to supply, and without it the driver falls back to the generic flag.
+
 ### Doing one, start to finish
 
 Say your league has a team called **Red Bull** and you have its badge ready.

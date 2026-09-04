@@ -136,7 +136,7 @@ Bot initialization flow, right now, accounts only for the weather forecast funct
     - The start of the signup wizard shall change the state of the driver from "not signed up" to "pending signup completion".
     - Pressing the signup wizard button by a driver in any other state will yield an appropriate error message visible only to them (already signed up, banned from signing up due to a league/season ban).
     - During the wizard, the bot shall request the following information from the user one-by-one and in this order, recording their answers:
-        - Nationality - only accepts codes from national flags standard in Discord or the string "other", case insensitive
+        - Nationality - accepts a nationality adjective ("British"), a country name ("United Kingdom"), or the string "other", case insensitive. A two-letter country code is not accepted. The vocabulary covers every UN member state, together with Palestine and Taiwan; a value outside it is rejected and the answer re-requested.
         - Platform (Steam/EA/Xbox/Playstation) - single choice (buttons)
         - Platform ID - string input, no bot validation
         - Availability - string input, the various configurations chosen via the "signup time-slot" command shall be printed in ID order, associating each one with their ID. The user will then type all IDs pertaining to time slots they are available in. Multiple can be chosen; they must be separated by spaces, commas, or comma+space.
