@@ -503,7 +503,7 @@ No parameters. Flips test mode on/off; state persists across bot restarts.
 
 **Nor while your signup window is open.** Nobody real may sign up under test mode, so the button would refuse everyone who pressed it; close the window with `/signup close` first. The command does not close it for you — that would post a public notice in your signup channel off the back of a flag flip.
 
-Enabling it seeds the **Standard** and **Half Points** points configurations onto the current season if none are attached. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**.
+Enabling it seeds the **Standard** and **Half Points** points configurations onto the current season if none are attached, as ordinary server configurations that `/results config` can view and edit like any other. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**; the two configurations are kept, being configuration rather than scaffolding.
 
 #### `/test-mode nationality` — Toggle nationality for fake drivers
 *Access: Trusted admin · Requires test mode active*
@@ -582,7 +582,7 @@ Opens a modal for setting the RSVP status of every test driver in the division's
 |-----------|------|----------|-------------|
 | `division` | String | ✅ | Division name; the division must be in the active season and have an open RSVP |
 
-> Turning test mode **off** deletes every fake driver on the server, across all divisions, and is refused while a running season holds any of them. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached, and is refused outright while the server holds real drivers or its signup window is open.
+> Turning test mode **off** deletes every fake driver on the server, across all divisions, and is refused while a running season holds any of them. The seeded points configurations are **not** deleted with them — they are ordinary configurations of the server, and `/results config remove` takes them away if you do not want them. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached, and is refused outright while the server holds real drivers or its signup window is open.
 
 > While test mode is on, no real driver may sign up or be placed: the Sign Up button, `/signup open` and `/driver assign` all refuse them. Fake drivers are unaffected.
 

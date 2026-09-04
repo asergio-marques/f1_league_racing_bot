@@ -31,13 +31,15 @@ There is no on/off parameter — it flips, and the new state is persisted to `se
 
 Two side effects on **enable**, both aimed at getting to a testable season quickly:
 
-- Where a season is in SETUP or ACTIVE, **Standard** and **Half Points** are created and attached unless a config of that exact name is already linked. This runs unconditionally — a season already carrying configurations of its own gains these two on top of them, rather than being left alone.
+- Where a season is in SETUP or ACTIVE, **Standard** and **Half Points** are created and attached unless a config of that exact name is already linked. This runs unconditionally — a season already carrying configurations of its own gains these two on top of them, rather than being left alone. They are created as ordinary server configurations, in the same place `/results config create` puts one, so `/results config view` shows their full ladder while the season is still in setup and `/season approve` copies them into the season by the ordinary route.
 - `/season approve` performs the same seeding, so a season approved under test mode will not fail its points-configuration gate — but that path seeds only when nothing at all is attached, which the toggle path does not check.
 
 Two on **disable**:
 
 - Pending forecast-message deletions are flushed.
 - **Every fake driver on the server is deleted**, across all divisions. This is not scoped to one division and there is no confirmation. Toggling off mid-run destroys your roster.
+
+**The two seeded points configurations are kept** (decided 2026-09-04). "Standard" and "Half Points" are ordinary configurations of the server from the moment they are seeded — they sit in the same tables a hand-built one does, and `/results config` lists, views and edits them identically — so disabling test mode leaves them alone. A mock driver is scaffolding and goes; a points ladder is configuration and stays. The consequence is that a server which has ever had test mode enabled keeps both configurations permanently, and they appear in `/results config list` and in the season review. Remove them with `/results config remove` if a real season should not offer them.
 
 ---
 

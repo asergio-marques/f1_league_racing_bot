@@ -221,6 +221,17 @@ class TestRosterAddTakesANationality:
         assert "Added fake driver" in interaction.reply
         assert "Nationality:" not in interaction.reply
 
+    async def test_the_reply_names_the_division_the_driver_landed_in(self, cog):
+        """Every division is seeded from the same server team list, so a team name
+        repeats across all of them. The team alone therefore does not say where the
+        driver went, which is the one thing the command is choosing — and it matters
+        more to a manager building a roster than the nationality does."""
+        interaction = await _add(cog, name="Mock Alpha", nationality="Dutch")
+
+        assert DIVISION in interaction.reply
+        assert "Redline" in interaction.reply
+        assert interaction.reply.index("Redline") < interaction.reply.index(DIVISION)
+
     async def test_it_reaches_the_log(self, cog):
         await _add(cog, nationality="Dutch")
 

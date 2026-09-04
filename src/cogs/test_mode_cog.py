@@ -692,8 +692,12 @@ class TestModeCog(commands.Cog):
         nationality_line = (
             f"Nationality: **{result['nationality']}**\n" if result["nationality"] else ""
         )
+        # The division is named because a team name repeats across divisions — every
+        # division is seeded from the same server team list — so the team alone does not
+        # say where the driver landed, which is the one thing the manager is choosing.
         await interaction.response.send_message(
-            f"✅ Added fake driver **{result['display_name']}** to **{result['team_name']}**.\n"
+            f"✅ Added fake driver **{result['display_name']}** to **{result['team_name']}** "
+            f"in **{division}**.\n"
             f"{nationality_line}"
             f"Mention string (copy-paste into results): `{mention_str}`",
             ephemeral=True,

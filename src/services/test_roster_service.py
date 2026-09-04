@@ -506,6 +506,21 @@ async def _ensure_single_config(
     *session_entries* maps each SessionType to its position→points dict.
     *fl_configs* maps each SessionType that has an FL bonus to (fl_points, fl_position_limit).
     Returns True if the config was newly created, False if it already existed.
+
+    **The config is written as an ordinary server-level one**, into
+    ``points_config_store``/``points_config_entries``/``points_config_fl`` — the same
+    three tables `/results config` writes — and then attached to the season through
+    ``season_points_links``. It is a real config of the server from that moment: it is
+    listed, viewed and edited exactly as a hand-built one, and `/season approve` copies
+    it into the season's own store through the ordinary snapshot.
+
+    This used to write the points straight into ``season_points_entries`` while leaving
+    only an empty name row in the server-level store. Everything scored correctly,
+    because scoring reads the season store — but `/results config view` reads the
+    server-level store while the season is in SETUP, so a manager checking the
+    configuration was told "no entries configured" over a config that was fully
+    populated. A seeded config is a config; it does not get its own private path
+    through the schema.
     """
     async with get_connection(db_path) as db:
         # Check if already in season_points_links
@@ -518,11 +533,16 @@ async def _ensure_single_config(
         if already_linked:
             return False
 
-        # Create server-level config store entry (idempotent)
+        # Create the server-level config and take its id — the entries hang off it.
         await db.execute(
             "INSERT OR IGNORE INTO points_config_store (server_id, config_name) VALUES (?, ?)",
             (server_id, config_name),
         )
+        cursor = await db.execute(
+            "SELECT id FROM points_config_store WHERE server_id = ? AND config_name = ?",
+            (server_id, config_name),
+        )
+        config_id = (await cursor.fetchone())["id"]
 
         # Link to season
         await db.execute(
@@ -530,23 +550,25 @@ async def _ensure_single_config(
             (season_id, config_name),
         )
 
-        # Write season_points_entries per session type
         for session_type, pos_map in session_entries.items():
             for pos, points in pos_map.items():
                 await db.execute(
-                    "INSERT OR REPLACE INTO season_points_entries "
-                    "(season_id, config_name, session_type, position, points) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (season_id, config_name, session_type.value, pos, points),
+                    "INSERT INTO points_config_entries "
+                    "(config_id, session_type, position, points) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(config_id, session_type, position) "
+                    "DO UPDATE SET points = excluded.points",
+                    (config_id, session_type.value, pos, points),
                 )
 
-        # Write season_points_fl entries
         for session_type, (fl_pts, fl_pos_limit) in fl_configs.items():
             await db.execute(
-                "INSERT OR REPLACE INTO season_points_fl "
-                "(season_id, config_name, session_type, fl_points, fl_position_limit) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (season_id, config_name, session_type.value, fl_pts, fl_pos_limit),
+                "INSERT INTO points_config_fl "
+                "(config_id, session_type, fl_points, fl_position_limit) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(config_id, session_type) DO UPDATE SET "
+                "fl_points = excluded.fl_points, "
+                "fl_position_limit = excluded.fl_position_limit",
+                (config_id, session_type.value, fl_pts, fl_pos_limit),
             )
 
         await db.commit()
