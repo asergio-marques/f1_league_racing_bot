@@ -187,6 +187,14 @@ Found on 2026-08-17 while writing the results module how-to guide.
 
 Found on 2026-08-18 while building the `/images test` previews. **All three were fixed the same day**, and are kept here as a record of what was wrong and of the coverage gap that let two of them ship. Four later entries follow them.
 
+**Fixed — `/images config toggle` read fifteen template files before answering, so the reply hit an expired interaction token.**
+- Reported on 2026-09-04 from the Raspberry Pi: `404 Unknown interaction` raised from `_reply`, with the toggle itself written and only the log carrying the traceback.
+- Switching an aspect **on** reports what still blocks it, which reaches `_aspect_blocking_reasons` → `aspect_statuses` → `template_reports` → `evaluate_all_templates`. That parses all fifteen template SVGs from disk on every call and memoises nothing: **measured at 310–340 ms on a Windows development machine**, and the Pi's ARM CPU and SD card multiply it. The command did not defer, so past three seconds the token was dead.
+- Switching an aspect **off** returns before that work and was never affected, which is why the fault looked intermittent — it depended on which way the toggle went.
+- `/images template <kind>` carried the same exposure through `check_template`, which parses the one file it is given.
+- The autocomplete was not involved: `aspect` is a static `app_commands.choices` list, and no callback runs for it.
+- **Fixed** on 2026-09-04 by deferring at the top of both commands, ahead of every read. `_guard_module_enabled` replied through `interaction.response.send_message` directly and would have raised in its turn once its callers deferred — it now goes through `_reply`, which follows up when the interaction is already deferred. Covered by `tests/unit/test_image_cog_defers.py`. The underlying waste is untouched: `evaluate_all_templates` still re-parses fifteen files per call and would repay a cache.
+
 **Fixed — the nationality switch suppressed a flag only where the driver held no nationality, so a preview and a posting disagreed.**
 - `nationality_collected` reaches every drawing service, and each read it the same way: `if entry.nationality:` drew the flag, and the switch was consulted only in the `else` branch, to decide whether the *absence* was reported. See `image_results_service.py`, `image_standings_service.py`, `image_attendance_service.py`, `image_lineup_service._build_seat` and `image_verdict_service`.
 - The effect is that a driver who already holds a nationality still draws their flag on a posting after the league switches collection off. Only a driver holding none is affected by the switch.

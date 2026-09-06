@@ -201,12 +201,17 @@ class ImageCog(commands.Cog):
     # ── Helpers ───────────────────────────────────────────────────────────
 
     async def _guard_module_enabled(self, interaction: discord.Interaction) -> bool:
-        """Return True when the module is enabled; otherwise reply and return False."""
+        """Return True when the module is enabled; otherwise reply and return False.
+
+        Replies through :meth:`_reply` rather than ``response.send_message`` because its
+        callers differ: a command that has already deferred must answer on the followup,
+        and sending a fresh response there raises ``404 Unknown interaction``.
+        """
         if not await self.bot.module_service.is_images_enabled(interaction.guild_id):  # type: ignore[attr-defined]
-            await interaction.response.send_message(
+            await self._reply(
+                interaction,
                 "❌ The Image module is not enabled. "
                 "Use `/module enable images` first.",
-                ephemeral=True,
             )
             return False
         return True
@@ -288,6 +293,10 @@ class ImageCog(commands.Cog):
         rejection leaves the stored value exactly as it stood.
         """
         from services.image_validity_service import check_template
+
+        # Validation parses the named SVG from disk, which outruns Discord's three-second
+        # window on a slow host as readily as the fifteen-template sweep does.
+        await interaction.response.defer(ephemeral=True)
 
         if not await self._guard_module_enabled(interaction):
             return
@@ -868,6 +877,14 @@ class ImageCog(commands.Cog):
     async def config_toggle(
         self, interaction: discord.Interaction, aspect: app_commands.Choice[str]
     ) -> None:
+        # Switching an output *on* reports what still blocks it, and answering that means
+        # `_aspect_blocking_reasons` → `template_reports` → `evaluate_all_templates`,
+        # which parses all fifteen template SVGs from disk on every call and caches
+        # nothing. That is a third of a second on a development machine and several times
+        # that on the Raspberry Pi's SD card, so the reply arrived after Discord had
+        # already expired the token (404 Unknown interaction) with the toggle written.
+        await interaction.response.defer(ephemeral=True)
+
         if not await self._guard_module_enabled(interaction):
             return
 
