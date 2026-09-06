@@ -272,12 +272,30 @@ TEST_KIND_TEMPLATES: dict[str, tuple[str, ...]] = {
 #: Date-format token -> (strftime pattern, worked example shown in the choice list).
 #: At least one carries the weekday, and it is the default: a season run on the same
 #: weekday every second week makes the weekday the part of a date a driver reads for.
+#: Two tokens are substituted before ``strftime`` sees the pattern:
+#:
+#: ``{ordinal}`` — the day of the month with its English suffix and no leading zero
+#: (1st, 2nd, 3rd, 14th), which ``strftime`` cannot produce at all.
+#: ``{day}`` — the day of the month with no leading zero, which ``strftime`` can only
+#: produce through ``%-d`` on glibc and ``%#d`` on Windows. The bot is developed on
+#: Windows and runs on Debian, and the suite must pass on both, so neither is used:
+#: ``%-d`` raises ``ValueError: Invalid format string`` on Windows.
+#:
+#: See ``utils.date_formatting.format_date``, the only place either token or any of
+#: these patterns is read.
 DATE_FORMATS: dict[str, tuple[str, str]] = {
     "DDD_DD_MON_YYYY": ("%a %d %b %Y", "Sun 14 Jun 2026"),
     "DD_MM_YYYY": ("%d/%m/%Y", "14/06/2026"),
     "MM_DD_YYYY": ("%m/%d/%Y", "06/14/2026"),
     "YYYY_MM_DD": ("%Y-%m-%d", "2026-06-14"),
     "DD_MON_YYYY": ("%d %b %Y", "14 Jun 2026"),
+    # Written out, for a league that wants the date read rather than parsed.
+    "DDDD_ORD_MONTH_YYYY": ("%A {ordinal} %B %Y", "Sunday 14th June 2026"),
+    "ORD_MONTH_YYYY": ("{ordinal} %B %Y", "14th June 2026"),
+    "DDDD_DD_MONTH_YYYY": ("%A {day} %B %Y", "Sunday 14 June 2026"),
+    "DD_MONTH_YYYY": ("{day} %B %Y", "14 June 2026"),
+    "MONTH_DD_YYYY": ("%B {day}, %Y", "June 14, 2026"),
+    "DDDD_MONTH_ORD_YYYY": ("%A, %B {ordinal}, %Y", "Sunday, June 14th, 2026"),
 }
 
 TIME_FORMATS: dict[str, str] = {

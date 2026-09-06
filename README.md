@@ -1778,7 +1778,7 @@ offer the approve button while the configuration is one that could never fetch a
 |------------|-----------|---------|-------------|
 | `time-zone` | `zone` | `UTC` | IANA zone name, autocompleted. Times use the offset in force **on the date shown**, so a season spanning a daylight-saving change stays correct. |
 | `time-format` | `clock` | 24-hour | 12-hour or 24-hour |
-| `date-format` | `style` | `Sun 14 Jun 2026` | Five formats; the default carries the weekday |
+| `date-format` | `style` | `Sun 14 Jun 2026` | Eleven formats — five short, six written out (`Sunday 14th June 2026`, `14 June 2026`, `June 14, 2026`). The default carries the weekday |
 | `fastest-lap-colour` | `colour` | `#A020F0` | `#` plus exactly six hex digits |
 
 `fastest-lap-colour` reports the contrast of the chosen colour against the plate the race results template draws behind that field, and warns below 4.5:1 — the threshold at which text of that size stays legible. The colour is stored either way; it is the league's to choose. Where the template is invalid or declares no `fastest_lap_background` element, the bot says the contrast could not be measured rather than guessing.

@@ -106,7 +106,7 @@ Four settings, none of which need any artwork, so they are easy to get out of th
 |---|---|---|
 | `/images config time-zone` | The time zone shown on pictures. Start typing and it suggests names | `UTC` |
 | `/images config time-format` | 24-hour or 12-hour clock | 24-hour |
-| `/images config date-format` | `Sun 14 Jun 2026`, `14 Jun 2026`, `14/06/2026`, `06/14/2026` or `2026-06-14` | `Sun 14 Jun 2026` |
+| `/images config date-format` | Eleven formats, picked from a dropdown that shows each one written out. Short: `Sun 14 Jun 2026`, `14 Jun 2026`, `14/06/2026`, `06/14/2026`, `2026-06-14`. Written out: `Sunday 14th June 2026`, `14th June 2026`, `Sunday 14 June 2026`, `14 June 2026`, `June 14, 2026`, `Sunday, June 14th, 2026` | `Sun 14 Jun 2026` |
 | `/images config fastest-lap-colour` | The colour marking the fastest lap. A `#` and six characters | `#A020F0` (purple) |
 
 When you set the fastest-lap colour, the bot also tells you whether it will be easy to read against the background behind it, and warns you if not. It saves your choice either way — it is your league's look, not the bot's.
@@ -114,6 +114,8 @@ When you set the fastest-lap colour, the bot also tells you whether it will be e
 > **Everyone sees the same time zone.** When the bot posts times as text, Discord shows each driver the time in their own local zone. A picture cannot do that. Whatever zone you pick here is printed on the picture for everybody, with its short name after the time. Set it to the zone your league actually races in. This is the one thing a picture tells drivers *less* clearly than the text it replaces.
 
 The default date style includes the day of the week, which is usually the bit people actually look for.
+
+**The written-out styles are longer, and a date field has to hold them.** `Sunday, June 14th, 2026` is over twice the width of `2026-06-14`, so a drawing whose date field was drawn tight around a short style will shrink the text to fit it. Nothing is cut off and nothing fails — but if a calendar suddenly looks cramped after you change this, that is why. Draw the field wider, or pick a shorter style.
 
 ---
 

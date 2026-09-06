@@ -1109,6 +1109,20 @@ class ImageCog(commands.Cog):
             app_commands.Choice(name="14/06/2026", value="DD_MM_YYYY"),
             app_commands.Choice(name="06/14/2026", value="MM_DD_YYYY"),
             app_commands.Choice(name="2026-06-14", value="YYYY_MM_DD"),
+            # Written out. A calendar is read rather than parsed, and a league that wants
+            # it to look like a poster wants the month and the weekday spelled.
+            app_commands.Choice(
+                name="Sunday 14th June 2026", value="DDDD_ORD_MONTH_YYYY"
+            ),
+            app_commands.Choice(name="14th June 2026", value="ORD_MONTH_YYYY"),
+            app_commands.Choice(
+                name="Sunday 14 June 2026", value="DDDD_DD_MONTH_YYYY"
+            ),
+            app_commands.Choice(name="14 June 2026", value="DD_MONTH_YYYY"),
+            app_commands.Choice(name="June 14, 2026", value="MONTH_DD_YYYY"),
+            app_commands.Choice(
+                name="Sunday, June 14th, 2026", value="DDDD_MONTH_ORD_YYYY"
+            ),
         ]
     )
     @channel_guard
