@@ -7,11 +7,15 @@ server is a paste rather than an afternoon of typing.
 Nothing here touches the database or needs a running bot. These are offline generators: they
 produce **text**, and the bot does the real work when you paste it in.
 
+All but one of them read `roster.csv`, described next. The calendar generator is the exception:
+a calendar names circuits and dates, never drivers, so it stands outside that contract.
+
 | Script | Generates | Reads | Writes |
 |---|---|---|---|
 | `test-roster/generate_test_roster.py` | drivers, teams and divisions | `test-roster/names.txt` | `roster.csv`, `teams.txt`, `test-roster/commands.txt` |
 | `check-in-data/generate_check_in_data.py` | RSVP check-ins and revisions | `roster.csv` | `check-in-data/<slug>_initial.txt`, `check-in-data/<slug>_changed.txt` |
 | `results-data/generate_results_data.py` | a round's session results | `roster.csv`, `teams.txt`, `check-in-data/<slug>_*.txt` | `results-data/<slug>_<stamp>_<n>_<stage>_<session>.txt` |
+| `calendar-data/generate_calendar_data.py` | a season's calendar of rounds | the bot's track migration | `calendar-data/calendar.xml` |
 
 ## `roster.csv` — the shared contract
 
@@ -340,11 +344,118 @@ Unlike the check-in files, these are never replaced: the run stamp in the name m
 only collides with another started in the same second. They accumulate until you clear them
 out, and like every other generated file here they are gitignored.
 
+## `calendar-data/generate_calendar_data.py`
+
+Run it from the repo root:
+
+```
+python tools/data-generator/calendar-data/generate_calendar_data.py
+```
+
+It asks three things — the divisions, then how many rounds each of them runs, then one time
+zone for the whole run — and writes a single file beside itself:
+
+```
+calendar.xml
+```
+
+That file is the payload `/round add-xml` parses, and it goes into the modal whole:
+
+```xml
+<config>
+  <division name="Pro">
+    <round>
+      <datetime>2027-04-12T20:00</datetime>
+      <timezone>Europe/Lisbon</timezone>
+      <format>Sprint</format>
+      <track>1</track>
+    </round>
+  </division>
+</config>
+```
+
+**This is the one script here that reads no `roster.csv`.** It invents a calendar, not
+drivers, so there is nothing for it to agree with the roster about. It reads the bot instead,
+in two places, and both are the same argument the roster generator makes for importing
+nationalities: a value the bot rejects would make the whole import fail.
+
+- **The circuits come from the bot's own migration**, `src/db/migrations/029_track_data_expansion.sql`,
+  parsed out of its seed statement. They live in SQL rather than a module and reading
+  `track_service` would mean opening a database, which nothing here does — so the statement is
+  parsed. The generator emits the **numeric id** in `<track>`, which side-steps the accented
+  circuit names and the one whose name carries a comma.
+- **The time zone is validated by the bot's own `is_known_zone`**, which is case-sensitive on
+  purpose: `europe/lisbon` resolves on a Windows development machine and raises on the
+  Raspberry Pi. A folded name accepted here would write a payload that imports on one host and
+  fails on the other, so it is refused at the question.
+
+A checkout missing either stops the run **before the first question**, so you are never
+part-way through answering when it fails.
+
+**Naming your divisions.** The same rule as the roster generator: only a single space after a
+comma is stripped, so `Pro, Academy` gives exactly those two. Empty entries, doubled commas and
+duplicate names are refused and the question is asked again. Unlike the sibling scripts there is
+no `<<<DEFAULT>>>` token and no list to check a name against — a division is whatever you call
+it, and the bot matches it against its own pending divisions when the payload goes in. A name
+carrying an `&` or a quote is escaped for you.
+
+**How many rounds.** Asked per division, because divisions need not run seasons of the same
+length. **Four is the minimum** — three of the rounds are always special, so anything shorter
+leaves no normal round at all. **28 is the maximum**, because tracks are drawn without
+replacement and that is how many circuits the bot holds; the ceiling follows the migration if
+the track list ever grows. Both bounds are named in the question and in every refusal.
+
+**What it generates.** Division by division, each drawing its own:
+
+- **A weekday, drawn without replacement**, so no two divisions race on the same night and
+  their rounds cannot clash. There are only seven nights, so a run of more than seven divisions
+  repeats one and says so.
+- **A time on the hour between 18:00 and 22:00**, drawn once and held for every round of that
+  division. A league races after work, and a season whose slot wanders is not one anybody could
+  read at a glance.
+- **A start date in the year after the run**, drawn at random and moved forward to the
+  division's weekday, so divisions generated together do not all begin on the same date. A late
+  draw carries the season into the following January, which is left alone — a season crossing
+  the new year is an ordinary thing.
+- **Rounds exactly one week apart** thereafter, so the weekday and the time never move.
+- **Its own circuits**, drawn without replacement, so no track repeats within a division and
+  two divisions racing the same week visit different ones.
+- **Exactly one sprint, one mystery and one endurance round**, at random positions; every other
+  round is normal. All four formats in every generated season is the point — it is what
+  exercises each branch of the importer. **The mystery round is written with no `<track>` at
+  all**, which is what makes it a mystery to the parser and the only format allowed to omit one.
+
+**The times are local, not UTC.** `<datetime>` is read in the zone beside it and converted on
+import, which is the difference between this format and the pasted-line one. So an 18:00–22:00
+slot is what a driver in that zone sees, not what the database stores.
+
+> **A long calendar can be refused for a reason this script cannot see.** Where the images
+> module and its calendar aspect are both on, the bot refuses an import that would leave a
+> division holding more rounds than its calendar template draws — measured across the whole
+> import, not round by round. The **shipped template holds twelve**, so a generated season
+> longer than that is refused on a server using it, whole and with nothing added. The capacity
+> is the league's own template's, so there is no number this script could check against
+> without a database; generate around twelve unless you know the template is larger.
+
+**The modal takes 4000 characters**, around 23 rounds. A calendar longer than that is reported
+with its size, and goes in over several passes — the importer adds to a division rather than
+replacing it, so pasting a few divisions at a time builds one calendar. Note that the bot
+refuses an import **whole** if any round in it fails a validation, so a refused pass leaves
+nothing behind to clean up.
+
+Like the check-in files and unlike `roster.csv`, `calendar.xml` is replaced without asking and
+without a backup. It is per-run output, not a contract anything else reads.
+
 ## Adding a script here
 
-Give it its own subdirectory, read `roster.csv` for anything driver-shaped, and keep the same
-shape as the roster generator: prompt for what varies, and write what you generate to files
-beside the script. Add the generated filenames to `.gitignore` and a row to the table above.
+Give it its own subdirectory and keep the same shape as the roster generator: prompt for what
+varies, and write what you generate to files beside the script. Add the generated filenames to
+`.gitignore` and a row to the table above.
+
+**Read `roster.csv` for anything driver-shaped.** A generator that invents its own drivers stops
+lining up with the roster actually loaded into the bot. A generator that needs no drivers at all
+needs no roster either — the calendar generator is the one such script — but it should still read
+the bot rather than copy from it wherever the bot would reject what it made up.
 
 **What you write depends on how the bot takes it.** A generator whose output is one *command* per
 item writes them to a `commands.txt` and prints them too, as the roster generator does — the

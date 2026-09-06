@@ -308,17 +308,13 @@ class XmlRoundModal(discord.ui.Modal, title="Add rounds from XML"):
     payload: discord.ui.TextInput = discord.ui.TextInput(
         label="XML payload",
         style=discord.TextStyle.paragraph,
+        # A placeholder is capped at 100 characters, which the full schema does not fit
+        # in — Discord refuses the whole modal with a 400 rather than truncating it. So
+        # this names the elements rather than laying them out; the shape is in the
+        # README and in `docs/how-to/configuring-the-core-bot.md`.
         placeholder=(
-            '<config>\n'
-            '  <division name="Pro">\n'
-            "    <round>\n"
-            "      <datetime>2026-06-14T18:00</datetime>\n"
-            "      <timezone>Europe/Lisbon</timezone>\n"
-            "      <format>Normal</format>\n"
-            "      <track>14</track>\n"
-            "    </round>\n"
-            "  </division>\n"
-            "</config>"
+            '<config><division name="Pro"><round>'
+            "<datetime><timezone><format><track>"
         ),
         required=True,
         max_length=4000,

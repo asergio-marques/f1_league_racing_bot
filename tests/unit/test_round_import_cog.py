@@ -341,3 +341,49 @@ async def test_round_add_still_accepts_a_free_moment(monkeypatch):
 
     assert len(cfg.divisions[0].rounds) == 2
     cog._snapshot_pending.assert_awaited_once()
+
+
+# ── Discord's own limits on a modal ───────────────────────────────────────
+#
+# These are not style rules. Discord refuses a modal that breaks one with
+# `400 Invalid Form Body`, and refuses it *whole* — the command raises where it opens
+# the modal, so the manager gets nothing at all and only the log carries the reason.
+# The XML placeholder shipped at 220 characters against the 100 limit and did exactly
+# that, which is why the limits are pinned rather than trusted.
+
+_MODAL_FIELDS = [
+    ("BulkRoundModal.entries", BulkRoundModal.entries),
+    ("XmlRoundModal.payload", XmlRoundModal.payload),
+]
+
+
+@pytest.mark.parametrize("name, field", _MODAL_FIELDS)
+def test_a_placeholder_fits_discords_limit(name, field):
+    assert len(field.placeholder or "") <= 100, (
+        f"{name}: a placeholder over 100 characters makes Discord refuse the modal"
+    )
+
+
+@pytest.mark.parametrize(
+    "name, label",
+    [
+        ("BulkRoundModal.entries", "datetime UTC, format, track — one per line"),
+        ("XmlRoundModal.payload", "XML payload"),
+    ],
+)
+def test_a_label_fits_discords_limit(name, label):
+    """Stated rather than read back: `TextInput.label` is deprecated, and reading it
+    for an assertion adds a warning to every run for no gain."""
+    assert len(label) <= 45, f"{name}: a label is capped at 45 characters"
+
+
+@pytest.mark.parametrize("name, field", _MODAL_FIELDS)
+def test_a_field_does_not_ask_for_more_than_discord_carries(name, field):
+    assert field.max_length <= 4000, f"{name}: a text input is capped at 4000 characters"
+
+
+@pytest.mark.parametrize(
+    "title", ["Add rounds in bulk", "Add rounds from XML"]
+)
+def test_a_modal_title_fits_discords_limit(title):
+    assert len(title) <= 45
