@@ -168,9 +168,9 @@ Driving a check-in through the buttons requires as many Discord accounts as ther
 
 The `/images test` commands draw the server's own data — its rounds, its teams, its seated drivers and the artwork folders it configures. Which season they read is decided for them: the **approved** season where there is one, the season **pending approval** where there is none approved, and neither where the server holds no season at all.
 
-That last case is the one worth knowing. A server with no season is **not** refused: the bot invents a whole league — division, calendar, circuits, round and drivers — over the server's own configured team names, and says so in the reply. So the previews work on a bare server without test mode being involved at all.
+That last case is the one worth knowing. A server with no season is **refused** — the previews need something of the league's own to draw. The bot used to invent a whole league here, over the server's configured team names, but that was withdrawn on 2026-09-06 along with the optional `division` and `round` parameters that reached it: an invented league says nothing about the configuration a preview exists to check.
 
-Test mode is therefore no longer *required* to preview an image, but it remains how you preview one against **particular** data. A test season with one division and a few `roster add` drivers is enough for every kind, and the previews read that data exactly as they read a real league's.
+So a season is the prerequisite, and a test season is the cheapest one to build. Test mode remains how you preview against **particular** data: one division and a few `roster add` drivers is enough for every kind, and the previews read that data exactly as they read a real league's.
 
 Seven things worth knowing when previewing against a test season:
 

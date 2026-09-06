@@ -30,14 +30,13 @@ If Inkscape is installed somewhere unusual, tell the bot where by setting `INKSC
 INKSCAPE="C:/Program Files/Inkscape/bin/inkscape.exe"
 ```
 
-**You do not need a season.** The previews work at every point in a league's life, which is the point of them — you check your templates *before* committing to a season, not after. What you have changes what they draw:
+**You do need a season.** A preview draws your own league — that is the whole point of it — so it needs one to draw. A season still awaiting `/season approve` is enough, and is drawn exactly as it will be once approved. With no season at all the command is refused and tells you to run `/season setup`.
 
-- **A season, approved or still pending approval** — the previews draw it, and you name the division (and the round, where the kind takes one). A season awaiting `/season approve` is drawn exactly as it will be once approved.
-- **No season at all** — the bot invents a league instead. Omit both parameters. Your **team names are your own**, taken from `/team add`; the division, the calendar, the circuits, the round and the driver names are all made up and differ every time you run it. Nothing is saved.
+Every preview takes the name of a division, and the ones drawn for a single round take its number as well. Both are required: there is nothing sensible to draw without them.
 
-**You do need teams for five of the eleven.** `lineup`, `results`, `standings`, `attendance` and `verdict` draw a roster, so on a server with no season they need `/team add` to have been run at least once. The other six — `calendar`, `rsvp` and the four `weather-*` — draw no team and work on a completely bare server.
+**You do need teams for five of the eleven.** `lineup`, `results`, `standings`, `attendance` and `verdict` draw a roster, so the division has to hold teams beyond Reserve. The other six — `calendar`, `rsvp` and the four `weather-*` — draw no team and are happy with a division that has none.
 
-Setting the season up is covered by [the core guide](configuring-the-core-bot.md). You do not need drivers seated: where a division has none, the bot invents them for the picture and says so.
+Setting the season up is covered by [the core guide](configuring-the-core-bot.md). You do **not** need drivers seated: where a division has none, the bot invents them for the picture and says so.
 
 **You need to be able to put files on the computer running the bot.** This one catches people out: **there is no command for uploading artwork.** You cannot attach a logo to a Discord message and have the bot save it. Every drawing file and every badge, flag and photo is copied onto the bot's computer by hand. The commands only *tell the bot which folder to look in*.
 
@@ -62,9 +61,9 @@ If somebody else hosts the bot for you, you will need their help for the artwork
 
 The bot sends you back a picture. If your server has a season, name the division — `/images test calendar division:<your division>` — and you get **your** division's calendar, with your rounds, your circuits and your dates. Start typing the name and the bot completes it for you.
 
-If your server has no season yet, omit the division entirely. The bot invents a calendar so you can see the drawing at once, and says plainly in the reply that it did.
+If your server has no season yet, set one up first — a preview draws your own calendar and has nothing to show without one.
 
-The calendar is the one to start with because it needs the least: no teams, no drivers, no round number. The lineup, the results, the standings, the attendance sheet and the verdict also need a team beyond Reserve, and every kind but the calendar and the lineup needs a round number as well. If a preview refuses, it names exactly which of those is missing — a wrong division name, a round the division does not have, a team list with nothing but Reserve in it, or a parameter you left off when your server had a season to resolve it against.
+The calendar is the one to start with because it needs the least: no teams, no drivers, no round number. The lineup, the results, the standings, the attendance sheet and the verdict also need a team beyond Reserve, and every kind but the calendar and the lineup needs a round number as well. If a preview refuses, it names exactly which of those is missing — a wrong division name, a round the division does not have, or a team list with nothing but Reserve in it.
 
 Switching the module on does not change anything the bot posts yet. All eight kinds of output stay off until you turn them on, which is step 6.
 
@@ -492,7 +491,7 @@ Lists every setting and whether it is usable, and each of the eight outputs as �
 /images test verdict         division:<name>  round:<number>
 ```
 
-One command per kind, sent only to you. The calendar and the lineup take a division alone; every other kind also takes a round number. **Both parameters are optional** — omit them where your server has no season, and the bot invents a league over your own team names.
+One command per kind, sent only to you. The calendar and the lineup take a division alone; every other kind also takes a round number. **Both are required**, and your server needs a season for them to name.
 
 **What is real and what is made up.** Your division, your rounds, your circuits, your teams, your drivers and your artwork are all real. What the bot invents is only what a round that has not been run yet cannot have: the finishing order, the forecast, the attendance points, the steward's verdict. The attendance sheet's point limit is invented too, rather than taken from what you configured it to be: a preview is worth nothing unless the sheet carries a driver over the limit, one approaching it and rows marked neither way, and your own limit may be one no driver could reach in the rounds drawn. If your division has no drivers seated at all, the bot invents those too and says so in the reply, so that you can still judge the drawing.
 
@@ -528,7 +527,7 @@ Worth running through just before `/season approve`.
 - [ ] Your calendar drawing has room for your longest division's rounds
 - [ ] Your attendance drawing has room for that many rounds too, and the check-in drawing has room for a sprint weekend's sessions
 - [ ] The time zone is the one your league actually races in
-- [ ] You have looked at each output with its `/images test` command — against a real division once you have a season, and against the invented league before then — and been happy with it
+- [ ] You have looked at each output with its `/images test` command, against a real division of your season, and been happy with it
 - [ ] Your artwork is on the bot's computer, correctly named
 - [ ] If you are letting the bot fetch driver photos, `/season review` shows it switched on with at least one update method
 - [ ] `/season review` reports nothing blocking, and still offers the **Approve** button

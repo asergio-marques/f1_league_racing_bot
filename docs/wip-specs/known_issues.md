@@ -187,6 +187,12 @@ Found on 2026-08-17 while writing the results module how-to guide.
 
 Found on 2026-08-18 while building the `/images test` previews. **All three were fixed the same day**, and are kept here as a record of what was wrong and of the coverage gap that let two of them ship. Four later entries follow them.
 
+**Withdrawn — the fabricated league an `/images test` preview drew for a season-less server.**
+- Not a defect. Recorded because a feature with its own service, its own spec rules and seven test files was removed deliberately on 2026-09-06, and a later reader finding the gap should know it was taken out rather than never built.
+- `division` and `round` were optional parameters so that a server holding no season could still judge a template: `image_preview_league.build_fabricated_context` invented a whole league — divisions, a calendar, circuits, rounds and drivers — over the server's own team names, behind a banner saying so.
+- Withdrawn on the reasoning that an invented league shows a manager nothing about the configuration a preview exists to check. Both parameters are now mandatory, so Discord refuses a command that names neither before the bot is reached, and a server holding no season is refused with a message naming `/season setup`.
+- Removed with it: `src/services/image_preview_league.py`, `tests/unit/test_image_preview_league.py`, the `fabricated_league` field of `PreviewContext`, the banner in `_send_preview`, and the FR-014 and FR-024 rules of the image spec. `fabricated_drivers` is **not** part of this and remains: it marks a real division of a real season whose seats are empty, which is still drawn with invented names.
+
 **Fixed — a template for a switched-off output withheld the approval of a season.**
 - Reported on 2026-09-04: `/season review` ended with "⛔ The image module is not correctly configured" on a league that had deliberately left several outputs switched off.
 - `_image_template_problems` called `check_all_templates`, which surveys all fifteen templates with no regard for which aspects are enabled, and `/season approve` gated on the same list. A league that had never switched verdicts on was refused approval over a verdicts template it had no use for — the output posts as text and reaches no template at all. Verified: with only `calendar` enabled and a folder holding fourteen of the fifteen, the survey reported one problem and the gate blocked on it.

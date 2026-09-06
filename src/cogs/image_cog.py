@@ -1440,12 +1440,12 @@ class ImageCog(commands.Cog):
         description="Preview the calendar image for one of your divisions.",
     )
     @app_commands.describe(
-        division="The division whose calendar to draw. Omit where this server has no season."
+        division="The division whose calendar to draw."
     )
     @channel_guard
     @admin_only
     async def test_calendar(
-        self, interaction: discord.Interaction, division: str | None = None
+        self, interaction: discord.Interaction, division: str
     ) -> None:
         from services.image_preview_service import build_calendar_preview
 
@@ -1465,12 +1465,12 @@ class ImageCog(commands.Cog):
         description="Preview the lineup image for one of your divisions.",
     )
     @app_commands.describe(
-        division="The division whose lineup to draw. Omit where this server has no season."
+        division="The division whose lineup to draw."
     )
     @channel_guard
     @admin_only
     async def test_lineup(
-        self, interaction: discord.Interaction, division: str | None = None
+        self, interaction: discord.Interaction, division: str
     ) -> None:
         from services.image_preview_service import build_lineup_preview
 
@@ -1498,8 +1498,8 @@ class ImageCog(commands.Cog):
     async def test_results(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_results_preview
 
@@ -1528,8 +1528,8 @@ class ImageCog(commands.Cog):
     async def test_standings(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_standings_preview
 
@@ -1558,8 +1558,8 @@ class ImageCog(commands.Cog):
     async def test_attendance(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_attendance_preview
 
@@ -1588,8 +1588,8 @@ class ImageCog(commands.Cog):
     async def test_rsvp(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_rsvp_preview
 
@@ -1618,8 +1618,8 @@ class ImageCog(commands.Cog):
     async def test_verdict(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_verdict_preview
 
@@ -1648,8 +1648,8 @@ class ImageCog(commands.Cog):
     async def test_weather_p1(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_weather_preview
 
@@ -1678,8 +1678,8 @@ class ImageCog(commands.Cog):
     async def test_weather_p2(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_weather_preview
 
@@ -1708,8 +1708,8 @@ class ImageCog(commands.Cog):
     async def test_weather_p3(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_weather_preview
 
@@ -1738,8 +1738,8 @@ class ImageCog(commands.Cog):
     async def test_weather_mystery(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_weather_preview
 
@@ -1793,17 +1793,6 @@ class ImageCog(commands.Cog):
                 "be once `/season approve` has run._"
             )
 
-        # A manager must never mistake an invented league for their own (FR-024). Said
-        # before the pictures rather than after them, because it governs how every line
-        # below it should be read.
-        if getattr(context, "fabricated_league", False):
-            lines.append(
-                "⚠️ **This server has no season, so the league drawn here is invented.** "
-                "The team names are your own, taken from `/team add`; the division, the "
-                "calendar, the round, the circuits and the driver names are all made up, "
-                "and differ every time you run this. Nothing has been saved."
-            )
-
         all_notices = []
         for label, template_key, outcome in outcomes:
             if outcome.problem:
@@ -1823,12 +1812,10 @@ class ImageCog(commands.Cog):
             all_notices.extend(outcome.notices)
 
         # The drivers drawn are invented, and a manager must never mistake them for their
-        # own roster (FR-018). Suppressed on a fabricated league, where the banner above
-        # has already said so of the whole thing and this would only repeat it — and would
-        # tell a manager to seat drivers in a division that does not exist.
-        if getattr(context, "fabricated_drivers", False) and not getattr(
-            context, "fabricated_league", False
-        ):
+        # own roster (FR-018). This is a real division of a real season whose seats happen
+        # to be empty — not the wholly invented league that used to be drawn for a
+        # season-less server, which is withdrawn.
+        if getattr(context, "fabricated_drivers", False):
             lines.append("")
             lines.append(
                 "ℹ️ This division has no seated driver, so the names and nationalities "

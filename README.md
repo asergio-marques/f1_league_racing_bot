@@ -1866,7 +1866,7 @@ Eleven commands, one per kind of image. Each is drawn against **your own league*
 | `/images test weather-mystery` | `division`, `round` |
 | `/images test verdict` | `division`, `round` |
 
-`division` completes as you type. Both parameters are optional, and whether you need them depends on what your server holds.
+`division` completes as you type. Both parameters are required, and your server needs a season for them to name.
 
 **The previews work at every point in a league's life**, which is the point of them — you check your templates *before* committing to a season, not after.
 
@@ -1875,13 +1875,13 @@ Eleven commands, one per kind of image. Each is drawn against **your own league*
 | An **approved** season | That season | Required |
 | A season **pending approval**, and none approved | That season, drawn exactly as it will be once `/season approve` has run | Required |
 | Both | The approved one | Required |
-| **No season at all** | An invented league over your own configured teams | Ignored — omit them |
+| **No season at all** | Nothing — the command is refused | Required, but there is nothing to name |
 
 A season that has been completed or cancelled is not previewable; a server holding only those counts as holding none.
 
-**When your server has no season**, the bot invents a league rather than refusing. Your **team names are your own**, taken from `/team add` — the names and badges on the picture are the artwork you configured, and a preview over made-up teams would show you nothing about it. Everything else is made up: the division and its tier, the calendar, the circuits, the round drawn and the driver names, all differing every time you run it. The season number counts on from your last one. The reply says plainly that the league is invented, and nothing is ever saved.
+**When your server has no season**, a preview is refused and tells you to run `/season setup` first. The bot used to invent an entire league here — a division, a calendar, circuits and drivers — but an invented league shows you nothing about *your* configuration, which is the only thing a preview is for. Set a season up and preview against it.
 
-Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four `weather-*` — so they work on a server that has configured no teams at all. The other five need a roster and are refused until you have added teams.
+Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four `weather-*` — so a division with no teams is enough for them. The other five need a roster and are refused until you have added teams.
 
 **What is real, and what is invented.** Everything a league configures is real: the division and its tier, the season number, the calendar, the teams, the seated drivers and their nationalities, and the artwork in the folders you set. What the bot invents is only what a round that has not been run cannot have — the finishing order, the forecast, the attendance points and the steward's verdict. The attendance sheet's point limit is invented with the points, rather than read from what you configured, so that the sheet always carries a driver over the limit, one approaching it and rows marked neither way. A division with no seated driver at all has drivers invented for it as well, and the reply says so.
 
@@ -1892,8 +1892,8 @@ Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four
 | Refusal | Applies to |
 |---------|-----------|
 | No division of that name in the season being drawn | all eleven |
-| A parameter was omitted, and your server has a season to resolve it against | all eleven |
-| Your server has no season **and** no configured team | `lineup`, `results`, `standings`, `attendance`, `verdict` |
+| A parameter was omitted — Discord refuses the command before the bot sees it | all eleven |
+| Your server has no season at all | all eleven |
 | The division holds no configured round | `calendar` |
 | The division holds no round of that number | the nine that take one |
 | The division holds no team beyond Reserve | `lineup`, `results`, `standings`, `attendance` |

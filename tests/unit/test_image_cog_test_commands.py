@@ -499,14 +499,19 @@ class TestAutocompleteFollowsTheDrawnSeason:
 # ── 046 US2: the command surface on a season-less server ──────────────────
 
 
-class TestBothParametersAreOptional:
-    """FR-021. Optionality is a platform relaxation; whether a value is *required* is
-    decided at resolution, by whether a season exists."""
+class TestBothParametersAreRequired:
+    """Decided 2026-09-06.
 
-    def test_no_preview_command_declares_a_required_parameter(self):
+    Both were optional so that a server holding no season could still preview a template
+    against a wholly invented league. That fabrication is withdrawn — a preview draws the
+    league's own data or refuses — so Discord itself now insists on the parameters, and a
+    manager cannot submit a command that could only fail.
+    """
+
+    def test_every_preview_command_requires_what_it_takes(self):
         for command in ImageCog.test.commands:
             for parameter in command.parameters:
-                assert not parameter.required, f"{command.name}.{parameter.name}"
+                assert parameter.required, f"{command.name}.{parameter.name}"
 
     def test_every_round_scoped_command_still_offers_a_round(self):
         from models.image_constants import PREVIEW_KINDS
@@ -519,40 +524,16 @@ class TestBothParametersAreOptional:
             assert names == expected, command.name
 
 
-class TestTheFabricatedLeagueBanner:
-    """FR-024. A manager cannot mistake an invented league for their own."""
+class TestNoLeagueIsInvented:
+    """The banner that named an invented league went with the league itself.
 
-    async def test_it_says_the_league_is_invented(self, cog):
-        interaction = _Interaction()
-        await interaction.response.defer()
+    A preview drew a wholly fabricated season for a server that held none — divisions,
+    calendar, circuits and driver names — behind a warning saying so. Both are withdrawn
+    (2026-09-06): `division` and `round` are required, so the command cannot be submitted
+    without them, and a server with no season is refused rather than invented for.
+    """
 
-        await cog._send_preview(
-            interaction,
-            title="Calendar",
-            context=_context(fabricated_league=True),
-            outcomes=[("Calendar", "calendar_template", _outcome())],
-        )
-
-        message = interaction.followup.messages[0]
-        assert "no season" in message
-        assert "invented" in message
-        assert "Nothing has been saved" in message
-
-    async def test_it_distinguishes_the_teams_as_the_servers_own(self, cog):
-        """The one part of a fabricated league that is not made up."""
-        interaction = _Interaction()
-        await interaction.response.defer()
-
-        await cog._send_preview(
-            interaction,
-            title="Lineup",
-            context=_context(fabricated_league=True),
-            outcomes=[("Lineup", "lineup_template", _outcome())],
-        )
-
-        assert "team names are your own" in interaction.followup.messages[0]
-
-    async def test_a_real_league_gets_no_banner(self, cog):
+    async def test_a_preview_never_announces_an_invented_league(self, cog):
         interaction = _Interaction()
         await interaction.response.defer()
 
@@ -565,19 +546,20 @@ class TestTheFabricatedLeagueBanner:
 
         assert "invented" not in interaction.followup.messages[0]
 
-    async def test_the_seat_note_is_not_repeated_on_a_fabricated_league(self, cog):
-        """It would tell a manager to seat drivers in a division that does not exist."""
+    async def test_an_empty_division_still_says_its_drivers_are_invented(self, cog):
+        """FR-018 survives: a real division whose seats are empty draws made-up names,
+        and the manager is told so."""
         interaction = _Interaction()
         await interaction.response.defer()
 
         await cog._send_preview(
             interaction,
             title="Lineup",
-            context=_context(fabricated_league=True, fabricated_drivers=True),
+            context=_context(fabricated_drivers=True),
             outcomes=[("Lineup", "lineup_template", _outcome())],
         )
 
-        assert "Seat your drivers" not in interaction.followup.messages[0]
+        assert "Seat your drivers" in interaction.followup.messages[0]
 
     async def test_a_real_division_with_empty_seats_still_gets_the_seat_note(self, cog):
         interaction = _Interaction()

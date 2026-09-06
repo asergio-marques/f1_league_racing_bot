@@ -466,23 +466,8 @@ These hold for every image type of the module and are stated here rather than re
     - "images test weather-p1", "images test weather-p2" and "images test weather-p3" shall be rejected where the round named is of the mystery format;
     - "images test weather-mystery" shall be rejected where the round named is not of the mystery format.
 - Every rejection above shall be determined before a generation is attempted, so that a fault of configuration is never reported as a failure to render.
-- The name of a division and the number of a round shall each be an optional parameter. Where the server holds a season, a command invoked without the parameter it requires shall be rejected with a clear error naming the input that is wanting, and no division, round, calendar, format or team list shall be fabricated to stand in for configuration that is absent.
-- Where the server holds no live season, a command of this family shall draw a fabricated league rather than be rejected, and:
-    - the number of the season shall be one higher than the highest season number the server has already committed, and shall be 1 where the server has committed none;
-    - the teams shall be those of the team list of the server, the reserve team excepted, each carrying the count of seats that list gives it;
-    - the name of the division, the tier of the division, the calendar, the formats of its rounds, the number of the round drawn, the track and the schedule of that round, and the names of the drivers shall all be randomised;
-    - every seat of every team shall be filled with a fabricated driver;
-    - the calendar shall hold rounds of more than one format where it holds more than one round;
-    - the round drawn shall be one of that calendar's own rounds, and shall carry the number it holds there;
-    - the round drawn for "images test weather-mystery" shall be of the mystery format, and the round drawn for "images test weather-p1", "images test weather-p2" and "images test weather-p3" shall not be, so that no command of the family is rejected for the format of a round it fabricated itself;
-    - the track of the round drawn shall be one the track data of the bot carries, so that its imagery resolves as the imagery of a real round resolves;
-    - a name of a division and a number of a round supplied by the manager shall be disregarded, and neither the presence nor the absence of either shall be rejected;
-    - the league shall be randomised afresh at each invocation, so that two invocations of one command differ in everything randomised above and agree in the names of the teams;
-    - nothing of the league shall be written to the records of the server.
-- Where the server holds no season and the team list of the server holds no team beyond the reserve team:
-    - "images test lineup", "images test results", "images test standings", "images test attendance" and "images test verdict" shall be rejected, with a clear error naming the teams that are wanting and distinguishing itself from the rejection given above for a division holding none. These draw a team or a driver, and no seat exists to fabricate a driver into;
-    - "images test calendar", "images test rsvp", "images test weather-p1", "images test weather-p2", "images test weather-p3" and "images test weather-mystery" shall be drawn, these drawing neither a team nor a driver. The fabricated league supplies the division, the calendar and the round they draw.
-- The reply of a command drawing a fabricated league shall state that the server holds no season and that the league drawn is fabricated, and shall distinguish what was taken from the configuration of the server from what was invented. That statement replaces the notice given for a division that has seated nobody, which shall not also be given: it would direct the manager to seat drivers in a division that does not exist.
+- The name of a division and the number of a round shall each be a **mandatory** parameter of the command that takes it. A command of this family draws the league's own data and nothing else, so an invocation naming neither has nothing to resolve against and shall not be admitted at all.
+- Where the server holds no live season, a command of this family shall be rejected with a clear error saying so and naming the command that starts one. It shall not fabricate a league to draw in its place: a league invented entire — its divisions, its calendar, its rounds, its circuits and its drivers — is not a preview of anything the manager configured, and a preview exists to show them what their own configuration produces (decided 2026-09-06, withdrawing the fabricated league of 046).
 - Where a type draws drivers and the division named holds at least one seated driver, its seats shall be drawn as they stand, an unoccupied seat being drawn unoccupied as a posting would draw it. Where the division holds no seated driver at all, every seat shall be filled with a fabricated driver rather than the command rejected.
 - A driver the league has seated shall be drawn with their own name and, where the league collects it, their own nationality. Fabrication reaches only a division that has seated nobody.
 - The nationalities given to fabricated drivers shall be among those the signup wizard accepts. Where the league does not collect a nationality at all, a fabricated driver shall be given none.
@@ -571,7 +556,7 @@ These hold for every image type of the module and are stated here rather than re
 - The date and the time of a round are drawn in the single configured zone, as the conventions above require, where the textual calendar renders them as a Discord timestamp.
 
 ### Test data
-- The "images test calendar" command shall generate one image, drawn for the division named, holding exactly the rounds configured for that division, in their configured order, with their configured tracks, formats, dates and times. It fabricates nothing where the server holds a season; where it holds none, it draws the fabricated league the conventions of the family define.
+- The "images test calendar" command shall generate one image, drawn for the division named, holding exactly the rounds configured for that division, in their configured order, with their configured tracks, formats, dates and times. It fabricates nothing: a server holding no season is rejected rather than drawn an invented one.
 - The crop of the image shall be evaluated at the round count the division holds, that being the count a league would see.
 - Should the division named hold no configured round, the command shall be rejected with a clear error, as there is no calendar to be drawn.
 
@@ -1146,7 +1131,7 @@ These hold for every image type of the module and are stated here rather than re
 - The cases listed above shall be drawn insofar as the driver count and the round count of the division named allow. None is fabricated into existence to reach one.
 - The sheet draws a driver's flag where the league collects a nationality and draws none where it does not, as a posted sheet does.
 - Should the division named hold no team beyond the reserve team, the command shall be rejected with a clear error, as there is no sheet to be drawn.
-- The "images test rsvp" command shall generate one image, drawn for the division and round named, carrying that round's own format, track, schedule and deadline. It fabricates nothing where the server holds a season; where it holds none, it draws the fabricated league the conventions of the family define.
+- The "images test rsvp" command shall generate one image, drawn for the division and round named, carrying that round's own format, track, schedule and deadline. It fabricates nothing: a server holding no season is rejected rather than drawn an invented one.
 
 ## Weather image generation
 - A weather graphic represents the forecast of one single phase of one single round of one division. One graphic shall be generated per phase and per division, and shall replace the textual forecast of that phase. The mention of the division role shall remain message text, the graphic itself carrying none; the heading of the textual forecast is carried over neither to the message nor to the graphic, the description of the phase standing in its place.

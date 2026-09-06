@@ -130,12 +130,12 @@ class PreviewContext:
     nationality_collected: bool = True
     asset_directories: dict[str, Path] = field(default_factory=dict)
     directory_faults: list[DirectoryFault] = field(default_factory=list)
-    #: Drivers invented into the empty seats of a **real** division (045).
+    #: Drivers invented into the empty seats of a **real** division (045). The only thing
+    #: a preview still invents: a ``fabricated_league`` flag stood beside this until
+    #: 2026-09-06, when drawing a whole imaginary league for a season-less server was
+    #: withdrawn along with the optional ``division`` and ``round`` parameters that made
+    #: it reachable.
     fabricated_drivers: bool = False
-    #: The whole league is invented, there being no season to draw (046). Never true at the
-    #: same time as ``season_pending_approval``: a league is fabricated precisely because
-    #: no season exists to be pending anything.
-    fabricated_league: bool = False
     #: The season drawn is still awaiting ``/season approve``.
     season_pending_approval: bool = False
     #: Seated drivers drawn with no flag where the league collects nationality. A test-mode
@@ -240,13 +240,15 @@ async def resolve_context(
     season = await bot.season_service.get_previewable_season(server_id)
 
     if season is None:
-        # No season to resolve against, so the league is invented rather than the command
-        # refused (FR-009). Whatever division name or round number was supplied is
-        # disregarded: there is nothing for either to name (FR-022).
-        from services.image_preview_league import build_fabricated_context
-
-        return await build_fabricated_context(
-            bot, server_id, kind=kind or "calendar", rng=rng, now=now
+        # Refused rather than invented (decided 2026-09-06). A preview used to fabricate a
+        # whole league here — divisions, a calendar, teams and drivers — so that a manager
+        # with no season could still judge a template. That is withdrawn: `division` and
+        # `round` are now required parameters, so Discord refuses the command before the
+        # bot is reached, and a preview always draws the league's own data.
+        raise PreviewRefused(
+            REASON_MISSING_INPUT,
+            "⛔ This server holds no season to draw. Set one up with `/season setup` "
+            "first — a preview draws your own divisions and rounds.",
         )
 
     pending_approval = str(getattr(season.status, "value", season.status)) == "SETUP"
