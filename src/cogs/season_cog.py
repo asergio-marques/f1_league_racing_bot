@@ -13,9 +13,11 @@ Commands:
   /division rename    — rename a division (setup only)
   /division cancel    — cancel a division in the active season
 
-  /round add    — add a round to pending setup (auto-numbered by date)
-  /round delete — remove a round and renumber (setup only)
-  /round cancel — cancel a round in the active season
+  /round add      — add a round to pending setup (auto-numbered by date)
+  /round add-bulk — add many rounds to one division from a pasted list
+  /round add-xml  — add rounds to one or more divisions from XML
+  /round delete   — remove a round and renumber (setup only)
+  /round cancel   — cancel a round in the active season
 """
 
 from __future__ import annotations
@@ -24,7 +26,8 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
-from typing import Any
+from functools import partial
+from typing import Any, Awaitable, Callable
 
 import discord
 from discord import app_commands
@@ -32,6 +35,7 @@ from discord.ext import commands
 
 from db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
 from models.division import Division
+from models.round import Round as RoundModel
 from models.round import RoundFormat
 from services import season_points_service
 import services.track_service as track_service
@@ -40,6 +44,12 @@ from utils.autocomplete import bounded_autocomplete
 from utils.channel_guard import channel_guard, admin_only
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from utils.output_router import _chunk_message
+from utils.round_import import (
+    ParsedDivisionRounds,
+    ParsedRound,
+    parse_bulk_round_lines,
+    parse_round_xml,
+)
 
 log = logging.getLogger(__name__)
 
@@ -97,6 +107,316 @@ def _pending_to_division_models(cfg: PendingConfig) -> list[Division]:
         for d in cfg.divisions
         if d.name
     ]
+
+
+# ---------------------------------------------------------------------------
+# Bulk round import
+# ---------------------------------------------------------------------------
+
+#: How many faults a rejection lists before it stops. A payload wrong in one systematic
+#: way — every format misspelled, every track unknown — produces one error per round, and
+#: a reply over 2000 characters is refused by Discord whole rather than truncated, which
+#: would lose the report entirely.
+_MAX_REPORTED_ERRORS = 25
+
+
+def _format_import_errors(errors: list[str]) -> str:
+    """The rejection a manager reads, capped so that the reply survives sending."""
+    shown = errors[:_MAX_REPORTED_ERRORS]
+    body = "\n".join(f"  • {error}" for error in shown)
+    if len(errors) > len(shown):
+        body += f"\n  …and {len(errors) - len(shown)} more."
+    return (
+        f"❌ Import rejected — {len(errors)} problem(s). "
+        f"**No rounds were added.**\n{body}"
+    )
+
+
+def _duplicate_datetime_errors(
+    existing: list[dict[str, Any]], incoming: list[ParsedRound]
+) -> list[str]:
+    """Every incoming round whose datetime is already taken, within the batch or before it.
+
+    `/season approve` refuses a season holding two rounds of one division at the same
+    moment (Gate 0b), and it does so long after the calendar has been built and possibly
+    posted. A repeated line is the likeliest fault in a pasted calendar, so it is caught
+    here instead — at the first moment the whole batch can be seen.
+    """
+    errors: list[str] = []
+    seen: dict[datetime, str] = {
+        round_["scheduled_at"]: "a round already in this division"
+        for round_ in existing
+    }
+    for parsed in incoming:
+        previous = seen.get(parsed.scheduled_at)
+        if previous is not None:
+            errors.append(
+                f"{parsed.location}: duplicate datetime "
+                f"{parsed.scheduled_at.isoformat()} — already used by {previous}."
+            )
+            continue
+        seen[parsed.scheduled_at] = parsed.location
+    return errors
+
+
+async def apply_round_import(
+    *,
+    cfg: PendingConfig,
+    parsed: list[ParsedDivisionRounds],
+    db_path: str,
+    overflow_check: Callable[[str, int], Awaitable[str | None]],
+) -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
+    """Merge *parsed* rounds into *cfg*, or refuse the lot.
+
+    Returns ``(applied, errors)``. Where *errors* is non-empty **nothing has been
+    changed** — every division is validated in full before any is written, so a manager
+    fixes their paste and submits the same text again rather than working out which half
+    of it landed.
+
+    Rounds are *merged* with those the division already holds, never substituted for
+    them: these are add commands, and a calendar too long for one modal is imported in
+    two passes.
+
+    Does not snapshot. The caller does that once, after every division has been applied —
+    `_snapshot_pending` rebuilds the entire season, so once per import rather than once
+    per round is the difference between one teardown and twenty.
+    """
+    errors: list[str] = []
+    staged: dict[str, list[dict[str, Any]]] = {}
+    divisions_seen: set[str] = set()
+
+    # One connection for every track in the payload. Opening one per round, as `/round
+    # add` does for its single round, is 72 connections on an SD card for a full season.
+    async with get_connection(db_path) as db:
+        for entry in parsed:
+            wanted = entry.division_name.strip().casefold()
+            if wanted in divisions_seen:
+                errors.append(
+                    f"[{entry.division_name}]: named more than once in this import."
+                )
+                continue
+            divisions_seen.add(wanted)
+
+            division = next(
+                (d for d in cfg.divisions if d.name.strip().casefold() == wanted), None
+            )
+            if division is None:
+                errors.append(
+                    f"[{entry.division_name}]: no division of that name in the "
+                    f"pending setup."
+                )
+                continue
+
+            new_rounds: list[dict[str, Any]] = []
+            for parsed_round in entry.rounds:
+                track_name: str | None = None
+                if parsed_round.track_raw:
+                    track_name = await track_service.resolve_track_name(
+                        db, parsed_round.track_raw
+                    )
+                    if track_name is None:
+                        errors.append(
+                            f"{parsed_round.location}: unknown track "
+                            f"`{parsed_round.track_raw}`."
+                        )
+                        continue
+
+                new_rounds.append(
+                    {
+                        "round_number": 0,
+                        "format": parsed_round.format,
+                        "track_name": track_name,
+                        "scheduled_at": parsed_round.scheduled_at,
+                    }
+                )
+
+            errors += _duplicate_datetime_errors(division.rounds, entry.rounds)
+
+            # Last, because it loads and parses the calendar template. Asked of the whole
+            # batch: each round of a dozen can clear a `+ 1` check while the dozen
+            # together outgrow the template.
+            overflow = await overflow_check(
+                division.name, len(division.rounds) + len(new_rounds)
+            )
+            if overflow is not None:
+                errors.append(f"[{division.name}]: {overflow}")
+                continue
+
+            staged[division.name] = sorted(
+                division.rounds + new_rounds, key=lambda r: r["scheduled_at"]
+            )
+
+    if errors:
+        return {}, errors
+
+    for name, merged in staged.items():
+        division = next(d for d in cfg.divisions if d.name == name)
+        for number, round_ in enumerate(merged, start=1):
+            round_["round_number"] = number
+        division.rounds = merged
+
+    return staged, []
+
+
+class BulkRoundModal(discord.ui.Modal, title="Add rounds in bulk"):
+    """The pasted calendar of one division, a round per line.
+
+    Times are stated in UTC, which is what a round is stored in — so unlike the XML
+    import this format cannot meet a daylight-saving gap, and needs no zone.
+    """
+
+    entries: discord.ui.TextInput = discord.ui.TextInput(
+        label="datetime UTC, format, track — one per line",
+        style=discord.TextStyle.paragraph,
+        placeholder=(
+            "2026-06-14T18:00, Normal, 14\n"
+            "2026-06-21T18:00, Sprint, Hungaroring\n"
+            "2026-06-28T18:00, Mystery"
+        ),
+        required=True,
+        max_length=2000,
+    )
+
+    def __init__(self, division_name: str) -> None:
+        super().__init__()
+        self._division_name = division_name
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+        await interaction.response.defer(ephemeral=True)
+        rounds, errors = parse_bulk_round_lines(self.entries.value)
+        if errors:
+            await interaction.followup.send(
+                _format_import_errors(errors), ephemeral=True
+            )
+            return
+        if not rounds:
+            await interaction.followup.send(
+                "❌ Nothing to add — no rounds were given.", ephemeral=True
+            )
+            return
+
+        await _run_round_import(
+            interaction,
+            [ParsedDivisionRounds(division_name=self._division_name, rounds=rounds)],
+            source="/round add-bulk",
+        )
+
+
+class XmlRoundModal(discord.ui.Modal, title="Add rounds from XML"):
+    """A calendar of one or more divisions, each round stated in its local time."""
+
+    payload: discord.ui.TextInput = discord.ui.TextInput(
+        label="XML payload",
+        style=discord.TextStyle.paragraph,
+        placeholder=(
+            '<config>\n'
+            '  <division name="Pro">\n'
+            "    <round>\n"
+            "      <datetime>2026-06-14T18:00</datetime>\n"
+            "      <timezone>Europe/Lisbon</timezone>\n"
+            "      <format>Normal</format>\n"
+            "      <track>14</track>\n"
+            "    </round>\n"
+            "  </division>\n"
+            "</config>"
+        ),
+        required=True,
+        max_length=4000,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+        await interaction.response.defer(ephemeral=True)
+        divisions, errors = parse_round_xml(self.payload.value)
+        if errors:
+            await interaction.followup.send(
+                _format_import_errors(errors), ephemeral=True
+            )
+            return
+        if not any(entry.rounds for entry in divisions):
+            await interaction.followup.send(
+                "❌ Nothing to add — no rounds were given.", ephemeral=True
+            )
+            return
+
+        await _run_round_import(interaction, divisions, source="/round add-xml")
+
+
+async def _run_round_import(
+    interaction: discord.Interaction,
+    parsed: list[ParsedDivisionRounds],
+    *,
+    source: str,
+) -> None:
+    """Apply a parsed calendar and report it. Shared by both import modals.
+
+    The interaction is already deferred. Everything here replies through ``followup``.
+    """
+    cog = interaction.client.get_cog("SeasonCog")  # type: ignore[union-attr]
+    if cog is None:  # pragma: no cover — the cog is loaded for the command to exist
+        await interaction.followup.send(
+            "❌ Season commands are unavailable.", ephemeral=True
+        )
+        return
+
+    cfg = cog.resolve_pending(interaction)
+    if cfg is None:
+        await interaction.followup.send(
+            "❌ No pending season setup. Run `/season setup` first.", ephemeral=True
+        )
+        return
+
+    applied, errors = await apply_round_import(
+        cfg=cfg,
+        parsed=parsed,
+        db_path=cog.bot.db_path,
+        overflow_check=partial(_overflow_for, cog, interaction.guild_id),
+    )
+    if errors:
+        await interaction.followup.send(_format_import_errors(errors), ephemeral=True)
+        return
+
+    # Once, after every division. The snapshot rebuilds the whole season.
+    await cog._snapshot_pending(cfg)
+
+    total = sum(len(rounds) for rounds in applied.values())
+    lines = [f"✅ Added rounds to {len(applied)} division(s)."]
+    for name, rounds in applied.items():
+        lines.append(f"  **{name}**: {len(rounds)} round(s) in total")
+    if len(applied) == 1:
+        name, rounds = next(iter(applied.items()))
+        lines.append("")
+        lines.append(
+            format_round_list(
+                [
+                    RoundModel(
+                        id=0,
+                        division_id=0,
+                        round_number=r["round_number"],
+                        format=r["format"],
+                        track_name=r["track_name"],
+                        scheduled_at=r["scheduled_at"],
+                    )
+                    for r in rounds
+                ]
+            )
+        )
+
+    for chunk in _chunk_message("\n".join(lines)):
+        await interaction.followup.send(chunk, ephemeral=True)
+
+    await cog.bot.output_router.post_log(
+        interaction.guild_id,
+        f"{interaction.user.display_name} (<@{interaction.user.id}>) | {source} | Success\n"
+        + "\n".join(
+            f"  division: {name}, now holds {len(rounds)} round(s)"
+            for name, rounds in applied.items()
+        ),
+    )
+
+
+async def _overflow_for(cog, guild_id: int, _division_name: str, would_hold: int):
+    """Bind the cog's capacity guard to the shape `apply_round_import` injects."""
+    return await cog._calendar_round_overflow(guild_id, would_hold)
 
 
 # ---------------------------------------------------------------------------
@@ -2999,6 +3319,23 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        # Two rounds of one division may not share a moment. `/season approve` refuses a
+        # season that holds such a pair (Gate 0b), and on the same reasoning as the
+        # overflow guard below it is refused here instead — at the command that would
+        # cause it, rather than at an approval days later, with a calendar possibly
+        # already posted.
+        _clash = next(
+            (r for r in div.rounds if r["scheduled_at"] == sched), None
+        )
+        if _clash is not None:
+            await interaction.followup.send(
+                f"❌ **{div.name}** already holds round {_clash['round_number']} at "
+                f"{discord_ts(sched)}. Two rounds of one division cannot share a moment "
+                f"— the season could not be approved. The round was **not** added.",
+                ephemeral=True,
+            )
+            return
+
         # XIV.12: overflow is rejected at the earliest moment it can be detected, which
         # for rounds is the command that would cause it — not a render days later. The
         # change is refused with nothing applied.
@@ -3049,6 +3386,43 @@ class SeasonCog(commands.Cog):
             f"  track: {track_name or 'Mystery'}\n"
             f"  scheduled_at: {sched.isoformat()} UTC",
         )
+
+    # ── /round add-bulk and /round add-xml ────────────────────────────────
+    #
+    # Flat siblings of `add` rather than `add bulk` and `add xml`: `/round` already
+    # carries the `/round results` subgroup, and Discord permits no third level of
+    # nesting. The hyphenated shape follows `/results config bulk-session`.
+
+    @round.command(
+        name="add-bulk",
+        description="Add many rounds to one division from a pasted list (setup only).",
+    )
+    @app_commands.describe(division_name="Division these rounds belong to")
+    @channel_guard
+    @admin_only
+    async def round_add_bulk(
+        self, interaction: discord.Interaction, division_name: str
+    ) -> None:
+        """Open the paste-a-calendar modal for one division.
+
+        **Deliberately does not defer**, unlike every other command of this flow:
+        `send_modal` must be the interaction's first response, and a deferred interaction
+        cannot open one. The work — and the deferral — happens in the modal's `on_submit`.
+        """
+        await interaction.response.send_modal(BulkRoundModal(division_name))
+
+    @round.command(
+        name="add-xml",
+        description="Add rounds to one or more divisions from XML (setup only).",
+    )
+    @channel_guard
+    @admin_only
+    async def round_add_xml(self, interaction: discord.Interaction) -> None:
+        """Open the XML import modal.
+
+        Does not defer, for the reason given on `round_add_bulk`.
+        """
+        await interaction.response.send_modal(XmlRoundModal())
 
     @bounded_autocomplete()
     async def _track_autocomplete(
@@ -3944,6 +4318,18 @@ class SeasonCog(commands.Cog):
         return next(
             (cfg for cfg in self._pending.values() if cfg.server_id == server_id),
             None,
+        )
+
+    def resolve_pending(self, interaction: discord.Interaction) -> PendingConfig | None:
+        """The pending setup this interaction acts upon, or None.
+
+        The manager's own first, then any config for the guild — the lookup every command
+        of the setup flow makes. Public because the import modals need it and are
+        module-level classes holding no cog: reaching into `_pending` from outside would
+        make the store's shape part of their contract.
+        """
+        return self._pending.get(interaction.user.id) or self._get_pending_for_server(
+            interaction.guild_id
         )
 
     async def _snapshot_pending(self, cfg: PendingConfig) -> None:

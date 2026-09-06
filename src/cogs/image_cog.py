@@ -10,8 +10,6 @@ is disabled (FR-005).
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
-from zoneinfo import available_timezones
 
 import discord
 from discord import app_commands
@@ -34,31 +32,16 @@ from services.image_config_service import pfp_change_refusal
 from utils.channel_guard import admin_only, channel_guard, server_admin_only
 from utils.paths import PathContainmentError, relative_to_root
 from utils.time_parsing import parse_time_of_day
+from utils.timezones import clear_zone_cache, is_known_zone, zone_names
 
 log = logging.getLogger(__name__)
 
-
-@lru_cache(maxsize=1)
-def _zone_names() -> tuple[tuple[str, str], ...]:
-    """Every IANA zone paired with its case-folded form, sorted, built once.
-
-    `available_timezones()` walks the whole `TZPATH` tree — some 600 entries under
-    `/usr/share/zoneinfo` — and CPython does not cache it. The autocomplete it feeds runs on
-    *every keystroke*, and this was measured at 325 ms cold on the Raspberry Pi the bot runs
-    on: a third of Discord's three-second budget spent on a command that never touches the
-    database. Folding the case here too saves lowercasing ~600 strings per keystroke.
-
-    Memoised for the life of the process, in the same spirit as the font index in
-    `utils/font_metrics.py`. This is not the caching layer the constitution cautions about
-    at "Performance & Storage Considerations" — that concerns league data at scale, whereas
-    the zone list is a static enumeration shipped by the operating system.
-    """
-    return tuple(sorted((zone, zone.casefold()) for zone in available_timezones()))
-
-
-def clear_zone_cache() -> None:
-    """Drop the memoised zone list. For tests, mirroring `font_metrics.clear_cache`."""
-    _zone_names.cache_clear()
+#: The memoised zone list, which now lives in `utils/timezones.py` so that the round
+#: importer can validate a zone without importing this cog — and Discord with it. Kept
+#: under its old name here because the autocomplete below and its tests both reach for it,
+#: and the move is not a change to either. `clear_zone_cache` is re-exported above for the
+#: same reason.
+_zone_names = zone_names
 
 
 _STATE_ICONS = {
@@ -1092,10 +1075,10 @@ class ImageCog(commands.Cog):
         if not await self._guard_module_enabled(interaction):
             return
 
-        from zoneinfo import available_timezones
-
+        # Through the memoised list rather than `available_timezones()`, which walks the
+        # whole TZPATH tree on every call — 325 ms cold on the Pi, for one membership test.
         candidate = zone.strip()
-        if candidate not in available_timezones():
+        if not is_known_zone(candidate):
             await self._reply(
                 interaction,
                 f"❌ `{candidate}` is not a recognised time zone. "

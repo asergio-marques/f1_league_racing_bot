@@ -65,3 +65,15 @@
 - A subsection holding nothing shall not be posted. A module that is switched off has no configuration to review, and a heading standing over nothing is noise in a report a manager is asked to read properly.
 - Each subsection shall further be divided across as many messages as its own length requires. A message too long is refused whole, so a report that outgrows the limit is lost rather than truncated.
 - The validations that belong to the season rather than to a module — the team names that cannot become lineup fields, and the reserve team holding no role — are posted with the first subsection, whatever modules are enabled.
+
+# Building a calendar in bulk
+
+- <NEW COMMAND> A "round add-bulk" command shall be made available to league managers, taking the name of a division. It shall open a dialog into which a calendar is written, one round to a line, in the form "datetime, format, track". The datetime shall be stated in UTC.
+- <NEW COMMAND> A "round add-xml" command shall be made available to league managers, taking no parameter. It shall open a dialog into which a calendar is written as XML, in the following form:
+    - A configuration holds one or more divisions; a division carries its name as an attribute and holds one or more rounds; a round states a datetime, a timezone, a format and a track. The rounds of a division need not be stated in chronological order.
+    - The datetime of a round shall be stated in the **local time** of the timezone beside it, and shall be converted to UTC upon that timezone. The timezone shall be named in the IANA form and shall be validated as one; a timezone that is not recognised is a fault of the round that names it.
+    - A track shall be identified by its numerical ID, by its name, or by the form the completion offers.
+- Both commands shall add rounds to those a division already holds and shall never replace them. A calendar too long to be written in one dialog is therefore imported in as many passes as it requires.
+- Both commands shall apply every validation the "round add" command applies, and shall refuse the **whole** import where any round fails one of them, adding nothing and naming every fault at once. A calendar is one artefact: the rounds of a division are numbered by their order in time, so admitting some of an import and refusing others renumbers the division around the ones admitted, and a manager cannot tell what was taken without reading the season back.
+- Where a division would hold more rounds than the calendar template draws, the import shall be refused. The measurement is made of the whole import and not of each round in turn, a batch being able to exceed a capacity that no round of it exceeds alone.
+- <COMMAND CHANGE> Two rounds of one division shall not be scheduled at the same moment, and the "round add", "round add-bulk" and "round add-xml" commands shall each refuse one that would be. The season review has always refused to approve a season holding such a pair; refusing it at the command that would create it is the earlier moment, and the moment at which the manager is present to correct it.

@@ -225,7 +225,44 @@ Four things to know:
 
 `/round delete` removes one during setup, and renumbers what remains.
 
-> **Two rounds in the same division cannot share a date and time.** You can add them, but approval will refuse the season and name the clash. Duplicating a division with an offset of zero is the usual way this happens.
+> **Two rounds in the same division cannot share a date and time.** The command refuses the second one and names the round already sitting there. Approval refuses such a season too, so this only saves you finding out later — duplicating a division with an offset of zero is the usual way it happens.
+
+### Or paste the whole calendar at once
+
+A full season is twenty-odd rounds per division, and adding them one command at a time is slow. Two commands take the lot in one go.
+
+**`/round add-bulk`** takes a division name and opens a box. One round per line, times in UTC:
+
+```
+2026-03-08T20:00, Normal, 12
+2026-03-15T20:00, Sprint, Hungaroring
+2026-03-22T20:00, Mystery
+```
+
+Same rules as `/round add` — the track can be an ID, a name, or the `12 – Silverstone Circuit` form, and a `MYSTERY` round can leave it out. The box holds 2000 characters, which is a full season and more if you use track IDs, and rather less if you write the circuit names out in full.
+
+**`/round add-xml`** takes no parameters and covers several divisions at once. Its one difference is worth the trouble: each round states its **local** time and the zone it is in, and the bot works out UTC for you.
+
+```xml
+<config>
+  <division name="Pro">
+    <round>
+      <datetime>2026-03-08T20:00</datetime>
+      <timezone>Europe/Lisbon</timezone>
+      <format>Normal</format>
+      <track>12</track>
+    </round>
+  </division>
+</config>
+```
+
+Zone names are the IANA ones — `Europe/Lisbon`, `America/Sao_Paulo` — and must be spelled exactly, capitals included. Rounds can be in any order. About 23 rounds fit in the box, so a long season goes in over two runs.
+
+Three things to know about both:
+
+- **They add, never replace.** Running one twice does not wipe the first batch, which is what makes splitting a long calendar across runs safe.
+- **One bad line rejects the whole thing.** Nothing is added and every problem is listed at once, with the line number. Fix the text and paste it again — that is the intended way to use them, and it is why nothing is half-applied.
+- **`add-bulk` sidesteps daylight saving entirely** by taking UTC. If a round of yours falls near the weekend the clocks change, that is the safer command: a local time in the hour a clock skips forward does not exist, and the bot will take it at face value rather than querying it.
 
 ---
 

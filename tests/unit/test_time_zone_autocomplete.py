@@ -16,6 +16,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 import cogs.image_cog as image_cog  # noqa: E402
+import utils.timezones as timezones  # noqa: E402
 from cogs.image_cog import ImageCog, clear_zone_cache  # noqa: E402
 
 
@@ -44,7 +45,7 @@ async def test_the_zone_list_is_built_once(cog, monkeypatch):
         calls["n"] += 1
         return {"Europe/Lisbon", "America/New_York", "Asia/Tokyo"}
 
-    monkeypatch.setattr(image_cog, "available_timezones", _counted)
+    monkeypatch.setattr(timezones, "available_timezones", _counted)
     clear_zone_cache()
 
     await cog._time_zone_autocomplete(_Interaction(), "eur")
@@ -61,7 +62,7 @@ async def test_the_cache_can_be_dropped(cog, monkeypatch):
         calls["n"] += 1
         return {"Europe/Lisbon"}
 
-    monkeypatch.setattr(image_cog, "available_timezones", _counted)
+    monkeypatch.setattr(timezones, "available_timezones", _counted)
     clear_zone_cache()
 
     await cog._time_zone_autocomplete(_Interaction(), "")
@@ -106,7 +107,7 @@ async def test_a_failure_building_the_list_offers_no_choices(cog, monkeypatch):
     def _raise():
         raise OSError("zoneinfo is unreadable")
 
-    monkeypatch.setattr(image_cog, "available_timezones", _raise)
+    monkeypatch.setattr(timezones, "available_timezones", _raise)
     clear_zone_cache()
 
     assert await cog._time_zone_autocomplete(_Interaction(), "") == []

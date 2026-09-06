@@ -310,6 +310,49 @@ Round numbers are **auto-assigned** by sorting all rounds in the division by `sc
 | `scheduled_at` | String | ✅ | Race date and time in ISO format: `YYYY-MM-DDTHH:MM:SS` (UTC) |
 | `track` | String | — | Track ID or circuit name — use the autocomplete dropdown (e.g. `12` or `Silverstone Circuit`). What the dropdown displays (`12 – Silverstone Circuit`) is accepted too, so a pasted or retyped entry works; circuit names are matched regardless of case. Required for every format except `MYSTERY`, where it must be omitted. |
 
+> **Two rounds of one division cannot share a start time.** The command refuses the second, naming the round already there. `/season approve` has always refused a season holding such a pair — this catches it at the moment you can still fix it easily.
+
+#### `/round add-bulk` — Add many rounds at once from a pasted list
+*Access: Trusted admin · Requires active `/season setup` session*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division_name` | String | ✅ | Exact name of the division these rounds belong to |
+
+Opens a box. Write one round per line as `datetime, format, track`, with the time **in UTC**:
+
+```
+2026-06-14T18:00, Normal, 14
+2026-06-21T18:00, Sprint, Hungaroring
+2026-06-28T18:00, Mystery
+```
+
+The track takes the same forms `/round add` takes — an ID, a name, or the dropdown's `14 – Hungaroring`. A `MYSTERY` round may leave it out. The box holds 2000 characters — comfortably a full season with short track IDs, fewer if you write circuit names out.
+
+#### `/round add-xml` — Add rounds to several divisions from XML
+*Access: Trusted admin · Requires active `/season setup` session*
+
+No parameters. Opens a box taking a calendar for one or more divisions:
+
+```xml
+<config>
+  <division name="Pro">
+    <round>
+      <datetime>2026-06-14T18:00</datetime>
+      <timezone>Europe/Lisbon</timezone>
+      <format>Normal</format>
+      <track>14</track>
+    </round>
+  </division>
+</config>
+```
+
+Unlike the other two commands, `<datetime>` is a **local** time in the zone `<timezone>` names, and the bot converts it to UTC. Use an IANA zone name (`Europe/Lisbon`, `America/Sao_Paulo`), spelled exactly — the names are case-sensitive. Rounds need not be listed in date order. Around 23 rounds fit in one box.
+
+> **Both import commands add to what is already there** — they never replace it. A calendar too long for one box goes in over two or three runs.
+>
+> **One bad entry rejects the whole import.** Nothing is added, and every fault is listed at once with the line it is on, so you fix the text and paste it again. This is deliberate: round numbers come from sorting the whole division by date, so a half-finished import would renumber the rounds around whichever ones landed.
+
 #### `/round delete` — Remove a round from setup
 *Access: Trusted admin · Setup only*
 

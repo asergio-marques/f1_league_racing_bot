@@ -11,6 +11,12 @@ league manager sees is a command that appears to fail while having silently succ
 Deferring first buys fifteen minutes, so these pin two things: that the deferral happens
 before any of that work, and that every reply thereafter goes to `followup` — a
 `response.send_message` after a defer is itself a 404.
+
+**`/round add-bulk` and `/round add-xml` are deliberately not in this list.** They open a
+modal, and `send_modal` must be an interaction's *first* response — a deferred interaction
+cannot open one. They defer inside the modal's `on_submit` instead, where the work
+actually happens, and `tests/unit/test_round_import_cog.py` pins that. Adding them here
+would be a plausible-looking change that breaks both commands.
 """
 from __future__ import annotations
 
