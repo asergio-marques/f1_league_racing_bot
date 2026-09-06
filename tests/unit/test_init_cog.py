@@ -85,6 +85,9 @@ async def _row(db_path: str) -> dict:
 
 def _bot(db_path: str) -> MagicMock:
     bot = MagicMock()
+    # The two channel settings check the channel is not already doing another job, which
+    # reads the database directly rather than through a service.
+    bot.db_path = db_path
     bot.config_service = ConfigService(db_path)
     bot.output_router.post_log = AsyncMock()
     bot.team_service.seed_default_teams_if_empty = AsyncMock()

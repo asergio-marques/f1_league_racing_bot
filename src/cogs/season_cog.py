@@ -2632,6 +2632,47 @@ class SeasonCog(commands.Cog):
     # Division channel assignment (shared helper + 3 commands)
     # ------------------------------------------------------------------
 
+    async def _refuse_channel_in_use(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel,
+        setting: str,
+        *,
+        division_name: str | None = None,
+    ) -> bool:
+        """Reply and return True where *channel* is already doing another job.
+
+        A channel serves one purpose across the whole server (decided 2026-09-06): two
+        settings sharing one interleave two kinds of posting, and several posting paths
+        edit or delete their last message by an id stored against the channel, so sharing
+        is how one output comes to delete another's.
+
+        Re-running a command with the value it already holds is refused too, and says so
+        in its own words — it is not a collision with something else, and reporting it as
+        one would send a manager looking for a conflict that does not exist.
+        """
+        from services.channel_registry_service import (
+            ChannelUse,
+            find_channel_use,
+            refusal,
+        )
+
+        mine = ChannelUse(setting, division_name)
+        use = await find_channel_use(
+            self.bot.db_path, interaction.guild_id, channel.id  # type: ignore[attr-defined]
+        )
+        if use is None:
+            return False
+
+        # Some of these commands defer and some do not, so the reply follows whichever
+        # state the interaction is already in — a fresh response after a defer is a 404.
+        message = refusal(channel.mention, use, same_setting=(use == mine))
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+        return True
+
     async def _set_division_channel(
         self,
         interaction: discord.Interaction,
@@ -2661,7 +2702,15 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        # 3. Upsert channel + get old value (for idempotency check and audit)
+        # 3. A channel does one job. Checked before the write, so a refusal leaves the
+        # configuration exactly as it stood — the same-value case included, which used to
+        # be written and only then reported as unchanged.
+        if await self._refuse_channel_in_use(
+            interaction, channel, channel_type, division_name=div.name
+        ):
+            return
+
+        # 4. Upsert channel + get old value (for the audit entry)
         if channel_type == "weather":
             old_id = await self.bot.season_service.set_division_forecast_channel(div.id, channel.id)
             type_label = "Weather forecast"
@@ -2672,13 +2721,7 @@ class SeasonCog(commands.Cog):
             old_id = await self.bot.season_service.set_division_standings_channel(div.id, channel.id)
             type_label = "Standings"
 
-        # 4. Idempotency: same value
-        if old_id == channel.id:
-            await interaction.response.send_message(
-                f"\u2139\ufe0f {type_label} channel for **{name}** is already set to {channel.mention}.",
-                ephemeral=True,
-            )
-            return
+        # The same-value case is caught by the guard above, before anything is written.
 
         # 5. Audit
         now = datetime.now(timezone.utc).isoformat()
@@ -2816,6 +2859,11 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        if await self._refuse_channel_in_use(
+            interaction, channel, "verdicts", division_name=div.name
+        ):
+            return
+
         old_id = await self.bot.season_service.set_division_penalty_channel(div.id, channel.id)
 
         # Audit log
@@ -2895,6 +2943,11 @@ class SeasonCog(commands.Cog):
                 f"\u274c Division \"{name}\" not found.",
                 ephemeral=True,
             )
+            return
+
+        if await self._refuse_channel_in_use(
+            interaction, channel, "rsvp", division_name=div.name
+        ):
             return
 
         old_cfg = await self.bot.attendance_service.get_division_config(div.id)
@@ -2980,6 +3033,11 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        if await self._refuse_channel_in_use(
+            interaction, channel, "attendance", division_name=div.name
+        ):
+            return
+
         old_cfg = await self.bot.attendance_service.get_division_config(div.id)
         old_id = old_cfg.attendance_channel_id if old_cfg else None
 
@@ -3045,6 +3103,11 @@ class SeasonCog(commands.Cog):
                 ephemeral=True,
             )
             return
+        if await self._refuse_channel_in_use(
+            interaction, channel, "lineup", division_name=div.name
+        ):
+            return
+
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
             await db.execute(
@@ -3106,6 +3169,11 @@ class SeasonCog(commands.Cog):
                 ephemeral=True,
             )
             return
+        if await self._refuse_channel_in_use(
+            interaction, channel, "calendar", division_name=div.name
+        ):
+            return
+
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
             await db.execute(

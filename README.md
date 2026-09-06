@@ -233,6 +233,10 @@ Removes all season data for this server. Use `full:True` to also wipe the bot co
 
 Season configuration is a multi-step flow: run `/season setup`, add divisions with `/division add`, add rounds with `/round add`, then review with `/season review` and approve with `/season approve`.
 
+> **A channel does one job.** Every command that sets a channel — the eight `/division …-channel` commands, `/bot-interaction-channel`, `/bot-log-channel` and `/signup channel` — refuses a channel already set as something else anywhere on this server, naming what holds it. Two divisions cannot share a results channel, and a calendar channel cannot double as a log.
+>
+> This is not tidiness: several postings **replace** the message they last put up, finding it by an id stored against the channel, so two purposes in one channel is how one output deletes another's message. Setting a channel to the value it already holds is refused too, in its own words — nothing else holds it, and nothing changes.
+
 #### `/season setup` — Start season configuration
 *Access: Trusted admin*
 

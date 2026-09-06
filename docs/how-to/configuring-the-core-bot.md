@@ -292,6 +292,12 @@ The other six belong to modules. Set the ones whose module you turned on in step
 
 > **The calendar and lineup channels are not checked.** Unlike the six above, a division missing either is simply skipped at approval — no refusal, no warning. It posts no calendar and no lineup, and the first you know of it is the silence. Set them.
 
+> **A channel does one job.** Every one of these commands refuses a channel that is already set as something else — including your `/bot-init` command and log channels, your signup channel, and the same kind of channel in another division. A two-division league therefore needs its own results channel for each, its own calendar channel for each, and so on.
+>
+> It is not tidiness. Several of these postings **replace** the message they put up last, finding it by an id they store against the channel — so two purposes sharing a channel is how a lineup comes to delete a standings table.
+>
+> Setting a channel to the value it already has is refused too, but says so plainly rather than reporting a clash: nothing else holds it, and nothing is changed.
+
 ---
 
 ## Step 7 — Review what you have built
