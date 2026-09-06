@@ -329,6 +329,8 @@ The report arrives as **one message per subsection**, in this order: the season 
 
 **The review shows you what your league will actually get.** Where the images module is on and the `calendar` or `lineup` aspect with it, that division's calendar and lineup arrive as the drawn pictures rather than as text — the same pictures the season will post once approved. With the aspect off, you get the text exactly as before. The warning naming teams with no Discord role assigned is a finding of the review rather than part of the lineup, so it is shown either way.
 
+The image subsection also lists the eight **asset directories** and the path each is set to, marking any the bot cannot read. A folder that has been moved or renamed produces pictures full of placeholders, which looks the same as artwork you never supplied — seeing the path is what tells the two apart. `/images config view` names the fault in full.
+
 > **A picture that cannot be drawn withholds the Approve button.** You are told what is wrong, that section falls back to its text so the review is still complete, and the review ends with a note that the image module is not correctly configured instead of the button. `/season approve` refuses for the same reason and on the same check, so there is no way past it — fix the template or the artwork it names and run `/season review` again.
 
 #### `/season approve` — Commit the configuration

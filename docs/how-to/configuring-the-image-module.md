@@ -470,7 +470,7 @@ Lists every setting and whether it is usable, and each of the eight outputs as �
 
 > **"The drawing is missing something the bot has to fill in" — but what?** Run the `/images template …` command it names, on the file you already have. That reply is the one place that still names the exact field, because you are looking at that one drawing at the moment you can fix it.
 
-> **It is written for you.** Both this report and `/season review` say what is wrong in terms of your drawings and your folders — you will not find a field id, a file path or a layer number in either. The precise fault goes into the bot's log for whoever runs it. The one exception is naming a drawing file with an `/images template …` command: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
+> **It is written for you.** Both this report and `/season review` say what is wrong in terms of your drawings and your folders — you will not find a field id or a layer number in either, and the precise fault goes into the bot's log for whoever runs it. Both do print the folder paths you set yourself, under **Asset directories**, because that is your own configuration read back rather than a diagnostic. The one exception to the rest is naming a drawing file with an `/images template …` command: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
 
 ```
 /images test calendar        division:<name>
@@ -497,6 +497,8 @@ Several kinds send more than one picture: the results send one per session of th
 **A cancelled division still previews.** It is offered in the division list and draws like any other, deliberately — a preview posts nothing where a driver can see it, so a division you have withdrawn is a perfectly good one to check a drawing against, and often the most convenient.
 
 `/season review` shows the same summary and names anything that would stop the season. **`/season approve` refuses to run** while something is broken — review is where you spot it, approval is where it stops you.
+
+It also lists your eight **asset directories** with the path each is set to, and marks any it cannot read. This is the one place in the review those paths appear, and it is worth a glance: a folder that has been moved or renamed draws placeholders everywhere, which looks exactly like artwork you never supplied. `/images config view` says what is wrong with a folder it cannot read; the review only tells you which one.
 
 **The review draws the calendar and the lineup for real.** With `calendar` or `lineup` switched on, that division's block in the review carries the picture instead of the text — the same picture the season will post once you approve it. That is the point of looking: what you sign off is what your league gets. With the switch off you see the text, as before.
 

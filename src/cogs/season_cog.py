@@ -998,6 +998,8 @@ class SeasonCog(commands.Cog):
         try:
             statuses = await self.bot.image_validity_service.aspect_statuses(server_id)  # type: ignore[attr-defined]
             reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
+            directories = await self.bot.image_validity_service.directory_reports(server_id)  # type: ignore[attr-defined]
+            config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
         except Exception as exc:  # a review must never fail because of this section
             log.error("season review: image section failed: %s", exc)
             return ["**Image output**", "  ⚠️ Could not be read.", ""]
@@ -1028,6 +1030,33 @@ class SeasonCog(commands.Cog):
                         f"      • **{label}**: {plain_reason(report)}. "
                         f"{plain_remedy(report)}"
                     )
+
+        # FR-033: where the assets are read from. The paths are configuration a manager
+        # sets once and then cannot see anywhere in this report, and a graphic that draws
+        # placeholders because a folder was renamed looks exactly like one whose artwork
+        # is missing. Naming the directory is what separates the two.
+        #
+        # Summarised, as the templates above are: the path and whether it resolves. The
+        # fault and its remedy belong to `/images config view`, which has room for them.
+        if config is not None and directories:
+            from models.image_constants import ASSET_LABELS
+
+            lines.append("  Asset directories:")
+            for column, report in directories.items():
+                icon = "✅" if report.valid else "⚠️"
+                label = ASSET_LABELS.get(column, column)
+                lines.append(f"      {icon} {label}: `{getattr(config, column)}`")
+            unresolved = sum(1 for r in directories.values() if not r.valid)
+            if unresolved:
+                # Deliberately not the "↳" the aspect reasons use: that marker belongs to
+                # a reason hanging off one of the eight aspects, and `/images config view`
+                # is compared against this report line for line by
+                # `test_season_review_and_config_view_agree`. Borrowing it here would make
+                # the two surfaces look divergent when they are not.
+                lines.append(
+                    f"      • {unresolved} of these cannot be read — "
+                    f"`/images config view` names the fault."
+                )
 
         lines += await self._portrait_review_lines(server_id)
 

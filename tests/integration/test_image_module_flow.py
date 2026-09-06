@@ -512,6 +512,31 @@ async def test_season_review_and_config_view_agree(
         )
 
 
+def test_the_review_names_every_configured_asset_directory():
+    """`/season review` states where each asset class is read from.
+
+    A manager sets these paths once and then has nowhere in the review to see them, so a
+    graphic drawing placeholders because a folder was renamed looks exactly like one whose
+    artwork was never supplied. Naming the directory is what tells the two apart.
+
+    Asserted against `ASSET_LABELS` rather than a written-out list, so an asset class
+    added later is covered by this test the day it appears.
+    """
+    import asyncio
+    import inspect
+
+    from models.image_constants import ASSET_LABELS
+    from cogs.season_cog import SeasonCog
+
+    source = inspect.getsource(SeasonCog._build_image_review_section)
+
+    assert "directory_reports" in source, "the review does not read the directories"
+    assert "ASSET_LABELS" in source, "the review does not label them"
+    # Every class is labelled from the same map `/images config view` uses, so the two
+    # surfaces name a directory identically or not at all.
+    assert len(ASSET_LABELS) == 8
+
+
 # ── Which aspects actually post ───────────────────────────────────────────
 #
 # Both surfaces read LIVE_POSTING_ASPECTS, so they follow it when a posting path ships
