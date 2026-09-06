@@ -1448,6 +1448,10 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 Flips that aspect between a generated image and the text the bot has always posted. All eight start disabled. It is a **toggle**: run it on an aspect that is off and it comes on, run it again and it goes back to text.
 
+**Switching one on checks its drawings first.** If any drawing that aspect needs is missing or unusable, the command is **refused** — it names each fault, and the aspect stays off. That is deliberate: an aspect switched on over a broken drawing posts nothing at all where your drivers would otherwise have read text, and it withholds your season's approval besides. Switching an aspect **off** is never refused, whatever state its drawings are in: text needs no drawing, so you can always retreat to it.
+
+**A broken drawing only blocks a season if the output that draws it is on.** `/season review` and `/season approve` apply the same rule — a fault under a switched-off output is shown as a ⚠️ warning and stops nothing, because nothing would ever post it. Fix it before you switch that output on; the review names it either way so it does not catch you out later.
+
 The choice names above are exactly the names `/images config view` and `/season review` print for the eight aspects, so a `❌` row in either report can hand you the command with the choice already named.
 
 > **All eight aspects post live.** Enabling one changes what the bot posts from its next posting onwards.
@@ -1654,7 +1658,7 @@ These sit under `/images template` rather than `/images config` because Discord 
 
 Every directory is a path relative to the project root, and one that resolves outside it is rejected.
 
-**`template-directory` is checked before it is stored; the other eight are not.** Name a folder for your templates and the bot looks for all fifteen of them in it and checks each one, exactly as `/season review` does. If any is missing or unusable the command is **refused**, naming each one and why, and your existing folder stays in force — so put your templates in place first, then point the bot at the folder. The eight artwork directories are accepted whether or not anything is in them yet, because a missing picture falls back to what the bot ships and files added later are picked up with no further command. A missing *template* has nothing behind it, so it would stop every graphic being produced at all.
+**`template-directory` is checked before it is stored; the other eight are not.** Name a folder for your templates and the bot looks in it for every drawing your **switched-on** outputs need, and checks each one, exactly as `/season review` does. If any is missing or unusable the command is **refused**, naming each one and why, and your existing folder stays in force — so put your templates in place first, then point the bot at the folder. Drawings for outputs you have switched off are not required: that output posts as text and draws nothing, and switching it on later checks its own drawings at that moment. The eight artwork directories are accepted whether or not anything is in them yet, because a missing picture falls back to what the bot ships and files added later are picked up with no further command. A missing *template* has nothing behind it, so it would stop every graphic being produced at all.
 
 | Subcommand | Default | Holds |
 |------------|---------|-------|

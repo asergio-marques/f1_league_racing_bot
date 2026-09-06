@@ -1081,6 +1081,47 @@ def build_aspect_statuses(
     return statuses
 
 
+def templates_of_enabled_aspects(toggles: dict[str, bool]) -> set[str]:
+    """The templates that can actually be drawn, given which aspects are switched on.
+
+    An aspect that is off posts as text and reaches no template at all, so a template
+    backing only off aspects cannot stop anything happening. Read from
+    ``ASPECT_TEMPLATES``, so an aspect added later is covered without editing this.
+    """
+    wanted: set[str] = set()
+    for aspect in ASPECTS:
+        if toggles.get(aspect, False):
+            wanted.update(ASPECT_TEMPLATES[aspect])
+    return wanted
+
+
+def blocking_template_problems(
+    config: ImageConfig,
+    toggles: dict[str, bool],
+    *,
+    root: Path | None = None,
+) -> list[Problem]:
+    """The template faults that must stop a season, given what is switched on.
+
+    One rule, applied by `/season review` and `/season approve` alike so the two cannot
+    disagree: **a broken template blocks only where the aspect drawing it is on.** A
+    league that never switched verdicts on is not stopped by a verdicts template it has
+    no use for, and used to be — `check_all_templates` surveys all fifteen regardless,
+    which is right for the question "does this folder hold every drawing?" and wrong for
+    "may this season run?".
+
+    A fault under a *disabled* aspect is not silently dropped. It is reported as a
+    warning by the surfaces that report, because a manager switching that aspect on
+    later wants to have known; it simply withholds no approval in the meantime.
+    """
+    wanted = templates_of_enabled_aspects(toggles)
+    return [
+        problem
+        for problem in check_all_templates(config, root=root)
+        if problem.template_key in wanted
+    ]
+
+
 #: What "off" means to a league: the posting still happens, in text rather than as a
 #: picture. The same words `/images config toggle` uses when an aspect is switched off.
 PLAIN_ASPECT_OFF = "switched off — this is posted as text, not as a picture"

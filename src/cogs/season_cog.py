@@ -660,13 +660,19 @@ class SeasonCog(commands.Cog):
         return problems
 
     async def _image_template_problems(self, server_id: int) -> list[str]:
-        """Every unusable template, named individually (FR-007, FR-008).
+        """Every unusable template that would actually be drawn (FR-007, FR-008).
 
         The single evaluation `/season review` reports and `/season approve` blocks on,
         so the two surfaces cannot disagree about whether a template is usable (FR-008a).
         Silent when the module is disabled (FR-009).
+
+        **Scoped to the aspects that are switched on.** An aspect that is off posts as
+        text and reaches no template, so a broken drawing beneath it cannot stop a season
+        — this surveyed all fifteen regardless, and a league that had never switched
+        verdicts on was refused approval over a verdicts template it had no use for. The
+        fault is still *reported*, as a warning, by the image section of the review.
         """
-        from services.image_validity_service import check_all_templates, describe
+        from services.image_validity_service import blocking_template_problems, describe
 
         if not await self.bot.module_service.is_images_enabled(server_id):
             return []
@@ -676,7 +682,11 @@ class SeasonCog(commands.Cog):
             return []
 
         try:
-            return [describe(problem) for problem in check_all_templates(config)]
+            toggles = await self.bot.image_config_service.get_toggles(server_id)  # type: ignore[attr-defined]
+            return [
+                describe(problem)
+                for problem in blocking_template_problems(config, toggles)
+            ]
         except Exception as exc:  # noqa: BLE001 - never fail a season on this reader
             log.error("season: image template check failed: %s", exc)
             return []
@@ -1019,17 +1029,40 @@ class SeasonCog(commands.Cog):
         # FR-008: name each one. A count tells a manager nothing about what to fix, and
         # this is the report they read before approving — the approval refuses on the
         # same findings, so seeing them here is what lets them act first.
+        #
+        # Split by whether the aspect drawing the template is switched on, because that
+        # is what decides whether the fault stops the season. `/season approve` blocks on
+        # exactly the first list, so the heading is a promise the gate keeps rather than
+        # a guess. A template beneath a switched-off aspect is still named: it is a real
+        # fault a manager will meet the moment they switch that aspect on, and finding it
+        # then — after the season is running — is worse than reading it here.
         if invalid:
             from models.image_constants import TEMPLATE_LABELS as _LABELS
+            from services.image_validity_service import templates_of_enabled_aspects
 
-            lines.append("  ⛔ These block approval:")
-            for report in reports.values():
-                if not report.valid:
-                    label = _LABELS.get(report.template_key, report.template_key)
-                    lines.append(
-                        f"      • **{label}**: {plain_reason(report)}. "
-                        f"{plain_remedy(report)}"
-                    )
+            drawn = templates_of_enabled_aspects(
+                await self.bot.image_config_service.get_toggles(server_id)  # type: ignore[attr-defined]
+            )
+
+            def _detail(report) -> str:
+                label = _LABELS.get(report.template_key, report.template_key)
+                return (
+                    f"      • **{label}**: {plain_reason(report)}. "
+                    f"{plain_remedy(report)}"
+                )
+
+            blocking = [r for r in reports.values() if not r.valid and r.template_key in drawn]
+            dormant = [r for r in reports.values() if not r.valid and r.template_key not in drawn]
+
+            if blocking:
+                lines.append("  ⛔ These block approval:")
+                lines += [_detail(report) for report in blocking]
+            if dormant:
+                lines.append(
+                    "  ⚠️ These do not block approval — the output that draws them is "
+                    "switched off, so nothing posts them. Fix them before switching it on:"
+                )
+                lines += [_detail(report) for report in dormant]
 
         # FR-033: where the assets are read from. The paths are configuration a manager
         # sets once and then cannot see anywhere in this report, and a graphic that draws

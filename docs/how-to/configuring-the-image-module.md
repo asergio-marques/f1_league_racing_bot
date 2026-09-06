@@ -285,10 +285,10 @@ Fifteen of them, one per kind of picture, and they all come with the bot. You ca
 
 That folder is `resources/defaults/templates`, and `/images config template-directory` moves it. **It does not behave like the artwork folders in step 4, and the order matters:**
 
-1. Put **all fifteen** drawing files in your new folder first.
+1. Put the drawing files in your new folder first — at least the ones your switched-on outputs need. Copying all fifteen is the simplest thing to do.
 2. *Then* run `/images config template-directory`.
 
-The command checks every one of the fifteen before it stores anything, exactly as `/season review` does. If any is missing or unusable it **refuses** the change, tells you which ones and why, and leaves your existing folder in force. An empty artwork folder is harmless — the bot falls back to what it ships — but there is nothing behind a missing drawing file, so a half-filled folder would stop every picture being produced at all. That is why this one is checked and the other eight are not.
+The command checks every drawing your switched-on outputs need before it stores anything, exactly as `/season review` does. If any is missing or unusable it **refuses** the change, tells you which ones and why, and leaves your existing folder in force. A drawing for an output you have switched **off** is not required — that output posts as text and draws nothing — and switching it on later checks its own drawings at that point. An empty artwork folder is harmless — the bot falls back to what it ships — but there is nothing behind a missing drawing file, so a half-filled folder would stop every picture being produced at all. That is why this one is checked and the other eight are not.
 
 It must still sit inside the bot's own project folder.
 
@@ -437,6 +437,10 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 Eight switches. `aspect` is a dropdown, so you pick rather than type; its eight entries are **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts** and **Verdicts** — the same names `/images config view` and `/season review` use for them. All start off. Each one swaps that output between a picture and the text the bot has always posted.
 
 It is a **toggle**, not an on/off setting: run it on something that is off and it comes on, run it again and it goes back to text.
+
+**Switching one on checks its drawings first, and refuses if they are not right.** You are told what is wrong and the output stays off. That is on purpose: an output switched on over a broken drawing posts *nothing* where your drivers would otherwise have read text, and it holds up your season's approval as well. Switching one **off** is never refused — text needs no drawing, so you can always go back to it.
+
+**What you leave switched off costs you nothing.** A missing or broken drawing behind an output you have not switched on does not stop a season being approved: nothing would ever post it. `/season review` still names it, as a ⚠️ rather than a ⛔, so you know it is there before you decide to switch that output on.
 
 This comes last on purpose. Switching something on before its drawing file is big enough is what causes problems; by now everything is in place.
 

@@ -527,7 +527,7 @@ class ImageCog(commands.Cog):
         files, and able to fix it — rather than letting it surface as a render failure at
         the next scheduled post, when nobody is looking.
         """
-        from services.image_validity_service import check_all_templates
+        from services.image_validity_service import blocking_template_problems
         from utils.paths import resolve_within_project_root
 
         if not await self._guard_module_enabled(interaction):
@@ -565,12 +565,20 @@ class ImageCog(commands.Cog):
 
         # The FR-007 survey, which also backs `/season review` and `/season approve`, so
         # the three surfaces cannot disagree about whether a template is usable.
-        problems = check_all_templates(proposed)
+        #
+        # Scoped to the aspects that are switched on, as those two are: a folder holding
+        # no verdicts drawing is a perfectly good folder for a league that posts verdicts
+        # as text, and refusing it would force every league to supply all fifteen before
+        # it could move its artwork. Switching an aspect on checks its own drawings at
+        # that moment, so nothing reaches a posting path unverified.
+        toggles = await self._config_service.get_toggles(interaction.guild_id)
+        problems = blocking_template_problems(proposed, toggles)
         if problems:
             await self._reject_directory(
                 interaction,
                 label,
-                f"`{stored}` does not hold every template the bot needs.",
+                f"`{stored}` does not hold every template the bot needs "
+                f"for the outputs you have switched on.",
                 problems=problems,
                 searched=resolved,
             )
@@ -582,7 +590,8 @@ class ImageCog(commands.Cog):
         await self._reply(
             interaction,
             f"✅ **{label}** set to `{stored}`.\n"
-            f"✅ All fifteen templates are present and valid.\nSearched: `{resolved}`",
+            f"✅ Every drawing the outputs you have switched on need is present and "
+            f"valid.\nSearched: `{resolved}`",
         )
         await self._log(interaction, f"{label} = {stored}")
 
@@ -889,24 +898,76 @@ class ImageCog(commands.Cog):
             return
 
         server_id = interaction.guild_id
-        now_enabled = await self._config_service.toggle_aspect(server_id, aspect.value)
         label = ASPECT_LABELS[aspect.value]
 
-        if not now_enabled:
+        # Switching *off* is always allowed: the output reverts to text, which needs no
+        # drawing at all, so nothing about the templates can stand in the way.
+        if await self._config_service.is_aspect_enabled(server_id, aspect.value):
+            await self._config_service.set_aspect(server_id, aspect.value, False)
             await self._reply(
                 interaction, f"❌ **{label}** image output **disabled**. Posting stays as text."
             )
             await self._log(interaction, f"{label} image output disabled")
             return
 
-        blocking = await self._aspect_blocking_reasons(server_id, aspect.value)
-        lines = toggle_enabled_lines(aspect.value, label, blocking)
+        # Switching *on* is refused while the drawings behind it are unusable, and the
+        # aspect is left off. Enabling it would produce an aspect that cannot draw — one
+        # that withholds the season's approval, and posts nothing where a driver would
+        # otherwise have read text. The check is made against the configured directory,
+        # so it answers for the files the league actually has.
+        blocking = await self._aspect_blocking_reasons_if_enabled(server_id, aspect.value)
+        if blocking:
+            body = "\n".join(f"  • {reason}" for reason in blocking)
+            await self._reply(
+                interaction,
+                f"⛔ **{label}** image output was **not** switched on — "
+                f"it cannot be drawn as things stand:\n{body}\n"
+                f"Put that right and run this command again. The output is still posted "
+                f"as text in the meantime.",
+            )
+            await self._log(
+                interaction, f"{label} image output refused — {len(blocking)} problem(s)"
+            )
+            return
+
+        await self._config_service.set_aspect(server_id, aspect.value, True)
+        lines = toggle_enabled_lines(aspect.value, label, [])
 
         await self._reply(interaction, "\n".join(lines))
         await self._log(interaction, f"{label} image output enabled")
 
     async def _aspect_blocking_reasons(self, server_id: int, aspect: str) -> list[str]:
         statuses = await self._validity_service.aspect_statuses(server_id)
+        for status in statuses:
+            if status.aspect == aspect:
+                return status.blocking_reasons
+        return []
+
+    async def _aspect_blocking_reasons_if_enabled(
+        self, server_id: int, aspect: str
+    ) -> list[str]:
+        """What would stop *aspect* drawing, asked while it is still switched off.
+
+        `aspect_statuses` reads the stored toggles, and an aspect that is off reports its
+        problems as ``disabled_reasons`` rather than ``blocking_reasons`` — so asking the
+        ordinary way, before the toggle is written, always answers "nothing blocks it".
+        The toggle is therefore overridden for this one question, which is what lets the
+        command refuse *before* storing rather than storing and then complaining.
+        """
+        from services.image_render_service import converter_available
+        from services.image_validity_service import build_aspect_statuses
+
+        toggles = dict(await self._config_service.get_toggles(server_id))
+        toggles[aspect] = True
+
+        statuses = build_aspect_statuses(
+            toggles,
+            await self._validity_service.template_reports(server_id),
+            disabled_source_modules=await self._validity_service.disabled_source_modules(
+                server_id
+            ),
+            converter_available=converter_available(),
+        )
         for status in statuses:
             if status.aspect == aspect:
                 return status.blocking_reasons

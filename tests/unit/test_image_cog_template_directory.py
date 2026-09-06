@@ -2,8 +2,15 @@
 
 Templates are the one directory with no packaged second tier. Every asset class falls back
 to what the bot ships, so an empty artwork folder still draws every graphic; the template
-directory is the only place templates are searched, so a folder that does not hold all
-fifteen, valid, is a configuration that cannot produce a single image.
+directory is the only place templates are searched, so a folder that does not hold the
+drawings a league's switched-on outputs need is a configuration that cannot produce those
+images.
+
+The survey is **scoped to the enabled aspects**, as `/season review` and `/season approve`
+are: a folder holding no verdicts drawing is a perfectly good folder for a league that
+posts verdicts as text, and demanding all fifteen would force every league to supply
+drawings for outputs it has switched off. Switching an aspect on checks its own drawings
+at that moment, so nothing reaches a posting path unverified.
 
 It is therefore refused at the moment it is named — the one moment the manager is present,
 holding the files, and able to fix it — rather than stored and left to surface as a render
@@ -30,6 +37,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.image_cog import ImageCog  # noqa: E402
+from models.image_constants import ASPECTS  # noqa: E402
 from services.image_validity_service import Problem  # noqa: E402
 from utils.paths import PathContainmentError  # noqa: E402
 
@@ -50,6 +58,11 @@ def _cog(monkeypatch, *, problems=None, contained=True):
     cog._config_service = MagicMock()
     cog._config_service.candidate_config = AsyncMock(return_value=MagicMock())
     cog._config_service.set_field = AsyncMock()
+    # The survey is scoped to the aspects that are switched on, so the command reads
+    # them. Everything on here, which is the strictest case and what these assert.
+    cog._config_service.get_toggles = AsyncMock(
+        return_value={aspect: True for aspect in ASPECTS}
+    )
     cog._guard_module_enabled = AsyncMock(return_value=True)
     cog._reply = AsyncMock()
     cog._log = AsyncMock()
@@ -73,7 +86,11 @@ def _cog(monkeypatch, *, problems=None, contained=True):
 
     import services.image_validity_service as validity
 
-    monkeypatch.setattr(validity, "check_all_templates", lambda config: problems or [])
+    monkeypatch.setattr(
+        validity,
+        "blocking_template_problems",
+        lambda config, toggles, **kwargs: problems or [],
+    )
     return cog
 
 
@@ -96,7 +113,9 @@ async def test_a_folder_holding_every_valid_template_is_stored(monkeypatch):
     cog._reject_directory.assert_not_awaited()
 
     reply = cog._reply.await_args.args[1]
-    assert "fifteen" in reply
+    # Not "all fifteen" any more: the survey covers the drawings the switched-on outputs
+    # need, so a league posting verdicts as text is not held to a verdicts template.
+    assert "switched on" in reply
     assert "resources/mine" in reply
 
 

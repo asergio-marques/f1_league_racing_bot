@@ -103,3 +103,92 @@ def test_reply_follows_up_when_the_interaction_is_already_deferred():
 
     assert "interaction.response.is_done()" in source
     assert "followup.send" in source
+
+
+# ── Switching an aspect on verifies its drawings first ────────────────────
+
+
+class _Toggled:
+    """The smallest cog the toggle body needs, recording what it stored."""
+
+    def __init__(self, *, enabled: bool, blocking: list[str]):
+        from unittest.mock import AsyncMock, MagicMock
+
+        self._enabled = enabled
+        self._blocking = blocking
+        self.stored: list[tuple[str, bool]] = []
+
+        self._config_service = MagicMock()
+        self._config_service.is_aspect_enabled = AsyncMock(return_value=enabled)
+
+        async def _set(server_id, aspect, value):
+            self.stored.append((aspect, value))
+
+        self._config_service.set_aspect = AsyncMock(side_effect=_set)
+        self._guard_module_enabled = AsyncMock(return_value=True)
+        self._reply = AsyncMock()
+        self._log = AsyncMock()
+
+    async def _aspect_blocking_reasons_if_enabled(self, server_id, aspect):
+        return self._blocking
+
+
+def _toggle_interaction():
+    from unittest.mock import AsyncMock, MagicMock
+
+    interaction = MagicMock()
+    interaction.guild_id = 1
+    interaction.response.defer = AsyncMock()
+    return interaction
+
+
+async def _toggle(cog, aspect="verdicts"):
+    """The command body, past `channel_guard` and `admin_only`.
+
+    Both guards have their own cover, and neither is what these are about — a stub cog
+    carries no `bot`, and the interaction's user is not a `discord.Member`.
+    """
+    from discord import app_commands
+
+    from cogs.image_cog import ImageCog
+
+    body = ImageCog.config_toggle.callback.__wrapped__.__wrapped__
+    choice = app_commands.Choice(name=aspect, value=aspect)
+    await body(cog, _toggle_interaction(), choice)
+
+
+@pytest.mark.asyncio
+async def test_switching_on_is_refused_while_the_drawing_is_broken():
+    """The aspect stays off: storing it would arm an output that posts nothing."""
+    cog = _Toggled(enabled=False, blocking=["the verdicts drawing is not there."])
+
+    await _toggle(cog)
+
+    assert cog.stored == [], "the aspect was switched on despite a broken drawing"
+    reply = cog._reply.await_args.args[1]
+    assert "not** switched on" in reply
+    assert "the verdicts drawing is not there." in reply
+
+
+@pytest.mark.asyncio
+async def test_switching_on_succeeds_when_the_drawing_is_sound():
+    cog = _Toggled(enabled=False, blocking=[])
+
+    await _toggle(cog)
+
+    assert cog.stored == [("verdicts", True)]
+
+
+@pytest.mark.asyncio
+async def test_switching_off_is_never_refused():
+    """Off posts as text and draws nothing, so no drawing can stand in the way.
+
+    A broken template must not trap an aspect in the on position — that would leave a
+    league unable to retreat to text, which is the very thing the switch is for.
+    """
+    cog = _Toggled(enabled=True, blocking=["the verdicts drawing is not there."])
+
+    await _toggle(cog)
+
+    assert cog.stored == [("verdicts", False)]
+    assert "disabled" in cog._reply.await_args.args[1]
