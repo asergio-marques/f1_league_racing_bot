@@ -791,3 +791,85 @@ def test_the_approval_gate_returns_rather_than_merely_reporting():
     branch = branch[: branch.index("snapshot_configs_to_season")]
     assert "return" in branch
     assert "Season cannot be approved" in branch
+
+
+# ── The approval window ───────────────────────────────────────────────────
+#
+# A review is a photograph of the season at the moment it was posted, and the button
+# commits on the strength of it. A manager who edits a round, moves a channel or reseats
+# a driver and then presses a button from half an hour ago would approve a season nobody
+# has reviewed — so the button stands for five minutes and then refuses (2026-09-07).
+
+
+from cogs.season_cog import _ApproveView  # noqa: E402
+
+
+def _approve_view():
+
+    cog = MagicMock()
+    cog._do_approve = AsyncMock()
+    return _ApproveView(cog), cog
+
+
+def _button_interaction():
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+    return interaction
+
+
+async def test_a_fresh_review_approves():
+    view, cog = _approve_view()
+
+    await _ApproveView.approve(view, _button_interaction(), MagicMock())
+
+    cog._do_approve.assert_awaited_once()
+
+
+async def test_a_stale_review_is_refused_and_approves_nothing():
+    from datetime import timedelta
+
+    from cogs.season_cog import APPROVAL_WINDOW_SECONDS
+
+    view, cog = _approve_view()
+    view._posted_at -= timedelta(seconds=APPROVAL_WINDOW_SECONDS + 1)
+    interaction = _button_interaction()
+
+    await _ApproveView.approve(view, interaction, MagicMock())
+
+    cog._do_approve.assert_not_awaited()
+    reply = interaction.response.send_message.await_args.args[0]
+    assert "Nothing has been approved" in reply
+    assert "/season review" in reply
+
+
+async def test_the_window_is_checked_before_any_gate_runs():
+    """First thing, so a stale press costs no query and certainly no rasterisation."""
+    import inspect
+
+    from cogs.season_cog import _ApproveView
+
+    source = inspect.getsource(_ApproveView.approve)
+    age_at = source.index("APPROVAL_WINDOW_SECONDS")
+    assert age_at < source.index("_do_approve"), (
+        "the age check must precede the approval itself"
+    )
+
+
+async def test_the_view_stops_listening_on_the_same_window():
+    """The explicit check and discord.py's own timeout must not disagree."""
+    from cogs.season_cog import APPROVAL_WINDOW_SECONDS
+
+    view, _cog = _approve_view()
+
+    assert view.timeout == APPROVAL_WINDOW_SECONDS
+
+
+def test_the_approve_command_is_withdrawn():
+    """A season is approved from the review's button and from nowhere else.
+
+    A command that could be run without a review let a manager commit a season they had
+    not looked at, which is the whole thing the window above exists to prevent.
+    """
+    from cogs.season_cog import SeasonCog
+
+    assert "approve" not in {c.name for c in SeasonCog.season.commands}

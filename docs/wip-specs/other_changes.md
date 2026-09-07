@@ -85,3 +85,9 @@
 - A command setting a channel to the value that setting already holds shall likewise be refused, and shall say so in its own terms rather than as a collision: nothing else holds the channel, and nothing is changed by the refusal.
 - The check shall be made before anything is written, so that a refusal leaves the configuration exactly as it stood.
 - A channel recorded against a completed or cancelled season shall not be held to this rule. A league beginning a season in the channels its last season used is doing the ordinary thing.
+
+# Approving a season
+
+- The command approving a season is withdrawn. A season shall be approved by the button the season review posts, and by no other means. Approval commits a season, and the review is the evidence upon which it is committed; a command that could be run without one admitted the approval of a season nobody had read.
+- The button shall stand for five minutes from the posting of the review that carries it. A button pressed later shall be refused, shall say that the review may no longer describe the season, and shall approve nothing; the manager is directed to review again and approve from the fresh report.
+- The age of the review shall be the first thing the button checks, before any validation of the season and before any graphic is drawn.

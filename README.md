@@ -73,7 +73,7 @@ league data made those writes stall everything else the bot was doing.
 
 Both files matter. `bot.db` alone is **not** a complete backup: restoring it without
 `scheduler.db` leaves a season whose pending weather phases, RSVP notices and result
-submissions will never fire, and only re-running `/season approve` rebuilds them.
+submissions will never fire, and only reviewing and approving again rebuilds them.
 
 The databases run in WAL mode, which means recent changes may sit in a `bot.db-wal` file
 beside the database. **Copying `bot.db` on its own while the bot is running can therefore
@@ -96,8 +96,8 @@ self-contained and can be restored by copying it back into place under the origi
 > **Upgrading from a version before the split.** The scheduler used to keep its jobs inside
 > `bot.db`. On the first start after upgrading it begins with an empty `scheduler.db`, and
 > the old jobs are **not** carried across — a season already under way therefore loses its
-> pending weather phases, RSVP notices and result submissions. Run `/season approve` again
-> for each affected division to rebuild them. Upgrade between seasons and there is nothing
+> pending weather phases, RSVP notices and result submissions. Run `/season review` and
+> approve again for each affected division to rebuild them. Upgrade between seasons and there is nothing
 > to do. The abandoned `apscheduler_jobs` table is left inside `bot.db`, unread; drop it or
 > leave it as you prefer.
 
@@ -231,7 +231,7 @@ Removes all season data for this server. Use `full:True` to also wipe the bot co
 
 ### Season Setup Workflow
 
-Season configuration is a multi-step flow: run `/season setup`, add divisions with `/division add`, add rounds with `/round add`, then review with `/season review` and approve with `/season approve`.
+Season configuration is a multi-step flow: run `/season setup`, add divisions with `/division add`, add rounds with `/round add`, then review with `/season review` and press its **Approve** button.
 
 > **A channel does one job.** Every command that sets a channel — the eight `/division …-channel` commands, `/bot-interaction-channel`, `/bot-log-channel` and `/signup channel` — refuses a channel already set as something else anywhere on this server, naming what holds it. Two divisions cannot share a results channel, and a calendar channel cannot double as a log.
 >
@@ -380,10 +380,14 @@ The image subsection also lists the eight **asset directories** and the path eac
 
 > **A picture that cannot be drawn withholds the Approve button.** You are told what is wrong, that section falls back to its text so the review is still complete, and the review ends with a note that the image module is not correctly configured instead of the button. `/season approve` refuses for the same reason and on the same check, so there is no way past it — fix the template or the artwork it names and run `/season review` again.
 
-#### `/season approve` — Commit the configuration
+#### Approving — the button in `/season review`
 *Access: Trusted admin*
 
-No parameters. Saves all pending divisions and rounds to the database and arms the weather scheduler, and — with the attendance module on — every round's check-in call, reminder and deadline. Equivalent to pressing Approve in `/season review`.
+**There is no `/season approve` command.** A season is approved by pressing **✅ Approve** on the report `/season review` posts, and from nowhere else. Approving commits a season, and the review is the evidence it is committed on — a command that could be run without one let a manager commit a season they had not looked at.
+
+Pressing it saves all pending divisions and rounds to the database and arms the weather scheduler, and — with the attendance module on — every round's check-in call, reminder and deadline.
+
+> **The button stands for five minutes.** After that it refuses, says the review may no longer describe your season, and approves nothing — run `/season review` again and approve from the fresh report. A review is a photograph of the season as it stood when posted, and a manager who edits a round or moves a channel in between would otherwise approve something nobody has read.
 
 > **Approve early enough for the first round's check-in.** Attendance timings are read once, here, and anything whose moment has already passed is skipped without warning. Approving inside the notice window — three days out with the default five-day notice, say — leaves that round with no check-in call at all, and therefore no attendance records and no penalties for anyone. Weather catches up on overdue phases; attendance does not.
 

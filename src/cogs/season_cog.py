@@ -3,7 +3,7 @@
 Commands:
   /season setup    — start season configuration (admin only)
   /season review   — view pending config with Approve/Amend actions
-  /season approve  — commit the pending config to the database
+  (approval is the button `/season review` posts; there is no `/season approve`)
   /season status   — read-only summary of active season
   /season cancel   — delete the active season (admin only, destructive)
 
@@ -1960,14 +1960,11 @@ class SeasonCog(commands.Cog):
                 await interaction.followup.send("\n".join(div_lines), ephemeral=False)
             await interaction.followup.send("Use the button below to approve.", view=view, ephemeral=True)
 
-    @season.command(
-        name="approve",
-        description="Commit the pending season configuration to the bot.",
-    )
-    @channel_guard
-    @admin_only
-    async def season_approve(self, interaction: discord.Interaction) -> None:
-        await self._do_approve(interaction)
+    # `/season approve` is withdrawn (2026-09-07). A season is approved from the button
+    # `/season review` posts and from nowhere else: the review is the evidence the
+    # approval rests on, and a command that could be run without one let a manager commit
+    # a season they had not looked at. The button carries its own five-minute window, so
+    # what is approved is always a season someone has just read.
 
     @season.command(
         name="status",
@@ -4993,15 +4990,40 @@ class SeasonCog(commands.Cog):
 # ---------------------------------------------------------------------------
 
 
+#: How long a review's Approve button stands. A review is a photograph of the season at
+#: the moment it was posted, and the button commits on the strength of it \u2014 so a manager
+#: who edits a round, moves a channel or reseats a driver and then presses a button from
+#: half an hour ago would approve a season nobody has actually reviewed. Five minutes is
+#: long enough to read the report and short enough that little can have changed.
+APPROVAL_WINDOW_SECONDS = 300
+
+
 class _ApproveView(discord.ui.View):
     def __init__(self, cog: SeasonCog) -> None:
-        super().__init__(timeout=300)
+        super().__init__(timeout=APPROVAL_WINDOW_SECONDS)
         self._cog = cog
+        self._posted_at = datetime.now(timezone.utc)
 
     @discord.ui.button(label="\u2705 Approve", style=discord.ButtonStyle.success)
     async def approve(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
+        # Checked before anything else, the gates included. discord.py's own view timeout
+        # stops it *listening* after the same five minutes, but that is in-memory: a bot
+        # restarted since the review would answer a stale press as though it were fresh,
+        # and an expired view otherwise fails silently rather than saying why.
+        age = (datetime.now(timezone.utc) - self._posted_at).total_seconds()
+        if age > APPROVAL_WINDOW_SECONDS:
+            await interaction.response.send_message(
+                f"\u23f1\ufe0f This review is more than "
+                f"{APPROVAL_WINDOW_SECONDS // 60} minutes old, so it may no longer "
+                f"describe your season. Run `/season review` again and approve from the "
+                f"fresh report. **Nothing has been approved.**",
+                ephemeral=True,
+            )
+            self.stop()
+            return
+
         await self._cog._do_approve(interaction)
         self.stop()
 
