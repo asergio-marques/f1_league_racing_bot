@@ -13,6 +13,7 @@ from models.points_config import PointsConfigEntry, PointsConfigFastestLap, Sess
 from models.round import RoundFormat
 from models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
 from utils import results_formatter
+from utils.batch_notice import batch_notice
 from utils.tyre_compound import (
     canonicalise_tyre,
     records_no_tyre,
@@ -477,146 +478,156 @@ async def finalize_penalty_review(
     # Post-penalty snapshot
     post_snapshot = await _snapshot_staged_drivers(db_path, round_id, division_id, state.staged)
 
-    # Repost results/standings with "Post-Race Penalty Results" label
-    if guild:
-        await _rps.delete_and_repost_final_results(
-            db_path, round_id, division_id, guild,
-            label="Post-Race Penalty Results", bot=interaction.client,
-        )
-        await _rps.repost_subsequent_standings(
-            db_path, division_id, round_id, guild, bot=interaction.client,
-        )
+    # Everything from here to the end of the attendance pipeline draws graphics: every
+    # session's results, both standings, one verdict per penalty, the attendance sheet,
+    # and — where anyone was sanctioned — the lineup and the sheet a second time. On the
+    # Pi that is a long silence, so it is covered by a single notice in the submission
+    # channel, this flow's equivalent of the channel a command was typed in.
+    _notice_channel = guild.get_channel(state.submission_channel_id) if guild else None
+    async with batch_notice(
+        _notice_channel,
+        "\U0001f3a8 Updating results, standings and verdicts — one moment.",
+    ):
+        # Repost results/standings with "Post-Race Penalty Results" label
+        if guild:
+            await _rps.delete_and_repost_final_results(
+                db_path, round_id, division_id, guild,
+                label="Post-Race Penalty Results", bot=interaction.client,
+            )
+            await _rps.repost_subsequent_standings(
+                db_path, division_id, round_id, guild, bot=interaction.client,
+            )
 
-    # Set result_status = 'POST_RACE_PENALTY'
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE rounds SET result_status = 'POST_RACE_PENALTY' WHERE id = ?",
-            (round_id,),
-        )
-        await db.commit()
-
-    # Audit log PENALTY_REVIEW_APPROVED
-    penalty_log = [
-        {
-            "driver_user_id": sp.driver_user_id,
-            "session_type": sp.session_type.value,
-            "penalty_type": sp.penalty_type,
-            "penalty_seconds": sp.penalty_seconds,
-            "description": sp.description,
-            "justification": sp.justification,
-        }
-        for sp in state.staged
-    ]
-    old_val = _json.dumps({"result_status": "PROVISIONAL", "affected_drivers": pre_snapshot})
-    new_val = _json.dumps(
-        {
-            "result_status": "POST_RACE_PENALTY",
-            "affected_drivers": post_snapshot,
-            "penalties": penalty_log,
-            "actor_id": actor_id,
-        }
-    )
-    try:
+        # Set result_status = 'POST_RACE_PENALTY'
         async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
-                (division_id,),
+            await db.execute(
+                "UPDATE rounds SET result_status = 'POST_RACE_PENALTY' WHERE id = ?",
+                (round_id,),
             )
-            srv_row = await cursor.fetchone()
-        if srv_row:
-            n_penalties = len(state.staged)
-            summary = (
-                f"<@{actor_id}> | PENALTY_REVIEW_APPROVED | Success\n"
-                f"  round: {state.round_number} ({state.division_name})\n"
-                + (f"  penalties: {n_penalties}\n" if n_penalties else "  penalties: none\n")
-                + f"  old={old_val}\n  new={new_val}"
-            )
-            await bot.output_router.post_log(  # type: ignore[attr-defined]
-                int(srv_row["server_id"]),
-                summary,
-            )
-    except Exception:
-        log.exception("finalize_penalty_review: error writing audit log for round %s", round_id)
+            await db.commit()
 
-    # Post verdict announcements (non-blocking: skip silently on any error)
-    if applied_records:
-        try:
-            await _vas.post_penalty_announcements(bot, state, applied_records)
-        except Exception:
-            log.exception(
-                "finalize_penalty_review: error posting penalty announcements for round %s",
-                round_id,
-            )
-
-    # Post appeals review prompt and keep submission channel open
-    from services.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
-
-    # === NEW: Attendance pipeline (033-attendance-tracking) ===
-    from services.attendance_service import (
-        record_attendance_from_results,
-        distribute_attendance_points,
-        post_attendance_sheet,
-        enforce_attendance_sanctions,
-    )
-    from datetime import datetime as _dt, timezone as _tz
-
-    async with get_connection(db_path) as _db:
-        _srv_cur = await _db.execute(
-            "SELECT s.server_id, s.id AS season_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
-            (division_id,),
+        # Audit log PENALTY_REVIEW_APPROVED
+        penalty_log = [
+            {
+                "driver_user_id": sp.driver_user_id,
+                "session_type": sp.session_type.value,
+                "penalty_type": sp.penalty_type,
+                "penalty_seconds": sp.penalty_seconds,
+                "description": sp.description,
+                "justification": sp.justification,
+            }
+            for sp in state.staged
+        ]
+        old_val = _json.dumps({"result_status": "PROVISIONAL", "affected_drivers": pre_snapshot})
+        new_val = _json.dumps(
+            {
+                "result_status": "POST_RACE_PENALTY",
+                "affected_drivers": post_snapshot,
+                "penalties": penalty_log,
+                "actor_id": actor_id,
+            }
         )
-        _srv_row = await _srv_cur.fetchone()
-
-    if _srv_row and await bot.module_service.is_attendance_enabled(int(_srv_row["server_id"])):  # type: ignore[attr-defined]
-        _att_server_id = int(_srv_row["server_id"])
-        _att_season_id = int(_srv_row["season_id"])
-
-        # T004: Record attendance from submitted results.
         try:
-            await record_attendance_from_results(db_path, round_id, division_id)
-        except Exception:
-            log.exception("finalize_penalty_review: record_attendance_from_results failed for round %s", round_id)
-
-        # T010: Persist staged attendance pardons (INSERT OR IGNORE for idempotency).
-        if state.staged_pardons:
-            _now_iso = _dt.now(_tz.utc).isoformat()
-            async with get_connection(db_path) as _db:
-                for _sp in state.staged_pardons:
-                    await _db.execute(
-                        """
-                        INSERT OR IGNORE INTO attendance_pardons
-                            (attendance_id, pardon_type, justification, granted_by, granted_at)
-                        VALUES (?, ?, ?, ?, ?)
-                        """,
-                        (_sp.attendance_id, _sp.pardon_type, _sp.justification,
-                         _sp.grantor_id, _now_iso),
-                    )
-                await _db.commit()
-
-        # T012: Distribute attendance points.
-        try:
-            await distribute_attendance_points(db_path, round_id, division_id)
-        except Exception:
-            log.exception("finalize_penalty_review: distribute_attendance_points failed for round %s", round_id)
-
-        # T014: Post attendance sheet (non-blocking).
-        try:
-            if guild:
-                await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
-        except Exception:
-            log.exception("finalize_penalty_review: post_attendance_sheet failed for round %s", round_id)
-
-        # T016: Enforce attendance sanctions (non-blocking).
-        try:
-            if guild:
-                await enforce_attendance_sanctions(
-                    bot, guild, db_path, round_id, division_id,
-                    _att_server_id, _att_season_id,
+            async with get_connection(db_path) as db:
+                cursor = await db.execute(
+                    "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                    (division_id,),
+                )
+                srv_row = await cursor.fetchone()
+            if srv_row:
+                n_penalties = len(state.staged)
+                summary = (
+                    f"<@{actor_id}> | PENALTY_REVIEW_APPROVED | Success\n"
+                    f"  round: {state.round_number} ({state.division_name})\n"
+                    + (f"  penalties: {n_penalties}\n" if n_penalties else "  penalties: none\n")
+                    + f"  old={old_val}\n  new={new_val}"
+                )
+                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                    int(srv_row["server_id"]),
+                    summary,
                 )
         except Exception:
-            log.exception("finalize_penalty_review: enforce_attendance_sanctions failed for round %s", round_id)
+            log.exception("finalize_penalty_review: error writing audit log for round %s", round_id)
 
-    # === END Attendance pipeline ===
+        # Post verdict announcements (non-blocking: skip silently on any error)
+        if applied_records:
+            try:
+                await _vas.post_penalty_announcements(bot, state, applied_records)
+            except Exception:
+                log.exception(
+                    "finalize_penalty_review: error posting penalty announcements for round %s",
+                    round_id,
+                )
+
+        # Post appeals review prompt and keep submission channel open
+        from services.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
+
+        # === NEW: Attendance pipeline (033-attendance-tracking) ===
+        from services.attendance_service import (
+            record_attendance_from_results,
+            distribute_attendance_points,
+            post_attendance_sheet,
+            enforce_attendance_sanctions,
+        )
+        from datetime import datetime as _dt, timezone as _tz
+
+        async with get_connection(db_path) as _db:
+            _srv_cur = await _db.execute(
+                "SELECT s.server_id, s.id AS season_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                (division_id,),
+            )
+            _srv_row = await _srv_cur.fetchone()
+
+        if _srv_row and await bot.module_service.is_attendance_enabled(int(_srv_row["server_id"])):  # type: ignore[attr-defined]
+            _att_server_id = int(_srv_row["server_id"])
+            _att_season_id = int(_srv_row["season_id"])
+
+            # T004: Record attendance from submitted results.
+            try:
+                await record_attendance_from_results(db_path, round_id, division_id)
+            except Exception:
+                log.exception("finalize_penalty_review: record_attendance_from_results failed for round %s", round_id)
+
+            # T010: Persist staged attendance pardons (INSERT OR IGNORE for idempotency).
+            if state.staged_pardons:
+                _now_iso = _dt.now(_tz.utc).isoformat()
+                async with get_connection(db_path) as _db:
+                    for _sp in state.staged_pardons:
+                        await _db.execute(
+                            """
+                            INSERT OR IGNORE INTO attendance_pardons
+                                (attendance_id, pardon_type, justification, granted_by, granted_at)
+                            VALUES (?, ?, ?, ?, ?)
+                            """,
+                            (_sp.attendance_id, _sp.pardon_type, _sp.justification,
+                             _sp.grantor_id, _now_iso),
+                        )
+                    await _db.commit()
+
+            # T012: Distribute attendance points.
+            try:
+                await distribute_attendance_points(db_path, round_id, division_id)
+            except Exception:
+                log.exception("finalize_penalty_review: distribute_attendance_points failed for round %s", round_id)
+
+            # T014: Post attendance sheet (non-blocking).
+            try:
+                if guild:
+                    await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
+            except Exception:
+                log.exception("finalize_penalty_review: post_attendance_sheet failed for round %s", round_id)
+
+            # T016: Enforce attendance sanctions (non-blocking).
+            try:
+                if guild:
+                    await enforce_attendance_sanctions(
+                        bot, guild, db_path, round_id, division_id,
+                        _att_server_id, _att_season_id,
+                    )
+            except Exception:
+                log.exception("finalize_penalty_review: enforce_attendance_sanctions failed for round %s", round_id)
+
+        # === END Attendance pipeline ===
 
     appeals_view = AppealsReviewView(state=state)
     sub_channel = guild.get_channel(state.submission_channel_id) if guild else None
@@ -705,64 +716,73 @@ async def finalize_appeals_review(
                 )
             await db.commit()
 
-    # Repost results/standings with "Final Results" label
-    if guild:
-        await _rps.delete_and_repost_final_results(
-            db_path, round_id, division_id, guild,
-            label="Final Results", bot=interaction.client,
-        )
-        await _rps.repost_subsequent_standings(
-            db_path, division_id, round_id, guild, bot=interaction.client,
-        )
+    # As in `finalize_penalty_review`: the reposts and the appeal announcements are all
+    # graphics. The notice must be gone before `close_submission_channel` below deletes
+    # the channel holding it, which the context manager's exit guarantees by sitting
+    # inside this block rather than around the whole function.
+    _notice_channel = guild.get_channel(state.submission_channel_id) if guild else None
+    async with batch_notice(
+        _notice_channel,
+        "\U0001f3a8 Updating results and standings — one moment.",
+    ):
+        # Repost results/standings with "Final Results" label
+        if guild:
+            await _rps.delete_and_repost_final_results(
+                db_path, round_id, division_id, guild,
+                label="Final Results", bot=interaction.client,
+            )
+            await _rps.repost_subsequent_standings(
+                db_path, division_id, round_id, guild, bot=interaction.client,
+            )
 
-    # Set result_status = 'FINAL'
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE rounds SET result_status = 'FINAL' WHERE id = ?",
-            (round_id,),
-        )
-        await db.commit()
-
-    # Audit log APPEALS_REVIEW_APPROVED
-    old_val = _json.dumps({"result_status": "POST_RACE_PENALTY"})
-    new_val = _json.dumps(
-        {
-            "result_status": "FINAL",
-            "actor_id": actor_id,
-            "corrections": len(state.staged_appeals),
-        }
-    )
-    try:
+        # Set result_status = 'FINAL'
         async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
-                (division_id,),
+            await db.execute(
+                "UPDATE rounds SET result_status = 'FINAL' WHERE id = ?",
+                (round_id,),
             )
-            srv_row = await cursor.fetchone()
-        if srv_row:
-            n_corrections = len(state.staged_appeals)
-            summary = (
-                f"<@{actor_id}> | APPEALS_REVIEW_APPROVED | Success\n"
-                f"  round: {state.round_number} ({state.division_name})\n"
-                + (f"  corrections: {n_corrections}\n" if n_corrections else "  corrections: none\n")
-                + f"  old={old_val}\n  new={new_val}"
-            )
-            await bot.output_router.post_log(  # type: ignore[attr-defined]
-                int(srv_row["server_id"]),
-                summary,
-            )
-    except Exception:
-        log.exception("finalize_appeals_review: error writing audit log for round %s", round_id)
+            await db.commit()
 
-    # Post appeal announcements (non-blocking)
-    if applied_correction_records:
+        # Audit log APPEALS_REVIEW_APPROVED
+        old_val = _json.dumps({"result_status": "POST_RACE_PENALTY"})
+        new_val = _json.dumps(
+            {
+                "result_status": "FINAL",
+                "actor_id": actor_id,
+                "corrections": len(state.staged_appeals),
+            }
+        )
         try:
-            await _vas.post_appeal_announcements(bot, state, applied_correction_records)
+            async with get_connection(db_path) as db:
+                cursor = await db.execute(
+                    "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                    (division_id,),
+                )
+                srv_row = await cursor.fetchone()
+            if srv_row:
+                n_corrections = len(state.staged_appeals)
+                summary = (
+                    f"<@{actor_id}> | APPEALS_REVIEW_APPROVED | Success\n"
+                    f"  round: {state.round_number} ({state.division_name})\n"
+                    + (f"  corrections: {n_corrections}\n" if n_corrections else "  corrections: none\n")
+                    + f"  old={old_val}\n  new={new_val}"
+                )
+                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                    int(srv_row["server_id"]),
+                    summary,
+                )
         except Exception:
-            log.exception(
-                "finalize_appeals_review: error posting appeal announcements for round %s",
-                round_id,
-            )
+            log.exception("finalize_appeals_review: error writing audit log for round %s", round_id)
+
+        # Post appeal announcements (non-blocking)
+        if applied_correction_records:
+            try:
+                await _vas.post_appeal_announcements(bot, state, applied_correction_records)
+            except Exception:
+                log.exception(
+                    "finalize_appeals_review: error posting appeal announcements for round %s",
+                    round_id,
+                )
 
     # Close the submission channel
     await close_submission_channel(state.submission_channel_id, round_id, guild, db_path)

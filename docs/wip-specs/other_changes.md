@@ -89,12 +89,19 @@
 # Approving a season
 
 - The command approving a season is withdrawn. A season shall be approved by the button the season review posts, and by no other means. Approval commits a season, and the review is the evidence upon which it is committed; a command that could be run without one admitted the approval of a season nobody had read.
-- The button shall stand for five minutes from the posting of the review that carries it. A button pressed later shall be refused, shall say that the review may no longer describe the season, and shall approve nothing; the manager is directed to review again and approve from the fresh report.
-- The age of the review shall be the first thing the button checks, before any validation of the season and before any graphic is drawn.
+- The season review may be run by any holder of the interaction role. Reading what a season is configured to be is not an administrative act.
+- The button shall be carried by a message of its own, asking whether the season configuration is accepted and naming both the member who ran the review and who may answer it.
+- That message shall be posted publicly, and not to the reviewer alone. A reviewer who may not approve is thereby able to put the question to a member who may.
+- The button shall be pressed only by the member who ran the review, or by a server administrator. A press by any other member shall be refused, shall say who may approve, and shall approve nothing; the refusal is seen by the presser alone.
+- Who is pressing shall be the first thing the button settles, before the state of the season is read.
+- The button shall carry no other action. The season is amended by the commands that amend it and reviewed again.
+- The button shall stand for five minutes from the posting of the review that carries it. Upon their passing its message shall be deleted, and a notice posted in its place naming the reviewer, saying that the review has expired and that it must be run again before the season can be approved.
+- A review standing when the bot stops shall be treated as expired when the bot next starts: its message shall be deleted and the same notice posted. The five minutes cannot have been served while the bot was down, and a message left standing would offer a button nothing shall answer.
 
 # The evidence a season is approved upon
 
 - The season review shall record the state of the season at the moment its report is posted, over the whole of what that report describes: the season, its divisions, its rounds, its teams and seats, its seated drivers, its channels, the modules enabled upon it, its points configurations, the configuration of each module, and the template and artwork files its graphics are drawn from.
 - The button approving a season shall refuse where that state has changed since the report was posted, shall name the parts of it that changed, and shall approve nothing. The manager is directed to review again and approve from the fresh report. The rule is that the report read is the report approved: the review states what the season is, and an approval upon a report that no longer describes it is an approval of something nobody has read.
-- The state is compared before the season is validated and before anything is drawn, and after the age of the review is checked.
+- The state is compared before the season is validated and before anything is drawn, and after the member pressing has been found entitled to approve.
+- A review refused upon a changed state shall end as an expired one does: its message is deleted and the notice posted in its place. The report no longer describes the season, so the question it puts shall not remain standing.
 - The approval shall **not** draw the graphics of the season. The review draws them, and refuses its own button where one will not draw; a season proven unchanged since that review is a season whose graphics have already been drawn successfully, and drawing them a second time would answer a question already answered.

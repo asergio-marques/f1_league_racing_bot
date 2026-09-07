@@ -368,9 +368,9 @@ Unlike the other two commands, `<datetime>` is a **local** time in the zone `<ti
 Deletes the round and renumbers remaining rounds by date.
 
 #### `/season review` — Review pending configuration
-*Access: Trusted admin*
+*Access: League manager*
 
-No parameters. Displays the pending season configuration with **Approve** and **Go Back to Edit** buttons.
+No parameters. Displays the pending season configuration, ending with a message asking whether you accept it and carrying the **✅ Approve** button.
 
 The report arrives as **one message per subsection**, in this order: the season and its enabled modules; signup; attendance; points configurations; weather; image outputs. A subsection with nothing in it — a module you have not enabled — is not posted at all. The per-division blocks follow, as before. Each subsection is split further if it alone is too long for one Discord message, because an over-long message is refused whole rather than truncated.
 
@@ -378,16 +378,20 @@ The report arrives as **one message per subsection**, in this order: the season 
 
 The image subsection also lists the eight **asset directories** and the path each is set to, marking any the bot cannot read. A folder that has been moved or renamed produces pictures full of placeholders, which looks the same as artwork you never supplied — seeing the path is what tells the two apart. `/images config view` names the fault in full.
 
-> **A picture that cannot be drawn withholds the Approve button.** You are told what is wrong, that section falls back to its text so the review is still complete, and the review ends with a note that the image module is not correctly configured instead of the button. `/season approve` refuses for the same reason and on the same check, so there is no way past it — fix the template or the artwork it names and run `/season review` again.
+> **A picture that cannot be drawn withholds the Approve button.** You are told what is wrong, that section falls back to its text so the review is still complete, and the review ends with a note that the image module is not correctly configured instead of the button. There is no command that approves around it — the button is the only route — so fix the template or the artwork it names and run `/season review` again.
 
 #### Approving — the button in `/season review`
-*Access: Trusted admin*
+*Access: the reviewer, or a server administrator*
 
 **There is no `/season approve` command.** A season is approved by pressing **✅ Approve** on the report `/season review` posts, and from nowhere else. Approving commits a season, and the review is the evidence it is committed on — a command that could be run without one let a manager commit a season they had not looked at.
 
 Pressing it saves all pending divisions and rounds to the database and arms the weather scheduler, and — with the attendance module on — every round's check-in call, reminder and deadline.
 
-> **The button stands for five minutes**, and only for the season it was posted for. After five minutes it refuses. Before that, it refuses if anything about your season has changed since the report was drawn up — a round edited, a channel moved, a driver seated, a template file altered — and it names what changed. Either way it approves nothing and tells you to run `/season review` again.
+**Who may press it.** The person who ran the review, or a **server administrator** — someone with Discord's Administrator permission. Anyone else who presses is told so privately and nothing is approved. That check matters because the question is posted publicly: a league manager can review a season and then ask an administrator to approve it, which is the point of putting it where both can see it. Manage Server is not enough on its own.
+
+> **The button stands for five minutes**, and only for the season it was posted for. When they pass, the message is deleted and replaced by a notice mentioning whoever ran the review, saying it has expired and must be run again. The same happens if the bot restarts while a review is standing — the five minutes cannot have run while it was down, so the question is cleared at startup rather than left waiting for a press nothing would answer.
+>
+> Before it expires, the button refuses if anything about your season has changed since the report was drawn up — a round edited, a channel moved, a driver seated, a template file altered — and it names what changed. Nothing is approved, the message is cleared as an expiry clears it, and you are told to run `/season review` again.
 >
 > That is what the report is for: **what you read is what you approve.** It is also why approving is quick — the review already drew your calendars and lineups, so if the season is provably the same one, the approval trusts those pictures rather than drawing them all over again.
 
@@ -1491,6 +1495,8 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 `lxml` and `fontTools` are ordinary Python dependencies and are already in `requirements.txt`.
 
 **What the files are called.** Every picture is named for what it shows rather than for the template that drew it, so a folder of them saved off Discord still makes sense: `season1_division1_round10_standings_drivers.png`, `season1_division1_round10_feature_qualifying_results.png`, `season1_division1_lineup.png`. The division is named by its tier where the graphic knows it and by its name otherwise (`season1_elite_calendar.png`); the season or round is left out where there is none, and the lineup and calendar carry no round because they stand for the whole season. `/images test` names its output the same way.
+
+**A batch of pictures announces itself.** Drawing takes a few seconds per picture, and some jobs draw a run of them — `/season review` draws a lineup and a calendar per division, and closing a penalty review redraws every session's results, both championships, one verdict per penalty and the attendance sheet. A short message saying the pictures are being drawn is posted before the batch starts and deleted once it has finished. It goes to the channel you gave the command in — the bot interaction channel for a command you type, the round's results channel for the button presses that drive the results flow — and never to the channels the pictures themselves land in. Nothing is lost when it disappears: a fault is reported to you and to the log channel in its own right.
 
 #### `/images config toggle` — Choose image or text, per kind of output
 *Access: Trusted admin*

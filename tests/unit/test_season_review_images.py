@@ -262,9 +262,11 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
     assert "if approval_blockers:" in tail
     guarded = tail[tail.index("if approval_blockers:"):]
     fault_branch, _, approve_branch = guarded.partition("else:")
-    assert "view=view" not in fault_branch, "the button must not be offered on a fault"
+    assert "_post_approval_prompt" not in fault_branch, (
+        "the button must not be offered on a fault"
+    )
     assert "image module is not correctly configured" in fault_branch
-    assert "view=view" in approve_branch
+    assert "_post_approval_prompt" in approve_branch
 
 
 def test_the_roleless_team_warning_survives_the_graphic():
@@ -542,8 +544,8 @@ def test_approval_refuses_before_it_commits_anything():
     source = _function_source(SRC / "cogs" / "season_cog.py", "approve")
 
     gate_at = source.index("differs_from")
-    assert source.index("APPROVAL_WINDOW_SECONDS") < gate_at, (
-        "the age of the review is checked before its content"
+    assert source.index("_may_approve") < gate_at, (
+        "who is pressing is settled before what they are pressing on"
     )
     assert gate_at < source.index("_do_approve"), (
         "the season must be proven unchanged before it is approved"
@@ -686,31 +688,48 @@ def test_the_approval_gate_returns_rather_than_merely_reporting():
     assert "Season cannot be approved" in branch
 
 
-# ── The approval window ───────────────────────────────────────────────────
+# ── The approval window, and who may answer it ────────────────────────────
 #
 # A review is a photograph of the season at the moment it was posted, and the button
 # commits on the strength of it. A manager who edits a round, moves a channel or reseats
 # a driver and then presses a button from half an hour ago would approve a season nobody
-# has reviewed — so the button stands for five minutes and then refuses (2026-09-07).
+# has reviewed — so the button stands for five minutes and is then deleted (2026-09-07).
+#
+# The message is public, which is what makes the access check load-bearing rather than
+# decorative: a league manager holding only the interaction role may run `/season review`,
+# and anyone who can read the channel can see the button they post.
 
 
 from cogs.season_cog import _ApproveView  # noqa: E402
 
+REVIEWER = 4242
 
-def _approve_view():
 
+def _approve_view(reviewer_id: int = REVIEWER):
     cog = MagicMock()
     cog._do_approve = AsyncMock()
-    return _ApproveView(cog), cog
+    cog.bot.db_path = "/nonexistent/nowhere.db"
+    view = _ApproveView(cog, reviewer_id)
+    view._server_id = 7
+    view._season_id = 1
+    return view, cog
 
 
-def _button_interaction():
+def _member(user_id: int, administrator: bool = False):
+    member = MagicMock()
+    member.id = user_id
+    member.guild_permissions.administrator = administrator
+    return member
+
+
+def _button_interaction(user=None):
     interaction = MagicMock()
     interaction.response.send_message = AsyncMock()
+    interaction.user = user if user is not None else _member(REVIEWER)
     return interaction
 
 
-async def test_a_fresh_review_approves():
+async def test_the_reviewer_may_approve():
     view, cog = _approve_view()
 
     await _ApproveView.approve(view, _button_interaction(), MagicMock())
@@ -718,43 +737,166 @@ async def test_a_fresh_review_approves():
     cog._do_approve.assert_awaited_once()
 
 
-async def test_a_stale_review_is_refused_and_approves_nothing():
-    from datetime import timedelta
-
-    from cogs.season_cog import APPROVAL_WINDOW_SECONDS
-
+async def test_a_server_administrator_may_approve_somebody_elses_review():
     view, cog = _approve_view()
-    view._posted_at -= timedelta(seconds=APPROVAL_WINDOW_SECONDS + 1)
-    interaction = _button_interaction()
+    presser = _member(99, administrator=True)
+
+    await _ApproveView.approve(view, _button_interaction(presser), MagicMock())
+
+    cog._do_approve.assert_awaited_once()
+
+
+async def test_another_league_manager_may_not_approve():
+    """The case the public message creates. Manage Server is deliberately not enough —
+    only the reviewer or a server administrator."""
+    view, cog = _approve_view()
+    presser = _member(99, administrator=False)
+    presser.guild_permissions.manage_guild = True
+    interaction = _button_interaction(presser)
 
     await _ApproveView.approve(view, interaction, MagicMock())
 
     cog._do_approve.assert_not_awaited()
     reply = interaction.response.send_message.await_args.args[0]
     assert "Nothing has been approved" in reply
-    assert "/season review" in reply
+    assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
 
 
-async def test_the_window_is_checked_before_any_gate_runs():
-    """First thing, so a stale press costs no query and certainly no rasterisation."""
+async def test_the_access_check_runs_before_the_fingerprint():
+    """A press by somebody who may not approve costs no query."""
     import inspect
 
-    from cogs.season_cog import _ApproveView
-
     source = inspect.getsource(_ApproveView.approve)
-    age_at = source.index("APPROVAL_WINDOW_SECONDS")
-    assert age_at < source.index("_do_approve"), (
-        "the age check must precede the approval itself"
+
+    assert source.index("_may_approve") < source.index("take_fingerprint"), (
+        "the fingerprint is taken for a member who may not approve anyway"
     )
 
 
-async def test_the_view_stops_listening_on_the_same_window():
-    """The explicit check and discord.py's own timeout must not disagree."""
+async def test_the_view_stops_listening_on_the_window():
+    """discord.py's own timeout is what fires the deletion, so it must be the window."""
     from cogs.season_cog import APPROVAL_WINDOW_SECONDS
 
     view, _cog = _approve_view()
 
     assert view.timeout == APPROVAL_WINDOW_SECONDS
+
+
+# ── Expiry deletes the question and says so ───────────────────────────────
+
+
+def _bound_view():
+    view, cog = _approve_view()
+    message = MagicMock()
+    message.delete = AsyncMock()
+    message.channel.send = AsyncMock()
+    view._message = message
+    return view, cog, message
+
+
+async def test_the_expired_prompt_is_deleted():
+    """Left standing, a public message offers a button nobody may press."""
+    view, _cog, message = _bound_view()
+
+    await view.on_timeout()
+
+    message.delete.assert_awaited_once()
+
+
+async def test_the_expiry_notice_pings_the_reviewer():
+    view, _cog, message = _bound_view()
+
+    await view.on_timeout()
+
+    notice = message.channel.send.await_args.args[0]
+    assert f"<@{REVIEWER}>" in notice
+    assert "/season review" in notice
+
+
+async def test_a_prompt_already_gone_still_posts_the_notice():
+    """Deleted by hand between the review and the timeout."""
+    import discord
+
+    view, _cog, message = _bound_view()
+    message.delete = AsyncMock(side_effect=discord.NotFound(MagicMock(status=404), "gone"))
+
+    await view.on_timeout()
+
+    message.channel.send.assert_awaited_once()
+
+
+async def test_a_changed_season_expires_the_prompt_rather_than_leaving_it():
+    """The report is stale either way, so the question must not stand."""
+    from services.season_fingerprint_service import SeasonFingerprint
+
+    view, cog, message = _bound_view()
+    view._fingerprint = SeasonFingerprint({"season": "abc"})
+    interaction = _button_interaction()
+
+    async def _changed(*_args, **_kwargs):
+        return SeasonFingerprint({"season": "def"})
+
+    import services.season_fingerprint_service as _sfs
+
+    original = _sfs.take_fingerprint
+    _sfs.take_fingerprint = _changed
+    try:
+        await _ApproveView.approve(view, interaction, MagicMock())
+    finally:
+        _sfs.take_fingerprint = original
+
+    cog._do_approve.assert_not_awaited()
+    message.delete.assert_awaited_once()
+
+
+async def test_an_approved_prompt_is_not_deleted_by_the_timeout():
+    """The approval leaves its own message standing; only an expiry clears it."""
+    view, cog, message = _bound_view()
+
+    await _ApproveView.approve(view, _button_interaction(), MagicMock())
+    await view.on_timeout()
+
+    cog._do_approve.assert_awaited_once()
+    message.delete.assert_not_awaited()
+
+
+# ── The question the button is attached to ────────────────────────────────
+
+
+def test_the_prompt_is_public_and_says_who_may_answer():
+    """Public so a reviewer who cannot approve can put the question to someone who can."""
+    source = _function_source(SRC / "cogs" / "season_cog.py", "_post_approval_prompt")
+
+    assert "ephemeral=False" in source
+    assert "wait=True" in source, "the message must be returned so it can be deleted"
+    assert "administrator" in source
+    assert "await view.bind(message)" in source
+
+
+def test_the_review_offers_only_the_approve_button():
+    """The Go Back to Edit button is withdrawn (2026-09-07): it did nothing but print
+    advice, and a second button on a public message is a second thing to mis-press."""
+    import discord
+
+    view, _cog = _approve_view()
+    buttons = [c for c in view.children if isinstance(c, discord.ui.Button)]
+
+    assert len(buttons) == 1
+    assert "Approve" in buttons[0].label
+
+
+def test_a_league_manager_may_run_the_review():
+    """`admin_only` is withdrawn from the command; approving is the narrower right."""
+    import inspect
+
+    from cogs.season_cog import SeasonCog
+
+    source = inspect.getsource(SeasonCog)
+    block = source[: source.index("async def season_review")]
+    decorators = block[block.rindex("@season.command") :]
+
+    assert "@channel_guard" in decorators
+    assert "@admin_only" not in decorators
 
 
 def test_the_approve_command_is_withdrawn():

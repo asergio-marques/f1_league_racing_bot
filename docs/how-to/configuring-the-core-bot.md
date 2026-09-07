@@ -72,7 +72,8 @@ Run it anywhere; it is one of only two commands that do not require the command 
 | To run | You need |
 |---|---|
 | Most commands in this guide | The interaction role **and** Discord's **Manage Server** permission |
-| `/season status`, and `/division weather-channel`, `results-channel` and `standings-channel` | The interaction role alone |
+| `/season status`, `/season review`, and `/division weather-channel`, `results-channel` and `standings-channel` | The interaction role alone |
+| Approving a season, on the button `/season review` posts | Whoever ran that review, or Discord's **Administrator** permission |
 | `/module enable` and `/module disable` | Discord's **Administrator** permission |
 | `/bot-init` and `/bot-reset` | **Manage Server**, from any channel |
 | `/bot-log-channel`, `/bot-interaction-channel`, `/bot-interaction-role` | **Manage Server**, from any channel |
@@ -332,9 +333,13 @@ Two warnings it raises that are easy to skim past:
 
 ## Step 8 — Approve
 
-Press **✅ Approve** on the review you have just read. **There is no `/season approve` command** — approving commits your season, and the review is the evidence it is committed on, so the two are deliberately one action.
+The review ends by asking whether you accept the configuration, with a **✅ Approve** button beneath it. Press it. **There is no `/season approve` command** — approving commits your season, and the review is the evidence it is committed on, so the two are deliberately one action.
 
-> **The button stands for five minutes, and only for the season it was posted for.** Past five minutes it refuses. Before that it still refuses if anything has changed since the report was drawn up — and it tells you what: the rounds, the channels, the seated drivers, even a drawing file edited on the bot's computer. Either way nothing is approved and you are asked to run `/season review` again.
+**You can press it if you ran the review, or if you are a server administrator.** Anybody else who presses is told privately that they cannot, and nothing is approved. Running the review needs only the interaction role, so you may well be able to review a season you cannot approve — that is why the question is posted where everyone can see it rather than to you alone. Show it to an administrator and they can answer it from the same message.
+
+> **The button stands for five minutes, and only for the season it was posted for.** When they pass, the message is deleted and replaced by one mentioning you to say the review has expired — run `/season review` again. If the bot restarts while a review is waiting, the same thing happens as soon as it comes back up, because the five minutes cannot have run while it was off.
+>
+> Before it expires, the button still refuses if anything has changed since the report was drawn up — and it tells you what: the rounds, the channels, the seated drivers, even a drawing file edited on the bot's computer. Nothing is approved, and the question is cleared away just as an expiry clears it.
 >
 > The rule is simply that **what you read is what you approve**. A report describing a season you have since changed is not something anyone can approve from, so it stops being offered.
 

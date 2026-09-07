@@ -248,6 +248,13 @@ These hold for every image type of the module and are stated here rather than re
 - The question is therefore not whether a value may ever change, but whether what the graphic says may become false while its message stands. For a graphic of a state the two are one question; for a graphic of an event they are not. A graphic taking the second manner shall be one whose corrections arrive as fresh postings and never as edits of the posting standing: a penalty overturned upon appeal is announced as a verdict of its own beside the first, and the first remains a true record of what was decided when it was decided.
 - The declaration is made by the graphic, in the section defining it, and is not derived from its catalogue. Whether a field carries a value the module will alter is a fact of the module owning that value and is not visible in a list of fields. A field added to the catalogue of a static graphic is a change to that declaration and shall be weighed as one.
 
+### The notice while a batch is drawn
+- Where a single command or button draws several graphics in succession, a notice shall be posted before the first is drawn saying that graphics are being drawn, and deleted once the last has been posted.
+- The notice shall be posted to the channel in which the command was issued, and never to a channel a graphic is posted to. A batch may post into several channels — results, standings and verdicts each have their own — and the notice follows the person waiting rather than the graphics.
+- Two channels carry a notice today. A command a manager types is answered in the bot interaction channel. The results flow is answered in the round's results submission channel, the presses of its buttons being the commands of that flow.
+- The notice shall be deleted rather than replaced by a summary, and shall therefore carry nothing a reader would afterwards want. A fault met while drawing is reported as it already is: to the manager, and to the server's logging channel.
+- The notice shall never be the cause of a failure. Where it cannot be posted the graphics are drawn regardless, and where it cannot be deleted the batch stands as posted.
+
 ### The canvas
 - The width and the height a template declares are the width and the height at which it is drawn, and the conversion to PNG shall honour them. No canvas is assumed of any template.
 - The vertical crop and the horizontal crop defined below are the sole exceptions; each shortens one dimension and neither reads what the other did.

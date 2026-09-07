@@ -41,6 +41,7 @@ from services import season_points_service
 import services.track_service as track_service
 from services.season_service import SeasonImmutableError
 from utils.autocomplete import bounded_autocomplete
+from utils.batch_notice import batch_notice
 from utils.channel_guard import channel_guard, admin_only
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from utils.output_router import _chunk_message
@@ -762,6 +763,32 @@ class SeasonCog(commands.Cog):
             log.error("season review: lineup image failed: %s", exc)
             return REVIEW_IMAGE_FAULT
 
+    async def _post_approval_prompt(
+        self, interaction, view: "_ApproveView", season_id: int
+    ) -> None:
+        """Ask, publicly, whether the configuration just reported is accepted.
+
+        Public rather than ephemeral so a reviewer who cannot approve — a league manager
+        holding only the interaction role — can put the question to somebody who can. The
+        message therefore says who may answer it, since anyone reading the channel can see
+        the button and only two kinds of member may press it.
+
+        The fingerprint is taken here rather than at the top of the command: it must
+        describe the season as the report just described it, and the report is only
+        complete now.
+        """
+        await view.record_fingerprint(interaction.guild_id, season_id)
+        message = await interaction.followup.send(
+            f"\U0001f4cb **Do you accept this season configuration?**\n"
+            f"Reviewed by <@{interaction.user.id}>. Approval is open to them or to a server "
+            f"administrator for the next {APPROVAL_WINDOW_SECONDS // 60} minutes, after "
+            f"which this review expires and must be run again.",
+            view=view,
+            ephemeral=False,
+            wait=True,
+        )
+        await view.bind(message)
+
     async def _post_review_calendar_image(
         self, interaction, division, rounds, season_number, *, prepared=None
     ) -> str:
@@ -1358,8 +1385,10 @@ class SeasonCog(commands.Cog):
         name="review",
         description="Review pending season configuration before approving.",
     )
+    # `admin_only` is deliberately absent (2026-09-07). A league manager holding only
+    # the interaction role may review a season: the report is what the review is for.
+    # Approving it is the narrower right, and `_ApproveView` is where that is enforced.
     @channel_guard
-    @admin_only
     async def season_review(self, interaction: discord.Interaction) -> None:
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
@@ -1387,7 +1416,7 @@ class SeasonCog(commands.Cog):
         weather_lines: list[str] = []
         image_lines: list[str] = []
 
-        view = _ApproveView(self)
+        view = _ApproveView(self, interaction.user.id)
 
         # Why the approve button must be withheld, if it must. A list rather than a flag
         # because there is more than one cause and they read differently: a graphic that
@@ -1608,9 +1637,16 @@ class SeasonCog(commands.Cog):
                     rounds_by_division[_div.id] = (
                         await self.bot.season_service.get_division_rounds(_div.id)
                     )
-            prepared = await self._prerender_review_images(
-                interaction, db_divisions, rounds_by_division, cfg.season_number or None
-            )
+            # The notice wraps the pre-render, not the posting loop below it: the
+            # pre-render is where the whole batch is drawn, and the loop afterwards runs
+            # at message speed with nothing to wait for.
+            async with batch_notice(
+                interaction.channel,
+                "\U0001f3a8 Drawing the graphics for this review — one moment.",
+            ):
+                prepared = await self._prerender_review_images(
+                    interaction, db_divisions, rounds_by_division, cfg.season_number or None
+                )
 
             try:
                 for div in db_divisions:
@@ -1795,10 +1831,7 @@ class SeasonCog(commands.Cog):
                 # Taken here rather than at the top of the command: the fingerprint must
                 # describe the season as the report just described it, and the report is
                 # only complete now.
-                await view.record_fingerprint(interaction.guild_id, cfg.season_id)
-                await interaction.followup.send(
-                    "Use the button below to approve.", view=view, ephemeral=True
-                )
+                await self._post_approval_prompt(interaction, view, cfg.season_id)
         else:
             # Pending (not yet persisted) path — header then one block per division
             await interaction.followup.send("\n".join(header_lines), ephemeral=False)
@@ -1817,8 +1850,7 @@ class SeasonCog(commands.Cog):
                         f"@ {r['track_name'] or 'Mystery'} \u2014 {discord_ts(r['scheduled_at'])}"
                     )
                 await interaction.followup.send("\n".join(div_lines), ephemeral=False)
-            await view.record_fingerprint(interaction.guild_id, cfg.season_id)
-            await interaction.followup.send("Use the button below to approve.", view=view, ephemeral=True)
+            await self._post_approval_prompt(interaction, view, cfg.season_id)
 
     # `/season approve` is withdrawn (2026-09-07). A season is approved from the button
     # `/season review` posts and from nowhere else: the review is the evidence the
@@ -4708,74 +4740,82 @@ class SeasonCog(commands.Cog):
                             "_do_approve: role grant failed for user %s", _row["discord_user_id"]
                         )
 
-        # ── T016: Post lineup per division (FR-010) ──────────────────────────
-        if _guild is not None:
-            for _div in divisions:
-                if _div.lineup_channel_id:
+        # Both postings below draw inside their own loops, so the notice covers the pair
+        # of them rather than sitting inside either. It goes to the channel the review
+        # was read in — the approve button is ephemeral, so there is no other home, and
+        # this is where the manager is waiting.
+        async with batch_notice(
+            interaction.channel,
+            "\U0001f3a8 Posting lineups and calendars — one moment.",
+        ):
+            # ── T016: Post lineup per division (FR-010) ──────────────────────
+            if _guild is not None:
+                for _div in divisions:
+                    if _div.lineup_channel_id:
+                        try:
+                            await self.bot.placement_service._refresh_lineup_post(_guild, _div.id)  # type: ignore[attr-defined]
+                        except Exception:
+                            log.exception(
+                                "_do_approve: lineup post failed for division %s", _div.id
+                            )
+
+            # ── T017: Post calendar per division (FR-011) ─────────────────────
+            # Conveyed as a graphic where the images module is enabled and the `calendar`
+            # aspect is toggled on; in the traditional textual manner otherwise, and as a
+            # fallback where a graphic was wanted but could not be produced. Approval is a
+            # command, but the calendar posting within it is not the thing commanded, so a
+            # failed render degrades to text rather than refusing the season (XIV.7).
+            if _guild is not None:
+                from services import calendar_post_service as _calendar
+
+                _tracks_by_name = await _calendar.tracks_by_name(self.bot.db_path)
+                _calendar_notices: list[str] = []
+                _calendar_problems: list[str] = []
+
+                for _div in divisions:
+                    if not _div.calendar_channel_id:
+                        continue
                     try:
-                        await self.bot.placement_service._refresh_lineup_post(_guild, _div.id)  # type: ignore[attr-defined]
-                    except Exception:
-                        log.exception(
-                            "_do_approve: lineup post failed for division %s", _div.id
+                        _posting = await _calendar.post_division_calendar(
+                            self.bot,
+                            _guild,
+                            cfg.server_id,
+                            _div,
+                            div_rounds.get(_div.id, []),
+                            _tracks_by_name,
                         )
+                    except Exception:  # noqa: BLE001
+                        # One division must never stop the others being posted.
+                        log.exception(
+                            "_do_approve: calendar post failed for division %s", _div.id
+                        )
+                        continue
 
-        # ── T017: Post calendar per division (FR-011) ─────────────────────────
-        # Conveyed as a graphic where the images module is enabled and the `calendar`
-        # aspect is toggled on; in the traditional textual manner otherwise, and as a
-        # fallback where a graphic was wanted but could not be produced. Approval is a
-        # command, but the calendar posting within it is not the thing commanded, so a
-        # failed render degrades to text rather than refusing the season (XIV.7).
-        if _guild is not None:
-            from services import calendar_post_service as _calendar
-
-            _tracks_by_name = await _calendar.tracks_by_name(self.bot.db_path)
-            _calendar_notices: list[str] = []
-            _calendar_problems: list[str] = []
-
-            for _div in divisions:
-                if not _div.calendar_channel_id:
-                    continue
-                try:
-                    _posting = await _calendar.post_division_calendar(
-                        self.bot,
-                        _guild,
-                        cfg.server_id,
-                        _div,
-                        div_rounds.get(_div.id, []),
-                        _tracks_by_name,
+                    _calendar_notices.extend(
+                        f"{_div.name}: {detail}" for detail in _posting.notices
                     )
-                except Exception:  # noqa: BLE001
-                    # One division must never stop the others being posted.
-                    log.exception(
-                        "_do_approve: calendar post failed for division %s", _div.id
-                    )
-                    continue
+                    if _posting.problem:
+                        _calendar_problems.append(f"{_div.name}: {_posting.problem}")
 
-                _calendar_notices.extend(
-                    f"{_div.name}: {detail}" for detail in _posting.notices
-                )
-                if _posting.problem:
-                    _calendar_problems.append(f"{_div.name}: {_posting.problem}")
-
-            # Reported to the server's logging channel and to the manager who approved
-            # the season — and never in a division's calendar channel, which the drivers
-            # read (Constitution XIV.4).
-            for _line in _calendar_problems:
-                log.error("_do_approve: calendar fell back to text - %s", _line)
-            if _calendar_problems or _calendar_notices:
-                _report = ["/season approve | Calendar image generation"]
-                if _calendar_problems:
-                    _report.append("  Fell back to the textual calendar:")
-                    _report += [f"    - {line}" for line in _calendar_problems]
-                if _calendar_notices:
-                    _report.append("  Notices:")
-                    _report += [f"    - {line}" for line in _calendar_notices]
-                _report_text = "\n".join(_report)
-                try:
-                    await self.bot.output_router.post_log(cfg.server_id, _report_text)
-                except Exception:  # noqa: BLE001 — never fail an approval on the report
-                    log.exception("_do_approve: could not post the calendar report")
-                self._calendar_report = _report_text
+                # Reported to the server's logging channel and to the manager who approved
+                # the season — and never in a division's calendar channel, which the drivers
+                # read (Constitution XIV.4).
+                for _line in _calendar_problems:
+                    log.error("_do_approve: calendar fell back to text - %s", _line)
+                if _calendar_problems or _calendar_notices:
+                    _report = ["/season approve | Calendar image generation"]
+                    if _calendar_problems:
+                        _report.append("  Fell back to the textual calendar:")
+                        _report += [f"    - {line}" for line in _calendar_problems]
+                    if _calendar_notices:
+                        _report.append("  Notices:")
+                        _report += [f"    - {line}" for line in _calendar_notices]
+                    _report_text = "\n".join(_report)
+                    try:
+                        await self.bot.output_router.post_log(cfg.server_id, _report_text)
+                    except Exception:  # noqa: BLE001 — never fail an approval on the report
+                        log.exception("_do_approve: could not post the calendar report")
+                    self._calendar_report = _report_text
 
         stale_keys = [uid for uid, c in self._pending.items() if c.server_id == cfg.server_id]
         for uid in stale_keys:
@@ -4844,13 +4884,28 @@ APPROVAL_WINDOW_SECONDS = 300
 
 
 class _ApproveView(discord.ui.View):
-    def __init__(self, cog: SeasonCog) -> None:
+    """The standing question at the end of a review, and the button that answers it.
+
+    **Who may press.** The member who ran the review, or a server administrator. A league
+    manager holding only the interaction role may run `/season review` — that is what the
+    report is for — but approving somebody else's review is not theirs to do. The message
+    is public, so this check is what stops a bystander answering it; the refusal is
+    ephemeral, so only the presser reads it.
+
+    **How it ends.** The view times out after five minutes, deletes its own message and
+    replaces it with a notice pinging the reviewer. That timer is held in memory and dies
+    with the process, which is why the message is also recorded in `season_review_prompts`
+    and swept at startup — see migration 050.
+    """
+
+    def __init__(self, cog: SeasonCog, reviewer_id: int) -> None:
         super().__init__(timeout=APPROVAL_WINDOW_SECONDS)
         self._cog = cog
-        self._posted_at = datetime.now(timezone.utc)
+        self._reviewer_id = reviewer_id
         self._fingerprint = None
         self._season_id: int | None = None
         self._server_id: int | None = None
+        self._message: discord.Message | None = None
 
     async def record_fingerprint(self, server_id: int, season_id: int) -> None:
         """Capture the season as the report just described it.
@@ -4864,29 +4919,108 @@ class _ApproveView(discord.ui.View):
         self._season_id = season_id
         self._fingerprint = await take_fingerprint(self._cog.bot, server_id, season_id)
 
-    @discord.ui.button(label="\u2705 Approve", style=discord.ButtonStyle.success)
+    async def bind(self, message: discord.Message) -> None:
+        """Remember the message, and record it so a restart can find it again."""
+        self._message = message
+        if self._server_id is None or self._season_id is None:
+            return
+        try:
+            async with get_connection(self._cog.bot.db_path) as db:  # type: ignore[attr-defined]
+                await db.execute(
+                    "INSERT INTO season_review_prompts "
+                    "(server_id, season_id, channel_id, message_id, reviewer_id, posted_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(server_id) DO UPDATE SET "
+                    "season_id = excluded.season_id, channel_id = excluded.channel_id, "
+                    "message_id = excluded.message_id, reviewer_id = excluded.reviewer_id, "
+                    "posted_at = excluded.posted_at",
+                    (
+                        self._server_id,
+                        self._season_id,
+                        message.channel.id,
+                        message.id,
+                        self._reviewer_id,
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+                await db.commit()
+        except Exception:  # noqa: BLE001 — a review is not failed over its own bookkeeping
+            log.exception("season review: could not record the approve prompt")
+
+    async def _forget(self) -> None:
+        """Drop the record. The message has been answered, has expired, or is gone."""
+        if self._server_id is None:
+            return
+        try:
+            async with get_connection(self._cog.bot.db_path) as db:  # type: ignore[attr-defined]
+                await db.execute(
+                    "DELETE FROM season_review_prompts WHERE server_id = ?",
+                    (self._server_id,),
+                )
+                await db.commit()
+        except Exception:  # noqa: BLE001
+            log.exception("season review: could not clear the approve prompt")
+
+    def _may_approve(self, member) -> bool:
+        """The reviewer, or a server administrator.
+
+        Deliberately *not* Manage Server, which is the tier that used to be required to run
+        the review at all: widening who may review and narrowing who may approve is the
+        whole point of the split.
+        """
+        if getattr(member, "id", None) == self._reviewer_id:
+            return True
+        permissions = getattr(member, "guild_permissions", None)
+        return bool(permissions is not None and permissions.administrator)
+
+    async def on_timeout(self) -> None:
+        """Delete the question and say the review has expired.
+
+        Deleted rather than left disabled: a public message offering a button nobody may
+        press is a standing invitation to press it. The reviewer is pinged so the one
+        person who was waiting learns of it without having to watch the channel.
+        """
+        await self._forget()
+        message, self._message = self._message, None
+        if message is None:
+            return
+        try:
+            await message.delete()
+        except discord.NotFound:
+            pass
+        except (discord.HTTPException, discord.Forbidden) as exc:
+            log.warning("season review: could not delete the expired prompt: %s", exc)
+        try:
+            await message.channel.send(
+                f"⏱️ <@{self._reviewer_id}> your season review has expired and "
+                f"can no longer be approved. Run `/season review` again to approve the season."
+            )
+        except (discord.HTTPException, discord.Forbidden) as exc:
+            log.warning("season review: could not post the expiry notice: %s", exc)
+
+    async def _expire_now(self) -> None:
+        """End the review as a timeout would, before the five minutes are up."""
+        self.stop()
+        await self.on_timeout()
+
+    @discord.ui.button(label="✅ Approve", style=discord.ButtonStyle.success)
     async def approve(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        # Checked before anything else, the gates included. discord.py's own view timeout
-        # stops it *listening* after the same five minutes, but that is in-memory: a bot
-        # restarted since the review would answer a stale press as though it were fresh,
-        # and an expired view otherwise fails silently rather than saying why.
-        age = (datetime.now(timezone.utc) - self._posted_at).total_seconds()
-        if age > APPROVAL_WINDOW_SECONDS:
+        # Checked first, the fingerprint included: the message is public, so anyone who can
+        # read the channel can press this. Nothing is read and nothing is approved for a
+        # member who may not approve.
+        if not self._may_approve(interaction.user):
             await interaction.response.send_message(
-                f"\u23f1\ufe0f This review is more than "
-                f"{APPROVAL_WINDOW_SECONDS // 60} minutes old, so it may no longer "
-                f"describe your season. Run `/season review` again and approve from the "
-                f"fresh report. **Nothing has been approved.**",
+                "⛔ Only the person who ran this review, or a server administrator, "
+                "can approve it. **Nothing has been approved.**",
                 ephemeral=True,
             )
-            self.stop()
             return
 
-        # The report you read is the report you approve. The window makes a change
-        # unlikely; this makes one detectable \u2014 and it is what lets the approval trust
-        # the review's own render rather than drawing everything a second time.
+        # The report you read is the report you approve. The five-minute life makes a change
+        # unlikely; this makes one detectable — and it is what lets the approval trust the
+        # review's own render rather than drawing everything a second time.
         if self._fingerprint is not None and self._season_id is not None:
             from services.season_fingerprint_service import take_fingerprint
 
@@ -4895,29 +5029,20 @@ class _ApproveView(discord.ui.View):
             )
             changed = self._fingerprint.differs_from(current)
             if changed:
-                bullets = "\n".join(f"\u2022 {area}" for area in changed)
+                bullets = "\n".join(f"• {area}" for area in changed)
                 await interaction.response.send_message(
-                    f"\u26d4 Your season has changed since this review, so the report above "
+                    f"⛔ Your season has changed since this review, so the report above "
                     f"no longer describes it:\n{bullets}\n"
                     f"Run `/season review` again and approve from the fresh report. "
                     f"**Nothing has been approved.**",
                     ephemeral=True,
                 )
-                self.stop()
+                await self._expire_now()
                 return
 
         await self._cog._do_approve(interaction)
-        self.stop()
-
-    @discord.ui.button(label="\u270f\ufe0f Go Back to Edit", style=discord.ButtonStyle.secondary)
-    async def amend(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await interaction.response.send_message(
-            "Use `/round amend` to correct a round, or `/division add` / `/round add` to add more. "
-            "Then run `/season review` again.",
-            ephemeral=True,
-        )
+        await self._forget()
+        self._message = None
         self.stop()
 
 
