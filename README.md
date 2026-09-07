@@ -387,7 +387,9 @@ The image subsection also lists the eight **asset directories** and the path eac
 
 Pressing it saves all pending divisions and rounds to the database and arms the weather scheduler, and — with the attendance module on — every round's check-in call, reminder and deadline.
 
-> **The button stands for five minutes.** After that it refuses, says the review may no longer describe your season, and approves nothing — run `/season review` again and approve from the fresh report. A review is a photograph of the season as it stood when posted, and a manager who edits a round or moves a channel in between would otherwise approve something nobody has read.
+> **The button stands for five minutes**, and only for the season it was posted for. After five minutes it refuses. Before that, it refuses if anything about your season has changed since the report was drawn up — a round edited, a channel moved, a driver seated, a template file altered — and it names what changed. Either way it approves nothing and tells you to run `/season review` again.
+>
+> That is what the report is for: **what you read is what you approve.** It is also why approving is quick — the review already drew your calendars and lineups, so if the season is provably the same one, the approval trusts those pictures rather than drawing them all over again.
 
 > **Approve early enough for the first round's check-in.** Attendance timings are read once, here, and anything whose moment has already passed is skipped without warning. Approving inside the notice window — three days out with the default five-day notice, say — leaves that round with no check-in call at all, and therefore no attendance records and no penalties for anyone. Weather catches up on overdue phases; attendance does not.
 

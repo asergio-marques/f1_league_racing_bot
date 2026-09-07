@@ -520,158 +520,46 @@ def test_the_posting_loop_pops_what_it_posts():
     assert 'prepared.pop((div.id, "lineup"), None)' in source
 
 
-# ── Approval refuses on a graphic that will not draw ──────────────────────
+# ── Approval trusts the review's render, and proves the season is unchanged ──
 #
-# The review withholds its button; `/season approve` refuses outright, so the two cannot
-# disagree and a season cannot be committed past a fault by skipping the review. That is
-# the rule Gate 4 already followed for template validity, extended to the drawing itself.
+# The approval used to draw every graphic a second time to prove they still drew. That is
+# withdrawn (2026-09-07): the review draws them, and the button refuses unless the season
+# still fingerprints as the one the review described — so the review's render is evidence
+# for the approval, and repeating it was a full rasterisation per division for an answer
+# already in hand.
 
 
-def _divisions(*names):
-    out = []
-    for index, name in enumerate(names, start=1):
-        division = MagicMock()
-        division.id = index
-        division.name = name
-        division.tier = index
-        out.append(division)
-    return out
+def test_the_approval_draws_nothing_itself():
+    """The render pass is gone, and must not creep back in."""
+    approve = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve", code_only=True)
 
-
-async def _undrawable(bot=None, **kwargs):
-    cog = _cog(bot)
-    return await cog._undrawable_graphics(
-        kwargs.get("guild", MagicMock()),
-        kwargs.get("server_id", 7),
-        kwargs.get("divisions", _divisions("Elite")),
-        kwargs.get("rounds_of", {1: []}),
-        kwargs.get("season_number", 3),
-    )
-
-
-async def test_both_aspects_off_checks_nothing_at_all(monkeypatch):
-    """A league conveying both as text has no graphic here to fail."""
-    import services.calendar_post_service as calendar_post
-    import services.image_lineup_post as lineup_post
-
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=False))
-    monkeypatch.setattr(
-        calendar_post, "image_calendar_wanted", AsyncMock(return_value=False)
-    )
-    tracks = AsyncMock(return_value={})
-    monkeypatch.setattr(calendar_post, "tracks_by_name", tracks)
-
-    assert await _undrawable() == []
-    tracks.assert_not_awaited(), "nothing should be read for a check that does not run"
-
-
-async def test_a_lineup_that_will_not_draw_names_its_division(monkeypatch, tmp_path):
-    import services.calendar_post_service as calendar_post
-    import services.image_lineup_post as lineup_post
-
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        calendar_post, "image_calendar_wanted", AsyncMock(return_value=False)
-    )
-
-    async def render(bot, guild, division_id):
-        if division_id == 2:
-            return MagicMock(png_path=None, message="no value for `team_3_name`")
-        return MagicMock(png_path=_png(tmp_path), message=None)
-
-    monkeypatch.setattr(lineup_post, "render_for_command", AsyncMock(side_effect=render))
-
-    problems = await _undrawable(divisions=_divisions("Elite", "Academy"))
-
-    assert len(problems) == 1
-    assert "Academy" in problems[0] and "team_3_name" in problems[0]
-    assert "Elite" not in problems[0], "a division that drew must not be named"
-
-
-async def test_a_calendar_that_will_not_draw_names_its_division(monkeypatch):
-    import services.calendar_post_service as calendar_post
-    import services.image_lineup_post as lineup_post
-
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=False))
-    monkeypatch.setattr(
-        calendar_post, "image_calendar_wanted", AsyncMock(return_value=True)
-    )
-    monkeypatch.setattr(calendar_post, "tracks_by_name", AsyncMock(return_value={}))
-    monkeypatch.setattr(
-        calendar_post,
-        "render_for_command",
-        AsyncMock(return_value=MagicMock(png_path=None, message="unknown circuit")),
-    )
-
-    problems = await _undrawable()
-
-    assert len(problems) == 1
-    assert "Elite" in problems[0] and "calendar" in problems[0]
-
-
-async def test_a_check_that_cannot_run_refuses_rather_than_passing(monkeypatch):
-    """A season committed on the strength of a test that never ran is the worse outcome."""
-    import services.image_lineup_post as lineup_post
-
-    monkeypatch.setattr(
-        lineup_post, "lineup_enabled", AsyncMock(side_effect=RuntimeError("db gone"))
-    )
-
-    problems = await _undrawable()
-
-    assert len(problems) == 1
-    assert "could not be checked" in problems[0]
-
-
-async def test_every_graphic_drawn_is_no_problem(monkeypatch, tmp_path):
-    import services.calendar_post_service as calendar_post
-    import services.image_lineup_post as lineup_post
-
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        calendar_post, "image_calendar_wanted", AsyncMock(return_value=True)
-    )
-    monkeypatch.setattr(calendar_post, "tracks_by_name", AsyncMock(return_value={}))
-    drawn = MagicMock(png_path=_png(tmp_path), message=None)
-    monkeypatch.setattr(
-        lineup_post, "render_for_command", AsyncMock(return_value=drawn)
-    )
-    monkeypatch.setattr(
-        calendar_post, "render_for_command", AsyncMock(return_value=drawn)
-    )
-
-    assert await _undrawable(divisions=_divisions("Elite", "Academy")) == []
+    for drawn in ("_undrawable_graphics", "render_for_command", "render_lineup"):
+        assert drawn not in approve, f"{drawn} draws at approval; the review does that"
 
 
 def test_approval_refuses_before_it_commits_anything():
-    """The gate must stand among the others, ahead of the work approval does."""
-    source = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve")
+    """The fingerprint stands where the render stood: ahead of everything committed."""
+    source = _function_source(SRC / "cogs" / "season_cog.py", "approve")
 
-    gate_at = source.index("_undrawable_graphics")
-    assert "Gate 4c" in source, "the render gate is labelled"
+    gate_at = source.index("differs_from")
+    assert source.index("APPROVAL_WINDOW_SECONDS") < gate_at, (
+        "the age of the review is checked before its content"
+    )
+    assert gate_at < source.index("_do_approve"), (
+        "the season must be proven unchanged before it is approved"
+    )
 
-    # Ahead of everything approval commits: the points snapshot, the scheduling, the
-    # transition to ACTIVE and the posting.
-    for later in (
-        "snapshot_configs_to_season",
-        "transition_to_active",
-        "post_division_calendar",
-    ):
-        assert gate_at < source.index(later), f"the gate must precede {later}"
+
+def test_a_changed_season_approves_nothing():
+    """The refusal returns rather than merely reporting."""
+    source = _function_source(SRC / "cogs" / "season_cog.py", "approve")
+
+    branch = source[source.index("if changed:") : source.index("await self._cog._do_approve")]
+    assert "return" in branch
+    assert "Nothing has been approved" in branch
 
     # The cheap module checks come *before* it, so a league missing a channel is not made
     # to pay for a rasterisation it was never going to keep (settled 2026-09-07).
-    for earlier in (
-        "Gate 2b: signup module",
-        "Gate 2c: attendance module",
-        "Gate 4b: the driver portrait settings",
-    ):
-        assert source.index(earlier) < gate_at, f"{earlier} must precede the render"
-
-    # And it returns rather than merely reporting.
-    tail = source[gate_at:]
-    branch = tail[tail.index("if undrawable:") : tail.index("snapshot_configs_to_season")]
-    assert "return" in branch
 
 
 def test_the_review_and_the_approval_read_the_same_evaluation():
@@ -680,7 +568,12 @@ def test_the_review_and_the_approval_read_the_same_evaluation():
     approve = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve")
 
     assert "approval_blockers" in review
-    assert "_undrawable_graphics" in approve
+    # The review still withholds its button on a graphic that will not draw. The approval
+    # no longer re-draws to find that out — it refuses unless the season still fingerprints
+    # as the one the review described, which is the same evidence reached more cheaply.
+    assert "differs_from" in _function_source(
+        SRC / "cogs" / "season_cog.py", "approve"
+    )
 
     # The portrait settings block on both surfaces too, and through one helper so that the
     # two cannot disagree about whether a season may be approved.

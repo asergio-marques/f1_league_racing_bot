@@ -334,7 +334,9 @@ Two warnings it raises that are easy to skim past:
 
 Press **✅ Approve** on the review you have just read. **There is no `/season approve` command** — approving commits your season, and the review is the evidence it is committed on, so the two are deliberately one action.
 
-> **The button stands for five minutes.** After that it refuses and approves nothing, telling you to run `/season review` again. The review is a photograph of your season at the moment it was posted: change a round, move a channel or seat a driver in the meantime and the report you are looking at is no longer true, so it stops being something you can approve from.
+> **The button stands for five minutes, and only for the season it was posted for.** Past five minutes it refuses. Before that it still refuses if anything has changed since the report was drawn up — and it tells you what: the rounds, the channels, the seated drivers, even a drawing file edited on the bot's computer. Either way nothing is approved and you are asked to run `/season review` again.
+>
+> The rule is simply that **what you read is what you approve**. A report describing a season you have since changed is not something anyone can approve from, so it stops being offered.
 
 **Four things will refuse the season whatever modules you use:**
 

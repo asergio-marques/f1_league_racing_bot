@@ -898,150 +898,6 @@ class SeasonCog(commands.Cog):
             log.error("season: lineup template check failed: %s", exc)
             return []
 
-    async def _refresh_portraits_for_approval(self, guild, division_id: int) -> None:
-        """Pull this division's driver portraits ahead of the approval trial render.
-
-        `/season approve` is the one moment worth overriding the league's update trigger
-        for: the season is committed on the strength of a render, and a render drawing
-        yesterday's portraits — or the placeholder for a driver seated since the last
-        daily fetch — is not the picture the season will actually post.
-
-        Never raises and never blocks for long: the refresh carries its own two-second
-        budget, and a portrait that cannot be obtained resolves exactly as it would have
-        done. A fault here must not refuse a season, which is why nothing is returned.
-        """
-        from services.driver_portrait_service import refresh_before_render
-        from services.image_lineup_post import build_drawing
-
-        try:
-            if guild is None:
-                return
-            _division, _drawing, members = await build_drawing(
-                self.bot, guild, division_id
-            )
-            if not members:
-                return
-            await refresh_before_render(
-                self.bot, guild.id, members, ignore_trigger=True
-            )
-        except Exception as exc:  # noqa: BLE001 — never refuse a season over this
-            log.error("season approve: portrait refresh failed: %s", exc)
-
-    async def _undrawable_graphics(
-        self, guild, server_id: int, divisions, rounds_of, season_number
-    ) -> list[str]:
-        """Every division whose lineup or calendar graphic will not draw, named.
-
-        The season review and this read **one and the same evaluation**, as they already do
-        for template validity: a graphic the review could not draw is a graphic every
-        posting of the season will fail to draw, so approving past it would commit a season
-        whose calendar and lineup fall back to text on every channel a league reads.
-
-        Silent for an aspect that is switched off — a league conveying its calendar as text
-        has nothing here to fail — and silent for a division the render draws.
-
-        This renders in earnest, and the season is then posted by rendering again. The cost
-        is one extra rasterisation per division per enabled aspect, on a command that
-        already defers and already schedules a season's worth of work; refusing on anything
-        cheaper would mean refusing on something other than what a posting will actually do.
-        """
-        from services.calendar_post_service import (
-            image_calendar_wanted,
-            tracks_by_name,
-        )
-        from services.calendar_post_service import (
-            render_for_command as render_calendar,
-        )
-        from services.image_lineup_post import lineup_enabled
-        from services.image_lineup_post import render_for_command as render_lineup
-        from services.image_render_service import discard_render
-
-        problems: list[str] = []
-        try:
-            draws_lineup = await lineup_enabled(self.bot, server_id)
-            draws_calendar = await image_calendar_wanted(self.bot, server_id)
-            if not (draws_lineup or draws_calendar):
-                return []
-
-            tracks = await tracks_by_name(self.bot.db_path) if draws_calendar else {}
-
-            for division in divisions:
-                if draws_lineup:
-                    # Bring the portraits down first, whichever update trigger the league
-                    # chose. `render_lineup` refreshes only where `pfp_prerender` is on,
-                    # so a league on daily updates alone would otherwise be judged on
-                    # yesterday's portraits — and on the placeholder for any driver seated
-                    # since. Bounded and silent: a two-second budget, and it never raises.
-                    await self._refresh_portraits_for_approval(guild, division.id)
-                    outcome = await render_lineup(self.bot, guild, division.id)
-                    try:
-                        if outcome.png_path is None:
-                            problems.append(
-                                f"**{division.name}** — the lineup could not be drawn"
-                                + (f": {outcome.message}" if outcome.message else "")
-                            )
-                    finally:
-                        discard_render(outcome.png_path)
-
-                if draws_calendar:
-                    outcome = await render_calendar(
-                        self.bot,
-                        server_id,
-                        division,
-                        rounds_of.get(division.id, []),
-                        tracks,
-                        season_number=season_number,
-                    )
-                    try:
-                        if outcome.png_path is None:
-                            problems.append(
-                                f"**{division.name}** — the calendar could not be drawn"
-                                + (f": {outcome.message}" if outcome.message else "")
-                            )
-                    finally:
-                        discard_render(outcome.png_path)
-        except Exception as exc:  # noqa: BLE001
-            # A fault in the check is itself a reason not to approve: the season would be
-            # committed on the strength of a test that never ran.
-            log.error("season approve: the graphics check failed: %s", exc)
-            return [
-                "the image module could not be checked at all — "
-                f"{exc}. The season has not been approved."
-            ]
-        return problems
-
-    async def _image_template_problems(self, server_id: int) -> list[str]:
-        """Every unusable template that would actually be drawn (FR-007, FR-008).
-
-        The single evaluation `/season review` reports and `/season approve` blocks on,
-        so the two surfaces cannot disagree about whether a template is usable (FR-008a).
-        Silent when the module is disabled (FR-009).
-
-        **Scoped to the aspects that are switched on.** An aspect that is off posts as
-        text and reaches no template, so a broken drawing beneath it cannot stop a season
-        — this surveyed all fifteen regardless, and a league that had never switched
-        verdicts on was refused approval over a verdicts template it had no use for. The
-        fault is still *reported*, as a warning, by the image section of the review.
-        """
-        from services.image_validity_service import blocking_template_problems, describe
-
-        if not await self.bot.module_service.is_images_enabled(server_id):
-            return []
-
-        config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
-        if config is None:
-            return []
-
-        try:
-            toggles = await self.bot.image_config_service.get_toggles(server_id)  # type: ignore[attr-defined]
-            return [
-                describe(problem)
-                for problem in blocking_template_problems(config, toggles)
-            ]
-        except Exception as exc:  # noqa: BLE001 - never fail a season on this reader
-            log.error("season: image template check failed: %s", exc)
-            return []
-
     async def _calendar_round_overflow(
         self, server_id: int, would_hold: int
     ) -> str | None:
@@ -1932,11 +1788,14 @@ class SeasonCog(commands.Cog):
                     "\u26d4 **The image module is not correctly configured.**\n"
                     f"{body}\n"
                     "The season is **not** offered for approval while that stands, and "
-                    "`/season approve` will refuse it for the same reason. Put it right, "
-                    "then run `/season review` again.",
+                    "Put it right, then run `/season review` again.",
                     ephemeral=True,
                 )
             else:
+                # Taken here rather than at the top of the command: the fingerprint must
+                # describe the season as the report just described it, and the report is
+                # only complete now.
+                await view.record_fingerprint(interaction.guild_id, cfg.season_id)
                 await interaction.followup.send(
                     "Use the button below to approve.", view=view, ephemeral=True
                 )
@@ -1958,6 +1817,7 @@ class SeasonCog(commands.Cog):
                         f"@ {r['track_name'] or 'Mystery'} \u2014 {discord_ts(r['scheduled_at'])}"
                     )
                 await interaction.followup.send("\n".join(div_lines), ephemeral=False)
+            await view.record_fingerprint(interaction.guild_id, cfg.season_id)
             await interaction.followup.send("Use the button below to approve.", view=view, ephemeral=True)
 
     # `/season approve` is withdrawn (2026-09-07). A season is approved from the button
@@ -4759,26 +4619,11 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        # ── Gate 4c: the graphics this season will actually post ──────────────
-        #
-        # Gates 4 and 4a check the template; this draws it. A template that is structurally
-        # valid and holds every mandatory field can still fail on the data of this season —
-        # a track the registry does not know, a value that cannot be determined — and that
-        # fault reaches every channel of the league. The review reports it and withholds
-        # its button; this is where the season is stopped.
-        undrawable = await self._undrawable_graphics(
-            interaction.guild, cfg.server_id, divisions, div_rounds, cfg.season_number or None
-        )
-        if undrawable:
-            bullet_list = "\n\u2022 ".join(undrawable)
-            msg = (
-                f"\u274c Season cannot be approved \u2014 the image module is enabled but "
-                f"these graphics could not be drawn:\n\u2022 {bullet_list}\n"
-                f"Correct the template or the artwork it names, then run `/season review` "
-                f"again."
-            )
-            await interaction.followup.send(msg, ephemeral=True)
-            return
+        # The graphics are **not** drawn again here (withdrawn 2026-09-07). `/season
+        # review` draws every one of them, and the button that reaches this code refuses
+        # unless the season still fingerprints as the one that review described — so the
+        # review's render is evidence for this approval, and repeating it would be one
+        # full rasterisation per division per aspect for an answer already in hand.
 
         # Snapshot attached points configs before transitioning (FR-007)
         if await self.bot.module_service.is_results_enabled(cfg.server_id):
@@ -5003,6 +4848,21 @@ class _ApproveView(discord.ui.View):
         super().__init__(timeout=APPROVAL_WINDOW_SECONDS)
         self._cog = cog
         self._posted_at = datetime.now(timezone.utc)
+        self._fingerprint = None
+        self._season_id: int | None = None
+        self._server_id: int | None = None
+
+    async def record_fingerprint(self, server_id: int, season_id: int) -> None:
+        """Capture the season as the report just described it.
+
+        Called after the report is built, not before: the fingerprint has to describe
+        what the manager actually read.
+        """
+        from services.season_fingerprint_service import take_fingerprint
+
+        self._server_id = server_id
+        self._season_id = season_id
+        self._fingerprint = await take_fingerprint(self._cog.bot, server_id, season_id)
 
     @discord.ui.button(label="\u2705 Approve", style=discord.ButtonStyle.success)
     async def approve(
@@ -5023,6 +4883,28 @@ class _ApproveView(discord.ui.View):
             )
             self.stop()
             return
+
+        # The report you read is the report you approve. The window makes a change
+        # unlikely; this makes one detectable \u2014 and it is what lets the approval trust
+        # the review's own render rather than drawing everything a second time.
+        if self._fingerprint is not None and self._season_id is not None:
+            from services.season_fingerprint_service import take_fingerprint
+
+            current = await take_fingerprint(
+                self._cog.bot, self._server_id, self._season_id
+            )
+            changed = self._fingerprint.differs_from(current)
+            if changed:
+                bullets = "\n".join(f"\u2022 {area}" for area in changed)
+                await interaction.response.send_message(
+                    f"\u26d4 Your season has changed since this review, so the report above "
+                    f"no longer describes it:\n{bullets}\n"
+                    f"Run `/season review` again and approve from the fresh report. "
+                    f"**Nothing has been approved.**",
+                    ephemeral=True,
+                )
+                self.stop()
+                return
 
         await self._cog._do_approve(interaction)
         self.stop()
