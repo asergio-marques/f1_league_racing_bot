@@ -204,10 +204,18 @@ If the bot has never been configured on the server, these refuse and point you a
 
 ---
 
-### `/clean-bot` — Delete bot messages in this channel
+### `/clean-bot` — Delete recent bot messages in this channel
 *Access: Trusted admin*
 
-No parameters. Scans the last 500 messages in the interaction channel and deletes every message sent by the bot. Useful for tidying up after a multi-message command. Responds ephemerally with a count of deleted messages.
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `count` | Integer | ✅ | How many of the bot's most recent messages to delete, 1–10 |
+
+Deletes the bot's `count` most recent messages in the interaction channel, newest first. Messages anybody else wrote are never touched and never count towards the total. Useful for tidying up after a multi-message command. Responds ephemerally with a count of what it deleted.
+
+> **Ten is the most it will delete**, and the count is required — there is no running it without deciding how much you mean to remove. Discord has no undo for a deleted message, so the command asks rather than assumes. It used to sweep up to five hundred with no parameter at all.
+
+> It looks back over the last 200 messages to find them. On a busy channel that may be fewer of the bot's than you asked for, and the reply tells you when it was.
 
 > An approved or expired `/season review` clears itself, so this is for the ones that did neither — a review you walked away from, or anything else the bot has left in the channel.
 

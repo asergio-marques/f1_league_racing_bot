@@ -383,7 +383,7 @@ Things change. During an active season:
 | `/round cancel` | Call off one round. Needs `CONFIRM`, and posts a notice to the division |
 | `/division cancel` | Call off a whole division. Needs `CONFIRM` |
 | `/division calendar-sync` | Repost a division's calendar with your changes on it |
-| `/clean-bot` | Delete the bot's own messages in the command channel — handy after a long review. It looks back over the last 500 messages only, so run it more than once on a busy channel |
+| `/clean-bot` | Delete the bot's own most recent messages in the command channel. You say how many, up to ten, and nobody else's messages are touched. An approved or expired review clears itself, so this is for whatever else the bot has left behind |
 
 > **The posted calendar does not update itself.** It is the calendar the season was approved with, and it stays that way. `/round amend` changes what the bot *does*, but the picture or the message your drivers scroll back to is untouched until you run `/division calendar-sync`. This trips up nearly everyone once.
 

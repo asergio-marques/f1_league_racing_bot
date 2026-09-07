@@ -108,3 +108,11 @@
 - The state is compared before the season is validated and before anything is drawn, and after the member pressing has been found entitled to approve.
 - A review refused upon a changed state shall end as an expired one does: its message is deleted and the notice posted in its place. The report no longer describes the season, so the question it puts shall not remain standing.
 - The approval shall **not** draw the graphics of the season. The review draws them, and refuses its own button where one will not draw; a season proven unchanged since that review is a season whose graphics have already been drawn successfully, and drawing them a second time would answer a question already answered.
+
+# Deleting the bot's own messages
+
+- The command deleting the bot's messages in a channel shall require the number to be deleted, and shall accept no fewer than one and no more than ten.
+- The number shall count the messages actually deleted. A message written by anybody other than the bot shall never be deleted and shall never be counted towards it.
+- The messages deleted shall be the most recent, the newest first.
+- The command shall look back over a bounded stretch of the channel to find them, and shall report the shortfall where it finds fewer of the bot's messages than it was asked for.
+- A message that cannot be deleted shall be reported and shall not be counted towards the number asked for.
