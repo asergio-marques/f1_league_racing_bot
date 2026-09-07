@@ -188,18 +188,18 @@ Nothing a preview does is written back, so previewing at any point in the order 
 
 ## Saving a state and going back to it
 
-Building a season to test one thing is slow, and testing the next thing usually means building it again. `/backup` saves the whole database and puts it back, so you can reach a state once and return to it as often as you like.
+Building a season to test one thing is slow, and testing the next thing usually means building it again. `/test-mode backup` saves the whole database and puts it back, so you can reach a state once and return to it as often as you like.
 
 ```
-/backup save        take a snapshot, replacing whatever was there
-/backup lock        keep that one — a save will refuse to overwrite it
-/backup status      what is saved, when it was taken, whether it is locked
-/backup restore      put the saved one back
+/test-mode backup save       take a snapshot, replacing whatever was there
+/test-mode backup lock       keep that one — a save will refuse to overwrite it
+/test-mode backup status     what is saved, when it was taken, whether it is locked
+/test-mode backup restore    put the saved one back
 ```
 
 **These run only in test mode, and only for a server administrator.** They copy and replace `bot.db` wholesale, which is not something to do to a league that is running — and test mode already refuses to switch on while a real driver sits in a live season, so a server that can run them has nothing real to lose.
 
-**A restore needs a restart.** The bot holds its databases open the whole time it runs, so the files cannot be swapped underneath it. `/backup restore` checks the backup, keeps a copy of what is live, and stages the swap; the bot picks it up the next time it starts. Under a service that happens on its own — stop it and it comes back restored. From a terminal, stop it and run it again.
+**A restore needs a restart.** The bot holds its databases open the whole time it runs, so the files cannot be swapped underneath it. `/test-mode backup restore` checks the backup, keeps a copy of what is live, and stages the swap; the bot picks it up the next time it starts. Under a service that happens on its own — stop it and it comes back restored. From a terminal, stop it and run it again.
 
 **What it saves.** Both `bot.db` and the scheduler's `scheduler.db`, so the jobs come back with the data. Restoring puts you back exactly where the snapshot was taken, test mode included.
 
@@ -226,4 +226,4 @@ Building a season to test one thing is slow, and testing the next thing usually 
 
 Every command in this document requires the interaction role, the configured command channel, and Discord's **Manage Server** permission — the same as the rest of the administrative surface. Full parameter tables are in the [Test Mode Commands](../../README.md#test-mode-commands) section of the README.
 
-The `/backup` commands are the exception: they ask for Discord's **Administrator** permission, since a restore replaces everything the bot holds.
+The `/test-mode backup` commands are the exception: they ask for Discord's **Administrator** permission, since a restore replaces everything the bot holds.

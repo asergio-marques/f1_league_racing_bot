@@ -1,4 +1,4 @@
-"""The gates on `/backup`, which are the whole of what makes it safe.
+"""The gates on `/test-mode backup`, which are the whole of what makes it safe.
 
 The commands copy and replace `bot.db` wholesale, and that file holds every server the bot
 serves. Nothing in `backup_service` knows about servers or test mode — it moves files. So
@@ -22,7 +22,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.backup_cog import BackupCog, _jobstore_path  # noqa: E402
+# Imported under another name: pytest tries to *collect* any class whose name
+# begins with "Test", and warns that it cannot because the cog takes arguments.
+from cogs.test_mode_cog import TestModeCog as Cog  # noqa: E402
+from cogs.test_mode_cog import _jobstore_path  # noqa: E402
 from services import backup_service as bs  # noqa: E402
 
 SERVER_ID = 4400
@@ -51,7 +54,7 @@ def live(tmp_path):
 
 
 def _cog(live, *, test_mode: bool = True):
-    cog = BackupCog.__new__(BackupCog)
+    cog = Cog.__new__(Cog)
     cog.bot = MagicMock()
     cog.bot.db_path = str(live.db)
     cog.bot.config_service.get_server_config = AsyncMock(
@@ -92,8 +95,8 @@ def _reply(interaction) -> str:
 
 @pytest.mark.parametrize(
     "command",
-    [BackupCog.backup_save, BackupCog.backup_lock, BackupCog.backup_restore,
-     BackupCog.backup_status],
+    [Cog.backup_save, Cog.backup_lock, Cog.backup_restore,
+     Cog.backup_status],
 )
 async def test_every_command_refuses_outside_test_mode(live, command):
     """The check that stands between this and a real league's history."""
@@ -113,7 +116,7 @@ async def test_a_server_with_no_configuration_is_refused(live):
     cog.bot.config_service.get_server_config = AsyncMock(return_value=None)
     interaction = _interaction()
 
-    await _body(BackupCog.backup_save)(cog, interaction)
+    await _body(Cog.backup_save)(cog, interaction)
 
     assert "test mode" in _reply(interaction)
     assert not bs.backup_path(live.db).exists()
@@ -123,7 +126,7 @@ async def test_the_flag_is_read_at_the_moment_of_the_command(live):
     """Not trusted from earlier: it can be turned off between one command and the next,
     and a restore is not run on a stale reading."""
     cog = _cog(live)
-    await _body(BackupCog.backup_save)(cog, _interaction())
+    await _body(Cog.backup_save)(cog, _interaction())
 
     cog.bot.config_service.get_server_config.assert_awaited()
 
@@ -133,12 +136,12 @@ def test_every_command_requires_a_server_administrator():
     import inspect
 
     for command in (
-        BackupCog.backup_save,
-        BackupCog.backup_lock,
-        BackupCog.backup_restore,
-        BackupCog.backup_status,
+        Cog.backup_save,
+        Cog.backup_lock,
+        Cog.backup_restore,
+        Cog.backup_status,
     ):
-        source = inspect.getsource(BackupCog)
+        source = inspect.getsource(Cog)
         assert "server_admin_only" in source
         # The decorator wraps the callback twice — channel_guard and server_admin_only —
         # which is what `_body` unwraps. A command carrying only one would fail here.
@@ -152,7 +155,7 @@ def test_every_command_requires_a_server_administrator():
 async def test_save_takes_a_backup_of_both_databases(live):
     cog = _cog(live)
 
-    await _body(BackupCog.backup_save)(cog, _interaction())
+    await _body(Cog.backup_save)(cog, _interaction())
 
     assert bs.backup_path(live.db).is_file()
     assert bs.backup_path(live.jobs).is_file()
@@ -163,7 +166,7 @@ async def test_save_pauses_the_scheduler_and_resumes_it(live):
     caught half-written."""
     cog = _cog(live)
 
-    await _body(BackupCog.backup_save)(cog, _interaction())
+    await _body(Cog.backup_save)(cog, _interaction())
 
     cog.bot.scheduler_service._scheduler.pause.assert_called_once()
     cog.bot.scheduler_service._scheduler.resume.assert_called_once()
@@ -175,7 +178,7 @@ async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
     live.db.unlink()  # nothing to copy
     interaction = _interaction()
 
-    await _body(BackupCog.backup_save)(cog, interaction)
+    await _body(Cog.backup_save)(cog, interaction)
 
     cog.bot.scheduler_service._scheduler.resume.assert_called_once()
     assert "⛔" in _reply(interaction)
@@ -183,11 +186,11 @@ async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
 
 async def test_a_locked_backup_refuses_the_save(live):
     cog = _cog(live)
-    await _body(BackupCog.backup_save)(cog, _interaction())
+    await _body(Cog.backup_save)(cog, _interaction())
     bs.set_lock(live.db, who="Manager")
     interaction = _interaction()
 
-    await _body(BackupCog.backup_save)(cog, interaction)
+    await _body(Cog.backup_save)(cog, interaction)
 
     assert "locked" in _reply(interaction)
 
@@ -197,14 +200,14 @@ async def test_a_locked_backup_refuses_the_save(live):
 
 async def test_lock_toggles_and_says_which_way(live):
     cog = _cog(live)
-    await _body(BackupCog.backup_save)(cog, _interaction())
+    await _body(Cog.backup_save)(cog, _interaction())
 
     first = _interaction()
-    await _body(BackupCog.backup_lock)(cog, first)
+    await _body(Cog.backup_lock)(cog, first)
     assert "Locked" in _reply(first)
 
     second = _interaction()
-    await _body(BackupCog.backup_lock)(cog, second)
+    await _body(Cog.backup_lock)(cog, second)
     assert "Unlocked" in _reply(second)
 
 
@@ -212,7 +215,7 @@ async def test_locking_nothing_is_refused(live):
     cog = _cog(live)
     interaction = _interaction()
 
-    await _body(BackupCog.backup_lock)(cog, interaction)
+    await _body(Cog.backup_lock)(cog, interaction)
 
     assert "no saved backup" in _reply(interaction)
     assert not bs.is_locked(live.db)
@@ -225,7 +228,7 @@ async def test_status_with_no_backup_says_so(live):
     cog = _cog(live)
     interaction = _interaction()
 
-    await _body(BackupCog.backup_status)(cog, interaction)
+    await _body(Cog.backup_status)(cog, interaction)
 
     assert "no saved backup" in _reply(interaction)
 
@@ -236,7 +239,7 @@ async def test_status_reports_an_unreadable_backup(live):
     bs.backup_path(live.db).write_bytes(b"not a database at all")
     interaction = _interaction()
 
-    await _body(BackupCog.backup_status)(cog, interaction)
+    await _body(Cog.backup_status)(cog, interaction)
 
     assert "cannot be restored" in _reply(interaction)
 
@@ -247,10 +250,10 @@ async def test_status_reports_an_unreadable_backup(live):
 async def test_restore_asks_before_it_does_anything(live):
     """One word from `/backup save`, and it replaces everything the bot holds."""
     cog = _cog(live)
-    await _body(BackupCog.backup_save)(cog, _interaction())
+    await _body(Cog.backup_save)(cog, _interaction())
     interaction = _interaction()
 
-    await _body(BackupCog.backup_restore)(cog, interaction)
+    await _body(Cog.backup_restore)(cog, interaction)
 
     assert interaction.followup.send.await_args.kwargs.get("view") is not None
     assert not bs.staged_path(live.db).exists(), "staged before it was confirmed"
@@ -260,7 +263,7 @@ async def test_restore_without_a_backup_is_refused(live):
     cog = _cog(live)
     interaction = _interaction()
 
-    await _body(BackupCog.backup_restore)(cog, interaction)
+    await _body(Cog.backup_restore)(cog, interaction)
 
     assert "no saved backup" in _reply(interaction)
 
@@ -270,17 +273,17 @@ async def test_restore_of_an_unreadable_backup_is_refused(live):
     bs.backup_path(live.db).write_bytes(b"not a database at all")
     interaction = _interaction()
 
-    await _body(BackupCog.backup_restore)(cog, interaction)
+    await _body(Cog.backup_restore)(cog, interaction)
 
     assert "not a readable database" in _reply(interaction)
     assert not bs.staged_path(live.db).exists()
 
 
 async def test_confirming_stages_the_restore_and_says_to_restart(live):
-    from cogs.backup_cog import _ConfirmRestoreView
+    from cogs.test_mode_cog import _ConfirmRestoreView
 
     cog = _cog(live)
-    await _body(BackupCog.backup_save)(cog, _interaction())
+    await _body(Cog.backup_save)(cog, _interaction())
     view = _ConfirmRestoreView(cog, USER_ID)
     interaction = _interaction()
 
@@ -291,10 +294,10 @@ async def test_confirming_stages_the_restore_and_says_to_restart(live):
 
 
 async def test_only_the_requester_may_confirm(live):
-    from cogs.backup_cog import _ConfirmRestoreView
+    from cogs.test_mode_cog import _ConfirmRestoreView
 
     cog = _cog(live)
-    await _body(BackupCog.backup_save)(cog, _interaction())
+    await _body(Cog.backup_save)(cog, _interaction())
     view = _ConfirmRestoreView(cog, USER_ID)
     interaction = _interaction()
     interaction.user.id = USER_ID + 1
@@ -306,10 +309,10 @@ async def test_only_the_requester_may_confirm(live):
 
 
 async def test_cancelling_changes_nothing(live):
-    from cogs.backup_cog import _ConfirmRestoreView
+    from cogs.test_mode_cog import _ConfirmRestoreView
 
     cog = _cog(live)
-    await _body(BackupCog.backup_save)(cog, _interaction())
+    await _body(Cog.backup_save)(cog, _interaction())
     view = _ConfirmRestoreView(cog, USER_ID)
     interaction = _interaction()
 

@@ -659,24 +659,22 @@ Opens a modal for setting the RSVP status of every test driver in the division's
 
 See [Testing with test mode](docs/how-to/test-mode.md) for how these fit together.
 
----
-
-### Backup Commands
+#### `/test-mode backup` — Save the database and put it back
 
 *Access: Server administrator, **and the server must be in test mode***
 
-Save the whole database and put it back, so a state reached once while testing can be returned to. Four commands, none of which take a parameter.
+Save the whole database and return to it later, so a state reached once while testing need not be built again. Four subcommands, none of which take a parameter.
 
 | Command | What it does |
 |---------|--------------|
-| `/backup save` | Copies `bot.db` and `scheduler.db` to `bot.bkup.db` and `scheduler.bkup.db`, replacing whatever was there |
-| `/backup lock` | Locks the saved backup so `save` refuses to overwrite it. Run it again to unlock |
-| `/backup status` | Whether a backup exists, when it was taken, its size, whether it can still be read, and whether it is locked |
-| `/backup restore` | Puts the saved backup back. Asks you to confirm first |
+| `/test-mode backup save` | Copies `bot.db` and `scheduler.db` to `bot.bkup.db` and `scheduler.bkup.db`, replacing whatever was there |
+| `/test-mode backup lock` | Locks the saved backup so `save` refuses to overwrite it. Run it again to unlock |
+| `/test-mode backup status` | Whether a backup exists, when it was taken, its size, whether it can still be read, and whether it is locked |
+| `/test-mode backup restore` | Puts the saved backup back. Asks you to confirm first |
 
 > **Test mode is required, not just recommended.** These copy and replace the whole database file — which holds every server the bot serves — so they are refused outright unless the server is in test mode. Test mode itself will not switch on while a real driver sits in a live season, so a server that can run these has no real league to lose.
 
-> **A restore needs a restart.** The bot holds both databases open while it runs, so nothing can be swapped underneath it. `/backup restore` checks the backup, keeps a copy of what is live as `bot.prerestore.db`, and stages the swap — which happens the next time the bot starts. Under a service that is automatic; from a terminal, stop it and run it again.
+> **A restore needs a restart.** The bot holds both databases open while it runs, so nothing can be swapped underneath it. `/test-mode backup restore` checks the backup, keeps a copy of what is live as `bot.prerestore.db`, and stages the swap — which happens the next time the bot starts. Under a service that is automatic; from a terminal, stop it and run it again.
 
 > **This is not disaster recovery.** The backups sit beside the live files on the same disk. They protect against a test run you want to undo, and against nothing that happens to the disk itself.
 

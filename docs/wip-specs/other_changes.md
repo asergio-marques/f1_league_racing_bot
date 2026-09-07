@@ -119,7 +119,7 @@
 
 # Saving and restoring the database while testing
 
-- <NEW COMMANDS> Four commands shall be made available for saving the state of the bot and returning to it: one saving, one locking what was saved, one reporting what is saved, and one restoring it.
+- <NEW COMMANDS> Four commands shall be made available for saving the state of the bot and returning to it: one saving, one locking what was saved, one reporting what is saved, and one restoring it. They shall be subcommands of the test mode commands, that being the only circumstance in which they run.
 - Every one of them shall be refused unless the server is in test mode, and unless the member holds the Administrator permission of the server. They copy and replace the database entire, which is not a thing to be done to a league that is running; test mode is itself refused while a real driver stands in a live season, and is therefore what stands between these commands and a league's history.
 - Saving shall copy both the league database and the database of the scheduler, so that the jobs of a season are restored beside the season itself.
 - Saving shall replace whatever was saved before, save where the saved state has been locked.
