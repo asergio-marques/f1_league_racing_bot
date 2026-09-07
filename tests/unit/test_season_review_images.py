@@ -650,13 +650,23 @@ def test_approval_refuses_before_it_commits_anything():
     gate_at = source.index("_undrawable_graphics")
     assert "Gate 4b" in source
 
-    # Ahead of the module gates that follow it, and of the posting approval does.
-    for later in ("Gate 3: signup module", "post_division_calendar"):
+    # Ahead of everything approval commits: the points snapshot, the scheduling, the
+    # transition to ACTIVE and the posting.
+    for later in (
+        "snapshot_configs_to_season",
+        "transition_to_active",
+        "post_division_calendar",
+    ):
         assert gate_at < source.index(later), f"the gate must precede {later}"
+
+    # The cheap module checks come *before* it, so a league missing a channel is not made
+    # to pay for a rasterisation it was never going to keep (settled 2026-09-07).
+    for earlier in ("Gate 2b: signup module", "Gate 2c: attendance module"):
+        assert source.index(earlier) < gate_at, f"{earlier} must precede the render"
 
     # And it returns rather than merely reporting.
     tail = source[gate_at:]
-    branch = tail[tail.index("if undrawable:") : tail.index("Gate 3: signup module")]
+    branch = tail[tail.index("if undrawable:") : tail.index("Gate 4c")]
     assert "return" in branch
 
 
@@ -774,6 +784,6 @@ def test_the_approval_gate_returns_rather_than_merely_reporting():
 
     assert "Gate 4c" in source
     branch = source[source.index("if portrait_fault is not None:"):]
-    branch = branch[: branch.index("Gate 3: signup module")]
+    branch = branch[: branch.index("snapshot_configs_to_season")]
     assert "return" in branch
     assert "Season cannot be approved" in branch

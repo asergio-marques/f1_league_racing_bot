@@ -4604,7 +4604,7 @@ class SeasonCog(commands.Cog):
                 await interaction.followup.send(msg, ephemeral=True)
                 return
 
-            # ── Gate 3: monotonic ordering check (FR-008) ────────────────────
+            # ── Gate 2a: monotonic ordering check (FR-008) ───────────────────
             mono_errors = await season_points_service.validate_monotonic_ordering(
                 self.bot.db_path, cfg.season_id
             )
@@ -4616,6 +4616,55 @@ class SeasonCog(commands.Cog):
                 )
                 await interaction.followup.send(msg, ephemeral=True)
                 return
+
+        # ── Gate 2b: signup module config prerequisites ───────────────────────
+        if await self.bot.module_service.is_signup_enabled(cfg.server_id):
+            signup_cfg = await self.bot.signup_module_service.get_config(cfg.server_id)
+            if signup_cfg:
+                missing: list[str] = []
+                if signup_cfg.signup_channel_id is None:
+                    missing.append("**Signup channel** (use `/signup channel`)")
+                if signup_cfg.base_role_id is None:
+                    missing.append("**Base role** (use `/signup base-role`)")
+                if signup_cfg.signed_up_role_id is None:
+                    missing.append("**Complete role** (use `/signup complete-role`)")
+                if missing:
+                    bullet_list = "\n\u2022 ".join(missing)
+                    msg = (
+                        f"\u274c Season cannot be approved \u2014 signup module is enabled but "
+                        f"missing required configuration:\n\u2022 {bullet_list}"
+                    )
+                    await interaction.followup.send(msg, ephemeral=True)
+                    return
+
+        # ── Gate 2c: attendance module channel prerequisites ──────────────────
+        if await self.bot.module_service.is_attendance_enabled(cfg.server_id):
+            att_errors: list[str] = []
+            for _div in divisions:
+                att_div_cfg = await self.bot.attendance_service.get_division_config(_div.id)  # type: ignore[attr-defined]
+                if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
+                    att_errors.append(
+                        f"**{_div.name}** is missing an RSVP channel "
+                        f"(use `/division rsvp-channel {_div.name} <channel>`)"
+                    )
+                if att_div_cfg is None or not att_div_cfg.attendance_channel_id:
+                    att_errors.append(
+                        f"**{_div.name}** is missing an attendance channel "
+                        f"(use `/division attendance-channel {_div.name} <channel>`)"
+                    )
+            if att_errors:
+                bullet_list = "\n\u2022 ".join(att_errors)
+                msg = (
+                    f"\u274c Season cannot be approved \u2014 attendance module is enabled but "
+                    f"missing required channel configuration:\n\u2022 {bullet_list}"
+                )
+                await interaction.followup.send(msg, ephemeral=True)
+                return
+
+        # Everything above is a database read. Everything below reaches the image
+        # module, and Gate 4b rasterises in earnest — so the cheap checks come first and
+        # a league missing an RSVP channel is told so without paying for a render it was
+        # never going to keep (ordering settled 2026-09-07).
 
         # ── Gate 3a: team names can address a lineup template (038, FR-013) ───
         #
@@ -4697,50 +4746,6 @@ class SeasonCog(commands.Cog):
                 ephemeral=True,
             )
             return
-
-        # ── Gate 3: signup module config prerequisites ────────────────────────
-        if await self.bot.module_service.is_signup_enabled(cfg.server_id):
-            signup_cfg = await self.bot.signup_module_service.get_config(cfg.server_id)
-            if signup_cfg:
-                missing: list[str] = []
-                if signup_cfg.signup_channel_id is None:
-                    missing.append("**Signup channel** (use `/signup channel`)")
-                if signup_cfg.base_role_id is None:
-                    missing.append("**Base role** (use `/signup base-role`)")
-                if signup_cfg.signed_up_role_id is None:
-                    missing.append("**Complete role** (use `/signup complete-role`)")
-                if missing:
-                    bullet_list = "\n\u2022 ".join(missing)
-                    msg = (
-                        f"\u274c Season cannot be approved \u2014 signup module is enabled but "
-                        f"missing required configuration:\n\u2022 {bullet_list}"
-                    )
-                    await interaction.followup.send(msg, ephemeral=True)
-                    return
-
-        # ── Gate 4: attendance module channel prerequisites ───────────────────
-        if await self.bot.module_service.is_attendance_enabled(cfg.server_id):
-            att_errors: list[str] = []
-            for _div in divisions:
-                att_div_cfg = await self.bot.attendance_service.get_division_config(_div.id)  # type: ignore[attr-defined]
-                if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
-                    att_errors.append(
-                        f"**{_div.name}** is missing an RSVP channel "
-                        f"(use `/division rsvp-channel {_div.name} <channel>`)"
-                    )
-                if att_div_cfg is None or not att_div_cfg.attendance_channel_id:
-                    att_errors.append(
-                        f"**{_div.name}** is missing an attendance channel "
-                        f"(use `/division attendance-channel {_div.name} <channel>`)"
-                    )
-            if att_errors:
-                bullet_list = "\n\u2022 ".join(att_errors)
-                msg = (
-                    f"\u274c Season cannot be approved \u2014 attendance module is enabled but "
-                    f"missing required channel configuration:\n\u2022 {bullet_list}"
-                )
-                await interaction.followup.send(msg, ephemeral=True)
-                return
 
         # Snapshot attached points configs before transitioning (FR-007)
         if await self.bot.module_service.is_results_enabled(cfg.server_id):
