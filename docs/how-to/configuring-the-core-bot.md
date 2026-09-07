@@ -343,6 +343,8 @@ The review ends by asking whether you accept the configuration, with a **✅ App
 >
 > The rule is simply that **what you read is what you approve**. A report describing a season you have since changed is not something anyone can approve from, so it stops being offered.
 
+**The review disappears once you approve it.** The whole report goes, pictures and all — it described a season waiting on your decision, and you have made it. What you are told about the approval itself is private to you and stays, so you still see whether anything needed your attention. A review that expired is cleared the same way.
+
 **Four things will refuse the season whatever modules you use:**
 
 | The refusal | The fix |

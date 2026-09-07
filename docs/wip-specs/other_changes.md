@@ -97,6 +97,9 @@
 - The button shall carry no other action. The season is amended by the commands that amend it and reviewed again.
 - The button shall stand for five minutes from the posting of the review that carries it. Upon their passing its message shall be deleted, and a notice posted in its place naming the reviewer, saying that the review has expired and that it must be run again before the season can be approved.
 - A review standing when the bot stops shall be treated as expired when the bot next starts: its message shall be deleted and the same notice posted. The five minutes cannot have been served while the bot was down, and a message left standing would offer a button nothing shall answer.
+- A season approved shall have the review it was approved from deleted, the question and every message of the report alike. The report describes a season awaiting a decision, and the decision has been taken. The confirmation of the approval is seen by the member who gave it and stands.
+- A review expired shall have its report deleted on the same terms, the report of a review nobody may answer standing for a decision that can no longer be given.
+- The messages seen by the reviewer alone are not deleted, being neither deletable by the bot nor part of the report a league reads.
 
 # The evidence a season is approved upon
 

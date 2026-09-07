@@ -849,18 +849,126 @@ async def test_a_changed_season_expires_the_prompt_rather_than_leaving_it():
     message.delete.assert_awaited_once()
 
 
-async def test_an_approved_prompt_is_not_deleted_by_the_timeout():
-    """The approval leaves its own message standing; only an expiry clears it."""
+async def test_approving_clears_the_review_it_was_approved_from():
+    """The report describes a season awaiting a decision, and the decision is taken.
+
+    Left standing it is a long scroll of a state that has moved on. The approval's own
+    confirmation is ephemeral and survives, so the manager still sees the outcome.
+    """
     view, cog, message = _bound_view()
+    report = [MagicMock(delete=AsyncMock()) for _ in range(3)]
+    view.carries(report)
 
     await _ApproveView.approve(view, _button_interaction(), MagicMock())
-    await view.on_timeout()
 
     cog._do_approve.assert_awaited_once()
-    message.delete.assert_not_awaited()
+    message.delete.assert_awaited_once()
+    for posted in report:
+        posted.delete.assert_awaited_once()
+
+
+async def test_an_expired_review_is_cleared_too():
+    """A review nobody may answer must not be left claiming a decision is pending."""
+    view, _cog, message = _bound_view()
+    report = [MagicMock(delete=AsyncMock()) for _ in range(2)]
+    view.carries(report)
+
+    await view.on_timeout()
+
+    message.delete.assert_awaited_once()
+    for posted in report:
+        posted.delete.assert_awaited_once()
+
+
+async def test_a_report_message_already_gone_does_not_stop_the_rest():
+    """One deleted by hand must not strand the other eleven."""
+    import discord
+
+    view, _cog, message = _bound_view()
+    gone = MagicMock(delete=AsyncMock(side_effect=discord.NotFound(MagicMock(status=404), "x")))
+    survivor = MagicMock(delete=AsyncMock())
+    view.carries([gone, survivor])
+
+    await _ApproveView.approve(view, _button_interaction(), MagicMock())
+
+    survivor.delete.assert_awaited_once()
 
 
 # ── The question the button is attached to ────────────────────────────────
+
+
+# ── Collecting the report, so approving can clear it ──────────────────────
+
+
+async def test_the_recorder_collects_every_public_message():
+    """One interception point rather than ten. The review sends from ten places, several
+    inside helpers, and a collector threaded through all of them would be forgotten by the
+    eleventh caller."""
+    from cogs.season_cog import SeasonCog
+
+    interaction = MagicMock()
+    sent = [MagicMock(), MagicMock()]
+    interaction.followup.send = AsyncMock(side_effect=sent)
+    posted: list = []
+
+    SeasonCog._recording_followup(interaction, posted)
+    await interaction.followup.send("first")
+    await interaction.followup.send("second")
+
+    assert posted == sent
+
+
+async def test_the_recorder_asks_for_the_message_back():
+    """`followup.send` returns None unless `wait=True`, so without it nothing is collected
+    and the report could never be cleared."""
+    from cogs.season_cog import SeasonCog
+
+    interaction = MagicMock()
+    original = AsyncMock(return_value=MagicMock())
+    interaction.followup.send = original
+
+    SeasonCog._recording_followup(interaction, [])
+    await interaction.followup.send("body")
+
+    assert original.await_args.kwargs["wait"] is True
+
+
+async def test_the_recorder_leaves_ephemeral_messages_alone():
+    """An ephemeral followup is the reviewer's alone and cannot be deleted by id; the
+    fault reports among them are how a manager knows what to fix."""
+    from cogs.season_cog import SeasonCog
+
+    interaction = MagicMock()
+    original = AsyncMock(return_value=MagicMock())
+    interaction.followup.send = original
+    posted: list = []
+
+    SeasonCog._recording_followup(interaction, posted)
+    await interaction.followup.send("a fault", ephemeral=True)
+
+    assert posted == []
+    assert "wait" not in original.await_args.kwargs
+
+
+async def test_the_recorder_returns_the_original_for_restoring():
+    from cogs.season_cog import SeasonCog
+
+    interaction = MagicMock()
+    original = AsyncMock(return_value=MagicMock())
+    interaction.followup.send = original
+
+    returned = SeasonCog._recording_followup(interaction, [])
+
+    assert returned is original
+    assert interaction.followup.send is not original
+
+
+def test_the_review_restores_the_followup_it_wrapped():
+    """The interaction outlives the command, and a wrapper left in place would collect
+    into a list nothing will ever read."""
+    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+
+    assert "interaction.followup.send = original_followup" in source
 
 
 def test_the_prompt_is_public_and_says_who_may_answer():

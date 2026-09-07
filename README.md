@@ -207,7 +207,9 @@ If the bot has never been configured on the server, these refuse and point you a
 ### `/clean-bot` — Delete bot messages in this channel
 *Access: Trusted admin*
 
-No parameters. Scans the last 500 messages in the interaction channel and deletes every message sent by the bot. Useful for tidying up after `/season review` or other multi-message commands. Responds ephemerally with a count of deleted messages.
+No parameters. Scans the last 500 messages in the interaction channel and deletes every message sent by the bot. Useful for tidying up after a multi-message command. Responds ephemerally with a count of deleted messages.
+
+> An approved or expired `/season review` clears itself, so this is for the ones that did neither — a review you walked away from, or anything else the bot has left in the channel.
 
 > **Note:** Requires the bot to have **Manage Messages** in the channel (already a required bot permission).
 
@@ -386,6 +388,8 @@ The image subsection also lists the eight **asset directories** and the path eac
 **There is no `/season approve` command.** A season is approved by pressing **✅ Approve** on the report `/season review` posts, and from nowhere else. Approving commits a season, and the review is the evidence it is committed on — a command that could be run without one let a manager commit a season they had not looked at.
 
 Pressing it saves all pending divisions and rounds to the database and arms the weather scheduler, and — with the attendance module on — every round's check-in call, reminder and deadline.
+
+**The review is deleted once the season is approved** — the whole report, pictures included, not just the button. It described a season waiting on a decision, and the decision has been made; leaving it would put a long stale scroll above everything the bot posts next. Your confirmation that the season was approved is private to you and stays. An expired review is cleared the same way, for the same reason.
 
 **Who may press it.** The person who ran the review, or a **server administrator** — someone with Discord's Administrator permission. Anyone else who presses is told so privately and nothing is approved. That check matters because the question is posted publicly: a league manager can review a season and then ask an administrator to approve it, which is the point of putting it where both can see it. Manage Server is not enough on its own.
 

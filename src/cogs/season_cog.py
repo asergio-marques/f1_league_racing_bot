@@ -763,8 +763,35 @@ class SeasonCog(commands.Cog):
             log.error("season review: lineup image failed: %s", exc)
             return REVIEW_IMAGE_FAULT
 
+    @staticmethod
+    def _recording_followup(interaction, posted: list):
+        """Wrap *interaction*'s followup so every message it sends is collected.
+
+        The review is a dozen messages sent from ten places, several of them inside
+        helpers that know nothing of each other. Threading a collector through all of them
+        would put the bookkeeping in ten places and leave the eleventh caller to forget it;
+        wrapping the one object they all send through puts it in one.
+
+        Only the public messages are collected. An ephemeral followup is visible to the
+        reviewer alone and cannot be deleted by id, and the fault reports among them are
+        the reason a manager knows what to fix.
+        """
+        original = interaction.followup.send
+
+        async def send(*args, **kwargs):
+            if kwargs.get("ephemeral"):
+                return await original(*args, **kwargs)
+            kwargs["wait"] = True
+            message = await original(*args, **kwargs)
+            if message is not None:
+                posted.append(message)
+            return message
+
+        interaction.followup.send = send
+        return original
+
     async def _post_approval_prompt(
-        self, interaction, view: "_ApproveView", season_id: int
+        self, interaction, view: "_ApproveView", season_id: int, posted_messages: list
     ) -> None:
         """Ask, publicly, whether the configuration just reported is accepted.
 
@@ -787,6 +814,7 @@ class SeasonCog(commands.Cog):
             ephemeral=False,
             wait=True,
         )
+        view.carries(posted_messages)
         await view.bind(message)
 
     async def _post_review_calendar_image(
@@ -1401,6 +1429,13 @@ class SeasonCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=False)
 
+        # Everything the review posts publicly is collected, so that approving the season
+        # can clear the report it was approved from. A review is a dozen messages and
+        # several pictures, and once the season is committed it describes a state that no
+        # longer needs answering — see `_ApproveView.approve`.
+        posted_messages: list = []
+        original_followup = self._recording_followup(interaction, posted_messages)
+
         season_num = f" (Season #{cfg.season_number} — F1 {cfg.game_edition})" if cfg.season_number > 0 else (f" (F1 {cfg.game_edition})" if cfg.game_edition > 0 else "")
         # The review is sent as one message per subsection rather than as one block.
         # It outgrew Discord's 2000-character limit once every not-OK image output began
@@ -1832,7 +1867,9 @@ class SeasonCog(commands.Cog):
                 # Taken here rather than at the top of the command: the fingerprint must
                 # describe the season as the report just described it, and the report is
                 # only complete now.
-                await self._post_approval_prompt(interaction, view, cfg.season_id)
+                await self._post_approval_prompt(
+                    interaction, view, cfg.season_id, posted_messages
+                )
         else:
             # Pending (not yet persisted) path — header then one block per division
             await interaction.followup.send("\n".join(header_lines), ephemeral=False)
@@ -1851,7 +1888,11 @@ class SeasonCog(commands.Cog):
                         f"@ {r['track_name'] or 'Mystery'} \u2014 {discord_ts(r['scheduled_at'])}"
                     )
                 await interaction.followup.send("\n".join(div_lines), ephemeral=False)
-            await self._post_approval_prompt(interaction, view, cfg.season_id)
+            await self._post_approval_prompt(
+                interaction, view, cfg.season_id, posted_messages
+            )
+
+        interaction.followup.send = original_followup
 
     # `/season approve` is withdrawn (2026-09-07). A season is approved from the button
     # `/season review` posts and from nowhere else: the review is the evidence the
@@ -4901,6 +4942,11 @@ class _ApproveView(discord.ui.View):
         self._season_id: int | None = None
         self._server_id: int | None = None
         self._message: discord.Message | None = None
+        self._report: list = []
+
+    def carries(self, posted_messages: list) -> None:
+        """The report this button answers, so approving can clear it."""
+        self._report = posted_messages
 
     async def record_fingerprint(self, server_id: int, season_id: int) -> None:
         """Capture the season as the report just described it.
@@ -4976,6 +5022,17 @@ class _ApproveView(discord.ui.View):
         person who was waiting learns of it without having to watch the channel.
         """
         await self._forget()
+        # The report goes with the question. An expired review is one nobody may answer,
+        # and leaving its dozen messages behind while deleting only the button would say
+        # the season is still awaiting a decision it can no longer be given.
+        report, self._report = self._report, []
+        for stale in report:
+            try:
+                await stale.delete()
+            except discord.NotFound:
+                pass
+            except (discord.HTTPException, discord.Forbidden) as exc:
+                log.warning("season review: could not clear an expired report: %s", exc)
         message, self._message = self._message, None
         if message is None:
             return
@@ -5037,8 +5094,31 @@ class _ApproveView(discord.ui.View):
 
         await self._cog._do_approve(interaction)
         await self._forget()
+        await self._clear_report()
         self._message = None
         self.stop()
+
+    async def _clear_report(self) -> None:
+        """Delete the review, the question included, once the season is approved.
+
+        The report describes a season awaiting a decision, and the decision is now taken:
+        left standing it is a long scroll of a state that has moved on, above whatever the
+        division channels have since been sent. The approval's own confirmation is
+        ephemeral and survives, so the manager still sees the outcome.
+
+        Deleted one by one rather than by `purge`: these are the review's own messages and
+        nothing else in the channel is the bot's to remove.
+        """
+        for message in [*self._report, self._message]:
+            if message is None:
+                continue
+            try:
+                await message.delete()
+            except discord.NotFound:
+                pass
+            except (discord.HTTPException, discord.Forbidden) as exc:
+                log.warning("season review: could not clear a report message: %s", exc)
+        self._report = []
 
 
 # ---------------------------------------------------------------------------
