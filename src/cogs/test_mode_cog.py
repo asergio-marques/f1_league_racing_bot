@@ -906,6 +906,33 @@ class TestModeCog(commands.Cog):
 
     # /test-mode roster remove --------------------------------------------
 
+    # /test-mode roster add-bulk -------------------------------------------
+
+    @roster.command(
+        name="add-bulk",
+        description="Seat a whole roster from the generator's roster.csv.",
+    )
+    @channel_guard
+    @admin_only
+    async def roster_add_bulk(self, interaction: discord.Interaction) -> None:
+        """Open the box a roster is pasted into.
+
+        **Does not defer.** `send_modal` has to be the interaction's first response, which
+        inverts the rule the rest of this cog follows — see `roster_add` above, which
+        defers as normal. Do not "correct" it.
+        """
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ This command is only available when test mode is enabled.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_modal(_RosterImportModal(self))
+
     @roster.command(
         name="remove",
         description="Remove a single fake driver by their synthetic user ID.",
@@ -1303,6 +1330,82 @@ class _RsvpBulkSetModal(discord.ui.Modal, title="Bulk Set RSVP Statuses"):
                 f"  round_id: {self._round_id}\n"
                 f"  changes: {', '.join(applied)}",
             )
+
+
+class _RosterImportModal(discord.ui.Modal, title="Import a test roster"):
+    """The box a `roster.csv` is pasted into.
+
+    **4000 characters is the whole of what Discord allows a text input**, which is roughly
+    sixty drivers at the width the generator writes. A larger roster is imported in two
+    passes — the import appends to what a season already holds, and refuses only a
+    *division* that already holds drivers, so a second paste of the remaining divisions
+    lands cleanly.
+    """
+
+    # The placeholder is capped at 100 characters by Discord, which is not room for an
+    # example row; it names the file instead, and the label carries the shape.
+    csv_text: discord.ui.TextInput = discord.ui.TextInput(
+        label="Paste roster.csv, header and all",
+        style=discord.TextStyle.paragraph,
+        placeholder="ID,Driver name,Team,Division,Nationality",
+        required=True,
+        max_length=4000,
+    )
+
+    def __init__(self, cog: "TestModeCog") -> None:
+        super().__init__()
+        self._cog = cog
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        from services.test_roster_service import add_test_drivers_in_bulk
+        from utils.roster_import import divisions_named, parse_roster_csv
+
+        await interaction.response.defer(ephemeral=True)
+
+        drivers, errors = parse_roster_csv(str(self.csv_text.value))
+        if errors:
+            await interaction.followup.send(
+                _format_roster_errors(errors), ephemeral=True
+            )
+            return
+
+        seated, errors = await add_test_drivers_in_bulk(
+            interaction.guild_id,
+            drivers,
+            self._cog.bot.db_path,  # type: ignore[attr-defined]
+        )
+        if errors:
+            await interaction.followup.send(
+                _format_roster_errors(errors), ephemeral=True
+            )
+            return
+
+        divisions = divisions_named(drivers)
+        await interaction.followup.send(
+            f"✅ Seated **{seated}** test driver(s) across "
+            f"{len(divisions)} division(s): {', '.join(divisions)}.\n"
+            f"`/test-mode roster list` shows a division's drivers with the mentions "
+            f"result submission wants.",
+            ephemeral=True,
+        )
+
+
+def _format_roster_errors(errors: list[str]) -> str:
+    """One shape for every refusal, capped so a systematically wrong file still replies.
+
+    A file whose every row is wrong produces one fault per row, and fifty-one of them
+    exceed Discord's 2000-character limit — which refuses the whole message rather than
+    truncating it, leaving the manager with no reply at all.
+    """
+    shown = errors[:15]
+    lines = [
+        f"⛔ The roster was not imported — {len(errors)} problem(s). "
+        f"**No drivers were added.**"
+    ]
+    lines += [f"• {problem}" for problem in shown]
+    if len(errors) > len(shown):
+        lines.append(f"…and {len(errors) - len(shown)} more.")
+    return "\n".join(lines)
 
 
 def _jobstore_path(bot) -> str:

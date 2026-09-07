@@ -621,6 +621,19 @@ Creates a synthetic driver profile occupying a real seat, so a division can be f
 
 A fake driver has no signup record behind it, so the nationality is recorded on the driver itself. Give one and the driver draws a flag like anybody else; leave it out and the driver is drawn without one. The value is refused if it is not a nationality the bot knows, and refused outright while `/test-mode nationality` is off.
 
+#### `/test-mode roster add-bulk` — Seat a whole roster at once
+*Access: Trusted admin · Requires test mode active*
+
+No parameters. Opens a box; paste the `roster.csv` the roster generator writes, header row and all, and every driver in it is seated across every division it names.
+
+**The IDs in the file are the IDs written**, unlike `roster add`, which allocates its own. The generator's other scripts — results, check-ins — name drivers by those IDs, so importing the CSV keeps a generated results file lined up with the grid.
+
+> **A division that already holds drivers is refused.** The file describes a whole grid, so importing over a seated division would leave drivers somewhere the file does not describe. Clear it with `/test-mode roster clear` first. Only the division named is refused, so the rest of a split roster still lands.
+
+> **Nothing is seated unless everything can be.** A misspelt team, an unknown nationality, a division not in the season, or a team given more drivers than it has seats refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time.
+
+> Discord caps the box at 4000 characters, which is roughly seventy drivers. A larger grid goes in two passes, a division at a time.
+
 #### `/test-mode roster remove` — Remove one fake driver
 *Access: Trusted admin · Requires test mode active*
 

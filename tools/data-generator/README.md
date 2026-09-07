@@ -87,6 +87,13 @@ command per driver:
 The same lines go to `test-roster/commands.txt`. Paste them into a server with test mode
 enabled and a season in setup or active, in order.
 
+**Or import the CSV instead, which is quicker and more faithful.** With `--record`, run
+`/test-mode roster add-bulk` and paste `roster.csv` whole: it seats every driver in one
+go, and — unlike the commands above — writes the **IDs the file names**. The results and
+check-in generators key on those IDs, so importing the CSV keeps them lined up whatever
+order you do things in. `commands.txt` only lines up on a season with no test drivers
+in it yet.
+
 **Naming your divisions and teams.** Only a single space *after* a comma is stripped, so
 `Division 1, Division 2` gives you exactly those two names, and a team called `Red Bull`
 survives with its space intact. Everything else you type is kept verbatim — a trailing space

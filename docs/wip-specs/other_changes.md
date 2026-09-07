@@ -129,3 +129,14 @@
 - Restoring shall keep a copy of the state it replaces, so that a restore nobody wanted may be walked back.
 - Restoring shall not replace the databases while the bot runs. It shall prepare the replacement, and the replacement shall be made when the bot next starts, before any part of the bot has opened either database. The manager shall be told that a restart is required, and the requirement shall hold whether the bot is run as a service or from a terminal.
 - A state restored shall carry the test mode flag it was saved with.
+
+# Seating a test roster in bulk
+
+- <NEW COMMAND> A command shall be made available under the test mode roster commands which takes a whole roster at once. It shall open a dialog into which the roster is written as comma-separated values, one driver to a line, stating the driver's identifier, name, team, division and nationality. A header line naming the columns shall be accepted and ignored.
+- The identifier stated for a driver shall be the identifier the driver is created with. The commands that add drivers one at a time allocate the next identifier available, which agrees with a generated roster only where the season holds no test driver already; the files generated beside a roster name its drivers by those identifiers, and the roster is therefore authoritative.
+- An identifier below the range reserved for test drivers shall be refused. Below that range is the identifier of a real Discord account, and seating one as a mock driver is not undone by leaving test mode.
+- Two drivers sharing an identifier, and two sharing a name, shall each be refused.
+- The nationality of a driver may be omitted, and is otherwise validated as the command adding one driver validates it.
+- A division named by the roster which already holds drivers shall be refused, and the roster shall not be imported. A roster describes a whole grid; importing it over a division already seated would place drivers where the roster does not describe them, the roster still standing as the record of what was done. Only the division so held is refused, so the remaining divisions of a roster may be imported.
+- The whole import shall be refused where any driver of it fails any validation, and every fault shall be named at once. Nothing shall be seated in that case, so that the roster may be corrected and given again without duplicating what a partial import had already placed.
+- A driver seated by the import shall be indistinguishable from one added by the command that adds them one at a time.

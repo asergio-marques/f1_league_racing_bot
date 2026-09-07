@@ -120,11 +120,30 @@ The response includes a **synthetic mention string** (`<@…>` with the fake pro
 | Command | Notes |
 |---|---|
 | `/test-mode roster add` | `driver_name`, `team_name`, `division` required; `nationality` optional |
+| `/test-mode roster add-bulk` | Opens a box. Paste the generator's `roster.csv` and it seats the whole grid at once |
 | `/test-mode roster remove` | Takes the synthetic `user_id`, not a name |
 | `/test-mode roster list` | Per division. The cheat sheet — reprints every mention string, with team and nationality. A long roster arrives as several messages, each one a complete table |
 | `/test-mode roster clear` | Empties one division |
 
 Fake drivers show up in `/season review`'s lineup block with their display name beside the mention, which is the quickest way to confirm a division is fully seated — provided the lineup is being shown as text. With the `lineup` image output switched on, the review draws the picture instead, which carries the driver's display name and not the mention; switch that output off, or use `/test-mode roster list`, to read the mentions back.
+
+### Seating a whole grid at once
+
+Fifty-one `roster add` commands is a poor way to spend an afternoon. The roster generator already writes `roster.csv`, and `add-bulk` takes it whole:
+
+```
+/test-mode roster add-bulk
+```
+
+Paste the file — header row and all — into the box that opens. It seats every driver in it, across every division it names, in one go.
+
+**The IDs in the file are the IDs the bot writes.** That is the point of importing the CSV rather than pasting `commands.txt`: the sibling generator scripts, for results and check-ins, name drivers by those IDs, and `roster add` allocates its own. Import the CSV and every generated results file lines up with the grid, whatever order things were done in.
+
+**A division that already holds drivers is refused.** The file describes a whole grid, so importing it over a division that is already seated would leave drivers somewhere the file does not describe. Clear it with `/test-mode roster clear` first, or import only the divisions that are still empty — the other divisions in the file are refused, not the whole import.
+
+**Nothing is seated unless everything can be.** A misspelt team, a nationality the bot does not know, a division that is not in the season, or a team given more drivers than it has seats: any of these refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time, so there is nothing to undo.
+
+**About seventy drivers fit.** Discord caps the box at 4000 characters, and a roster row is around 55. A grid too large for one paste goes in two, a division at a time.
 
 ### Nationality
 
