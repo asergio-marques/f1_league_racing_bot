@@ -194,7 +194,7 @@ async def test_a_configured_empty_seat_beyond_the_block_does_not_fail(tmp_path):
 
 @pytest.mark.asyncio
 async def test_an_unusable_template_is_not_reported_twice(tmp_path):
-    """`_image_template_problems` already names it; saying so again tells nobody anything."""
+    """The review's own render already names it; saying so again tells nobody anything."""
     bot = _bot(tmp_path, DIVISIONS, {10: [], 20: []})
     bot.image_validity_service.template_reports = AsyncMock(
         return_value={"lineup_template": MagicMock(valid=False, resolved_path=None)}

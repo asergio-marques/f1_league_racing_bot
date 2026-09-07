@@ -1779,9 +1779,16 @@ def test_the_render_service_writes_only_to_the_log_channel():
 
 
 def test_the_season_approval_refusal_is_ephemeral():
-    """The template gate refuses in front of the admin, not the league."""
+    """An image gate refuses in front of the admin, not the league.
+
+    The gate this used to anchor on — every unusable template, re-evaluated at the button
+    — is withdrawn with the approval's render pass (2026-09-07): the review draws the
+    graphics and withholds its own button, and the fingerprint proves the season has not
+    changed since. The lineup gate below is the image refusal that remains, and the rule
+    it must keep is the one this test has always been about.
+    """
     source = (_SRC / "cogs" / "season_cog.py").read_text(encoding="utf-8")
-    marker = "the image module is enabled"
+    marker = "the `lineup` image aspect is on but"
     assert marker in source
 
     tail = source[source.index(marker):source.index(marker) + 600]

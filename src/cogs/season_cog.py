@@ -877,8 +877,9 @@ class SeasonCog(commands.Cog):
             reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
             report = reports.get("lineup_template")
             if report is None or not report.valid:
-                # An unusable template is already reported by _image_template_problems;
-                # naming it twice would tell a manager nothing new.
+                # An unusable template is already reported by the review's own render,
+                # which withholds the approve button; naming it twice would tell a
+                # manager nothing new.
                 return []
 
             from models.image_catalogues import catalogue_for
@@ -4605,20 +4606,14 @@ class SeasonCog(commands.Cog):
             await interaction.followup.send(msg, ephemeral=True)
             return
 
-        # ── Gate 4: image template prerequisites (036, FR-007/FR-008) ─────────
-        #
-        # `/season review` reports these; this is where the season is stopped. Every
-        # failing template is named individually with its own reason — a count, or a
-        # line naming a group, does not satisfy FR-008.
-        image_problems = await self._image_template_problems(cfg.server_id)
-        if image_problems:
-            bullet_list = "\n• ".join(image_problems)
-            msg = (
-                f"❌ Season cannot be approved — the image module is enabled "
-                f"but these templates are not usable:\n• {bullet_list}"
-            )
-            await interaction.followup.send(msg, ephemeral=True)
-            return
+        # Gate 4 — every unusable template — is withdrawn (2026-09-07), with the render
+        # pass it belonged to. `/season review` draws every graphic and withholds its own
+        # button where one will not draw; the fingerprint then proves the season is the one
+        # that review described. A template broken here is therefore impossible: it was
+        # broken at the review, and there was no button, or it has changed since, and the
+        # fingerprint refuses. Re-evaluating fifteen templates at the button would answer a
+        # question already answered — and its method was deleted while this call was left
+        # behind, so the approval raised `AttributeError` rather than approving anything.
 
         # ── Gate 4a: the lineup template against this season (038, FR-017/18) ─
         #
