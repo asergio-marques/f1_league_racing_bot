@@ -1327,3 +1327,9 @@ These hold for every image type of the module and are stated here rather than re
     - one exceeding that number by a little, so that the reduction of the font size may be evaluated;
     - one exceeding it by an order of magnitude, so that the reduction past the floor and the non-fatal error it reports may be evaluated;
     - one for which the steward entered neither a description nor a justification.
+
+### The order of the season approval
+
+- The checks the approval of a season makes shall be ordered so that every check reading only the records of the league is made before any check that draws a graphic. A season refused for want of a channel, a role or a points configuration shall be refused without a rasterisation having been attempted, a rasterisation being the most expensive thing the approval does and the only one that reaches a program outside the bot.
+- The approval shall draw the graphics the season will post, and shall refuse a season whose graphics do not draw. The images so drawn are discarded: they are made to prove the drawing and are not the postings of the season, which are drawn again once the season is approved.
+- The driver portraits of a division shall be obtained before that drawing is made, wherever the league takes portraits from Discord at all, and whichever of the two update triggers it has chosen. The approval is the one moment at which a season is committed upon the evidence of a drawing, and a drawing made over portraits obtained yesterday — or over the placeholder of a driver seated since — is not the drawing the season will post. The obtaining shall be bounded in time and shall never refuse a season for its own failure.

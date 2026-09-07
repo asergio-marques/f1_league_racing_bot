@@ -353,7 +353,7 @@ def _config(**overrides):
     return SimpleNamespace(**values)
 
 
-async def _gate(monkeypatch, config, directory, members=None):
+async def _gate(monkeypatch, config, directory, members=None, *, ignore_trigger=False):
     """Run refresh_before_render with refresh_portraits captured rather than performed."""
     from services import driver_portrait_service as m
 
@@ -368,7 +368,7 @@ async def _gate(monkeypatch, config, directory, members=None):
     bot.db_path = ":memory:"
     written = await m.refresh_before_render(
         bot, SERVER_ID, members if members is not None else [_member(1)],
-        config=config, directory=directory,
+        config=config, directory=directory, ignore_trigger=ignore_trigger,
     )
     return written, calls
 
@@ -846,3 +846,60 @@ def test_a_wrapped_portrait_survives_the_whole_fill_and_render_path(tmp_path):
         capture_output=True,
     )
     assert out.is_file() and out.stat().st_size > 0
+
+
+# ── Approval overrides the update trigger ─────────────────────────────────
+#
+# `pfp_prerender` is the league's choice about ordinary postings. `/season approve`
+# decides whether to commit a season on the strength of a trial render, so it pulls
+# whichever trigger is on: judging the season on yesterday's portraits — or on the
+# placeholder for a driver seated since the last daily fetch — would be judging a
+# picture the season is not going to post (decided 2026-09-07).
+
+
+async def test_approval_pulls_even_where_only_daily_updates_are_asked_for(
+    monkeypatch, directory
+):
+    written, calls = await _gate(
+        monkeypatch,
+        _config(pfp_prerender=False, pfp_daily=True),
+        directory,
+        ignore_trigger=True,
+    )
+
+    assert written == 1
+    assert calls and calls[0][0] == SERVER_ID
+
+
+async def test_the_same_configuration_pulls_nothing_on_an_ordinary_posting(
+    monkeypatch, directory
+):
+    """The override is approval's alone; a scheduled posting still honours the trigger."""
+    written, calls = await _gate(
+        monkeypatch, _config(pfp_prerender=False, pfp_daily=True), directory
+    )
+
+    assert (written, calls) == (0, [])
+
+
+async def test_portraits_switched_off_are_never_pulled_even_by_approval(
+    monkeypatch, directory
+):
+    """`use_pfp` is the league saying it does not take portraits from Discord at all.
+    Approval overrides *when* they are fetched, never *whether*."""
+    written, calls = await _gate(
+        monkeypatch, _config(use_pfp=False), directory, ignore_trigger=True
+    )
+
+    assert (written, calls) == (0, [])
+
+
+async def test_a_rejected_directory_still_shuts_the_gate_for_approval(
+    monkeypatch,
+):
+    """Obtaining portraits into a directory the render has refused helps nobody."""
+    written, calls = await _gate(
+        monkeypatch, _config(), None, ignore_trigger=True
+    )
+
+    assert (written, calls) == (0, [])

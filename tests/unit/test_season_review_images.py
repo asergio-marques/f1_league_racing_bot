@@ -648,7 +648,7 @@ def test_approval_refuses_before_it_commits_anything():
     source = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve")
 
     gate_at = source.index("_undrawable_graphics")
-    assert "Gate 4b" in source
+    assert "Gate 4c" in source, "the render gate is labelled"
 
     # Ahead of everything approval commits: the points snapshot, the scheduling, the
     # transition to ACTIVE and the posting.
@@ -661,12 +661,16 @@ def test_approval_refuses_before_it_commits_anything():
 
     # The cheap module checks come *before* it, so a league missing a channel is not made
     # to pay for a rasterisation it was never going to keep (settled 2026-09-07).
-    for earlier in ("Gate 2b: signup module", "Gate 2c: attendance module"):
+    for earlier in (
+        "Gate 2b: signup module",
+        "Gate 2c: attendance module",
+        "Gate 4b: the driver portrait settings",
+    ):
         assert source.index(earlier) < gate_at, f"{earlier} must precede the render"
 
     # And it returns rather than merely reporting.
     tail = source[gate_at:]
-    branch = tail[tail.index("if undrawable:") : tail.index("Gate 4c")]
+    branch = tail[tail.index("if undrawable:") : tail.index("snapshot_configs_to_season")]
     assert "return" in branch
 
 

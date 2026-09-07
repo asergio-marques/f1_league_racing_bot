@@ -223,6 +223,13 @@ You can have both on at once. One of the two must stay on while the feature is e
 you try to switch off the last one, the bot refuses and changes nothing, because neither on
 would mean no photo is ever fetched — which is what `/images use-pfp toggle` already does.
 
+**`/season approve` fetches them whichever of the two you chose.** Approving a season draws
+your lineups once to check they work, and it brings the photos down first so that check is
+made on what the season will actually post — not on yesterday's overnight batch, and not on
+the placeholder for a driver you seated this morning. It is the only place that overrides
+your choice of *when* to fetch, and it never overrides *whether*: with the feature off, no
+photo is fetched at any point.
+
 **A few things worth knowing before you turn it on:**
 
 - **Your own files always win.** A photo you put in `resources/league/drivers` yourself is

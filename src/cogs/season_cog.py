@@ -898,6 +898,35 @@ class SeasonCog(commands.Cog):
             log.error("season: lineup template check failed: %s", exc)
             return []
 
+    async def _refresh_portraits_for_approval(self, guild, division_id: int) -> None:
+        """Pull this division's driver portraits ahead of the approval trial render.
+
+        `/season approve` is the one moment worth overriding the league's update trigger
+        for: the season is committed on the strength of a render, and a render drawing
+        yesterday's portraits — or the placeholder for a driver seated since the last
+        daily fetch — is not the picture the season will actually post.
+
+        Never raises and never blocks for long: the refresh carries its own two-second
+        budget, and a portrait that cannot be obtained resolves exactly as it would have
+        done. A fault here must not refuse a season, which is why nothing is returned.
+        """
+        from services.driver_portrait_service import refresh_before_render
+        from services.image_lineup_post import build_drawing
+
+        try:
+            if guild is None:
+                return
+            _division, _drawing, members = await build_drawing(
+                self.bot, guild, division_id
+            )
+            if not members:
+                return
+            await refresh_before_render(
+                self.bot, guild.id, members, ignore_trigger=True
+            )
+        except Exception as exc:  # noqa: BLE001 — never refuse a season over this
+            log.error("season approve: portrait refresh failed: %s", exc)
+
     async def _undrawable_graphics(
         self, guild, server_id: int, divisions, rounds_of, season_number
     ) -> list[str]:
@@ -938,6 +967,12 @@ class SeasonCog(commands.Cog):
 
             for division in divisions:
                 if draws_lineup:
+                    # Bring the portraits down first, whichever update trigger the league
+                    # chose. `render_lineup` refreshes only where `pfp_prerender` is on,
+                    # so a league on daily updates alone would otherwise be judged on
+                    # yesterday's portraits — and on the placeholder for any driver seated
+                    # since. Bounded and silent: a two-second budget, and it never raises.
+                    await self._refresh_portraits_for_approval(guild, division.id)
                     outcome = await render_lineup(self.bot, guild, division.id)
                     try:
                         if outcome.png_path is None:
@@ -4662,7 +4697,7 @@ class SeasonCog(commands.Cog):
                 return
 
         # Everything above is a database read. Everything below reaches the image
-        # module, and Gate 4b rasterises in earnest — so the cheap checks come first and
+        # module, and Gate 4c rasterises in earnest — so the cheap checks come first and
         # a league missing an RSVP channel is told so without paying for a render it was
         # never going to keep (ordering settled 2026-09-07).
 
@@ -4711,7 +4746,23 @@ class SeasonCog(commands.Cog):
             await interaction.followup.send(msg, ephemeral=True)
             return
 
-        # ── Gate 4b: the graphics this season will actually post ──────────────
+        # ── Gate 4b: the driver portrait settings ─────────────────────────────
+        #
+        # Nothing about a graphic is wrong here, so this is its own gate rather than a
+        # finding of the render below: with portraits enabled and neither update trigger on,
+        # no portrait
+        # would ever be fetched, and the season would run drawing the placeholder for every
+        # driver while the configuration said otherwise. Read through the same helper
+        # `/season review` reads, so the two cannot disagree.
+        portrait_fault = await self._portrait_configuration_blocker(cfg.server_id)
+        if portrait_fault is not None:
+            await interaction.followup.send(
+                f"\u274c Season cannot be approved \u2014 {portrait_fault}",
+                ephemeral=True,
+            )
+            return
+
+        # ── Gate 4c: the graphics this season will actually post ──────────────
         #
         # Gates 4 and 4a check the template; this draws it. A template that is structurally
         # valid and holds every mandatory field can still fail on the data of this season —
@@ -4730,21 +4781,6 @@ class SeasonCog(commands.Cog):
                 f"again."
             )
             await interaction.followup.send(msg, ephemeral=True)
-            return
-
-        # ── Gate 4c: the driver portrait settings ─────────────────────────────
-        #
-        # Nothing about a graphic is wrong here, so this is its own gate rather than a
-        # finding of 4b: with portraits enabled and neither update trigger on, no portrait
-        # would ever be fetched, and the season would run drawing the placeholder for every
-        # driver while the configuration said otherwise. Read through the same helper
-        # `/season review` reads, so the two cannot disagree.
-        portrait_fault = await self._portrait_configuration_blocker(cfg.server_id)
-        if portrait_fault is not None:
-            await interaction.followup.send(
-                f"\u274c Season cannot be approved \u2014 {portrait_fault}",
-                ephemeral=True,
-            )
             return
 
         # Snapshot attached points configs before transitioning (FR-007)
