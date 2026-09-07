@@ -116,3 +116,16 @@
 - The messages deleted shall be the most recent, the newest first.
 - The command shall look back over a bounded stretch of the channel to find them, and shall report the shortfall where it finds fewer of the bot's messages than it was asked for.
 - A message that cannot be deleted shall be reported and shall not be counted towards the number asked for.
+
+# Saving and restoring the database while testing
+
+- <NEW COMMANDS> Four commands shall be made available for saving the state of the bot and returning to it: one saving, one locking what was saved, one reporting what is saved, and one restoring it.
+- Every one of them shall be refused unless the server is in test mode, and unless the member holds the Administrator permission of the server. They copy and replace the database entire, which is not a thing to be done to a league that is running; test mode is itself refused while a real driver stands in a live season, and is therefore what stands between these commands and a league's history.
+- Saving shall copy both the league database and the database of the scheduler, so that the jobs of a season are restored beside the season itself.
+- Saving shall replace whatever was saved before, save where the saved state has been locked.
+- The lock shall be set and unset by the same command. A state locked shall refuse to be overwritten by a save, and the lock shall record the member who set it and the moment they did.
+- Restoring shall be confirmed before anything is done, and shall be confirmed by the member who commanded it and by no other.
+- Restoring shall refuse a saved state that cannot be read as a database, and shall refuse before anything of the live state is disturbed. A manager shall learn that their saved state is unusable while the working one is still theirs.
+- Restoring shall keep a copy of the state it replaces, so that a restore nobody wanted may be walked back.
+- Restoring shall not replace the databases while the bot runs. It shall prepare the replacement, and the replacement shall be made when the bot next starts, before any part of the bot has opened either database. The manager shall be told that a restart is required, and the requirement shall hold whether the bot is run as a service or from a terminal.
+- A state restored shall carry the test mode flag it was saved with.

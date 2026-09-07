@@ -48,6 +48,18 @@ async def main() -> None:
     from services.scheduler_service import SchedulerService
     from utils.output_router import OutputRouter
 
+    # A staged restore is swapped in **here**, before a single service is constructed and
+    # before the scheduler opens its job store. Every service captures its path and holds
+    # connections open, so this is the one moment in the process at which replacing the
+    # files underneath them is safe. `/backup restore` stages and does no more, precisely
+    # so that the swap can happen at this point on the next start — under a service or
+    # from a terminal alike.
+    from services.backup_service import apply_staged_restore
+    from services.scheduler_service import default_jobstore_path
+
+    if apply_staged_restore(DB_PATH, SCHEDULER_DB_PATH or default_jobstore_path(DB_PATH)):
+        log.info("Started on a restored database.")
+
     bot = create_bot()
 
     # Services are attached to bot for cog access
@@ -313,6 +325,7 @@ async def main() -> None:
     from cogs.attendance_cog import AttendanceCog
     from cogs.image_cog import ImageCog
     from cogs.clean_cog import CleanCog
+    from cogs.backup_cog import BackupCog
 
     await bot.add_cog(InitCog(bot))
     await bot.add_cog(SeasonCog(bot))
@@ -331,6 +344,7 @@ async def main() -> None:
     await bot.add_cog(AttendanceCog(bot))
     await bot.add_cog(ImageCog(bot))
     await bot.add_cog(CleanCog(bot))
+    await bot.add_cog(BackupCog(bot))
 
     # Register ALL persistent views so button interactions survive bot restarts.
     # Views with optional __init__ params resolve driver context from channel at
