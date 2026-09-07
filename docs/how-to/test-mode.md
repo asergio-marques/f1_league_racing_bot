@@ -222,6 +222,10 @@ Building a season to test one thing is slow, and testing the next thing usually 
 
 **What it saves.** Both `bot.db` and the scheduler's `scheduler.db`, so the jobs come back with the data. Restoring puts you back exactly where the snapshot was taken, test mode included.
 
+**The approval offers to save for you.** Under test mode, pressing Approve on a season review pauses just before it commits anything and asks whether to save first — after every check has passed, and before the schedule is armed or a single lineup posted. That is the moment worth returning to, so you need not remember to save beforehand.
+
+> The question inherits what is left of the review's five minutes rather than getting its own. Leave it unanswered and the review expires and nothing is approved, exactly as if you had never pressed the button. If the save itself fails, you are told and the season is approved anyway — it was a convenience, not a condition.
+
 **What it is not.** The backups sit beside the live files, on the same disk — the same SD card, on a Pi. They protect you from a test run that went somewhere unhelpful or a migration worth undoing. They protect you from nothing that happens to the card. If you want a copy that survives the machine, copy `bot.bkup.db` off it yourself.
 
 > A restore keeps the database it replaced as `bot.prerestore.db`. If you restore and wish you had not, that file is the way back — by hand, with the bot stopped.

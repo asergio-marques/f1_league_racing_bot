@@ -407,6 +407,8 @@ Pressing it saves all pending divisions and rounds to the database and arms the 
 >
 > That is what the report is for: **what you read is what you approve.** It is also why approving is quick — the review already drew your calendars and lineups, so if the season is provably the same one, the approval trusts those pictures rather than drawing them all over again.
 
+**Under test mode, it offers to save first.** With test mode on, pressing Approve pauses just before committing anything and asks whether to back the databases up — after every check has passed, and before the schedule is armed or anything is posted. Answer it, decline it, or cancel the approval outright. The question inherits what is left of the review's five minutes, so leaving it unanswered expires the review and approves nothing. See [Testing with test mode](docs/how-to/test-mode.md).
+
 > **Approve early enough for the first round's check-in.** Attendance timings are read once, here, and anything whose moment has already passed is skipped without warning. Approving inside the notice window — three days out with the default five-day notice, say — leaves that round with no check-in call at all, and therefore no attendance records and no penalties for anyone. Weather catches up on overdue phases; attendance does not.
 
 ---

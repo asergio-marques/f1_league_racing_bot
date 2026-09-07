@@ -140,3 +140,11 @@
 - A division named by the roster which already holds drivers shall be refused, and the roster shall not be imported. A roster describes a whole grid; importing it over a division already seated would place drivers where the roster does not describe them, the roster still standing as the record of what was done. Only the division so held is refused, so the remaining divisions of a roster may be imported.
 - The whole import shall be refused where any driver of it fails any validation, and every fault shall be named at once. Nothing shall be seated in that case, so that the roster may be corrected and given again without duplicating what a partial import had already placed.
 - A driver seated by the import shall be indistinguishable from one added by the command that adds them one at a time.
+
+# Saving a season before it is approved
+
+- Where the server is in test mode, the approval of a season shall ask whether the databases are to be saved before it commits anything. The question shall be put after every validation of the season has passed and before the first thing is written, that being the only moment at which a saved state is worth taking: earlier it records a season that may yet prove unapprovable, later one already committed.
+- The question shall not be put where the server is not in test mode.
+- The question shall offer three answers: to save and approve, to approve without saving, and to abandon the approval. A manager who sees something amiss at this point shall not have to approve the season in order to escape the question.
+- The question shall be given what remains of the validity of the review, and not a validity of its own. A review left unanswered at this question shall expire exactly when it would otherwise have expired, and the season shall not be approved.
+- A saved state that cannot be taken shall not refuse the season. The manager shall be told that it was not taken and the approval shall continue, the saving being a convenience asked for and not a condition of the season.

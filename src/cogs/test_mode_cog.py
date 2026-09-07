@@ -1408,15 +1408,9 @@ def _format_roster_errors(errors: list[str]) -> str:
     return "\n".join(lines)
 
 
-def _jobstore_path(bot) -> str:
-    """Where the scheduler keeps its jobs, asked of the scheduler rather than guessed."""
-    scheduler = getattr(bot, "scheduler_service", None)
-    path = getattr(scheduler, "_jobstore_path", None)
-    if path:
-        return str(path)
-    from services.scheduler_service import default_jobstore_path
-
-    return str(default_jobstore_path(bot.db_path))
+#: Re-exported from the backup service, which owns it now that the season approval
+#: needs it too. Kept as a name here because this module's tests import it.
+_jobstore_path = backup_service.jobstore_path_of
 
 
 class _ConfirmRestoreView(discord.ui.View):

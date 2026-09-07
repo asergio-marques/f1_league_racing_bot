@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import partial
 from typing import Any, Awaitable, Callable
 
@@ -4439,7 +4439,81 @@ class SeasonCog(commands.Cog):
             self._pending[s["server_id"]] = cfg
         log.info("Recovered %d pending setup(s) from DB", len(self._pending))
 
-    async def _do_approve(self, interaction: discord.Interaction) -> None:
+    async def _offer_backup_before_approving(
+        self, interaction, server_id: int, deadline: datetime
+    ) -> bool:
+        """Under test mode, ask whether to save the databases. Returns whether to go on.
+
+        Returns True where the approval should continue — the server is not in test mode
+        and there was nothing to ask, the manager said no, or the backup was taken. False
+        where the approval must stop: the question went unanswered until the review
+        expired, or the manager cancelled.
+
+        **The question is given what is left of the approval window, not a window of its
+        own.** A review stops describing its season five minutes after it is posted, and
+        that is as true of a season waiting on this question as of one waiting on the
+        button. Leaving it unanswered therefore expires the approval rather than holding
+        it open, which is the whole reason the deadline is carried in here.
+        """
+        config = await self.bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
+        if config is None or not getattr(config, "test_mode_active", False):
+            return True
+
+        remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
+        if remaining <= 0:
+            await interaction.followup.send(
+                "⏱️ This review expired before the season could be approved. Run "
+                "`/season review` again. **Nothing has been approved.**",
+                ephemeral=True,
+            )
+            return False
+
+        from services import backup_service
+
+        state = backup_service.state(self.bot.db_path)  # type: ignore[attr-defined]
+        standing = (
+            f"A backup taken {discord_ts(state.taken_at)} would be replaced."
+            if state.exists and not state.locked
+            else "The saved backup is locked and will not be replaced."
+            if state.locked
+            else "Nothing is saved yet."
+        )
+
+        view = _BackupBeforeApprovalView(self, server_id, timeout=remaining)
+        await interaction.followup.send(
+            f"\U0001f4be **Save the databases before approving?**\n"
+            f"Approving arms the schedule, grants the roles and posts the lineups, which "
+            f"is a laborious thing to build again. {standing}\n"
+            f"This review expires {discord_ts(deadline)} whichever you choose, so answer "
+            f"before then.",
+            view=view,
+            ephemeral=True,
+        )
+        await view.wait()
+
+        if view.answer is None:
+            await interaction.followup.send(
+                "⏱️ This review expired while the backup question went "
+                "unanswered. Run `/season review` again. **Nothing has been approved.**",
+                ephemeral=True,
+            )
+            return False
+        if view.answer == "cancel":
+            await interaction.followup.send(
+                "Nothing has been approved, and nothing has been saved.", ephemeral=True
+            )
+            return False
+        return True
+
+    async def _do_approve(
+        self, interaction: discord.Interaction, *, deadline: datetime | None = None
+    ) -> None:
+        """Commit the season, having asked about a backup first where test mode is on.
+
+        *deadline* is when the review stops being approvable, carried in from the view so
+        the backup question below can be given what is left of that window rather than a
+        fresh one. Omitted, the question is skipped — there is no window to divide.
+        """
         # Defer immediately — approval involves heavy work (scheduling, role grants,
         # lineup/calendar posts) that can exceed Discord's 3-second response window.
         await interaction.response.defer(ephemeral=True)
@@ -4693,6 +4767,21 @@ class SeasonCog(commands.Cog):
         # review's render is evidence for this approval, and repeating it would be one
         # full rasterisation per division per aspect for an answer already in hand.
 
+        # ── The last thing before anything is committed: a backup, under test mode ──
+        #
+        # Approving a season is the point a test run becomes hard to repeat — the schedule
+        # is armed, the roles are granted, the lineups and calendars are posted — and
+        # getting back to the moment before it meant building the season again. So under
+        # test mode the approval pauses here and offers to save the databases first.
+        #
+        # Placed after every gate and before every write, which is the only moment a
+        # backup is worth taking: earlier and it saves a season that turns out to be
+        # unapprovable, later and it saves one already committed.
+        if deadline is not None and not await self._offer_backup_before_approving(
+            interaction, cfg.server_id, deadline
+        ):
+            return
+
         # Snapshot attached points configs before transitioning (FR-007)
         if await self.bot.module_service.is_results_enabled(cfg.server_id):
             await season_points_service.snapshot_configs_to_season(
@@ -4919,6 +5008,90 @@ class SeasonCog(commands.Cog):
 APPROVAL_WINDOW_SECONDS = 300
 
 
+class _BackupBeforeApprovalView(discord.ui.View):
+    """Save the databases, or don't, or stop — asked between the last gate and the commit.
+
+    Its timeout is what remains of the approval window rather than a span of its own, so a
+    review whose backup question goes unanswered expires exactly when it would have expired
+    anyway. `answer` is None in that case, which is how the caller tells silence from a
+    deliberate "no".
+    """
+
+    def __init__(self, cog: SeasonCog, server_id: int, *, timeout: float) -> None:
+        super().__init__(timeout=timeout)
+        self._cog = cog
+        self._server_id = server_id
+        self.answer: str | None = None
+
+    @discord.ui.button(label="\U0001f4be Save, then approve", style=discord.ButtonStyle.primary)
+    async def save(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        from services import backup_service
+
+        scheduler = getattr(self._cog.bot, "scheduler_service", None)
+        paused = False
+        try:
+            # Paused for the copy exactly as `/test-mode backup save` pauses it: the job
+            # store is written on the event loop, and a job added mid-copy tears.
+            if scheduler is not None and getattr(scheduler, "_scheduler", None) is not None:
+                if scheduler._scheduler.running:
+                    scheduler._scheduler.pause()
+                    paused = True
+            backup_service.save(
+                self._cog.bot.db_path,  # type: ignore[attr-defined]
+                backup_service.jobstore_path_of(self._cog.bot),
+            )
+        except backup_service.BackupError as exc:
+            # A backup that cannot be taken does not refuse the season. The manager asked
+            # for a convenience and is told it was not available; approving is what they
+            # actually came to do, and the alternative is making them run the review again
+            # for a reason that has nothing to do with the season.
+            await interaction.followup.send(
+                f"⚠️ The backup was not taken — {exc}\nApproving the season "
+                f"anyway.",
+                ephemeral=True,
+            )
+            self.answer = "skip"
+            self.stop()
+            return
+        except Exception:
+            log.exception("season approval: the backup could not be taken")
+            await interaction.followup.send(
+                "⚠️ The backup could not be taken. Approving the season anyway.",
+                ephemeral=True,
+            )
+            self.answer = "skip"
+            self.stop()
+            return
+        finally:
+            if paused:
+                scheduler._scheduler.resume()
+
+        await interaction.followup.send(
+            "✅ Saved. Restore it with `/test-mode backup restore`.", ephemeral=True
+        )
+        self.answer = "save"
+        self.stop()
+
+    @discord.ui.button(label="Approve without saving", style=discord.ButtonStyle.secondary)
+    async def skip(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        self.answer = "skip"
+        self.stop()
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger)
+    async def cancel(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        self.answer = "cancel"
+        self.stop()
+
+
 class _ApproveView(discord.ui.View):
     """The standing question at the end of a review, and the button that answers it.
 
@@ -4938,6 +5111,14 @@ class _ApproveView(discord.ui.View):
         super().__init__(timeout=APPROVAL_WINDOW_SECONDS)
         self._cog = cog
         self._reviewer_id = reviewer_id
+        # When the review stops being approvable. Under test mode the approval pauses to
+        # ask about a backup, and that question is given whatever is *left* of this window
+        # rather than a fresh one of its own — an approval delayed by the question must
+        # still expire on time. `discord.py`'s own view timeout counts from construction
+        # and cannot answer "how much is left", so the moment is kept here.
+        self._deadline = datetime.now(timezone.utc) + timedelta(
+            seconds=APPROVAL_WINDOW_SECONDS
+        )
         self._fingerprint = None
         self._season_id: int | None = None
         self._server_id: int | None = None
@@ -5092,7 +5273,7 @@ class _ApproveView(discord.ui.View):
                 await self._expire_now()
                 return
 
-        await self._cog._do_approve(interaction)
+        await self._cog._do_approve(interaction, deadline=self._deadline)
         await self._forget()
         await self._clear_report()
         self._message = None

@@ -319,3 +319,17 @@ def state(db_path: str | Path) -> BackupState:
         locked=is_locked(db_path),
         locked_by=locked_by(db_path),
     )
+
+def jobstore_path_of(bot) -> str:
+    """Where the scheduler keeps its jobs, asked of the scheduler rather than guessed.
+
+    Here rather than in a cog because two of them need it: the backup commands, and the
+    approval that offers a backup before it commits a season.
+    """
+    scheduler = getattr(bot, "scheduler_service", None)
+    path = getattr(scheduler, "_jobstore_path", None)
+    if path:
+        return str(path)
+    from services.scheduler_service import default_jobstore_path
+
+    return str(default_jobstore_path(bot.db_path))
