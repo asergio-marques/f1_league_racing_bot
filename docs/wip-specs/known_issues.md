@@ -394,6 +394,13 @@ Found on 2026-08-18 while auditing the how-to guides against the implementation.
 - What a league sees: a setup flow that slows as the calendar grows, and a season-shaping command that can queue behind another manager's for seconds on the Raspberry Pi's SD card.
 - Not fixed, and not a small change: the setup commands would have to amend the season in place — insert one round, update one division — rather than re-derive it from `PendingConfig`, which is also what would let the save-and-restore machinery be deleted rather than extended. Worth weighing against the fact that a SETUP season is small and the commands are infrequent; the correctness problems it caused are fixed, and what remains is waste rather than damage.
 
+**Fixed — `/signup channel` raised a `NameError` and set nothing.**
+- Reported on 2026-09-07 from the Raspberry Pi: `NameError: name 'server_cfg' is not defined`, and the command replied nothing at all.
+- Introduced by `775443d`, the change making a channel serve one purpose across the server. The block it replaced was a narrower guard — the signup channel may not be the bot's command channel — and that guard had fetched `server_cfg` for its own comparison. Fifty lines below, the permission overwrites read `server_cfg.interaction_role_id` to let the stewards see the channel. Replacing the guard removed the fetch and left the later read orphaned.
+- What a league saw: `/signup channel` failing outright, with the traceback in the log alone. The channel was never stored, so nothing was corrupted.
+- The command had **no test of its own**, which is why it shipped: the existing signup tests cover the module service, not this command body, and nothing drove it past the guard to the overwrites.
+- **Fixed** on 2026-09-07 by reading the server config where it is used. Covered by `tests/unit/test_signup_channel_command.py`, which drives the command to its end — three of its four cases fail with the original `NameError` when the read is removed again. A `symtable` sweep of `src/` for the same class of fault — a name referenced in a function and bound nowhere — found no other instance.
+
 **P2 — `/team remove` fails, in silence, when the team holds a placed driver.**
 - Found on 2026-09-04 while auditing every site that deletes seats, after the P1 below.
 - `season_team_remove` (`src/services/team_service.py:405`) deletes `team_seats` and then `team_instances` for the named team in every division of the SETUP season. It never clears the `driver_season_assignments.team_seat_id` rows pointing at those seats, and that foreign key is enforced, so the delete raises `IntegrityError: FOREIGN KEY constraint failed`. Verified against a migrated database with one placed driver.

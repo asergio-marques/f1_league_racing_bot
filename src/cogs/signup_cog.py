@@ -835,7 +835,11 @@ class SignupCog(commands.Cog):
                 except Exception:
                     log.warning("signup_channel: could not revert overwrites on old channel %s", old_channel_id)
 
-        # Apply overwrites to new channel
+        # Apply overwrites to new channel. The server config is read here for the
+        # interaction role; it used to be read further up, by the guard against reusing
+        # the bot's own command channel, and this line was left orphaned when that guard
+        # became the server-wide `find_channel_use` check.
+        server_cfg = await self.bot.config_service.get_server_config(server_id)
         interaction_role = guild.get_role(server_cfg.interaction_role_id) if server_cfg else None
         base_role = guild.get_role(cfg.base_role_id) if cfg.base_role_id else None
         overwrites: dict = {
