@@ -1852,13 +1852,34 @@ Your own file always wins where you supply one — this only ever fills a gap. C
 | `slot` | The slot id you marked in the template, e.g. `accent`. |
 | `colour` | A `#` followed by exactly six hex digits. |
 
-**Keep the real colour on the element too.** Write `fill="#3DD6F5" class="colour-fill-accent"` rather than the class alone: the class only wins once a colour is configured and the feature is on, so the file stays a picture that opens correctly in Inkscape and draws its own colours for a league that never touches this.
+**The slot must have a colour to fall back on, and there are two ways to give it one.** The class only wins once a colour is configured and the feature is on, so without a fallback the element draws black for a league that never touches this.
+
+Either keep the literal on the element —
+
+```xml
+<rect fill="#3DD6F5" class="colour-fill-accent"/>
+```
+
+— or, better where you are slotting a whole palette, declare the default once in the drawing's own stylesheet and let the class carry it:
+
+```xml
+<style>
+  .colour-fill-accent { fill:#3DD6F5 }
+  .colour-fill-ink    { fill:#F4F7FA }
+</style>
+...
+<text class="colour-fill-ink">Driver Name</text>
+```
+
+The second form states each colour once rather than on every element that uses it, which is how the drawings shipped in `resources/league/templates` do it. Both draw identically in Inkscape and both are overridden the same way.
 
 > **Once it is on, every slot needs a colour for every division.** A slot left unset for any division is reported by `/images config view` and by `/season review`, stops the affected graphics posting, and refuses the approval of a season — the same way a lineup template that cannot draw does. Set the colour explicitly even where you want the tier drawn in the colour the template already carries; there is deliberately no command to clear one back to the default.
 
 > **A colour is remembered by the division's *name*.** `Division 1` and `division_1` are the same tier, so your palette survives a new season — but renaming a division loses its colours, exactly as it loses its logo.
 
 Colours are stored whether or not the feature is on and whether or not a template marks the slot, and `/images config view` lists them by tier, so you can set a season up before turning it on.
+
+**Choosing a whole palette by hand is the hard part, so there is a tool for it.** `tools/tier_palette.py` takes one accent, reads the rest of the palette out of your own drawing, and prints the `per-tier-set-colour` commands for a division — keeping each colour's lightness, giving it the accent's hue, and cutting its colourfulness to a third so the greys stay grey. It changes nothing; it prints commands. See [the image module guide](docs/how-to/configuring-the-image-module.md) for when to reach for it.
 
 **This class alone is held to no shape.** The consistency rule below does not apply to it: two logo slots on the same template may be any two shapes, because you supply one file *per division* rather than one file for the class, and each division can draw artwork for both. You still cannot set `preserveAspectRatio="none"` on the slot — a logo letterboxes into its box like everything but `markers`.
 

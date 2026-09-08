@@ -280,11 +280,16 @@ Every one of the fifteen kinds admits slots and none requires them, so a file de
 which is every file here — is unaffected. The colours themselves are configured per division with
 `/images config per-tier-set-colour`, behind a toggle that is off by default.
 
-**Keep the literal colour on the element beside the class.** The injected stylesheet is placed
-after the ones a template declares and so wins on document order, but only once a colour is
-actually configured and the feature switched on. A file written
-`fill="#3DD6F5" class="colour-fill-accent"` therefore opens in Inkscape and rasterises exactly as
-it did before any of this existed; a class with no fill beside it draws black.
+**A slot needs a colour to fall back on.** The injected stylesheet is placed after the ones a
+template declares and so wins on document order, but only once a colour is actually configured and
+the feature switched on. A class with nothing behind it draws black.
+
+Two forms do that. `fill="#3DD6F5" class="colour-fill-accent"` keeps the literal on the element;
+or the template declares `.colour-fill-accent { fill:#3DD6F5 }` in its own `<style>` and the
+element carries the class alone. The second states each colour once rather than on every element
+and is what the league templates under `resources/league/templates` use — see `_build/brand.py`,
+where the palette and its slots are one table. Either way the file rasterises exactly as it did
+before any of this existed.
 
 Note that a class rule does **not** reach a `<stop>` in Inkscape — the module writes those into the
 stop's inline style instead, which is why `colour-stop-` is its own prefix rather than a use of

@@ -471,7 +471,20 @@ Do it in this order. Turning it on before the colours are set will stop your pic
 
 `colour-fill-` paints the fill, `colour-stroke-` the stroke, `colour-stop-` a gradient stop. `accent` is a name you invent — anything up to 64 characters of lower-case letters, digits, `-` or `_`. Put the class on a group and everything inside it follows.
 
-**Leave the real colour on the element.** The class only takes effect once a colour is set and the feature is on, so a file written this way still opens in Inkscape and still draws its own colours. A class on its own would draw black in an editor.
+**The slot needs a colour to fall back on.** The class only takes effect once a colour is set and the feature is on; a class on its own draws black in an editor. Either leave the literal on the element, as above, or — better if you are slotting more than one or two colours — declare the default once in the drawing's stylesheet and let the class carry it everywhere:
+
+```xml
+<style>
+  .colour-fill-accent { fill:#3DD6F5 }
+  .colour-fill-ink    { fill:#F4F7FA }
+</style>
+...
+<text class="colour-fill-ink">Driver Name</text>
+```
+
+That states each colour once instead of on every element, and is how the drawings supplied in `resources/league/templates` are built. Either way the file still opens in Inkscape drawing its own colours.
+
+> **Every slot you mark is one you must then set, for every division.** Slotting your whole palette means ten colours per tier before anything posts. Mark what you actually want to vary.
 
 **2. Set a colour for every division, for every slot you marked.**
 
@@ -481,6 +494,13 @@ Do it in this order. Turning it on before the colours are set will stop your pic
 ```
 
 The division name completes as you type. Set it even for the tier you want left in the colour the drawing already carries — give it that colour explicitly. There is no command to clear one.
+
+**Choosing the other nine, once you have picked the accent.** If you have slotted a whole palette, the grounds and the inks want to agree with the tier's accent without becoming coloured themselves. Two rules make that reliable, and both were arrived at by rendering the alternatives rather than by eye:
+
+- **Give every colour your accent's hue.** Not an offset from it, and not a rotation by however far the accent moved from the drawing's own — a fixed angular offset does not mean the same thing at different points of the colour wheel. Turning the greys by the same angle as a cyan-to-violet accent lands them in *red*, which is not a colour anyone chose.
+- **Keep each colour's own lightness, and cut its colourfulness to about a third.** The lightness steps are what the sheets are built on; changing them is what makes text hard to read. Colourfulness is different: greys that keep their original amount of it look neutral in blue and tinted in violet, because the eye reads a cool grey as plain and a warm one as coloured. A third is the setting that looks as neutral in any hue as the drawings do in blue.
+
+`tools/tier_palette.py` does both for you — see *Working out a tier's palette* below.
 
 **3. Turn it on.**
 
@@ -495,6 +515,20 @@ It tells you straight away if any slot is still unset, and for which tier.
 **Names, not divisions.** A colour is remembered against the division's *name*, so it survives into next season — but renaming a division loses its colours, exactly as it loses its logo.
 
 **Check it before you trust it.** `/images test` draws a preview for a division you name, in that tier's colours. Use it on two different tiers and compare.
+
+### Working out a tier's palette
+
+Ten colours per tier is a lot to choose by hand, and choosing them badly is easy. `tools/tier_palette.py` takes one accent and works out the rest, applying the two rules above:
+
+```
+python3 tools/tier_palette.py --division "Division 2" --accent "#A78BFA"
+```
+
+It reads the palette out of **your own drawing** — the `.colour-fill-…` rules its stylesheet declares — so it works with whatever slots you invented and whatever colours you drew them in. It prints the `/images config per-tier-set-colour` commands ready to paste, one per slot.
+
+Pass `--template` to read a drawing other than the first it finds, and `--chroma` to make the greys more or less colourful than the default third — `--chroma 0` leaves them perfectly neutral and lets the accent carry the tier alone, which is the safest choice if your accent is an unusual hue.
+
+It changes nothing by itself. It prints commands; you run the ones you want.
 
 > **Keep your accent colours cool if you use the packaged marks.** The bot's own podium, fastest-lap and attendance-warning artwork is gold, amber and red, and it reads as a warning because nothing else on the picture is warm. A tier whose accent is amber or red will pass every check here and still make those marks look like decoration.
 
