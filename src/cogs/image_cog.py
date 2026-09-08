@@ -943,13 +943,20 @@ class ImageCog(commands.Cog):
         toggles = dict(await self._config_service.get_toggles(server_id))
         toggles[aspect] = True
 
+        reports = await self._validity_service.template_reports(server_id)
         statuses = build_aspect_statuses(
             toggles,
-            await self._validity_service.template_reports(server_id),
+            reports,
             disabled_source_modules=await self._validity_service.disabled_source_modules(
                 server_id
             ),
             converter_available=converter_available(),
+            # The shortfall is passed here too, and must be: this builds its own status
+            # list rather than calling `aspect_statuses`, so an aspect could otherwise be
+            # switched on while a template of it wanted a colour no tier had set (051).
+            colour_shortfall=await self._validity_service.colour_shortfall(
+                server_id, reports
+            ),
         )
         for status in statuses:
             if status.aspect == aspect:
@@ -1010,6 +1017,145 @@ class ImageCog(commands.Cog):
 
         await self._reply(interaction, "\n".join(lines))
         await self._log(interaction, f"Fastest-lap colour = {canonical}")
+
+    # ── Per-tier colours (051) ────────────────────────────────────────────
+
+    @config.command(
+        name="per-tier-colour-toggle",
+        description="Turn per-tier template colours on or off.",
+    )
+    @app_commands.describe(
+        enable="Whether your templates should take each tier's own colours."
+    )
+    @channel_guard
+    @admin_only
+    async def config_per_tier_colour_toggle(
+        self, interaction: discord.Interaction, enable: bool
+    ) -> None:
+        await self._set_per_tier_colours(interaction, enable)
+
+    async def _set_per_tier_colours(self, interaction, enable: bool) -> None:
+        """Shared body for the toggle, so it can be exercised without a gateway.
+
+        The same split `_set_directory` uses and for the same reason: the command itself is
+        wrapped by `@channel_guard` and `@admin_only` and cannot be invoked in a test.
+        """
+        if not await self._guard_module_enabled(interaction):
+            return
+
+        await self._config_service.set_flag(
+            interaction.guild_id, "per_tier_colour_enabled", enable
+        )
+        lines = [f"✅ Per-tier colours are now **{'on' if enable else 'off'}**."]
+
+        if enable:
+            # Switching on is the moment the shortfall becomes real. Saying so here beats
+            # letting it be discovered at the season review, which is the worst moment to
+            # find out a graphic will not post.
+            shortfall = await self._validity_service.colour_shortfall(
+                interaction.guild_id
+            )
+            if shortfall:
+                lines.append("")
+                lines.append("⚠️ These are wanted before your graphics will draw:")
+                for template_key in sorted(shortfall):
+                    for line in shortfall[template_key]:
+                        lines.append(f"  • `{template_key}` — {line}")
+            else:
+                lines.append(
+                    "Every colour slot your templates mark is set for every tier."
+                )
+        else:
+            lines.append(
+                "Your templates draw the colours they were authored in, and nothing is "
+                "validated while this is off."
+            )
+
+        await self._reply(interaction, "\n".join(lines))
+        await self._log(
+            interaction, f"Per-tier colours = {'on' if enable else 'off'}"
+        )
+
+    @config.command(
+        name="per-tier-set-colour",
+        description="Set one colour slot for one tier.",
+    )
+    @app_commands.describe(
+        division="The division the colour applies to.",
+        slot="The slot id your template marks, for example `accent`.",
+        colour="A '#' followed by exactly six hex digits, e.g. #A78BFA.",
+    )
+    @channel_guard
+    @admin_only
+    async def config_per_tier_set_colour(
+        self, interaction: discord.Interaction, division: str, slot: str, colour: str
+    ) -> None:
+        await self._set_tier_colour(interaction, division, slot, colour)
+
+    async def _set_tier_colour(
+        self, interaction, division: str, slot: str, colour: str
+    ) -> None:
+        """Shared body for the setter. See `_set_per_tier_colours` for why it is split."""
+        if not await self._guard_module_enabled(interaction):
+            return
+
+        from utils.colour import InvalidColour, normalise_hex
+        from utils.svg_palette import InvalidSlot, normalise_slot
+
+        # Both rejections store nothing and name the input that was wrong: a manager who
+        # mistyped a slot and one who mistyped a colour are looking for different things.
+        try:
+            canonical_slot = normalise_slot(slot)
+        except InvalidSlot as exc:
+            await self._reply(interaction, f"❌ {exc}\nNothing was stored.")
+            return
+        try:
+            canonical_colour = normalise_hex(colour)
+        except InvalidColour as exc:
+            await self._reply(interaction, f"❌ {exc}\nNothing was stored.")
+            return
+
+        await self._config_service.set_tier_colour(
+            interaction.guild_id, division, canonical_slot, canonical_colour
+        )
+        lines = [f"✅ **{division}** — `{canonical_slot}` set to `{canonical_colour}`."]
+
+        # A slot no template marks is stored all the same and merely reported, exactly as
+        # an unmeasurable fastest-lap contrast is: the input is the league's, and a slot
+        # may reasonably be set before the template that uses it is drawn.
+        declared = await self._declared_colour_slots(interaction.guild_id)
+        if canonical_slot not in declared:
+            lines.append(
+                f"ℹ️ No template of yours marks `{canonical_slot}` yet, so nothing will "
+                f"change until one does."
+            )
+
+        config = await self._config_service.get_config(interaction.guild_id)
+        if config is not None and not config.per_tier_colour_enabled:
+            lines.append(
+                "ℹ️ Per-tier colours are **off**, so this is stored but not drawn. "
+                "Turn them on with `/images config per-tier-colour-toggle`."
+            )
+
+        await self._reply(interaction, "\n".join(lines))
+        await self._log(
+            interaction,
+            f"Tier colour: {division} / {canonical_slot} = {canonical_colour}",
+        )
+
+    async def _declared_colour_slots(self, server_id: int) -> set[str]:
+        """Every colour slot any valid template of this server marks.
+
+        Read off the validity reports, which carry it from the parse Layer 1 already did,
+        so asking costs no second read of fifteen files.
+        """
+        reports = await self._validity_service.template_reports(server_id)
+        return {
+            slot
+            for report in reports.values()
+            if report.valid
+            for slot in report.colour_slots
+        }
 
     async def _measure_fastest_lap_contrast(
         self, server_id: int, colour: str
@@ -1273,8 +1419,44 @@ class ImageCog(commands.Cog):
             "",
         ]
 
+        lines += await self.build_tier_colour_section(server_id, config)
+
         lines += await self.build_aspect_section(server_id)
         return "\n".join(lines)
+
+    async def build_tier_colour_section(self, server_id: int, config) -> list[str]:
+        """The per-tier colours, listed here rather than behind a command of their own (051).
+
+        The `config` group holds seventeen of Discord's twenty-five subcommands and a third
+        per-tier command would spend one of the eight left to say what this section already
+        says. What is *missing* is not repeated here: a shortfall is a reason against the
+        aspect it would stop, and the aspect section below prints it in the same words
+        `/season review` uses.
+        """
+        palettes = await self._config_service.get_all_tier_colours(server_id)
+        state = "on" if config.per_tier_colour_enabled else "off"
+
+        lines = ["**Per-tier colours**", f"  Enabled: `{state}`"]
+
+        if not palettes:
+            lines += [
+                "  No tier has a colour set.",
+                "",
+            ]
+            return lines
+
+        for slug in sorted(palettes):
+            drawn = ", ".join(
+                f"`{slot}` = `{colour}`" for slot, colour in palettes[slug].items()
+            )
+            lines.append(f"  {slug}: {drawn}")
+
+        if not config.per_tier_colour_enabled:
+            lines.append(
+                "  _Stored, but not drawn while this is off._"
+            )
+        lines.append("")
+        return lines
 
     async def build_aspect_section(self, server_id: int) -> list[str]:
         """The eight aspects in their three states (FR-031, FR-032)."""
@@ -1428,6 +1610,9 @@ class ImageCog(commands.Cog):
                     division_name=context.division_name,
                     round_number=round_number,
                 ),
+                # A preview must show the tier's own colours, or it is not a preview of
+                # what the league will post (051).
+                division_name=context.division_name,
             )
             outcomes.append((label, template_key, outcome))
 
@@ -1766,6 +1951,8 @@ class ImageCog(commands.Cog):
     test_weather_p2.autocomplete("division")(_division_autocomplete)
     test_weather_p3.autocomplete("division")(_division_autocomplete)
     test_weather_mystery.autocomplete("division")(_division_autocomplete)
+    # The per-tier colour command takes a division too, and completes it the same way.
+    config_per_tier_set_colour.autocomplete("division")(_division_autocomplete)
 
     async def _send_preview(
         self, interaction: discord.Interaction, *, title: str, context, outcomes

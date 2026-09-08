@@ -165,11 +165,15 @@ async def test_the_lineup_render_body_runs_and_labels_itself_with_its_template(
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
 
-    # The drawing is not what is under test here; the body around it is.
+    # The drawing is not what is under test here; the body around it is — but it must
+    # still carry `division_name`, which every drawing dataclass declares as mandatory
+    # and which the posting path passes as the tier whose colours to draw in (051).
     monkeypatch.setattr(
         image_lineup_post,
         "build_drawing",
-        AsyncMock(return_value=({"name": "Main"}, SimpleNamespace(), [])),
+        AsyncMock(
+            return_value=({"name": "Main"}, SimpleNamespace(division_name="Division 1"), [])
+        ),
     )
 
     decision = await image_lineup_post.render_png(
@@ -195,7 +199,9 @@ async def test_the_attendance_render_body_runs_and_labels_itself(tmp_path, monke
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
 
-    render = await image_attendance_post.render_sheet(bot, 1, SimpleNamespace())
+    render = await image_attendance_post.render_sheet(
+        bot, 1, SimpleNamespace(division_name="Division 1")
+    )
 
     assert render.draws, render.problem
     assert render.png == png
@@ -208,7 +214,9 @@ async def test_the_verdict_render_body_runs_and_labels_itself(tmp_path, monkeypa
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
 
-    render = await image_verdict_post.render_verdict(bot, 1, SimpleNamespace())
+    render = await image_verdict_post.render_verdict(
+        bot, 1, SimpleNamespace(division_name="Division 1")
+    )
 
     assert render.draws, render.problem
     assert render.png == png

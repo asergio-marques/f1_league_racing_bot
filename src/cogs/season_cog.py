@@ -512,6 +512,28 @@ class SeasonCog(commands.Cog):
             f"  season: Season #{cfg.season_number} (F1 {cfg.game_edition})",
         )
 
+    async def _colour_shortfall_problems(self, server_id: int) -> list[str]:
+        """Every per-tier colour a template wants and no tier has set (051).
+
+        Flattened from the same map `/images config view` and the review's aspect section
+        render, so all three surfaces name the same shortfall in the same words.
+
+        Empty on any fault, in the manner of `_team_name_problems`: a reader that cannot
+        answer must not be the thing that refuses a season.
+        """
+        try:
+            shortfall = await self.bot.image_validity_service.colour_shortfall(  # type: ignore[attr-defined]
+                server_id
+            )
+        except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
+            log.error("season: per-tier colour check failed: %s", exc)
+            return []
+        return [
+            f"`{template_key}` — {line}"
+            for template_key in sorted(shortfall)
+            for line in shortfall[template_key]
+        ]
+
     async def _team_name_problems(self, server_id: int, season_id: int | None) -> list[str]:
         """Every team whose name cannot become an asset filename (047 FR-032).
 
@@ -4743,6 +4765,24 @@ class SeasonCog(commands.Cog):
                 f"the template cannot draw this season:\n• {bullet_list}"
             )
             await interaction.followup.send(msg, ephemeral=True)
+            return
+
+        # ── Gate 4a2: the per-tier colours (051) ──────────────────────────────
+        #
+        # Same reasoning as the lineup gate above it: a league that turned per-tier colours
+        # on and marked a template with a slot has said that slot matters, and approving a
+        # season with one unset would draw that tier in whatever the template happened to
+        # be authored in — silently, and differently from its siblings. Read through the
+        # same `colour_shortfall` `/season review` and `/images config view` report, so the
+        # three cannot disagree about what is missing.
+        colour_problems = await self._colour_shortfall_problems(cfg.server_id)
+        if colour_problems:
+            bullet_list = "\n• ".join(colour_problems)
+            await interaction.followup.send(
+                f"❌ Season cannot be approved — per-tier colours are on, but a template "
+                f"wants a colour no tier has set:\n• {bullet_list}",
+                ephemeral=True,
+            )
             return
 
         # ── Gate 4b: the driver portrait settings ─────────────────────────────

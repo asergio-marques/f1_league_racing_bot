@@ -259,6 +259,7 @@ async def render_verdict(
             ),
             posting_origin=origin,
             bot=bot,
+            division_name=drawing.division_name,
             filename_stem=stem_for_drawing(drawing, VERDICTS_TEMPLATE_KEY),
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other

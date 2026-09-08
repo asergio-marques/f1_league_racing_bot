@@ -43,8 +43,8 @@ from utils.svg_document import (
     FieldIndex,
     canvas_of,
     computed_style,
-    declarations,
     length,
+    merge_style,
     stylesheet,
 )
 
@@ -1036,23 +1036,11 @@ def _vacate(
 def _restyle(element: etree._Element, updates: dict[str, str | None]) -> None:
     """Merge *updates* into the element's inline ``style`` (XIV.2).
 
-    Merged, not replaced: overwriting `style` would discard whatever else the template
-    declared on the same element. A value of ``None`` drops the declaration.
-
-    Note that dropping an inline declaration does not undo one the template's own
-    stylesheet makes — inline is the strongest source, so a property that must be
-    cancelled is written with an explicit neutral value rather than removed.
+    Kept as a name here because the recolour operation reads better for it; the merge
+    itself lives in :func:`utils.svg_document.merge_style`, beside the style resolution it
+    is the counterpart of, because the palette injection needs the same behaviour.
     """
-    current = declarations(element.get("style"))
-    for name, value in updates.items():
-        if value is None:
-            current.pop(name, None)
-        else:
-            current[name] = value
-    if current:
-        element.set("style", ";".join(f"{n}:{v}" for n, v in current.items()))
-    elif element.get("style") is not None:
-        del element.attrib["style"]
+    merge_style(element, updates)
 
 
 def _element_y(element: etree._Element) -> float | None:

@@ -39,6 +39,7 @@ _MIGRATIONS = (
     "045_marks_join_the_markers.sql",
     "047_driver_portraits.sql",
     "048_division_logo_directory.sql",
+    "051_per_tier_colours.sql",
 )
 
 
