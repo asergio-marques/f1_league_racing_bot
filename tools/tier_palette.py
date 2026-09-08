@@ -197,7 +197,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.chroma < 0:
         print("error: --chroma cannot be negative.", file=sys.stderr)
         return 2
+    if args.format == "block" and len(args.division) > 1:
+        print(
+            "error: --format block takes one --division; the bulk command sets one tier.",
+            file=sys.stderr,
+        )
+        return 2
 
+    # Every argument fault is answered above, before a drawing is looked for. That order
+    # is load-bearing rather than tidy: the default directory is `resources/league/`,
+    # which is gitignored and therefore **empty in any fresh checkout**, so a check placed
+    # after this one passes on a machine that happens to hold drawings and dies on CI.
     template = _find_template(args.template)
     if not template.exists():
         print(f"error: no such drawing: {template}", file=sys.stderr)
@@ -236,13 +246,6 @@ def main(argv: list[str] | None = None) -> int:
     if shape == "xml":
         print(as_xml(tiers))
         return 0
-
-    if shape == "block" and len(tiers) > 1:
-        print(
-            "error: --format block takes one --division; the bulk command sets one tier.",
-            file=sys.stderr,
-        )
-        return 2
 
     for division, derived in tiers:
         if shape == "commands":

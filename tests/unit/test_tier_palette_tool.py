@@ -415,3 +415,52 @@ def test_a_block_cannot_be_asked_for_across_several_divisions(tmp_path, capsys):
          "--division", "B", "--accent", "#4ADE80", "--format", "block"]
     ) == 2
     assert "takes one --division" in capsys.readouterr().err
+
+
+# ── Host independence ─────────────────────────────────────────────────────
+#
+# The tool's default template directory is `resources/league/templates`, which is
+# **gitignored** — full on a machine that has built the drawings, empty in any fresh
+# checkout. A test that leaves `--template` off therefore passes for whoever wrote it and
+# fails on CI, which is exactly what happened to
+# `test_a_block_cannot_be_asked_for_across_several_divisions` on both runners.
+#
+# The remedy is in the tool: every argument fault is answered before a drawing is sought.
+# These pin that, with the default directory emptied to reproduce a fresh checkout.
+
+
+@pytest.fixture
+def fresh_checkout(tmp_path, monkeypatch):
+    """The default template directory as a clone sees it: present, and empty."""
+    empty = tmp_path / "templates"
+    empty.mkdir()
+    monkeypatch.setattr(tier_palette, "DEFAULT_TEMPLATE_DIR", empty)
+    return empty
+
+
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        (["--division", "A", "--division", "B", "--accent", "#A78BFA"],
+         "one --accent per --division"),
+        (["--division", "A", "--accent", "purple"], "not a valid colour"),
+        (["--division", "A", "--accent", "#A78BFA", "--chroma", "-1"],
+         "cannot be negative"),
+        (["--division", "A", "--accent", "#A78BFA",
+          "--division", "B", "--accent", "#4ADE80", "--format", "block"],
+         "takes one --division"),
+    ],
+    ids=["accent count", "bad accent", "negative chroma", "block across tiers"],
+)
+def test_an_argument_fault_is_answered_without_needing_a_drawing(
+    fresh_checkout, capsys, argv, expected
+):
+    assert tier_palette.main(argv) == 2
+    assert expected in capsys.readouterr().err
+
+
+def test_a_missing_drawing_directory_is_still_reported_plainly(fresh_checkout, capsys):
+    """Past the argument checks, an empty default directory must say so, not traceback."""
+    with pytest.raises(SystemExit) as exit_info:
+        tier_palette.main(["--division", "A", "--accent", "#A78BFA"])
+    assert "No drawings found" in str(exit_info.value)
