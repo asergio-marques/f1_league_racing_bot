@@ -1,91 +1,11 @@
-This code repository was initially for a Discord bot used for F1 game league races to pseudo-randomly generate pre-set weather behavior in rounds. A league would be able to have multiple divisions, and each division would have their own independently configured rounds.
-At set times before each round (T-5 days, T-2 days, T-2 hours), phases would be triggered to inform drivers of the most recent (and accurate) generated weather prediction.
-Trusted users could also alter default configuration for rain probability to customize the behavior of this weather drawing.
-There is also a test mode that allows for quick and easy testing of the bot.
-I want to expand the functionality of this bot little-by-little, to eventually encompass the entire business rules of a league. There will be two new persisted data structures. Then there will be a change to the existing data structure of Seasons. For the time being, keep new commands at a minimum, to those lines/bullet points denoted with <NEW COMMAND>.
+# Signup module
 
-# Driver Profile
-From the moment of sign-up, a discord user ID will be associated to a driver profile that is persisted in server-scope.
-This driver profile will hold the following information:
-    - Discord User ID - unique string that identifies one and only one Discord account
-    - Current state - enumeration that will have the following meanings:
-        - Not Signed Up - Driver is currently inactive and is able to trigger the signup procedure
-        - Pending Signup Completion - Driver is currently finalizing their initial signup
-        - Pending Admin Approval - Driver's signup procedure is currently on-hold, pending trusted role approval
-        - Pending Driver Correction - Driver was requested to amend a parameter in their signup by trusted role, but has yet to submit it
-        - Unassigned - Driver's signup was approved by trusted role, but driver is pending assignment to a division and team
-        - Assigned - Driver's signup was approved by trusted role and driver was assigned to at least 1 team
-        - Season Banned - Driver is currently inactive and is unable to trigger the signup procedure for a number of races equal to the length of the season they were race banned for
-        - League Banned - Driver is currently inactive and is unable to trigger the signup procedure indefinitely
-    - Former driver flag (binary) - False by default, set to true once a driver participates in a round. If this value is true, then the driver entry cannot be deleted, only modified.
-    - Current season assignments - 0..n - For each division in which the driver is currently participating in, the name and tier shall be stored alongside their current position, their current tally of points, and the difference of points of the driver to the current first place of that division/tier
-    - Historical season participation - 0..n - For each division in which the driver participated, the name and tier shall be stored alongside the season number, their final position, their final tally of points, and the difference of points of the driver to the eventual winner of that division/tier
-    - Number of previous race bans - Integer - Description self-evident, 0 by default
-    - Number of previous season bans - Integer - Description self-evident, 0 by default
-    - Number of previous league bans - Integer - Description self-evident, 0 by default
-If a driver does not have an entry in the database, it will be assumed that they are Not Signed Up.
-If a driver transitions to the Not Signed Up state and their Former Driver Flag is false, then their entry shall be deleted from the database.
-There shall be a state machine in place to govern over the current state of the driver. The possible transitions shall be as follows:
-    - Not Signed Up -> Pending Signup Completion
-    - Pending Signup Completion -> Pending Admin Approval
-    - Pending Admin Approval -> Unassigned
-    - Pending Admin Approval -> Pending Driver Correction
-    - Pending Driver Correction -> Pending Admin Approval
-    - Pending Admin Approval -> Not Signed Up
-    - Unassigned -> Assigned
-    - All States except League Banned and Season Banned -> Season Banned
-    - All States except League Banned -> League Banned
-    - Season Banned -> Not Signed Up
-    - League Banned -> Not Signed Up
-    - Not Signed Up -> Unassigned (only if test mode is enabled)
-    - Not Signed Up -> Assigned (only if test mode is enabled)
-The transitions for the unspecified states shall be outlined in later changes.
-It shall be possible for server administrators to change the Discord User ID of a driver profile for another, to cover the possible of account changes <NEW COMMAND>.
-If a user leaves the Discord server, their entry must remain in the database.
-When test mode is enabled, it shall be possible for a system administrator to manually set the former driver flag of a driver to true or to false <NEW COMMAND>.
+The signup module governs how a person becomes a driver of a league: the channel they sign up
+in, the questions the wizard asks, and the approval that admits them.
 
-## Test mode and real drivers
-A server shall be either running a real league or under test, never both.
-- Test mode shall not be enabled while the server holds a real driver whose state is anything other than Not Signed Up. A driver profile retained at Not Signed Up is a former driver and shall not stand in the way.
-    - The refusal shall name how many real drivers the server holds, and the state of test mode shall be left unchanged.
-- Test mode shall not be enabled while the signup window is open. The refusal shall direct the administrator to close the window, and the window shall be left open — enabling test mode shall not close it.
-- Test mode shall not be disabled while a season that has started holds a driver created by test mode. Such a season shall hold test mode open until it is completed, and the refusal shall direct the administrator to complete it.
-    - Neither a season yet to start nor a completed one shall stand in the way.
-- While test mode is enabled:
-    - A real driver shall not begin a signup. The sign-up button shall refuse them, and the "signup open" command shall refuse to open a signup window.
-    - A real driver shall not be assigned to a team. A driver created by test mode shall still be assigned freely.
-
-# Teams
-Each server holds a list of default teams. A division's own teams are created from that list automatically upon division creation.
-    - The default list ships with the "Reserve" team only. No other team is created for a server, and a league shall build its own list.
-    - There is an extra team, called "Reserve" which shall always exist and shall not be configurable.
-    - A server administrator shall be able to add, modify or remove a team to the default configuration (except Reserve) <NEW COMMAND>.
-    - A server administrator shall be able to add, modify or remove a team to ALL the divisions of the current season only during season setup (except Reserve) <NEW COMMAND>.
-    - The configurable teams (in other words, all except Reserve) shall have 2 seats, unassigned by default.
-    - The Reserve team shall have no limit of available seats.
-    - When reviewing the season, the list of teams and the drivers assigned to each team shall be displayed (including Reserve), alongside any unassigned drivers.
-
-# Changes to Seasons
-Beyond the aforementioned changes to seasons as a consequence of the implementation of Teams and Driver Profiles, the following functionality shall be implemented for seasons as well:
-    - Each server will have a unique integer unassociated with any other data structure that identifies the number of the previous season. By default, this is 0. This season number will be the one displayed on all bot output.
-    - Upon season setup, the new season will take the number recorded as above incremented by 1.
-    - Upon season cancellation or completion, the server's previous season tracker shall be incremented by 1.
-    - Each division shall possess a new tier parameter that is input when it is created (applies both to division add and division duplicate). The division tier may be used as an ID, but the division name shall remain as the one used in bot output.
-    - Season approval will be blocked by the bot if all the divisions' tiers are not in sequential order. Furthermore, in the database, the divisions will be sorted in increasing tier order, for clarity, with tier 1 being the highest.
-
-Please clarify possible impacts of this implementation on performance and storage footprint of the bot.
-
----
-
-Some new commands are denoted below explicitly. Others may be necessary, but at the very least these are required.
-
-# Changes to bot initialization flow
-Bot initialization flow, right now, accounts only for the weather forecast functionality. There will be a change in approach to modularize and customize bot functionality, allowing users to enable and disable parts. As the division, round, team and driver flows are all foundational concepts, they may not be disabled; however, all other modules and functionality will be installed disabled by default. For this reason, the following considerations will be had regarding the weather forecast module:
-- <NEW COMMAND> A "module enable weather" command will be made available to server administrators to enable weather functionality.
-- <NEW COMMAND> A "module disable weather" command will be made available to server administrators to disable weather functionality.
-- Weather events shall only be scheduled if weather functionality is enabled.
-- Weather events shall be deleted when weather functionality is toggled off.
-- Weather events shall be created for all rounds yet to happen when weather functionality is toggled on. If any event is scheduled "in the past", then it shall be executed in order (meaning, if Phase 1 and Phase 2 must be triggered immediately, Phase 2 must be triggered after Phase 1).
+What a driver *is* — the driver profile, its states, the former-driver rule, and placement into
+a division and team — is specified in [the core specification](core_specification.md), a driver
+existing whether or not this module is enabled.
 
 # Signup wizard and flow
 ## Enabling signup flow
@@ -126,10 +46,6 @@ Bot initialization flow, right now, accounts only for the weather forecast funct
 - Once closed, the button that allows the initiation of the signup shall be deleted by the bot, which shall likewise post a message informing that "signups are closed".
 
 ## Signup wizard
-### Key driver state transitions
-    - When a driver state changes to "not signed up", if the "former driver flag" is set to true, the entry in the database will remain, but their signup data shall be deleted with the exception of their signup channel (covered by another requirement).
-    - When a driver state changes to "not signed up", if the "former driver flag" is set to false, the entry in the database will be deleted.
-    - Every change of a driver's state shall be persisted.
 ### Wizard flow
     - Once the signup button is pressed by someone in the "not signed up" state, the bot will create a new channel titled "username-signup", in which the signup wizard shall be engaged. This channel shall be visible only to the user who engaged the signup wizard, the tier 2 admins and the server administrators.
     - Tier 2 admins and server administrators shall be able to type at will in the signup channels of all drivers.
@@ -181,25 +97,6 @@ Bot initialization flow, right now, accounts only for the weather forecast funct
     - An easier, quicker way to implement the above command will be to have an "unassigned" driver list that is indexed by seeding number, holding only the "discord user ID" and the sum of all signup times. This last parameter shall determine the seeding; drivers with lower signup time sum shall be seeded higher (e.g. 3:40.055 would be seed 1, 3:40.097 seed 2, 3:41.423 seed 3, etc). This way, the seeding is always kept up to date.
         - The sum of signup times shall be computed at the transition to "unassigned" and shall not be recomputed thereafter. Drivers with no recorded time shall be seeded last, and ties shall be broken by order of approval.
     - A "signup unassigned export" command shall be made available to trusted role users, returning the same drivers as a CSV file in seeding order. The columns shall be: seed, display name, Discord user ID, driver type, time sum, one column per configured availability slot marking those the driver selected, three preferred team columns, platform and platform ID.
-    - <NEW COMMAND> A "driver assign" command shall be made available to trusted role users, which will take a discord user ID, an integer signifying a division tier (or a string signifying a division name), and an integer signifying one of the currently configured teams (plus Reserve).
-        - In order for this command to be valid, the driver profile associated with the ID shall be in state "unassigned" or "assigned" (this permits multiple tier assignment). 
-        - In order for this command to be valid, the team of the tier input shall have at least 1 open spot (if configurable). Reserve teams have limitless seats, so it shall always be possible to append a driver to a Reserve seat.
-        - In order for this command to be valid, the driver may not have been assigned to any other team (including Reserve) in the same tier.
-        - In order for this command to be valid, there shall be a season in setup or active state. Placement shall not require the season to be active.
-        - If the "driver assign" command is successful and the driver state is "unassigned", it shall change to "assigned".
-        - If the season is active, the discord user shall be granted the roles pertaining to the division and to the team they were assigned to, immediately. If the season is in setup, no roles shall be granted at this point; they shall all be granted when the season is approved.
-    - <NEW COMMAND> A "driver unassign" command shall be made available to trusted role users, which will take a discord user ID an an integer signifying a division tier (or a string signifying a division name).
-        - Clarity: This is the only command that allows the change from "assigned" to "unassigned"
-        - In order for this command to be valid, the driver profile associated with the ID must be in state "assigned".
-        - In order for this command to be valid, the driver must be assigned to a team in the division specified.
-        - If the "driver unassign" command is successful and the driver has no other assignments, its state shall change to "unassigned".
-        - If the season is active, the discord user shall have the role pertaining to the division they were assigned to removed. If the season is in setup, no role shall be removed, the driver never having held one.
-        - A team role shall be revoked only where the driver no longer holds a seat in any team, across all divisions, that maps to that role.
-    - Every successful assignment, unassignment and sacking shall cause the division's lineup message to be deleted and reposted in the division's configured lineup channel.
-    - <NEW COMMAND> A "driver sack" command shall be made available to trusted role users, which will take a discord user ID.
-        - In order for this command to be valid, the driver profile associated with the ID must be in state "unassigned" or "assigned"
-        - If the "driver sack" command is successful, the driver's state will be changed to "not signed up".
-        - If the "driver sack" command is successful, all driver roles pertaining to all divisions will be removed.
-        - As part of this flow will be useful in future "season ban" and "league ban" functionality to come later, the removal of division roles shall be easily reusable.
+    - The placement of a driver into a division and team is specified in [the core specification](core_specification.md).
 
 The name of the commands is an example and only tentative. If further commands are required, please inform.

@@ -444,10 +444,23 @@ Found on 2026-08-18 while auditing the how-to guides against the implementation.
 - `SeasonService.get_setup_or_active_season` (`src/services/season_service.py:78`) is `WHERE status IN ('SETUP', 'ACTIVE') ... LIMIT 1` with no `ORDER BY`. Where a league is building next season while this one runs, both rows match and which is returned is whatever SQLite happens to yield first.
 - Its two callers are `/driver` commands (`src/cogs/driver_cog.py:123` and `:220`), so a driver operation can silently address the wrong season. Found on 2026-08-19 while planning feature 046, which needs the opposite guarantee and therefore adds a method of its own rather than reusing this one.
 
+**P4 — The ban transitions are narrower in code than the constitution states, and no command reaches them.**
+- Constitution Principle VIII permits "Any (except League Banned, Season Banned)" to Season Banned, and "Any (except League Banned)" to League Banned. `ALLOWED_TRANSITIONS` (`src/services/driver_service.py:15`) admits a ban only from Pending Admin Approval, Pending Driver Correction, Unassigned and Assigned; Pending Signup Completion and Awaiting Correction Parameter reach neither.
+- Nothing issues a ban. `SEASON_BANNED` and `LEAGUE_BANNED` are referenced outside the state machine only at `src/cogs/signup_cog.py:148-149`, where they refuse a signup, so the divergence is latent and the narrower map has never been exercised.
+- Recorded so the disagreement is visible rather than settled by whichever document is read first. `docs/wip-specs/core_specification.md` states the map as implemented, per the standing rule that the implementation wins.
+- Found on 2026-09-08 while writing the core specification.
+
 **P4 — `server_configs.previous_season_number` is written by nothing and read by nothing.**
 - The column is added by `src/db/migrations/008_driver_profiles_teams.sql:71` and carried on the model at `src/models/server_config.py:15`. `SeasonService.increment_previous_season_number` (`src/services/season_service.py:502`) is the only code that would write it, and nothing calls that method.
 - It therefore holds 0 on every server, whatever the league's history. The real previous season number is derived instead from `count_persisted_seasons`, which counts seasons that have reached ACTIVE, COMPLETED or CANCELLED status, and `save_pending_snapshot` numbers a new season at one higher than that tally.
 - The trap is that the column is the obvious-looking source for anything wanting "the previous season's number" and is always wrong. Found on 2026-08-19 while specifying feature 046, whose fabricated league needs exactly that number.
+
+**P2 — `/season complete` gates on a column nothing writes, so no season holding a round can be completed.**
+- `/season complete` refuses unless `SeasonService.all_rounds_finalized` (`src/services/season_service.py:772`) returns true, which it does only when no non-cancelled round of the active season has `finalized = 0` (`:784`).
+- Nothing sets `finalized` to 1. `src/db/migrations/019_round_finalized.sql:5` adds it with a default of 0, `src/db/migrations/026_result_status_penalty_records.sql:5` reads it once to seed `result_status`, and no `UPDATE` against it exists anywhere in `src/`. The live signal for a finished round is `rounds.result_status`, which moves `PROVISIONAL → POST_RACE_PENALTY → FINAL` in `src/services/result_submission_service.py:501` and `:738`.
+- A league therefore sees `/season complete` list every round of the season as "not yet finalized", however completely it was raced and scored. The gate passes only on a season whose divisions hold no uncancelled round at all. Nothing else ends a season — the automatic path below is dead — so the season stays ACTIVE and the league cannot begin the next one, a server being allowed only one live season.
+- `is_round_finalized` (`src/services/test_mode_service.py:438`) reads the same column and so always returns false, leaving the test-mode advance path treating every round as still in penalty review.
+- Found on 2026-09-08 while writing the core specification.
 
 **P4 — The automatic season-end path is dead code that six tests still exercise.**
 - Nothing in `src/` calls `check_and_schedule_season_end`. `_recover_season_end_jobs` in `src/bot.py` is an explicit no-op documented as such, and `/season complete` calls `execute_season_end` directly.
@@ -505,7 +518,7 @@ Found on 2026-08-26, alongside the autocomplete investigation above.
 
 **P4 — `track_records` and `lap_records` are created and never used.**
 - Migration `029_track_data_expansion.sql` creates both tables, annotated "populated by a future increment". Neither has a single reference anywhere in `src/`.
-- The per-tier track and lap records described in `docs/wip-specs/other_changes.md` therefore exist as schema only. No command writes one and no surface displays one.
+- The per-tier track and lap records described in `docs/wip-specs/core_specification.md` therefore exist as schema only. No command writes one and no surface displays one.
 
 **P4 — Two timestamps are written with the deprecated `datetime.utcnow()`.**
 - `src/services/penalty_service.py:368` and `src/services/result_submission_service.py:660`. Both produce a naive datetime, and both account for the bulk of the suite's fourteen `DeprecationWarning`s.
@@ -517,6 +530,12 @@ Found on 2026-08-26, alongside the autocomplete investigation above.
 - No test references `weather_config_service`, `validate_ordering`, `set_phase_1_days`, `run_phase1`, `run_phase2`, `run_phase3` or `WeatherCog`. `schedule_round` is referenced only by `tests/unit/test_mystery_notice.py`.
 - The ordering invariant, the minimum of 1, the active-season refusal and the three phase draws therefore have no automated cover at all, while `math_utils`, `message_builder`, `forecast_cleanup`, `mystery_notice` and the image weather path are all well covered.
 - This cuts against the standing rule that every implementation task carries the unit test that covers it.
+
+**P3 — Five tests construct a Discord modal outside an event loop, and so fail on the Pi and nowhere else.**
+- `tests/unit/test_roster_import_modal.py::test_the_box_stays_within_discord_s_limits`, `tests/unit/test_round_import_cog.py::test_the_division_is_carried_to_the_modal`, `tests/unit/test_season_review_images.py::test_the_review_offers_only_the_approve_button` and both tests of `tests/unit/test_backup_before_approval.py` build a `Modal` or a `View` from a synchronous test body.
+- `requirements.txt` pins `discord.py==2.7.1`, where the view's completion future is created lazily. Raspberry Pi OS carries 2.5.0 from apt, which creates it in `View.__init__` and therefore raises `RuntimeError: no running event loop` before the assertion is reached. `requirements.txt` names the version gap in its own comment, and a Debian host importing from `/usr/lib/python3/dist-packages` never sees the pin.
+- The suite is green on CI and on a virtualenv, and reports five failures on the Pi the bot runs on. This is the host-dependence the testing rules forbid: the remedy is to construct these modals inside a running loop, not to align the Pi with CI.
+- Found on 2026-09-08 while taking a baseline for the core specification.
 
 **Fixed — a rasteriser test resolved its artwork out of the league's own folder, so it passed or failed according to what the host happened to carry.**
 - Found on 2026-09-02 while adding the division-logo asset class; the coupling itself was spotted by a parallel session. Fixed the same day.
