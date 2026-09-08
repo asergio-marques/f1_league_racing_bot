@@ -6,11 +6,16 @@ either is off — or when the generation meets a fatal error on a posting nobody
 it is conveyed in the traditional textual manner. Priority is given to the graphic where
 one can be produced; the text is what the league falls back to, never what it loses.
 
-Both forms carry the **same heading**, built here once, so the two cannot drift apart:
+**Only the textual form carries a heading:**
 
     📅 **Elite — Race Calendar**
 
-and both persist their message id against the division, so whichever posted last is the
+A graphic does not. The picture draws the division's own name and says what it is, so a
+line of message text above it repeats the picture rather than introducing it, and the
+lineup graphic has never carried one either (2026-09-07). The heading is still built in
+one place, because the text is posted from two — the ordinary posting and the retry queue.
+
+Both forms persist their message id against the division, so whichever posted last is the
 one the next replacement deletes.
 """
 from __future__ import annotations
@@ -258,11 +263,16 @@ async def replace_calendar_message(
     channel,
     division_id: int,
     *,
-    content: str,
+    content: str | None,
     image_path: Path | None,
     previous_message_id: int | None,
 ) -> int:
     """Post the calendar and delete the message it replaces, **in that order**.
+
+    *content* is None for a graphic, which carries no message text of its own, and the
+    textual calendar otherwise. Discord accepts a message with an attachment and no text;
+    it would refuse one with neither, which is why None never reaches the branch below
+    that sends without a file.
 
     The ordering is the contract. The previous message is deleted only once its
     replacement has been posted successfully, so a failure can never leave the channel
@@ -336,7 +346,11 @@ async def post_division_calendar(
 
     from services.image_render_service import discard_render
 
-    content = calendar_heading(division.name)
+    # A graphic carries no heading. The picture draws the division's own name and says
+    # what it is, so a line of message text above it repeats the picture rather than
+    # introducing it — the lineup graphic has never carried one either. The textual
+    # calendar keeps its heading below, where it is the only thing naming the list.
+    content: str | None = None
     image_path: Path | None = None
 
     # Everything from the render to the post sits inside one `finally`, so the picture is

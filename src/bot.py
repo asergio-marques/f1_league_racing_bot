@@ -48,6 +48,18 @@ async def main() -> None:
     from services.scheduler_service import SchedulerService
     from utils.output_router import OutputRouter
 
+    # A staged restore is swapped in **here**, before a single service is constructed and
+    # before the scheduler opens its job store. Every service captures its path and holds
+    # connections open, so this is the one moment in the process at which replacing the
+    # files underneath them is safe. `/backup restore` stages and does no more, precisely
+    # so that the swap can happen at this point on the next start — under a service or
+    # from a terminal alike.
+    from services.backup_service import apply_staged_restore
+    from services.scheduler_service import default_jobstore_path
+
+    if apply_staged_restore(DB_PATH, SCHEDULER_DB_PATH or default_jobstore_path(DB_PATH)):
+        log.info("Started on a restored database.")
+
     bot = create_bot()
 
     # Services are attached to bot for cog access
@@ -257,6 +269,9 @@ async def main() -> None:
 
         # Close any results-amend channels left open by a previous run.
         await _recover_orphaned_amend_channels(bot)
+
+        # Clear any season-review approve button left standing by a previous run.
+        await _recover_expired_review_prompts(bot)
 
         # Recover any missed phases from before bot restart
         await _recover_missed_phases(bot)
@@ -775,6 +790,92 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         except Exception:
             log.exception(
                 "Recovery: failed to post log for mid-submission orphan round %s", round_id
+            )
+
+
+async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
+    """Clear any season-review approve button left standing by a previous run.
+
+    The button expires five minutes after `/season review` posts it, and the timer that
+    does so is a `discord.ui.View` timeout — held in memory, and lost with the process. A
+    bot restarted inside that window would otherwise leave a public message offering a
+    button nothing is listening to, for ever.
+
+    Every row that survives to startup is expired by definition: the bot was down, so the
+    five minutes cannot have been served, and no view exists to serve them now. Each is
+    therefore deleted and replaced with the same notice a timeout would have posted, the
+    reviewer pinged so they learn of it without watching the channel.
+    """
+    from db.database import get_connection
+
+    try:
+        async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+            cursor = await db.execute(
+                "SELECT server_id, channel_id, message_id, reviewer_id, posted_at "
+                "FROM season_review_prompts"
+            )
+            prompts = await cursor.fetchall()
+    except Exception:
+        log.exception("could not read the standing season review prompts")
+        return
+
+    for row in prompts:
+        server_id = int(row["server_id"])
+        # Fetched rather than only read from the cache. A cache miss and a deleted channel
+        # are indistinguishable to `get_channel`, and the row is cleared either way — so a
+        # miss would drop the only record of a message still standing, which is precisely
+        # what this sweep exists to prevent.
+        channel = bot.get_channel(int(row["channel_id"]))
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(int(row["channel_id"]))
+            except (discord.NotFound, discord.Forbidden):
+                channel = None
+            except discord.HTTPException as exc:
+                log.warning(
+                    "could not fetch the channel of a standing review in guild %s: %s",
+                    server_id,
+                    exc,
+                )
+                channel = None
+        if channel is not None:
+            try:
+                message = await channel.fetch_message(int(row["message_id"]))
+                await message.delete()
+            except discord.NotFound:
+                # Already gone — deleted by hand, or the channel with it. The row is
+                # cleared below regardless, which is the point of the sweep.
+                pass
+            except (discord.HTTPException, discord.Forbidden) as exc:
+                log.warning(
+                    "could not delete the expired review prompt in guild %s: %s",
+                    server_id,
+                    exc,
+                )
+            try:
+                await channel.send(
+                    f"⏱️ <@{int(row['reviewer_id'])}> your season review expired while the "
+                    f"bot was restarting and can no longer be approved. Run "
+                    f"`/season review` again to approve the season."
+                )
+            except (discord.HTTPException, discord.Forbidden) as exc:
+                log.warning(
+                    "could not post the review expiry notice in guild %s: %s", server_id, exc
+                )
+
+        try:
+            async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+                await db.execute(
+                    "DELETE FROM season_review_prompts WHERE server_id = ?", (server_id,)
+                )
+                await db.commit()
+        except Exception:
+            log.exception("could not clear the review prompt for guild %s", server_id)
+        else:
+            log.info(
+                "cleared a season review prompt posted at %s in guild %s",
+                row["posted_at"],
+                server_id,
             )
 
 

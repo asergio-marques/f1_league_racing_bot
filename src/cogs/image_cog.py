@@ -10,8 +10,6 @@ is disabled (FR-005).
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
-from zoneinfo import available_timezones
 
 import discord
 from discord import app_commands
@@ -34,31 +32,16 @@ from services.image_config_service import pfp_change_refusal
 from utils.channel_guard import admin_only, channel_guard, server_admin_only
 from utils.paths import PathContainmentError, relative_to_root
 from utils.time_parsing import parse_time_of_day
+from utils.timezones import clear_zone_cache, is_known_zone, zone_names
 
 log = logging.getLogger(__name__)
 
-
-@lru_cache(maxsize=1)
-def _zone_names() -> tuple[tuple[str, str], ...]:
-    """Every IANA zone paired with its case-folded form, sorted, built once.
-
-    `available_timezones()` walks the whole `TZPATH` tree — some 600 entries under
-    `/usr/share/zoneinfo` — and CPython does not cache it. The autocomplete it feeds runs on
-    *every keystroke*, and this was measured at 325 ms cold on the Raspberry Pi the bot runs
-    on: a third of Discord's three-second budget spent on a command that never touches the
-    database. Folding the case here too saves lowercasing ~600 strings per keystroke.
-
-    Memoised for the life of the process, in the same spirit as the font index in
-    `utils/font_metrics.py`. This is not the caching layer the constitution cautions about
-    at "Performance & Storage Considerations" — that concerns league data at scale, whereas
-    the zone list is a static enumeration shipped by the operating system.
-    """
-    return tuple(sorted((zone, zone.casefold()) for zone in available_timezones()))
-
-
-def clear_zone_cache() -> None:
-    """Drop the memoised zone list. For tests, mirroring `font_metrics.clear_cache`."""
-    _zone_names.cache_clear()
+#: The memoised zone list, which now lives in `utils/timezones.py` so that the round
+#: importer can validate a zone without importing this cog — and Discord with it. Kept
+#: under its old name here because the autocomplete below and its tests both reach for it,
+#: and the move is not a change to either. `clear_zone_cache` is re-exported above for the
+#: same reason.
+_zone_names = zone_names
 
 
 _STATE_ICONS = {
@@ -201,12 +184,17 @@ class ImageCog(commands.Cog):
     # ── Helpers ───────────────────────────────────────────────────────────
 
     async def _guard_module_enabled(self, interaction: discord.Interaction) -> bool:
-        """Return True when the module is enabled; otherwise reply and return False."""
+        """Return True when the module is enabled; otherwise reply and return False.
+
+        Replies through :meth:`_reply` rather than ``response.send_message`` because its
+        callers differ: a command that has already deferred must answer on the followup,
+        and sending a fresh response there raises ``404 Unknown interaction``.
+        """
         if not await self.bot.module_service.is_images_enabled(interaction.guild_id):  # type: ignore[attr-defined]
-            await interaction.response.send_message(
+            await self._reply(
+                interaction,
                 "❌ The Image module is not enabled. "
                 "Use `/module enable images` first.",
-                ephemeral=True,
             )
             return False
         return True
@@ -288,6 +276,10 @@ class ImageCog(commands.Cog):
         rejection leaves the stored value exactly as it stood.
         """
         from services.image_validity_service import check_template
+
+        # Validation parses the named SVG from disk, which outruns Discord's three-second
+        # window on a slow host as readily as the fifteen-template sweep does.
+        await interaction.response.defer(ephemeral=True)
 
         if not await self._guard_module_enabled(interaction):
             return
@@ -518,7 +510,7 @@ class ImageCog(commands.Cog):
         files, and able to fix it — rather than letting it surface as a render failure at
         the next scheduled post, when nobody is looking.
         """
-        from services.image_validity_service import check_all_templates
+        from services.image_validity_service import blocking_template_problems
         from utils.paths import resolve_within_project_root
 
         if not await self._guard_module_enabled(interaction):
@@ -556,12 +548,20 @@ class ImageCog(commands.Cog):
 
         # The FR-007 survey, which also backs `/season review` and `/season approve`, so
         # the three surfaces cannot disagree about whether a template is usable.
-        problems = check_all_templates(proposed)
+        #
+        # Scoped to the aspects that are switched on, as those two are: a folder holding
+        # no verdicts drawing is a perfectly good folder for a league that posts verdicts
+        # as text, and refusing it would force every league to supply all fifteen before
+        # it could move its artwork. Switching an aspect on checks its own drawings at
+        # that moment, so nothing reaches a posting path unverified.
+        toggles = await self._config_service.get_toggles(interaction.guild_id)
+        problems = blocking_template_problems(proposed, toggles)
         if problems:
             await self._reject_directory(
                 interaction,
                 label,
-                f"`{stored}` does not hold every template the bot needs.",
+                f"`{stored}` does not hold every template the bot needs "
+                f"for the outputs you have switched on.",
                 problems=problems,
                 searched=resolved,
             )
@@ -573,7 +573,8 @@ class ImageCog(commands.Cog):
         await self._reply(
             interaction,
             f"✅ **{label}** set to `{stored}`.\n"
-            f"✅ All fifteen templates are present and valid.\nSearched: `{resolved}`",
+            f"✅ Every drawing the outputs you have switched on need is present and "
+            f"valid.\nSearched: `{resolved}`",
         )
         await self._log(interaction, f"{label} = {stored}")
 
@@ -868,28 +869,88 @@ class ImageCog(commands.Cog):
     async def config_toggle(
         self, interaction: discord.Interaction, aspect: app_commands.Choice[str]
     ) -> None:
+        # Switching an output *on* reports what still blocks it, and answering that means
+        # `_aspect_blocking_reasons` → `template_reports` → `evaluate_all_templates`,
+        # which parses all fifteen template SVGs from disk on every call and caches
+        # nothing. That is a third of a second on a development machine and several times
+        # that on the Raspberry Pi's SD card, so the reply arrived after Discord had
+        # already expired the token (404 Unknown interaction) with the toggle written.
+        await interaction.response.defer(ephemeral=True)
+
         if not await self._guard_module_enabled(interaction):
             return
 
         server_id = interaction.guild_id
-        now_enabled = await self._config_service.toggle_aspect(server_id, aspect.value)
         label = ASPECT_LABELS[aspect.value]
 
-        if not now_enabled:
+        # Switching *off* is always allowed: the output reverts to text, which needs no
+        # drawing at all, so nothing about the templates can stand in the way.
+        if await self._config_service.is_aspect_enabled(server_id, aspect.value):
+            await self._config_service.set_aspect(server_id, aspect.value, False)
             await self._reply(
                 interaction, f"❌ **{label}** image output **disabled**. Posting stays as text."
             )
             await self._log(interaction, f"{label} image output disabled")
             return
 
-        blocking = await self._aspect_blocking_reasons(server_id, aspect.value)
-        lines = toggle_enabled_lines(aspect.value, label, blocking)
+        # Switching *on* is refused while the drawings behind it are unusable, and the
+        # aspect is left off. Enabling it would produce an aspect that cannot draw — one
+        # that withholds the season's approval, and posts nothing where a driver would
+        # otherwise have read text. The check is made against the configured directory,
+        # so it answers for the files the league actually has.
+        blocking = await self._aspect_blocking_reasons_if_enabled(server_id, aspect.value)
+        if blocking:
+            body = "\n".join(f"  • {reason}" for reason in blocking)
+            await self._reply(
+                interaction,
+                f"⛔ **{label}** image output was **not** switched on — "
+                f"it cannot be drawn as things stand:\n{body}\n"
+                f"Put that right and run this command again. The output is still posted "
+                f"as text in the meantime.",
+            )
+            await self._log(
+                interaction, f"{label} image output refused — {len(blocking)} problem(s)"
+            )
+            return
+
+        await self._config_service.set_aspect(server_id, aspect.value, True)
+        lines = toggle_enabled_lines(aspect.value, label, [])
 
         await self._reply(interaction, "\n".join(lines))
         await self._log(interaction, f"{label} image output enabled")
 
     async def _aspect_blocking_reasons(self, server_id: int, aspect: str) -> list[str]:
         statuses = await self._validity_service.aspect_statuses(server_id)
+        for status in statuses:
+            if status.aspect == aspect:
+                return status.blocking_reasons
+        return []
+
+    async def _aspect_blocking_reasons_if_enabled(
+        self, server_id: int, aspect: str
+    ) -> list[str]:
+        """What would stop *aspect* drawing, asked while it is still switched off.
+
+        `aspect_statuses` reads the stored toggles, and an aspect that is off reports its
+        problems as ``disabled_reasons`` rather than ``blocking_reasons`` — so asking the
+        ordinary way, before the toggle is written, always answers "nothing blocks it".
+        The toggle is therefore overridden for this one question, which is what lets the
+        command refuse *before* storing rather than storing and then complaining.
+        """
+        from services.image_render_service import converter_available
+        from services.image_validity_service import build_aspect_statuses
+
+        toggles = dict(await self._config_service.get_toggles(server_id))
+        toggles[aspect] = True
+
+        statuses = build_aspect_statuses(
+            toggles,
+            await self._validity_service.template_reports(server_id),
+            disabled_source_modules=await self._validity_service.disabled_source_modules(
+                server_id
+            ),
+            converter_available=converter_available(),
+        )
         for status in statuses:
             if status.aspect == aspect:
                 return status.blocking_reasons
@@ -1014,10 +1075,10 @@ class ImageCog(commands.Cog):
         if not await self._guard_module_enabled(interaction):
             return
 
-        from zoneinfo import available_timezones
-
+        # Through the memoised list rather than `available_timezones()`, which walks the
+        # whole TZPATH tree on every call — 325 ms cold on the Pi, for one membership test.
         candidate = zone.strip()
-        if candidate not in available_timezones():
+        if not is_known_zone(candidate):
             await self._reply(
                 interaction,
                 f"❌ `{candidate}` is not a recognised time zone. "
@@ -1092,6 +1153,20 @@ class ImageCog(commands.Cog):
             app_commands.Choice(name="14/06/2026", value="DD_MM_YYYY"),
             app_commands.Choice(name="06/14/2026", value="MM_DD_YYYY"),
             app_commands.Choice(name="2026-06-14", value="YYYY_MM_DD"),
+            # Written out. A calendar is read rather than parsed, and a league that wants
+            # it to look like a poster wants the month and the weekday spelled.
+            app_commands.Choice(
+                name="Sunday 14th June 2026", value="DDDD_ORD_MONTH_YYYY"
+            ),
+            app_commands.Choice(name="14th June 2026", value="ORD_MONTH_YYYY"),
+            app_commands.Choice(
+                name="Sunday 14 June 2026", value="DDDD_DD_MONTH_YYYY"
+            ),
+            app_commands.Choice(name="14 June 2026", value="DD_MONTH_YYYY"),
+            app_commands.Choice(name="June 14, 2026", value="MONTH_DD_YYYY"),
+            app_commands.Choice(
+                name="Sunday, June 14th, 2026", value="DDDD_MONTH_ORD_YYYY"
+            ),
         ]
     )
     @channel_guard
@@ -1365,12 +1440,12 @@ class ImageCog(commands.Cog):
         description="Preview the calendar image for one of your divisions.",
     )
     @app_commands.describe(
-        division="The division whose calendar to draw. Omit where this server has no season."
+        division="The division whose calendar to draw."
     )
     @channel_guard
     @admin_only
     async def test_calendar(
-        self, interaction: discord.Interaction, division: str | None = None
+        self, interaction: discord.Interaction, division: str
     ) -> None:
         from services.image_preview_service import build_calendar_preview
 
@@ -1390,12 +1465,12 @@ class ImageCog(commands.Cog):
         description="Preview the lineup image for one of your divisions.",
     )
     @app_commands.describe(
-        division="The division whose lineup to draw. Omit where this server has no season."
+        division="The division whose lineup to draw."
     )
     @channel_guard
     @admin_only
     async def test_lineup(
-        self, interaction: discord.Interaction, division: str | None = None
+        self, interaction: discord.Interaction, division: str
     ) -> None:
         from services.image_preview_service import build_lineup_preview
 
@@ -1423,8 +1498,8 @@ class ImageCog(commands.Cog):
     async def test_results(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_results_preview
 
@@ -1453,8 +1528,8 @@ class ImageCog(commands.Cog):
     async def test_standings(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_standings_preview
 
@@ -1483,8 +1558,8 @@ class ImageCog(commands.Cog):
     async def test_attendance(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_attendance_preview
 
@@ -1513,8 +1588,8 @@ class ImageCog(commands.Cog):
     async def test_rsvp(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_rsvp_preview
 
@@ -1543,8 +1618,8 @@ class ImageCog(commands.Cog):
     async def test_verdict(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_verdict_preview
 
@@ -1573,8 +1648,8 @@ class ImageCog(commands.Cog):
     async def test_weather_p1(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_weather_preview
 
@@ -1603,8 +1678,8 @@ class ImageCog(commands.Cog):
     async def test_weather_p2(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_weather_preview
 
@@ -1633,8 +1708,8 @@ class ImageCog(commands.Cog):
     async def test_weather_p3(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_weather_preview
 
@@ -1663,8 +1738,8 @@ class ImageCog(commands.Cog):
     async def test_weather_mystery(
         self,
         interaction: discord.Interaction,
-        division: str | None = None,
-        round: int | None = None,
+        division: str,
+        round: int,
     ) -> None:
         from services.image_preview_service import build_weather_preview
 
@@ -1718,17 +1793,6 @@ class ImageCog(commands.Cog):
                 "be once `/season approve` has run._"
             )
 
-        # A manager must never mistake an invented league for their own (FR-024). Said
-        # before the pictures rather than after them, because it governs how every line
-        # below it should be read.
-        if getattr(context, "fabricated_league", False):
-            lines.append(
-                "⚠️ **This server has no season, so the league drawn here is invented.** "
-                "The team names are your own, taken from `/team add`; the division, the "
-                "calendar, the round, the circuits and the driver names are all made up, "
-                "and differ every time you run this. Nothing has been saved."
-            )
-
         all_notices = []
         for label, template_key, outcome in outcomes:
             if outcome.problem:
@@ -1748,12 +1812,10 @@ class ImageCog(commands.Cog):
             all_notices.extend(outcome.notices)
 
         # The drivers drawn are invented, and a manager must never mistake them for their
-        # own roster (FR-018). Suppressed on a fabricated league, where the banner above
-        # has already said so of the whole thing and this would only repeat it — and would
-        # tell a manager to seat drivers in a division that does not exist.
-        if getattr(context, "fabricated_drivers", False) and not getattr(
-            context, "fabricated_league", False
-        ):
+        # own roster (FR-018). This is a real division of a real season whose seats happen
+        # to be empty — not the wholly invented league that used to be drawn for a
+        # season-less server, which is withdrawn.
+        if getattr(context, "fabricated_drivers", False):
             lines.append("")
             lines.append(
                 "ℹ️ This division has no seated driver, so the names and nationalities "

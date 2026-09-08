@@ -286,38 +286,15 @@ class TestTheNationalityTally:
 class TestTestModeChangesNoReading:
     """FR-029."""
 
-    @pytest.mark.parametrize("flag", [0, 1])
-    async def test_a_season_less_server_fabricates_the_same_either_way(
-        self, bot, db_path, flag
-    ):
-        import random
-
-        from services.image_preview_league import build_fabricated_context
-
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "UPDATE server_configs SET test_mode_active = ? WHERE server_id = ?",
-                (flag, SERVER_ID),
-            )
-            await db.execute(
-                "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
-                "VALUES (?, 'Redline', 2, 0)",
-                (SERVER_ID,),
-            )
-            await db.commit()
-
-        context = await build_fabricated_context(
-            bot, SERVER_ID, kind="lineup", rng=random.Random(11), now=NOW
-        )
-
-        assert context.fabricated_league is True
-        assert [t.name for t in context.teams] == ["Redline"]
-
     async def test_the_preview_reads_no_test_mode_flag_at_all(self):
-        """The strongest form of FR-029: the flag is not consulted anywhere."""
+        """The strongest form of FR-029: the flag is not consulted anywhere.
+
+        A companion case asserting that a season-less server fabricated its league
+        identically either way went with the fabrication itself, withdrawn 2026-09-06:
+        a preview now names its division and round and draws the league's own data.
+        """
         import inspect
 
-        from services import image_preview_league, image_preview_service
+        from services import image_preview_service
 
-        for module in (image_preview_service, image_preview_league):
-            assert "test_mode_active" not in inspect.getsource(module)
+        assert "test_mode_active" not in inspect.getsource(image_preview_service)

@@ -39,7 +39,7 @@ Three things have to be done on that computer, by hand, before any command in th
 2. **Turn on two switches in that same portal** — the *Server Members* and *Message Content* intents. Without the first the bot cannot hand out roles at all. See [Privileged Gateway Intents](../../README.md#privileged-gateway-intents).
 3. **Start it once.** It builds its own databases on first run — two of them, `bot.db` for your league's records and `scheduler.db` for work it has scheduled ahead. There is nothing to create.
 
-> **If you keep backups, keep both.** `bot.db` on its own is not a complete backup: without `scheduler.db` a restored season still knows its rounds, but every weather phase, RSVP notice and result submission it was waiting to send has gone, and only running `/season approve` again brings them back. Copying `bot.db` while the bot is running can also miss the most recent changes, because they may still be sitting in a `bot.db-wal` file next to it. The safe ways are in [Backing up](../../README.md#backing-up). Backups are optional and entirely your choice — but a half-backup is worse than none, because it looks complete.
+> **If you keep backups, keep both.** `bot.db` on its own is not a complete backup: without `scheduler.db` a restored season still knows its rounds, but every weather phase, RSVP notice and result submission it was waiting to send has gone, and only reviewing and approving the season again brings them back. Copying `bot.db` while the bot is running can also miss the most recent changes, because they may still be sitting in a `bot.db-wal` file next to it. The safe ways are in [Backing up](../../README.md#backing-up). Backups are optional and entirely your choice — but a half-backup is worse than none, because it looks complete.
 
 **Invite it with the right permissions.** All of them listed under [Required Permissions](../../README.md#required-permissions) are genuinely used, and the two worth checking twice are **Manage Roles** — the bot cannot place a driver without it — and **Mention @everyone, @here, and All Roles**, which it needs to ping a division role even though it never pings everyone.
 
@@ -72,7 +72,8 @@ Run it anywhere; it is one of only two commands that do not require the command 
 | To run | You need |
 |---|---|
 | Most commands in this guide | The interaction role **and** Discord's **Manage Server** permission |
-| `/season status`, and `/division weather-channel`, `results-channel` and `standings-channel` | The interaction role alone |
+| `/season status`, `/season review`, and `/division weather-channel`, `results-channel` and `standings-channel` | The interaction role alone |
+| Approving a season, on the button `/season review` posts | Whoever ran that review, or Discord's **Administrator** permission |
 | `/module enable` and `/module disable` | Discord's **Administrator** permission |
 | `/bot-init` and `/bot-reset` | **Manage Server**, from any channel |
 | `/bot-log-channel`, `/bot-interaction-channel`, `/bot-interaction-role` | **Manage Server**, from any channel |
@@ -167,7 +168,7 @@ Adding a team while a season is in setup also seats it in every division of that
 /track list
 ```
 
-The bot carries **28 circuits**, each with an ID and a full name — `12` is Silverstone Circuit, `22` is Autódromo José Carlos Pace. You use either when adding a round, and autocomplete offers them as you type.
+The bot carries **28 circuits**, each with an ID and a full name — `12` is Silverstone Circuit, `22` is Autódromo José Carlos Pace. You use either when adding a round, and autocomplete offers them as you type. Picking a suggestion is the easiest route, but you are not tied to it: the ID on its own, the name in any capitalisation, and the whole line as the dropdown shows it (`12 – Silverstone Circuit`) all work, so retyping or pasting an entry is safe. Where an ID and a name appear together, the ID decides.
 
 **The list is fixed.** You cannot add a circuit of your own, rename one, or change how wet the bot thinks it is. Each circuit's rainfall behaviour ships with the bot and is the same on every server.
 
@@ -225,7 +226,44 @@ Four things to know:
 
 `/round delete` removes one during setup, and renumbers what remains.
 
-> **Two rounds in the same division cannot share a date and time.** You can add them, but approval will refuse the season and name the clash. Duplicating a division with an offset of zero is the usual way this happens.
+> **Two rounds in the same division cannot share a date and time.** The command refuses the second one and names the round already sitting there. Approval refuses such a season too, so this only saves you finding out later — duplicating a division with an offset of zero is the usual way it happens.
+
+### Or paste the whole calendar at once
+
+A full season is twenty-odd rounds per division, and adding them one command at a time is slow. Two commands take the lot in one go.
+
+**`/round add-bulk`** takes a division name and opens a box. One round per line, times in UTC:
+
+```
+2026-03-08T20:00, Normal, 12
+2026-03-15T20:00, Sprint, Hungaroring
+2026-03-22T20:00, Mystery
+```
+
+Same rules as `/round add` — the track can be an ID, a name, or the `12 – Silverstone Circuit` form, and a `MYSTERY` round can leave it out. The box holds 2000 characters, which is a full season and more if you use track IDs, and rather less if you write the circuit names out in full.
+
+**`/round add-xml`** takes no parameters and covers several divisions at once. Its one difference is worth the trouble: each round states its **local** time and the zone it is in, and the bot works out UTC for you.
+
+```xml
+<config>
+  <division name="Pro">
+    <round>
+      <datetime>2026-03-08T20:00</datetime>
+      <timezone>Europe/Lisbon</timezone>
+      <format>Normal</format>
+      <track>12</track>
+    </round>
+  </division>
+</config>
+```
+
+Zone names are the IANA ones — `Europe/Lisbon`, `America/Sao_Paulo` — and must be spelled exactly, capitals included. Rounds can be in any order. About 23 rounds fit in the box, so a long season goes in over two runs.
+
+Three things to know about both:
+
+- **They add, never replace.** Running one twice does not wipe the first batch, which is what makes splitting a long calendar across runs safe.
+- **One bad line rejects the whole thing.** Nothing is added and every problem is listed at once, with the line number. Fix the text and paste it again — that is the intended way to use them, and it is why nothing is half-applied.
+- **`add-bulk` sidesteps daylight saving entirely** by taking UTC. If a round of yours falls near the weekend the clocks change, that is the safer command: a local time in the hour a clock skips forward does not exist, and the bot will take it at face value rather than querying it.
 
 ---
 
@@ -254,6 +292,12 @@ The other six belong to modules. Set the ones whose module you turned on in step
 **Approval will refuse a season that is missing any of those six for an enabled module**, so it is cheaper to do them all now than to discover it at step 8.
 
 > **The calendar and lineup channels are not checked.** Unlike the six above, a division missing either is simply skipped at approval — no refusal, no warning. It posts no calendar and no lineup, and the first you know of it is the silence. Set them.
+
+> **A channel does one job.** Every one of these commands refuses a channel that is already set as something else — including your `/bot-init` command and log channels, your signup channel, and the same kind of channel in another division. A two-division league therefore needs its own results channel for each, its own calendar channel for each, and so on.
+>
+> It is not tidiness. Several of these postings **replace** the message they put up last, finding it by an id they store against the channel — so two purposes sharing a channel is how a lineup comes to delete a standings table.
+>
+> Setting a channel to the value it already has is refused too, but says so plainly rather than reporting a clash: nothing else holds it, and nothing is changed.
 
 ---
 
@@ -285,15 +329,21 @@ Two warnings it raises that are easy to skim past:
 - **"Reserve team has no role assigned"** — go back to step 3.
 - **"*n* driver(s) UNASSIGNED"** — drivers exist who are in no team. Placing drivers belongs to the signup module; see [Driver Commands](../../README.md#driver-commands).
 
-There is an **Approve** button on the review itself, which does exactly what the next step does.
-
 ---
 
 ## Step 8 — Approve
 
-```
-/season approve
-```
+The review ends by asking whether you accept the configuration, with a **✅ Approve** button beneath it. Press it. **There is no `/season approve` command** — approving commits your season, and the review is the evidence it is committed on, so the two are deliberately one action.
+
+**You can press it if you ran the review, or if you are a server administrator.** Anybody else who presses is told privately that they cannot, and nothing is approved. Running the review needs only the interaction role, so you may well be able to review a season you cannot approve — that is why the question is posted where everyone can see it rather than to you alone. Show it to an administrator and they can answer it from the same message.
+
+> **The button stands for five minutes, and only for the season it was posted for.** When they pass, the message is deleted and replaced by one mentioning you to say the review has expired — run `/season review` again. If the bot restarts while a review is waiting, the same thing happens as soon as it comes back up, because the five minutes cannot have run while it was off.
+>
+> Before it expires, the button still refuses if anything has changed since the report was drawn up — and it tells you what: the rounds, the channels, the seated drivers, even a drawing file edited on the bot's computer. Nothing is approved, and the question is cleared away just as an expiry clears it.
+>
+> The rule is simply that **what you read is what you approve**. A report describing a season you have since changed is not something anyone can approve from, so it stops being offered.
+
+**The review disappears once you approve it.** The whole report goes, pictures and all — it described a season waiting on your decision, and you have made it. What you are told about the approval itself is private to you and stays, so you still see whether anything needed your attention. A review that expired is cleared the same way.
 
 **Four things will refuse the season whatever modules you use:**
 
@@ -333,7 +383,7 @@ Things change. During an active season:
 | `/round cancel` | Call off one round. Needs `CONFIRM`, and posts a notice to the division |
 | `/division cancel` | Call off a whole division. Needs `CONFIRM` |
 | `/division calendar-sync` | Repost a division's calendar with your changes on it |
-| `/clean-bot` | Delete the bot's own messages in the command channel — handy after a long review. It looks back over the last 500 messages only, so run it more than once on a busy channel |
+| `/clean-bot` | Delete the bot's own most recent messages in the command channel. You say how many, up to ten, and nobody else's messages are touched. An approved or expired review clears itself, so this is for whatever else the bot has left behind |
 
 > **The posted calendar does not update itself.** It is the calendar the season was approved with, and it stays that way. `/round amend` changes what the bot *does*, but the picture or the message your drivers scroll back to is untouched until you run `/division calendar-sync`. This trips up nearly everyone once.
 
@@ -348,6 +398,8 @@ Things change. During an active season:
 **Nothing ends a season by itself.** You run this once every round in every division has been finalised, and the bot refuses — listing the outstanding rounds — until they are. It then archives the season: it is marked complete, a history entry is written for every driver who raced, and it is announced in the log channel. **Nothing is deleted.**
 
 An archived season cannot be edited. Start the next one with `/season setup` and a new game edition; your team list, your modules and your `/bot-init` settings all carry over.
+
+**You cannot build next season while this one is still running.** A server holds one live season at a time — one being set up, or one running, never both — so the running season has to be completed (or cancelled) before `/season setup` will start another. Archived seasons are not live and never get in the way: every completed and cancelled season you have ever run stays in the database, with its rounds, results, standings and driver histories intact, and the stats commands keep reading them.
 
 If you need to abandon a season rather than finish it:
 

@@ -27,7 +27,7 @@ from models.image_catalogues import (
     CapacityError,
     catalogue_for,
 )
-from models.image_constants import DATE_FORMATS, TIME_FORMATS
+from utils.date_formatting import format_date_and_time
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
 
@@ -112,20 +112,7 @@ def _format_moment(
     A graphic cannot carry a Discord timestamp, so it carries one zone for every reader
     and says which (Constitution XIV.15).
     """
-    zone = _zone(zone_name)
-    local = moment.astimezone(zone) if moment.tzinfo is not None else moment.replace(
-        tzinfo=ZoneInfo("UTC")
-    ).astimezone(zone)
-
-    date_pattern = DATE_FORMATS.get(date_format or "", DATE_FORMATS["DDD_DD_MON_YYYY"])[0]
-    time_pattern = TIME_FORMATS.get(time_format or "", TIME_FORMATS["24H"])
-
-    date_text = local.strftime(date_pattern)
-    time_text = local.strftime(time_pattern)
-    abbreviation = local.strftime("%Z")
-    if abbreviation:
-        time_text = f"{time_text} {abbreviation}"
-    return date_text, time_text
+    return format_date_and_time(moment, _zone(zone_name), date_format, time_format)
 
 
 def resolve_drawing(

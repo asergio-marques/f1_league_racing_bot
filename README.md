@@ -73,7 +73,7 @@ league data made those writes stall everything else the bot was doing.
 
 Both files matter. `bot.db` alone is **not** a complete backup: restoring it without
 `scheduler.db` leaves a season whose pending weather phases, RSVP notices and result
-submissions will never fire, and only re-running `/season approve` rebuilds them.
+submissions will never fire, and only reviewing and approving again rebuilds them.
 
 The databases run in WAL mode, which means recent changes may sit in a `bot.db-wal` file
 beside the database. **Copying `bot.db` on its own while the bot is running can therefore
@@ -96,8 +96,8 @@ self-contained and can be restored by copying it back into place under the origi
 > **Upgrading from a version before the split.** The scheduler used to keep its jobs inside
 > `bot.db`. On the first start after upgrading it begins with an empty `scheduler.db`, and
 > the old jobs are **not** carried across — a season already under way therefore loses its
-> pending weather phases, RSVP notices and result submissions. Run `/season approve` again
-> for each affected division to rebuild them. Upgrade between seasons and there is nothing
+> pending weather phases, RSVP notices and result submissions. Run `/season review` and
+> approve again for each affected division to rebuild them. Upgrade between seasons and there is nothing
 > to do. The abandoned `apscheduler_jobs` table is left inside `bot.db`, unread; drop it or
 > leave it as you prefer.
 
@@ -204,10 +204,20 @@ If the bot has never been configured on the server, these refuse and point you a
 
 ---
 
-### `/clean-bot` — Delete bot messages in this channel
+### `/clean-bot` — Delete recent bot messages in this channel
 *Access: Trusted admin*
 
-No parameters. Scans the last 500 messages in the interaction channel and deletes every message sent by the bot. Useful for tidying up after `/season review` or other multi-message commands. Responds ephemerally with a count of deleted messages.
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `count` | Integer | ✅ | How many of the bot's most recent messages to delete, 1–10 |
+
+Deletes the bot's `count` most recent messages in the interaction channel, newest first. Messages anybody else wrote are never touched and never count towards the total. Useful for tidying up after a multi-message command. Responds ephemerally with a count of what it deleted.
+
+> **Ten is the most it will delete**, and the count is required — there is no running it without deciding how much you mean to remove. Discord has no undo for a deleted message, so the command asks rather than assumes. It used to sweep up to five hundred with no parameter at all.
+
+> It looks back over the last 200 messages to find them. On a busy channel that may be fewer of the bot's than you asked for, and the reply tells you when it was.
+
+> An approved or expired `/season review` clears itself, so this is for the ones that did neither — a review you walked away from, or anything else the bot has left in the channel.
 
 > **Note:** Requires the bot to have **Manage Messages** in the channel (already a required bot permission).
 
@@ -231,12 +241,16 @@ Removes all season data for this server. Use `full:True` to also wipe the bot co
 
 ### Season Setup Workflow
 
-Season configuration is a multi-step flow: run `/season setup`, add divisions with `/division add`, add rounds with `/round add`, then review with `/season review` and approve with `/season approve`.
+Season configuration is a multi-step flow: run `/season setup`, add divisions with `/division add`, add rounds with `/round add`, then review with `/season review` and press its **Approve** button.
+
+> **A channel does one job.** Every command that sets a channel — the eight `/division …-channel` commands, `/bot-interaction-channel`, `/bot-log-channel` and `/signup channel` — refuses a channel already set as something else anywhere on this server, naming what holds it. Two divisions cannot share a results channel, and a calendar channel cannot double as a log.
+>
+> This is not tidiness: several postings **replace** the message they last put up, finding it by an id stored against the channel, so two purposes in one channel is how one output deletes another's message. Setting a channel to the value it already holds is refused too, in its own words — nothing else holds it, and nothing changes.
 
 #### `/season setup` — Start season configuration
 *Access: Trusted admin*
 
-Creates a pending season tied to today's date and enables the `/division` and `/round` setup commands. Refused if a season is already in setup or active for this server.
+Creates a pending season tied to today's date and enables the `/division` and `/round` setup commands. Refused if a season is already in setup or active for this server — a server holds **one** live season at a time, so finish the running one with `/season complete` (or approve or cancel the pending one) before starting another. Completed and cancelled seasons do not count and are kept indefinitely.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -308,7 +322,50 @@ Round numbers are **auto-assigned** by sorting all rounds in the division by `sc
 | `division_name` | String | ✅ | Exact name of the division this round belongs to |
 | `format` | String | ✅ | Race format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE` |
 | `scheduled_at` | String | ✅ | Race date and time in ISO format: `YYYY-MM-DDTHH:MM:SS` (UTC) |
-| `track` | String | — | Track ID or exact circuit name — use the autocomplete dropdown (e.g. `12` or `Silverstone Circuit`). Required for every format except `MYSTERY`, where it must be omitted. |
+| `track` | String | — | Track ID or circuit name — use the autocomplete dropdown (e.g. `12` or `Silverstone Circuit`). What the dropdown displays (`12 – Silverstone Circuit`) is accepted too, so a pasted or retyped entry works; circuit names are matched regardless of case. Required for every format except `MYSTERY`, where it must be omitted. |
+
+> **Two rounds of one division cannot share a start time.** The command refuses the second, naming the round already there. `/season approve` has always refused a season holding such a pair — this catches it at the moment you can still fix it easily.
+
+#### `/round add-bulk` — Add many rounds at once from a pasted list
+*Access: Trusted admin · Requires active `/season setup` session*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division_name` | String | ✅ | Exact name of the division these rounds belong to |
+
+Opens a box. Write one round per line as `datetime, format, track`, with the time **in UTC**:
+
+```
+2026-06-14T18:00, Normal, 14
+2026-06-21T18:00, Sprint, Hungaroring
+2026-06-28T18:00, Mystery
+```
+
+The track takes the same forms `/round add` takes — an ID, a name, or the dropdown's `14 – Hungaroring`. A `MYSTERY` round may leave it out. The box holds 2000 characters — comfortably a full season with short track IDs, fewer if you write circuit names out.
+
+#### `/round add-xml` — Add rounds to several divisions from XML
+*Access: Trusted admin · Requires active `/season setup` session*
+
+No parameters. Opens a box taking a calendar for one or more divisions:
+
+```xml
+<config>
+  <division name="Pro">
+    <round>
+      <datetime>2026-06-14T18:00</datetime>
+      <timezone>Europe/Lisbon</timezone>
+      <format>Normal</format>
+      <track>14</track>
+    </round>
+  </division>
+</config>
+```
+
+Unlike the other two commands, `<datetime>` is a **local** time in the zone `<timezone>` names, and the bot converts it to UTC. Use an IANA zone name (`Europe/Lisbon`, `America/Sao_Paulo`), spelled exactly — the names are case-sensitive. Rounds need not be listed in date order. Around 23 rounds fit in one box.
+
+> **Both import commands add to what is already there** — they never replace it. A calendar too long for one box goes in over two or three runs.
+>
+> **One bad entry rejects the whole import.** Nothing is added, and every fault is listed at once with the line it is on, so you fix the text and paste it again. This is deliberate: round numbers come from sorting the whole division by date, so a half-finished import would renumber the rounds around whichever ones landed.
 
 #### `/round delete` — Remove a round from setup
 *Access: Trusted admin · Setup only*
@@ -321,20 +378,36 @@ Round numbers are **auto-assigned** by sorting all rounds in the division by `sc
 Deletes the round and renumbers remaining rounds by date.
 
 #### `/season review` — Review pending configuration
-*Access: Trusted admin*
+*Access: League manager*
 
-No parameters. Displays the pending season configuration with **Approve** and **Go Back to Edit** buttons.
+No parameters. Displays the pending season configuration, ending with a message asking whether you accept it and carrying the **✅ Approve** button.
 
 The report arrives as **one message per subsection**, in this order: the season and its enabled modules; signup; attendance; points configurations; weather; image outputs. A subsection with nothing in it — a module you have not enabled — is not posted at all. The per-division blocks follow, as before. Each subsection is split further if it alone is too long for one Discord message, because an over-long message is refused whole rather than truncated.
 
 **The review shows you what your league will actually get.** Where the images module is on and the `calendar` or `lineup` aspect with it, that division's calendar and lineup arrive as the drawn pictures rather than as text — the same pictures the season will post once approved. With the aspect off, you get the text exactly as before. The warning naming teams with no Discord role assigned is a finding of the review rather than part of the lineup, so it is shown either way.
 
-> **A picture that cannot be drawn withholds the Approve button.** You are told what is wrong, that section falls back to its text so the review is still complete, and the review ends with a note that the image module is not correctly configured instead of the button. `/season approve` refuses for the same reason and on the same check, so there is no way past it — fix the template or the artwork it names and run `/season review` again.
+The image subsection also lists the eight **asset directories** and the path each is set to, marking any the bot cannot read. A folder that has been moved or renamed produces pictures full of placeholders, which looks the same as artwork you never supplied — seeing the path is what tells the two apart. `/images config view` names the fault in full.
 
-#### `/season approve` — Commit the configuration
-*Access: Trusted admin*
+> **A picture that cannot be drawn withholds the Approve button.** You are told what is wrong, that section falls back to its text so the review is still complete, and the review ends with a note that the image module is not correctly configured instead of the button. There is no command that approves around it — the button is the only route — so fix the template or the artwork it names and run `/season review` again.
 
-No parameters. Saves all pending divisions and rounds to the database and arms the weather scheduler, and — with the attendance module on — every round's check-in call, reminder and deadline. Equivalent to pressing Approve in `/season review`.
+#### Approving — the button in `/season review`
+*Access: the reviewer, or a server administrator*
+
+**There is no `/season approve` command.** A season is approved by pressing **✅ Approve** on the report `/season review` posts, and from nowhere else. Approving commits a season, and the review is the evidence it is committed on — a command that could be run without one let a manager commit a season they had not looked at.
+
+Pressing it saves all pending divisions and rounds to the database and arms the weather scheduler, and — with the attendance module on — every round's check-in call, reminder and deadline.
+
+**The review is deleted once the season is approved** — the whole report, pictures included, not just the button. It described a season waiting on a decision, and the decision has been made; leaving it would put a long stale scroll above everything the bot posts next. Your confirmation that the season was approved is private to you and stays. An expired review is cleared the same way, for the same reason.
+
+**Who may press it.** The person who ran the review, or a **server administrator** — someone with Discord's Administrator permission. Anyone else who presses is told so privately and nothing is approved. That check matters because the question is posted publicly: a league manager can review a season and then ask an administrator to approve it, which is the point of putting it where both can see it. Manage Server is not enough on its own.
+
+> **The button stands for five minutes**, and only for the season it was posted for. When they pass, the message is deleted and replaced by a notice mentioning whoever ran the review, saying it has expired and must be run again. The same happens if the bot restarts while a review is standing — the five minutes cannot have run while it was down, so the question is cleared at startup rather than left waiting for a press nothing would answer.
+>
+> Before it expires, the button refuses if anything about your season has changed since the report was drawn up — a round edited, a channel moved, a driver seated, a template file altered — and it names what changed. Nothing is approved, the message is cleared as an expiry clears it, and you are told to run `/season review` again.
+>
+> That is what the report is for: **what you read is what you approve.** It is also why approving is quick — the review already drew your calendars and lineups, so if the season is provably the same one, the approval trusts those pictures rather than drawing them all over again.
+
+**Under test mode, it offers to save first.** With test mode on, pressing Approve pauses just before committing anything and asks whether to back the databases up — after every check has passed, and before the schedule is armed or anything is posted. Answer it, decline it, or cancel the approval outright. The question inherits what is left of the review's five minutes, so leaving it unanswered expires the review and approves nothing. See [Testing with test mode](docs/how-to/test-mode.md).
 
 > **Approve early enough for the first round's check-in.** Attendance timings are read once, here, and anything whose moment has already passed is skipped without warning. Approving inside the notice window — three days out with the default five-day notice, say — leaves that round with no check-in call at all, and therefore no attendance records and no penalties for anyone. Weather catches up on overdue phases; attendance does not.
 
@@ -374,7 +447,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 |-----------|------|----------|-------------|
 | `division_name` | String | ✅ | Name of the division containing the round |
 | `round_number` | Integer | ✅ | The round number to amend |
-| `track` | String | — | New track — track ID or exact circuit name, use the autocomplete dropdown (e.g. `4` or `Bahrain International Circuit`). Amending invalidates prior weather phases. |
+| `track` | String | — | New track — track ID or circuit name, use the autocomplete dropdown (e.g. `4` or `Bahrain International Circuit`). What the dropdown displays (`04 – Bahrain International Circuit`) is accepted too, and names are matched regardless of case. Amending invalidates prior weather phases. |
 | `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC). Amending re-triggers the scheduler and renumbers rounds. |
 | `format` | String | — | New format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE`. Amending invalidates prior weather phases. |
 
@@ -503,7 +576,7 @@ No parameters. Flips test mode on/off; state persists across bot restarts.
 
 **Nor while your signup window is open.** Nobody real may sign up under test mode, so the button would refuse everyone who pressed it; close the window with `/signup close` first. The command does not close it for you — that would post a public notice in your signup channel off the back of a flag flip.
 
-Enabling it seeds the **Standard** and **Half Points** points configurations onto the current season if none are attached. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**.
+Enabling it seeds the **Standard** and **Half Points** points configurations onto the current season if none are attached, as ordinary server configurations that `/results config` can view and edit like any other. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**; the two configurations are kept, being configuration rather than scaffolding.
 
 #### `/test-mode nationality` — Toggle nationality for fake drivers
 *Access: Trusted admin · Requires test mode active*
@@ -550,6 +623,19 @@ Creates a synthetic driver profile occupying a real seat, so a division can be f
 
 A fake driver has no signup record behind it, so the nationality is recorded on the driver itself. Give one and the driver draws a flag like anybody else; leave it out and the driver is drawn without one. The value is refused if it is not a nationality the bot knows, and refused outright while `/test-mode nationality` is off.
 
+#### `/test-mode roster add-bulk` — Seat a whole roster at once
+*Access: Trusted admin · Requires test mode active*
+
+No parameters. Opens a box; paste the `roster.csv` the roster generator writes, header row and all, and every driver in it is seated across every division it names.
+
+**The IDs in the file are the IDs written**, unlike `roster add`, which allocates its own. The generator's other scripts — results, check-ins — name drivers by those IDs, so importing the CSV keeps a generated results file lined up with the grid.
+
+> **A division that already holds drivers is refused.** The file describes a whole grid, so importing over a seated division would leave drivers somewhere the file does not describe. Clear it with `/test-mode roster clear` first. Only the division named is refused, so the rest of a split roster still lands.
+
+> **Nothing is seated unless everything can be.** A misspelt team, an unknown nationality, a division not in the season, or a team given more drivers than it has seats refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time.
+
+> Discord caps the box at 4000 characters, which is roughly seventy drivers. A larger grid goes in two passes, a division at a time.
+
 #### `/test-mode roster remove` — Remove one fake driver
 *Access: Trusted admin · Requires test mode active*
 
@@ -564,7 +650,7 @@ A fake driver has no signup record behind it, so the nationality is recorded on 
 |-----------|------|----------|-------------|
 | `division` | String | ✅ | Division name |
 
-Prints each fake driver with their synthetic user ID, their team and their nationality — the cheat sheet for result submission. A driver recorded with no nationality shows a dash.
+Prints each fake driver with their synthetic user ID, their team and their nationality — the cheat sheet for result submission. A driver recorded with no nationality shows a dash. A roster too long for one Discord message is sent as several, each a complete table with the heading repeated.
 
 #### `/test-mode roster clear` — Remove every fake driver from a division
 *Access: Trusted admin · Requires test mode active*
@@ -582,11 +668,30 @@ Opens a modal for setting the RSVP status of every test driver in the division's
 |-----------|------|----------|-------------|
 | `division` | String | ✅ | Division name; the division must be in the active season and have an open RSVP |
 
-> Turning test mode **off** deletes every fake driver on the server, across all divisions, and is refused while a running season holds any of them. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached, and is refused outright while the server holds real drivers or its signup window is open.
+> Turning test mode **off** deletes every fake driver on the server, across all divisions, and is refused while a running season holds any of them. The seeded points configurations are **not** deleted with them — they are ordinary configurations of the server, and `/results config remove` takes them away if you do not want them. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached, and is refused outright while the server holds real drivers or its signup window is open.
 
 > While test mode is on, no real driver may sign up or be placed: the Sign Up button, `/signup open` and `/driver assign` all refuse them. Fake drivers are unaffected.
 
 See [Testing with test mode](docs/how-to/test-mode.md) for how these fit together.
+
+#### `/test-mode backup` — Save the database and put it back
+
+*Access: Server administrator, **and the server must be in test mode***
+
+Save the whole database and return to it later, so a state reached once while testing need not be built again. Four subcommands, none of which take a parameter.
+
+| Command | What it does |
+|---------|--------------|
+| `/test-mode backup save` | Copies `bot.db` and `scheduler.db` to `bot.bkup.db` and `scheduler.bkup.db`, replacing whatever was there |
+| `/test-mode backup lock` | Locks the saved backup so `save` refuses to overwrite it. Run it again to unlock |
+| `/test-mode backup status` | Whether a backup exists, when it was taken, its size, whether it can still be read, and whether it is locked |
+| `/test-mode backup restore` | Puts the saved backup back. Asks you to confirm first |
+
+> **Test mode is required, not just recommended.** These copy and replace the whole database file — which holds every server the bot serves — so they are refused outright unless the server is in test mode. Test mode itself will not switch on while a real driver sits in a live season, so a server that can run these has no real league to lose.
+
+> **A restore needs a restart.** The bot holds both databases open while it runs, so nothing can be swapped underneath it. `/test-mode backup restore` checks the backup, keeps a copy of what is live as `bot.prerestore.db`, and stages the swap — which happens the next time the bot starts. Under a service that is automatic; from a terminal, stop it and run it again.
+
+> **This is not disaster recovery.** The backups sit beside the live files on the same disk. They protect against a test run you want to undo, and against nothing that happens to the disk itself.
 
 ---
 
@@ -1437,6 +1542,8 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 **What the files are called.** Every picture is named for what it shows rather than for the template that drew it, so a folder of them saved off Discord still makes sense: `season1_division1_round10_standings_drivers.png`, `season1_division1_round10_feature_qualifying_results.png`, `season1_division1_lineup.png`. The division is named by its tier where the graphic knows it and by its name otherwise (`season1_elite_calendar.png`); the season or round is left out where there is none, and the lineup and calendar carry no round because they stand for the whole season. `/images test` names its output the same way.
 
+**A batch of pictures announces itself.** Drawing takes a few seconds per picture, and some jobs draw a run of them — `/season review` draws a lineup and a calendar per division, and closing a penalty review redraws every session's results, both championships, one verdict per penalty and the attendance sheet. A short message saying the pictures are being drawn is posted before the batch starts and deleted once it has finished. It goes to the channel you gave the command in — the bot interaction channel for a command you type, the round's results channel for the button presses that drive the results flow — and never to the channels the pictures themselves land in. Nothing is lost when it disappears: a fault is reported to you and to the log channel in its own right.
+
 #### `/images config toggle` — Choose image or text, per kind of output
 *Access: Trusted admin*
 
@@ -1445,6 +1552,10 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 | `aspect` | Choice | ✅ | **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts**, or **Verdicts** |
 
 Flips that aspect between a generated image and the text the bot has always posted. All eight start disabled. It is a **toggle**: run it on an aspect that is off and it comes on, run it again and it goes back to text.
+
+**Switching one on checks its drawings first.** If any drawing that aspect needs is missing or unusable, the command is **refused** — it names each fault, and the aspect stays off. That is deliberate: an aspect switched on over a broken drawing posts nothing at all where your drivers would otherwise have read text, and it withholds your season's approval besides. Switching an aspect **off** is never refused, whatever state its drawings are in: text needs no drawing, so you can always retreat to it.
+
+**A broken drawing only blocks a season if the output that draws it is on.** `/season review` and `/season approve` apply the same rule — a fault under a switched-off output is shown as a ⚠️ warning and stops nothing, because nothing would ever post it. Fix it before you switch that output on; the review names it either way so it does not catch you out later.
 
 The choice names above are exactly the names `/images config view` and `/season review` print for the eight aspects, so a `❌` row in either report can hand you the command with the choice already named.
 
@@ -1652,7 +1763,7 @@ These sit under `/images template` rather than `/images config` because Discord 
 
 Every directory is a path relative to the project root, and one that resolves outside it is rejected.
 
-**`template-directory` is checked before it is stored; the other eight are not.** Name a folder for your templates and the bot looks for all fifteen of them in it and checks each one, exactly as `/season review` does. If any is missing or unusable the command is **refused**, naming each one and why, and your existing folder stays in force — so put your templates in place first, then point the bot at the folder. The eight artwork directories are accepted whether or not anything is in them yet, because a missing picture falls back to what the bot ships and files added later are picked up with no further command. A missing *template* has nothing behind it, so it would stop every graphic being produced at all.
+**`template-directory` is checked before it is stored; the other eight are not.** Name a folder for your templates and the bot looks in it for every drawing your **switched-on** outputs need, and checks each one, exactly as `/season review` does. If any is missing or unusable the command is **refused**, naming each one and why, and your existing folder stays in force — so put your templates in place first, then point the bot at the folder. Drawings for outputs you have switched off are not required: that output posts as text and draws nothing, and switching it on later checks its own drawings at that moment. The eight artwork directories are accepted whether or not anything is in them yet, because a missing picture falls back to what the bot ships and files added later are picked up with no further command. A missing *template* has nothing behind it, so it would stop every graphic being produced at all.
 
 | Subcommand | Default | Holds |
 |------------|---------|-------|
@@ -1776,7 +1887,7 @@ offer the approve button while the configuration is one that could never fetch a
 |------------|-----------|---------|-------------|
 | `time-zone` | `zone` | `UTC` | IANA zone name, autocompleted. Times use the offset in force **on the date shown**, so a season spanning a daylight-saving change stays correct. |
 | `time-format` | `clock` | 24-hour | 12-hour or 24-hour |
-| `date-format` | `style` | `Sun 14 Jun 2026` | Five formats; the default carries the weekday |
+| `date-format` | `style` | `Sun 14 Jun 2026` | Eleven formats — five short, six written out (`Sunday 14th June 2026`, `14 June 2026`, `June 14, 2026`). The default carries the weekday |
 | `fastest-lap-colour` | `colour` | `#A020F0` | `#` plus exactly six hex digits |
 
 `fastest-lap-colour` reports the contrast of the chosen colour against the plate the race results template draws behind that field, and warns below 4.5:1 — the threshold at which text of that size stays legible. The colour is stored either way; it is the league's to choose. Where the template is invalid or declares no `fastest_lap_background` element, the bot says the contrast could not be measured rather than guessing.
@@ -1817,7 +1928,7 @@ Eleven commands, one per kind of image. Each is drawn against **your own league*
 | `/images test weather-mystery` | `division`, `round` |
 | `/images test verdict` | `division`, `round` |
 
-`division` completes as you type. Both parameters are optional, and whether you need them depends on what your server holds.
+`division` completes as you type. Both parameters are required, and your server needs a season for them to name.
 
 **The previews work at every point in a league's life**, which is the point of them — you check your templates *before* committing to a season, not after.
 
@@ -1826,13 +1937,13 @@ Eleven commands, one per kind of image. Each is drawn against **your own league*
 | An **approved** season | That season | Required |
 | A season **pending approval**, and none approved | That season, drawn exactly as it will be once `/season approve` has run | Required |
 | Both | The approved one | Required |
-| **No season at all** | An invented league over your own configured teams | Ignored — omit them |
+| **No season at all** | Nothing — the command is refused | Required, but there is nothing to name |
 
 A season that has been completed or cancelled is not previewable; a server holding only those counts as holding none.
 
-**When your server has no season**, the bot invents a league rather than refusing. Your **team names are your own**, taken from `/team add` — the names and badges on the picture are the artwork you configured, and a preview over made-up teams would show you nothing about it. Everything else is made up: the division and its tier, the calendar, the circuits, the round drawn and the driver names, all differing every time you run it. The season number counts on from your last one. The reply says plainly that the league is invented, and nothing is ever saved.
+**When your server has no season**, a preview is refused and tells you to run `/season setup` first. The bot used to invent an entire league here — a division, a calendar, circuits and drivers — but an invented league shows you nothing about *your* configuration, which is the only thing a preview is for. Set a season up and preview against it.
 
-Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four `weather-*` — so they work on a server that has configured no teams at all. The other five need a roster and are refused until you have added teams.
+Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four `weather-*` — so a division with no teams is enough for them. The other five need a roster and are refused until you have added teams.
 
 **What is real, and what is invented.** Everything a league configures is real: the division and its tier, the season number, the calendar, the teams, the seated drivers and their nationalities, and the artwork in the folders you set. What the bot invents is only what a round that has not been run cannot have — the finishing order, the forecast, the attendance points and the steward's verdict. The attendance sheet's point limit is invented with the points, rather than read from what you configured, so that the sheet always carries a driver over the limit, one approaching it and rows marked neither way. A division with no seated driver at all has drivers invented for it as well, and the reply says so.
 
@@ -1843,8 +1954,8 @@ Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four
 | Refusal | Applies to |
 |---------|-----------|
 | No division of that name in the season being drawn | all eleven |
-| A parameter was omitted, and your server has a season to resolve it against | all eleven |
-| Your server has no season **and** no configured team | `lineup`, `results`, `standings`, `attendance`, `verdict` |
+| A parameter was omitted — Discord refuses the command before the bot sees it | all eleven |
+| Your server has no season at all | all eleven |
 | The division holds no configured round | `calendar` |
 | The division holds no round of that number | the nine that take one |
 | The division holds no team beyond Reserve | `lineup`, `results`, `standings`, `attendance` |

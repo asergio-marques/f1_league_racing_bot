@@ -10,6 +10,7 @@ APScheduler triggers:
   /test-mode set-former-driver — set or clear a driver's former-driver flag
   /test-mode roster …          — manage the fake driver roster of a division
   /test-mode rsvp …            — set the RSVP status of fake drivers
+  /test-mode backup …          — save the whole database, and put it back
 
 All commands are gated by @channel_guard (interaction role + channel).
 Every command but toggle additionally requires test mode to be active. Toggle itself
@@ -33,7 +34,9 @@ from services.test_mode_service import (
     get_next_pending_phase,
     build_review_summary,
 )
-from utils.channel_guard import channel_guard, admin_only
+from services import backup_service
+from utils.channel_guard import channel_guard, admin_only, server_admin_only
+from utils.message_builder import paginate_fenced
 
 log = logging.getLogger(__name__)
 
@@ -619,6 +622,197 @@ class TestModeCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
+    # /test-mode backup (subgroup)
+    # ------------------------------------------------------------------
+    #
+    # Under `/test-mode` because that is the only circumstance in which they run. They
+    # copy and replace the whole database, and the test-mode gate below is what stands
+    # between that and a league's history — putting them anywhere else would suggest they
+    # were an ordinary administrative tool.
+
+    backup = app_commands.Group(
+        name="backup",
+        description="Save the database while testing, and put it back.",
+        parent=test_mode,
+        guild_only=True,
+        default_permissions=None,
+    )
+
+    async def _refuse_outside_test_mode(self, interaction: discord.Interaction) -> bool:
+        """Reply and return True where the server is not in test mode.
+
+        Read at the moment of the command rather than trusted from earlier: the flag can
+        be turned off between one command and the next, and a restore is not something to
+        run on the strength of a stale reading.
+        """
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is not None and config.test_mode_active:
+            return False
+        await interaction.followup.send(
+            "⛔ The backup commands run only while the server is in **test mode**. They "
+            "copy and replace the whole database, which is not something to do to a "
+            "league that is running. Turn test mode on with `/test-mode toggle` first.",
+            ephemeral=True,
+        )
+        return True
+
+    # ── save ──────────────────────────────────────────────────────────────
+
+    @backup.command(
+        name="save",
+        description="Save the current database and scheduler as a backup.",
+    )
+    @channel_guard
+    @server_admin_only
+    async def backup_save(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        if await self._refuse_outside_test_mode(interaction):
+            return
+
+        db_path = self.bot.db_path  # type: ignore[attr-defined]
+        scheduler = getattr(self.bot, "scheduler_service", None)
+
+        # Paused around the copy. APScheduler writes its jobstore on the event-loop
+        # thread, so a job added mid-copy would be caught half-written; the backup API
+        # makes that unlikely and this makes it impossible.
+        paused = False
+        try:
+            if scheduler is not None and getattr(scheduler, "_scheduler", None) is not None:
+                if scheduler._scheduler.running:
+                    scheduler._scheduler.pause()
+                    paused = True
+            backup_service.save(db_path, _jobstore_path(self.bot))
+        except backup_service.BackupError as exc:
+            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+            return
+        except Exception:
+            log.exception("backup save: failed for server %s", interaction.guild_id)
+            await interaction.followup.send(
+                "⛔ The backup could not be taken. The log channel has the detail.",
+                ephemeral=True,
+            )
+            return
+        finally:
+            if paused:
+                scheduler._scheduler.resume()
+
+        state = backup_service.state(db_path)
+        await interaction.followup.send(
+            f"✅ Saved. The backup holds {state.size_bytes // 1024} KB and replaces "
+            f"whatever was there before.\n"
+            f"Lock it with `/backup lock` if you want to keep this one.",
+            ephemeral=True,
+        )
+        log.info(
+            "backup save: server=%s by %s", interaction.guild_id, interaction.user
+        )
+
+    # ── lock ──────────────────────────────────────────────────────────────
+
+    @backup.command(
+        name="lock",
+        description="Lock or unlock the saved backup, so a save cannot overwrite it.",
+    )
+    @channel_guard
+    @server_admin_only
+    async def backup_lock(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        if await self._refuse_outside_test_mode(interaction):
+            return
+
+        db_path = self.bot.db_path  # type: ignore[attr-defined]
+        if not backup_service.state(db_path).exists:
+            await interaction.followup.send(
+                "⛔ There is no saved backup to lock. Take one with `/backup save`.",
+                ephemeral=True,
+            )
+            return
+
+        locked = backup_service.set_lock(db_path, who=interaction.user.display_name)
+        await interaction.followup.send(
+            "🔒 Locked. `/backup save` will refuse to overwrite it until you run this "
+            "again."
+            if locked
+            else "🔓 Unlocked. `/backup save` will overwrite it from now on.",
+            ephemeral=True,
+        )
+
+    # ── status ────────────────────────────────────────────────────────────
+
+    @backup.command(
+        name="status",
+        description="Show whether a backup exists, when it was taken, and if it is locked.",
+    )
+    @channel_guard
+    @server_admin_only
+    async def backup_status(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        if await self._refuse_outside_test_mode(interaction):
+            return
+
+        state = backup_service.state(self.bot.db_path)  # type: ignore[attr-defined]
+        if not state.exists:
+            await interaction.followup.send(
+                "📭 There is no saved backup. Take one with `/backup save`.",
+                ephemeral=True,
+            )
+            return
+
+        lines = [
+            "📦 **Saved backup**",
+            f"  Taken: {discord.utils.format_dt(state.taken_at, 'F')}",
+            f"  Size: {state.size_bytes // 1024} KB",
+            f"  Readable: {'yes' if state.readable else '**no — it cannot be restored**'}",
+            f"  Locked: {state.locked_by if state.locked else 'no'}",
+        ]
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+    # ── restore ───────────────────────────────────────────────────────────
+
+    @backup.command(
+        name="restore",
+        description="Replace the database with the saved backup. Needs a restart.",
+    )
+    @channel_guard
+    @server_admin_only
+    async def backup_restore(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        if await self._refuse_outside_test_mode(interaction):
+            return
+
+        state = backup_service.state(self.bot.db_path)  # type: ignore[attr-defined]
+        if not state.exists:
+            await interaction.followup.send(
+                "⛔ There is no saved backup to restore. Take one with `/backup save`.",
+                ephemeral=True,
+            )
+            return
+        if not state.readable:
+            await interaction.followup.send(
+                "⛔ The saved backup is not a readable database, so it will not be "
+                "restored. Take a fresh one with `/backup save`.",
+                ephemeral=True,
+            )
+            return
+
+        # Confirmed rather than done: everything the bot currently holds is about to be
+        # replaced by a snapshot of some earlier moment, and the command that does it is
+        # one word from `/backup save`.
+        view = _ConfirmRestoreView(self, interaction.user.id)
+        await interaction.followup.send(
+            f"⚠️ **Restore the backup taken "
+            f"{discord.utils.format_dt(state.taken_at, 'R')}?**\n"
+            f"Everything the bot holds now — seasons, rounds, drivers, results and every "
+            f"scheduled job — is replaced by what that backup holds. A copy of the current "
+            f"database is kept beside it first.\n"
+            f"**The bot must be restarted afterwards** to pick it up.",
+            view=view,
+            ephemeral=True,
+        )
+
+    # ------------------------------------------------------------------
     # /test-mode roster (subgroup)
     # ------------------------------------------------------------------
 
@@ -691,8 +885,12 @@ class TestModeCog(commands.Cog):
         nationality_line = (
             f"Nationality: **{result['nationality']}**\n" if result["nationality"] else ""
         )
+        # The division is named because a team name repeats across divisions — every
+        # division is seeded from the same server team list — so the team alone does not
+        # say where the driver landed, which is the one thing the manager is choosing.
         await interaction.response.send_message(
-            f"✅ Added fake driver **{result['display_name']}** to **{result['team_name']}**.\n"
+            f"✅ Added fake driver **{result['display_name']}** to **{result['team_name']}** "
+            f"in **{division}**.\n"
             f"{nationality_line}"
             f"Mention string (copy-paste into results): `{mention_str}`",
             ephemeral=True,
@@ -707,6 +905,33 @@ class TestModeCog(commands.Cog):
         )
 
     # /test-mode roster remove --------------------------------------------
+
+    # /test-mode roster add-bulk -------------------------------------------
+
+    @roster.command(
+        name="add-bulk",
+        description="Seat a whole roster from the generator's roster.csv.",
+    )
+    @channel_guard
+    @admin_only
+    async def roster_add_bulk(self, interaction: discord.Interaction) -> None:
+        """Open the box a roster is pasted into.
+
+        **Does not defer.** `send_modal` has to be the interaction's first response, which
+        inverts the rule the rest of this cog follows — see `roster_add` above, which
+        defers as normal. Do not "correct" it.
+        """
+        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "⛔ This command is only available when test mode is enabled.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_modal(_RosterImportModal(self))
 
     @roster.command(
         name="remove",
@@ -778,11 +1003,16 @@ class TestModeCog(commands.Cog):
         interaction: discord.Interaction,
         division: str,
     ) -> None:
+        # A division's roster outgrows one Discord message somewhere past twenty
+        # drivers, and the listing is then sent as several — so the reply is deferred
+        # and every page goes out through followup.
+        await interaction.response.defer(ephemeral=True)
+
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
             interaction.guild_id
         )
         if config is None or not config.test_mode_active:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "⛔ This command is only available when test mode is enabled.",
                 ephemeral=True,
             )
@@ -797,34 +1027,33 @@ class TestModeCog(commands.Cog):
         )
 
         if isinstance(result, str):
-            await interaction.response.send_message(f"⛔ {result}", ephemeral=True)
+            await interaction.followup.send(f"⛔ {result}", ephemeral=True)
             return
 
         if not result:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"ℹ️ No fake drivers in **{division}**. Use `/test-mode roster add` to create some.",
                 ephemeral=True,
             )
             return
 
-        lines = [f"**Fake Driver Roster — {division}**\n"]
-        lines.append(f"{'Name':<20} {'Mention':<30} {'Team':<20} Nationality")
-        lines.append("-" * 86)
+        body = [f"{'Name':<20} {'Mention':<30} {'Team':<20} Nationality", "-" * 86]
         for driver in result:
             mention = f"<@{driver['discord_user_id']}>"
-            lines.append(
+            body.append(
                 f"{driver['display_name']:<20} {mention:<30} "
                 f"{driver['team_name']:<20} {driver['nationality'] or '—'}"
             )
-        lines.append(
-            "\nCopy mention strings above when submitting results in the format:\n"
-            "`Position, <@user_id>, <@&role_id>, ...`"
-        )
 
-        await interaction.response.send_message(
-            "```\n" + "\n".join(lines) + "\n```",
-            ephemeral=True,
-        )
+        for page in paginate_fenced(
+            header=f"**Fake Driver Roster — {division}**",
+            body_lines=body,
+            footer=(
+                "Copy mention strings above when submitting results in the format:\n"
+                "`Position, <@user_id>, <@&role_id>, ...`"
+            ),
+        ):
+            await interaction.followup.send(page, ephemeral=True)
 
     # /test-mode roster clear ----------------------------------------------
 
@@ -1101,3 +1330,140 @@ class _RsvpBulkSetModal(discord.ui.Modal, title="Bulk Set RSVP Statuses"):
                 f"  round_id: {self._round_id}\n"
                 f"  changes: {', '.join(applied)}",
             )
+
+
+class _RosterImportModal(discord.ui.Modal, title="Import a test roster"):
+    """The box a `roster.csv` is pasted into.
+
+    **4000 characters is the whole of what Discord allows a text input**, which is roughly
+    sixty drivers at the width the generator writes. A larger roster is imported in two
+    passes — the import appends to what a season already holds, and refuses only a
+    *division* that already holds drivers, so a second paste of the remaining divisions
+    lands cleanly.
+    """
+
+    # The placeholder is capped at 100 characters by Discord, which is not room for an
+    # example row; it names the file instead, and the label carries the shape.
+    csv_text: discord.ui.TextInput = discord.ui.TextInput(
+        label="Paste roster.csv, header and all",
+        style=discord.TextStyle.paragraph,
+        placeholder="ID,Driver name,Team,Division,Nationality",
+        required=True,
+        max_length=4000,
+    )
+
+    def __init__(self, cog: "TestModeCog") -> None:
+        super().__init__()
+        self._cog = cog
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        from services.test_roster_service import add_test_drivers_in_bulk
+        from utils.roster_import import divisions_named, parse_roster_csv
+
+        await interaction.response.defer(ephemeral=True)
+
+        drivers, errors = parse_roster_csv(str(self.csv_text.value))
+        if errors:
+            await interaction.followup.send(
+                _format_roster_errors(errors), ephemeral=True
+            )
+            return
+
+        seated, errors = await add_test_drivers_in_bulk(
+            interaction.guild_id,
+            drivers,
+            self._cog.bot.db_path,  # type: ignore[attr-defined]
+        )
+        if errors:
+            await interaction.followup.send(
+                _format_roster_errors(errors), ephemeral=True
+            )
+            return
+
+        divisions = divisions_named(drivers)
+        await interaction.followup.send(
+            f"✅ Seated **{seated}** test driver(s) across "
+            f"{len(divisions)} division(s): {', '.join(divisions)}.\n"
+            f"`/test-mode roster list` shows a division's drivers with the mentions "
+            f"result submission wants.",
+            ephemeral=True,
+        )
+
+
+def _format_roster_errors(errors: list[str]) -> str:
+    """One shape for every refusal, capped so a systematically wrong file still replies.
+
+    A file whose every row is wrong produces one fault per row, and fifty-one of them
+    exceed Discord's 2000-character limit — which refuses the whole message rather than
+    truncating it, leaving the manager with no reply at all.
+    """
+    shown = errors[:15]
+    lines = [
+        f"⛔ The roster was not imported — {len(errors)} problem(s). "
+        f"**No drivers were added.**"
+    ]
+    lines += [f"• {problem}" for problem in shown]
+    if len(errors) > len(shown):
+        lines.append(f"…and {len(errors) - len(shown)} more.")
+    return "\n".join(lines)
+
+
+#: Re-exported from the backup service, which owns it now that the season approval
+#: needs it too. Kept as a name here because this module's tests import it.
+_jobstore_path = backup_service.jobstore_path_of
+
+
+class _ConfirmRestoreView(discord.ui.View):
+    """The confirmation on a restore, and the staging behind it."""
+
+    def __init__(self, cog: "TestModeCog", requester_id: int) -> None:
+        super().__init__(timeout=120)
+        self._cog = cog
+        self._requester_id = requester_id
+
+    @discord.ui.button(label="♻️ Restore", style=discord.ButtonStyle.danger)
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if interaction.user.id != self._requester_id:
+            await interaction.response.send_message(
+                "⛔ Only the person who ran the command can confirm it.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        bot = self._cog.bot
+        try:
+            backup_service.stage_restore(bot.db_path, _jobstore_path(bot))  # type: ignore[attr-defined]
+        except backup_service.BackupError as exc:
+            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+            self.stop()
+            return
+        except Exception:
+            log.exception("backup restore: staging failed")
+            await interaction.followup.send(
+                "⛔ The restore could not be prepared. Nothing has been changed.",
+                ephemeral=True,
+            )
+            self.stop()
+            return
+
+        await interaction.followup.send(
+            "✅ The backup is staged. **Restart the bot** and it will come back on the "
+            "restored database — under a service it will restart itself; from a terminal, "
+            "stop it and run it again.\n"
+            "The database being replaced was copied to `bot.prerestore.db` first, so this "
+            "can be walked back by hand if it was not what you wanted.",
+            ephemeral=True,
+        )
+        log.info("backup restore: staged by %s", interaction.user)
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.send_message(
+            "Nothing has been changed.", ephemeral=True
+        )
+        self.stop()

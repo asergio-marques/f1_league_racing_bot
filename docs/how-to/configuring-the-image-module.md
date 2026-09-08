@@ -30,14 +30,13 @@ If Inkscape is installed somewhere unusual, tell the bot where by setting `INKSC
 INKSCAPE="C:/Program Files/Inkscape/bin/inkscape.exe"
 ```
 
-**You do not need a season.** The previews work at every point in a league's life, which is the point of them — you check your templates *before* committing to a season, not after. What you have changes what they draw:
+**You do need a season.** A preview draws your own league — that is the whole point of it — so it needs one to draw. A season still awaiting `/season approve` is enough, and is drawn exactly as it will be once approved. With no season at all the command is refused and tells you to run `/season setup`.
 
-- **A season, approved or still pending approval** — the previews draw it, and you name the division (and the round, where the kind takes one). A season awaiting `/season approve` is drawn exactly as it will be once approved.
-- **No season at all** — the bot invents a league instead. Omit both parameters. Your **team names are your own**, taken from `/team add`; the division, the calendar, the circuits, the round and the driver names are all made up and differ every time you run it. Nothing is saved.
+Every preview takes the name of a division, and the ones drawn for a single round take its number as well. Both are required: there is nothing sensible to draw without them.
 
-**You do need teams for five of the eleven.** `lineup`, `results`, `standings`, `attendance` and `verdict` draw a roster, so on a server with no season they need `/team add` to have been run at least once. The other six — `calendar`, `rsvp` and the four `weather-*` — draw no team and work on a completely bare server.
+**You do need teams for five of the eleven.** `lineup`, `results`, `standings`, `attendance` and `verdict` draw a roster, so the division has to hold teams beyond Reserve. The other six — `calendar`, `rsvp` and the four `weather-*` — draw no team and are happy with a division that has none.
 
-Setting the season up is covered by [the core guide](configuring-the-core-bot.md). You do not need drivers seated: where a division has none, the bot invents them for the picture and says so.
+Setting the season up is covered by [the core guide](configuring-the-core-bot.md). You do **not** need drivers seated: where a division has none, the bot invents them for the picture and says so.
 
 **You need to be able to put files on the computer running the bot.** This one catches people out: **there is no command for uploading artwork.** You cannot attach a logo to a Discord message and have the bot save it. Every drawing file and every badge, flag and photo is copied onto the bot's computer by hand. The commands only *tell the bot which folder to look in*.
 
@@ -62,9 +61,9 @@ If somebody else hosts the bot for you, you will need their help for the artwork
 
 The bot sends you back a picture. If your server has a season, name the division — `/images test calendar division:<your division>` — and you get **your** division's calendar, with your rounds, your circuits and your dates. Start typing the name and the bot completes it for you.
 
-If your server has no season yet, omit the division entirely. The bot invents a calendar so you can see the drawing at once, and says plainly in the reply that it did.
+If your server has no season yet, set one up first — a preview draws your own calendar and has nothing to show without one.
 
-The calendar is the one to start with because it needs the least: no teams, no drivers, no round number. The lineup, the results, the standings, the attendance sheet and the verdict also need a team beyond Reserve, and every kind but the calendar and the lineup needs a round number as well. If a preview refuses, it names exactly which of those is missing — a wrong division name, a round the division does not have, a team list with nothing but Reserve in it, or a parameter you left off when your server had a season to resolve it against.
+The calendar is the one to start with because it needs the least: no teams, no drivers, no round number. The lineup, the results, the standings, the attendance sheet and the verdict also need a team beyond Reserve, and every kind but the calendar and the lineup needs a round number as well. If a preview refuses, it names exactly which of those is missing — a wrong division name, a round the division does not have, or a team list with nothing but Reserve in it.
 
 Switching the module on does not change anything the bot posts yet. All eight kinds of output stay off until you turn them on, which is step 6.
 
@@ -106,7 +105,7 @@ Four settings, none of which need any artwork, so they are easy to get out of th
 |---|---|---|
 | `/images config time-zone` | The time zone shown on pictures. Start typing and it suggests names | `UTC` |
 | `/images config time-format` | 24-hour or 12-hour clock | 24-hour |
-| `/images config date-format` | `Sun 14 Jun 2026`, `14 Jun 2026`, `14/06/2026`, `06/14/2026` or `2026-06-14` | `Sun 14 Jun 2026` |
+| `/images config date-format` | Eleven formats, picked from a dropdown that shows each one written out. Short: `Sun 14 Jun 2026`, `14 Jun 2026`, `14/06/2026`, `06/14/2026`, `2026-06-14`. Written out: `Sunday 14th June 2026`, `14th June 2026`, `Sunday 14 June 2026`, `14 June 2026`, `June 14, 2026`, `Sunday, June 14th, 2026` | `Sun 14 Jun 2026` |
 | `/images config fastest-lap-colour` | The colour marking the fastest lap. A `#` and six characters | `#A020F0` (purple) |
 
 When you set the fastest-lap colour, the bot also tells you whether it will be easy to read against the background behind it, and warns you if not. It saves your choice either way — it is your league's look, not the bot's.
@@ -114,6 +113,8 @@ When you set the fastest-lap colour, the bot also tells you whether it will be e
 > **Everyone sees the same time zone.** When the bot posts times as text, Discord shows each driver the time in their own local zone. A picture cannot do that. Whatever zone you pick here is printed on the picture for everybody, with its short name after the time. Set it to the zone your league actually races in. This is the one thing a picture tells drivers *less* clearly than the text it replaces.
 
 The default date style includes the day of the week, which is usually the bit people actually look for.
+
+**The written-out styles are longer, and a date field has to hold them.** `Sunday, June 14th, 2026` is over twice the width of `2026-06-14`, so a drawing whose date field was drawn tight around a short style will shrink the text to fit it. Nothing is cut off and nothing fails — but if a calendar suddenly looks cramped after you change this, that is why. Draw the field wider, or pick a shorter style.
 
 ---
 
@@ -187,6 +188,8 @@ So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`
 
 > **Guinea-Bissau, the Democratic Republic of the Congo and Dominica each need their own flag file now.** `Guinean`, `Congolese` and `Dominican` used to cover two countries apiece in English and could only ever resolve one — Guinea, Congo and the Dominican Republic. A driver from the other country of each pair has a nationality of their own to select — `Bissau-Guinean`, `Congolese (Kinshasa)` and `Dominican (Dominica)` — so if your league has such a driver, add `guinea_bissau.svg`, `democratic_republic_of_the_congo.svg` or `dominica.svg` alongside the flags you already supply.
 
+> **`Palestinian` is selectable, and draws `palestine.svg`.** A driver may state it as `Palestinian`, `Palestine` or `State of Palestine`; all three record the same nationality and resolve the same one file. Add `palestine.svg` to your flag folder if your league has such a driver — like every other country flag, the artwork is your league's to supply, and without it the driver falls back to the generic flag.
+
 ### Doing one, start to finish
 
 Say your league has a team called **Red Bull** and you have its badge ready.
@@ -219,6 +222,13 @@ Running the command again turns the daily refresh off, and needs no time.
 You can have both on at once. One of the two must stay on while the feature is enabled: if
 you try to switch off the last one, the bot refuses and changes nothing, because neither on
 would mean no photo is ever fetched — which is what `/images use-pfp toggle` already does.
+
+**`/season approve` fetches them whichever of the two you chose.** Approving a season draws
+your lineups once to check they work, and it brings the photos down first so that check is
+made on what the season will actually post — not on yesterday's overnight batch, and not on
+the placeholder for a driver you seated this morning. It is the only place that overrides
+your choice of *when* to fetch, and it never overrides *whether*: with the feature off, no
+photo is fetched at any point.
 
 **A few things worth knowing before you turn it on:**
 
@@ -281,10 +291,10 @@ Fifteen of them, one per kind of picture, and they all come with the bot. You ca
 
 That folder is `resources/defaults/templates`, and `/images config template-directory` moves it. **It does not behave like the artwork folders in step 4, and the order matters:**
 
-1. Put **all fifteen** drawing files in your new folder first.
+1. Put the drawing files in your new folder first — at least the ones your switched-on outputs need. Copying all fifteen is the simplest thing to do.
 2. *Then* run `/images config template-directory`.
 
-The command checks every one of the fifteen before it stores anything, exactly as `/season review` does. If any is missing or unusable it **refuses** the change, tells you which ones and why, and leaves your existing folder in force. An empty artwork folder is harmless — the bot falls back to what it ships — but there is nothing behind a missing drawing file, so a half-filled folder would stop every picture being produced at all. That is why this one is checked and the other eight are not.
+The command checks every drawing your switched-on outputs need before it stores anything, exactly as `/season review` does. If any is missing or unusable it **refuses** the change, tells you which ones and why, and leaves your existing folder in force. A drawing for an output you have switched **off** is not required — that output posts as text and draws nothing — and switching it on later checks its own drawings at that point. An empty artwork folder is harmless — the bot falls back to what it ships — but there is nothing behind a missing drawing file, so a half-filled folder would stop every picture being produced at all. That is why this one is checked and the other eight are not.
 
 It must still sit inside the bot's own project folder.
 
@@ -434,6 +444,10 @@ Eight switches. `aspect` is a dropdown, so you pick rather than type; its eight 
 
 It is a **toggle**, not an on/off setting: run it on something that is off and it comes on, run it again and it goes back to text.
 
+**Switching one on checks its drawings first, and refuses if they are not right.** You are told what is wrong and the output stays off. That is on purpose: an output switched on over a broken drawing posts *nothing* where your drivers would otherwise have read text, and it holds up your season's approval as well. Switching one **off** is never refused — text needs no drawing, so you can always go back to it.
+
+**What you leave switched off costs you nothing.** A missing or broken drawing behind an output you have not switched on does not stop a season being approved: nothing would ever post it. `/season review` still names it, as a ⚠️ rather than a ⛔, so you know it is there before you decide to switch that output on.
+
 This comes last on purpose. Switching something on before its drawing file is big enough is what causes problems; by now everything is in place.
 
 The check-in call is the odd one out — it *adds* a picture rather than replacing anything. The message, the roster and the buttons all stay exactly as they were.
@@ -448,7 +462,9 @@ When you switch something on, the bot tells you if it would not work as things s
 
 > **If a picture fails, only that picture fails.** The division falls back to its usual text post and the log channel explains why; other divisions still get their pictures. Nothing is ever held up waiting for a picture — results, penalties, forecasts and standings all happen exactly as they would with the module off, and the picture is drawn afterwards.
 
-**What the pictures are called.** Each one is named for what it shows, so a folder of them saved off Discord still makes sense months later: `season1_division1_round10_standings_drivers.png`, `season1_division1_round10_feature_qualifying_results.png`, `season1_division1_lineup.png`. The division is named by its tier where the picture knows it and by its name otherwise. There is no round in a lineup or calendar filename, because those stand for the whole season rather than one round of it. `/images test` names what it sends you the same way.
+**Drawing takes time, and the bot says so.** A picture takes a few seconds to draw, and several jobs draw a batch of them one after another — `/season review` draws a lineup and a calendar for every division, and closing a penalty review redraws every session's results, both championships, a verdict per penalty and the attendance sheet. Before a batch starts you get a short message saying the pictures are being drawn, and it disappears once they are all posted. You do not need to do anything with it, and nothing is lost when it goes: anything that went wrong is reported to you and to the log channel separately.
+
+**The message appears where you gave the command**, not where the pictures land. A batch may post into your results, standings and verdicts channels at once, and putting the notice in each of them would tell three roomfuls of drivers something only you are waiting for. So a command you type is answered in the bot interaction channel, and the results flow — which you drive by pressing buttons in the round's results channel — is answered there.
 
 **What the pictures are called.** Each one is named for what it shows, so a folder of them saved off Discord still makes sense months later: `season1_division1_round10_standings_drivers.png`, `season1_division1_round10_feature_qualifying_results.png`, `season1_division1_lineup.png`. The division is named by its tier where the picture knows it and by its name otherwise. There is no round in a lineup or calendar filename, because those stand for the whole season rather than one round of it. `/images test` names what it sends you the same way.
 
@@ -468,7 +484,7 @@ Lists every setting and whether it is usable, and each of the eight outputs as �
 
 > **"The drawing is missing something the bot has to fill in" — but what?** Run the `/images template …` command it names, on the file you already have. That reply is the one place that still names the exact field, because you are looking at that one drawing at the moment you can fix it.
 
-> **It is written for you.** Both this report and `/season review` say what is wrong in terms of your drawings and your folders — you will not find a field id, a file path or a layer number in either. The precise fault goes into the bot's log for whoever runs it. The one exception is naming a drawing file with an `/images template …` command: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
+> **It is written for you.** Both this report and `/season review` say what is wrong in terms of your drawings and your folders — you will not find a field id or a layer number in either, and the precise fault goes into the bot's log for whoever runs it. Both do print the folder paths you set yourself, under **Asset directories**, because that is your own configuration read back rather than a diagnostic. The one exception to the rest is naming a drawing file with an `/images template …` command: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
 
 ```
 /images test calendar        division:<name>
@@ -484,7 +500,7 @@ Lists every setting and whether it is usable, and each of the eight outputs as �
 /images test verdict         division:<name>  round:<number>
 ```
 
-One command per kind, sent only to you. The calendar and the lineup take a division alone; every other kind also takes a round number. **Both parameters are optional** — omit them where your server has no season, and the bot invents a league over your own team names.
+One command per kind, sent only to you. The calendar and the lineup take a division alone; every other kind also takes a round number. **Both are required**, and your server needs a season for them to name.
 
 **What is real and what is made up.** Your division, your rounds, your circuits, your teams, your drivers and your artwork are all real. What the bot invents is only what a round that has not been run yet cannot have: the finishing order, the forecast, the attendance points, the steward's verdict. The attendance sheet's point limit is invented too, rather than taken from what you configured it to be: a preview is worth nothing unless the sheet carries a driver over the limit, one approaching it and rows marked neither way, and your own limit may be one no driver could reach in the rounds drawn. If your division has no drivers seated at all, the bot invents those too and says so in the reply, so that you can still judge the drawing.
 
@@ -496,9 +512,11 @@ Several kinds send more than one picture: the results send one per session of th
 
 `/season review` shows the same summary and names anything that would stop the season. **`/season approve` refuses to run** while something is broken — review is where you spot it, approval is where it stops you.
 
+It also lists your eight **asset directories** with the path each is set to, and marks any it cannot read. This is the one place in the review those paths appear, and it is worth a glance: a folder that has been moved or renamed draws placeholders everywhere, which looks exactly like artwork you never supplied. `/images config view` says what is wrong with a folder it cannot read; the review only tells you which one.
+
 **The review draws the calendar and the lineup for real.** With `calendar` or `lineup` switched on, that division's block in the review carries the picture instead of the text — the same picture the season will post once you approve it. That is the point of looking: what you sign off is what your league gets. With the switch off you see the text, as before.
 
-> **A picture the review cannot draw takes the Approve button away.** You are told what is wrong, that block falls back to its text so you still see the whole season, and the review ends with a note that the image module is not correctly configured instead of the button. `/season approve` refuses on the same check, naming the division and the picture that failed, so typing the command instead of pressing the button gets you nowhere. Fix what it names and run `/season review` again.
+> **A picture the review cannot draw takes the Approve button away.** You are told what is wrong, that block falls back to its text so you still see the whole season, and the review ends with a note that the image module is not correctly configured instead of the button. There is no command that approves around it, so there is nothing to type instead of pressing the button. Fix what the review names and run `/season review` again.
 
 > **Judge the finished picture, not the drawing file in a web browser.** They disagree on exactly the things worth checking — wrapped text, typefaces and missing images. The previews send you the finished picture for this reason.
 
@@ -518,7 +536,7 @@ Worth running through just before `/season approve`.
 - [ ] Your calendar drawing has room for your longest division's rounds
 - [ ] Your attendance drawing has room for that many rounds too, and the check-in drawing has room for a sprint weekend's sessions
 - [ ] The time zone is the one your league actually races in
-- [ ] You have looked at each output with its `/images test` command — against a real division once you have a season, and against the invented league before then — and been happy with it
+- [ ] You have looked at each output with its `/images test` command, against a real division of your season, and been happy with it
 - [ ] Your artwork is on the bot's computer, correctly named
 - [ ] If you are letting the bot fetch driver photos, `/season review` shows it switched on with at least one update method
 - [ ] `/season review` reports nothing blocking, and still offers the **Approve** button

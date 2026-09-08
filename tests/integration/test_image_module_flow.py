@@ -512,6 +512,31 @@ async def test_season_review_and_config_view_agree(
         )
 
 
+def test_the_review_names_every_configured_asset_directory():
+    """`/season review` states where each asset class is read from.
+
+    A manager sets these paths once and then has nowhere in the review to see them, so a
+    graphic drawing placeholders because a folder was renamed looks exactly like one whose
+    artwork was never supplied. Naming the directory is what tells the two apart.
+
+    Asserted against `ASSET_LABELS` rather than a written-out list, so an asset class
+    added later is covered by this test the day it appears.
+    """
+    import asyncio
+    import inspect
+
+    from models.image_constants import ASSET_LABELS
+    from cogs.season_cog import SeasonCog
+
+    source = inspect.getsource(SeasonCog._build_image_review_section)
+
+    assert "directory_reports" in source, "the review does not read the directories"
+    assert "ASSET_LABELS" in source, "the review does not label them"
+    # Every class is labelled from the same map `/images config view` uses, so the two
+    # surfaces name a directory identically or not at all.
+    assert len(ASSET_LABELS) == 8
+
+
 # ── Which aspects actually post ───────────────────────────────────────────
 #
 # Both surfaces read LIVE_POSTING_ASPECTS, so they follow it when a posting path ships
@@ -1754,9 +1779,16 @@ def test_the_render_service_writes_only_to_the_log_channel():
 
 
 def test_the_season_approval_refusal_is_ephemeral():
-    """The template gate refuses in front of the admin, not the league."""
+    """An image gate refuses in front of the admin, not the league.
+
+    The gate this used to anchor on — every unusable template, re-evaluated at the button
+    — is withdrawn with the approval's render pass (2026-09-07): the review draws the
+    graphics and withholds its own button, and the fingerprint proves the season has not
+    changed since. The lineup gate below is the image refusal that remains, and the rule
+    it must keep is the one this test has always been about.
+    """
     source = (_SRC / "cogs" / "season_cog.py").read_text(encoding="utf-8")
-    marker = "the image module is enabled"
+    marker = "the `lineup` image aspect is on but"
     assert marker in source
 
     tail = source[source.index(marker):source.index(marker) + 600]

@@ -91,6 +91,46 @@ def test_heading_is_the_textual_calendar_s_own():
     assert cps.calendar_heading("Elite") == "\U0001f4c5 **Elite — Race Calendar**"
 
 
+@pytest.mark.asyncio
+async def test_a_graphic_is_posted_with_no_message_text(tmp_path, monkeypatch):
+    """The picture draws the division's name and says what it is, so a heading above it
+    repeats the picture rather than introducing it (2026-09-07)."""
+    png = tmp_path / "calendar.png"
+    png.write_bytes(b"\x89PNG")
+    bot = _bot(tmp_path)
+    channel, _ = _channel()
+    monkeypatch.setattr(
+        cps,
+        "render_calendar_image",
+        AsyncMock(return_value=NS(problem=None, notices=[], png_paths=[png])),
+    )
+    monkeypatch.setattr(cps, "replace_calendar_message", AsyncMock(return_value=555))
+
+    result = await cps.post_division_calendar(
+        bot, _guild(channel), 1, _division(), _rounds(), TRACKS
+    )
+
+    assert result.posted_as_image is True
+    assert cps.replace_calendar_message.await_args.kwargs["content"] is None
+
+
+@pytest.mark.asyncio
+async def test_the_textual_calendar_keeps_its_heading(tmp_path, monkeypatch):
+    """Withdrawing the graphic's heading must not strip the text's, where it is the only
+    thing naming the list of rounds."""
+    bot = _bot(tmp_path)
+    channel, _ = _channel()
+    monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=False))
+    monkeypatch.setattr(cps, "replace_calendar_message", AsyncMock(return_value=555))
+
+    await cps.post_division_calendar(
+        bot, _guild(channel), 1, _division(), _rounds(), TRACKS
+    )
+
+    content = cps.replace_calendar_message.await_args.kwargs["content"]
+    assert content.startswith(cps.calendar_heading("Elite"))
+
+
 def test_textual_calendar_matches_the_posting_it_replaced():
     """SC-006: byte-identical while the module is off."""
     rounds = _rounds(2)

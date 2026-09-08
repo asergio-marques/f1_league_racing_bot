@@ -793,11 +793,21 @@ class SignupCog(commands.Cog):
             )
             return
 
-        # Guard: must not be the bot interaction channel
-        server_cfg = await self.bot.config_service.get_server_config(server_id)
-        if server_cfg and channel.id == server_cfg.interaction_channel_id:
+        # A channel does one job (decided 2026-09-06). This stood as a guard against the
+        # bot interaction channel alone; every configurable channel of the server is
+        # checked now, the interaction channel among them.
+        from services.channel_registry_service import (
+            ChannelUse,
+            find_channel_use,
+            refusal,
+        )
+
+        use = await find_channel_use(self.bot.db_path, server_id, channel.id)
+        if use is not None:
             await interaction.response.send_message(
-                "❌ The signup channel cannot be the same as the bot interaction channel.",
+                refusal(
+                    channel.mention, use, same_setting=(use == ChannelUse("signup"))
+                ),
                 ephemeral=True,
             )
             return
@@ -825,7 +835,11 @@ class SignupCog(commands.Cog):
                 except Exception:
                     log.warning("signup_channel: could not revert overwrites on old channel %s", old_channel_id)
 
-        # Apply overwrites to new channel
+        # Apply overwrites to new channel. The server config is read here for the
+        # interaction role; it used to be read further up, by the guard against reusing
+        # the bot's own command channel, and this line was left orphaned when that guard
+        # became the server-wide `find_channel_use` check.
+        server_cfg = await self.bot.config_service.get_server_config(server_id)
         interaction_role = guild.get_role(server_cfg.interaction_role_id) if server_cfg else None
         base_role = guild.get_role(cfg.base_role_id) if cfg.base_role_id else None
         overwrites: dict = {

@@ -319,6 +319,7 @@ async def refresh_before_render(
     *,
     config=None,
     directory=_UNSET,
+    ignore_trigger: bool = False,
     now: datetime | None = None,
 ) -> int:
     """Refresh the portraits a graphic is about to draw, where the league asked for that.
@@ -336,6 +337,11 @@ async def refresh_before_render(
     none. Omitting the argument entirely means the caller has not looked, and it is resolved
     here.
 
+    *ignore_trigger* pulls even where the league asked for daily updates rather than
+    pre-render ones. Only `/season approve` sets it, and only for the render it makes to
+    decide whether the season may be committed. ``use_pfp`` still governs: a league not
+    taking portraits from Discord at all is never fetched for.
+
     Returns the number of portraits written, and never raises.
     """
     if config is None:
@@ -345,7 +351,12 @@ async def refresh_before_render(
     # off, which is the same answer the defaults give.
     if config is None or not getattr(config, "use_pfp", False):
         return 0
-    if not getattr(config, "pfp_prerender", False):
+    # `pfp_prerender` is the league's choice about *ordinary* postings. `/season approve`
+    # sets `ignore_trigger` and pulls whichever trigger is on: it is the one moment a
+    # manager is watching, the season is being committed on the strength of a trial
+    # render, and drawing yesterday's portraits there would misrepresent what the season
+    # is about to post (decided 2026-09-07).
+    if not ignore_trigger and not getattr(config, "pfp_prerender", False):
         return 0
     if not members:
         return 0

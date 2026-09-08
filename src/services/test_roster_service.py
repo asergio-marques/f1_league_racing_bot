@@ -82,10 +82,22 @@ async def _next_synthetic_id(db_path: str) -> int:
 
 
 async def _get_active_season_id(server_id: int, db_path: str) -> int | None:
-    """Return the active or setup season ID for a server, or None if none exists."""
+    """Return the live season ID for a server, or None if it has none.
+
+    A server holds at most one live (SETUP or ACTIVE) season — migration 049 enforces it
+    with a partial unique index, and `/season setup` refuses to start a second — so this
+    reads at most one row and needs no precedence between the two states.
+
+    The ordering is written in regardless, because it costs nothing and the query used to
+    be a bare ``LIMIT 1`` over both states. Which row that returned was uncontracted, and
+    on a server that held two it seated a mock driver in one season's divisions while
+    `/season review` drew the other's: a full `roster list` beside an empty lineup, with
+    neither command reporting a fault.
+    """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP')",
+            "SELECT id FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
+            "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
             (server_id,),
         )
         row = await cursor.fetchone()
@@ -231,6 +243,199 @@ async def add_test_driver(
         team_name=team_name,
         nationality=canonical_nationality,
     )
+
+
+async def add_test_drivers_in_bulk(
+    server_id: int,
+    drivers: list,
+    db_path: str,
+) -> tuple[int, list[str]]:
+    """Seat a whole roster at once, or seat none of it.
+
+    *drivers* are `utils.roster_import.ParsedDriver` rows, already checked for the things
+    a file can be wrong about on its own. What is checked here is what needs the database:
+    the division exists, the team exists within it, the team has a free seat, the
+    nationality is one the bot accepts, and no driver already holds the ID the file names.
+
+    Returns the number seated and the faults met. **The two are exclusive**: a fault seats
+    nobody. A roster is one artefact — the sibling generator scripts read the whole CSV and
+    expect every driver in it — so a half-applied import is a state no script can work
+    against, and pasting the file again after fixing one line would duplicate everything
+    that landed the first time.
+
+    **The IDs the file names are the IDs written.** `add_test_driver` allocates
+    `MAX(existing) + 1`, which lines up with the generator's own numbering only on a clean
+    season; the sibling scripts key on those IDs absolutely, so here the file is
+    authoritative. See `utils/roster_import.py`.
+
+    **A division that already holds drivers is refused**, rather than appended to. The CSV
+    describes a whole grid, and importing it twice — or over a roster seated by hand —
+    would put a division's seats somewhere the file does not describe, with the file still
+    looking like the record of what happened.
+    """
+    from utils.roster_import import divisions_named
+
+    if not drivers:
+        return 0, ["There were no drivers to add."]
+
+    season_id = await _get_active_season_id(server_id, db_path)
+    if season_id is None:
+        return 0, ["No active or setup season found."]
+
+    errors: list[str] = []
+
+    # Nationalities first: the check needs no database, so a file full of misspelt ones is
+    # reported without a single query.
+    canonical: dict[int, str | None] = {}
+    for driver in drivers:
+        if driver.nationality is None:
+            canonical[driver.line] = None
+            continue
+        resolved = _canonical_nationality(driver.nationality)
+        if resolved is None:
+            errors.append(
+                f"Line {driver.line}: `{driver.nationality}` is not a nationality the bot "
+                f"knows. Give one like 'British', a country like 'United Kingdom', or "
+                f"'other'."
+            )
+        canonical[driver.line] = resolved
+
+    async with get_connection(db_path) as db:
+        # Every division named must exist, and must be empty.
+        division_ids: dict[str, int] = {}
+        for name in divisions_named(drivers):
+            division_id = await _get_division_id(server_id, season_id, name, db_path)
+            if division_id is None:
+                errors.append(f"Division '{name}' is not in the current season.")
+                continue
+            division_ids[name] = division_id
+
+            cursor = await db.execute(
+                "SELECT COUNT(*) AS seated FROM driver_season_assignments "
+                "WHERE season_id = ? AND division_id = ?",
+                (season_id, division_id),
+            )
+            row = await cursor.fetchone()
+            if row and row["seated"]:
+                errors.append(
+                    f"Division '{name}' already holds {row['seated']} driver(s). Clear it "
+                    f"with `/test-mode roster clear` before importing a roster into it."
+                )
+
+        # An ID already in the database would collide on insert, and the collision is the
+        # one thing worth naming precisely: it means the file has already been imported.
+        for driver in drivers:
+            cursor = await db.execute(
+                "SELECT 1 FROM driver_profiles WHERE server_id = ? AND discord_user_id = ?",
+                (server_id, str(driver.discord_user_id)),
+            )
+            if await cursor.fetchone():
+                errors.append(
+                    f"Line {driver.line}: a driver with ID {driver.discord_user_id} is "
+                    f"already on this server."
+                )
+
+        # Teams and their seats, counted across the whole import: two drivers of one team
+        # need two seats, and each row passing on its own would still overfill it.
+        wanted: dict[tuple[int, str], int] = {}
+        for driver in drivers:
+            division_id = division_ids.get(driver.division_name)
+            if division_id is None:
+                continue
+            wanted[(division_id, driver.team_name.lower())] = (
+                wanted.get((division_id, driver.team_name.lower()), 0) + 1
+            )
+
+        seats: dict[tuple[int, str], list[int]] = {}
+        for (division_id, team_key), needed in wanted.items():
+            cursor = await db.execute(
+                "SELECT id, max_seats, is_reserve, name FROM team_instances "
+                "WHERE division_id = ? AND LOWER(name) = ?",
+                (division_id, team_key),
+            )
+            team_row = await cursor.fetchone()
+            if team_row is None:
+                errors.append(f"Team '{team_key}' is not in the division that names it.")
+                continue
+
+            seat_cursor = await db.execute(
+                "SELECT id FROM team_seats WHERE team_instance_id = ? "
+                "AND driver_profile_id IS NULL ORDER BY seat_number",
+                (team_row["id"],),
+            )
+            free = [r["id"] for r in await seat_cursor.fetchall()]
+            if len(free) < needed and not team_row["is_reserve"]:
+                errors.append(
+                    f"Team '{team_row['name']}' has {len(free)} free seat(s) but the "
+                    f"roster gives it {needed} driver(s)."
+                )
+            seats[(division_id, team_key)] = free
+
+        if errors:
+            return 0, errors
+
+        # Nothing has been written to this point, and nothing is written unless every
+        # check above passed.
+        seated = 0
+        for driver in drivers:
+            division_id = division_ids[driver.division_name]
+            key = (division_id, driver.team_name.lower())
+            free = seats[key]
+            if free:
+                seat_id = free.pop(0)
+            else:
+                # A reserve team, which has no seat limit — the only case reaching here,
+                # since every other shortfall was refused above.
+                cursor = await db.execute(
+                    "SELECT id FROM team_instances WHERE division_id = ? AND LOWER(name) = ?",
+                    (division_id, driver.team_name.lower()),
+                )
+                team_row = await cursor.fetchone()
+                max_cursor = await db.execute(
+                    "SELECT MAX(seat_number) FROM team_seats WHERE team_instance_id = ?",
+                    (team_row["id"],),
+                )
+                max_row = await max_cursor.fetchone()
+                new_seat = await db.execute(
+                    "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+                    "VALUES (?, ?, NULL)",
+                    (team_row["id"], (max_row[0] or 0) + 1),
+                )
+                seat_id = new_seat.lastrowid
+
+            profile_cursor = await db.execute(
+                "INSERT INTO driver_profiles "
+                "(server_id, discord_user_id, current_state, former_driver, is_test_driver, "
+                " test_display_name, test_nationality) "
+                "VALUES (?, ?, 'ASSIGNED', 0, 1, ?, ?)",
+                (
+                    server_id,
+                    str(driver.discord_user_id),
+                    driver.driver_name,
+                    canonical[driver.line],
+                ),
+            )
+            profile_id = profile_cursor.lastrowid
+
+            await db.execute(
+                "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
+                (profile_id, seat_id),
+            )
+            await db.execute(
+                "INSERT INTO driver_season_assignments "
+                "(driver_profile_id, season_id, division_id, team_seat_id, "
+                "current_position, current_points, points_gap_to_first) "
+                "VALUES (?, ?, ?, ?, 0, 0, 0)",
+                (profile_id, season_id, division_id, seat_id),
+            )
+            seated += 1
+
+        await db.commit()
+
+    log.info(
+        "roster import: seated %d test drivers on server %s", seated, server_id
+    )
+    return seated, []
 
 
 async def list_test_drivers(
@@ -494,6 +699,21 @@ async def _ensure_single_config(
     *session_entries* maps each SessionType to its position→points dict.
     *fl_configs* maps each SessionType that has an FL bonus to (fl_points, fl_position_limit).
     Returns True if the config was newly created, False if it already existed.
+
+    **The config is written as an ordinary server-level one**, into
+    ``points_config_store``/``points_config_entries``/``points_config_fl`` — the same
+    three tables `/results config` writes — and then attached to the season through
+    ``season_points_links``. It is a real config of the server from that moment: it is
+    listed, viewed and edited exactly as a hand-built one, and `/season approve` copies
+    it into the season's own store through the ordinary snapshot.
+
+    This used to write the points straight into ``season_points_entries`` while leaving
+    only an empty name row in the server-level store. Everything scored correctly,
+    because scoring reads the season store — but `/results config view` reads the
+    server-level store while the season is in SETUP, so a manager checking the
+    configuration was told "no entries configured" over a config that was fully
+    populated. A seeded config is a config; it does not get its own private path
+    through the schema.
     """
     async with get_connection(db_path) as db:
         # Check if already in season_points_links
@@ -506,11 +726,16 @@ async def _ensure_single_config(
         if already_linked:
             return False
 
-        # Create server-level config store entry (idempotent)
+        # Create the server-level config and take its id — the entries hang off it.
         await db.execute(
             "INSERT OR IGNORE INTO points_config_store (server_id, config_name) VALUES (?, ?)",
             (server_id, config_name),
         )
+        cursor = await db.execute(
+            "SELECT id FROM points_config_store WHERE server_id = ? AND config_name = ?",
+            (server_id, config_name),
+        )
+        config_id = (await cursor.fetchone())["id"]
 
         # Link to season
         await db.execute(
@@ -518,23 +743,25 @@ async def _ensure_single_config(
             (season_id, config_name),
         )
 
-        # Write season_points_entries per session type
         for session_type, pos_map in session_entries.items():
             for pos, points in pos_map.items():
                 await db.execute(
-                    "INSERT OR REPLACE INTO season_points_entries "
-                    "(season_id, config_name, session_type, position, points) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (season_id, config_name, session_type.value, pos, points),
+                    "INSERT INTO points_config_entries "
+                    "(config_id, session_type, position, points) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(config_id, session_type, position) "
+                    "DO UPDATE SET points = excluded.points",
+                    (config_id, session_type.value, pos, points),
                 )
 
-        # Write season_points_fl entries
         for session_type, (fl_pts, fl_pos_limit) in fl_configs.items():
             await db.execute(
-                "INSERT OR REPLACE INTO season_points_fl "
-                "(season_id, config_name, session_type, fl_points, fl_position_limit) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (season_id, config_name, session_type.value, fl_pts, fl_pos_limit),
+                "INSERT INTO points_config_fl "
+                "(config_id, session_type, fl_points, fl_position_limit) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(config_id, session_type) DO UPDATE SET "
+                "fl_points = excluded.fl_points, "
+                "fl_position_limit = excluded.fl_position_limit",
+                (config_id, session_type.value, fl_pts, fl_pos_limit),
             )
 
         await db.commit()

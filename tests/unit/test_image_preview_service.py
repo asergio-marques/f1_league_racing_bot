@@ -348,30 +348,30 @@ class TestTeamsAndDrivers:
 
 
 class TestRefusals:
-    async def test_no_season_is_no_longer_refused_but_fabricated(self, bot, db_path):
-        """046 withdraws the refusal 045 raised here.
+    async def test_no_season_is_refused(self, bot, db_path):
+        """Decided 2026-09-06, reversing what 046 had reversed.
 
-        A server with no season draws an invented league instead. The calendar draws no
-        team, so it is drawn even on a server that has configured none.
+        A server holding no season drew a wholly invented league here — divisions, a
+        calendar, circuits and drivers. That is withdrawn: a preview draws the league's
+        own data or refuses, and `division` and `round` are required parameters, so the
+        command cannot be submitted without something to resolve them against.
         """
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="calendar")
+        with pytest.raises(PreviewRefused) as excinfo:
+            await resolve_context(bot, SERVER_ID, "Division 1", kind="calendar")
 
-        assert context.fabricated_league is True
+        assert "no season to draw" in str(excinfo.value)
 
     async def test_an_archived_season_is_not_drawn_from(self, bot, db_path):
         """A-001 — the preview checks what the league is about to run.
 
-        Such a server holds no previewable season, so it falls to the fabricated league
-        rather than drawing the archived one. The assertion that matters is that the
-        archived division's name is *not* what comes back.
+        Such a server holds no previewable season at all, so it is refused. What matters
+        is that the archived division is never what comes back.
         """
         season_id = await _seed_season(db_path, status="ARCHIVED")
         await _seed_division(db_path, season_id, "Old Division")
 
-        context = await resolve_context(bot, SERVER_ID, "Old Division", kind="calendar")
-
-        assert context.fabricated_league is True
-        assert context.division_name != "Old Division"
+        with pytest.raises(PreviewRefused):
+            await resolve_context(bot, SERVER_ID, "Old Division", kind="calendar")
 
     async def test_an_unknown_division_is_refused_and_the_known_ones_named(
         self, bot, league
@@ -652,32 +652,33 @@ class TestWhichSeasonIsDrawn:
 
         assert context.season_pending_approval is False
 
-    async def test_an_approved_season_outranks_a_later_pending_one(self, bot, db_path):
-        """A-002. The ACTIVE season's divisions are the ones offered and drawn."""
+    async def test_a_preview_never_faces_a_choice_of_two_live_seasons(self, bot, db_path):
+        """The server cannot hold both, so the preview has one season to resolve against.
+
+        This replaced a test asserting that an ACTIVE season outranked a later SETUP one.
+        A server now holds at most one live season — migration 049 enforces it with a
+        partial unique index — so the precedence it pinned arbitrates a state that cannot
+        occur, and what is worth pinning instead is that the state is refused.
+        """
         await _seed_league(db_path, status="ACTIVE", season_number=4, name="Running")
-        await _seed_league(db_path, status="SETUP", season_number=5, name="NextYear")
+
+        with pytest.raises(aiosqlite.IntegrityError):
+            await _seed_league(
+                db_path, status="SETUP", season_number=5, name="NextYear"
+            )
 
         context = await resolve_context(bot, SERVER_ID, "Running")
-
         assert context.season_number == 4
         assert context.season_pending_approval is False
 
-        # And the pending season's division is not reachable while the approved one stands.
-        with pytest.raises(PreviewRefused) as excinfo:
-            await resolve_context(bot, SERVER_ID, "NextYear")
-        assert excinfo.value.reason == REASON_NO_DIVISION
-
     @pytest.mark.parametrize("status", ["COMPLETED", "CANCELLED"])
     async def test_a_finished_season_is_not_drawn(self, bot, db_path, status):
-        """FR-005 — a server holding only such seasons holds none for previewing, and
-        therefore draws a fabricated league numbered on from the one that finished."""
+        """FR-005 — a server holding only such seasons holds none for previewing, and is
+        refused rather than drawn an invented one."""
         await _seed_league(db_path, status=status, season_number=2)
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="calendar")
-
-        assert context.fabricated_league is True
-        # And the number counts on from the season that finished.
-        assert context.season_number == 3
+        with pytest.raises(PreviewRefused):
+            await resolve_context(bot, SERVER_ID, "Division 1", kind="calendar")
 
 
 class TestRefusalsStillFireOnAPendingSeason:

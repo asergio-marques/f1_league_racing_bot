@@ -130,6 +130,27 @@ class InitCog(commands.Cog):
         """
         server_id = interaction.guild_id
 
+        # A channel does one job (decided 2026-09-06). Keyed on the column, because this
+        # body also carries the interaction *role*, which no channel rule governs.
+        _setting = {
+            "interaction_channel_id": "interaction",
+            "log_channel_id": "log",
+        }.get(column)
+        if _setting is not None:
+            from services.channel_registry_service import (
+                ChannelUse,
+                find_channel_use,
+                refusal,
+            )
+
+            use = await find_channel_use(self.bot.db_path, server_id, value)
+            if use is not None:
+                await interaction.response.send_message(
+                    refusal(mention, use, same_setting=(use == ChannelUse(_setting))),
+                    ephemeral=True,
+                )
+                return
+
         changed = await self.bot.config_service.set_core_setting(server_id, column, value)
         if not changed:
             await interaction.response.send_message(

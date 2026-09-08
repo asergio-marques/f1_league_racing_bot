@@ -3,7 +3,7 @@
 Commands:
   /season setup    — start season configuration (admin only)
   /season review   — view pending config with Approve/Amend actions
-  /season approve  — commit the pending config to the database
+  (approval is the button `/season review` posts; there is no `/season approve`)
   /season status   — read-only summary of active season
   /season cancel   — delete the active season (admin only, destructive)
 
@@ -13,9 +13,11 @@ Commands:
   /division rename    — rename a division (setup only)
   /division cancel    — cancel a division in the active season
 
-  /round add    — add a round to pending setup (auto-numbered by date)
-  /round delete — remove a round and renumber (setup only)
-  /round cancel — cancel a round in the active season
+  /round add      — add a round to pending setup (auto-numbered by date)
+  /round add-bulk — add many rounds to one division from a pasted list
+  /round add-xml  — add rounds to one or more divisions from XML
+  /round delete   — remove a round and renumber (setup only)
+  /round cancel   — cancel a round in the active season
 """
 
 from __future__ import annotations
@@ -23,8 +25,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
-from typing import Any
+from datetime import date, datetime, timedelta, timezone
+from functools import partial
+from typing import Any, Awaitable, Callable
 
 import discord
 from discord import app_commands
@@ -32,14 +35,22 @@ from discord.ext import commands
 
 from db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
 from models.division import Division
+from models.round import Round as RoundModel
 from models.round import RoundFormat
 from services import season_points_service
 import services.track_service as track_service
 from services.season_service import SeasonImmutableError
 from utils.autocomplete import bounded_autocomplete
+from utils.batch_notice import batch_notice
 from utils.channel_guard import channel_guard, admin_only
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from utils.output_router import _chunk_message
+from utils.round_import import (
+    ParsedDivisionRounds,
+    ParsedRound,
+    parse_bulk_round_lines,
+    parse_round_xml,
+)
 
 log = logging.getLogger(__name__)
 
@@ -100,6 +111,312 @@ def _pending_to_division_models(cfg: PendingConfig) -> list[Division]:
 
 
 # ---------------------------------------------------------------------------
+# Bulk round import
+# ---------------------------------------------------------------------------
+
+#: How many faults a rejection lists before it stops. A payload wrong in one systematic
+#: way — every format misspelled, every track unknown — produces one error per round, and
+#: a reply over 2000 characters is refused by Discord whole rather than truncated, which
+#: would lose the report entirely.
+_MAX_REPORTED_ERRORS = 25
+
+
+def _format_import_errors(errors: list[str]) -> str:
+    """The rejection a manager reads, capped so that the reply survives sending."""
+    shown = errors[:_MAX_REPORTED_ERRORS]
+    body = "\n".join(f"  • {error}" for error in shown)
+    if len(errors) > len(shown):
+        body += f"\n  …and {len(errors) - len(shown)} more."
+    return (
+        f"❌ Import rejected — {len(errors)} problem(s). "
+        f"**No rounds were added.**\n{body}"
+    )
+
+
+def _duplicate_datetime_errors(
+    existing: list[dict[str, Any]], incoming: list[ParsedRound]
+) -> list[str]:
+    """Every incoming round whose datetime is already taken, within the batch or before it.
+
+    `/season approve` refuses a season holding two rounds of one division at the same
+    moment (Gate 0b), and it does so long after the calendar has been built and possibly
+    posted. A repeated line is the likeliest fault in a pasted calendar, so it is caught
+    here instead — at the first moment the whole batch can be seen.
+    """
+    errors: list[str] = []
+    seen: dict[datetime, str] = {
+        round_["scheduled_at"]: "a round already in this division"
+        for round_ in existing
+    }
+    for parsed in incoming:
+        previous = seen.get(parsed.scheduled_at)
+        if previous is not None:
+            errors.append(
+                f"{parsed.location}: duplicate datetime "
+                f"{parsed.scheduled_at.isoformat()} — already used by {previous}."
+            )
+            continue
+        seen[parsed.scheduled_at] = parsed.location
+    return errors
+
+
+async def apply_round_import(
+    *,
+    cfg: PendingConfig,
+    parsed: list[ParsedDivisionRounds],
+    db_path: str,
+    overflow_check: Callable[[str, int], Awaitable[str | None]],
+) -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
+    """Merge *parsed* rounds into *cfg*, or refuse the lot.
+
+    Returns ``(applied, errors)``. Where *errors* is non-empty **nothing has been
+    changed** — every division is validated in full before any is written, so a manager
+    fixes their paste and submits the same text again rather than working out which half
+    of it landed.
+
+    Rounds are *merged* with those the division already holds, never substituted for
+    them: these are add commands, and a calendar too long for one modal is imported in
+    two passes.
+
+    Does not snapshot. The caller does that once, after every division has been applied —
+    `_snapshot_pending` rebuilds the entire season, so once per import rather than once
+    per round is the difference between one teardown and twenty.
+    """
+    errors: list[str] = []
+    staged: dict[str, list[dict[str, Any]]] = {}
+    divisions_seen: set[str] = set()
+
+    # One connection for every track in the payload. Opening one per round, as `/round
+    # add` does for its single round, is 72 connections on an SD card for a full season.
+    async with get_connection(db_path) as db:
+        for entry in parsed:
+            wanted = entry.division_name.strip().casefold()
+            if wanted in divisions_seen:
+                errors.append(
+                    f"[{entry.division_name}]: named more than once in this import."
+                )
+                continue
+            divisions_seen.add(wanted)
+
+            division = next(
+                (d for d in cfg.divisions if d.name.strip().casefold() == wanted), None
+            )
+            if division is None:
+                errors.append(
+                    f"[{entry.division_name}]: no division of that name in the "
+                    f"pending setup."
+                )
+                continue
+
+            new_rounds: list[dict[str, Any]] = []
+            for parsed_round in entry.rounds:
+                track_name: str | None = None
+                if parsed_round.track_raw:
+                    track_name = await track_service.resolve_track_name(
+                        db, parsed_round.track_raw
+                    )
+                    if track_name is None:
+                        errors.append(
+                            f"{parsed_round.location}: unknown track "
+                            f"`{parsed_round.track_raw}`."
+                        )
+                        continue
+
+                new_rounds.append(
+                    {
+                        "round_number": 0,
+                        "format": parsed_round.format,
+                        "track_name": track_name,
+                        "scheduled_at": parsed_round.scheduled_at,
+                    }
+                )
+
+            errors += _duplicate_datetime_errors(division.rounds, entry.rounds)
+
+            # Last, because it loads and parses the calendar template. Asked of the whole
+            # batch: each round of a dozen can clear a `+ 1` check while the dozen
+            # together outgrow the template.
+            overflow = await overflow_check(
+                division.name, len(division.rounds) + len(new_rounds)
+            )
+            if overflow is not None:
+                errors.append(f"[{division.name}]: {overflow}")
+                continue
+
+            staged[division.name] = sorted(
+                division.rounds + new_rounds, key=lambda r: r["scheduled_at"]
+            )
+
+    if errors:
+        return {}, errors
+
+    for name, merged in staged.items():
+        division = next(d for d in cfg.divisions if d.name == name)
+        for number, round_ in enumerate(merged, start=1):
+            round_["round_number"] = number
+        division.rounds = merged
+
+    return staged, []
+
+
+class BulkRoundModal(discord.ui.Modal, title="Add rounds in bulk"):
+    """The pasted calendar of one division, a round per line.
+
+    Times are stated in UTC, which is what a round is stored in — so unlike the XML
+    import this format cannot meet a daylight-saving gap, and needs no zone.
+    """
+
+    entries: discord.ui.TextInput = discord.ui.TextInput(
+        label="datetime UTC, format, track — one per line",
+        style=discord.TextStyle.paragraph,
+        placeholder=(
+            "2026-06-14T18:00, Normal, 14\n"
+            "2026-06-21T18:00, Sprint, Hungaroring\n"
+            "2026-06-28T18:00, Mystery"
+        ),
+        required=True,
+        max_length=2000,
+    )
+
+    def __init__(self, division_name: str) -> None:
+        super().__init__()
+        self._division_name = division_name
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+        await interaction.response.defer(ephemeral=True)
+        rounds, errors = parse_bulk_round_lines(self.entries.value)
+        if errors:
+            await interaction.followup.send(
+                _format_import_errors(errors), ephemeral=True
+            )
+            return
+        if not rounds:
+            await interaction.followup.send(
+                "❌ Nothing to add — no rounds were given.", ephemeral=True
+            )
+            return
+
+        await _run_round_import(
+            interaction,
+            [ParsedDivisionRounds(division_name=self._division_name, rounds=rounds)],
+            source="/round add-bulk",
+        )
+
+
+class XmlRoundModal(discord.ui.Modal, title="Add rounds from XML"):
+    """A calendar of one or more divisions, each round stated in its local time."""
+
+    payload: discord.ui.TextInput = discord.ui.TextInput(
+        label="XML payload",
+        style=discord.TextStyle.paragraph,
+        # A placeholder is capped at 100 characters, which the full schema does not fit
+        # in — Discord refuses the whole modal with a 400 rather than truncating it. So
+        # this names the elements rather than laying them out; the shape is in the
+        # README and in `docs/how-to/configuring-the-core-bot.md`.
+        placeholder=(
+            '<config><division name="Pro"><round>'
+            "<datetime><timezone><format><track>"
+        ),
+        required=True,
+        max_length=4000,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+        await interaction.response.defer(ephemeral=True)
+        divisions, errors = parse_round_xml(self.payload.value)
+        if errors:
+            await interaction.followup.send(
+                _format_import_errors(errors), ephemeral=True
+            )
+            return
+        if not any(entry.rounds for entry in divisions):
+            await interaction.followup.send(
+                "❌ Nothing to add — no rounds were given.", ephemeral=True
+            )
+            return
+
+        await _run_round_import(interaction, divisions, source="/round add-xml")
+
+
+async def _run_round_import(
+    interaction: discord.Interaction,
+    parsed: list[ParsedDivisionRounds],
+    *,
+    source: str,
+) -> None:
+    """Apply a parsed calendar and report it. Shared by both import modals.
+
+    The interaction is already deferred. Everything here replies through ``followup``.
+    """
+    cog = interaction.client.get_cog("SeasonCog")  # type: ignore[union-attr]
+    if cog is None:  # pragma: no cover — the cog is loaded for the command to exist
+        await interaction.followup.send(
+            "❌ Season commands are unavailable.", ephemeral=True
+        )
+        return
+
+    cfg = cog.resolve_pending(interaction)
+    if cfg is None:
+        await interaction.followup.send(
+            "❌ No pending season setup. Run `/season setup` first.", ephemeral=True
+        )
+        return
+
+    applied, errors = await apply_round_import(
+        cfg=cfg,
+        parsed=parsed,
+        db_path=cog.bot.db_path,
+        overflow_check=partial(_overflow_for, cog, interaction.guild_id),
+    )
+    if errors:
+        await interaction.followup.send(_format_import_errors(errors), ephemeral=True)
+        return
+
+    # Once, after every division. The snapshot rebuilds the whole season.
+    await cog._snapshot_pending(cfg)
+
+    total = sum(len(rounds) for rounds in applied.values())
+    lines = [f"✅ Added rounds to {len(applied)} division(s)."]
+    for name, rounds in applied.items():
+        lines.append(f"  **{name}**: {len(rounds)} round(s) in total")
+    if len(applied) == 1:
+        name, rounds = next(iter(applied.items()))
+        lines.append("")
+        lines.append(
+            format_round_list(
+                [
+                    RoundModel(
+                        id=0,
+                        division_id=0,
+                        round_number=r["round_number"],
+                        format=r["format"],
+                        track_name=r["track_name"],
+                        scheduled_at=r["scheduled_at"],
+                    )
+                    for r in rounds
+                ]
+            )
+        )
+
+    for chunk in _chunk_message("\n".join(lines)):
+        await interaction.followup.send(chunk, ephemeral=True)
+
+    await cog.bot.output_router.post_log(
+        interaction.guild_id,
+        f"{interaction.user.display_name} (<@{interaction.user.id}>) | {source} | Success\n"
+        + "\n".join(
+            f"  division: {name}, now holds {len(rounds)} round(s)"
+            for name, rounds in applied.items()
+        ),
+    )
+
+
+async def _overflow_for(cog, guild_id: int, _division_name: str, would_hold: int):
+    """Bind the cog's capacity guard to the shape `apply_round_import` injects."""
+    return await cog._calendar_round_overflow(guild_id, would_hold)
+
+
+# ---------------------------------------------------------------------------
 # Cog
 # ---------------------------------------------------------------------------
 
@@ -149,10 +466,14 @@ class SeasonCog(commands.Cog):
         game_edition: app_commands.Range[int, 1, 9999],
     ) -> None:
         """Begin season setup."""
+        # Deferred before any work: the snapshot rebuild below rewrites the whole
+        # SETUP season, which outlasts Discord's three-second window on a season of
+        # any size, and the reply then lands on an expired token.
+        await interaction.response.defer(ephemeral=True)
         server_id = interaction.guild_id
 
         if self._get_pending_for_server(server_id) is not None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c A season setup is already in progress for this server. "
                 "Use `/season review` to approve, or `/bot-reset` to cancel it first.",
                 ephemeral=True,
@@ -160,7 +481,7 @@ class SeasonCog(commands.Cog):
             return
 
         if await self.bot.season_service.get_active_season(server_id) is not None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c A season is currently active for this server. "
                 "Complete it before starting a new one.",
                 ephemeral=True,
@@ -168,7 +489,7 @@ class SeasonCog(commands.Cog):
             return
 
         if await self.bot.season_service.get_setup_season(server_id) is not None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c A season setup is already in progress for this server. "
                 "Use `/season review` to continue, or cancel it first.",
                 ephemeral=True,
@@ -179,7 +500,7 @@ class SeasonCog(commands.Cog):
         self._pending[interaction.user.id] = cfg
         await self._snapshot_pending(cfg)
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"\u2705 Season setup started. **Season #{cfg.season_number} (F1 {cfg.game_edition})** is being configured.\n\n"
             "Use `/division add` for each division, then `/round add` for each round.\n"
             "When done, run `/season review` to review and approve.",
@@ -442,6 +763,60 @@ class SeasonCog(commands.Cog):
             log.error("season review: lineup image failed: %s", exc)
             return REVIEW_IMAGE_FAULT
 
+    @staticmethod
+    def _recording_followup(interaction, posted: list):
+        """Wrap *interaction*'s followup so every message it sends is collected.
+
+        The review is a dozen messages sent from ten places, several of them inside
+        helpers that know nothing of each other. Threading a collector through all of them
+        would put the bookkeeping in ten places and leave the eleventh caller to forget it;
+        wrapping the one object they all send through puts it in one.
+
+        Only the public messages are collected. An ephemeral followup is visible to the
+        reviewer alone and cannot be deleted by id, and the fault reports among them are
+        the reason a manager knows what to fix.
+        """
+        original = interaction.followup.send
+
+        async def send(*args, **kwargs):
+            if kwargs.get("ephemeral"):
+                return await original(*args, **kwargs)
+            kwargs["wait"] = True
+            message = await original(*args, **kwargs)
+            if message is not None:
+                posted.append(message)
+            return message
+
+        interaction.followup.send = send
+        return original
+
+    async def _post_approval_prompt(
+        self, interaction, view: "_ApproveView", season_id: int, posted_messages: list
+    ) -> None:
+        """Ask, publicly, whether the configuration just reported is accepted.
+
+        Public rather than ephemeral so a reviewer who cannot approve — a league manager
+        holding only the interaction role — can put the question to somebody who can. The
+        message therefore says who may answer it, since anyone reading the channel can see
+        the button and only two kinds of member may press it.
+
+        The fingerprint is taken here rather than at the top of the command: it must
+        describe the season as the report just described it, and the report is only
+        complete now.
+        """
+        await view.record_fingerprint(interaction.guild_id, season_id)
+        message = await interaction.followup.send(
+            f"\U0001f4cb **Do you accept this season configuration?**\n"
+            f"Reviewed by <@{interaction.user.id}>. Approval is open to them or to a server "
+            f"administrator for the next {APPROVAL_WINDOW_SECONDS // 60} minutes, after "
+            f"which this review expires and must be run again.",
+            view=view,
+            ephemeral=False,
+            wait=True,
+        )
+        view.carries(posted_messages)
+        await view.bind(message)
+
     async def _post_review_calendar_image(
         self, interaction, division, rounds, season_number, *, prepared=None
     ) -> str:
@@ -530,8 +905,9 @@ class SeasonCog(commands.Cog):
             reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
             report = reports.get("lineup_template")
             if report is None or not report.valid:
-                # An unusable template is already reported by _image_template_problems;
-                # naming it twice would tell a manager nothing new.
+                # An unusable template is already reported by the review's own render,
+                # which withholds the approve button; naming it twice would tell a
+                # manager nothing new.
                 return []
 
             from models.image_catalogues import catalogue_for
@@ -576,105 +952,6 @@ class SeasonCog(commands.Cog):
             return problems
         except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
             log.error("season: lineup template check failed: %s", exc)
-            return []
-
-    async def _undrawable_graphics(
-        self, guild, server_id: int, divisions, rounds_of, season_number
-    ) -> list[str]:
-        """Every division whose lineup or calendar graphic will not draw, named.
-
-        The season review and this read **one and the same evaluation**, as they already do
-        for template validity: a graphic the review could not draw is a graphic every
-        posting of the season will fail to draw, so approving past it would commit a season
-        whose calendar and lineup fall back to text on every channel a league reads.
-
-        Silent for an aspect that is switched off — a league conveying its calendar as text
-        has nothing here to fail — and silent for a division the render draws.
-
-        This renders in earnest, and the season is then posted by rendering again. The cost
-        is one extra rasterisation per division per enabled aspect, on a command that
-        already defers and already schedules a season's worth of work; refusing on anything
-        cheaper would mean refusing on something other than what a posting will actually do.
-        """
-        from services.calendar_post_service import (
-            image_calendar_wanted,
-            tracks_by_name,
-        )
-        from services.calendar_post_service import (
-            render_for_command as render_calendar,
-        )
-        from services.image_lineup_post import lineup_enabled
-        from services.image_lineup_post import render_for_command as render_lineup
-        from services.image_render_service import discard_render
-
-        problems: list[str] = []
-        try:
-            draws_lineup = await lineup_enabled(self.bot, server_id)
-            draws_calendar = await image_calendar_wanted(self.bot, server_id)
-            if not (draws_lineup or draws_calendar):
-                return []
-
-            tracks = await tracks_by_name(self.bot.db_path) if draws_calendar else {}
-
-            for division in divisions:
-                if draws_lineup:
-                    outcome = await render_lineup(self.bot, guild, division.id)
-                    try:
-                        if outcome.png_path is None:
-                            problems.append(
-                                f"**{division.name}** — the lineup could not be drawn"
-                                + (f": {outcome.message}" if outcome.message else "")
-                            )
-                    finally:
-                        discard_render(outcome.png_path)
-
-                if draws_calendar:
-                    outcome = await render_calendar(
-                        self.bot,
-                        server_id,
-                        division,
-                        rounds_of.get(division.id, []),
-                        tracks,
-                        season_number=season_number,
-                    )
-                    try:
-                        if outcome.png_path is None:
-                            problems.append(
-                                f"**{division.name}** — the calendar could not be drawn"
-                                + (f": {outcome.message}" if outcome.message else "")
-                            )
-                    finally:
-                        discard_render(outcome.png_path)
-        except Exception as exc:  # noqa: BLE001
-            # A fault in the check is itself a reason not to approve: the season would be
-            # committed on the strength of a test that never ran.
-            log.error("season approve: the graphics check failed: %s", exc)
-            return [
-                "the image module could not be checked at all — "
-                f"{exc}. The season has not been approved."
-            ]
-        return problems
-
-    async def _image_template_problems(self, server_id: int) -> list[str]:
-        """Every unusable template, named individually (FR-007, FR-008).
-
-        The single evaluation `/season review` reports and `/season approve` blocks on,
-        so the two surfaces cannot disagree about whether a template is usable (FR-008a).
-        Silent when the module is disabled (FR-009).
-        """
-        from services.image_validity_service import check_all_templates, describe
-
-        if not await self.bot.module_service.is_images_enabled(server_id):
-            return []
-
-        config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
-        if config is None:
-            return []
-
-        try:
-            return [describe(problem) for problem in check_all_templates(config)]
-        except Exception as exc:  # noqa: BLE001 - never fail a season on this reader
-            log.error("season: image template check failed: %s", exc)
             return []
 
     async def _calendar_round_overflow(
@@ -994,6 +1271,8 @@ class SeasonCog(commands.Cog):
         try:
             statuses = await self.bot.image_validity_service.aspect_statuses(server_id)  # type: ignore[attr-defined]
             reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
+            directories = await self.bot.image_validity_service.directory_reports(server_id)  # type: ignore[attr-defined]
+            config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
         except Exception as exc:  # a review must never fail because of this section
             log.error("season review: image section failed: %s", exc)
             return ["**Image output**", "  ⚠️ Could not be read.", ""]
@@ -1013,17 +1292,67 @@ class SeasonCog(commands.Cog):
         # FR-008: name each one. A count tells a manager nothing about what to fix, and
         # this is the report they read before approving — the approval refuses on the
         # same findings, so seeing them here is what lets them act first.
+        #
+        # Split by whether the aspect drawing the template is switched on, because that
+        # is what decides whether the fault stops the season. `/season approve` blocks on
+        # exactly the first list, so the heading is a promise the gate keeps rather than
+        # a guess. A template beneath a switched-off aspect is still named: it is a real
+        # fault a manager will meet the moment they switch that aspect on, and finding it
+        # then — after the season is running — is worse than reading it here.
         if invalid:
             from models.image_constants import TEMPLATE_LABELS as _LABELS
+            from services.image_validity_service import templates_of_enabled_aspects
 
-            lines.append("  ⛔ These block approval:")
-            for report in reports.values():
-                if not report.valid:
-                    label = _LABELS.get(report.template_key, report.template_key)
-                    lines.append(
-                        f"      • **{label}**: {plain_reason(report)}. "
-                        f"{plain_remedy(report)}"
-                    )
+            drawn = templates_of_enabled_aspects(
+                await self.bot.image_config_service.get_toggles(server_id)  # type: ignore[attr-defined]
+            )
+
+            def _detail(report) -> str:
+                label = _LABELS.get(report.template_key, report.template_key)
+                return (
+                    f"      • **{label}**: {plain_reason(report)}. "
+                    f"{plain_remedy(report)}"
+                )
+
+            blocking = [r for r in reports.values() if not r.valid and r.template_key in drawn]
+            dormant = [r for r in reports.values() if not r.valid and r.template_key not in drawn]
+
+            if blocking:
+                lines.append("  ⛔ These block approval:")
+                lines += [_detail(report) for report in blocking]
+            if dormant:
+                lines.append(
+                    "  ⚠️ These do not block approval — the output that draws them is "
+                    "switched off, so nothing posts them. Fix them before switching it on:"
+                )
+                lines += [_detail(report) for report in dormant]
+
+        # FR-033: where the assets are read from. The paths are configuration a manager
+        # sets once and then cannot see anywhere in this report, and a graphic that draws
+        # placeholders because a folder was renamed looks exactly like one whose artwork
+        # is missing. Naming the directory is what separates the two.
+        #
+        # Summarised, as the templates above are: the path and whether it resolves. The
+        # fault and its remedy belong to `/images config view`, which has room for them.
+        if config is not None and directories:
+            from models.image_constants import ASSET_LABELS
+
+            lines.append("  Asset directories:")
+            for column, report in directories.items():
+                icon = "✅" if report.valid else "⚠️"
+                label = ASSET_LABELS.get(column, column)
+                lines.append(f"      {icon} {label}: `{getattr(config, column)}`")
+            unresolved = sum(1 for r in directories.values() if not r.valid)
+            if unresolved:
+                # Deliberately not the "↳" the aspect reasons use: that marker belongs to
+                # a reason hanging off one of the eight aspects, and `/images config view`
+                # is compared against this report line for line by
+                # `test_season_review_and_config_view_agree`. Borrowing it here would make
+                # the two surfaces look divergent when they are not.
+                lines.append(
+                    f"      • {unresolved} of these cannot be read — "
+                    f"`/images config view` names the fault."
+                )
 
         lines += await self._portrait_review_lines(server_id)
 
@@ -1085,8 +1414,10 @@ class SeasonCog(commands.Cog):
         name="review",
         description="Review pending season configuration before approving.",
     )
+    # `admin_only` is deliberately absent (2026-09-07). A league manager holding only
+    # the interaction role may review a season: the report is what the review is for.
+    # Approving it is the narrower right, and `_ApproveView` is where that is enforced.
     @channel_guard
-    @admin_only
     async def season_review(self, interaction: discord.Interaction) -> None:
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
@@ -1097,6 +1428,13 @@ class SeasonCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=False)
+
+        # Everything the review posts publicly is collected, so that approving the season
+        # can clear the report it was approved from. A review is a dozen messages and
+        # several pictures, and once the season is committed it describes a state that no
+        # longer needs answering — see `_ApproveView.approve`.
+        posted_messages: list = []
+        original_followup = self._recording_followup(interaction, posted_messages)
 
         season_num = f" (Season #{cfg.season_number} — F1 {cfg.game_edition})" if cfg.season_number > 0 else (f" (F1 {cfg.game_edition})" if cfg.game_edition > 0 else "")
         # The review is sent as one message per subsection rather than as one block.
@@ -1114,7 +1452,7 @@ class SeasonCog(commands.Cog):
         weather_lines: list[str] = []
         image_lines: list[str] = []
 
-        view = _ApproveView(self)
+        view = _ApproveView(self, interaction.user.id)
 
         # Why the approve button must be withheld, if it must. A list rather than a flag
         # because there is more than one cause and they read differently: a graphic that
@@ -1335,9 +1673,16 @@ class SeasonCog(commands.Cog):
                     rounds_by_division[_div.id] = (
                         await self.bot.season_service.get_division_rounds(_div.id)
                     )
-            prepared = await self._prerender_review_images(
-                interaction, db_divisions, rounds_by_division, cfg.season_number or None
-            )
+            # The notice wraps the pre-render, not the posting loop below it: the
+            # pre-render is where the whole batch is drawn, and the loop afterwards runs
+            # at message speed with nothing to wait for.
+            async with batch_notice(
+                interaction.channel,
+                "\U0001f3a8 Drawing the graphics for this review — one moment.",
+            ):
+                prepared = await self._prerender_review_images(
+                    interaction, db_divisions, rounds_by_division, cfg.season_number or None
+                )
 
             try:
                 for div in db_divisions:
@@ -1515,13 +1860,15 @@ class SeasonCog(commands.Cog):
                     "\u26d4 **The image module is not correctly configured.**\n"
                     f"{body}\n"
                     "The season is **not** offered for approval while that stands, and "
-                    "`/season approve` will refuse it for the same reason. Put it right, "
-                    "then run `/season review` again.",
+                    "Put it right, then run `/season review` again.",
                     ephemeral=True,
                 )
             else:
-                await interaction.followup.send(
-                    "Use the button below to approve.", view=view, ephemeral=True
+                # Taken here rather than at the top of the command: the fingerprint must
+                # describe the season as the report just described it, and the report is
+                # only complete now.
+                await self._post_approval_prompt(
+                    interaction, view, cfg.season_id, posted_messages
                 )
         else:
             # Pending (not yet persisted) path — header then one block per division
@@ -1541,16 +1888,17 @@ class SeasonCog(commands.Cog):
                         f"@ {r['track_name'] or 'Mystery'} \u2014 {discord_ts(r['scheduled_at'])}"
                     )
                 await interaction.followup.send("\n".join(div_lines), ephemeral=False)
-            await interaction.followup.send("Use the button below to approve.", view=view, ephemeral=True)
+            await self._post_approval_prompt(
+                interaction, view, cfg.season_id, posted_messages
+            )
 
-    @season.command(
-        name="approve",
-        description="Commit the pending season configuration to the bot.",
-    )
-    @channel_guard
-    @admin_only
-    async def season_approve(self, interaction: discord.Interaction) -> None:
-        await self._do_approve(interaction)
+        interaction.followup.send = original_followup
+
+    # `/season approve` is withdrawn (2026-09-07). A season is approved from the button
+    # `/season review` posts and from nowhere else: the review is the evidence the
+    # approval rests on, and a command that could be run without one let a manager commit
+    # a season they had not looked at. The button carries its own five-minute window, so
+    # what is approved is always a season someone has just read.
 
     @season.command(
         name="status",
@@ -1742,30 +2090,35 @@ class SeasonCog(commands.Cog):
         role: discord.Role,
         tier: int,
     ) -> None:
+        # Deferred before any work: the snapshot rebuild below rewrites the whole
+        # SETUP season, which outlasts Discord's three-second window once the season
+        # holds a division or two, and the reply then lands on an expired token.
+        await interaction.response.defer(ephemeral=True)
+
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c No pending season setup. Run `/season setup` first.",
                 ephemeral=True,
             )
             return
 
         if tier < 1:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u26d4 Tier must be 1 or higher.",
                 ephemeral=True,
             )
             return
 
         if any(d.name.lower() == name.lower() for d in cfg.divisions if d.name):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u274c A division named **{name}** already exists in this setup.",
                 ephemeral=True,
             )
             return
 
         if any(d.tier == tier for d in cfg.divisions if d.name):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u26d4 A division with tier **{tier}** already exists in this setup.",
                 ephemeral=True,
             )
@@ -1781,7 +2134,7 @@ class SeasonCog(commands.Cog):
 
         await self._snapshot_pending(cfg)
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"\u2705 Division **{name}** (Tier {tier}) added.\n"
             f"Role: {role.mention}\n\n"
             + format_division_list(_pending_to_division_models(cfg)),
@@ -2245,6 +2598,47 @@ class SeasonCog(commands.Cog):
     # Division channel assignment (shared helper + 3 commands)
     # ------------------------------------------------------------------
 
+    async def _refuse_channel_in_use(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel,
+        setting: str,
+        *,
+        division_name: str | None = None,
+    ) -> bool:
+        """Reply and return True where *channel* is already doing another job.
+
+        A channel serves one purpose across the whole server (decided 2026-09-06): two
+        settings sharing one interleave two kinds of posting, and several posting paths
+        edit or delete their last message by an id stored against the channel, so sharing
+        is how one output comes to delete another's.
+
+        Re-running a command with the value it already holds is refused too, and says so
+        in its own words — it is not a collision with something else, and reporting it as
+        one would send a manager looking for a conflict that does not exist.
+        """
+        from services.channel_registry_service import (
+            ChannelUse,
+            find_channel_use,
+            refusal,
+        )
+
+        mine = ChannelUse(setting, division_name)
+        use = await find_channel_use(
+            self.bot.db_path, interaction.guild_id, channel.id  # type: ignore[attr-defined]
+        )
+        if use is None:
+            return False
+
+        # Some of these commands defer and some do not, so the reply follows whichever
+        # state the interaction is already in — a fresh response after a defer is a 404.
+        message = refusal(channel.mention, use, same_setting=(use == mine))
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+        return True
+
     async def _set_division_channel(
         self,
         interaction: discord.Interaction,
@@ -2274,7 +2668,15 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        # 3. Upsert channel + get old value (for idempotency check and audit)
+        # 3. A channel does one job. Checked before the write, so a refusal leaves the
+        # configuration exactly as it stood — the same-value case included, which used to
+        # be written and only then reported as unchanged.
+        if await self._refuse_channel_in_use(
+            interaction, channel, channel_type, division_name=div.name
+        ):
+            return
+
+        # 4. Upsert channel + get old value (for the audit entry)
         if channel_type == "weather":
             old_id = await self.bot.season_service.set_division_forecast_channel(div.id, channel.id)
             type_label = "Weather forecast"
@@ -2285,13 +2687,7 @@ class SeasonCog(commands.Cog):
             old_id = await self.bot.season_service.set_division_standings_channel(div.id, channel.id)
             type_label = "Standings"
 
-        # 4. Idempotency: same value
-        if old_id == channel.id:
-            await interaction.response.send_message(
-                f"\u2139\ufe0f {type_label} channel for **{name}** is already set to {channel.mention}.",
-                ephemeral=True,
-            )
-            return
+        # The same-value case is caught by the guard above, before anything is written.
 
         # 5. Audit
         now = datetime.now(timezone.utc).isoformat()
@@ -2429,6 +2825,11 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        if await self._refuse_channel_in_use(
+            interaction, channel, "verdicts", division_name=div.name
+        ):
+            return
+
         old_id = await self.bot.season_service.set_division_penalty_channel(div.id, channel.id)
 
         # Audit log
@@ -2508,6 +2909,11 @@ class SeasonCog(commands.Cog):
                 f"\u274c Division \"{name}\" not found.",
                 ephemeral=True,
             )
+            return
+
+        if await self._refuse_channel_in_use(
+            interaction, channel, "rsvp", division_name=div.name
+        ):
             return
 
         old_cfg = await self.bot.attendance_service.get_division_config(div.id)
@@ -2593,6 +2999,11 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        if await self._refuse_channel_in_use(
+            interaction, channel, "attendance", division_name=div.name
+        ):
+            return
+
         old_cfg = await self.bot.attendance_service.get_division_config(div.id)
         old_id = old_cfg.attendance_channel_id if old_cfg else None
 
@@ -2658,6 +3069,11 @@ class SeasonCog(commands.Cog):
                 ephemeral=True,
             )
             return
+        if await self._refuse_channel_in_use(
+            interaction, channel, "lineup", division_name=div.name
+        ):
+            return
+
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
             await db.execute(
@@ -2719,6 +3135,11 @@ class SeasonCog(commands.Cog):
                 ephemeral=True,
             )
             return
+        if await self._refuse_channel_in_use(
+            interaction, channel, "calendar", division_name=div.name
+        ):
+            return
+
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
             await db.execute(
@@ -2866,9 +3287,15 @@ class SeasonCog(commands.Cog):
         scheduled_at: str,
         track: str = "",
     ) -> None:
+        # Deferred before any work: the snapshot rebuild and the calendar capacity
+        # guard below both outlast Discord's three-second window on a season of any
+        # size, and the reply then lands on an expired token (404 Unknown interaction)
+        # while the round itself has already been written.
+        await interaction.response.defer(ephemeral=True)
+
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c No pending season setup. Run `/season setup` first.",
                 ephemeral=True,
             )
@@ -2877,7 +3304,7 @@ class SeasonCog(commands.Cog):
         try:
             fmt = RoundFormat(format.upper())
         except ValueError:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u274c Invalid format `{format}`. Choose from: NORMAL, SPRINT, MYSTERY, ENDURANCE.",
                 ephemeral=True,
             )
@@ -2886,7 +3313,7 @@ class SeasonCog(commands.Cog):
         track_name = track.strip() or None
 
         if fmt != RoundFormat.MYSTERY and not track_name:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u274c A track is required for `{fmt.value}` rounds. "
                 "Leave track blank only for `MYSTERY` rounds.",
                 ephemeral=True,
@@ -2895,24 +3322,20 @@ class SeasonCog(commands.Cog):
 
         if track_name:
             async with get_connection(self.bot.db_path) as _tdb:
-                if track_name.isdigit():
-                    _tcur = await _tdb.execute("SELECT name FROM tracks WHERE id = ?", (int(track_name),))
-                else:
-                    _tcur = await _tdb.execute("SELECT name FROM tracks WHERE name = ?", (track_name,))
-                _trow = await _tcur.fetchone()
-            if _trow is None:
-                await interaction.response.send_message(
+                _resolved = await track_service.resolve_track_name(_tdb, track_name)
+            if _resolved is None:
+                await interaction.followup.send(
                     f"\u274c Unknown track `{track_name}`.\n"
                     "Use `/round add` and type a number or name \u2014 autocomplete will guide you.",
                     ephemeral=True,
                 )
                 return
-            track_name = _trow["name"]
+            track_name = _resolved
 
         try:
             sched = datetime.fromisoformat(scheduled_at)
         except ValueError:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c Invalid datetime. Use ISO format: `YYYY-MM-DDTHH:MM:SS`",
                 ephemeral=True,
             )
@@ -2920,8 +3343,25 @@ class SeasonCog(commands.Cog):
 
         div = next((d for d in cfg.divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u274c Division `{division_name}` not found in pending setup.",
+                ephemeral=True,
+            )
+            return
+
+        # Two rounds of one division may not share a moment. `/season approve` refuses a
+        # season that holds such a pair (Gate 0b), and on the same reasoning as the
+        # overflow guard below it is refused here instead — at the command that would
+        # cause it, rather than at an approval days later, with a calendar possibly
+        # already posted.
+        _clash = next(
+            (r for r in div.rounds if r["scheduled_at"] == sched), None
+        )
+        if _clash is not None:
+            await interaction.followup.send(
+                f"❌ **{div.name}** already holds round {_clash['round_number']} at "
+                f"{discord_ts(sched)}. Two rounds of one division cannot share a moment "
+                f"— the season could not be approved. The round was **not** added.",
                 ephemeral=True,
             )
             return
@@ -2933,7 +3373,7 @@ class SeasonCog(commands.Cog):
             interaction.guild_id, len(div.rounds) + 1
         )
         if _overflow is not None:
-            await interaction.response.send_message(_overflow, ephemeral=True)
+            await interaction.followup.send(_overflow, ephemeral=True)
             return
 
         new_round: dict[str, Any] = {
@@ -2962,7 +3402,7 @@ class SeasonCog(commands.Cog):
             )
             for r in div.rounds
         ]
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"\u2705 Round **{assigned_number}** added to **{div.name}**.\n"
             f"Format: {fmt.value} | Track: {track_name or 'Mystery'} | {discord_ts(sched)}\n\n"
             + format_round_list(round_models),
@@ -2976,6 +3416,43 @@ class SeasonCog(commands.Cog):
             f"  track: {track_name or 'Mystery'}\n"
             f"  scheduled_at: {sched.isoformat()} UTC",
         )
+
+    # ── /round add-bulk and /round add-xml ────────────────────────────────
+    #
+    # Flat siblings of `add` rather than `add bulk` and `add xml`: `/round` already
+    # carries the `/round results` subgroup, and Discord permits no third level of
+    # nesting. The hyphenated shape follows `/results config bulk-session`.
+
+    @round.command(
+        name="add-bulk",
+        description="Add many rounds to one division from a pasted list (setup only).",
+    )
+    @app_commands.describe(division_name="Division these rounds belong to")
+    @channel_guard
+    @admin_only
+    async def round_add_bulk(
+        self, interaction: discord.Interaction, division_name: str
+    ) -> None:
+        """Open the paste-a-calendar modal for one division.
+
+        **Deliberately does not defer**, unlike every other command of this flow:
+        `send_modal` must be the interaction's first response, and a deferred interaction
+        cannot open one. The work — and the deferral — happens in the modal's `on_submit`.
+        """
+        await interaction.response.send_modal(BulkRoundModal(division_name))
+
+    @round.command(
+        name="add-xml",
+        description="Add rounds to one or more divisions from XML (setup only).",
+    )
+    @channel_guard
+    @admin_only
+    async def round_add_xml(self, interaction: discord.Interaction) -> None:
+        """Open the XML import modal.
+
+        Does not defer, for the reason given on `round_add_bulk`.
+        """
+        await interaction.response.send_modal(XmlRoundModal())
 
     @bounded_autocomplete()
     async def _track_autocomplete(
@@ -3026,8 +3503,14 @@ class SeasonCog(commands.Cog):
         scheduled_at: str = "",
         format: str = "",
     ) -> None:
+        # Deferred before any work: the snapshot rebuild and the calendar capacity
+        # guard below both outlast Discord's three-second window on a season of any
+        # size, and the reply then lands on an expired token (404 Unknown interaction)
+        # while the round itself has already been written.
+        await interaction.response.defer(ephemeral=True)
+
         if not any([track, scheduled_at, format]):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c Provide at least one field to amend: `track`, `scheduled_at`, or `format`.",
                 ephemeral=True,
             )
@@ -3041,7 +3524,7 @@ class SeasonCog(commands.Cog):
                 None,
             )
             if pend_div is None:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"\u274c Division `{division_name}` not found in pending setup.",
                     ephemeral=True,
                 )
@@ -3052,7 +3535,7 @@ class SeasonCog(commands.Cog):
                 None,
             )
             if pend_rnd is None:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"\u274c Round {round_number} not found in division `{division_name}` of the pending setup.",
                     ephemeral=True,
                 )
@@ -3061,25 +3544,21 @@ class SeasonCog(commands.Cog):
             new_track: str | None = ...
             if track:
                 async with get_connection(self.bot.db_path) as _tdb:
-                    if track.isdigit():
-                        _tcur = await _tdb.execute("SELECT name FROM tracks WHERE id = ?", (int(track),))
-                    else:
-                        _tcur = await _tdb.execute("SELECT name FROM tracks WHERE name = ?", (track,))
-                    _trow = await _tcur.fetchone()
-                if _trow is None:
-                    await interaction.response.send_message(
+                    _resolved = await track_service.resolve_track_name(_tdb, track)
+                if _resolved is None:
+                    await interaction.followup.send(
                         f"\u274c Unknown track `{track}`. Use autocomplete to pick a valid track.",
                         ephemeral=True,
                     )
                     return
-                new_track = _trow["name"]
+                new_track = _resolved
 
             new_dt = ...
             if scheduled_at:
                 try:
                     new_dt = datetime.fromisoformat(scheduled_at)
                 except ValueError:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         "\u274c Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.",
                         ephemeral=True,
                     )
@@ -3090,7 +3569,7 @@ class SeasonCog(commands.Cog):
                 try:
                     new_fmt = RoundFormat(format.upper())
                 except ValueError:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"\u274c Invalid format `{format}`. Use NORMAL, SPRINT, MYSTERY, or ENDURANCE.",
                         ephemeral=True,
                     )
@@ -3099,7 +3578,7 @@ class SeasonCog(commands.Cog):
             effective_fmt = new_fmt if new_fmt is not ... else pend_rnd["format"]
             effective_track = new_track if new_track is not ... else pend_rnd["track_name"]
             if effective_fmt != RoundFormat.MYSTERY and not effective_track:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"\u274c Format `{effective_fmt.value}` requires a track. "
                     "Supply a `track` value or change format to MYSTERY.",
                     ephemeral=True,
@@ -3134,7 +3613,7 @@ class SeasonCog(commands.Cog):
                 )
                 for r in pend_div.rounds
             ]
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u2705 Round {round_number} in **{pend_div.name}** updated in pending setup "
                 f"(no DB write \u2014 use `/season approve` to commit).\n\n"
                 + format_round_list(round_models),
@@ -3151,13 +3630,13 @@ class SeasonCog(commands.Cog):
         # Active-season DB path
         season = await self.bot.season_service.get_active_season(interaction.guild_id)
         if season is None:
-            await interaction.response.send_message("\u274c No active season found.", ephemeral=True)
+            await interaction.followup.send("\u274c No active season found.", ephemeral=True)
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u274c Division `{division_name}` not found.", ephemeral=True
             )
             return
@@ -3165,7 +3644,7 @@ class SeasonCog(commands.Cog):
         rounds = await self.bot.season_service.get_division_rounds(div.id)
         rnd = next((r for r in rounds if r.round_number == round_number), None)
         if rnd is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"\u274c Round {round_number} not found in division `{division_name}`.",
                 ephemeral=True,
             )
@@ -3175,24 +3654,20 @@ class SeasonCog(commands.Cog):
 
         if track:
             async with get_connection(self.bot.db_path) as _tdb:
-                if track.isdigit():
-                    _tcur = await _tdb.execute("SELECT name FROM tracks WHERE id = ?", (int(track),))
-                else:
-                    _tcur = await _tdb.execute("SELECT name FROM tracks WHERE name = ?", (track,))
-                _trow = await _tcur.fetchone()
-            if _trow is None:
-                await interaction.response.send_message(
+                _resolved = await track_service.resolve_track_name(_tdb, track)
+            if _resolved is None:
+                await interaction.followup.send(
                     f"\u274c Unknown track `{track}`. Use autocomplete to pick a valid track.",
                     ephemeral=True,
                 )
                 return
-            amendments.append(("track_name", _trow["name"]))
+            amendments.append(("track_name", _resolved))
 
         if scheduled_at:
             try:
                 new_dt = datetime.fromisoformat(scheduled_at)
             except ValueError:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "\u274c Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.",
                     ephemeral=True,
                 )
@@ -3203,7 +3678,7 @@ class SeasonCog(commands.Cog):
             try:
                 new_fmt = RoundFormat(format.upper())
             except ValueError:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"\u274c Invalid format `{format}`. Use NORMAL, SPRINT, MYSTERY, or ENDURANCE.",
                     ephemeral=True,
                 )
@@ -3221,7 +3696,7 @@ class SeasonCog(commands.Cog):
             round_id=rnd.id,
             amendments=amendments,
         )
-        await interaction.response.send_message("\n".join(summary_lines), view=view, ephemeral=True)
+        await interaction.followup.send("\n".join(summary_lines), view=view, ephemeral=True)
 
     # One callback, both parameters. Registered here rather than by decorator because
     # `round_amend` is only defined further up the class body than `_track_autocomplete`.
@@ -3875,6 +4350,18 @@ class SeasonCog(commands.Cog):
             None,
         )
 
+    def resolve_pending(self, interaction: discord.Interaction) -> PendingConfig | None:
+        """The pending setup this interaction acts upon, or None.
+
+        The manager's own first, then any config for the guild — the lookup every command
+        of the setup flow makes. Public because the import modals need it and are
+        module-level classes holding no cog: reaching into `_pending` from outside would
+        make the store's shape part of their contract.
+        """
+        return self._pending.get(interaction.user.id) or self._get_pending_for_server(
+            interaction.guild_id
+        )
+
     async def _snapshot_pending(self, cfg: PendingConfig) -> None:
         """Write the current PendingConfig to DB (status=SETUP) and update cfg.season_id."""
         divisions_data = [
@@ -3898,6 +4385,10 @@ class SeasonCog(commands.Cog):
         new_divisions = await self.bot.season_service.get_divisions(cfg.season_id)
         for div in new_divisions:
             await self.bot.team_service.seed_division_teams(div.id, cfg.server_id)
+
+        # Only now do the teams exist to seat them in: put back the mock drivers the
+        # snapshot displaced, so a test-mode roster survives every season-setup command.
+        await self.bot.season_service.restore_driver_seats(cfg.season_id)
 
     async def _reload_pending_from_db(self, cfg: PendingConfig) -> None:
         """Resync the in-memory PendingConfig.divisions from DB (after direct DB operations)."""
@@ -3948,7 +4439,81 @@ class SeasonCog(commands.Cog):
             self._pending[s["server_id"]] = cfg
         log.info("Recovered %d pending setup(s) from DB", len(self._pending))
 
-    async def _do_approve(self, interaction: discord.Interaction) -> None:
+    async def _offer_backup_before_approving(
+        self, interaction, server_id: int, deadline: datetime
+    ) -> bool:
+        """Under test mode, ask whether to save the databases. Returns whether to go on.
+
+        Returns True where the approval should continue — the server is not in test mode
+        and there was nothing to ask, the manager said no, or the backup was taken. False
+        where the approval must stop: the question went unanswered until the review
+        expired, or the manager cancelled.
+
+        **The question is given what is left of the approval window, not a window of its
+        own.** A review stops describing its season five minutes after it is posted, and
+        that is as true of a season waiting on this question as of one waiting on the
+        button. Leaving it unanswered therefore expires the approval rather than holding
+        it open, which is the whole reason the deadline is carried in here.
+        """
+        config = await self.bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
+        if config is None or not getattr(config, "test_mode_active", False):
+            return True
+
+        remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
+        if remaining <= 0:
+            await interaction.followup.send(
+                "⏱️ This review expired before the season could be approved. Run "
+                "`/season review` again. **Nothing has been approved.**",
+                ephemeral=True,
+            )
+            return False
+
+        from services import backup_service
+
+        state = backup_service.state(self.bot.db_path)  # type: ignore[attr-defined]
+        standing = (
+            f"A backup taken {discord_ts(state.taken_at)} would be replaced."
+            if state.exists and not state.locked
+            else "The saved backup is locked and will not be replaced."
+            if state.locked
+            else "Nothing is saved yet."
+        )
+
+        view = _BackupBeforeApprovalView(self, server_id, timeout=remaining)
+        await interaction.followup.send(
+            f"\U0001f4be **Save the databases before approving?**\n"
+            f"Approving arms the schedule, grants the roles and posts the lineups, which "
+            f"is a laborious thing to build again. {standing}\n"
+            f"This review expires {discord_ts(deadline)} whichever you choose, so answer "
+            f"before then.",
+            view=view,
+            ephemeral=True,
+        )
+        await view.wait()
+
+        if view.answer is None:
+            await interaction.followup.send(
+                "⏱️ This review expired while the backup question went "
+                "unanswered. Run `/season review` again. **Nothing has been approved.**",
+                ephemeral=True,
+            )
+            return False
+        if view.answer == "cancel":
+            await interaction.followup.send(
+                "Nothing has been approved, and nothing has been saved.", ephemeral=True
+            )
+            return False
+        return True
+
+    async def _do_approve(
+        self, interaction: discord.Interaction, *, deadline: datetime | None = None
+    ) -> None:
+        """Commit the season, having asked about a backup first where test mode is on.
+
+        *deadline* is when the review stops being approvable, carried in from the view so
+        the backup question below can be given what is left of that window rather than a
+        fresh one. Omitted, the question is skipped — there is no window to divide.
+        """
         # Defer immediately — approval involves heavy work (scheduling, role grants,
         # lineup/calendar posts) that can exceed Discord's 3-second response window.
         await interaction.response.defer(ephemeral=True)
@@ -4079,7 +4644,7 @@ class SeasonCog(commands.Cog):
                 await interaction.followup.send(msg, ephemeral=True)
                 return
 
-            # ── Gate 3: monotonic ordering check (FR-008) ────────────────────
+            # ── Gate 2a: monotonic ordering check (FR-008) ───────────────────
             mono_errors = await season_points_service.validate_monotonic_ordering(
                 self.bot.db_path, cfg.season_id
             )
@@ -4092,88 +4657,7 @@ class SeasonCog(commands.Cog):
                 await interaction.followup.send(msg, ephemeral=True)
                 return
 
-        # ── Gate 3a: team names can address a lineup template (038, FR-013) ───
-        #
-        # Not gated on the image module: a team name is a structural invariant of teams
-        # (Principle IX), constrained at the one moment it is set so that a league
-        # enabling the module later is not left with names it cannot correct.
-        name_problems = await self._team_name_problems(cfg.server_id, cfg.season_id)
-        if name_problems:
-            bullet_list = "\n• ".join(name_problems)
-            msg = (
-                f"❌ Season cannot be approved — these team names cannot become "
-                f"lineup template fields:\n• {bullet_list}"
-            )
-            await interaction.followup.send(msg, ephemeral=True)
-            return
-
-        # ── Gate 4: image template prerequisites (036, FR-007/FR-008) ─────────
-        #
-        # `/season review` reports these; this is where the season is stopped. Every
-        # failing template is named individually with its own reason — a count, or a
-        # line naming a group, does not satisfy FR-008.
-        image_problems = await self._image_template_problems(cfg.server_id)
-        if image_problems:
-            bullet_list = "\n• ".join(image_problems)
-            msg = (
-                f"❌ Season cannot be approved — the image module is enabled "
-                f"but these templates are not usable:\n• {bullet_list}"
-            )
-            await interaction.followup.send(msg, ephemeral=True)
-            return
-
-        # ── Gate 4a: the lineup template against this season (038, FR-017/18) ─
-        #
-        # Season review holds the data that will actually be drawn, so a divergence here
-        # refuses rather than warns (Constitution XIV.9). A warning would let a league
-        # approve a season every lineup of which then falls back to text.
-        lineup_problems = await self._lineup_problems(cfg.server_id, cfg.season_id)
-        if lineup_problems:
-            bullet_list = "\n• ".join(lineup_problems)
-            msg = (
-                f"❌ Season cannot be approved — the `lineup` image aspect is on but "
-                f"the template cannot draw this season:\n• {bullet_list}"
-            )
-            await interaction.followup.send(msg, ephemeral=True)
-            return
-
-        # ── Gate 4b: the graphics this season will actually post ──────────────
-        #
-        # Gates 4 and 4a check the template; this draws it. A template that is structurally
-        # valid and holds every mandatory field can still fail on the data of this season —
-        # a track the registry does not know, a value that cannot be determined — and that
-        # fault reaches every channel of the league. The review reports it and withholds
-        # its button; this is where the season is stopped.
-        undrawable = await self._undrawable_graphics(
-            interaction.guild, cfg.server_id, divisions, div_rounds, cfg.season_number or None
-        )
-        if undrawable:
-            bullet_list = "\n\u2022 ".join(undrawable)
-            msg = (
-                f"\u274c Season cannot be approved \u2014 the image module is enabled but "
-                f"these graphics could not be drawn:\n\u2022 {bullet_list}\n"
-                f"Correct the template or the artwork it names, then run `/season review` "
-                f"again."
-            )
-            await interaction.followup.send(msg, ephemeral=True)
-            return
-
-        # ── Gate 4c: the driver portrait settings ─────────────────────────────
-        #
-        # Nothing about a graphic is wrong here, so this is its own gate rather than a
-        # finding of 4b: with portraits enabled and neither update trigger on, no portrait
-        # would ever be fetched, and the season would run drawing the placeholder for every
-        # driver while the configuration said otherwise. Read through the same helper
-        # `/season review` reads, so the two cannot disagree.
-        portrait_fault = await self._portrait_configuration_blocker(cfg.server_id)
-        if portrait_fault is not None:
-            await interaction.followup.send(
-                f"\u274c Season cannot be approved \u2014 {portrait_fault}",
-                ephemeral=True,
-            )
-            return
-
-        # ── Gate 3: signup module config prerequisites ────────────────────────
+        # ── Gate 2b: signup module config prerequisites ───────────────────────
         if await self.bot.module_service.is_signup_enabled(cfg.server_id):
             signup_cfg = await self.bot.signup_module_service.get_config(cfg.server_id)
             if signup_cfg:
@@ -4193,7 +4677,7 @@ class SeasonCog(commands.Cog):
                     await interaction.followup.send(msg, ephemeral=True)
                     return
 
-        # ── Gate 4: attendance module channel prerequisites ───────────────────
+        # ── Gate 2c: attendance module channel prerequisites ──────────────────
         if await self.bot.module_service.is_attendance_enabled(cfg.server_id):
             att_errors: list[str] = []
             for _div in divisions:
@@ -4216,6 +4700,87 @@ class SeasonCog(commands.Cog):
                 )
                 await interaction.followup.send(msg, ephemeral=True)
                 return
+
+        # Everything above is a database read. Everything below reaches the image
+        # module, and Gate 4c rasterises in earnest — so the cheap checks come first and
+        # a league missing an RSVP channel is told so without paying for a render it was
+        # never going to keep (ordering settled 2026-09-07).
+
+        # ── Gate 3a: team names can address a lineup template (038, FR-013) ───
+        #
+        # Not gated on the image module: a team name is a structural invariant of teams
+        # (Principle IX), constrained at the one moment it is set so that a league
+        # enabling the module later is not left with names it cannot correct.
+        name_problems = await self._team_name_problems(cfg.server_id, cfg.season_id)
+        if name_problems:
+            bullet_list = "\n• ".join(name_problems)
+            msg = (
+                f"❌ Season cannot be approved — these team names cannot become "
+                f"lineup template fields:\n• {bullet_list}"
+            )
+            await interaction.followup.send(msg, ephemeral=True)
+            return
+
+        # Gate 4 — every unusable template — is withdrawn (2026-09-07), with the render
+        # pass it belonged to. `/season review` draws every graphic and withholds its own
+        # button where one will not draw; the fingerprint then proves the season is the one
+        # that review described. A template broken here is therefore impossible: it was
+        # broken at the review, and there was no button, or it has changed since, and the
+        # fingerprint refuses. Re-evaluating fifteen templates at the button would answer a
+        # question already answered — and its method was deleted while this call was left
+        # behind, so the approval raised `AttributeError` rather than approving anything.
+
+        # ── Gate 4a: the lineup template against this season (038, FR-017/18) ─
+        #
+        # Season review holds the data that will actually be drawn, so a divergence here
+        # refuses rather than warns (Constitution XIV.9). A warning would let a league
+        # approve a season every lineup of which then falls back to text.
+        lineup_problems = await self._lineup_problems(cfg.server_id, cfg.season_id)
+        if lineup_problems:
+            bullet_list = "\n• ".join(lineup_problems)
+            msg = (
+                f"❌ Season cannot be approved — the `lineup` image aspect is on but "
+                f"the template cannot draw this season:\n• {bullet_list}"
+            )
+            await interaction.followup.send(msg, ephemeral=True)
+            return
+
+        # ── Gate 4b: the driver portrait settings ─────────────────────────────
+        #
+        # Nothing about a graphic is wrong here, so this is its own gate rather than a
+        # finding of the render below: with portraits enabled and neither update trigger on,
+        # no portrait
+        # would ever be fetched, and the season would run drawing the placeholder for every
+        # driver while the configuration said otherwise. Read through the same helper
+        # `/season review` reads, so the two cannot disagree.
+        portrait_fault = await self._portrait_configuration_blocker(cfg.server_id)
+        if portrait_fault is not None:
+            await interaction.followup.send(
+                f"\u274c Season cannot be approved \u2014 {portrait_fault}",
+                ephemeral=True,
+            )
+            return
+
+        # The graphics are **not** drawn again here (withdrawn 2026-09-07). `/season
+        # review` draws every one of them, and the button that reaches this code refuses
+        # unless the season still fingerprints as the one that review described — so the
+        # review's render is evidence for this approval, and repeating it would be one
+        # full rasterisation per division per aspect for an answer already in hand.
+
+        # ── The last thing before anything is committed: a backup, under test mode ──
+        #
+        # Approving a season is the point a test run becomes hard to repeat — the schedule
+        # is armed, the roles are granted, the lineups and calendars are posted — and
+        # getting back to the moment before it meant building the season again. So under
+        # test mode the approval pauses here and offers to save the databases first.
+        #
+        # Placed after every gate and before every write, which is the only moment a
+        # backup is worth taking: earlier and it saves a season that turns out to be
+        # unapprovable, later and it saves one already committed.
+        if deadline is not None and not await self._offer_backup_before_approving(
+            interaction, cfg.server_id, deadline
+        ):
+            return
 
         # Snapshot attached points configs before transitioning (FR-007)
         if await self.bot.module_service.is_results_enabled(cfg.server_id):
@@ -4300,74 +4865,82 @@ class SeasonCog(commands.Cog):
                             "_do_approve: role grant failed for user %s", _row["discord_user_id"]
                         )
 
-        # ── T016: Post lineup per division (FR-010) ──────────────────────────
-        if _guild is not None:
-            for _div in divisions:
-                if _div.lineup_channel_id:
+        # Both postings below draw inside their own loops, so the notice covers the pair
+        # of them rather than sitting inside either. It goes to the channel the review
+        # was read in — the approve button is ephemeral, so there is no other home, and
+        # this is where the manager is waiting.
+        async with batch_notice(
+            interaction.channel,
+            "\U0001f3a8 Posting lineups and calendars — one moment.",
+        ):
+            # ── T016: Post lineup per division (FR-010) ──────────────────────
+            if _guild is not None:
+                for _div in divisions:
+                    if _div.lineup_channel_id:
+                        try:
+                            await self.bot.placement_service._refresh_lineup_post(_guild, _div.id)  # type: ignore[attr-defined]
+                        except Exception:
+                            log.exception(
+                                "_do_approve: lineup post failed for division %s", _div.id
+                            )
+
+            # ── T017: Post calendar per division (FR-011) ─────────────────────
+            # Conveyed as a graphic where the images module is enabled and the `calendar`
+            # aspect is toggled on; in the traditional textual manner otherwise, and as a
+            # fallback where a graphic was wanted but could not be produced. Approval is a
+            # command, but the calendar posting within it is not the thing commanded, so a
+            # failed render degrades to text rather than refusing the season (XIV.7).
+            if _guild is not None:
+                from services import calendar_post_service as _calendar
+
+                _tracks_by_name = await _calendar.tracks_by_name(self.bot.db_path)
+                _calendar_notices: list[str] = []
+                _calendar_problems: list[str] = []
+
+                for _div in divisions:
+                    if not _div.calendar_channel_id:
+                        continue
                     try:
-                        await self.bot.placement_service._refresh_lineup_post(_guild, _div.id)  # type: ignore[attr-defined]
-                    except Exception:
-                        log.exception(
-                            "_do_approve: lineup post failed for division %s", _div.id
+                        _posting = await _calendar.post_division_calendar(
+                            self.bot,
+                            _guild,
+                            cfg.server_id,
+                            _div,
+                            div_rounds.get(_div.id, []),
+                            _tracks_by_name,
                         )
+                    except Exception:  # noqa: BLE001
+                        # One division must never stop the others being posted.
+                        log.exception(
+                            "_do_approve: calendar post failed for division %s", _div.id
+                        )
+                        continue
 
-        # ── T017: Post calendar per division (FR-011) ─────────────────────────
-        # Conveyed as a graphic where the images module is enabled and the `calendar`
-        # aspect is toggled on; in the traditional textual manner otherwise, and as a
-        # fallback where a graphic was wanted but could not be produced. Approval is a
-        # command, but the calendar posting within it is not the thing commanded, so a
-        # failed render degrades to text rather than refusing the season (XIV.7).
-        if _guild is not None:
-            from services import calendar_post_service as _calendar
-
-            _tracks_by_name = await _calendar.tracks_by_name(self.bot.db_path)
-            _calendar_notices: list[str] = []
-            _calendar_problems: list[str] = []
-
-            for _div in divisions:
-                if not _div.calendar_channel_id:
-                    continue
-                try:
-                    _posting = await _calendar.post_division_calendar(
-                        self.bot,
-                        _guild,
-                        cfg.server_id,
-                        _div,
-                        div_rounds.get(_div.id, []),
-                        _tracks_by_name,
+                    _calendar_notices.extend(
+                        f"{_div.name}: {detail}" for detail in _posting.notices
                     )
-                except Exception:  # noqa: BLE001
-                    # One division must never stop the others being posted.
-                    log.exception(
-                        "_do_approve: calendar post failed for division %s", _div.id
-                    )
-                    continue
+                    if _posting.problem:
+                        _calendar_problems.append(f"{_div.name}: {_posting.problem}")
 
-                _calendar_notices.extend(
-                    f"{_div.name}: {detail}" for detail in _posting.notices
-                )
-                if _posting.problem:
-                    _calendar_problems.append(f"{_div.name}: {_posting.problem}")
-
-            # Reported to the server's logging channel and to the manager who approved
-            # the season — and never in a division's calendar channel, which the drivers
-            # read (Constitution XIV.4).
-            for _line in _calendar_problems:
-                log.error("_do_approve: calendar fell back to text - %s", _line)
-            if _calendar_problems or _calendar_notices:
-                _report = ["/season approve | Calendar image generation"]
-                if _calendar_problems:
-                    _report.append("  Fell back to the textual calendar:")
-                    _report += [f"    - {line}" for line in _calendar_problems]
-                if _calendar_notices:
-                    _report.append("  Notices:")
-                    _report += [f"    - {line}" for line in _calendar_notices]
-                _report_text = "\n".join(_report)
-                try:
-                    await self.bot.output_router.post_log(cfg.server_id, _report_text)
-                except Exception:  # noqa: BLE001 — never fail an approval on the report
-                    log.exception("_do_approve: could not post the calendar report")
-                self._calendar_report = _report_text
+                # Reported to the server's logging channel and to the manager who approved
+                # the season — and never in a division's calendar channel, which the drivers
+                # read (Constitution XIV.4).
+                for _line in _calendar_problems:
+                    log.error("_do_approve: calendar fell back to text - %s", _line)
+                if _calendar_problems or _calendar_notices:
+                    _report = ["/season approve | Calendar image generation"]
+                    if _calendar_problems:
+                        _report.append("  Fell back to the textual calendar:")
+                        _report += [f"    - {line}" for line in _calendar_problems]
+                    if _calendar_notices:
+                        _report.append("  Notices:")
+                        _report += [f"    - {line}" for line in _calendar_notices]
+                    _report_text = "\n".join(_report)
+                    try:
+                        await self.bot.output_router.post_log(cfg.server_id, _report_text)
+                    except Exception:  # noqa: BLE001 — never fail an approval on the report
+                        log.exception("_do_approve: could not post the calendar report")
+                    self._calendar_report = _report_text
 
         stale_keys = [uid for uid, c in self._pending.items() if c.server_id == cfg.server_id]
         for uid in stale_keys:
@@ -4427,28 +5000,306 @@ class SeasonCog(commands.Cog):
 # ---------------------------------------------------------------------------
 
 
-class _ApproveView(discord.ui.View):
-    def __init__(self, cog: SeasonCog) -> None:
-        super().__init__(timeout=300)
-        self._cog = cog
+#: How long a review's Approve button stands. A review is a photograph of the season at
+#: the moment it was posted, and the button commits on the strength of it \u2014 so a manager
+#: who edits a round, moves a channel or reseats a driver and then presses a button from
+#: half an hour ago would approve a season nobody has actually reviewed. Five minutes is
+#: long enough to read the report and short enough that little can have changed.
+APPROVAL_WINDOW_SECONDS = 300
 
-    @discord.ui.button(label="\u2705 Approve", style=discord.ButtonStyle.success)
+
+class _BackupBeforeApprovalView(discord.ui.View):
+    """Save the databases, or don't, or stop — asked between the last gate and the commit.
+
+    Its timeout is what remains of the approval window rather than a span of its own, so a
+    review whose backup question goes unanswered expires exactly when it would have expired
+    anyway. `answer` is None in that case, which is how the caller tells silence from a
+    deliberate "no".
+    """
+
+    def __init__(self, cog: SeasonCog, server_id: int, *, timeout: float) -> None:
+        super().__init__(timeout=timeout)
+        self._cog = cog
+        self._server_id = server_id
+        self.answer: str | None = None
+
+    @discord.ui.button(label="\U0001f4be Save, then approve", style=discord.ButtonStyle.primary)
+    async def save(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        from services import backup_service
+
+        scheduler = getattr(self._cog.bot, "scheduler_service", None)
+        paused = False
+        try:
+            # Paused for the copy exactly as `/test-mode backup save` pauses it: the job
+            # store is written on the event loop, and a job added mid-copy tears.
+            if scheduler is not None and getattr(scheduler, "_scheduler", None) is not None:
+                if scheduler._scheduler.running:
+                    scheduler._scheduler.pause()
+                    paused = True
+            backup_service.save(
+                self._cog.bot.db_path,  # type: ignore[attr-defined]
+                backup_service.jobstore_path_of(self._cog.bot),
+            )
+        except backup_service.BackupError as exc:
+            # A backup that cannot be taken does not refuse the season. The manager asked
+            # for a convenience and is told it was not available; approving is what they
+            # actually came to do, and the alternative is making them run the review again
+            # for a reason that has nothing to do with the season.
+            await interaction.followup.send(
+                f"⚠️ The backup was not taken — {exc}\nApproving the season "
+                f"anyway.",
+                ephemeral=True,
+            )
+            self.answer = "skip"
+            self.stop()
+            return
+        except Exception:
+            log.exception("season approval: the backup could not be taken")
+            await interaction.followup.send(
+                "⚠️ The backup could not be taken. Approving the season anyway.",
+                ephemeral=True,
+            )
+            self.answer = "skip"
+            self.stop()
+            return
+        finally:
+            if paused:
+                scheduler._scheduler.resume()
+
+        await interaction.followup.send(
+            "✅ Saved. Restore it with `/test-mode backup restore`.", ephemeral=True
+        )
+        self.answer = "save"
+        self.stop()
+
+    @discord.ui.button(label="Approve without saving", style=discord.ButtonStyle.secondary)
+    async def skip(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        self.answer = "skip"
+        self.stop()
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger)
+    async def cancel(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        self.answer = "cancel"
+        self.stop()
+
+
+class _ApproveView(discord.ui.View):
+    """The standing question at the end of a review, and the button that answers it.
+
+    **Who may press.** The member who ran the review, or a server administrator. A league
+    manager holding only the interaction role may run `/season review` — that is what the
+    report is for — but approving somebody else's review is not theirs to do. The message
+    is public, so this check is what stops a bystander answering it; the refusal is
+    ephemeral, so only the presser reads it.
+
+    **How it ends.** The view times out after five minutes, deletes its own message and
+    replaces it with a notice pinging the reviewer. That timer is held in memory and dies
+    with the process, which is why the message is also recorded in `season_review_prompts`
+    and swept at startup — see migration 050.
+    """
+
+    def __init__(self, cog: SeasonCog, reviewer_id: int) -> None:
+        super().__init__(timeout=APPROVAL_WINDOW_SECONDS)
+        self._cog = cog
+        self._reviewer_id = reviewer_id
+        # When the review stops being approvable. Under test mode the approval pauses to
+        # ask about a backup, and that question is given whatever is *left* of this window
+        # rather than a fresh one of its own — an approval delayed by the question must
+        # still expire on time. `discord.py`'s own view timeout counts from construction
+        # and cannot answer "how much is left", so the moment is kept here.
+        self._deadline = datetime.now(timezone.utc) + timedelta(
+            seconds=APPROVAL_WINDOW_SECONDS
+        )
+        self._fingerprint = None
+        self._season_id: int | None = None
+        self._server_id: int | None = None
+        self._message: discord.Message | None = None
+        self._report: list = []
+
+    def carries(self, posted_messages: list) -> None:
+        """The report this button answers, so approving can clear it."""
+        self._report = posted_messages
+
+    async def record_fingerprint(self, server_id: int, season_id: int) -> None:
+        """Capture the season as the report just described it.
+
+        Called after the report is built, not before: the fingerprint has to describe
+        what the manager actually read.
+        """
+        from services.season_fingerprint_service import take_fingerprint
+
+        self._server_id = server_id
+        self._season_id = season_id
+        self._fingerprint = await take_fingerprint(self._cog.bot, server_id, season_id)
+
+    async def bind(self, message: discord.Message) -> None:
+        """Remember the message, and record it so a restart can find it again."""
+        self._message = message
+        if self._server_id is None or self._season_id is None:
+            return
+        try:
+            async with get_connection(self._cog.bot.db_path) as db:  # type: ignore[attr-defined]
+                await db.execute(
+                    "INSERT INTO season_review_prompts "
+                    "(server_id, season_id, channel_id, message_id, reviewer_id, posted_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(server_id) DO UPDATE SET "
+                    "season_id = excluded.season_id, channel_id = excluded.channel_id, "
+                    "message_id = excluded.message_id, reviewer_id = excluded.reviewer_id, "
+                    "posted_at = excluded.posted_at",
+                    (
+                        self._server_id,
+                        self._season_id,
+                        message.channel.id,
+                        message.id,
+                        self._reviewer_id,
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+                await db.commit()
+        except Exception:  # noqa: BLE001 — a review is not failed over its own bookkeeping
+            log.exception("season review: could not record the approve prompt")
+
+    async def _forget(self) -> None:
+        """Drop the record. The message has been answered, has expired, or is gone."""
+        if self._server_id is None:
+            return
+        try:
+            async with get_connection(self._cog.bot.db_path) as db:  # type: ignore[attr-defined]
+                await db.execute(
+                    "DELETE FROM season_review_prompts WHERE server_id = ?",
+                    (self._server_id,),
+                )
+                await db.commit()
+        except Exception:  # noqa: BLE001
+            log.exception("season review: could not clear the approve prompt")
+
+    def _may_approve(self, member) -> bool:
+        """The reviewer, or a server administrator.
+
+        Deliberately *not* Manage Server, which is the tier that used to be required to run
+        the review at all: widening who may review and narrowing who may approve is the
+        whole point of the split.
+        """
+        if getattr(member, "id", None) == self._reviewer_id:
+            return True
+        permissions = getattr(member, "guild_permissions", None)
+        return bool(permissions is not None and permissions.administrator)
+
+    async def on_timeout(self) -> None:
+        """Delete the question and say the review has expired.
+
+        Deleted rather than left disabled: a public message offering a button nobody may
+        press is a standing invitation to press it. The reviewer is pinged so the one
+        person who was waiting learns of it without having to watch the channel.
+        """
+        await self._forget()
+        # The report goes with the question. An expired review is one nobody may answer,
+        # and leaving its dozen messages behind while deleting only the button would say
+        # the season is still awaiting a decision it can no longer be given.
+        report, self._report = self._report, []
+        for stale in report:
+            try:
+                await stale.delete()
+            except discord.NotFound:
+                pass
+            except (discord.HTTPException, discord.Forbidden) as exc:
+                log.warning("season review: could not clear an expired report: %s", exc)
+        message, self._message = self._message, None
+        if message is None:
+            return
+        try:
+            await message.delete()
+        except discord.NotFound:
+            pass
+        except (discord.HTTPException, discord.Forbidden) as exc:
+            log.warning("season review: could not delete the expired prompt: %s", exc)
+        try:
+            await message.channel.send(
+                f"⏱️ <@{self._reviewer_id}> your season review has expired and "
+                f"can no longer be approved. Run `/season review` again to approve the season."
+            )
+        except (discord.HTTPException, discord.Forbidden) as exc:
+            log.warning("season review: could not post the expiry notice: %s", exc)
+
+    async def _expire_now(self) -> None:
+        """End the review as a timeout would, before the five minutes are up."""
+        self.stop()
+        await self.on_timeout()
+
+    @discord.ui.button(label="✅ Approve", style=discord.ButtonStyle.success)
     async def approve(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await self._cog._do_approve(interaction)
+        # Checked first, the fingerprint included: the message is public, so anyone who can
+        # read the channel can press this. Nothing is read and nothing is approved for a
+        # member who may not approve.
+        if not self._may_approve(interaction.user):
+            await interaction.response.send_message(
+                "⛔ Only the person who ran this review, or a server administrator, "
+                "can approve it. **Nothing has been approved.**",
+                ephemeral=True,
+            )
+            return
+
+        # The report you read is the report you approve. The five-minute life makes a change
+        # unlikely; this makes one detectable — and it is what lets the approval trust the
+        # review's own render rather than drawing everything a second time.
+        if self._fingerprint is not None and self._season_id is not None:
+            from services.season_fingerprint_service import take_fingerprint
+
+            current = await take_fingerprint(
+                self._cog.bot, self._server_id, self._season_id
+            )
+            changed = self._fingerprint.differs_from(current)
+            if changed:
+                bullets = "\n".join(f"• {area}" for area in changed)
+                await interaction.response.send_message(
+                    f"⛔ Your season has changed since this review, so the report above "
+                    f"no longer describes it:\n{bullets}\n"
+                    f"Run `/season review` again and approve from the fresh report. "
+                    f"**Nothing has been approved.**",
+                    ephemeral=True,
+                )
+                await self._expire_now()
+                return
+
+        await self._cog._do_approve(interaction, deadline=self._deadline)
+        await self._forget()
+        await self._clear_report()
+        self._message = None
         self.stop()
 
-    @discord.ui.button(label="\u270f\ufe0f Go Back to Edit", style=discord.ButtonStyle.secondary)
-    async def amend(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await interaction.response.send_message(
-            "Use `/round amend` to correct a round, or `/division add` / `/round add` to add more. "
-            "Then run `/season review` again.",
-            ephemeral=True,
-        )
-        self.stop()
+    async def _clear_report(self) -> None:
+        """Delete the review, the question included, once the season is approved.
+
+        The report describes a season awaiting a decision, and the decision is now taken:
+        left standing it is a long scroll of a state that has moved on, above whatever the
+        division channels have since been sent. The approval's own confirmation is
+        ephemeral and survives, so the manager still sees the outcome.
+
+        Deleted one by one rather than by `purge`: these are the review's own messages and
+        nothing else in the channel is the bot's to remove.
+        """
+        for message in [*self._report, self._message]:
+            if message is None:
+                continue
+            try:
+                await message.delete()
+            except discord.NotFound:
+                pass
+            except (discord.HTTPException, discord.Forbidden) as exc:
+                log.warning("season review: could not clear a report message: %s", exc)
+        self._report = []
 
 
 # ---------------------------------------------------------------------------

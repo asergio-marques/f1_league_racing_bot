@@ -46,17 +46,33 @@ class _Response:
         self.messages.append(content)
 
 
+class _Followup:
+    """Where a deferred command's replies land — one call per message sent."""
+
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    async def send(self, content, **kwargs):
+        self.messages.append(content)
+
+
 class _Interaction:
     def __init__(self) -> None:
         self.guild_id = SERVER_ID
         self.guild = None
         self.response = _Response()
+        self.followup = _Followup()
         self.user = SimpleNamespace(display_name="Tester", id=1)
 
     @property
+    def sent(self) -> list[str]:
+        """Every message the command sent, however it sent it, in order."""
+        return self.response.messages + self.followup.messages
+
+    @property
     def reply(self) -> str:
-        assert self.response.messages, "the command replied with nothing"
-        return self.response.messages[-1]
+        assert self.sent, "the command replied with nothing"
+        return self.sent[-1]
 
 
 def _unwrap(cmd):
@@ -205,6 +221,17 @@ class TestRosterAddTakesANationality:
         assert "Added fake driver" in interaction.reply
         assert "Nationality:" not in interaction.reply
 
+    async def test_the_reply_names_the_division_the_driver_landed_in(self, cog):
+        """Every division is seeded from the same server team list, so a team name
+        repeats across all of them. The team alone therefore does not say where the
+        driver went, which is the one thing the command is choosing — and it matters
+        more to a manager building a roster than the nationality does."""
+        interaction = await _add(cog, name="Mock Alpha", nationality="Dutch")
+
+        assert DIVISION in interaction.reply
+        assert "Redline" in interaction.reply
+        assert interaction.reply.index("Redline") < interaction.reply.index(DIVISION)
+
     async def test_it_reaches_the_log(self, cog):
         await _add(cog, nationality="Dutch")
 
@@ -247,9 +274,10 @@ class TestRosterAddWhileTheSwitchIsOff:
 
 class TestRosterListShowsIt:
     async def _list(self, cog) -> str:
+        """The whole listing, however many messages it took to send it."""
         interaction = _Interaction()
         await _unwrap(test_mode_cog.TestModeCog.roster_list)(cog, interaction, DIVISION)
-        return interaction.reply
+        return "\n".join(interaction.sent)
 
     async def test_the_column_is_headed(self, cog):
         await _add(cog, nationality="Dutch")
@@ -278,3 +306,44 @@ class TestRosterListShowsIt:
 
         assert "Redline" in rendered
         assert rendered.index("Redline") < rendered.index("Dutch")
+
+    async def test_a_roster_too_large_for_one_message_is_sent_as_several(
+        self, cog, db_path
+    ):
+        """The bug: past about twenty drivers Discord refused the whole listing.
+
+        A body over 2000 characters is answered with a 400, not truncated, so the
+        manager got no roster at all and a traceback in the log. The reserve team is
+        used because it seats without limit — the point is the length of the reply,
+        not how the drivers came to be seated.
+        """
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT id FROM divisions WHERE name = ?", (DIVISION,)
+            )
+            division_id = (await cursor.fetchone())[0]
+            await db.execute(
+                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
+                "VALUES (?, 'Reserve', 0, 1)",
+                (division_id,),
+            )
+            await db.commit()
+
+        for i in range(25):
+            interaction = _Interaction()
+            await _unwrap(test_mode_cog.TestModeCog.roster_add)(
+                cog, interaction, f"Mock Driver {i:02d}", "Reserve", DIVISION, "Dutch"
+            )
+
+        interaction = _Interaction()
+        await _unwrap(test_mode_cog.TestModeCog.roster_list)(
+            cog, interaction, DIVISION
+        )
+
+        assert len(interaction.sent) > 1, "a roster this size must span several messages"
+        for message in interaction.sent:
+            assert len(message) <= 2000, f"a page of {len(message)} chars would 400"
+        # Every driver still reaches the manager, across however many messages it took.
+        whole = "\n".join(interaction.sent)
+        for i in range(25):
+            assert f"Mock Driver {i:02d}" in whole

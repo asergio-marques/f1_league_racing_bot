@@ -31,13 +31,15 @@ There is no on/off parameter — it flips, and the new state is persisted to `se
 
 Two side effects on **enable**, both aimed at getting to a testable season quickly:
 
-- Where a season is in SETUP or ACTIVE, **Standard** and **Half Points** are created and attached unless a config of that exact name is already linked. This runs unconditionally — a season already carrying configurations of its own gains these two on top of them, rather than being left alone.
+- Where a season is in SETUP or ACTIVE, **Standard** and **Half Points** are created and attached unless a config of that exact name is already linked. This runs unconditionally — a season already carrying configurations of its own gains these two on top of them, rather than being left alone. They are created as ordinary server configurations, in the same place `/results config create` puts one, so `/results config view` shows their full ladder while the season is still in setup and `/season approve` copies them into the season by the ordinary route.
 - `/season approve` performs the same seeding, so a season approved under test mode will not fail its points-configuration gate — but that path seeds only when nothing at all is attached, which the toggle path does not check.
 
 Two on **disable**:
 
 - Pending forecast-message deletions are flushed.
 - **Every fake driver on the server is deleted**, across all divisions. This is not scoped to one division and there is no confirmation. Toggling off mid-run destroys your roster.
+
+**The two seeded points configurations are kept** (decided 2026-09-04). "Standard" and "Half Points" are ordinary configurations of the server from the moment they are seeded — they sit in the same tables a hand-built one does, and `/results config` lists, views and edits them identically — so disabling test mode leaves them alone. A mock driver is scaffolding and goes; a points ladder is configuration and stays. The consequence is that a server which has ever had test mode enabled keeps both configurations permanently, and they appear in `/results config list` and in the season review. Remove them with `/results config remove` if a real season should not offer them.
 
 ---
 
@@ -118,11 +120,30 @@ The response includes a **synthetic mention string** (`<@…>` with the fake pro
 | Command | Notes |
 |---|---|
 | `/test-mode roster add` | `driver_name`, `team_name`, `division` required; `nationality` optional |
+| `/test-mode roster add-bulk` | Opens a box. Paste the generator's `roster.csv` and it seats the whole grid at once |
 | `/test-mode roster remove` | Takes the synthetic `user_id`, not a name |
-| `/test-mode roster list` | Per division. The cheat sheet — reprints every mention string, with team and nationality |
+| `/test-mode roster list` | Per division. The cheat sheet — reprints every mention string, with team and nationality. A long roster arrives as several messages, each one a complete table |
 | `/test-mode roster clear` | Empties one division |
 
 Fake drivers show up in `/season review`'s lineup block with their display name beside the mention, which is the quickest way to confirm a division is fully seated — provided the lineup is being shown as text. With the `lineup` image output switched on, the review draws the picture instead, which carries the driver's display name and not the mention; switch that output off, or use `/test-mode roster list`, to read the mentions back.
+
+### Seating a whole grid at once
+
+Fifty-one `roster add` commands is a poor way to spend an afternoon. The roster generator already writes `roster.csv`, and `add-bulk` takes it whole:
+
+```
+/test-mode roster add-bulk
+```
+
+Paste the file — header row and all — into the box that opens. It seats every driver in it, across every division it names, in one go.
+
+**The IDs in the file are the IDs the bot writes.** That is the point of importing the CSV rather than pasting `commands.txt`: the sibling generator scripts, for results and check-ins, name drivers by those IDs, and `roster add` allocates its own. Import the CSV and every generated results file lines up with the grid, whatever order things were done in.
+
+**A division that already holds drivers is refused.** The file describes a whole grid, so importing it over a division that is already seated would leave drivers somewhere the file does not describe. Clear it with `/test-mode roster clear` first, or import only the divisions that are still empty — the other divisions in the file are refused, not the whole import.
+
+**Nothing is seated unless everything can be.** A misspelt team, a nationality the bot does not know, a division that is not in the season, or a team given more drivers than it has seats: any of these refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time, so there is nothing to undo.
+
+**About seventy drivers fit.** Discord caps the box at 4000 characters, and a roster row is around 55. A grid too large for one paste goes in two, a division at a time.
 
 ### Nationality
 
@@ -166,9 +187,9 @@ Driving a check-in through the buttons requires as many Discord accounts as ther
 
 The `/images test` commands draw the server's own data — its rounds, its teams, its seated drivers and the artwork folders it configures. Which season they read is decided for them: the **approved** season where there is one, the season **pending approval** where there is none approved, and neither where the server holds no season at all.
 
-That last case is the one worth knowing. A server with no season is **not** refused: the bot invents a whole league — division, calendar, circuits, round and drivers — over the server's own configured team names, and says so in the reply. So the previews work on a bare server without test mode being involved at all.
+That last case is the one worth knowing. A server with no season is **refused** — the previews need something of the league's own to draw. The bot used to invent a whole league here, over the server's configured team names, but that was withdrawn on 2026-09-06 along with the optional `division` and `round` parameters that reached it: an invented league says nothing about the configuration a preview exists to check.
 
-Test mode is therefore no longer *required* to preview an image, but it remains how you preview one against **particular** data. A test season with one division and a few `roster add` drivers is enough for every kind, and the previews read that data exactly as they read a real league's.
+So a season is the prerequisite, and a test season is the cheapest one to build. Test mode remains how you preview against **particular** data: one division and a few `roster add` drivers is enough for every kind, and the previews read that data exactly as they read a real league's.
 
 Seven things worth knowing when previewing against a test season:
 
@@ -184,10 +205,37 @@ Nothing a preview does is written back, so previewing at any point in the order 
 
 ---
 
+## Saving a state and going back to it
+
+Building a season to test one thing is slow, and testing the next thing usually means building it again. `/test-mode backup` saves the whole database and puts it back, so you can reach a state once and return to it as often as you like.
+
+```
+/test-mode backup save       take a snapshot, replacing whatever was there
+/test-mode backup lock       keep that one — a save will refuse to overwrite it
+/test-mode backup status     what is saved, when it was taken, whether it is locked
+/test-mode backup restore    put the saved one back
+```
+
+**These run only in test mode, and only for a server administrator.** They copy and replace `bot.db` wholesale, which is not something to do to a league that is running — and test mode already refuses to switch on while a real driver sits in a live season, so a server that can run them has nothing real to lose.
+
+**A restore needs a restart.** The bot holds its databases open the whole time it runs, so the files cannot be swapped underneath it. `/test-mode backup restore` checks the backup, keeps a copy of what is live, and stages the swap; the bot picks it up the next time it starts. Under a service that happens on its own — stop it and it comes back restored. From a terminal, stop it and run it again.
+
+**What it saves.** Both `bot.db` and the scheduler's `scheduler.db`, so the jobs come back with the data. Restoring puts you back exactly where the snapshot was taken, test mode included.
+
+**The approval offers to save for you.** Under test mode, pressing Approve on a season review pauses just before it commits anything and asks whether to save first — after every check has passed, and before the schedule is armed or a single lineup posted. That is the moment worth returning to, so you need not remember to save beforehand.
+
+> The question inherits what is left of the review's five minutes rather than getting its own. Leave it unanswered and the review expires and nothing is approved, exactly as if you had never pressed the button. If the save itself fails, you are told and the season is approved anyway — it was a convenience, not a condition.
+
+**What it is not.** The backups sit beside the live files, on the same disk — the same SD card, on a Pi. They protect you from a test run that went somewhere unhelpful or a migration worth undoing. They protect you from nothing that happens to the card. If you want a copy that survives the machine, copy `bot.bkup.db` off it yourself.
+
+> A restore keeps the database it replaced as `bot.prerestore.db`. If you restore and wish you had not, that file is the way back — by hand, with the bot stopped.
+
+---
+
 ## A workable order
 
 1. `/test-mode toggle` — before `/season approve`, so the points configurations get seeded, and before any real driver signs up, since a server holding one is refused.
-2. Build and approve a season as normal.
+2. Build and approve a season as normal. Filling a calendar by hand is tedious, and `tools/data-generator/calendar-data/` writes one for you — random circuits, a weekday and an evening slot per division, rounds a week apart — as the XML `/round add-xml` takes. See [the generator's README](../../tools/data-generator/README.md).
 3. `/test-mode roster add` until each division is seated — with a `nationality` on each if you mean to look at the graphics. `/test-mode roster list` to collect the mention strings.
 4. `/test-mode advance` repeatedly, checking each posted message as it appears.
 5. For attendance rounds, `/test-mode rsvp set-status` once the check-in has been advanced into existence.
@@ -200,3 +248,5 @@ Nothing a preview does is written back, so previewing at any point in the order 
 ## Access
 
 Every command in this document requires the interaction role, the configured command channel, and Discord's **Manage Server** permission — the same as the rest of the administrative surface. Full parameter tables are in the [Test Mode Commands](../../README.md#test-mode-commands) section of the README.
+
+The `/test-mode backup` commands are the exception: they ask for Discord's **Administrator** permission, since a restore replaces everything the bot holds.

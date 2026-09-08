@@ -262,9 +262,11 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
     assert "if approval_blockers:" in tail
     guarded = tail[tail.index("if approval_blockers:"):]
     fault_branch, _, approve_branch = guarded.partition("else:")
-    assert "view=view" not in fault_branch, "the button must not be offered on a fault"
+    assert "_post_approval_prompt" not in fault_branch, (
+        "the button must not be offered on a fault"
+    )
     assert "image module is not correctly configured" in fault_branch
-    assert "view=view" in approve_branch
+    assert "_post_approval_prompt" in approve_branch
 
 
 def test_the_roleless_team_warning_survives_the_graphic():
@@ -520,144 +522,46 @@ def test_the_posting_loop_pops_what_it_posts():
     assert 'prepared.pop((div.id, "lineup"), None)' in source
 
 
-# ── Approval refuses on a graphic that will not draw ──────────────────────
+# ── Approval trusts the review's render, and proves the season is unchanged ──
 #
-# The review withholds its button; `/season approve` refuses outright, so the two cannot
-# disagree and a season cannot be committed past a fault by skipping the review. That is
-# the rule Gate 4 already followed for template validity, extended to the drawing itself.
+# The approval used to draw every graphic a second time to prove they still drew. That is
+# withdrawn (2026-09-07): the review draws them, and the button refuses unless the season
+# still fingerprints as the one the review described — so the review's render is evidence
+# for the approval, and repeating it was a full rasterisation per division for an answer
+# already in hand.
 
 
-def _divisions(*names):
-    out = []
-    for index, name in enumerate(names, start=1):
-        division = MagicMock()
-        division.id = index
-        division.name = name
-        division.tier = index
-        out.append(division)
-    return out
+def test_the_approval_draws_nothing_itself():
+    """The render pass is gone, and must not creep back in."""
+    approve = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve", code_only=True)
 
-
-async def _undrawable(bot=None, **kwargs):
-    cog = _cog(bot)
-    return await cog._undrawable_graphics(
-        kwargs.get("guild", MagicMock()),
-        kwargs.get("server_id", 7),
-        kwargs.get("divisions", _divisions("Elite")),
-        kwargs.get("rounds_of", {1: []}),
-        kwargs.get("season_number", 3),
-    )
-
-
-async def test_both_aspects_off_checks_nothing_at_all(monkeypatch):
-    """A league conveying both as text has no graphic here to fail."""
-    import services.calendar_post_service as calendar_post
-    import services.image_lineup_post as lineup_post
-
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=False))
-    monkeypatch.setattr(
-        calendar_post, "image_calendar_wanted", AsyncMock(return_value=False)
-    )
-    tracks = AsyncMock(return_value={})
-    monkeypatch.setattr(calendar_post, "tracks_by_name", tracks)
-
-    assert await _undrawable() == []
-    tracks.assert_not_awaited(), "nothing should be read for a check that does not run"
-
-
-async def test_a_lineup_that_will_not_draw_names_its_division(monkeypatch, tmp_path):
-    import services.calendar_post_service as calendar_post
-    import services.image_lineup_post as lineup_post
-
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        calendar_post, "image_calendar_wanted", AsyncMock(return_value=False)
-    )
-
-    async def render(bot, guild, division_id):
-        if division_id == 2:
-            return MagicMock(png_path=None, message="no value for `team_3_name`")
-        return MagicMock(png_path=_png(tmp_path), message=None)
-
-    monkeypatch.setattr(lineup_post, "render_for_command", AsyncMock(side_effect=render))
-
-    problems = await _undrawable(divisions=_divisions("Elite", "Academy"))
-
-    assert len(problems) == 1
-    assert "Academy" in problems[0] and "team_3_name" in problems[0]
-    assert "Elite" not in problems[0], "a division that drew must not be named"
-
-
-async def test_a_calendar_that_will_not_draw_names_its_division(monkeypatch):
-    import services.calendar_post_service as calendar_post
-    import services.image_lineup_post as lineup_post
-
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=False))
-    monkeypatch.setattr(
-        calendar_post, "image_calendar_wanted", AsyncMock(return_value=True)
-    )
-    monkeypatch.setattr(calendar_post, "tracks_by_name", AsyncMock(return_value={}))
-    monkeypatch.setattr(
-        calendar_post,
-        "render_for_command",
-        AsyncMock(return_value=MagicMock(png_path=None, message="unknown circuit")),
-    )
-
-    problems = await _undrawable()
-
-    assert len(problems) == 1
-    assert "Elite" in problems[0] and "calendar" in problems[0]
-
-
-async def test_a_check_that_cannot_run_refuses_rather_than_passing(monkeypatch):
-    """A season committed on the strength of a test that never ran is the worse outcome."""
-    import services.image_lineup_post as lineup_post
-
-    monkeypatch.setattr(
-        lineup_post, "lineup_enabled", AsyncMock(side_effect=RuntimeError("db gone"))
-    )
-
-    problems = await _undrawable()
-
-    assert len(problems) == 1
-    assert "could not be checked" in problems[0]
-
-
-async def test_every_graphic_drawn_is_no_problem(monkeypatch, tmp_path):
-    import services.calendar_post_service as calendar_post
-    import services.image_lineup_post as lineup_post
-
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        calendar_post, "image_calendar_wanted", AsyncMock(return_value=True)
-    )
-    monkeypatch.setattr(calendar_post, "tracks_by_name", AsyncMock(return_value={}))
-    drawn = MagicMock(png_path=_png(tmp_path), message=None)
-    monkeypatch.setattr(
-        lineup_post, "render_for_command", AsyncMock(return_value=drawn)
-    )
-    monkeypatch.setattr(
-        calendar_post, "render_for_command", AsyncMock(return_value=drawn)
-    )
-
-    assert await _undrawable(divisions=_divisions("Elite", "Academy")) == []
+    for drawn in ("_undrawable_graphics", "render_for_command", "render_lineup"):
+        assert drawn not in approve, f"{drawn} draws at approval; the review does that"
 
 
 def test_approval_refuses_before_it_commits_anything():
-    """The gate must stand among the others, ahead of the work approval does."""
-    source = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve")
+    """The fingerprint stands where the render stood: ahead of everything committed."""
+    source = _function_source(SRC / "cogs" / "season_cog.py", "approve")
 
-    gate_at = source.index("_undrawable_graphics")
-    assert "Gate 4b" in source
+    gate_at = source.index("differs_from")
+    assert source.index("_may_approve") < gate_at, (
+        "who is pressing is settled before what they are pressing on"
+    )
+    assert gate_at < source.index("_do_approve"), (
+        "the season must be proven unchanged before it is approved"
+    )
 
-    # Ahead of the module gates that follow it, and of the posting approval does.
-    for later in ("Gate 3: signup module", "post_division_calendar"):
-        assert gate_at < source.index(later), f"the gate must precede {later}"
 
-    # And it returns rather than merely reporting.
-    tail = source[gate_at:]
-    branch = tail[tail.index("if undrawable:") : tail.index("Gate 3: signup module")]
+def test_a_changed_season_approves_nothing():
+    """The refusal returns rather than merely reporting."""
+    source = _function_source(SRC / "cogs" / "season_cog.py", "approve")
+
+    branch = source[source.index("if changed:") : source.index("await self._cog._do_approve")]
     assert "return" in branch
+    assert "Nothing has been approved" in branch
+
+    # The cheap module checks come *before* it, so a league missing a channel is not made
+    # to pay for a rasterisation it was never going to keep (settled 2026-09-07).
 
 
 def test_the_review_and_the_approval_read_the_same_evaluation():
@@ -666,7 +570,12 @@ def test_the_review_and_the_approval_read_the_same_evaluation():
     approve = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve")
 
     assert "approval_blockers" in review
-    assert "_undrawable_graphics" in approve
+    # The review still withholds its button on a graphic that will not draw. The approval
+    # no longer re-draws to find that out — it refuses unless the season still fingerprints
+    # as the one the review described, which is the same evidence reached more cheaply.
+    assert "differs_from" in _function_source(
+        SRC / "cogs" / "season_cog.py", "approve"
+    )
 
     # The portrait settings block on both surfaces too, and through one helper so that the
     # two cannot disagree about whether a season may be approved.
@@ -774,6 +683,336 @@ def test_the_approval_gate_returns_rather_than_merely_reporting():
 
     assert "Gate 4c" in source
     branch = source[source.index("if portrait_fault is not None:"):]
-    branch = branch[: branch.index("Gate 3: signup module")]
+    branch = branch[: branch.index("snapshot_configs_to_season")]
     assert "return" in branch
     assert "Season cannot be approved" in branch
+
+
+# ── The approval window, and who may answer it ────────────────────────────
+#
+# A review is a photograph of the season at the moment it was posted, and the button
+# commits on the strength of it. A manager who edits a round, moves a channel or reseats
+# a driver and then presses a button from half an hour ago would approve a season nobody
+# has reviewed — so the button stands for five minutes and is then deleted (2026-09-07).
+#
+# The message is public, which is what makes the access check load-bearing rather than
+# decorative: a league manager holding only the interaction role may run `/season review`,
+# and anyone who can read the channel can see the button they post.
+
+
+from cogs.season_cog import _ApproveView  # noqa: E402
+
+REVIEWER = 4242
+
+
+def _approve_view(reviewer_id: int = REVIEWER):
+    cog = MagicMock()
+    cog._do_approve = AsyncMock()
+    cog.bot.db_path = "/nonexistent/nowhere.db"
+    view = _ApproveView(cog, reviewer_id)
+    view._server_id = 7
+    view._season_id = 1
+    return view, cog
+
+
+def _member(user_id: int, administrator: bool = False):
+    member = MagicMock()
+    member.id = user_id
+    member.guild_permissions.administrator = administrator
+    return member
+
+
+def _button_interaction(user=None):
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+    interaction.user = user if user is not None else _member(REVIEWER)
+    return interaction
+
+
+async def test_the_reviewer_may_approve():
+    view, cog = _approve_view()
+
+    await _ApproveView.approve(view, _button_interaction(), MagicMock())
+
+    cog._do_approve.assert_awaited_once()
+
+
+async def test_a_server_administrator_may_approve_somebody_elses_review():
+    view, cog = _approve_view()
+    presser = _member(99, administrator=True)
+
+    await _ApproveView.approve(view, _button_interaction(presser), MagicMock())
+
+    cog._do_approve.assert_awaited_once()
+
+
+async def test_another_league_manager_may_not_approve():
+    """The case the public message creates. Manage Server is deliberately not enough —
+    only the reviewer or a server administrator."""
+    view, cog = _approve_view()
+    presser = _member(99, administrator=False)
+    presser.guild_permissions.manage_guild = True
+    interaction = _button_interaction(presser)
+
+    await _ApproveView.approve(view, interaction, MagicMock())
+
+    cog._do_approve.assert_not_awaited()
+    reply = interaction.response.send_message.await_args.args[0]
+    assert "Nothing has been approved" in reply
+    assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
+
+
+async def test_the_access_check_runs_before_the_fingerprint():
+    """A press by somebody who may not approve costs no query."""
+    import inspect
+
+    source = inspect.getsource(_ApproveView.approve)
+
+    assert source.index("_may_approve") < source.index("take_fingerprint"), (
+        "the fingerprint is taken for a member who may not approve anyway"
+    )
+
+
+async def test_the_view_stops_listening_on_the_window():
+    """discord.py's own timeout is what fires the deletion, so it must be the window."""
+    from cogs.season_cog import APPROVAL_WINDOW_SECONDS
+
+    view, _cog = _approve_view()
+
+    assert view.timeout == APPROVAL_WINDOW_SECONDS
+
+
+# ── Expiry deletes the question and says so ───────────────────────────────
+
+
+def _bound_view():
+    view, cog = _approve_view()
+    message = MagicMock()
+    message.delete = AsyncMock()
+    message.channel.send = AsyncMock()
+    view._message = message
+    return view, cog, message
+
+
+async def test_the_expired_prompt_is_deleted():
+    """Left standing, a public message offers a button nobody may press."""
+    view, _cog, message = _bound_view()
+
+    await view.on_timeout()
+
+    message.delete.assert_awaited_once()
+
+
+async def test_the_expiry_notice_pings_the_reviewer():
+    view, _cog, message = _bound_view()
+
+    await view.on_timeout()
+
+    notice = message.channel.send.await_args.args[0]
+    assert f"<@{REVIEWER}>" in notice
+    assert "/season review" in notice
+
+
+async def test_a_prompt_already_gone_still_posts_the_notice():
+    """Deleted by hand between the review and the timeout."""
+    import discord
+
+    view, _cog, message = _bound_view()
+    message.delete = AsyncMock(side_effect=discord.NotFound(MagicMock(status=404), "gone"))
+
+    await view.on_timeout()
+
+    message.channel.send.assert_awaited_once()
+
+
+async def test_a_changed_season_expires_the_prompt_rather_than_leaving_it():
+    """The report is stale either way, so the question must not stand."""
+    from services.season_fingerprint_service import SeasonFingerprint
+
+    view, cog, message = _bound_view()
+    view._fingerprint = SeasonFingerprint({"season": "abc"})
+    interaction = _button_interaction()
+
+    async def _changed(*_args, **_kwargs):
+        return SeasonFingerprint({"season": "def"})
+
+    import services.season_fingerprint_service as _sfs
+
+    original = _sfs.take_fingerprint
+    _sfs.take_fingerprint = _changed
+    try:
+        await _ApproveView.approve(view, interaction, MagicMock())
+    finally:
+        _sfs.take_fingerprint = original
+
+    cog._do_approve.assert_not_awaited()
+    message.delete.assert_awaited_once()
+
+
+async def test_approving_clears_the_review_it_was_approved_from():
+    """The report describes a season awaiting a decision, and the decision is taken.
+
+    Left standing it is a long scroll of a state that has moved on. The approval's own
+    confirmation is ephemeral and survives, so the manager still sees the outcome.
+    """
+    view, cog, message = _bound_view()
+    report = [MagicMock(delete=AsyncMock()) for _ in range(3)]
+    view.carries(report)
+
+    await _ApproveView.approve(view, _button_interaction(), MagicMock())
+
+    cog._do_approve.assert_awaited_once()
+    message.delete.assert_awaited_once()
+    for posted in report:
+        posted.delete.assert_awaited_once()
+
+
+async def test_an_expired_review_is_cleared_too():
+    """A review nobody may answer must not be left claiming a decision is pending."""
+    view, _cog, message = _bound_view()
+    report = [MagicMock(delete=AsyncMock()) for _ in range(2)]
+    view.carries(report)
+
+    await view.on_timeout()
+
+    message.delete.assert_awaited_once()
+    for posted in report:
+        posted.delete.assert_awaited_once()
+
+
+async def test_a_report_message_already_gone_does_not_stop_the_rest():
+    """One deleted by hand must not strand the other eleven."""
+    import discord
+
+    view, _cog, message = _bound_view()
+    gone = MagicMock(delete=AsyncMock(side_effect=discord.NotFound(MagicMock(status=404), "x")))
+    survivor = MagicMock(delete=AsyncMock())
+    view.carries([gone, survivor])
+
+    await _ApproveView.approve(view, _button_interaction(), MagicMock())
+
+    survivor.delete.assert_awaited_once()
+
+
+# ── The question the button is attached to ────────────────────────────────
+
+
+# ── Collecting the report, so approving can clear it ──────────────────────
+
+
+async def test_the_recorder_collects_every_public_message():
+    """One interception point rather than ten. The review sends from ten places, several
+    inside helpers, and a collector threaded through all of them would be forgotten by the
+    eleventh caller."""
+    from cogs.season_cog import SeasonCog
+
+    interaction = MagicMock()
+    sent = [MagicMock(), MagicMock()]
+    interaction.followup.send = AsyncMock(side_effect=sent)
+    posted: list = []
+
+    SeasonCog._recording_followup(interaction, posted)
+    await interaction.followup.send("first")
+    await interaction.followup.send("second")
+
+    assert posted == sent
+
+
+async def test_the_recorder_asks_for_the_message_back():
+    """`followup.send` returns None unless `wait=True`, so without it nothing is collected
+    and the report could never be cleared."""
+    from cogs.season_cog import SeasonCog
+
+    interaction = MagicMock()
+    original = AsyncMock(return_value=MagicMock())
+    interaction.followup.send = original
+
+    SeasonCog._recording_followup(interaction, [])
+    await interaction.followup.send("body")
+
+    assert original.await_args.kwargs["wait"] is True
+
+
+async def test_the_recorder_leaves_ephemeral_messages_alone():
+    """An ephemeral followup is the reviewer's alone and cannot be deleted by id; the
+    fault reports among them are how a manager knows what to fix."""
+    from cogs.season_cog import SeasonCog
+
+    interaction = MagicMock()
+    original = AsyncMock(return_value=MagicMock())
+    interaction.followup.send = original
+    posted: list = []
+
+    SeasonCog._recording_followup(interaction, posted)
+    await interaction.followup.send("a fault", ephemeral=True)
+
+    assert posted == []
+    assert "wait" not in original.await_args.kwargs
+
+
+async def test_the_recorder_returns_the_original_for_restoring():
+    from cogs.season_cog import SeasonCog
+
+    interaction = MagicMock()
+    original = AsyncMock(return_value=MagicMock())
+    interaction.followup.send = original
+
+    returned = SeasonCog._recording_followup(interaction, [])
+
+    assert returned is original
+    assert interaction.followup.send is not original
+
+
+def test_the_review_restores_the_followup_it_wrapped():
+    """The interaction outlives the command, and a wrapper left in place would collect
+    into a list nothing will ever read."""
+    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+
+    assert "interaction.followup.send = original_followup" in source
+
+
+def test_the_prompt_is_public_and_says_who_may_answer():
+    """Public so a reviewer who cannot approve can put the question to someone who can."""
+    source = _function_source(SRC / "cogs" / "season_cog.py", "_post_approval_prompt")
+
+    assert "ephemeral=False" in source
+    assert "wait=True" in source, "the message must be returned so it can be deleted"
+    assert "administrator" in source
+    assert "await view.bind(message)" in source
+
+
+def test_the_review_offers_only_the_approve_button():
+    """The Go Back to Edit button is withdrawn (2026-09-07): it did nothing but print
+    advice, and a second button on a public message is a second thing to mis-press."""
+    import discord
+
+    view, _cog = _approve_view()
+    buttons = [c for c in view.children if isinstance(c, discord.ui.Button)]
+
+    assert len(buttons) == 1
+    assert "Approve" in buttons[0].label
+
+
+def test_a_league_manager_may_run_the_review():
+    """`admin_only` is withdrawn from the command; approving is the narrower right."""
+    import inspect
+
+    from cogs.season_cog import SeasonCog
+
+    source = inspect.getsource(SeasonCog)
+    block = source[: source.index("async def season_review")]
+    decorators = block[block.rindex("@season.command") :]
+
+    assert "@channel_guard" in decorators
+    assert "@admin_only" not in decorators
+
+
+def test_the_approve_command_is_withdrawn():
+    """A season is approved from the review's button and from nowhere else.
+
+    A command that could be run without a review let a manager commit a season they had
+    not looked at, which is the whole thing the window above exists to prevent.
+    """
+    from cogs.season_cog import SeasonCog
+
+    assert "approve" not in {c.name for c in SeasonCog.season.commands}
