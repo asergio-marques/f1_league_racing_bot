@@ -146,6 +146,58 @@ class PortraitTimeConfirm(discord.ui.View):
         self.stop()
 
 
+#: The largest palette file a league may attach. A palette is a few hundred bytes per
+#: tier; anything past this is not one, and reading it costs the host memory before the
+#: parser can say so.
+MAX_PALETTE_IMPORT_BYTES = 100_000
+
+
+class TierPaletteModal(discord.ui.Modal, title="Set one tier's colours"):
+    """Paste a whole palette for one division rather than running ten commands.
+
+    The tool's annotated output pastes in whole — its commentary lines start with `#`,
+    which `parse_palette_lines` skips.
+    """
+
+    block: discord.ui.TextInput = discord.ui.TextInput(
+        label="One `slot colour` per line",
+        style=discord.TextStyle.paragraph,
+        placeholder="accent #A78BFA\nink #F7F6F8\npage #161517",
+        required=True,
+        max_length=4000,
+    )
+
+    def __init__(self, cog, division: str) -> None:
+        super().__init__()
+        self._cog = cog
+        self._division = division
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+        await interaction.response.defer(ephemeral=True)
+        await self._cog.apply_tier_block(interaction, self._division, self.block.value)
+
+
+class TierPaletteXmlModal(discord.ui.Modal, title="Import tier colours"):
+    """The same, for several divisions at once, where no file was attached."""
+
+    payload: discord.ui.TextInput = discord.ui.TextInput(
+        label="XML payload",
+        style=discord.TextStyle.paragraph,
+        placeholder='<palettes><division name="Division 1">'
+                    '<colour slot="accent">#3DD6F5</colour></division></palettes>',
+        required=True,
+        max_length=4000,
+    )
+
+    def __init__(self, cog) -> None:
+        super().__init__()
+        self._cog = cog
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+        await interaction.response.defer(ephemeral=True)
+        await self._cog.apply_tier_xml(interaction, self.payload.value)
+
+
 class ImageCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -1143,6 +1195,132 @@ class ImageCog(commands.Cog):
             f"Tier colour: {division} / {canonical_slot} = {canonical_colour}",
         )
 
+    @config.command(
+        name="per-tier-bulk-colour",
+        description="Set several of one tier's colour slots at once.",
+    )
+    @app_commands.describe(division="The division the colours apply to.")
+    @channel_guard
+    @admin_only
+    async def config_per_tier_bulk_colour(
+        self, interaction: discord.Interaction, division: str
+    ) -> None:
+        if not await self._guard_module_enabled(interaction):
+            return
+        await interaction.response.send_modal(TierPaletteModal(self, division))
+
+    async def apply_tier_block(self, interaction, division: str, text: str) -> None:
+        """Store a pasted palette for one tier, or refuse the whole of it.
+
+        Nothing is written while any line is faulty. The division is the unit of
+        atomicity, and a tier drawn in four of its ten colours looks deliberate — which is
+        worse than one that is plainly unconfigured.
+        """
+        from utils.palette_import import parse_palette_lines
+
+        colours, problems = parse_palette_lines(text)
+        if problems:
+            listed = "\n".join(f"  • {problem}" for problem in problems)
+            await self._reply(
+                interaction,
+                f"❌ Nothing was stored — {len(problems)} line(s) could not be read:\n{listed}",
+            )
+            return
+
+        written = await self._config_service.set_tier_colours(
+            interaction.guild_id, division, colours
+        )
+        lines = [f"✅ **{division}** — {written} colour(s) set."]
+        lines += [f"  • `{slot}` = `{colour}`" for slot, colour in colours.items()]
+
+        declared = await self._declared_colour_slots(interaction.guild_id)
+        unknown = sorted(set(colours) - declared)
+        if unknown:
+            lines.append(
+                f"ℹ️ No template of yours marks {', '.join(f'`{s}`' for s in unknown)} yet."
+            )
+
+        await self._reply(interaction, "\n".join(lines))
+        await self._log(interaction, f"Tier colours: {division} — {written} set")
+
+    @config.command(
+        name="colour-xml-import",
+        description="Import colours for several tiers at once (file attachment or modal).",
+    )
+    @app_commands.describe(file="Optional XML file. Omit it to paste into a modal instead.")
+    @channel_guard
+    @admin_only
+    async def config_colour_xml_import(
+        self, interaction: discord.Interaction, file: discord.Attachment | None = None
+    ) -> None:
+        if not await self._guard_module_enabled(interaction):
+            return
+
+        if file is None:
+            await interaction.response.send_modal(TierPaletteXmlModal(self))
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        raw = await file.read()
+        if not raw:
+            await self._reply(interaction, "❌ The attached file is empty.")
+            return
+        if len(raw) > MAX_PALETTE_IMPORT_BYTES:
+            await self._reply(
+                interaction,
+                f"❌ File is too large (max {MAX_PALETTE_IMPORT_BYTES // 1000} KB).",
+            )
+            return
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            await self._reply(interaction, "❌ File could not be decoded as UTF-8.")
+            return
+
+        await self.apply_tier_xml(interaction, text)
+
+    async def apply_tier_xml(self, interaction, text: str) -> None:
+        """Import many tiers, rejecting a block at a time (decided 2026-09-08).
+
+        A document that cannot be parsed fails whole, there being nothing to salvage from
+        it. Past that, each division stands or falls alone, so one mistyped tier does not
+        cost a league the other four.
+        """
+        from utils.palette_import import PaletteXmlError, parse_palette_xml
+
+        try:
+            blocks, problems = parse_palette_xml(text)
+        except PaletteXmlError as exc:
+            listed = "\n".join(f"  • {error}" for error in exc.errors)
+            await self._reply(interaction, f"❌ Nothing was stored:\n{listed}")
+            await self._log(interaction, "Tier colour import | FAILED (unreadable)")
+            return
+
+        written = 0
+        for block in blocks:
+            written += await self._config_service.set_tier_colours(
+                interaction.guild_id, block.division, block.colours
+            )
+
+        lines = []
+        if blocks:
+            lines.append(
+                f"✅ Imported {written} colour(s) across {len(blocks)} tier(s)."
+            )
+            lines += [
+                f"  • **{b.division}** — {len(b.colours)} colour(s)" for b in blocks
+            ]
+        if problems:
+            lines.append(f"⚠️ {len(problems)} block(s) were not imported:")
+            lines += [f"  • {problem}" for problem in problems]
+
+        await self._reply(interaction, "\n".join(lines))
+        await self._log(
+            interaction,
+            f"Tier colour import | {len(blocks)} tier(s), {written} colour(s), "
+            f"{len(problems)} rejected",
+        )
+
     async def _declared_colour_slots(self, server_id: int) -> set[str]:
         """Every colour slot any valid template of this server marks.
 
@@ -1953,6 +2131,7 @@ class ImageCog(commands.Cog):
     test_weather_mystery.autocomplete("division")(_division_autocomplete)
     # The per-tier colour command takes a division too, and completes it the same way.
     config_per_tier_set_colour.autocomplete("division")(_division_autocomplete)
+    config_per_tier_bulk_colour.autocomplete("division")(_division_autocomplete)
 
     async def _send_preview(
         self, interaction: discord.Interaction, *, title: str, context, outcomes
