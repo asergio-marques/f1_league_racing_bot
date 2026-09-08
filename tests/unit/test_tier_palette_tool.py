@@ -37,9 +37,21 @@ VIOLET = "#A78BFA"
 
 
 def _svg(rules: str) -> object:
+    """A drawing declaring *rules*, with one element carrying every class they name.
+
+    The element matters: a rule nothing uses is not a slot the bot would demand either,
+    so a fixture without one would be testing a state that cannot occur.
+    """
+    import re as _re
+
+    classes = sorted(set(_re.findall(r"\.([a-z0-9_-]+)\s*\{", rules)))
+    # One element per class, not one carrying them all: an element with two colour classes
+    # has a single computed fill, so both slots would read the same colour and the fixture
+    # would assert a state no real drawing produces.
+    body = "".join(f'<rect class="{name}"/>' for name in classes)
     return parse_svg_bytes(
         f'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
-        f"<defs><style>{rules}</style></defs><rect/></svg>".encode()
+        f"<defs><style>{rules}</style></defs>{body}</svg>".encode()
     )
 
 
@@ -123,6 +135,67 @@ def test_the_offset_rotation_that_was_rejected_really_does_land_in_red():
 
 
 # ── Reading the palette out of a drawing ──────────────────────────────────
+
+def _inline_svg(body: str) -> object:
+    return parse_svg_bytes(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">{body}</svg>'.encode()
+    )
+
+
+def test_the_palette_is_read_where_the_colour_sits_on_the_element():
+    """The other authoring form the guides offer, and the one that used to find nothing.
+
+    A drawing may give a slot its default inline rather than as a stylesheet rule. Read
+    only from the stylesheet, such a drawing yielded an empty palette — so the tool said
+    "no colour slots" about a drawing the bot was simultaneously demanding colours for.
+    """
+    root = _inline_svg(
+        '<rect fill="#3DD6F5" class="colour-fill-accent"/>'
+        '<text fill="#F4F7FA" class="colour-fill-ink">x</text>'
+    )
+    assert tier_palette.base_palette(root) == {"accent": "#3DD6F5", "ink": "#F4F7FA"}
+
+
+def test_the_tool_finds_exactly_the_slots_the_bot_demands():
+    """The property that makes the two agree, whichever way a drawing is authored.
+
+    `colour_slots` is what the shortfall check measures a league against; anything it finds
+    and this does not is a colour the bot blocks on and the tool cannot help with.
+    """
+    from utils.svg_palette import colour_slots
+
+    for root in (
+        _inline_svg('<rect fill="#3DD6F5" class="colour-fill-accent"/>'),
+        _svg(".colour-fill-accent { fill:#3DD6F5 }"),
+        _inline_svg(
+            '<defs><style>.colour-fill-ink { fill:#F4F7FA }</style></defs>'
+            '<rect fill="#3DD6F5" class="colour-fill-accent"/>'
+            '<text class="colour-fill-ink">x</text>'
+        ),
+    ):
+        found = set(tier_palette.base_palette(root))
+        assert found == colour_slots(root), f"tool {found} vs bot {colour_slots(root)}"
+
+
+def test_a_stroke_slot_is_read_from_the_element_too():
+    root = _inline_svg('<path stroke="#242C35" class="colour-stroke-rule"/>')
+    assert tier_palette.base_palette(root) == {"rule": "#242C35"}
+
+
+def test_a_colour_written_some_other_css_way_is_understood():
+    """A hand-authored drawing may say `rgb(...)` or a colour name."""
+    root = _inline_svg('<rect fill="rgb(61, 214, 245)" class="colour-fill-accent"/>')
+    assert tier_palette.base_palette(root) == {"accent": "#3DD6F5"}
+
+
+def test_the_first_element_of_a_slot_settles_it():
+    """Deterministic, so two runs of one drawing print the same palette."""
+    root = _inline_svg(
+        '<rect fill="#111111" class="colour-fill-accent"/>'
+        '<rect fill="#222222" class="colour-fill-accent"/>'
+    )
+    assert tier_palette.base_palette(root) == {"accent": "#111111"}
+
 
 def test_the_palette_is_read_from_the_drawings_own_rules():
     root = _svg(".colour-fill-ink { fill:#F4F7FA } .colour-fill-page { fill:#12161B }")
@@ -213,7 +286,8 @@ def test_it_prints_the_commands_for_a_slotted_drawing(tmp_path, capsys):
     drawing.write_bytes(
         b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><defs><style>'
         b".colour-fill-accent { fill:#3DD6F5 } .colour-fill-ink { fill:#F4F7FA }"
-        b"</style></defs><rect/></svg>"
+        b'</style></defs><rect class="colour-fill-accent"/>'
+        b'<text class="colour-fill-ink">x</text></svg>'
     )
     assert tier_palette.main(
         ["--division", "Division 2", "--accent", "#A78BFA", "--template", str(drawing)]
@@ -228,7 +302,8 @@ def test_it_writes_nothing(tmp_path):
     drawing = tmp_path / "slotted.svg"
     drawing.write_bytes(
         b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><defs><style>'
-        b".colour-fill-accent { fill:#3DD6F5 }</style></defs><rect/></svg>"
+        b".colour-fill-accent { fill:#3DD6F5 }</style></defs>"
+        b'<rect class="colour-fill-accent"/></svg>'
     )
     before = drawing.read_bytes()
     tier_palette.main(

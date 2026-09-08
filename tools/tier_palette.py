@@ -33,35 +33,63 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from utils.colour import InvalidColour, normalise_hex, restate_in_hue, to_lch  # noqa: E402
-from utils.svg_document import load_svg, stylesheet  # noqa: E402
+from utils.colour import (  # noqa: E402
+    InvalidColour,
+    coerce_css_colour,
+    normalise_hex,
+    restate_in_hue,
+    to_lch,
+)
+from utils.svg_document import computed_style, load_svg, stylesheet  # noqa: E402
+from utils.svg_palette import FILL_PREFIX, STOP_PREFIX, STROKE_PREFIX  # noqa: E402
 
 #: Where the drawings live unless the caller names one. The league tier, because the
 #: packaged templates declare no slots and so state no palette.
 DEFAULT_TEMPLATE_DIR = Path("resources/league/templates")
 
-#: `.colour-fill-<slot>` and `.colour-stroke-<slot>`, as `svg_palette` spells them.
-_RULE = re.compile(r"^\.colour-(fill|stroke)-([a-z0-9_-]{1,64})$")
+#: Which property each prefix paints, and therefore which declaration to read back.
+_PAINTS = {FILL_PREFIX: "fill", STROKE_PREFIX: "stroke", STOP_PREFIX: "stop-color"}
 
 #: How much of its colourfulness a non-accent keeps. See the module docstring.
 DEFAULT_CHROMA = 0.35
 
 
-def base_palette(root) -> dict[str, str]:
-    """The colour each slot is drawn in, read off the drawing's own stylesheet.
+def _slots_on(element) -> list[tuple[str, str]]:
+    """Every (property, slot) this element's class declares."""
+    found = []
+    for token in (element.get("class") or "").split():
+        for prefix, prop in _PAINTS.items():
+            if token.startswith(prefix) and len(token) > len(prefix):
+                found.append((prop, token[len(prefix):]))
+    return found
 
-    A slot declared for both fill and stroke is one slot and one colour; the fill wins where
-    the two disagree, that being the form nearly every element uses.
+
+def base_palette(root) -> dict[str, str]:
+    """The colour each slot is currently drawn in, read off the drawing itself.
+
+    **Resolved through the full cascade, not from the stylesheet alone.** A league may give
+    a slot its default either way — `.colour-fill-accent { fill:#3DD6F5 }` in the drawing's
+    own stylesheet, or `fill="#3DD6F5"` on each element beside the class — and the guides
+    offer both. Reading only the stylesheet found nothing in a drawing written the second
+    way, so the tool announced "no colour slots" for a drawing the bot was at that moment
+    demanding ten colours for.
+
+    So slots are discovered from the elements that carry them, exactly as
+    `svg_palette.colour_slots` does, and each colour is then whatever `computed_style`
+    resolves for that element — which accounts for presentation attribute, stylesheet rule
+    and inline style alike. The first element of a slot in document order settles it.
     """
+    rules = stylesheet(root)
     palette: dict[str, str] = {}
-    for selector, block in stylesheet(root).items():
-        matched = _RULE.match(selector.strip())
-        if matched is None:
+    for element in root.iter():
+        if not isinstance(element.tag, str):
             continue
-        kind, slot = matched.groups()
-        colour = block.get("fill" if kind == "fill" else "stroke")
-        if colour and (kind == "fill" or slot not in palette):
-            palette[slot] = colour.strip()
+        for prop, slot in _slots_on(element):
+            if slot in palette:
+                continue
+            colour = coerce_css_colour(computed_style(element, rules).get(prop))
+            if colour:
+                palette[slot] = colour
     return palette
 
 
