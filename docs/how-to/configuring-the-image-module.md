@@ -430,6 +430,27 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 
 > **The standings drawings got wider.** They are now 1728 px across, from 1200 and 1128. The old columns could not hold the widest thing a cell can be asked to show — a `DSQ` with another outcome raised beside it — so it ran over into the next round, and nothing said so. Each session column is now 54 px wide. If you have re-laid a standings drawing of your own, give your columns the same room; nothing can check this for you.
 
+> **The two standings drawings and the attendance sheet name an occasion now, not a round.** Those
+> three used to carry a `round_number` slot with the word `ROUND` drawn beside it as artwork. They
+> now carry one slot, `classification_label`, holding the whole phrase: `After Round 10` after a
+> round, `Opening Classification` when the season is approved, `Final Classification` when it
+> completes. The word had to stop being artwork — artwork has no id, so the bot could not reach it,
+> and a heading it cannot reach can only ever say one of the three.
+>
+> **If you have re-laid any of those three, rename the slot before your next season.** Give the text
+> the id `classification_label`, delete the `ROUND` lettering next to it, and give it room for a
+> phrase rather than a two-digit number. It is required on all three, and `round_number` is no
+> longer read on any of them — `/images config template-directory` checks all fifteen at once and
+> refuses the whole change while one still declares the old slot, so you find out then rather than
+> at season approval. Every other drawing keeps `round_number` unchanged; those are always about
+> one round.
+>
+> Two slots empty themselves on these three when the season is at one of its ends. `race_name` is
+> blank on both — no grand prix has been run at the opening, and the final sheet is about the season
+> rather than the last race — and on the standings, `result_status` is blank at the opening too,
+> there being no results yet for it to name. Neither is reported as a problem: that is the picture
+> drawing what is true.
+
 **Make room for your biggest season.** Where the drawing file sets the limit — table rows, calendar rounds, reserve seats — the bot will refuse to go past it rather than quietly leaving someone off. The one exception is a reserve block you left out altogether, which is a decision rather than a limit and is honoured in silence. If your calendar drawing has room for 22 rounds, `/round add` will stop you at 23. Spare room costs nothing, as unused slots are hidden.
 
 ---
@@ -453,6 +474,19 @@ This comes last on purpose. Switching something on before its drawing file is bi
 The check-in call is the odd one out — it *adds* a picture rather than replacing anything. The message, the roster and the buttons all stay exactly as they were.
 
 **Standings is the other odd one out: it posts two pictures where the text posts one message.** The driver standings go first and the constructor standings after, each carrying its heading and lifecycle label as message text and its table as an attachment. Both are drawn again and replaced on every occasion the standings were reposted before — a round first posted as provisional, a penalty or appeal phase closed, an amendment approved, a points change recalculating a round, and `/results standings sync`.
+
+> **A season is bracketed by two more drawings of each.** Approving a season draws an opening
+> standings pair and an opening attendance sheet for every division; completing it draws a final
+> pair and a final sheet. These two are unlike every other picture the module draws in one respect:
+> **they carry no message text at all**, because the phrase naming the occasion is on the picture
+> itself. They also post with the module switched off, as the ordinary text tables headed by that
+> same phrase — they belong to the results and attendance modules, and the pictures are only how
+> they are dressed.
+>
+> Neither replaces anything on the standings side, so `/results standings sync` leaves both alone.
+> On the attendance side the opening sheet replaces the previous one as usual, but the **final sheet
+> is posted beside the last round's and both stay** — the one place the module leaves two sheets in
+> a channel on purpose.
 
 > **Both pictures carry the whole season as a grid** — every round the division holds, run or not, with a result cell per session and, on the constructors picture, a car per driver who drove. The classification beside the grid — positions, points, gaps — resolves the same way it always has, and the race cells are coloured for podiums, points finishes and fastest laps as described under Step 5. `/images test standings` shows you exactly this, with a different classification invented for each round so you can judge the colours across a whole grid rather than down one row.
 

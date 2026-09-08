@@ -437,3 +437,114 @@ async def test_get_all_server_ids_with_active_season() -> None:
     finally:
         os.unlink(db_path)
 
+
+
+# ---------------------------------------------------------------------------
+# The final classification (2026-09-08)
+# ---------------------------------------------------------------------------
+#
+# Each division's standings and attendance sheet, posted once more under the season's own
+# heading. It runs while the season is still ACTIVE, and it never blocks the archival.
+
+
+class _FakeGuildBot(_FakeBot):
+    """A bot with a guild in scope, so the classification block is reached.
+
+    A guild also brings role revocation into play, which is stubbed out — it is thoroughly
+    covered above and is not what these tests are about.
+    """
+
+    def __init__(self, db_path: str) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+
+        super().__init__(db_path)
+        self.guild = MagicMock()
+        self.guild.get_channel.return_value = None
+        self.placement_service = MagicMock()
+        self.placement_service._revoke_roles = AsyncMock()
+
+    def get_guild(self, guild_id: int):  # noqa: ANN201
+        return self.guild
+
+
+async def _status(db_path: str) -> str:
+    async with get_connection(db_path) as db:
+        cur = await db.execute("SELECT status FROM seasons WHERE server_id = 1")
+        row = await cur.fetchone()
+    return row[0]
+
+
+async def test_the_final_classification_is_posted_while_the_season_is_still_active() -> None:
+    """Everything downstream of here reads the season as the live one."""
+    from unittest.mock import AsyncMock, patch
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        season_id, _ = await _seed_server(db_path, server_id=1)
+        bot = _FakeGuildBot(db_path)
+        seen: list[str] = []
+
+        async def _post(bot_, guild, path, season):
+            seen.append(await _status(path))
+            return []
+
+        with patch(
+            "services.season_classification_service.post_final_classifications",
+            AsyncMock(side_effect=_post),
+        ) as spy:
+            await execute_season_end(1, season_id, bot)
+
+        assert spy.await_count == 1
+        assert spy.await_args.args[3] == season_id
+        assert seen == ["ACTIVE"]
+        assert await _status(db_path) == "COMPLETED"
+    finally:
+        os.unlink(db_path)
+
+
+async def test_the_season_still_completes_when_the_classification_fails() -> None:
+    """A picture is not what the completion is for (XIV.7)."""
+    from unittest.mock import AsyncMock, patch
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        season_id, _ = await _seed_server(db_path, server_id=1)
+        bot = _FakeGuildBot(db_path)
+
+        with patch(
+            "services.season_classification_service.post_final_classifications",
+            AsyncMock(side_effect=RuntimeError("the renderer fell over")),
+        ):
+            await execute_season_end(1, season_id, bot)
+
+        assert await _status(db_path) == "COMPLETED"
+    finally:
+        os.unlink(db_path)
+
+
+async def test_a_classification_problem_reaches_the_logging_channel() -> None:
+    """Never a channel a driver reads (XIV.4)."""
+    from unittest.mock import AsyncMock, patch
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        season_id, _ = await _seed_server(db_path, server_id=1)
+        bot = _FakeGuildBot(db_path)
+
+        with patch(
+            "services.season_classification_service.post_final_classifications",
+            AsyncMock(return_value=["Div A standings: the template is at fault"]),
+        ):
+            await execute_season_end(1, season_id, bot)
+
+        posted = "\n".join(text for _sid, text in bot.output_router.log_messages)
+        assert "the template is at fault" in posted
+        assert await _status(db_path) == "COMPLETED"
+    finally:
+        os.unlink(db_path)

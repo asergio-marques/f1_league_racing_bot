@@ -1566,6 +1566,24 @@ The choice names above are exactly the names `/images config view` and `/season 
 > table as an attachment. Either championship can fail on its own, in which case that one alone is
 > posted as text and the other keeps its picture.
 >
+> **A season is bracketed by two more postings.** When you approve a season, each division's
+> standings channel gets an **opening classification** — every driver and every team on zero, with
+> the season's calendar of rounds drawn empty beside them — and its attendance channel gets an
+> opening sheet. When the season completes, both channels get a **final** one. Neither carries any
+> message text: the sheet itself says which occasion it is. They post whether or not the images
+> module is on — with it off, or where a template will not draw, you get the textual tables headed
+> `Opening Classification` or `Final Classification` instead.
+>
+> The opening grid is ordered alphabetically by team, then by driver within the team. Nothing has
+> been scored yet, so there is no classification to order it by. The opening attendance sheet takes
+> the place of the division's live sheet, so the first round's sheet replaces it in the ordinary
+> way; the final sheet is posted **beside** the last round's and both stay — it is the season's last
+> word and nothing should be able to replace it. Neither standings posting is touched by
+> `/results standings sync`, which walks the rounds.
+>
+> Neither can stop a season being approved or completed. If a division's sheet cannot be drawn or
+> posted, the log channel says so and the other divisions carry on.
+>
 > With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`, and `/season review` shows you that image in place of its text calendar. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
 >
 > With `lineup` on, a division's lineup channel carries a drawn graphic instead of the text embed, redrawn on every occasion the text was redrawn before: season approval, a driver being assigned, unassigned or sacked, and the attendance module's auto-reserve and auto-sack. `/team lineup` answers with the graphic too, and `/season review` shows it *in place of* its text, so what you judge before approving is what your league will receive. The reserve distribution the attendance module does at each RSVP deadline does **not** redraw it — the graphic shows who is in which team for the season, not who is on the grid for one round.
@@ -1638,6 +1656,22 @@ Fifteen subcommands, each taking a `filename` inside the configured template dir
 Qualifying and race results are drawn from separate templates, as are the driver and constructor standings, and the attendance sheet and check-in call — each pair shares too few columns to share a file. A sprint and a feature session of the same kind *do* share a template, distinguished by the session-name field alone. Weather phases 2 and 3 have separate sprint variants because a sprint round holds four sessions where every other format holds two.
 
 These sit under `/images template` rather than `/images config` because Discord allows at most 25 subcommands per group.
+
+> **The two standings templates and the attendance sheet name an occasion, not a round.** Where
+> those three files used to carry a `round_number` field with the word `ROUND` drawn beside it as
+> artwork, they now carry a single `classification_label` field holding the whole phrase — `After
+> Round 10`, or `Opening Classification`, or `Final Classification`. A season publishes its
+> classification on three occasions and they differ only in this phrase; drawn as artwork, the word
+> could only ever say the middle one. It is **mandatory** on all three, and `round_number` is no
+> longer a field of any of them.
+>
+> **If you drew your own copies of these three, rename the field before your next season.** Give the
+> text element `id="classification_label"`, delete the `ROUND` lettering beside it, and give it room
+> for a phrase rather than a two-digit number — `Opening Classification` is a good deal wider than
+> `10`. `/images config template-directory` checks all fifteen files at once and refuses the whole
+> change if one of them still declares the old field, so you will be told rather than finding out at
+> season approval. Every other template — results, check-in, weather, verdicts — keeps `round_number`
+> exactly as it was; those are always about one round.
 
 **The file is checked before it is stored.** The command refuses, and your existing filename stays in force, if the name does not end in `.svg`, if no such file is in the configured directory, if it will not parse as SVG, or if it is missing a field the image needs. You are told which of those it was — a malformed file is described in plain terms ("a comment contains a double hyphen at line 12"), never as a parser error. Nothing is written unless every check passes, so a refused command cannot leave the bot pointed at a file it can't use.
 

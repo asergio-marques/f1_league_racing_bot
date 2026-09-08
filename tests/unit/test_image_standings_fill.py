@@ -54,7 +54,7 @@ def _template(rows: int, *, groups: bool = True, movement_group: bool = True):
     root = etree.Element(f"{{{SVG_NS}}}svg")
     root.set("width", "1200")
     root.set("height", "675")
-    for name in ("division_name", "round_number", "result_status"):
+    for name in ("division_name", "classification_label", "result_status"):
         etree.SubElement(root, f"{{{SVG_NS}}}text").set("id", name)
     for index in range(1, rows + 1):
         parent = root
@@ -142,7 +142,7 @@ def _grid_template(
     if style is not None:
         defs = etree.SubElement(root, f"{{{SVG_NS}}}defs")
         etree.SubElement(defs, f"{{{SVG_NS}}}style").text = style
-    for name in ("division_name", "round_number", "result_status"):
+    for name in ("division_name", "classification_label", "result_status"):
         etree.SubElement(root, f"{{{SVG_NS}}}text").set("id", name)
 
     row_parents = {}
@@ -216,7 +216,7 @@ def _drawing(entries, **overrides) -> StandingsDrawing:
     values = dict(
         template_key=DRIVERS_TEMPLATE_KEY,
         division_name="Division 1",
-        round_number="4",
+        classification_label="After Round 4",
         result_status_label="Final Results",
         entries=list(entries),
     )
@@ -230,7 +230,7 @@ def _drawing(entries, **overrides) -> StandingsDrawing:
 def test_the_headings_are_filled():
     spec = build_fill_spec(_drawing([_entry(1)]), _template(2))
     assert spec.text["division_name"] == "Division 1"
-    assert spec.text["round_number"] == "4"
+    assert spec.text["classification_label"] == "After Round 4"
     assert spec.text["result_status"] == "Final Results"
 
 
@@ -903,3 +903,55 @@ def test_the_race_plate_still_colours_the_raised_figure_it_sits_under():
         qualifying=CellValue(text="1", highlight=HIGHLIGHT_P1),
     )
     assert spec.recolour["row_1_round_1_feature_qualifying_result"] == "#0B0D10"
+
+
+def test_the_opening_sheet_empties_the_results_phase_rather_than_dashing_it():
+    """XIV.3 — a value the data determined to be nothing is quiet, not a fault.
+
+    No session has run at the season's opening, so `result_status` names nothing. It is
+    otherwise mandatory, and would have stood above the empty grid saying `Final Results`.
+    """
+    spec = build_fill_spec(
+        _drawing([_entry(1)], classification_label="Opening Classification",
+                 result_status_label=""),
+        _template(2),
+    )
+
+    assert spec.text["classification_label"] == "Opening Classification"
+    assert "result_status" not in spec.text
+    assert "result_status" in spec.empty_quietly
+
+
+def _template_with_race(rows: int):
+    """The same template, plus the race the sheet names beneath its title."""
+    root = _template(rows)
+    etree.SubElement(root, f"{{{SVG_NS}}}text").set("id", "race_name")
+    return root
+
+
+
+def test_a_boundary_sheet_names_no_race():
+    """No grand prix has been run at the opening, and the final sheet is about the season.
+
+    Emptied quietly rather than reported: its absence is what the occasion determined, not
+    a template shortcoming worth a notice on every posting.
+    """
+    from models.classification_occasion import ClassificationOccasion
+
+    for occasion in (
+        ClassificationOccasion.SEASON_OPENING,
+        ClassificationOccasion.SEASON_FINAL,
+    ):
+        drawing = _drawing([_entry(1)], classification_label=occasion.label(10),
+                          names_a_race=False, race_name="Belgian GP")
+        spec = build_fill_spec(drawing, _template_with_race(2))
+        assert "race_name" not in spec.text
+        assert "race_name" in spec.empty_quietly
+        assert "race_name" not in spec.empty, "a notice on every boundary posting is noise"
+
+
+def test_an_ordinary_sheet_still_names_its_race():
+    spec = build_fill_spec(
+        _drawing([_entry(1)], race_name="Belgian GP"), _template_with_race(2)
+    )
+    assert spec.text["race_name"] == "Belgian GP"

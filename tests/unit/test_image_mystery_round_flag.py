@@ -137,7 +137,7 @@ async def test_a_mystery_round_keeps_its_flag_through_the_fill(db_path):
         StandingsDrawing(
             template_key=DRIVERS_TEMPLATE_KEY,
             division_name="Elite",
-            round_number="3",
+            classification_label="After Round 3",
             result_status_label="PROVISIONAL",
             rounds=headings,
         ),

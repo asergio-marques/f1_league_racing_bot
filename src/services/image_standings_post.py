@@ -40,6 +40,7 @@ from pathlib import Path
 import discord
 
 from db.database import get_connection
+from models.classification_occasion import ClassificationOccasion
 from models.image_module import PostingOrigin
 from services.image_standings_service import (
     CONSTRUCTORS_TEMPLATE_KEY,
@@ -327,6 +328,7 @@ async def build_drawings(
     division_tier=None,
     season_number=None,
     race_name: str | None = None,
+    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
 ):
     """Resolve both championships into drawings, or raise ``StandingsDataError``.
 
@@ -367,15 +369,22 @@ async def build_drawings(
         (s.team_role_id, s.standing_position, s.total_points) for s in team_snapshots
     ]
 
-    driver_previous = await standings_service.previous_standing_positions(
-        db_path, division_id, round_id
-    )
-    team_previous = await standings_service.previous_standing_positions(
-        db_path, division_id, round_id, teams=True
-    )
+    # The opening sheet stands after nothing, so nobody has moved. The final sheet *is* the
+    # last round's classification, and shows the movement that round produced.
+    if occasion is ClassificationOccasion.SEASON_OPENING:
+        driver_previous = None
+        team_previous = None
+    else:
+        driver_previous = await standings_service.previous_standing_positions(
+            db_path, division_id, round_id
+        )
+        team_previous = await standings_service.previous_standing_positions(
+            db_path, division_id, round_id, teams=True
+        )
 
     shared = dict(
         division_name=division_name,
+        occasion=occasion,
         round_number=round_number,
         result_status=result_status,
         division_tier=division_tier,
@@ -472,6 +481,7 @@ async def _post_one(
     label: str,
     subject: str,
     origin: PostingOrigin,
+    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
 ) -> ChampionshipOutcome:
     """Draw, post and replace one championship's message.
 
@@ -513,8 +523,12 @@ async def _post_one(
 
     png = decision.png_paths[0]
     attachment = discord.File(str(png), filename=png.name)
+    # A season-boundary sheet carries no text above it. There is no round to head it with and
+    # no lifecycle phase to label it — the phrase naming the occasion is drawn *on* the
+    # graphic, as the lineup and calendar posted at approval are sent bare.
+    content = f"{heading}\n{label}" if occasion.names_a_round else None
     try:
-        message = await channel.send(f"{heading}\n{label}", file=attachment)
+        message = await channel.send(content, file=attachment)
     except discord.HTTPException as exc:
         # A Discord failure rather than a generation one. The graphic was produced; it is
         # the delivery that was not, so it is the **textual** standings the caller posts
@@ -525,19 +539,24 @@ async def _post_one(
         # Through the attachment, so the handle is closed before the file is removed.
         discard_attachment(attachment)
 
-    previous_id = await _get_standings_message_id(
-        db_path, division_id, round_id, championship
-    )
-    if previous_id is not None:
-        try:
-            previous = await channel.fetch_message(previous_id)
-            await previous.delete()
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            pass
+    # A standings message id is keyed by round, on the top-ranked driver's snapshot row.
+    # A season-boundary sheet has no round and no snapshot row to carry one, replaces
+    # nothing, and will never be reposted — so it neither reads nor writes the slot. See
+    # `models.classification_occasion`, which is where that reasoning is kept.
+    if occasion.names_a_round:
+        previous_id = await _get_standings_message_id(
+            db_path, division_id, round_id, championship
+        )
+        if previous_id is not None:
+            try:
+                previous = await channel.fetch_message(previous_id)
+                await previous.delete()
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
 
-    await _set_standings_message_id(
-        db_path, division_id, round_id, message.id, championship
-    )
+        await _set_standings_message_id(
+            db_path, division_id, round_id, message.id, championship
+        )
 
     if decision.notices:
         await report_notices(bot, server_id, what, decision.notices)
@@ -572,6 +591,7 @@ async def try_post(
     season_number=None,
     race_name: str | None = None,
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
+    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
 ) -> StandingsPostOutcome:
     """Post both championships as graphics, or say which of them the caller must write out.
 
@@ -590,7 +610,11 @@ async def try_post(
     if not any(wanted.values()):
         return StandingsPostOutcome()
 
-    subject = f"{division_name} round {round_number}"
+    subject = (
+        f"{division_name} round {round_number}"
+        if occasion.names_a_round
+        else f"{division_name} — {occasion.label()}"
+    )
 
     try:
         drivers_drawing, constructors_drawing = await build_drawings(
@@ -610,6 +634,7 @@ async def try_post(
             division_tier=division_tier,
             season_number=season_number,
             race_name=race_name,
+            occasion=occasion,
         )
     except Exception as exc:  # noqa: BLE001 — the data behind both, so both answer for it
         log.error("standings: the drawings could not be resolved: %s", exc)
@@ -647,6 +672,7 @@ async def try_post(
                 label=label,
                 subject=subject,
                 origin=origin,
+                occasion=occasion,
             )
         setattr(outcome, championship, result)
 

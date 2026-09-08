@@ -362,8 +362,16 @@ When it goes through, the bot:
 2. **Grants division and team roles** to every placed driver.
 3. **Posts the lineup** to each division's lineup channel.
 4. **Posts the calendar** to each division's calendar channel.
+5. **Posts the opening classification** to each division's standings and attendance channels — every driver and team on zero, with the season's rounds drawn empty beside them.
 
 Your season is now **active**.
+
+> **The opening classification needs the results and attendance modules, not the images module.**
+> Steps 3 and 4 draw nothing without `/images`; step 5 posts either way — as a drawing where the
+> `standings` and `attendance` outputs are switched on, and as the ordinary text tables where they
+> are not. It goes to the channels those modules already use, so a division with no standings
+> channel simply gets nothing. Nothing here can stop a season being approved: a division whose
+> sheets will not post is named in the log channel and the rest carry on.
 
 ---
 
@@ -395,7 +403,15 @@ Things change. During an active season:
 /season complete
 ```
 
-**Nothing ends a season by itself.** You run this once every round in every division has been finalised, and the bot refuses — listing the outstanding rounds — until they are. It then archives the season: it is marked complete, a history entry is written for every driver who raced, and it is announced in the log channel. **Nothing is deleted.**
+**Nothing ends a season by itself.** You run this once every round in every division has been finalised, and the bot refuses — listing the outstanding rounds — until they are. It then archives the season: it is marked complete, a history entry is written for every driver who raced, each division's **final classification** is posted, and it is announced in the log channel. **Nothing is deleted.**
+
+> **The final classification is the mirror of the opening one.** Each division's standings channel
+> gets its final standings and its attendance channel a final sheet, both headed `Final
+> Classification` and holding the state at that division's last round with results. A division that
+> ran no round gets none. The final attendance sheet is posted **beside** the last round's rather
+> than replacing it, so the channel ends the season holding both — it is the season's last word and
+> nothing should be able to delete it. As at approval, a division whose sheets will not post is
+> named in the log channel and the season completes regardless.
 
 An archived season cannot be edited. Start the next one with `/season setup` and a new game edition; your team list, your modules and your `/bot-init` settings all carry over.
 

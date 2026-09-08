@@ -1039,7 +1039,15 @@ RESULTS_RACE_CATALOGUE = _with_division_logo(FieldCatalogue(
 #: The heading fields both standings championships share. The lifecycle label is drawn on
 #: the graphic *and* kept as message text: XIV.16 (v4.5.0) makes that split non-exclusive,
 #: so a picture forwarded away from its message still says which phase it stands after.
-_STANDINGS_MANDATORY = frozenset({"division_name", "round_number", "result_status"})
+#:
+#: **``classification_label`` replaced ``round_number``.** A season publishes its standings on
+#: three occasions — approved, after each round, completed — and they differ only in this
+#: phrase. It is one addressable field rather than the word ``ROUND`` drawn as chrome beside a
+#: numeral, because chrome carries no id and so could only ever say the middle of the three.
+#: See :class:`models.classification_occasion.ClassificationOccasion`, which composes it.
+_STANDINGS_MANDATORY = frozenset(
+    {"division_name", "classification_label", "result_status"}
+)
 
 #: The optional headings, each with the group that may wrap it. XIV.2 requires a declared
 #: ``<field>_group`` to leave whole wherever the field would be emptied, so that the label
@@ -1243,9 +1251,14 @@ STANDINGS_CONSTRUCTORS_CATALOGUE = _with_division_logo(FieldCatalogue(
 ))
 
 
-#: The attendance sheet's heading fields. It stands **after** a round and names that round;
-#: it carries no lifecycle label, an attendance record having no phases to stand between.
-_ATTENDANCE_MANDATORY = frozenset({"division_name", "round_number"})
+#: The attendance sheet's heading fields. It names the occasion of the season it stands at —
+#: the opening grid, a round it stands after, or the season's final record — and carries no
+#: lifecycle label, an attendance record having no phases to stand between.
+#:
+#: ``classification_label`` replaced ``round_number`` for the reason given above
+#: ``_STANDINGS_MANDATORY``, and the two sheets share the field so that a division's standings
+#: and its attendance record cannot describe the same moment differently.
+_ATTENDANCE_MANDATORY = frozenset({"division_name", "classification_label"})
 
 #: The optional headings, each with the group that may wrap it, plus the **block group**
 #: (XIV.2) wrapping the point limit. A block group is named for the block and not for a field,

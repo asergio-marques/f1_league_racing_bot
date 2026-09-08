@@ -792,9 +792,9 @@ These hold for every image type of the module and are stated here rather than re
     - season_number - Optional - Field on which the season number of the server is placed
     - division_name - Mandatory - Field on which the name given to the division at "division add" is placed
     - division_tier - Optional - Field on which the tier given to the division at "division add" is placed
-    - round_number - Mandatory - Field on which the human-readable number of the round after which the standings stand is placed as text, read from the round object definition
-    - race_name - Optional - Field on which the grand prix name of that round is placed as text, read from the track object definition
-    - result_status - Mandatory - Field on which the lifecycle label of the results of that round is placed as text
+    - classification_label - Mandatory - Field on which the occasion of the season the standings stand at is placed as text: "Opening Classification" where the season has been approved, "After Round <n>" where it stands after a round, "Final Classification" where the season has completed
+    - race_name - Optional - Field on which the grand prix name of that round is placed as text, read from the track object definition, and which shall be emptied where the standings stand at a season boundary
+    - result_status - Mandatory - Field on which the lifecycle label of the results of that round is placed as text, and which shall be emptied where the season has been approved and no session has been run
     - For each row of ordinal <x>:
         - row_<x>_group - Mandatory - Field acting as a container for every other field of the row, which shall be removed in its entirety when the championship holds no driver of that ordinal
         - row_<x>_position - Mandatory - Field on which the standing position of the driver is placed as text
@@ -830,9 +830,9 @@ These hold for every image type of the module and are stated here rather than re
     - season_number - Optional - Field on which the season number of the server is placed
     - division_name - Mandatory - Field on which the name given to the division at "division add" is placed
     - division_tier - Optional - Field on which the tier given to the division at "division add" is placed
-    - round_number - Mandatory - Field on which the human-readable number of the round after which the standings stand is placed as text, read from the round object definition
-    - race_name - Optional - Field on which the grand prix name of that round is placed as text, read from the track object definition
-    - result_status - Mandatory - Field on which the lifecycle label of the results of that round is placed as text
+    - classification_label - Mandatory - Field on which the occasion of the season the standings stand at is placed as text: "Opening Classification" where the season has been approved, "After Round <n>" where it stands after a round, "Final Classification" where the season has completed
+    - race_name - Optional - Field on which the grand prix name of that round is placed as text, read from the track object definition, and which shall be emptied where the standings stand at a season boundary
+    - result_status - Mandatory - Field on which the lifecycle label of the results of that round is placed as text, and which shall be emptied where the season has been approved and no session has been run
     - For each row of ordinal <x>:
         - row_<x>_group - Mandatory - Field acting as a container for every other field of the row, which shall be removed in its entirety when the championship holds no team of that ordinal
         - row_<x>_position - Mandatory - Field on which the standing position of the team is placed as text
@@ -953,6 +953,14 @@ These hold for every image type of the module and are stated here rather than re
 - Wherever the textual flow edits the standings message in place, the image flow shall instead delete it and post the new ones, persisting their IDs in the place of the old. The previous message shall only be deleted once the messages replacing it have been produced successfully, be it the graphics or, in the case of a fallback, the textual standings.
 - The graphics shall be generated anew, and the posts replaced, on every occasion on which the textual standings are currently reposted: upon the results of a round being first posted as provisional, upon the penalty phase being closed, upon the appeal phase being closed, upon the standings of a division being resynchronised by command, upon an amendment to a session being approved, upon a change to the points configuration of a season causing rounds to be recalculated, and upon that recalculation cascading to every round following the one modified.
 - The standings of a round recorded as cancelled shall not be posted, the "standings" toggle notwithstanding.
+- The standings of a division shall additionally be posted on the two occasions that bracket a season, in the same channel and drawn from the same two templates:
+    - Upon the season being approved, an opening classification shall be posted, holding every driver and every team of the division upon nought points and the calendar of the division with no cell filled. Its heading names the occasion and not a round.
+        - The order of the opening classification shall be alphabetical by the name of the team, and alphabetical by the name of the driver within a team. Nothing has been scored, so the countback of the standings separates nobody and the order is stated rather than derived.
+        - The constructor standings shall be ordered alphabetically by the name of the team.
+    - Upon the season completing, a final classification shall be posted, holding the classification of the last round of the division for which results were posted. A division which ran no round publishes none.
+- Neither the opening nor the final classification carries message text. The occasion is drawn upon the graphic, and the heading and the lifecycle label a round's standings carry are omitted. Where a fallback to the textual standings is met, the phrase naming the occasion shall head it, a table carrying no heading naming nothing.
+- Neither the opening nor the final classification replaces a message nor has its ID persisted. A standings message ID belongs to the round it was posted for, and neither of these stands after a round; both are posted beside the standings of the rounds and neither is reposted.
+- The failure of either to generate or to post shall never prevent a season from being approved nor from completing, and the failure of one division shall not prevent the others.
 - The standings graphics replace the textual standings in the standings channel configured for the division and there alone.
 - The results posted alongside the standings of a round are governed by the results section above, not by this one. The failure of one shall not prevent the other.
 - The failure of one championship shall not prevent the other. Where one of the two falls back, its textual message shall carry the section of that championship alone, and the other shall be posted as a graphic.
@@ -1000,8 +1008,8 @@ These hold for every image type of the module and are stated here rather than re
     - season_number - Optional - Field on which the season number of the server is placed
     - division_name - Mandatory - Field on which the name given to the division at "division add" is placed
     - division_tier - Optional - Field on which the tier given to the division at "division add" is placed
-    - round_number - Mandatory - Field on which the human-readable number of the round after which the sheet stands is placed as text, read from the round object definition
-    - race_name - Optional - Field on which the grand prix name of that round is placed as text, read from the track object definition
+    - classification_label - Mandatory - Field on which the occasion of the season the sheet stands at is placed as text: "Opening Classification" where the season has been approved, "After Round <n>" where it stands after a round, "Final Classification" where the season has completed
+    - race_name - Optional - Field on which the grand prix name of that round is placed as text, read from the track object definition, and which shall be emptied where the sheet stands at a season boundary
     - limit_group - Optional - Field acting as a container for every other field of the point limit, which shall be removed in its entirety when neither the autoreserve nor the autosack functionality is enabled
     - limit_label - Optional - Field on which the name of the enabled functionality is placed as text: "RESERVE AT" where autoreserve is enabled, "SACKED AT" where autosack is
     - limit_value - Optional - Field on which the number of attendance points of the enabled functionality is placed as text, read from the configuration set via "attendance config autoreserve" or "attendance config autosack"
@@ -1103,11 +1111,17 @@ These hold for every image type of the module and are stated here rather than re
 ### Generation and posting
 - Once the attendance sheet is to be posted and the "attendance" toggle of "images config toggle" is enabled, the image shall be generated following the rules above via modification of the SVG file, which shall then be converted to PNG and posted to the attendance channel configured for the division via "division attendance-channel" as an attachment of a message carrying the heading of the textual sheet as message text.
 - The sheet shall be generated anew, and the post replaced, on every occasion on which the textual sheet is currently posted: upon the post-race penalties of a round being approved and posted, and upon the attendance of a round being recalculated after an amendment approved via "round results amend".
-- The previously posted sheet shall be deleted and the new one posted in its place, with its ID persisted, as the textual flow already does, so that at most one sheet exists in the channel at any moment. The previous message shall only be deleted once the message replacing it has been produced successfully, be it the image or, in the case of a fallback, the textual sheet.
+- The previously posted sheet shall be deleted and the new one posted in its place, with its ID persisted, as the textual flow already does, so that at most one sheet exists in the channel at any moment, save for the final sheet of a season, which is excepted below. The previous message shall only be deleted once the message replacing it has been produced successfully, be it the image or, in the case of a fallback, the textual sheet.
     - The textual flow deletes the previous sheet before posting its successor, and shall be reordered to produce before it destroys. The order is what leaves a division holding the sheet it had when a posting fails, and it cannot hold for the image path while the textual path it falls back to breaks it.
 - The sheet graphic replaces the textual sheet in the attendance channel configured for the division and there alone.
 - Where no attendance channel is configured for the division, or the channel is inaccessible, nothing is posted and no image shall be generated, as the textual flow posts nothing.
-- A round recorded as cancelled distributes no attendance points and produces no sheet, the "attendance" toggle notwithstanding.
+- A round recorded as cancelled distributes no attendance points and produces no sheet, the "attendance" toggle notwithstanding. A sheet standing at a season boundary is not about a round and shall be posted whatever the state of any round.
+- The attendance sheet shall additionally be posted on the two occasions that bracket a season, in the same channel and drawn from the same template:
+    - Upon the season being approved, an opening sheet shall be posted, holding every driver seated in the division upon nought attendance points, read from the seats of the division and not from the attendance record, which holds nothing. Its order shall be that of the opening classification of the standings: alphabetical by the name of the team, and alphabetical by the name of the driver within a team.
+    - Upon the season completing, a final sheet shall be posted, holding the attendance record as it stands at the last round of the division for which results were posted.
+- Neither sheet carries message text, the occasion being drawn upon the graphic. Where a fallback to the textual sheet is met, the phrase naming the occasion shall head it.
+- The opening sheet takes the one message ID the division holds, so that the sheet of the first round replaces it and the division is never left holding a stale opening sheet beside a live one. The final sheet does not: it is posted beside the sheet of the last round and both stand, which is the one exception to at most one sheet existing in the channel at any moment.
+- The failure of either to generate or to post shall never prevent a season from being approved nor from completing, and the failure of one division shall not prevent the others.
 - The generation and the posting of the sheet shall never prevent the enforcement of the autosack and the autoreserve sanctions. The announcements of those sanctions are governed by the verdicts section above, not by this one, and the failure of one shall not prevent the other.
 - Once a check-in call is to be posted and the "rsvp" toggle of "images config toggle" is enabled, the image shall be generated following the rules above via modification of the SVG file, which shall then be converted to PNG and posted as an attachment of the message carrying the mention of the division role, the embed of the call and its three buttons.
 - The image shall be generated on every occasion on which a check-in call is currently posted: upon the horizon configured via "attendance config rsvp-notice" being reached, upon the call being advanced by the test mode, and upon it being posted at startup after that horizon passed while the bot was offline.

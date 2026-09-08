@@ -99,7 +99,7 @@ def _standings_svg(*row_extra: bytes) -> bytes:
     return (
         b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
         b'<text id="division_name">D</text>'
-        b'<text id="round_number">1</text>'
+        b'<text id="classification_label">After Round 1</text>'
         b'<text id="result_status">F</text>'
         b'<g id="row_1_group">'
         b'<text id="row_1_position">1</text>'
@@ -122,7 +122,7 @@ STANDINGS_CONSTRUCTORS_SVG = _standings_svg()
 ATTENDANCE_SVG = (
     b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
     b'<text id="division_name">D</text>'
-    b'<text id="round_number">1</text>'
+    b'<text id="classification_label">After Round 1</text>'
     b'<g id="row_1_group">'
     b'<text id="row_1_driver_name">N</text>'
     b'<text id="row_1_points">0</text>'

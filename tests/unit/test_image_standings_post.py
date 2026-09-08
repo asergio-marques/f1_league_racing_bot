@@ -142,7 +142,8 @@ def _patched(render, *, previous_ids=None, stored=None):
     ]
 
 
-async def _try_post(bot, channel, render, *, origin=None, previous_ids=None, stored=None):
+async def _try_post(bot, channel, render, *, origin=None, previous_ids=None,
+                    stored=None, occasion=None):
     from models.image_module import PostingOrigin
     from services.image_standings_post import try_post
 
@@ -164,6 +165,8 @@ async def _try_post(bot, channel, render, *, origin=None, previous_ids=None, sto
         kwargs["origin"] = origin
     else:
         kwargs["origin"] = PostingOrigin.SCHEDULED
+    if occasion is not None:
+        kwargs["occasion"] = occasion
 
     patches = _patched(render, previous_ids=previous_ids, stored=stored)
     for p in patches:
@@ -1386,3 +1389,110 @@ async def test_the_three_marks_reach_the_raster_in_their_own_corners(tmp_path):
     # Two rows below the chip is the plain row band, which no mark reaches.
     below = image.getpixel((int(left) + 6, int(top + height) + 8))
     assert not any(near(below, c) for c in (plate_gold, purple, mark_gold))
+
+
+# ── The season's two boundaries ───────────────────────────────────────────
+#
+# The opening and final classifications are the same two graphics under a different
+# heading. What differs at the posting site is that they carry no message text and take
+# part in no replacement — see `models.classification_occasion`.
+
+
+async def _boundary(tmp_path, occasion, *, previous_ids=None, stored=None):
+    from unittest.mock import AsyncMock as _AsyncMock
+
+    sent: list = []
+    render = _AsyncMock(
+        side_effect=[
+            _decision(png=_drawn(tmp_path, "drivers")),
+            _decision(png=_drawn(tmp_path, "constructors")),
+        ]
+    )
+    outcome = await _try_post(
+        _bot(),
+        _channel(sent),
+        render,
+        occasion=occasion,
+        previous_ids=previous_ids,
+        stored=stored,
+    )
+    return outcome, sent
+
+
+async def test_an_opening_posting_carries_no_message_text(tmp_path):
+    """The phrase is drawn on the sheet; a heading above it would say it twice."""
+    from models.classification_occasion import ClassificationOccasion
+
+    _outcome, sent = await _boundary(tmp_path, ClassificationOccasion.SEASON_OPENING)
+
+    assert len(sent) == 2
+    assert [content for content, _kwargs in sent] == [None, None]
+    assert all(kwargs.get("file") is not None for _content, kwargs in sent)
+
+
+async def test_a_final_posting_carries_no_message_text(tmp_path):
+    from models.classification_occasion import ClassificationOccasion
+
+    _outcome, sent = await _boundary(tmp_path, ClassificationOccasion.SEASON_FINAL)
+
+    assert [content for content, _kwargs in sent] == [None, None]
+
+
+async def test_an_ordinary_posting_still_carries_its_heading_and_label(tmp_path):
+    """The occasion that predates the enum is untouched by it."""
+    sent: list = []
+    render = AsyncMock(
+        side_effect=[
+            _decision(png=_drawn(tmp_path, "drivers")),
+            _decision(png=_drawn(tmp_path, "constructors")),
+        ]
+    )
+    await _try_post(_bot(), _channel(sent), render)
+
+    assert [content for content, _kwargs in sent] == [
+        "**Season 3 Main Round 5 — Race**\n_Provisional Results_",
+        "**Season 3 Main Round 5 — Race**\n_Provisional Results_",
+    ]
+
+
+@pytest.mark.parametrize("occasion_name", ["SEASON_OPENING", "SEASON_FINAL"])
+async def test_a_boundary_posting_neither_reads_nor_writes_the_round_s_slot(
+    tmp_path, occasion_name
+):
+    """It has no round, so no snapshot row carries an id for it — and none is written.
+
+    Writing one would key the season's opening or closing word to a round it does not
+    belong to, and reading one would have it delete that round's own standings.
+    """
+    from models.classification_occasion import ClassificationOccasion
+
+    stored: dict = {}
+    _outcome, sent = await _boundary(
+        tmp_path,
+        getattr(ClassificationOccasion, occasion_name),
+        previous_ids={"drivers": 4242, "constructors": 4343},
+        stored=stored,
+    )
+
+    assert stored == {}, "a boundary posting must claim no round's slot"
+    assert len(sent) == 2, "and must delete nothing it did not post"
+
+
+async def test_an_ordinary_posting_still_replaces_its_predecessor(tmp_path):
+    stored: dict = {}
+    sent: list = []
+    render = AsyncMock(
+        side_effect=[
+            _decision(png=_drawn(tmp_path, "drivers")),
+            _decision(png=_drawn(tmp_path, "constructors")),
+        ]
+    )
+    await _try_post(
+        _bot(),
+        _channel(sent),
+        render,
+        previous_ids={"drivers": 4242, "constructors": 4343},
+        stored=stored,
+    )
+
+    assert set(stored) == {"drivers", "constructors"}
