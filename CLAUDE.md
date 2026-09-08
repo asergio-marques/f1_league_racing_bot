@@ -141,6 +141,22 @@ Note that pinning `requirements.txt` does **not** settle this. A Debian or Raspb
 that installs from apt imports out of `/usr/lib/python3/dist-packages`, which pip never writes
 to, so the pins govern CI and a virtualenv and nothing else.
 
+**A test that constructs a `discord.ui.View` or `Modal` must be `async def`.** apt's discord.py
+2.5.0 calls `asyncio.get_running_loop()` in `View.__init__`; the pinned 2.7.1 defers it. So a
+sync test that builds one passes on CI and raises `RuntimeError: no running event loop` on the
+Pi — the version divergence above, in its most common concrete form. `pytest.ini` sets
+`asyncio_mode = auto`, so `async def` is the whole fix and needs no decorator; do not reach for
+`asyncio.run()` in a sync test, which closes the loop on return and leaves the view bound to a
+dead one (decided 2026-09-08, after five such tests failed on the Pi alone).
+
+**The suite keeps no scratch.** `pytest.ini` sets `tmp_path_retention_count = 0` and
+`tests/conftest.py` sweeps the template scratch pytest does not own. A full run leaves some
+294 MB of `tmp_path` trees, and pytest's default of retaining three sessions fills the 923 MB
+tmpfs `/tmp` is on the Pi — which fails dishonestly, as 0-byte PNGs and `database or disk is
+full` scattered across unrelated modules. To inspect a failing test's scratch, restore
+retention for that run only: `pytest tests/ -q -o tmp_path_retention_count=3`. Both mechanisms
+are pinned by `tests/unit/test_scratch_retention.py` (decided 2026-09-08).
+
 **The schema is built once, not once per test.** `tests/conftest.py` substitutes
 `run_migrations` with a version that raises the schema a single time and copies the finished
 file thereafter. Keep calling `run_migrations` in fixtures exactly as before — the

@@ -981,7 +981,7 @@ def test_the_prompt_is_public_and_says_who_may_answer():
     assert "await view.bind(message)" in source
 
 
-def test_the_review_offers_only_the_approve_button():
+async def test_the_review_offers_only_the_approve_button():
     """The Go Back to Edit button is withdrawn (2026-09-07): it did nothing but print
     advice, and a second button on a public message is a second thing to mis-press."""
     import discord

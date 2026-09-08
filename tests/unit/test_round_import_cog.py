@@ -98,7 +98,7 @@ async def test_add_xml_opens_a_modal_without_deferring():
     assert isinstance(interaction.response.send_modal.await_args.args[0], XmlRoundModal)
 
 
-def test_the_division_is_carried_to_the_modal():
+async def test_the_division_is_carried_to_the_modal():
     """It is resolved when the modal is submitted, not when the command runs — the two
     are separated by however long the manager spends typing."""
     modal = BulkRoundModal("Pro")

@@ -199,7 +199,7 @@ def _view(cog, timeout: float = 300):
     return _BackupBeforeApprovalView(cog, SERVER_ID, timeout=timeout)
 
 
-def test_the_view_offers_three_answers():
+async def test_the_view_offers_three_answers():
     """Save, don't, and stop — a manager who realises something is wrong at this point
     must not have to approve the season to escape the question."""
     import discord
@@ -268,7 +268,7 @@ def test_the_question_falls_after_every_gate_and_before_every_write():
         assert asked < source.index(write), f"{write} runs before the backup question"
 
 
-def test_the_approve_view_carries_a_deadline():
+async def test_the_approve_view_carries_a_deadline():
     """What the question divides. Without it the question would be given a window of its
     own and a review could be held open indefinitely."""
     view = _ApproveView(_cog(), reviewer_id=1)

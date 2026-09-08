@@ -78,7 +78,7 @@ async def test_the_command_is_refused_outside_test_mode():
 # ── The box ───────────────────────────────────────────────────────────────
 
 
-def test_the_box_stays_within_discord_s_limits():
+async def test_the_box_stays_within_discord_s_limits():
     """Every one of these is a 400 from Discord rather than a validation message, and the
     placeholder limit in particular has caught this project before."""
     modal = _RosterImportModal(_cog())

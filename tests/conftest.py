@@ -10,6 +10,12 @@ two behaviours, so no test has to re-implement either:
 
 The schema is also built once here rather than once per test — see
 `_install_template_migrations` below for why that is worth the indirection.
+
+Scratch is not kept. `pytest.ini` sets `tmp_path_retention_count = 0`, so pytest clears
+every earlier run's `tmp_path` tree at session start and its own at session end; a full run
+leaves some 294 MB, and three of them overran the 923 MB tmpfs `/tmp` sits on the Raspberry
+Pi, which failed the rasteriser tests with 0-byte PNGs. The template scratch below is the
+one thing pytest does not own, so `pytest_sessionstart` sweeps it to the same schedule.
 """
 from __future__ import annotations
 
@@ -20,6 +26,10 @@ import tempfile
 from pathlib import Path
 
 import pytest
+
+
+_TEMPLATE_PREFIX = "f1-schema-"
+_TEMPLATE_SCRATCH: Path | None = None
 
 
 def _install_template_migrations() -> None:
@@ -50,9 +60,12 @@ def _install_template_migrations() -> None:
     """
     from db import database
 
+    global _TEMPLATE_SCRATCH
+
     real = database.run_migrations
     templates: dict[tuple[str, ...], Path] = {}
-    scratch = Path(tempfile.mkdtemp(prefix="f1-schema-"))
+    scratch = Path(tempfile.mkdtemp(prefix=_TEMPLATE_PREFIX))
+    _TEMPLATE_SCRATCH = scratch
     atexit.register(shutil.rmtree, scratch, ignore_errors=True)
 
     def migration_set() -> tuple[str, ...]:
@@ -80,6 +93,22 @@ def _install_template_migrations() -> None:
 
 
 _install_template_migrations()
+
+
+def pytest_sessionstart(session):
+    """Clear template scratch that an earlier run was killed before cleaning up.
+
+    `_install_template_migrations` puts its templates in a `tempfile.mkdtemp` outside the
+    directories pytest owns, so `tmp_path_retention_count = 0` never reaches them and the
+    `atexit` registered beside them is the only thing that does — which a killed run never
+    gets to. Each leak is small, but it lands on the very tmpfs that retention setting
+    exists to protect. Only directories carrying this module's own prefix are removed, and
+    never the one this run is using.
+    """
+    root = Path(tempfile.gettempdir())
+    for stale in root.glob(f"{_TEMPLATE_PREFIX}*"):
+        if stale != _TEMPLATE_SCRATCH and stale.is_dir():
+            shutil.rmtree(stale, ignore_errors=True)
 
 
 def pytest_collection_modifyitems(config, items):
