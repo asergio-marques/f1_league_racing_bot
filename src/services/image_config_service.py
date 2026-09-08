@@ -227,6 +227,43 @@ class ImageConfigService:
             )
             await db.commit()
 
+    async def set_tier_colours(
+        self, server_id: int, division_name: str, colours: dict[str, str]
+    ) -> int:
+        """Set several slots for one tier at once, returning how many were written.
+
+        **Merged, not replaced** (decided 2026-09-08): a slot the caller does not name keeps
+        the colour it had. A league pasting a partial palette is correcting part of a scheme,
+        not declaring the whole of it, and losing the rest to an omission would be a silent
+        cost. It is also what makes this consistent with `set_tier_colour`, which upserts.
+
+        One transaction, so a bulk set is all-or-nothing at the database even though the
+        import above it decides atomicity per division.
+        """
+        from utils.asset_resolver import normalise
+        from utils.svg_palette import normalise_slot
+
+        key = normalise(division_name or "")
+        if not key:
+            raise UnknownConfigField("a division name is required.")
+        if not colours:
+            return 0
+
+        rows = [
+            (server_id, key, normalise_slot(slot), colour)
+            for slot, colour in sorted(colours.items())
+        ]
+        async with get_connection(self._db_path) as db:
+            await db.executemany(
+                "INSERT INTO image_tier_colour (server_id, division_slug, slot, colour) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(server_id, division_slug, slot) "
+                "DO UPDATE SET colour = excluded.colour",
+                rows,
+            )
+            await db.commit()
+        return len(rows)
+
     async def get_tier_palette(self, server_id: int, division_name: str) -> dict[str, str]:
         """Every slot this tier has a colour for. The render path's only reader."""
         from utils.asset_resolver import normalise

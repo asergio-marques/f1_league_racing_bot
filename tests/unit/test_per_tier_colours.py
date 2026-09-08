@@ -191,3 +191,60 @@ async def test_another_server_sees_none_of_it(service, db_path):
         await db.commit()
     await service.set_tier_colour(1, "Division 1", "accent", "#A78BFA")
     assert await service.get_all_tier_colours(2) == {}
+
+
+# ── Setting several at once (bulk / import) ───────────────────────────────
+
+async def test_a_bulk_set_writes_every_slot(service):
+    written = await service.set_tier_colours(
+        1, "Division 1", {"accent": "#A78BFA", "ink": "#F7F6F8"}
+    )
+    assert written == 2
+    assert await service.get_tier_palette(1, "Division 1") == {
+        "accent": "#A78BFA", "ink": "#F7F6F8",
+    }
+
+
+async def test_a_bulk_set_merges_rather_than_replacing(service):
+    """The decision of 2026-09-08: a slot the payload omits keeps the colour it had.
+
+    A league pasting part of a palette is correcting part of a scheme, not declaring the
+    whole of it, and losing the rest to an omission would be silent.
+    """
+    await service.set_tier_colour(1, "Division 1", "ink", "#F4F7FA")
+    await service.set_tier_colours(1, "Division 1", {"accent": "#A78BFA"})
+    assert await service.get_tier_palette(1, "Division 1") == {
+        "ink": "#F4F7FA", "accent": "#A78BFA",
+    }
+
+
+async def test_a_bulk_set_overwrites_a_slot_it_does_name(service):
+    await service.set_tier_colour(1, "Division 1", "accent", "#3DD6F5")
+    await service.set_tier_colours(1, "Division 1", {"accent": "#A78BFA"})
+    assert await service.get_tier_palette(1, "Division 1") == {"accent": "#A78BFA"}
+
+
+async def test_a_bulk_set_of_nothing_writes_nothing(service):
+    assert await service.set_tier_colours(1, "Division 1", {}) == 0
+    assert await service.get_tier_palette(1, "Division 1") == {}
+
+
+async def test_a_bulk_set_needs_a_division(service):
+    with pytest.raises(UnknownConfigField):
+        await service.set_tier_colours(1, "  ", {"accent": "#A78BFA"})
+
+
+async def test_a_bulk_set_validates_every_slot(service):
+    """One bad slot writes none of them — the division is the unit of atomicity."""
+    with pytest.raises(InvalidSlot):
+        await service.set_tier_colours(
+            1, "Division 1", {"accent": "#A78BFA", "a{}b": "#F7F6F8"}
+        )
+    assert await service.get_tier_palette(1, "Division 1") == {}
+
+
+async def test_two_tiers_stay_separate_under_bulk(service):
+    await service.set_tier_colours(1, "Division 1", {"accent": "#3DD6F5"})
+    await service.set_tier_colours(1, "Division 2", {"accent": "#A78BFA"})
+    assert await service.get_tier_palette(1, "Division 1") == {"accent": "#3DD6F5"}
+    assert await service.get_tier_palette(1, "Division 2") == {"accent": "#A78BFA"}
