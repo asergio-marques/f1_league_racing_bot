@@ -152,6 +152,17 @@ For this purpose, the Discord bot shall require three new dependencies: one with
     - A slot no template declares shall be stored all the same, and the manager shall be told that no template declares it. A colour may be set before the template that uses it is drawn.
     - Storing a colour while per-tier colours are off shall be permitted, and the manager shall be told that it is stored but not drawn.
     - There shall be no command to clear a colour. A tier meant to draw in the colour the template was authored in shall be given that colour explicitly.
+- <NEW COMMAND> A new "images config per-tier-bulk-colour" command will be made available to league managers which will take in the name of a division and open a form into which several slots and their colours are pasted, one to a line.
+    - A line shall carry a slot and a colour, separated by a space, an equals sign, a colon or a comma. A line beginning with "#" shall be ignored, so that the output of the palette tool may be pasted whole.
+    - Every fault shall be reported at once rather than the first alone, and where any line is faulty nothing shall be stored.
+    - A slot the payload does not name shall keep the colour it had. Setting several colours is correcting part of a scheme, not declaring the whole of one.
+- <NEW COMMAND> A new "images config colour-xml-import" command will be made available to league managers which will take an optional XML file attachment, and shall open a form for the payload where none is attached.
+    - The payload shall carry a "division" block per tier, named by an attribute, holding a "colour" element per slot named by a "slot" attribute.
+    - A payload that cannot be parsed shall be refused whole and nothing shall be stored, there being nothing to salvage from it.
+    - Otherwise **the division shall be the unit of atomicity**: a block naming no division, naming one twice, carrying a slot or colour that cannot be read, or carrying no colours at all, shall be rejected in its entirety while every other block is imported. A division shall never be half-applied.
+    - The reply shall name every tier imported and every block rejected, with the reason for each.
+    - Both the success and the failure of an import shall be recorded in the log channel.
+    - An attached file shall be refused where it is empty, where it is not UTF-8, or where it exceeds the size the module sets for it.
 - The colours a league has set shall be reported by "images config view", grouped by division, together with whether per-tier colours are on.
 
 ### Verification of template files configured

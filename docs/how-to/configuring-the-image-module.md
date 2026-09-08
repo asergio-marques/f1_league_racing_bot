@@ -495,6 +495,38 @@ That states each colour once instead of on every element, and is how the drawing
 
 The division name completes as you type. Set it even for the tier you want left in the colour the drawing already carries — give it that colour explicitly. There is no command to clear one.
 
+**Ten commands a tier is tedious, so two commands take them in bulk.**
+
+```
+/images config per-tier-bulk-colour division:Division 2
+```
+
+opens a form. Paste one `slot colour` per line — `accent #A78BFA` — and they all go in together. Lines starting with `#` are ignored, so you can paste the tool's output whole without tidying it first.
+
+```
+/images config colour-xml-import
+```
+
+does several tiers at once. Attach an XML file, or leave `file` off and paste the payload into the form:
+
+```xml
+<palettes>
+  <division name="Division 1">
+    <colour slot="accent">#3DD6F5</colour>
+    <colour slot="ink">#F4F7FA</colour>
+  </division>
+  <division name="Division 2">
+    <colour slot="accent">#A78BFA</colour>
+  </division>
+</palettes>
+```
+
+> **A slot you leave out keeps the colour it had.** Both are merges. Pasting three colours corrects those three; it does not wipe the other seven.
+
+> **One bad tier does not spoil the rest.** Each `<division>` is taken on its own: a block with a colour it cannot read, no name, or the same name twice is skipped and reported, and the others still import. A tier is never left half-set. A file that is not valid XML at all is refused outright.
+
+Both tell you exactly what went in and what did not.
+
 **Choosing the other nine, once you have picked the accent.** If you have slotted a whole palette, the grounds and the inks want to agree with the tier's accent without becoming coloured themselves. Two rules make that reliable, and both were arrived at by rendering the alternatives rather than by eye:
 
 - **Give every colour your accent's hue.** Not an offset from it, and not a rotation by however far the accent moved from the drawing's own — a fixed angular offset does not mean the same thing at different points of the colour wheel. Turning the greys by the same angle as a cyan-to-violet accent lands them in *red*, which is not a colour anyone chose.
@@ -525,6 +557,16 @@ python3 tools/tier_palette.py --division "Division 2" --accent "#A78BFA"
 ```
 
 It reads the palette out of **your own drawing** — the `.colour-fill-…` rules its stylesheet declares — so it works with whatever slots you invented and whatever colours you drew them in. It prints the `/images config per-tier-set-colour` commands ready to paste, one per slot.
+
+**Do several tiers at once** by repeating the pair, and it writes the XML for `colour-xml-import` instead:
+
+```
+python3 tools/tier_palette.py \
+    --division "Division 1" --accent "#3DD6F5" \
+    --division "Division 2" --accent "#A78BFA" > palettes.xml
+```
+
+One `--accent` per `--division`, in the same order. With one division it prints the block for `per-tier-bulk-colour`; with several, the XML. `--format` overrides that — `commands` gives you one slash command per slot, which is what you want when changing only a colour or two.
 
 Pass `--template` to read a drawing other than the first it finds, and `--chroma` to make the greys more or less colourful than the default third — `--chroma 0` leaves them perfectly neutral and lets the accent carry the tier alone, which is the safest choice if your accent is an unusual hue.
 

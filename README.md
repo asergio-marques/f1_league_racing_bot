@@ -1879,6 +1879,21 @@ The second form states each colour once rather than on every element that uses i
 
 Colours are stored whether or not the feature is on and whether or not a template marks the slot, and `/images config view` lists them by tier, so you can set a season up before turning it on.
 
+**Setting ten colours a tier one command at a time is tedious, so two commands take them in bulk.** `per-tier-bulk-colour` asks for a division and opens a form: paste one `slot colour` per line and they are set together. `colour-xml-import` takes several tiers at once, either as an attached XML file or pasted into a form:
+
+```xml
+<palettes>
+  <division name="Division 1">
+    <colour slot="accent">#3DD6F5</colour>
+    <colour slot="ink">#F4F7FA</colour>
+  </division>
+</palettes>
+```
+
+> **A slot you do not mention keeps the colour it had.** Both are merges, not replacements, so a partial paste corrects part of a scheme rather than wiping the rest of it.
+
+> **An import takes each division separately.** A block that cannot be read — an unnamed tier, a bad colour, a tier named twice — is rejected whole and reported, and the other tiers still import. A division is never half-applied. A payload that is not valid XML at all is refused outright, since nothing can be salvaged from it.
+
 **Choosing a whole palette by hand is the hard part, so there is a tool for it.** `tools/tier_palette.py` takes one accent, reads the rest of the palette out of your own drawing, and prints the `per-tier-set-colour` commands for a division — keeping each colour's lightness, giving it the accent's hue, and cutting its colourfulness to a third so the greys stay grey. It changes nothing; it prints commands. See [the image module guide](docs/how-to/configuring-the-image-module.md) for when to reach for it.
 
 **This class alone is held to no shape.** The consistency rule below does not apply to it: two logo slots on the same template may be any two shapes, because you supply one file *per division* rather than one file for the class, and each division can draw artwork for both. You still cannot set `preserveAspectRatio="none"` on the slot — a logo letterboxes into its box like everything but `markers`.
@@ -1970,6 +1985,8 @@ offer the approve button while the configuration is one that could never fetch a
 | `fastest-lap-colour` | `colour` | `#A020F0` | `#` plus exactly six hex digits |
 | `per-tier-colour-toggle` | `enable` | off | Whether your drawings take each tier's own colours. See *Your tiers can be drawn in their own colours* above |
 | `per-tier-set-colour` | `division`, `slot`, `colour` | — | One slot's colour for one tier. Stored against the division's **name** |
+| `per-tier-bulk-colour` | `division` | — | Opens a form; paste `slot colour` lines to set several at once |
+| `colour-xml-import` | `file` (optional) | — | Several tiers at once, from an XML attachment or a pasted payload |
 
 `fastest-lap-colour` reports the contrast of the chosen colour against the plate the race results template draws behind that field, and warns below 4.5:1 — the threshold at which text of that size stays legible. The colour is stored either way; it is the league's to choose. Where the template is invalid or declares no `fastest_lap_background` element, the bot says the contrast could not be measured rather than guessing.
 

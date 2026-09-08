@@ -290,7 +290,8 @@ def test_it_prints_the_commands_for_a_slotted_drawing(tmp_path, capsys):
         b'<text class="colour-fill-ink">x</text></svg>'
     )
     assert tier_palette.main(
-        ["--division", "Division 2", "--accent", "#A78BFA", "--template", str(drawing)]
+        ["--division", "Division 2", "--accent", "#A78BFA", "--template", str(drawing),
+         "--format", "commands"]
     ) == 0
     out = capsys.readouterr().out
     assert "slot:accent colour:#A78BFA" in out
@@ -311,3 +312,106 @@ def test_it_writes_nothing(tmp_path):
     )
     assert drawing.read_bytes() == before
     assert sorted(p.name for p in tmp_path.iterdir()) == ["slotted.svg"]
+
+
+# ── One tier, or many ─────────────────────────────────────────────────────
+
+def test_a_single_tier_prints_the_block_the_modal_reads():
+    lines = tier_palette.as_block({"accent": "#A78BFA", "ink": "#F7F6F8"})
+    assert lines == ["accent #A78BFA", "ink #F7F6F8"]
+
+
+def test_the_block_is_what_the_bulk_parser_accepts():
+    """The two ends of the same paste, asserted against each other."""
+    from utils.palette_import import parse_palette_lines
+
+    derived = tier_palette.derive(PALETTE, VIOLET, 0.35)
+    colours, problems = parse_palette_lines("\n".join(tier_palette.as_block(derived)))
+    assert problems == []
+    assert colours == derived
+
+
+def test_several_tiers_produce_xml_the_import_accepts():
+    """And the other pair: what the tool writes is what the bot reads."""
+    from utils.palette_import import parse_palette_xml
+
+    tiers = [
+        ("Division 1", tier_palette.derive(PALETTE, "#3DD6F5", 0.35)),
+        ("Division 2", tier_palette.derive(PALETTE, VIOLET, 0.35)),
+    ]
+    blocks, problems = parse_palette_xml(tier_palette.as_xml(tiers))
+    assert problems == []
+    assert [b.division for b in blocks] == ["Division 1", "Division 2"]
+    assert blocks[1].colours == tiers[1][1]
+
+
+def test_a_division_name_with_xml_in_it_survives():
+    """A league may well have a tier called `Pro & Am`."""
+    from utils.palette_import import parse_palette_xml
+
+    xml = tier_palette.as_xml([("Pro & Am <2>", {"accent": "#A78BFA"})])
+    blocks, problems = parse_palette_xml(xml)
+    assert problems == []
+    assert blocks[0].division == "Pro & Am <2>"
+
+
+def test_the_cli_prints_a_block_for_one_division(tmp_path, capsys):
+    drawing = tmp_path / "d.svg"
+    drawing.write_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><defs><style>'
+        b".colour-fill-accent { fill:#3DD6F5 }</style></defs>"
+        b'<rect class="colour-fill-accent"/></svg>'
+    )
+    assert tier_palette.main(
+        ["--division", "D", "--accent", "#A78BFA", "--template", str(drawing)]
+    ) == 0
+    out = capsys.readouterr().out
+    assert "accent #A78BFA" in out
+    assert "<palettes>" not in out
+
+
+def test_the_cli_prints_xml_for_several(tmp_path, capsys):
+    drawing = tmp_path / "d.svg"
+    drawing.write_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><defs><style>'
+        b".colour-fill-accent { fill:#3DD6F5 }</style></defs>"
+        b'<rect class="colour-fill-accent"/></svg>'
+    )
+    assert tier_palette.main(
+        ["--division", "A", "--accent", "#A78BFA",
+         "--division", "B", "--accent", "#4ADE80", "--template", str(drawing)]
+    ) == 0
+    out = capsys.readouterr().out
+    assert "<palettes>" in out and 'name="A"' in out and 'name="B"' in out
+
+
+def test_a_division_without_its_accent_is_refused(tmp_path, capsys):
+    assert tier_palette.main(
+        ["--division", "A", "--division", "B", "--accent", "#A78BFA"]
+    ) == 2
+    assert "one --accent per --division" in capsys.readouterr().err
+
+
+def test_the_format_can_be_forced(tmp_path, capsys):
+    drawing = tmp_path / "d.svg"
+    drawing.write_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><defs><style>'
+        b".colour-fill-accent { fill:#3DD6F5 }</style></defs>"
+        b'<rect class="colour-fill-accent"/></svg>'
+    )
+    base = ["--division", "D", "--accent", "#A78BFA", "--template", str(drawing)]
+
+    assert tier_palette.main(base + ["--format", "xml"]) == 0
+    assert "<palettes>" in capsys.readouterr().out
+
+    assert tier_palette.main(base + ["--format", "commands"]) == 0
+    assert "/images config per-tier-set-colour" in capsys.readouterr().out
+
+
+def test_a_block_cannot_be_asked_for_across_several_divisions(tmp_path, capsys):
+    """The bulk command takes one division, so a block spanning two is meaningless."""
+    assert tier_palette.main(
+        ["--division", "A", "--accent", "#A78BFA",
+         "--division", "B", "--accent", "#4ADE80", "--format", "block"]
+    ) == 2
+    assert "takes one --division" in capsys.readouterr().err

@@ -115,6 +115,30 @@ def commands(division: str, palette: dict[str, str]) -> list[str]:
     ]
 
 
+def as_block(palette: dict[str, str]) -> list[str]:
+    """The `slot colour` lines the bulk modal reads."""
+    return [f"{slot} {colour}" for slot, colour in palette.items()]
+
+
+def as_xml(tiers: list[tuple[str, dict[str, str]]]) -> str:
+    """The many-division document `/images config colour-xml-import` reads.
+
+    Written by hand rather than through lxml: the output is small, fixed in shape, and
+    meant to be read and edited by a person, so the indentation matters more than the
+    convenience of a serialiser. Names are escaped because a division may hold an `&`.
+    """
+    from xml.sax.saxutils import escape, quoteattr
+
+    lines = ["<palettes>"]
+    for division, palette in tiers:
+        lines.append(f"  <division name={quoteattr(division)}>")
+        for slot, colour in palette.items():
+            lines.append(f'    <colour slot="{slot}">{escape(colour)}</colour>')
+        lines.append("  </division>")
+    lines.append("</palettes>")
+    return "\n".join(lines)
+
+
 def _find_template(named: str | None) -> Path:
     if named:
         return Path(named)
@@ -132,8 +156,15 @@ def main(argv: list[str] | None = None) -> int:
         description="Derive a division's colour palette from one accent colour.",
         epilog="Prints the commands. Run the ones you want.",
     )
-    parser.add_argument("--division", required=True, help="The division's name.")
-    parser.add_argument("--accent", required=True, help="Its accent, as #RRGGBB.")
+    parser.add_argument(
+        "--division", required=True, action="append",
+        help="The division's name. Repeat it, with a matching --accent each time, to do "
+             "several tiers at once.",
+    )
+    parser.add_argument(
+        "--accent", required=True, action="append",
+        help="That division's accent, as #RRGGBB. One per --division, in the same order.",
+    )
     parser.add_argument(
         "--chroma",
         type=float,
@@ -142,10 +173,24 @@ def main(argv: list[str] | None = None) -> int:
              f"0 leaves them perfectly neutral).",
     )
     parser.add_argument("--template", help="Read the palette from this drawing.")
+    parser.add_argument(
+        "--format", choices=("auto", "block", "xml", "commands"), default="auto",
+        help="auto (default): a paste block for one division, XML for several. "
+             "block/xml force one of those; commands prints one slash command per slot, "
+             "which is what you want when setting only a slot or two.",
+    )
     args = parser.parse_args(argv)
 
+    if len(args.division) != len(args.accent):
+        print(
+            f"error: {len(args.division)} division(s) but {len(args.accent)} accent(s). "
+            f"Give one --accent per --division, in the same order.",
+            file=sys.stderr,
+        )
+        return 2
+
     try:
-        accent = normalise_hex(args.accent)
+        accents = [normalise_hex(value) for value in args.accent]
     except InvalidColour as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -168,17 +213,46 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    derived = derive(palette, accent, args.chroma)
+    tiers = [
+        (division, derive(palette, accent, args.chroma))
+        for division, accent in zip(args.division, accents)
+    ]
 
-    print(f"# {template}  ·  accent {accent}  ·  chroma x{args.chroma:g}")
-    print(f"# {len(derived)} slots for {args.division}\n")
-    for slot, colour in derived.items():
-        lightness, chroma_value, _ = to_lch(colour)
-        print(f"#   {slot:<10} {colour}   L* {lightness:5.1f}  C* {chroma_value:4.1f}")
+    print(f"# {template}  ·  chroma x{args.chroma:g}")
+    for division, derived in tiers:
+        print(f"# {len(derived)} slots for {division}  ·  accent {derived['accent']}")
+        for slot, colour in derived.items():
+            lightness, chroma_value, _ = to_lch(colour)
+            print(f"#   {slot:<10} {colour}   L* {lightness:5.1f}  C* {chroma_value:4.1f}")
     print()
-    for line in commands(args.division, derived):
-        print(line)
+
+    # One tier pastes into the bulk modal; several want the XML import, there being no
+    # command that takes more than one division at a time. Either can be asked for
+    # outright, and `commands` remains for setting a slot or two by hand.
+    shape = args.format
+    if shape == "auto":
+        shape = "block" if len(tiers) == 1 else "xml"
+
+    if shape == "xml":
+        print(as_xml(tiers))
+        return 0
+
+    if shape == "block" and len(tiers) > 1:
+        print(
+            "error: --format block takes one --division; the bulk command sets one tier.",
+            file=sys.stderr,
+        )
+        return 2
+
+    for division, derived in tiers:
+        if shape == "commands":
+            for line in commands(division, derived):
+                print(line)
+        else:
+            for line in as_block(derived):
+                print(line)
     return 0
+
 
 
 if __name__ == "__main__":
