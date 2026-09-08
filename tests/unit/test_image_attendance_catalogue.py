@@ -51,7 +51,7 @@ def test_neither_catalogue_is_empty():
 
 
 def test_the_sheets_top_level_fields_are_exactly_the_wip_specs():
-    assert ATTENDANCE_CATALOGUE.mandatory == {"division_name", "round_number"}
+    assert ATTENDANCE_CATALOGUE.mandatory == {"division_name", "classification_label"}
     assert ATTENDANCE_CATALOGUE.optional == {
         "season_number",
         "season_number_group",
@@ -224,7 +224,10 @@ def test_the_call_declares_no_field_whose_value_can_change_while_it_stands():
 
 def test_all_mandatory_ids_with_no_template_returns_the_top_level_set_alone():
     """The per-member sets are unknowable without a file to count (XIV.12)."""
-    assert ATTENDANCE_CATALOGUE.all_mandatory_ids() == {"division_name", "round_number"}
+    assert ATTENDANCE_CATALOGUE.all_mandatory_ids() == {
+        "division_name",
+        "classification_label",
+    }
     assert RSVP_CATALOGUE.all_mandatory_ids() == {
         "division_name",
         "round_number",
@@ -330,10 +333,24 @@ def test_a_sheet_row_field_on_a_check_in_template_is_reported():
 
 
 def test_a_shared_top_level_field_is_never_a_siblings_field():
-    """Both graphics name the division, the season and the round — none is foreign."""
-    shared = ["division_name", "division_tier", "season_number", "round_number"]
+    """Both graphics name the division and the season — neither is foreign to either."""
+    shared = ["division_name", "division_tier", "season_number"]
     assert sibling_fields_declared(SHEET, shared) == []
     assert sibling_fields_declared(CALL, shared) == []
+
+
+def test_the_two_headings_are_foreign_to_one_another():
+    """The sheet names an occasion; the check-in names a round. They are not the same field.
+
+    The sheet stands at one of three moments of the season and says which. The check-in call
+    is always about one round and names it as a numeral, so it kept `round_number` when the
+    sheet gave it up — and a template carrying the other one's heading is carrying the wrong
+    file in the slot.
+    """
+    assert sibling_fields_declared(CALL, ["classification_label"]) == [
+        "classification_label"
+    ]
+    assert sibling_fields_declared(SHEET, ["round_number"]) == ["round_number"]
 
 
 def test_an_id_belonging_to_no_catalogue_is_not_a_fault():

@@ -340,7 +340,7 @@ def test_the_widest_cell_a_grid_can_carry_stays_inside_its_column(tmp_path):
     drawing = StandingsDrawing(
         template_key=DRIVERS_TEMPLATE_KEY,
         division_name="Alpha",
-        round_number="12",
+        classification_label="After Round 12",
         result_status_label="Final Results",
         nationality_collected=False,
         entries=entries,

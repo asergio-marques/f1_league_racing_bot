@@ -113,7 +113,7 @@ def test_the_two_catalogues_share_their_whole_graphic_fields():
     assert (
         STANDINGS_DRIVERS_CATALOGUE.mandatory
         == STANDINGS_CONSTRUCTORS_CATALOGUE.mandatory
-        == frozenset({"division_name", "round_number", "result_status"})
+        == frozenset({"division_name", "classification_label", "result_status"})
     )
     assert (
         STANDINGS_DRIVERS_CATALOGUE.optional
@@ -254,15 +254,16 @@ def test_a_template_declaring_no_round_is_not_faulty():
     assert "division_name" in mandatory
 
 
-def test_the_round_the_standings_stand_after_is_not_a_member_of_the_grid():
-    """`round_number` and `round_<z>_number` are different fields.
+def test_the_occasion_the_standings_stand_at_is_not_a_member_of_the_grid():
+    """`classification_label` is a heading; `round_<z>_number` is a column of the grid.
 
     The ordinal pattern requires digits, so the top-level heading is never miscounted as a
-    member of the round collection.
+    member of the round collection — which is what lets a sheet naming no round at all still
+    draw a full grid of them.
     """
-    root = _template(*_rows(1, "driver_name"), "round_number")
+    root = _template(*_rows(1, "driver_name"), "classification_label")
     assert STANDINGS_DRIVERS_CATALOGUE.column_capacity(root) == 0
-    assert "round_number" in STANDINGS_DRIVERS_CATALOGUE.mandatory
+    assert "classification_label" in STANDINGS_DRIVERS_CATALOGUE.mandatory
 
 
 def test_a_round_that_is_declared_owes_its_number():
@@ -293,7 +294,7 @@ def test_a_gap_in_the_rows_is_fatal():
 
 
 def test_a_template_declaring_no_row_at_all_is_fatal():
-    root = _template("division_name", "round_number", "result_status")
+    root = _template("division_name", "classification_label", "result_status")
     with pytest.raises(CapacityError):
         STANDINGS_DRIVERS_CATALOGUE.capacity(root)
 

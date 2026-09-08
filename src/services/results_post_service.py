@@ -6,6 +6,7 @@ import logging
 import discord
 
 from db.database import get_connection
+from models.classification_occasion import ClassificationOccasion
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from models.session_result import (
     DriverSessionResult,
@@ -410,8 +411,14 @@ def compose_standings_message(heading: str, label: str, sections: list[str]) -> 
 
     Passing both sections reproduces the message the textual flow has always posted, byte
     for byte. Passing one is what a per-championship fallback posts.
+
+    A season-boundary posting passes an empty *label* and the occasion's own phrase as the
+    *heading*. The graphic it falls back from carries no text at all, but a bare table names
+    nothing — so where the sheet is written out rather than drawn, the phrase is what heads
+    it.
     """
-    return "\n\n".join([f"{heading}\n{label}", *sections])
+    top = f"{heading}\n{label}" if label else heading
+    return "\n\n".join([top, *sections])
 
 
 async def post_standings(
@@ -428,6 +435,7 @@ async def post_standings(
     label: str,
     *,
     bot=None,
+    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
 ) -> None:
     """Format and post (or edit-in-place) the driver and team standings.
 
@@ -459,8 +467,17 @@ async def post_standings(
 
     season_number, division_name = await _get_heading_context(db_path, round_id)
     season_prefix = f"Season {season_number} " if season_number is not None else ""
-    primary_session_label = await _get_primary_session_label(db_path, round_id)
-    heading = f"**{season_prefix}{division_name} Round {round_number} — {primary_session_label}**"
+    if occasion.names_a_round:
+        primary_session_label = await _get_primary_session_label(db_path, round_id)
+        heading = (
+            f"**{season_prefix}{division_name} Round {round_number} "
+            f"— {primary_session_label}**"
+        )
+    else:
+        # No round to head it with and no phase to label it. The graphic goes out bare; the
+        # textual fallback below is headed by the occasion's own phrase.
+        heading = f"**{season_prefix}{division_name} — {occasion.label()}**"
+        label = ""
 
     sections_by_championship = {
         STANDINGS_DRIVERS: driver_text,
@@ -469,7 +486,10 @@ async def post_standings(
     championships = [STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS]
 
     # ── The image path (040) ──────────────────────────────────────────────
-    if bot is not None and not await _round_is_cancelled(db_path, round_id):
+    # A round recorded as cancelled produces no standings posting. A season-boundary sheet
+    # is not about a round and no round can cancel it, so the guard stands down there.
+    cancelled = occasion.names_a_round and await _round_is_cancelled(db_path, round_id)
+    if bot is not None and not cancelled:
         try:
             from services.image_standings_post import try_post
 
@@ -492,6 +512,7 @@ async def post_standings(
                 division_tier=await _get_division_tier(db_path, division_id),
                 season_number=season_number,
                 race_name=track_name,
+                occasion=occasion,
             )
         except Exception:  # noqa: BLE001 — a graphic never gates the standings
             log.exception(

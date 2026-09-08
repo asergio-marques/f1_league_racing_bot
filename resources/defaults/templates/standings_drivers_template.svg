@@ -89,7 +89,7 @@
        the rule and everything under it still line up with every other
        template; only the text inside it is re-centred.
 
-       Mandatory : division_name, round_number, result_status,
+       Mandatory : division_name, classification_label, result_status,
                    row_<x>_group, row_<x>_position, row_<x>_driver_name,
                    row_<x>_team_name, row_<x>_team_image, row_<x>_points,
                    round_<z>_number (of every round declared)
@@ -114,7 +114,7 @@
       .eyebrow  { font-size:15px; fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
       .title    { font-size:34px; fill:#F2F5F8; font-weight:700; inline-size:860px; max-lines:1 }
       .phase    { font-size:16px; fill:#8A94A3; letter-spacing:.16em; font-weight:600 }
-      .roundlbl { font-size:17px; fill:#8A94A3; letter-spacing:.20em; font-weight:600 }
+      .roundlbl { font-size:17px; fill:#8A94A3; letter-spacing:.04em; font-weight:600 }
       .roundnum { font-size:17px; fill:#E8113C; letter-spacing:.20em; font-weight:700 }
       .track    { font-size:46px; fill:#F2F5F8; font-weight:700 }
       .sub      { font-size:19px; fill:#8A94A3; inline-size:1104px; max-lines:1 }
@@ -186,10 +186,15 @@
   <text id="result_status" inkscape:label="result_status" class="phase" x="1680" y="72" text-anchor="end">Final Results</text>
   <rect x="0" y="93" width="1728" height="3" fill="#E8113C"/>
 
-  <!--  round block  -->
-  <text class="roundlbl" x="48" y="152">
-    <tspan>ROUND </tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">10</tspan>
-  </text>
+  <!--  classification block  -->
+  <!--  The occasion this sheet stands at, as one addressable phrase: `Opening
+        Classification` when the season is approved, `After Round 10` after each round,
+        `Final Classification` when it completes. One field, and not the word ROUND drawn
+        as chrome beside a numeral — chrome carries no id, so such a heading could only
+        ever say the middle of the three. Bounded, so a long phrase shrinks rather than
+        running into the plate to its right.  -->
+  <text id="classification_label" inkscape:label="classification_label" class="roundlbl"
+    x="48" y="152" style="inline-size:1300px;line-height:1.2">After Round 10</text>
   <text class="track" x="48" y="200">Driver Standings</text>
   <line x1="48" y1="252" x2="1680" y2="252" stroke="#262B33" stroke-width="1"/>
 

@@ -109,6 +109,34 @@ must come out identical everywhere names a face installed everywhere.
 properties above do **not** inherit — `inline-size`, `max-lines` and `shape-inside` each bound one
 field, and a group declaring one would otherwise re-bound every field beneath it.
 
+## The three season sheets name an occasion, not a round
+
+`standings_drivers_template.svg`, `standings_constructors_template.svg` and
+`attendance_template.svg` carry a single mandatory `classification_label` field where they used to
+carry the word `ROUND` as chrome beside a `round_number` field. It holds the whole phrase — `After
+Round 10`, `Opening Classification`, `Final Classification`.
+
+A season publishes its classification on three occasions: when it is approved, after each round,
+and when it completes. The word drawn as chrome carried no id, so the fill engine could reach
+nothing but the numeral beside it, and such a heading could only ever say the middle of the three.
+One addressable field says all three, and the two sheets share it so that a division's standings
+and its attendance record cannot describe the same moment differently.
+
+`round_number` is no longer a field of any of the three. The other twelve files keep it — they are
+each about one round, and one round is what they name. A file declaring the wrong one of the two
+is refused as the wrong file for its slot, in either direction.
+
+Two fields empty themselves at a season boundary, quietly: `race_name` on all three, no grand prix
+having been run at the opening and the final sheet being about the season rather than the last
+race, and `result_status` on the standings at the opening alone, the final sheet resting on results
+that are settled and naming them. Neither raises a notice — an emptied field here is what the
+occasion determined, not a shortcoming of the file.
+
+The phrase is set in the same `roundlbl` class the numeral was, its letter-spacing brought down
+from `.20em` to `.04em`: a sentence in a caps register reads as neither. Give it an `inline-size`
+that clears whatever stands to its right — `result_status` at the far edge on the standings, the
+point-limit plate on the attendance sheet.
+
 ## The constructors grid names no driver
 
 `standings_constructors_template.svg` draws two results per round for each of a team's cars —

@@ -11,7 +11,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from db.database import get_connection, run_migrations
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from models.session_result import DriverSessionResult, OutcomeModifier
-from services.standings_service import compute_driver_standings, compute_team_standings, compute_points_for_session
+from services.standings_service import (
+    compute_driver_standings,
+    compute_points_for_session,
+    compute_team_standings,
+    opening_driver_standings,
+    opening_team_standings,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -854,3 +860,151 @@ async def test_no_reference_round_returns_none_not_an_empty_mapping(db_path):
         division_id, rounds = await _division_with_rounds(db, 2)
         await db.commit()
     assert await previous_standing_positions(db_path, division_id, rounds[0]) is None
+
+
+# ---------------------------------------------------------------------------
+# The opening classification — the grid before a round has been run
+# ---------------------------------------------------------------------------
+#
+# The order is the whole subject here. Nobody has scored, so the countback above decides
+# nothing and an explicit rule is owed: team name, then driver, both case-insensitively.
+
+
+async def _seat(db, div_id: int, server_id: int, team: str, drivers: list[tuple[int, str]],
+                *, is_reserve: int = 0, role_id: int | None = None) -> int:
+    """Create a team instance holding *drivers* as (discord_user_id, display name)."""
+    cur = await db.execute(
+        "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
+        "VALUES (?, ?, ?, ?)",
+        (div_id, team, max(len(drivers), 1), is_reserve),
+    )
+    ti_id = cur.lastrowid
+    if role_id is not None:
+        await db.execute(
+            "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (?, ?, ?)",
+            (server_id, team, role_id),
+        )
+    for seat_number, (user_id, _name) in enumerate(drivers, start=1):
+        cur = await db.execute(
+            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
+            "VALUES (?, ?, 'ACTIVE')",
+            (server_id, user_id),
+        )
+        await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (?, ?, ?)",
+            (ti_id, seat_number, cur.lastrowid),
+        )
+    return ti_id
+
+
+@pytest.mark.asyncio
+async def test_the_opening_grid_is_ordered_by_team_then_driver(db_path):
+    """Alphabetical by team, then by driver within the team, both case-insensitively.
+
+    The ids are seeded in an order that contradicts the answer on every axis, so a run that
+    happened to preserve insertion order would fail.
+    """
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=70)
+        await _seat(db, div_id, 70, "zebra", [(1, "bravo"), (2, "Alpha")])
+        await _seat(db, div_id, 70, "Aardvark", [(3, "delta"), (4, "Charlie")])
+        await db.commit()
+
+    names = {1: "bravo", 2: "Alpha", 3: "delta", 4: "Charlie"}
+    snaps = await opening_driver_standings(db_path, div_id, names)
+
+    assert [s.driver_user_id for s in snaps] == [4, 3, 2, 1]
+    assert [s.standing_position for s in snaps] == [1, 2, 3, 4]
+
+
+@pytest.mark.asyncio
+async def test_the_opening_grid_puts_everybody_on_zero(db_path):
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=71)
+        await _seat(db, div_id, 71, "Alpha", [(1, "One"), (2, "Two")])
+        await db.commit()
+
+    snaps = await opening_driver_standings(db_path, div_id, {1: "One", 2: "Two"})
+
+    assert [s.total_points for s in snaps] == [0, 0]
+    assert all(s.finish_counts == {} for s in snaps)
+    assert all(s.race_participant is False for s in snaps)
+
+
+@pytest.mark.asyncio
+async def test_the_opening_grid_excludes_reserves(db_path):
+    """The same drivers `compute_driver_standings` selects, and no others."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=72)
+        await _seat(db, div_id, 72, "Alpha", [(1, "One")])
+        await _seat(db, div_id, 72, "Reserve", [(9, "Nine")], is_reserve=1)
+        await db.commit()
+
+    snaps = await opening_driver_standings(db_path, div_id, {1: "One", 9: "Nine"})
+
+    assert [s.driver_user_id for s in snaps] == [1]
+
+
+@pytest.mark.asyncio
+async def test_an_unresolved_driver_orders_by_their_id(db_path):
+    """A name the caller could not resolve falls back to the id, as everywhere else."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=73)
+        await _seat(db, div_id, 73, "Alpha", [(500, "zulu"), (400, None)])
+        await db.commit()
+
+    snaps = await opening_driver_standings(db_path, div_id, {500: "zulu"})
+
+    # "400" sorts before "zulu".
+    assert [s.driver_user_id for s in snaps] == [400, 500]
+
+
+@pytest.mark.asyncio
+async def test_the_opening_constructors_are_ordered_by_name(db_path):
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=74)
+        await _seat(db, div_id, 74, "zebra", [(1, "One")], role_id=901)
+        await _seat(db, div_id, 74, "Aardvark", [(2, "Two")], role_id=902)
+        await db.commit()
+
+    snaps = await opening_team_standings(db_path, div_id)
+
+    assert [s.team_role_id for s in snaps] == [902, 901]
+    assert [s.standing_position for s in snaps] == [1, 2]
+    assert [s.total_points for s in snaps] == [0, 0]
+
+
+@pytest.mark.asyncio
+async def test_the_opening_constructors_exclude_reserves_and_unmapped_teams(db_path):
+    """Keyed by role, as a constructors classification always is."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=75)
+        await _seat(db, div_id, 75, "Alpha", [(1, "One")], role_id=901)
+        await _seat(db, div_id, 75, "Reserve", [(9, "Nine")], is_reserve=1, role_id=903)
+        await _seat(db, div_id, 75, "Unmapped", [(2, "Two")])
+        await db.commit()
+
+    snaps = await opening_team_standings(db_path, div_id)
+
+    assert [s.team_role_id for s in snaps] == [901]
+
+
+@pytest.mark.asyncio
+async def test_neither_opening_function_persists_anything(db_path):
+    """There is no round for a snapshot row to key to (see the module comment)."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=76)
+        await _seat(db, div_id, 76, "Alpha", [(1, "One")], role_id=901)
+        await db.commit()
+
+    await opening_driver_standings(db_path, div_id, {1: "One"})
+    await opening_team_standings(db_path, div_id)
+
+    async with get_connection(db_path) as db:
+        drivers = await (await db.execute(
+            "SELECT COUNT(*) FROM driver_standings_snapshots")).fetchone()
+        teams = await (await db.execute(
+            "SELECT COUNT(*) FROM team_standings_snapshots")).fetchone()
+    assert drivers[0] == 0
+    assert teams[0] == 0

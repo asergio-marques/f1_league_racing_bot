@@ -158,13 +158,15 @@ async def sheet_db(tmp_path):
                 team_seat_id      INTEGER
             );
             CREATE TABLE team_seats (
-                id               INTEGER PRIMARY KEY,
-                team_instance_id INTEGER
+                id                INTEGER PRIMARY KEY,
+                team_instance_id  INTEGER,
+                driver_profile_id INTEGER
             );
             CREATE TABLE team_instances (
                 id          INTEGER PRIMARY KEY,
                 division_id INTEGER,
-                is_reserve  INTEGER
+                is_reserve  INTEGER,
+                name        TEXT
             );
             CREATE TABLE driver_profiles (
                 id                INTEGER PRIMARY KEY,
@@ -192,8 +194,8 @@ async def sheet_db(tmp_path):
             INSERT INTO rounds VALUES (3, 7, 3, 'NORMAL', 'Silverstone Circuit', 'ACTIVE');
             INSERT INTO rounds VALUES (9, 7, 9, 'NORMAL', 'Circuit Zandvoort', 'CANCELLED');
             INSERT INTO attendance_config VALUES (1, 10, 20);
-            INSERT INTO team_instances VALUES (100, 7, 0);
-            INSERT INTO team_seats     VALUES (200, 100);
+            INSERT INTO team_instances VALUES (100, 7, 0, 'Apex Racing');
+            INSERT INTO team_seats     VALUES (200, 100, 1);
             INSERT INTO driver_profiles VALUES (1, '111', NULL);
             INSERT INTO driver_season_assignments VALUES (1, 200);
             INSERT INTO driver_round_attendance
@@ -510,3 +512,163 @@ async def test_the_sheet_graphic_is_gone_when_the_send_fails(
     await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert not png.exists(), "a failed upload must not strand the sheet"
+
+
+# ── The season's two boundaries ───────────────────────────────────────────
+#
+# The opening sheet takes the division's one live slot, so round one replaces it in the
+# ordinary way. The final sheet does not: it stands beside the last round's, which is the
+# one deliberate exception to the one-sheet rule. See `models.classification_occasion`.
+
+
+def _occasion(name):
+    from models.classification_occasion import ClassificationOccasion
+
+    return getattr(ClassificationOccasion, name)
+
+
+@pytest.mark.asyncio
+async def test_the_opening_sheet_takes_the_live_slot(sheet_db):
+    """Round one then replaces it, so the division never holds two sheets."""
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(
+        None, guild, sheet_db, round_id=3, division_id=7,
+        occasion=_occasion("SEASON_OPENING"),
+    )
+
+    assert await _stored_message_id(sheet_db) == "5001"
+    assert "delete:4242" in journal
+
+
+@pytest.mark.asyncio
+async def test_the_final_sheet_stands_beside_the_last_rounds(sheet_db):
+    """It claims no slot and deletes nothing — nothing may ever replace the last word."""
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(
+        None, guild, sheet_db, round_id=3, division_id=7,
+        occasion=_occasion("SEASON_FINAL"),
+    )
+
+    assert await _stored_message_id(sheet_db) == "4242", "the slot must be left as it was"
+    assert not [entry for entry in journal if entry.startswith("delete:")]
+    assert [entry for entry in journal if entry.startswith("send:")]
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_sheet_still_takes_the_slot(sheet_db):
+    """The occasion that predates the enum is untouched by it."""
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert await _stored_message_id(sheet_db) == "5001"
+    assert "delete:4242" in journal
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("occasion_name", ["SEASON_OPENING", "SEASON_FINAL"])
+async def test_a_boundary_graphic_carries_no_message_text(sheet_db, occasion_name, monkeypatch):
+    """The phrase is drawn on the sheet, so a heading above it would say it twice."""
+    from services import attendance_service
+
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+    monkeypatch.setattr(
+        attendance_service, "_sheet_attachment", _fake_attachment(object())
+    )
+
+    await post_attendance_sheet(
+        None, guild, sheet_db, round_id=3, division_id=7,
+        occasion=_occasion(occasion_name),
+    )
+
+    assert channel.sent_content is None
+    assert channel.sent_file is not None
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_graphic_still_carries_its_heading(sheet_db, monkeypatch):
+    from services import attendance_service
+
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+    monkeypatch.setattr(
+        attendance_service, "_sheet_attachment", _fake_attachment(object())
+    )
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert channel.sent_content == "**Attendance Standings**"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "occasion_name,phrase",
+    [("SEASON_OPENING", "Opening Classification"), ("SEASON_FINAL", "Final Classification")],
+)
+async def test_the_textual_fallback_is_headed_by_the_phrase(sheet_db, occasion_name, phrase):
+    """A bare table of names and numbers says nothing about what it is a table of."""
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(
+        None, guild, sheet_db, round_id=3, division_id=7,
+        occasion=_occasion(occasion_name),
+    )
+
+    assert channel.sent_file is None, "no bot in scope, so this is the textual sheet"
+    assert channel.sent_content.startswith(f"**Attendance — {phrase}**")
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_round_does_not_stop_a_boundary_sheet(sheet_db):
+    """No round is the subject of it, so no round's cancellation bears on it.
+
+    Round 9 is CANCELLED in the fixture, and an ordinary sheet for it posts nothing.
+    """
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=9, division_id=7)
+    assert channel.sent_content is None, "an ordinary sheet skips a cancelled round"
+
+    await post_attendance_sheet(
+        None, guild, sheet_db, round_id=9, division_id=7,
+        occasion=_occasion("SEASON_FINAL"),
+    )
+    assert channel.sent_content is not None
+
+
+@pytest.mark.asyncio
+async def test_the_opening_sheet_reads_the_seats_rather_than_the_attendance_record(sheet_db):
+    """Nobody has attended anything yet, so the record it usually reads holds nothing.
+
+    Driver 111 has an attendance row for round 3 worth 4 points. The opening sheet must
+    show them on zero, drawn from their seat rather than from that row.
+    """
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(
+        None, guild, sheet_db, round_id=3, division_id=7,
+        occasion=_occasion("SEASON_OPENING"),
+    )
+
+    assert "0 attendance points" in channel.sent_content
+    assert "4 attendance points" not in channel.sent_content

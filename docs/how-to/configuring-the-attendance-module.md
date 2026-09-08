@@ -242,6 +242,10 @@ Pressing one updates the roster in the message itself, so the division can see a
 
 **A cancelled round charges nobody**, and neither does a round whose check-in call never got posted — no call means no records were ever opened, and the round quietly counts as perfect attendance for everyone. The log channel reports the failure loudly when it happens, and it is worth acting on.
 
+**The sheet is also posted at each end of the season.** Approving the season posts an **opening sheet** — every seated driver on zero, read from the seats rather than from an attendance record that does not exist yet, ordered alphabetically by team and then by driver. `/season complete` posts a **final sheet**, holding the record at that division's last round with results. Both go to the same attendance channel, as drawings where you turned pictures on and as the ordinary list where you did not. Neither is about a round, so a cancelled round does not stop either.
+
+> **The final sheet is the one thing that does not replace what came before it.** Every other posting deletes the previous sheet so exactly one stands in the channel; the final one is posted **beside** the last round's and both stay. It is the season's last word and nothing should be able to delete it. The opening sheet behaves normally — the first round's sheet replaces it in the usual way, so you are never left with a stale opening sheet beside a live one.
+
 ---
 
 ## Pardoning a driver

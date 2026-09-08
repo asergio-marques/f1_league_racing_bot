@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from models.classification_occasion import ClassificationOccasion
 from models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
@@ -249,8 +250,16 @@ class StandingsDrawing:
 
     template_key: str
     division_name: str
-    round_number: str
+    #: The occasion this sheet stands at, already composed into the phrase the heading draws
+    #: — `Opening Classification`, `After Round 10`, `Final Classification`. Composed once, by
+    #: `ClassificationOccasion.label`, so the graphic and the message text cannot disagree.
+    classification_label: str
+    #: The round's results lifecycle phase. Empty at the season's opening, where no session
+    #: has run and there is no phase to stand between.
     result_status_label: str
+    #: Whether this sheet is about a round, and so has a grand prix to name beneath its
+    #: title. False at both season boundaries — see `models.classification_occasion`.
+    names_a_race: bool = True
     division_tier: str | None = None
     season_number: str | None = None
     race_name: str | None = None
@@ -291,8 +300,9 @@ def resolve_drawing(
     *,
     template_key: str,
     division_name: str,
-    round_number: str | int,
     result_status: str | None,
+    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
+    round_number: str | int | None = None,
     snapshots: Sequence,
     display_names: Mapping[int, str],
     team_names: Mapping[int, str],
@@ -385,8 +395,20 @@ def resolve_drawing(
     return StandingsDrawing(
         template_key=template_key,
         division_name=division_name,
-        round_number=str(round_number),
-        result_status_label=status_label(result_status),
+        classification_label=occasion.label(round_number),
+        # The phase of the results this classification is computed from. The final sheet
+        # has one — it *is* the last round's classification, and that round's results are
+        # settled — so it names it, mildly redundant beside `Final Classification` but
+        # true. The opening sheet rests on no results at all, so the field is emptied
+        # rather than made to say something (XIV.3, a value the data determined to be
+        # nothing). This is not `names_a_round`: the question is whether results exist,
+        # not whether a round is the subject, and the two part company at the final sheet.
+        result_status_label=(
+            ""
+            if occasion is ClassificationOccasion.SEASON_OPENING
+            else status_label(result_status)
+        ),
+        names_a_race=occasion.names_a_round,
         division_tier=None if division_tier is None else str(division_tier),
         season_number=None if season_number is None else str(season_number),
         race_name=race_name,
@@ -773,11 +795,19 @@ def build_fill_spec(
     # The division's logo, where a league's own template declares the slot (2026-09-02).
     if DIVISION_LOGO_FIELD in declared:
         image_data[DIVISION_LOGO_FIELD] = (DIVISION_LOGO_ASSET, drawing.division_name)
-    put("round_number", drawing.round_number)
+    put("classification_label", drawing.classification_label)
     put("result_status", drawing.result_status_label)
     put_optional("season_number", drawing.season_number)
     put_optional("division_tier", drawing.division_tier)
-    put_optional("race_name", drawing.race_name)
+    # A season-boundary sheet names no race. The opening one stands before any has been
+    # run and the final one is about the season rather than about the last round, so a
+    # grand prix under `Opening Classification` would simply be untrue. Emptied *quietly*:
+    # its absence is what the occasion determined, not a template shortcoming worth a
+    # notice on every posting (XIV.3, XIV.4's configured absence).
+    if drawing.names_a_race:
+        put_optional("race_name", drawing.race_name)
+    else:
+        put("race_name", None)
 
     for entry in drawn:
         stem = f"{_ROW_PREFIX}_{entry.ordinal}"

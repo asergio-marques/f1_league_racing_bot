@@ -272,6 +272,10 @@ A second prompt appears in the same channel, with the same shape: **➕ Add Corr
 
 **Every standing is stored per round**, which is why amending round two can correct rounds three onwards without you resubmitting them, and why `/season complete` can write each driver's final position into their history.
 
+**The standings channel also gets a posting at each end of the season.** Approving the season posts an **opening classification** — every driver and team on zero, with the calendar drawn empty beside them — and `/season complete` posts a **final classification**, holding the last round that has results. Both go to the same channel as every round's standings, as drawings where you turned pictures on and as the ordinary text tables where you did not. The opening one is ordered alphabetically by team, then by driver within the team; nothing has been scored, so there is no championship to order it by.
+
+Neither is a round's standings, so neither is replaced by anything and neither is touched by `/results standings sync`, which walks the rounds that have results. If a division's cannot be posted, the log channel says so, the other divisions carry on, and the season is approved or completed regardless.
+
 ---
 
 ## Correcting something afterwards

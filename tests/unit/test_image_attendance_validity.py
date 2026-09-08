@@ -44,7 +44,7 @@ def _svg(ids):
 
 
 def _sound_sheet(rows=1, rounds=0):
-    ids = ["division_name", "round_number"]
+    ids = ["division_name", "classification_label"]
     for r in range(1, rows + 1):
         ids += [f"row_{r}_group", f"row_{r}_driver_name", f"row_{r}_points"]
     for z in range(1, rounds + 1):
@@ -78,7 +78,7 @@ def test_a_sound_call_declaring_no_session_is_accepted():
     assert _missing(CALL, _sound_call(sessions=0)) == []
 
 
-@pytest.mark.parametrize("field", ["division_name", "round_number"])
+@pytest.mark.parametrize("field", ["division_name", "classification_label"])
 def test_a_missing_mandatory_sheet_field_is_named(field):
     ids = [i for i in _sound_sheet() if i != field]
     assert field in _missing(SHEET, ids)
@@ -121,7 +121,7 @@ def test_a_sheet_declaring_no_row_at_all_is_refused():
 
 
 def test_a_gap_in_the_row_numbering_names_the_rows():
-    ids = ["division_name", "round_number",
+    ids = ["division_name", "classification_label",
            "row_1_driver_name", "row_2_driver_name", "row_5_driver_name"]
     with pytest.raises(CapacityError) as exc:
         catalogue_for(SHEET).rows.declared_capacity(_svg(ids))

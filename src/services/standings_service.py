@@ -5,6 +5,7 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Mapping
 
 from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
@@ -386,6 +387,135 @@ async def compute_team_standings(
         )
 
     return snapshots
+
+
+# ---------------------------------------------------------------------------
+# The opening classification
+# ---------------------------------------------------------------------------
+#
+# Posted once, when the season is approved. Nobody has scored, so neither of the two
+# functions above can supply the order: every component of their sort keys — points, the
+# finish-count vectors, the first-finish rounds, participation — is identical when no round
+# has been run, leaving `sorted()` to fall back on set iteration over Discord snowflakes.
+# That is not an order, it just looks like one. Hence an explicit rule, and a test that pins
+# it (decided 2026-09-08).
+#
+# Neither function persists anything. There is no round for a snapshot row to key to, and
+# writing zero-point rows against round one would corrupt the very computation above.
+
+
+async def opening_driver_standings(
+    db_path: str,
+    division_id: int,
+    display_names: Mapping[int, str] | None = None,
+) -> list[DriverStandingsSnapshot]:
+    """The division's grid before a round has been run: every driver on zero.
+
+    Ordered alphabetically by team name, then alphabetically by driver within the team, both
+    case-insensitively.
+
+    *display_names* are the names the graphic will actually draw, resolved from Discord by
+    the caller. The order reads the same string the sheet does — the attendance sheet already
+    orders on the resolved name for this reason, and a grid ordered on one name while
+    displaying another would look simply wrong. A driver the caller could not resolve falls
+    back to their id, as it does everywhere else.
+
+    Selects the same drivers ``compute_driver_standings`` does — seated, non-reserve.
+    """
+    names = display_names or {}
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT dp.discord_user_id, ti.name AS team_name
+            FROM team_seats ts
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
+            WHERE ti.division_id = ?
+              AND ti.is_reserve = 0
+              AND ts.driver_profile_id IS NOT NULL
+            """,
+            (division_id,),
+        )
+        rows = await cursor.fetchall()
+
+    seated: list[tuple[int, str]] = []
+    for row in rows:
+        try:
+            seated.append((int(row["discord_user_id"]), row["team_name"] or ""))
+        except (TypeError, ValueError):
+            continue
+
+    def _order(entry: tuple[int, str]) -> tuple[str, str]:
+        user_id, team_name = entry
+        return (team_name.casefold(), names.get(user_id, str(user_id)).casefold())
+
+    return [
+        DriverStandingsSnapshot(
+            id=0,
+            round_id=0,
+            division_id=division_id,
+            driver_user_id=user_id,
+            standing_position=position,
+            total_points=0,
+            finish_counts={},
+            first_finish_rounds={},
+            race_participant=False,
+        )
+        for position, (user_id, _team) in enumerate(sorted(seated, key=_order), start=1)
+    ]
+
+
+async def opening_team_standings(
+    db_path: str, division_id: int
+) -> list[TeamStandingsSnapshot]:
+    """The division's constructors before a round has been run: every team on zero.
+
+    Ordered alphabetically by team name, case-insensitively, so the two opening sheets agree
+    with one another about which team comes first.
+
+    Keyed by role id, as a constructor's classification always is, and selecting the same
+    teams ``compute_team_standings`` does. A team the server holds no role mapping for is
+    absent here exactly as it would be after a round.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT trc.role_id, ti.name AS team_name
+            FROM team_instances ti
+            JOIN divisions d ON d.id = ti.division_id
+            JOIN seasons s ON s.id = d.season_id
+            JOIN team_role_configs trc
+              ON trc.server_id = s.server_id AND trc.team_name = ti.name
+            WHERE ti.division_id = ?
+              AND ti.is_reserve = 0
+            """,
+            (division_id,),
+        )
+        rows = await cursor.fetchall()
+
+    teams: list[tuple[int, str]] = []
+    for row in rows:
+        try:
+            teams.append((int(row["role_id"]), row["team_name"] or ""))
+        except (TypeError, ValueError):
+            continue
+
+    return [
+        TeamStandingsSnapshot(
+            id=0,
+            round_id=0,
+            division_id=division_id,
+            team_role_id=role_id,
+            standing_position=position,
+            total_points=0,
+            finish_counts={},
+            first_finish_rounds={},
+        )
+        for position, (role_id, _name) in enumerate(
+            sorted(teams, key=lambda entry: entry[1].casefold()), start=1
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------

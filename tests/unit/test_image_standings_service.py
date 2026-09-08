@@ -144,7 +144,7 @@ def _race(
 def test_the_heading_fields_are_carried_through():
     drawing = _drivers_drawing(season_number=3, division_tier=1, race_name="Belgian GP")
     assert drawing.division_name == "Division 1"
-    assert drawing.round_number == "4"
+    assert drawing.classification_label == "After Round 4"
     assert drawing.season_number == "3"
     assert drawing.division_tier == "1"
     assert drawing.race_name == "Belgian GP"
@@ -581,3 +581,54 @@ def test_a_constructors_car_carries_the_same_highlight_as_the_drivers_cell():
     _, sessions = drawing.entries[0].cells[1].cars[1]
     cell = sessions["feature_race_result"]
     assert (cell.text, cell.highlight, cell.fastest_lap) == ("3", HIGHLIGHT_P3, True)
+
+
+# ── The occasion the sheet stands at ──────────────────────────────────────
+#
+# One phrase, composed once, for the three moments a season publishes a classification.
+
+
+def test_each_occasion_composes_its_own_heading():
+    from models.classification_occasion import ClassificationOccasion
+
+    assert (
+        _drivers_drawing(occasion=ClassificationOccasion.SEASON_OPENING).classification_label
+        == "Opening Classification"
+    )
+    assert _drivers_drawing().classification_label == "After Round 4"
+    assert (
+        _drivers_drawing(occasion=ClassificationOccasion.SEASON_FINAL).classification_label
+        == "Final Classification"
+    )
+
+
+def test_the_constructors_sheet_composes_the_same_phrase():
+    """The two championships of one division must not describe the same moment apart."""
+    from models.classification_occasion import ClassificationOccasion
+
+    for occasion in ClassificationOccasion:
+        assert (
+            _drivers_drawing(occasion=occasion, round_number=4).classification_label
+            == _constructors_drawing(occasion=occasion, round_number=4).classification_label
+        )
+
+
+def test_the_opening_sheet_names_no_results_phase():
+    """No session has run, so there is no phase to stand between — the field is emptied.
+
+    `result_status` is otherwise mandatory and would have said `Final Results` above a
+    classification in which nothing whatever had been decided.
+    """
+    from models.classification_occasion import ClassificationOccasion
+
+    drawing = _drivers_drawing(occasion=ClassificationOccasion.SEASON_OPENING)
+    assert drawing.result_status_label == ""
+
+
+def test_the_final_sheet_keeps_the_last_round_s_phase():
+    from models.classification_occasion import ClassificationOccasion
+
+    drawing = _drivers_drawing(occasion=ClassificationOccasion.SEASON_FINAL)
+    assert drawing.result_status_label == "Final Results"
+
+

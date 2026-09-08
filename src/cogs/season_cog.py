@@ -4865,13 +4865,14 @@ class SeasonCog(commands.Cog):
                             "_do_approve: role grant failed for user %s", _row["discord_user_id"]
                         )
 
-        # Both postings below draw inside their own loops, so the notice covers the pair
-        # of them rather than sitting inside either. It goes to the channel the review
+        # All three postings below draw inside their own loops, so the notice covers the
+        # set of them rather than sitting inside any one. It goes to the channel the review
         # was read in — the approve button is ephemeral, so there is no other home, and
         # this is where the manager is waiting.
         async with batch_notice(
             interaction.channel,
-            "\U0001f3a8 Posting lineups and calendars — one moment.",
+            "\U0001f3a8 Posting lineups, calendars and opening classifications — "
+            "one moment.",
         ):
             # ── T016: Post lineup per division (FR-010) ──────────────────────
             if _guild is not None:
@@ -4941,6 +4942,42 @@ class SeasonCog(commands.Cog):
                     except Exception:  # noqa: BLE001 — never fail an approval on the report
                         log.exception("_do_approve: could not post the calendar report")
                     self._calendar_report = _report_text
+
+            # ── The opening classification, per division ─────────────────────
+            # The standings and attendance sheets as they stand before a round has been
+            # run: everybody on zero, the grid empty. Posted as graphics with no text
+            # above them, falling back to the textual sheets where the images module is
+            # off or a template will not draw (XIV.7). A failure here never fails the
+            # approval — the season is already ACTIVE by this point.
+            if _guild is not None:
+                from services import season_classification_service as _classification
+
+                try:
+                    _opening_problems = await _classification.post_opening_classifications(
+                        self.bot, _guild, self.bot.db_path, divisions, div_rounds
+                    )
+                except Exception:  # noqa: BLE001 — never fail an approval on a picture
+                    log.exception("_do_approve: the opening classifications failed")
+                    _opening_problems = []
+
+                if _opening_problems:
+                    _opening_report = "\n".join(
+                        ["/season approve | Opening classification", *(
+                            f"    - {line}" for line in _opening_problems
+                        )]
+                    )
+                    log.error(
+                        "_do_approve: opening classification problems - %s",
+                        "; ".join(_opening_problems),
+                    )
+                    try:
+                        await self.bot.output_router.post_log(
+                            cfg.server_id, _opening_report
+                        )
+                    except Exception:  # noqa: BLE001
+                        log.exception(
+                            "_do_approve: could not post the opening classification report"
+                        )
 
         stale_keys = [uid for uid, c in self._pending.items() if c.server_id == cfg.server_id]
         for uid in stale_keys:

@@ -9,8 +9,9 @@ check_and_schedule_season_end(server_id, bot)
 
 execute_season_end(server_id, season_id, bot)
     Archives the season (status → COMPLETED), writes DriverHistoryEntry
-    records for every assigned driver, and announces completion in the log
-    channel.  All season data is permanently retained.
+    records for every assigned driver, posts each division's final standings
+    and attendance sheet, and announces completion in the log channel.  All
+    season data is permanently retained.
     Idempotent: a no-op if no active season is found (handles duplicate calls).
 """
 
@@ -122,6 +123,42 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
 
     # Write DriverHistoryEntry records for every assigned driver before archiving
     await _write_driver_history_entries(season, bot)
+
+    # ── The final classification, per division ────────────────────────────
+    # The season's last word: each division's standings and attendance record posted once
+    # more, headed `Final Classification`, as graphics with no text above them. Posted
+    # while the season is still ACTIVE, because everything downstream of here reads it as
+    # the live one. A failure never blocks the archival — the season completes either way,
+    # and a picture is not what the completion is for (XIV.7).
+    if guild is not None:
+        from services import season_classification_service as classification
+
+        try:
+            problems = await classification.post_final_classifications(
+                bot, guild, bot.db_path, season.id
+            )
+        except Exception:  # noqa: BLE001 — never fail an archival on a picture
+            log.exception("execute_season_end: the final classifications failed")
+            problems = []
+
+        if problems:
+            log.error(
+                "execute_season_end: final classification problems - %s",
+                "; ".join(problems),
+            )
+            try:
+                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                    server_id,
+                    "\n".join(
+                        ["System | Season complete | Final classification", *(
+                            f"    - {line}" for line in problems
+                        )]
+                    ),
+                )
+            except Exception:  # noqa: BLE001
+                log.exception(
+                    "execute_season_end: could not post the final classification report"
+                )
 
     # Archive: flip status to COMPLETED (all data retained)
     await season_svc.complete_season(season.id)

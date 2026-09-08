@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from models.classification_occasion import ClassificationOccasion
 from models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
@@ -145,8 +146,15 @@ class AttendanceDrawing:
     """A division's attendance record, resolved and ready to project onto a template."""
 
     division_name: str
-    round_number: str
+    #: The occasion this sheet stands at, already composed into the phrase the heading draws
+    #: — `Opening Classification`, `After Round 10`, `Final Classification`. Shared with the
+    #: standings sheets so a division's two records cannot describe the same moment
+    #: differently.
+    classification_label: str
     template_key: str = ATTENDANCE_TEMPLATE_KEY
+    #: Whether this sheet is about a round, and so has a grand prix to name. False at both
+    #: season boundaries — see `models.classification_occasion`.
+    names_a_race: bool = True
     division_tier: str | None = None
     season_number: str | None = None
     race_name: str | None = None
@@ -231,8 +239,9 @@ def mark_for(total: int | None, limit: int | None) -> str | None:
 def resolve_drawing(
     *,
     division_name: str,
-    round_number: str | int,
     records: Sequence[DriverRecord],
+    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
+    round_number: str | int | None = None,
     display_names: Mapping[int, str],
     team_names: Mapping[int, str] | None = None,
     nationalities: Mapping[int, str | None] | None = None,
@@ -296,7 +305,8 @@ def resolve_drawing(
 
     return AttendanceDrawing(
         division_name=division_name,
-        round_number=str(round_number),
+        classification_label=occasion.label(round_number),
+        names_a_race=occasion.names_a_round,
         division_tier=None if division_tier is None else str(division_tier),
         season_number=None if season_number is None else str(season_number),
         race_name=race_name,
@@ -410,10 +420,15 @@ def build_fill_spec(
     # The division's logo, where a league's own template declares the slot (2026-09-02).
     if DIVISION_LOGO_FIELD in declared:
         image_data[DIVISION_LOGO_FIELD] = (DIVISION_LOGO_ASSET, drawing.division_name)
-    put("round_number", drawing.round_number)
+    put("classification_label", drawing.classification_label)
     put_optional("season_number", drawing.season_number)
     put_optional("division_tier", drawing.division_tier)
-    put_optional("race_name", drawing.race_name)
+    # See the standings sheet: a season-boundary sheet names no race, and its absence is
+    # what the occasion determined rather than a fault worth a notice.
+    if drawing.names_a_race:
+        put_optional("race_name", drawing.race_name)
+    else:
+        put("race_name", None)
 
     # The one point limit, named by its own label. Both functionalities switched off takes the
     # whole block off the canvas; where the template declares no block group, the two fields

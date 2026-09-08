@@ -16,6 +16,7 @@ from models.attendance import (
     DriverRoundAttendance,
     RsvpEmbedMessage,
 )
+from models.classification_occasion import ClassificationOccasion
 
 
 def validate_timing_invariant(
@@ -823,6 +824,7 @@ async def post_attendance_sheet(
     round_id: int,
     division_id: int,
     sanctioned_profile_ids: set[int] | None = None,
+    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
 ) -> None:
     """Post a new sheet to the division's attendance channel, replacing the prior one.
 
@@ -859,7 +861,13 @@ async def post_attendance_sheet(
         round_row = await (
             await db.execute("SELECT status FROM rounds WHERE id = ?", (round_id,))
         ).fetchone()
-    if round_row is not None and round_row["status"] == "CANCELLED":
+    if (
+        occasion.names_a_round
+        and round_row is not None
+        and round_row["status"] == "CANCELLED"
+    ):
+        # A season-boundary sheet is about the season and not about a round, so no round's
+        # cancellation bears on it (see `models.classification_occasion`).
         log.info("post_attendance_sheet: skipping cancelled round %s", round_id)
         return
 
@@ -909,6 +917,12 @@ async def post_attendance_sheet(
         )
         driver_rows = await cursor.fetchall()
 
+        # The opening sheet stands before any round has been attended, so
+        # `driver_round_attendance` holds nothing to read and the query above returns
+        # nothing. The division's seated drivers, all on zero, are the sheet.
+        if occasion is ClassificationOccasion.SEASON_OPENING:
+            driver_rows = await _opening_attendance_rows(db, division_id)
+
         cursor2 = await db.execute(
             """
             SELECT ac.autoreserve_threshold, ac.autosack_threshold
@@ -927,9 +941,31 @@ async def post_attendance_sheet(
         display = member.display_name if member else str(r["discord_user_id"])
         return (-(r["total_points_after"] or 0), display.lower())
 
-    sorted_drivers = sorted(driver_rows, key=_sort_key)
+    # Nobody has attended anything yet, so the points above separate nobody. The opening
+    # sheet is ordered as the opening standings grid is — team, then driver — so that a
+    # league's two opening sheets agree about the order of the same drivers.
+    def _opening_sort_key(r):
+        member = guild.get_member(int(r["discord_user_id"]))
+        display = member.display_name if member else str(r["discord_user_id"])
+        return ((r["team_name"] or "").casefold(), display.casefold())
 
-    heading = "**Attendance Standings**"
+    sorted_drivers = sorted(
+        driver_rows,
+        key=(
+            _opening_sort_key
+            if occasion is ClassificationOccasion.SEASON_OPENING
+            else _sort_key
+        ),
+    )
+
+    # The opening and final sheets say which they are; an ordinary one names no round here,
+    # the sheet itself carrying that. The phrase heads the *textual* body either way — a bare
+    # table of names and numbers says nothing about what it is a table of.
+    heading = (
+        "**Attendance Standings**"
+        if occasion.names_a_round
+        else f"**Attendance — {occasion.label()}**"
+    )
     lines: list[str] = [heading, ""]
     for r in sorted_drivers:
         pts = r["total_points_after"] or 0
@@ -969,6 +1005,7 @@ async def post_attendance_sheet(
         sorted_drivers=sorted_drivers,
         cfg_row=cfg_row,
         sanctioned_profile_ids=sanctioned_profile_ids,
+        occasion=occasion,
     )
 
     # ── Produce ───────────────────────────────────────────────────────────
@@ -981,7 +1018,11 @@ async def post_attendance_sheet(
             # the full textual body beside the attachment would tell a league everything twice
             # and ping every driver from a message whose point is the image — and the graphic
             # carries names precisely so that it carries no mention.
-            new_msg = await channel.send(heading, file=attachment)
+            # A season-boundary graphic goes out bare: the phrase naming the occasion is
+            # drawn on the sheet, so a heading above it would only say it twice.
+            new_msg = await channel.send(
+                heading if occasion.names_a_round else None, file=attachment
+            )
         else:
             new_msg = await channel.send(content)
     except discord.HTTPException as exc:
@@ -1011,6 +1052,12 @@ async def post_attendance_sheet(
 
         discard_attachment(attachment)
 
+    # The final sheet is terminal: it stands *beside* the last round's rather than replacing
+    # it, so it neither claims the slot nor deletes what is in it. Claiming the slot would
+    # only hand some later posting the means to delete the season's last word.
+    if not occasion.takes_the_live_slot:
+        return
+
     # Persist the replacement's id before removing what it replaces, so that a failed
     # deletion leaves the config pointing at the message that actually exists.
     async with get_connection(db_path) as db:
@@ -1032,6 +1079,38 @@ async def post_attendance_sheet(
             log.warning("post_attendance_sheet: failed to delete prior message: %s", exc)
 
 
+async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
+    """The division's seated drivers, all on zero, shaped like the ordinary sheet's rows.
+
+    Posted once, when the season is approved. Selects the same drivers the sheet after a
+    round does — seated, non-reserve — and carries the team name besides, which is what the
+    opening order is taken on.
+    """
+    cursor = await db.execute(
+        """
+        SELECT dp.id AS driver_profile_id, dp.discord_user_id, dp.test_display_name,
+               ti.name AS team_name
+        FROM team_seats ts
+        JOIN team_instances ti ON ti.id = ts.team_instance_id
+        JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
+        WHERE ti.division_id = ?
+          AND ti.is_reserve = 0
+          AND ts.driver_profile_id IS NOT NULL
+        """,
+        (division_id,),
+    )
+    return [
+        {
+            "driver_profile_id": row["driver_profile_id"],
+            "total_points_after": 0,
+            "discord_user_id": row["discord_user_id"],
+            "test_display_name": row["test_display_name"],
+            "team_name": row["team_name"],
+        }
+        for row in await cursor.fetchall()
+    ]
+
+
 async def _sheet_attachment(
     bot,
     guild: discord.Guild,
@@ -1042,6 +1121,7 @@ async def _sheet_attachment(
     sorted_drivers,
     cfg_row,
     sanctioned_profile_ids: set[int] | None,
+    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
 ):
     """The sheet graphic to attach, or None to post the textual sheet alone.
 
@@ -1119,6 +1199,7 @@ async def _sheet_attachment(
 
         drawing = resolve_drawing(
             division_name=division_name,
+            occasion=occasion,
             round_number=round_number,
             records=records,
             display_names=display_names,
@@ -1135,7 +1216,11 @@ async def _sheet_attachment(
         )
 
         render = await render_sheet(bot, server_id, drawing)
-        label = f"{division_name} — attendance after round {round_number}"
+        label = (
+            f"{division_name} — attendance after round {round_number}"
+            if occasion.names_a_round
+            else f"{division_name} — attendance, {occasion.label()}"
+        )
         if render.notices:
             await report_notices(bot, server_id, label, render.notices)
         if render.problem:
