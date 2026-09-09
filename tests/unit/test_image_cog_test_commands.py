@@ -1,6 +1,6 @@
 """The `/images test` command surface (045).
 
-Eleven previews under one nested group, each drawn against the league's own division.
+Twelve previews under one nested group, each drawn against the league's own division.
 These tests exercise the surface and the shared reply, with Discord stubbed throughout —
 no gateway, no server, no running bot.
 """
@@ -103,7 +103,7 @@ class TestTheGroup:
         )
 
     def test_the_group_stays_within_discords_ceiling(self):
-        """Eleven previews, against a limit of twenty-five."""
+        """Twelve previews, against a limit of twenty-five."""
         assert len(ImageCog.test.commands) <= 25
 
     def test_the_startup_check_covers_the_new_group(self):
@@ -369,10 +369,10 @@ class TestTheReply:
         assert len(interaction.followup.messages[0]) <= 1900
 
 
-# ── The eleven, and their parameters (T016, T026, T031) ───────────────────
+# ── The twelve, and their parameters (T016, T026, T031) ───────────────────
 
 
-class TestTheElevenCommands:
+class TestTheTwelveCommands:
     EXPECTED = {
         "calendar": ["division"],
         "lineup": ["division"],
@@ -385,6 +385,7 @@ class TestTheElevenCommands:
         "weather-p3": ["division", "round"],
         "weather-mystery": ["division", "round"],
         "verdict": ["division", "round"],
+        "verdict-banner": ["division", "round"],
     }
 
     def test_every_contracted_command_is_registered_and_no_other(self):
@@ -410,6 +411,16 @@ class TestTheElevenCommands:
         names = {c.name for c in ImageCog.test.commands}
         assert "verdict" in names
         assert "verdicts" not in names
+
+    def test_the_banner_is_a_command_of_its_own(self):
+        """The two aspects are independent, so the two previews are two commands.
+
+        `verdict` draws the cards a review produced and `verdict-banner` the header above
+        them; a league may have either toggle on without the other, and drawing both from
+        one command would show a picture it does not post.
+        """
+        names = {c.name for c in ImageCog.test.commands}
+        assert {"verdict", "verdict-banner"} <= names
 
 
 def _async(value):

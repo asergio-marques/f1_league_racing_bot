@@ -1673,7 +1673,7 @@ class ImageCog(commands.Cog):
         return lines
 
 
-    # ── /images test ── the eleven previews ─────────────────────────
+    # ── /images test ── the twelve previews ─────────────────────────
 
     # One command per image kind, each drawn against the league's own division and, where
     # the kind pertains to one, its own round. Discord allows a group of subcommands
@@ -1736,7 +1736,7 @@ class ImageCog(commands.Cog):
         *kind* names the preview, and the three conditions 045 passed as separate flags —
         whether rounds are required, whether teams are, and what format the round must
         carry — are read from `PREVIEW_KINDS` off it. One table, read in one place, rather
-        than three rules restated at eleven call sites.
+        than three rules restated at twelve call sites.
         """
         from services.image_preview_service import PreviewRefused, resolve_context
         from services.image_render_service import (
@@ -2011,6 +2011,36 @@ class ImageCog(commands.Cog):
         )
 
     @test.command(
+        name="verdict-banner",
+        description="Preview the verdict banner for one of your rounds.",
+    )
+    @app_commands.describe(
+        division="The division to draw for. Omit where this server has no season.",
+        round="The round number to draw for. Omit where this server has no season.",
+    )
+    @channel_guard
+    @admin_only
+    async def test_verdict_banner(
+        self,
+        interaction: discord.Interaction,
+        division: str,
+        round: int,
+    ) -> None:
+        from services.image_preview_service import build_verdict_banner_preview
+
+        async def _build(context):
+            return await build_verdict_banner_preview(self.bot, context)
+
+        await self._run_preview(
+            interaction,
+            title="Verdict banner",
+            kind="verdict-banner",
+            division=division,
+            round_number=round,
+            build=_build,
+        )
+
+    @test.command(
         name="weather-p1",
         description="Preview the weather — phase 1 image for one of your rounds.",
     )
@@ -2137,6 +2167,7 @@ class ImageCog(commands.Cog):
     test_attendance.autocomplete("division")(_division_autocomplete)
     test_rsvp.autocomplete("division")(_division_autocomplete)
     test_verdict.autocomplete("division")(_division_autocomplete)
+    test_verdict_banner.autocomplete("division")(_division_autocomplete)
     test_weather_p1.autocomplete("division")(_division_autocomplete)
     test_weather_p2.autocomplete("division")(_division_autocomplete)
     test_weather_p3.autocomplete("division")(_division_autocomplete)
