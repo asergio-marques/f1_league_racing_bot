@@ -84,16 +84,25 @@ def describe_penalty(penalty_type: str | None, time_seconds: int | None) -> str:
 
 
 async def _get_announcement_context(db_path: str, round_id: int) -> dict:
-    """Return season_number, division_name, penalty_channel_id for the round."""
+    """Return the round's season, division, verdicts channel, tier and track record.
+
+    The last three are the banner's, and are read here rather than in a query of its own:
+    this runs once on every review that applies anything, and the round row it already
+    reads carries them. The `tracks` join is the one every other posting path makes --
+    `image_verdict_post._round_context` and the weather path both -- so the banner cannot
+    disagree with the card beneath it about what a round is called.
+    """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT s.season_number, d.name AS division_name,
-                   drc.penalty_channel_id
+            SELECT s.season_number, d.name AS division_name, d.tier AS division_tier,
+                   drc.penalty_channel_id, r.round_number,
+                   t.gp_name AS race_name, t.country AS country_name
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
             LEFT JOIN division_results_config drc ON drc.division_id = d.id
+            LEFT JOIN tracks t ON t.name = r.track_name
             WHERE r.id = ?
             """,
             (round_id,),
@@ -104,8 +113,48 @@ async def _get_announcement_context(db_path: str, round_id: int) -> dict:
     return {
         "season_number": row["season_number"],
         "division_name": row["division_name"],
+        "division_tier": row["division_tier"],
         "penalty_channel_id": row["penalty_channel_id"],
+        "round_number": row["round_number"],
+        "race_name": row["race_name"],
+        "country_name": row["country_name"],
     }
+
+
+def _banner_once(bot, channel, server_id: int, ctx: dict):
+    """A callable that heads this batch with a banner, at most once.
+
+    **Lazy, and that is the point.** A batch can produce nothing: a record whose result
+    context will not load is skipped, and every record of a batch may be such a one. Posted
+    eagerly, the banner would then stand alone over an empty run. Called immediately before
+    the first verdict that actually goes out, it cannot.
+
+    Never raises, and never returns anything the caller must act on: a header failing must
+    not cost a league the decisions it heads.
+    """
+    posted = False
+
+    async def post() -> None:
+        nonlocal posted
+        if posted:
+            return
+        posted = True  # set before the attempt: one try per batch, whatever it returns
+        try:
+            from services import image_verdict_banner_post
+
+            drawing = image_verdict_banner_post.build_drawing(
+                season_number=ctx.get("season_number"),
+                division_name=ctx["division_name"],
+                division_tier=ctx.get("division_tier"),
+                round_number=ctx.get("round_number"),
+                race_name=ctx.get("race_name"),
+                country_name=ctx.get("country_name"),
+            )
+            await image_verdict_banner_post.try_post(bot, channel, server_id, drawing)
+        except Exception:
+            log.exception("verdict banner: could not head the batch for server %s", server_id)
+
+    return post
 
 
 async def _get_result_context(db_path: str, race_result_id: int | None, qual_result_id: int | None) -> dict:
@@ -313,6 +362,7 @@ async def post_penalty_announcements(
     division_name = ctx["division_name"]
     server_id = getattr(getattr(target_channel, "guild", None), "id", 0)
     KIND = VerdictKind.PENALTY
+    head_the_batch = _banner_once(bot, target_channel, server_id, ctx)
 
     for record in applied_penalties:
         try:
@@ -356,6 +406,8 @@ async def post_penalty_announcements(
                 if hasattr(record, "get")
                 else getattr(record, "team_role_id", None),
             )
+
+            await head_the_batch()
 
             await _send_verdict(
                 bot,
@@ -421,6 +473,7 @@ async def post_appeal_announcements(
     division_name = ctx["division_name"]
     server_id = getattr(getattr(target_channel, "guild", None), "id", 0)
     KIND = VerdictKind.APPEAL
+    head_the_batch = _banner_once(bot, target_channel, server_id, ctx)
 
     for record in applied_corrections:
         try:
@@ -463,6 +516,8 @@ async def post_appeal_announcements(
                 if hasattr(record, "get")
                 else getattr(record, "team_role_id", None),
             )
+
+            await head_the_batch()
 
             await _send_verdict(
                 bot,
