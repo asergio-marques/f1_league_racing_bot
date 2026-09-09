@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     width="1200" height="304" viewBox="0 0 1200 304"
+     font-family="Inter, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif">
+
+  <!-- ===================================================================
+       Verdict banner template
+       Field catalogue: image_module_specification.md, "Verdict banner image
+       generation"
+
+       The header of a batch of verdicts. It names the round the decisions
+       below it were taken upon; the decisions themselves are drawn one apiece
+       by verdicts_template.svg and are no part of this file.
+
+       It is the heading of a verdict card and nothing under it — the same
+       masthead, the same 140 / 188 / 220 / 252 rhythm — so that the banner and
+       the cards it introduces read as one run. The canvas is 304 tall because
+       there is nothing beneath the rule but the strap.
+
+       The round takes the headline and the grand prix the line under it, which
+       is the opposite way round from a forecast. The round is the only thing
+       here that is always known: a round whose circuit matches no track record
+       on the server has no grand prix name, and a banner built the other way
+       would lose its headline exactly when it was most needed. This is how the
+       verdict card orders the same two facts.
+
+       There is no session name. One review closes on a whole round and may
+       sanction a qualifying entry and a race entry in the same breath, so a
+       banner naming one session would misname half the cards beneath it.
+
+       Mandatory : division_name, round_number
+       Optional  : season_number, division_tier, race_name, track_flag,
+                   season_number_group, division_tier_group, race_name_group,
+                   track_flag_group
+
+       No division_logo slot and no colour slot, as nothing else the module
+       ships declares either. A league drawing its crest here, or colouring
+       this file per tier, does it in its own copy.
+       =================================================================== -->
+
+  <defs>
+    <style>
+      .eyebrow  { font-size:15px;  fill:#8A94A3; letter-spacing:.18em; font-weight:600 }
+      .title    { font-size:34px;  fill:#F2F5F8; font-weight:700; inline-size:860px; max-lines:1 }
+      .roundlbl { font-size:17px;  fill:#8A94A3; letter-spacing:.20em; font-weight:600 }
+      .roundnum { font-size:42px;  fill:#E8113C; font-weight:700 }
+      .track    { font-size:42px; inline-size:880px; max-lines:1; fill:#F2F5F8; font-weight:700 }
+      .sub      { font-size:19px; inline-size:880px; max-lines:1; fill:#8A94A3 }
+      .foot     { font-size:11px;  fill:#5A626E; letter-spacing:.22em; font-weight:600 }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="304" fill="#0B0D10"/>
+
+  <!--  heading band, drawn as every round-scoped template draws it  -->
+  <!--  Each of the two heading values carries its own group, so that a template
+        emptying one does not leave the fixed word beside it standing alone. They
+        stand apart rather than run together with a separator between them, a
+        separator being chrome that survives the emptying of the fields it
+        divides.  -->
+  <g id="season_number_group" inkscape:label="season_number_group">
+    <text class="eyebrow" x="48" y="36"><tspan>SEASON&#160;</tspan><tspan id="season_number" inkscape:label="season_number">1</tspan></text>
+  </g>
+  <g id="division_tier_group" inkscape:label="division_tier_group">
+    <text class="eyebrow" x="184" y="36"><tspan>TIER&#160;</tspan><tspan id="division_tier" inkscape:label="division_tier">1</tspan></text>
+  </g>
+  <text id="division_name" inkscape:label="division_name" class="title" x="48" y="76">Division Name</text>
+  <rect x="0" y="93" width="1200" height="3" fill="#E8113C"/>
+
+  <!--  What the banner is. Static chrome in the slot a card gives its round
+        label: the sentence is the same on every banner drawn, and the round it
+        would otherwise carry has the headline instead.  -->
+  <text class="roundlbl" x="48" y="140">STEWARDS' VERDICTS</text>
+
+  <text class="track" x="48" y="188"><tspan>Round&#160;</tspan><tspan id="round_number" inkscape:label="round_number" class="roundnum">4</tspan></text>
+
+  <!--  The grand prix beneath it, as it sits beneath the session on a card. It
+        is optional and so carries a group: a round whose circuit matches no
+        record on the server drops the line rather than leaving a gap where a
+        name should be. The circuit name itself is not drawn — a banner is read
+        at a glance, and the grand prix is what a league calls the round.  -->
+  <g id="race_name_group" inkscape:label="race_name_group">
+    <text id="race_name" inkscape:label="race_name" class="sub" x="48" y="220">Grand Prix Name</text>
+  </g>
+
+  <!--  The flag of the round's country, plated as the check-in call plates its
+        own. Inside the group, so a round carrying no country leaves no empty
+        frame standing beside the name.  -->
+  <g id="track_flag_group" inkscape:label="track_flag_group">
+    <rect x="962" y="104" width="190" height="140" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <image id="track_flag" inkscape:label="track_flag"
+           x="982" y="124" width="150" height="100" preserveAspectRatio="xMidYMid meet"/>
+  </g>
+
+  <!--  footer  -->
+  <line x1="48" y1="252" x2="1152" y2="252" stroke="#262B33" stroke-width="1"/>
+  <text class="foot" x="48" y="278">VERDICTS FOLLOW</text>
+</svg>
