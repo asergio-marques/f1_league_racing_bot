@@ -31,14 +31,17 @@ it only to place it; the rules governing it belong to its own specification.
     - The log channel is where the bot records what it did, what it could not find, and why something fell back.
 - The initialisation command shall run once. A second run shall be refused rather than overwrite what stands, and shall name the commands that change a single setting.
 - Each of the three settings shall have a command changing that setting alone.
-- The initialisation command and the three single-setting commands shall run from any channel and shall require only the server permission that installed the bot, holding the interaction role being no part of it. They are what repairs the three settings, and a deleted channel or a withdrawn role would otherwise be unrepairable.
+- The initialisation command and the three single-setting commands are a league admin's, and shall run from any channel, holding the interaction role being no part of it. They are what repairs the three settings, and a deleted channel or a withdrawn role would otherwise be unrepairable.
 - Initialisation shall create the Reserve team where the server holds no team. No other team shall be created.
 
 ### Who may do what
 - A driver shall need no role and no channel. A driver reaches the bot through the buttons it posts and through their own channels.
-- A league manager shall hold the interaction role and shall command the bot in the interaction channel. Reading what the bot holds — the state of a season, the review of a season — asks nothing more.
-- Configuring a league shall further require the server permission for managing the server.
-- Enabling and disabling a module shall require the server's administrator permission, as shall saving and restoring the databases under test mode. Every other test mode command asks the same as configuring a league.
+- Two tiers of authority shall govern every command, and every command shall sit in one of them and no other.
+    - **A league admin** shall hold the server's administrator permission. A league admin governs what the bot is upon the server, and everything that may undo a league entire: initialising the bot and repairing its three settings, enabling and disabling a module, starting over, and every command of test mode.
+    - **A league manager** shall hold the interaction role and shall command the bot in the interaction channel. A league manager runs the league: its seasons, divisions, rounds, tracks, teams, drivers and seats; the configuration of every module and the templates and artwork it draws from; the channels each division posts to; and the results, standings, verdicts, check-ins and signups that follow.
+- Where this specification does not state a tier, the command is a league manager's.
+- The administrator permission shall carry the league manager's tier within it. A member holding it shall command the bot without holding the interaction role, a league admin being able to do everything a league manager may.
+- A league admin's command shall be given in the interaction channel, save the initialisation command and the three single-setting commands. Those alone repair the settings the channel itself depends upon, and shall run from any channel.
 - A command given in a channel other than the interaction channel shall be refused, and the refusal shall be seen by the member alone.
 
 ### Channels
@@ -72,7 +75,7 @@ it only to place it; the rules governing it belong to its own specification.
     - A fuller form shall additionally clear the server's three settings, so that the bot may be initialised again.
     - The server's team list shall survive either form.
     - It shall report what was deleted and shall be written to the log channel.
-    - It shall run from any channel, on the same footing as the initialisation command.
+    - It shall be given in the interaction channel. It is a league admin's command and not a repair of the settings, the initialisation command being the footing it does not share.
 - A command deleting the bot's own messages in a channel shall require the number to be deleted, and shall accept no fewer than one and no more than ten.
     - The number shall count the messages actually deleted. A message written by anybody other than the bot shall never be deleted and shall never be counted towards it.
     - The messages deleted shall be the most recent, the newest first.
