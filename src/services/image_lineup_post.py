@@ -238,6 +238,7 @@ async def render_png(bot, server_id: int, guild, division_id: int, origin: Posti
         ),
         posting_origin=origin,
         bot=bot,
+        division_name=drawing.division_name,
         filename_stem=stem_for_drawing(drawing, LINEUP_TEMPLATE_KEY),
     )
 

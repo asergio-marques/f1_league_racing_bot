@@ -131,6 +131,7 @@ async def try_attach(
             ),
             posting_origin=PostingOrigin.SCHEDULED,
             bot=bot,
+            division_name=drawing.division_name,
             filename_stem=stem_for_drawing(drawing, RSVP_TEMPLATE_KEY),
         )
 

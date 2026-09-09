@@ -65,6 +65,7 @@ from utils.svg_document import (
     canvas_of,
     load_svg,
 )
+from utils.svg_palette import colour_slots
 
 log = logging.getLogger(__name__)
 
@@ -682,7 +683,22 @@ def evaluate_template(ctx: TemplateContext, layers: list[ValidityLayer] | None =
         resolved_path=resolved_path,
         valid=True,
         depth_checked=depth,
+        colour_slots=_colour_slots_of(ctx, resolved_path),
     )
+
+
+def _colour_slots_of(ctx: TemplateContext, path: Path | None) -> frozenset[str]:
+    """The per-tier colour slots *path* marks, read off the tree Layer 1 already parsed.
+
+    Only ever asked of a template that passed, so the parse is in `ctx.parsed` and this
+    costs a walk rather than a read. A tree that is somehow absent yields nothing rather
+    than raising: a template is not invalid for declaring no slots, and this must not be
+    the thing that fails an otherwise sound configuration.
+    """
+    root = ctx.parsed.get(path) if path is not None else None
+    if root is None:
+        return frozenset()
+    return colour_slots(root)
 
 
 # ── The ordered check sequence (FR-001 … FR-004) ──────────────────────────
@@ -1033,6 +1049,7 @@ def build_aspect_statuses(
     *,
     disabled_source_modules: set[str] | None = None,
     converter_available: bool = True,
+    colour_shortfall: dict[str, list[str]] | None = None,
 ) -> list[AspectStatus]:
     """Roll the per-template reports up into the three states of FR-031.
 
@@ -1053,7 +1070,7 @@ def build_aspect_statuses(
         reports = [template_reports[key] for key in keys if key in template_reports]
         enabled = toggles.get(aspect, False)
         problems = _aspect_problems(
-            aspect, reports, disabled_modules, converter_available
+            aspect, reports, disabled_modules, converter_available, colour_shortfall
         )
 
         if not enabled:
@@ -1156,11 +1173,52 @@ def _plain_module_off(module: str) -> str:
     )
 
 
+def colour_shortfall(
+    reports: dict[str, ValidityReport],
+    palettes: dict[str, dict[str, str]],
+    division_names: list[str],
+) -> dict[str, list[str]]:
+    """Which templates demand a colour no tier has set, in a league's own words (051).
+
+    Keyed by template so :func:`build_aspect_statuses` can attribute each line to the
+    aspect that would draw it. Every missing pair is named rather than counted: a manager
+    fixing them one review at a time is a manager the check is failing, which is the rule
+    `_team_name_problems` already follows.
+
+    Measured **per template, against the slots that template actually marks**, so a
+    template marking none demands nothing and can never be blocked by this — which is what
+    makes the feature optional on all fifteen kinds and mandatory on none.
+
+    A league with no divisions yet demands nothing either: there is no tier to want a
+    colour, and reporting a shortfall against an empty season would block a configuration
+    nobody could complete.
+    """
+    from utils.asset_resolver import normalise
+
+    if not division_names:
+        return {}
+
+    shortfall: dict[str, list[str]] = {}
+    for key, report in sorted(reports.items()):
+        if not report.valid or not report.colour_slots:
+            continue
+        missing = [
+            f"`{slot}` is not set for **{name}**"
+            for name in division_names
+            for slot in sorted(report.colour_slots)
+            if slot not in palettes.get(normalise(name or ""), {})
+        ]
+        if missing:
+            shortfall[key] = missing
+    return shortfall
+
+
 def _aspect_problems(
     aspect: str,
     reports: list[ValidityReport],
     disabled_modules: set[str],
     converter_available: bool,
+    shortfall: dict[str, list[str]] | None = None,
 ) -> list[str]:
     """Everything standing between this aspect and a picture, in a league's own words.
 
@@ -1179,6 +1237,16 @@ def _aspect_problems(
 
     if not converter_available:
         problems.append(f"{PLAIN_NO_RASTERISER}. {PLAIN_REMEDY_ASK_OPERATOR}")
+
+    # Per-tier colours (051). Reported here rather than at each surface because
+    # `/images config view`, `/season review` and the aspect toggle all read this one list;
+    # three implementations of one rule is three chances for them to disagree.
+    for report in reports:
+        for line in (shortfall or {}).get(report.template_key, []):
+            problems.append(
+                f"`{report.template_key}` needs a per-tier colour: {line}. "
+                f"Set it with `/images config per-tier-set-colour`."
+            )
 
     return problems
 
@@ -1222,6 +1290,27 @@ class ImageValidityService:
             reports,
             disabled_source_modules=await self.disabled_source_modules(server_id),
             converter_available=converter_available(),
+            colour_shortfall=await self.colour_shortfall(server_id, reports),
+        )
+
+    async def colour_shortfall(
+        self, server_id: int, reports: dict[str, ValidityReport] | None = None
+    ) -> dict[str, list[str]]:
+        """Every per-tier colour a configured template wants and no tier has set (051).
+
+        Empty while the feature is off, which is what keeps it inert: nothing is demanded
+        of a league that has not asked for it, and nothing is read from the database
+        either.
+        """
+        config = await self._config_service.get_config(server_id)
+        if config is None or not getattr(config, "per_tier_colour_enabled", False):
+            return {}
+        if reports is None:
+            reports = await self.template_reports(server_id)
+        return colour_shortfall(
+            reports,
+            await self._config_service.get_all_tier_colours(server_id),
+            await self._config_service.season_division_names(server_id),
         )
 
     @staticmethod

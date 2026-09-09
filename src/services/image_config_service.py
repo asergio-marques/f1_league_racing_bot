@@ -31,6 +31,11 @@ SETTABLE_COLUMNS: frozenset[str] = frozenset(
 #: than the string-valued `set_field`, and are deliberately absent from SETTABLE_COLUMNS.
 PFP_FLAG_COLUMNS: frozenset[str] = frozenset({"use_pfp", "pfp_prerender", "pfp_daily"})
 
+#: Every boolean column a command may write, portraits included. Booleans go through
+#: `set_flag` for the same reason the portraits always did — `set_field` is string-valued —
+#: and are likewise absent from SETTABLE_COLUMNS.
+FLAG_COLUMNS: frozenset[str] = PFP_FLAG_COLUMNS | {"per_tier_colour_enabled"}
+
 #: Ordered column list used to build an ImageConfig from a row.
 _CONFIG_COLUMNS: tuple[str, ...] = (
     ("server_id", "module_enabled", "template_directory")
@@ -38,6 +43,7 @@ _CONFIG_COLUMNS: tuple[str, ...] = (
     + tuple(ASSET_DIRECTORIES)
     + ("use_pfp", "pfp_prerender", "pfp_daily", "pfp_daily_time")
     + ("time_zone", "time_format", "date_format", "fastest_lap_colour")
+    + ("per_tier_colour_enabled",)
 )
 
 
@@ -147,6 +153,20 @@ class ImageConfigService:
         """
         if column not in PFP_FLAG_COLUMNS:
             raise UnknownConfigField(column)
+        await self.set_flag(server_id, column, enabled)
+
+    async def set_flag(self, server_id: int, column: str, enabled: bool) -> None:
+        """Write any boolean configuration column, guarded by its own allow-list.
+
+        The generalisation of `set_pfp_flag`, which now delegates here: a second boolean
+        arrived with the per-tier colours (051) and two identical setters differing only in
+        the set they check would be one of them going stale.
+        """
+        if column not in FLAG_COLUMNS:
+            raise UnknownConfigField(f"`{column}` is not a settable image config flag.")
+
+        # Column name is interpolated because SQLite cannot parameterise identifiers;
+        # it is safe only because it was checked against the allow-list above.
         async with get_connection(self._db_path) as db:
             await db.execute(
                 f"UPDATE image_config SET {column} = ? WHERE server_id = ?",
@@ -171,6 +191,151 @@ class ImageConfigService:
         current = await self.is_aspect_enabled(server_id, aspect)
         await self.set_aspect(server_id, aspect, not current)
         return not current
+
+    # ── Per-tier colours (051) ────────────────────────────────────────────
+    #
+    # A table of their own rather than columns here, because the set of slots is the
+    # league's to invent: a slot is whatever its own template marks. Keyed on the
+    # division's normalised name so a tier's palette survives the season rollover that
+    # replaces its `divisions` row — the same reasoning, and the same `normalise()`, that
+    # makes a tier's logo `division_1.svg`.
+
+    async def set_tier_colour(
+        self, server_id: int, division_name: str, slot: str, colour: str
+    ) -> None:
+        """Set one slot's colour for one tier, replacing whatever stood there.
+
+        *slot* is normalised and validated here as well as at the command, because this is
+        the last point before it reaches a CSS selector and a service is not entitled to
+        assume its caller checked. *colour* is expected to have been through
+        ``normalise_hex`` already and is stored as given.
+        """
+        from utils.asset_resolver import normalise
+        from utils.svg_palette import normalise_slot
+
+        key = normalise(division_name or "")
+        if not key:
+            raise UnknownConfigField("a division name is required.")
+        canonical = normalise_slot(slot)
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "INSERT INTO image_tier_colour (server_id, division_slug, slot, colour) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(server_id, division_slug, slot) "
+                "DO UPDATE SET colour = excluded.colour",
+                (server_id, key, canonical, colour),
+            )
+            await db.commit()
+
+    async def set_tier_colours(
+        self, server_id: int, division_name: str, colours: dict[str, str]
+    ) -> int:
+        """Set several slots for one tier at once, returning how many were written.
+
+        **Merged, not replaced** (decided 2026-09-08): a slot the caller does not name keeps
+        the colour it had. A league pasting a partial palette is correcting part of a scheme,
+        not declaring the whole of it, and losing the rest to an omission would be a silent
+        cost. It is also what makes this consistent with `set_tier_colour`, which upserts.
+
+        One transaction, so a bulk set is all-or-nothing at the database even though the
+        import above it decides atomicity per division.
+        """
+        from utils.asset_resolver import normalise
+        from utils.svg_palette import normalise_slot
+
+        key = normalise(division_name or "")
+        if not key:
+            raise UnknownConfigField("a division name is required.")
+        if not colours:
+            return 0
+
+        rows = [
+            (server_id, key, normalise_slot(slot), colour)
+            for slot, colour in sorted(colours.items())
+        ]
+        async with get_connection(self._db_path) as db:
+            await db.executemany(
+                "INSERT INTO image_tier_colour (server_id, division_slug, slot, colour) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(server_id, division_slug, slot) "
+                "DO UPDATE SET colour = excluded.colour",
+                rows,
+            )
+            await db.commit()
+        return len(rows)
+
+    async def get_tier_palette(self, server_id: int, division_name: str) -> dict[str, str]:
+        """Every slot this tier has a colour for. The render path's only reader."""
+        from utils.asset_resolver import normalise
+
+        key = normalise(division_name or "")
+        if not key:
+            return {}
+        async with get_connection(self._db_path) as db:
+            rows = await (
+                await db.execute(
+                    "SELECT slot, colour FROM image_tier_colour "
+                    "WHERE server_id = ? AND division_slug = ?",
+                    (server_id, key),
+                )
+            ).fetchall()
+        return {row["slot"]: row["colour"] for row in rows}
+
+    async def season_division_names(self, server_id: int) -> list[str]:
+        """The divisions the per-tier colour check measures against, by tier.
+
+        The season a league is working on: ACTIVE if there is one, else SETUP — the same
+        choice `SeasonService.get_previewable_divisions` makes, so what `/season review`
+        validates is what `/images test` would draw.
+
+        It sits on **this** service, though it reads season data, because this is the
+        service that owns `image_tier_colour` and the one `ImageValidityService` already
+        holds. The alternative was a fourth constructor dependency on the validity service
+        for a single query, which buys nothing and costs every caller that builds one.
+
+        Empty where the server has no such season: a league with no divisions cannot be
+        short of a colour for one, and a check that said otherwise would block a
+        configuration nobody could complete.
+        """
+        async with get_connection(self._db_path) as db:
+            season = await (
+                await db.execute(
+                    "SELECT id FROM seasons "
+                    "WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
+                    "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
+                    (server_id,),
+                )
+            ).fetchone()
+            if season is None:
+                return []
+            rows = await (
+                await db.execute(
+                    "SELECT name FROM divisions WHERE season_id = ? ORDER BY tier",
+                    (season[0],),
+                )
+            ).fetchall()
+        return [row["name"] for row in rows]
+
+    async def get_all_tier_colours(self, server_id: int) -> dict[str, dict[str, str]]:
+        """Every tier's palette, keyed by division slug — for validation and the view.
+
+        Ordered, so the configuration view and the season review list tiers and slots the
+        same way on every run: a report whose lines move between two readings of one
+        configuration is a report a manager cannot compare by eye.
+        """
+        async with get_connection(self._db_path) as db:
+            rows = await (
+                await db.execute(
+                    "SELECT division_slug, slot, colour FROM image_tier_colour "
+                    "WHERE server_id = ? ORDER BY division_slug, slot",
+                    (server_id,),
+                )
+            ).fetchall()
+        palettes: dict[str, dict[str, str]] = {}
+        for row in rows:
+            palettes.setdefault(row["division_slug"], {})[row["slot"]] = row["colour"]
+        return palettes
+
 
 
 def portrait_configuration_fault(config) -> str | None:
@@ -238,6 +403,6 @@ def pfp_change_refusal(config: ImageConfig, column: str, enabled: bool) -> str |
 def _row_to_config(row) -> ImageConfig:
     values = {name: row[name] for name in _CONFIG_COLUMNS}
     values["module_enabled"] = bool(values["module_enabled"])
-    for name in ("use_pfp", "pfp_prerender", "pfp_daily"):
+    for name in ("use_pfp", "pfp_prerender", "pfp_daily", "per_tier_colour_enabled"):
         values[name] = bool(values[name])
     return ImageConfig(**values)

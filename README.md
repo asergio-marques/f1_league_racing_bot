@@ -1838,6 +1838,64 @@ Your own file always wins where you supply one — this only ever fills a gap. C
 
 > **A division with no logo is drawn with nothing, and the bot does not tell you.** What ships is an empty picture, and this is the one class whose fallback raises no notice — having no logo is the ordinary state here rather than a gap, and a warning on every graphic you post would be noise. The cost is that a misspelt filename is silent too, and so is renaming a division: rename `Division 1` to `Div 1` and `division_1.svg` stops being drawn with nothing said. If a logo does not appear, check the filename against the division's name first.
 
+**Your tiers can be drawn in their own colours, from one template.** This is off until you turn it on, and nothing the bot ships uses it. Mark an element of a template of your own with a class naming a colour *slot* — `colour-fill-accent` paints its fill, `colour-stroke-accent` its stroke, `colour-stop-accent` a gradient stop — then set that slot's colour per division. `accent` there is a name you choose; any slot name of lower-case letters, digits, `-` or `_` will do, up to 64 characters.
+
+```
+/images config per-tier-colour-toggle enable:True
+/images config per-tier-set-colour division:Division 1 slot:accent colour:#3DD6F5
+/images config per-tier-set-colour division:Division 2 slot:accent colour:#A78BFA
+```
+
+| Parameter | What it takes |
+|---|---|
+| `division` | The division the colour applies to. Completed from your current season. |
+| `slot` | The slot id you marked in the template, e.g. `accent`. |
+| `colour` | A `#` followed by exactly six hex digits. |
+
+**The slot must have a colour to fall back on, and there are two ways to give it one.** The class only wins once a colour is configured and the feature is on, so without a fallback the element draws black for a league that never touches this.
+
+Either keep the literal on the element —
+
+```xml
+<rect fill="#3DD6F5" class="colour-fill-accent"/>
+```
+
+— or, better where you are slotting a whole palette, declare the default once in the drawing's own stylesheet and let the class carry it:
+
+```xml
+<style>
+  .colour-fill-accent { fill:#3DD6F5 }
+  .colour-fill-ink    { fill:#F4F7FA }
+</style>
+...
+<text class="colour-fill-ink">Driver Name</text>
+```
+
+The second form states each colour once rather than on every element that uses it, which is how the drawings shipped in `resources/league/templates` do it. Both draw identically in Inkscape and both are overridden the same way.
+
+> **Once it is on, every slot needs a colour for every division.** A slot left unset for any division is reported by `/images config view` and by `/season review`, stops the affected graphics posting, and refuses the approval of a season — the same way a lineup template that cannot draw does. Set the colour explicitly even where you want the tier drawn in the colour the template already carries; there is deliberately no command to clear one back to the default.
+
+> **A colour is remembered by the division's *name*.** `Division 1` and `division_1` are the same tier, so your palette survives a new season — but renaming a division loses its colours, exactly as it loses its logo.
+
+Colours are stored whether or not the feature is on and whether or not a template marks the slot, and `/images config view` lists them by tier, so you can set a season up before turning it on.
+
+**Setting ten colours a tier one command at a time is tedious, so two commands take them in bulk.** `per-tier-bulk-colour` asks for a division and opens a form: paste one `slot colour` per line and they are set together. `colour-xml-import` takes several tiers at once, either as an attached XML file or pasted into a form:
+
+```xml
+<palettes>
+  <division name="Division 1">
+    <colour slot="accent">#3DD6F5</colour>
+    <colour slot="ink">#F4F7FA</colour>
+  </division>
+</palettes>
+```
+
+> **A slot you do not mention keeps the colour it had.** Both are merges, not replacements, so a partial paste corrects part of a scheme rather than wiping the rest of it.
+
+> **An import takes each division separately.** A block that cannot be read — an unnamed tier, a bad colour, a tier named twice — is rejected whole and reported, and the other tiers still import. A division is never half-applied. A payload that is not valid XML at all is refused outright, since nothing can be salvaged from it.
+
+**Choosing a whole palette by hand is the hard part, so there is a tool for it.** `tools/tier_palette.py` takes one accent, reads the rest of the palette out of your own drawing, and prints the `per-tier-set-colour` commands for a division — keeping each colour's lightness, giving it the accent's hue, and cutting its colourfulness to a third so the greys stay grey. It changes nothing; it prints commands. See [the image module guide](docs/how-to/configuring-the-image-module.md) for when to reach for it.
+
 **This class alone is held to no shape.** The consistency rule below does not apply to it: two logo slots on the same template may be any two shapes, because you supply one file *per division* rather than one file for the class, and each division can draw artwork for both. You still cannot set `preserveAspectRatio="none"` on the slot — a logo letterboxes into its box like everything but `markers`.
 
 **The shape of a picture is yours to choose.** The bot ships flags at 3:2 and everything else square, but nothing holds *your* templates to those numbers. What it does hold you to is **consistency inside one drawing**: every flag box on a given template must be the same shape as every other flag box on it, every team badge the same shape as every other team badge, and so on. Draw all twenty-four calendar flags at 2:1 and the bot is perfectly happy. Draw twenty-three at 2:1 and one square, and it refuses the drawing and names the box that is out of step.
@@ -1925,8 +1983,16 @@ offer the approve button while the configuration is one that could never fetch a
 | `time-format` | `clock` | 24-hour | 12-hour or 24-hour |
 | `date-format` | `style` | `Sun 14 Jun 2026` | Eleven formats — five short, six written out (`Sunday 14th June 2026`, `14 June 2026`, `June 14, 2026`). The default carries the weekday |
 | `fastest-lap-colour` | `colour` | `#A020F0` | `#` plus exactly six hex digits |
+| `per-tier-colour-toggle` | `enable` | off | Whether your drawings take each tier's own colours. See *Your tiers can be drawn in their own colours* above |
+| `per-tier-set-colour` | `division`, `slot`, `colour` | — | One slot's colour for one tier. Stored against the division's **name** |
+| `per-tier-bulk-colour` | `division` | — | Opens a form; paste `slot colour` lines to set several at once |
+| `colour-xml-import` | `file` (optional) | — | Several tiers at once, from an XML attachment or a pasted payload |
 
 `fastest-lap-colour` reports the contrast of the chosen colour against the plate the race results template draws behind that field, and warns below 4.5:1 — the threshold at which text of that size stays legible. The colour is stored either way; it is the league's to choose. Where the template is invalid or declares no `fastest_lap_background` element, the bot says the contrast could not be measured rather than guessing.
+
+`per-tier-set-colour` refuses a malformed colour and a slot name outside `a-z`, `0-9`, `-` and `_`, storing nothing in either case. It stores anything else — including a slot no drawing of yours marks, and a colour set while the feature is off — and says so, because a colour may reasonably be set before the drawing that uses it exists. `per-tier-colour-toggle` reports, on being switched on, every slot still lacking a colour and the tier it lacks it for.
+
+> **The fastest-lap contrast is measured against the drawing as authored, not against a tier's colours.** If you mark the fastest-lap plate with a colour slot, the ratio reported above is for whatever colour the file itself carries, which may be no tier's. The colour is stored regardless, so nothing is refused on it — but do not read the figure as applying to a recoloured tier.
 
 > **One zone for everyone.** A text post writes a session time as a Discord timestamp, so every driver reads it in their own local zone. A picture cannot do that: whatever zone you set here is drawn on the graphic for every reader alike, with its abbreviation after the time. Set it to the zone your league actually runs in — it is the one thing an image tells a driver less precisely than the text it replaces.
 

@@ -589,6 +589,12 @@ Found on 2026-08-26, alongside the autocomplete investigation above.
     - The figure was first written here as 4.9s, which was wrong: that timed the **bare** template, with no data and no artwork resolved. A filled drivers standings on the Pi — 3,600 slots, of which some four hundred resolve to a file — takes about 10.5s, of which roughly 6.4s is the empty canvas and the rest the assets drawn onto it. Measured 2026-08-31.
 - The remedy, if it is ever wanted, is to memoise `declared_capacity` per `(stem, declared)` inside `RowSpec._nested_ids` rather than to shrink the templates. It was deliberately not begun here: the feature that exposed it does not depend on it.
 
+**P3 — The fastest-lap contrast warning does not account for a tier's own colours.**
+- Found on 2026-09-08 while adding per-tier colour slots (051).
+- `ImageCog._measure_fastest_lap_contrast` loads the race results template and reads the fill of `fastest_lap_background` through `computed_style`, and it does that on the template **as authored**. It applies no tier palette, and it has no division to apply one for: the fastest-lap colour is a server-wide setting and the command that sets it names no division.
+- So a league that marks that plate with a colour slot and gives its tiers different colours is told the contrast against whatever colour the drawing file happens to carry, which may be no tier's actual background. The warning is advisory and the colour is stored either way, so nothing is refused on a wrong figure — it is the figure itself that can mislead.
+- Not fixed here because the fix is a design question rather than an oversight: either the contrast is measured per division and reported once per tier, which makes a server-wide setting report a per-tier answer, or the fastest-lap colour itself becomes a colour slot and stops being a setting of its own. Both are larger than the feature that exposed this.
+
 ## Behaviour worth knowing rather than fixing
 
 These are deliberate, or at least consistent, but are surprising enough to be mistaken for defects.

@@ -161,6 +161,7 @@ async def render_calendar_image(
         ),
         output_dir=output_dir,
         filename_stem=stem_for_drawing(drawing, TEMPLATE_KEY),
+        division_name=drawing.division_name,
     )
 
     # Every other posting path reaches the log channel through `render_for_posting`, which

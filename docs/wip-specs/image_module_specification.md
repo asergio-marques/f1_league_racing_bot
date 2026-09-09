@@ -143,6 +143,28 @@ For this purpose, the Discord bot shall require three new dependencies: one with
     - The class is optional in a sense no other class is. No template shipped with the module declares a field of it, so the class draws nothing until a league declares the field "division_logo" in a template of its own. Every one of the fifteen image types shall admit the field, and shall admit it as optional; which of them carries a logo is the league's to decide by which of its templates declare it.
     - The class shall be held to no aspect. The consistency required of a class across the slots of one template shall not be required of it, one file being supplied per division rather than one per class. A slot of the class shall nonetheless not declare that it stretches, as no class but the marker may.
 
+- <NEW COMMAND> A new "images config per-tier-colour-toggle" command will be made available to league managers which will take in a boolean stating whether the graphics shall be drawn in each tier's own colours.
+    - By default, per-tier colours shall be off. While they are off no colour shall be injected into any template and no colour shall be demanded of any division.
+- <NEW COMMAND> A new "images config per-tier-set-colour" command will be made available to league managers which will take in the name of a division, the identifier of a colour slot, and a colour in hexadecimal notation.
+    - The colour shall be stored against the division's name, normalized as every datum of every asset class is, so that a tier keeps its colours across a change of season.
+    - A slot identifier shall consist of between one and sixty-four characters, each a lower-case letter, a digit, a hyphen or an underscore, and shall be lower-cased on being accepted. An identifier outside that set shall be refused and nothing shall be stored.
+    - A malformed colour shall be refused and nothing shall be stored.
+    - A slot no template declares shall be stored all the same, and the manager shall be told that no template declares it. A colour may be set before the template that uses it is drawn.
+    - Storing a colour while per-tier colours are off shall be permitted, and the manager shall be told that it is stored but not drawn.
+    - There shall be no command to clear a colour. A tier meant to draw in the colour the template was authored in shall be given that colour explicitly.
+- <NEW COMMAND> A new "images config per-tier-bulk-colour" command will be made available to league managers which will take in the name of a division and open a form into which several slots and their colours are pasted, one to a line.
+    - A line shall carry a slot and a colour, separated by a space, an equals sign, a colon or a comma. A line beginning with "#" shall be ignored, so that the output of the palette tool may be pasted whole.
+    - Every fault shall be reported at once rather than the first alone, and where any line is faulty nothing shall be stored.
+    - A slot the payload does not name shall keep the colour it had. Setting several colours is correcting part of a scheme, not declaring the whole of one.
+- <NEW COMMAND> A new "images config colour-xml-import" command will be made available to league managers which will take an optional XML file attachment, and shall open a form for the payload where none is attached.
+    - The payload shall carry a "division" block per tier, named by an attribute, holding a "colour" element per slot named by a "slot" attribute.
+    - A payload that cannot be parsed shall be refused whole and nothing shall be stored, there being nothing to salvage from it.
+    - Otherwise **the division shall be the unit of atomicity**: a block naming no division, naming one twice, carrying a slot or colour that cannot be read, or carrying no colours at all, shall be rejected in its entirety while every other block is imported. A division shall never be half-applied.
+    - The reply shall name every tier imported and every block rejected, with the reason for each.
+    - Both the success and the failure of an import shall be recorded in the log channel.
+    - An attached file shall be refused where it is empty, where it is not UTF-8, or where it exceeds the size the module sets for it.
+- The colours a league has set shall be reported by "images config view", grouped by division, together with whether per-tier colours are on.
+
 ### Verification of template files configured
 - Right after one of the "images template X" commands is used, the following verifications shall be made:
     - The input string shall be verified for the ".svg" substring at the end.
@@ -167,8 +189,23 @@ These hold for every image type of the module and are stated here rather than re
 - A colour shall be written into the inline style of the element, merged with the declarations already standing there. A presentation attribute loses to the stylesheet a template declares, and a style assigned wholesale takes with it the declarations the template placed upon the field.
 - Setting the colour of a field is not filling it. A field that carries a value and is recoloured shall be filled as any other.
 - A field may be declared to carry no value, being drawn by its geometry or its colour alone. Such a field shall be neither filled nor asked for a value, and its absence from the values a generation determines is not an error. A vertical crop point is of this kind.
-- Where the colour a field is given is decided by the data, the colours themselves shall be read from the stylesheet the template declares, by the class names named for the graphic that uses them. A colour the template names no rule for shall not be applied, and the field shall be left as the template drew it. A league states the appearance of its graphics in the template and nowhere else.
+- Where the colour a field is given is decided by the data, the colours themselves shall be read from the stylesheet the template declares, by the class names named for the graphic that uses them. A colour the template names no rule for shall not be applied, and the field shall be left as the template drew it. A league states the appearance of its graphics in the template, and states in configuration only which colour each of its tiers gives to a slot the template declares (see "The colours of a tier").
 - An image field a generation determines no datum for may be left as the template drew it rather than removed, where the template declares it carrying no reference to a file. Such a field draws nothing. This is the only case in which an image field is neither filled nor removed.
+
+### The colours of a tier
+- A league may state the colours of a division separately from those of its fellows, so that one template serves every tier. This is optional, and is drawn only where a league declares a colour slot in a template of its own — no template shipped with the module declares one.
+- A colour slot is declared by a class upon an element, named for the property the colour is to paint and for the slot: "colour-fill-<slot>" paints its fill, "colour-stroke-<slot>" its stroke, and "colour-stop-<slot>" the colour of a gradient stop. The remainder of the class name is the identifier of the slot.
+- Every one of the fifteen image types shall admit colour slots, and shall admit them as optional. A template declaring none is unaffected, and which of them carry a tier's colours is the league's to decide by which of its templates declare them.
+- A slot declared upon a group applies to every element the group contains.
+- At generation, the colours the division has been given shall be applied to the template before the values are placed upon it, so that a colour the template declares for the module to read is the colour the league configured.
+    - The colours of the fill and stroke slots shall be applied as a stylesheet placed after those the template declares, so that the template's own rule stands as the colour of the slot until the league configures one. The colour of a gradient stop shall be applied to the inline style of that stop.
+    - **This is not a recolour.** A recolour addresses a field, is decided by the data, and is written into the inline style of the element; a tier's colours address a class, are decided by the league, and shall lose to any recolour of the same element. A tier's identity shall not overwrite what a colour says about the data.
+- A slot a league has configured no colour for shall be left as the template drew it, and the graphic shall be drawn.
+- Where per-tier colours are on, every slot a configured template declares shall have a colour for every division of the season under way. A slot lacking one for any division shall be reported:
+    - by "images config view", and by the season review, and as a reason against every output aspect the template backs, in the same words in all three;
+    - and shall refuse the approval of a season, as a template that cannot draw a lineup does.
+- A template declaring no slot demands no colour, whatever another template declares.
+- A league with no divisions demands no colour.
 
 ### Addressing of fields
 - A field is addressed by the identifier of a node of the SVG file. The identifier is normative.

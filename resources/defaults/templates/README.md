@@ -269,6 +269,32 @@ and which no file here declares. Add an `<image id="division_logo">` to a copy o
 templates and the bot fills it from `resources/league/division-logos/`, keyed on the division's
 name — `Division 1` looks for `division_1.svg`.
 
+## None of these files declares a colour slot, and yours may
+
+The same shape, for colour rather than artwork. A league may run one file across every tier and
+have each drawn in its own colour, by marking an element with a class naming a slot:
+`colour-fill-<slot>` paints its fill, `colour-stroke-<slot>` its stroke, `colour-stop-<slot>` a
+gradient stop. The remainder of the class is the slot id, which the league invents.
+
+Every one of the fifteen kinds admits slots and none requires them, so a file declaring none —
+which is every file here — is unaffected. The colours themselves are configured per division with
+`/images config per-tier-set-colour`, behind a toggle that is off by default.
+
+**A slot needs a colour to fall back on.** The injected stylesheet is placed after the ones a
+template declares and so wins on document order, but only once a colour is actually configured and
+the feature switched on. A class with nothing behind it draws black.
+
+Two forms do that. `fill="#3DD6F5" class="colour-fill-accent"` keeps the literal on the element;
+or the template declares `.colour-fill-accent { fill:#3DD6F5 }` in its own `<style>` and the
+element carries the class alone. The second states each colour once rather than on every element
+and is what the league templates under `resources/league/templates` use — see `_build/brand.py`,
+where the palette and its slots are one table. Either way the file rasterises exactly as it did
+before any of this existed.
+
+Note that a class rule does **not** reach a `<stop>` in Inkscape — the module writes those into the
+stop's inline style instead, which is why `colour-stop-` is its own prefix rather than a use of
+`colour-fill-`.
+
 Three things separate it from every other image field, and all three follow from its being
 decoration a league opts into rather than data the bot went looking for:
 

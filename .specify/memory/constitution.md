@@ -1,6 +1,63 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-08 — v7.11.0 → v7.12.0: MINOR — a second colour layer, weaker than a recolour, by which
+a league states the colours of each of its tiers]
+  Version change    : 7.11.0 → 7.12.0
+  Bump rationale    : MINOR. One change to Principle XIV, Rule 2, and it **adds a layer rather
+                      than altering one**. No Core Principle is removed and none is redefined,
+                      and MAJOR is reserved for those.
+
+                      The recolour rule is untouched and remains true in every word: a recolour
+                      is still merged into the existing inline `style`, still does not count as
+                      addressing a field, and a data-decided palette is still read from the
+                      template's own stylesheet rather than held in configuration. What is added
+                      sits *beneath* it in the cascade and cannot displace it.
+
+                      No template becomes invalid and no existing behaviour changes. The layer is
+                      off by default, nothing the module ships declares a slot, and every image
+                      type admits slots without requiring them — so a league that ignores this
+                      draws exactly what it drew before.
+
+  Modified principles: XIV Rule 2 (fill operations) — a new subsection, "The colours of a tier",
+                       is added after the data-driven-palette paragraph. It defines the colour
+                       slot and its three class forms (`colour-fill-`, `colour-stroke-`,
+                       `colour-stop-`), requires the palette be applied before the fill operations
+                       run, requires fill and stroke be applied as a stylesheet placed after the
+                       template's own and a gradient stop be painted inline instead, fixes the
+                       layer's precedence **below** an inline style and therefore below a
+                       recolour, and states the completeness obligation and its consequences.
+
+                       XIV Rule 2, the data-driven-palette paragraph: the sentence "A league
+                       states the appearance of its graphics in the template and nowhere else"
+                       is qualified — configuration now carries which colour each tier gives to a
+                       slot the template declares. The clause explaining what stating it in the
+                       template buys (a paint the module has no vocabulary for) is **kept**, now
+                       attached to that act rather than to the exclusivity.
+
+  Added sections     : none as such — "The colours of a tier" is a subsection of Rule 2.
+  Removed sections   : none
+
+  Occasioned by      : per-tier colour slots, added 2026-09-08. A league had two ways to tell its
+                       tiers apart on a graphic and both were coarse: a separate template per tier,
+                       which means maintaining fifteen files for each of them, or a per-division
+                       logo (048), which adds a crest but cannot touch the palette the sheet is
+                       drawn in. Neither let one template be drawn in each tier's own colours.
+
+                       The precedence rule is the part that needed governing. Both layers paint
+                       colour onto a template, and without a stated order a tier's identity could
+                       silently overwrite the fastest-lap colour or a standings highlight — colours
+                       that mean something about the *data*. Fixing the palette below inline style
+                       settles it in the cascade rather than in either implementation.
+
+                       The gradient-stop exception is a rasteriser fact rather than a preference:
+                       Inkscape does not apply a class rule to a `<stop>`, and does so silently,
+                       drawing the authored colour with no error. It is stated here because a
+                       later reader would otherwise be right to think the special case redundant.
+
+  Follow-up TODOs    : none. The implementation, its tests, the wip-spec, the README and the
+                       league-facing guides were brought into line in the same change.
+
 [2026-09-02 — v7.10.0 → v7.11.0: MINOR — a class may be held to no aspect where its artwork is
 per-datum, and a class's fallback may stand for the absence of artwork]
   Version change    : 7.10.0 → 7.11.0
@@ -4766,8 +4823,39 @@ Where the colour a recolour applies is decided by the **data**, the palette MUST
 the template's own stylesheet by documented class names, and MUST NOT be held in bot
 configuration. A kind for which the template names no rule MUST NOT be painted, and the field
 MUST be left as the template drew it. A league states the appearance of its graphics in the
-template and nowhere else, which is also what lets a paint the module has no vocabulary for —
-a gradient, a pattern — be used without the module gaining one.
+template and nowhere else, save that it states in configuration which colour each of its tiers
+gives to a slot the template declares (below). Stating it in the template is also what lets a
+paint the module has no vocabulary for — a gradient, a pattern — be used without the module
+gaining one.
+
+**The colours of a tier.** A league MAY state the colours of a division separately from those of
+its fellows, so that one template serves every tier. A template declares a **colour slot** by a
+class upon an element naming both the property to be painted and the slot: `colour-fill-<slot>`
+its fill, `colour-stroke-<slot>` its stroke, `colour-stop-<slot>` the colour of a gradient stop.
+The remainder of the class is the slot's identifier, which the league names. Every image type
+MUST admit colour slots and MUST require none, and no template the module ships MAY declare one —
+the layer draws nothing until a league asks for it.
+
+The colours a division is given MUST be applied before the fill operations run, so that a colour
+the template declares for the module to read is the colour the league configured rather than the
+one the file was authored in. The fill and stroke slots MUST be applied as a stylesheet placed
+after those the template declares, so that the template's own rule stands as the colour of the
+slot until a colour is configured and the file remains a picture that draws correctly in an
+editor. A gradient stop MUST instead be painted into that stop's inline style, a class rule not
+reaching a stop in the rasteriser.
+
+**This layer MUST lose to an inline style, and therefore to a recolour.** A recolour addresses a
+field, is decided by the data and is written inline; a tier's colours address a class and are
+decided by the league. The precedence is not incidental: a tier's identity MUST NOT overwrite
+what a colour says about the data.
+
+A slot for which no colour is configured MUST be left as the template drew it, and the graphic
+MUST be drawn. Where the layer is enabled, every slot a configured template declares MUST have a
+colour for every division of the season under way; a slot lacking one MUST be reported wherever
+the configuration is reported, MUST block every output aspect the template backs, and MUST refuse
+the approval of a season — one tier silently drawn in another's colours being the fault this
+prevents. The layer MUST default to off, and while it is off no colour is applied and none is
+demanded.
 
 **Removable groups.** Any field, mandatory or optional, MAY be wrapped in a group named for that
 field followed by `_group`. Where such a group is declared, it MUST be removed in its entirety
@@ -7020,4 +7108,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.11.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-02
+**Version**: 7.12.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-08

@@ -112,6 +112,8 @@ When you set the fastest-lap colour, the bot also tells you whether it will be e
 
 > **Everyone sees the same time zone.** When the bot posts times as text, Discord shows each driver the time in their own local zone. A picture cannot do that. Whatever zone you pick here is printed on the picture for everybody, with its short name after the time. Set it to the zone your league actually races in. This is the one thing a picture tells drivers *less* clearly than the text it replaces.
 
+**A fifth colour setting exists, and it is not here.** If you want each of your tiers drawn in its own colour, that needs a mark in a drawing file first — see *Giving each tier its own colours* at the end of step 5. Do not switch it on before then: turning it on with slots unset stops your pictures posting until you set them.
+
 The default date style includes the day of the week, which is usually the bit people actually look for.
 
 **The written-out styles are longer, and a date field has to hold them.** `Sunday, June 14th, 2026` is over twice the width of `2026-06-14`, so a drawing whose date field was drawn tight around a short style will shrink the text to fit it. Nothing is cut off and nothing fails — but if a calendar suddenly looks cramped after you change this, that is why. Draw the field wider, or pick a shorter style.
@@ -453,6 +455,125 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 
 **Make room for your biggest season.** Where the drawing file sets the limit — table rows, calendar rounds, reserve seats — the bot will refuse to go past it rather than quietly leaving someone off. The one exception is a reserve block you left out altogether, which is a decision rather than a limit and is honoured in silence. If your calendar drawing has room for 22 rounds, `/round add` will stop you at 23. Spare room costs nothing, as unused slots are hidden.
 
+### Giving each tier its own colours
+
+You can run **one** drawing file across every tier and have each of them drawn in its own colour, instead of keeping a separate set of files per division. Like division logos, nothing the bot ships uses this and it stays off until you turn it on.
+
+Do it in this order. Turning it on before the colours are set will stop your pictures posting.
+
+**1. Mark the drawing file.** Pick the elements you want to follow the tier and add a class naming a *slot*:
+
+```xml
+<rect fill="#3DD6F5" class="colour-fill-accent"/>
+<path fill="none" stroke="#3DD6F5" class="colour-stroke-accent"/>
+<stop stop-color="#3DD6F5" class="colour-stop-accent"/>
+```
+
+`colour-fill-` paints the fill, `colour-stroke-` the stroke, `colour-stop-` a gradient stop. `accent` is a name you invent — anything up to 64 characters of lower-case letters, digits, `-` or `_`. Put the class on a group and everything inside it follows.
+
+**The slot needs a colour to fall back on.** The class only takes effect once a colour is set and the feature is on; a class on its own draws black in an editor. Either leave the literal on the element, as above, or — better if you are slotting more than one or two colours — declare the default once in the drawing's stylesheet and let the class carry it everywhere:
+
+```xml
+<style>
+  .colour-fill-accent { fill:#3DD6F5 }
+  .colour-fill-ink    { fill:#F4F7FA }
+</style>
+...
+<text class="colour-fill-ink">Driver Name</text>
+```
+
+That states each colour once instead of on every element, and is how the drawings supplied in `resources/league/templates` are built. Either way the file still opens in Inkscape drawing its own colours.
+
+> **Every slot you mark is one you must then set, for every division.** Slotting your whole palette means ten colours per tier before anything posts. Mark what you actually want to vary.
+
+**2. Set a colour for every division, for every slot you marked.**
+
+```
+/images config per-tier-set-colour division:Division 1 slot:accent colour:#3DD6F5
+/images config per-tier-set-colour division:Division 2 slot:accent colour:#A78BFA
+```
+
+The division name completes as you type. Set it even for the tier you want left in the colour the drawing already carries — give it that colour explicitly. There is no command to clear one.
+
+**Ten commands a tier is tedious, so two commands take them in bulk.**
+
+```
+/images config per-tier-bulk-colour division:Division 2
+```
+
+opens a form. Paste one `slot colour` per line — `accent #A78BFA` — and they all go in together. Lines starting with `#` are ignored, so you can paste the tool's output whole without tidying it first.
+
+```
+/images config colour-xml-import
+```
+
+does several tiers at once. Attach an XML file, or leave `file` off and paste the payload into the form:
+
+```xml
+<palettes>
+  <division name="Division 1">
+    <colour slot="accent">#3DD6F5</colour>
+    <colour slot="ink">#F4F7FA</colour>
+  </division>
+  <division name="Division 2">
+    <colour slot="accent">#A78BFA</colour>
+  </division>
+</palettes>
+```
+
+> **A slot you leave out keeps the colour it had.** Both are merges. Pasting three colours corrects those three; it does not wipe the other seven.
+
+> **One bad tier does not spoil the rest.** Each `<division>` is taken on its own: a block with a colour it cannot read, no name, or the same name twice is skipped and reported, and the others still import. A tier is never left half-set. A file that is not valid XML at all is refused outright.
+
+Both tell you exactly what went in and what did not.
+
+**Choosing the other nine, once you have picked the accent.** If you have slotted a whole palette, the grounds and the inks want to agree with the tier's accent without becoming coloured themselves. Two rules make that reliable, and both were arrived at by rendering the alternatives rather than by eye:
+
+- **Give every colour your accent's hue.** Not an offset from it, and not a rotation by however far the accent moved from the drawing's own — a fixed angular offset does not mean the same thing at different points of the colour wheel. Turning the greys by the same angle as a cyan-to-violet accent lands them in *red*, which is not a colour anyone chose.
+- **Keep each colour's own lightness, and cut its colourfulness to about a third.** The lightness steps are what the sheets are built on; changing them is what makes text hard to read. Colourfulness is different: greys that keep their original amount of it look neutral in blue and tinted in violet, because the eye reads a cool grey as plain and a warm one as coloured. A third is the setting that looks as neutral in any hue as the drawings do in blue.
+
+`tools/tier_palette.py` does both for you — see *Working out a tier's palette* below.
+
+**3. Turn it on.**
+
+```
+/images config per-tier-colour-toggle enable:True
+```
+
+It tells you straight away if any slot is still unset, and for which tier.
+
+> **A slot left unset stops the pictures that use it.** It is reported by `/images config view` and by `/season review`, counts against every output that uses that drawing, and will refuse the approval of a season. That is deliberate: the alternative is one tier quietly drawn in another's colours.
+
+**Names, not divisions.** A colour is remembered against the division's *name*, so it survives into next season — but renaming a division loses its colours, exactly as it loses its logo.
+
+**Check it before you trust it.** `/images test` draws a preview for a division you name, in that tier's colours. Use it on two different tiers and compare.
+
+### Working out a tier's palette
+
+Ten colours per tier is a lot to choose by hand, and choosing them badly is easy. `tools/tier_palette.py` takes one accent and works out the rest, applying the two rules above:
+
+```
+python3 tools/tier_palette.py --division "Division 2" --accent "#A78BFA"
+```
+
+It reads the palette out of **your own drawing** — the `.colour-fill-…` rules its stylesheet declares — so it works with whatever slots you invented and whatever colours you drew them in. It prints the `/images config per-tier-set-colour` commands ready to paste, one per slot.
+
+**Do several tiers at once** by repeating the pair, and it writes the XML for `colour-xml-import` instead:
+
+```
+python3 tools/tier_palette.py \
+    --division "Division 1" --accent "#3DD6F5" \
+    --division "Division 2" --accent "#A78BFA" > palettes.xml
+```
+
+One `--accent` per `--division`, in the same order. With one division it prints the block for `per-tier-bulk-colour`; with several, the XML. `--format` overrides that — `commands` gives you one slash command per slot, which is what you want when changing only a colour or two.
+
+Pass `--template` to read a drawing other than the first it finds, and `--chroma` to make the greys more or less colourful than the default third — `--chroma 0` leaves them perfectly neutral and lets the accent carry the tier alone, which is the safest choice if your accent is an unusual hue.
+
+It changes nothing by itself. It prints commands; you run the ones you want.
+
+> **Keep your accent colours cool if you use the packaged marks.** The bot's own podium, fastest-lap and attendance-warning artwork is gold, amber and red, and it reads as a warning because nothing else on the picture is warm. A tier whose accent is amber or red will pass every check here and still make those marks look like decoration.
+
 ---
 
 ## Step 6 — Choose which outputs become pictures
@@ -572,6 +693,7 @@ Worth running through just before `/season approve`.
 - [ ] The time zone is the one your league actually races in
 - [ ] You have looked at each output with its `/images test` command, against a real division of your season, and been happy with it
 - [ ] Your artwork is on the bot's computer, correctly named
+- [ ] If you turned per-tier colours on, every slot your drawings mark has a colour for every division
 - [ ] If you are letting the bot fetch driver photos, `/season review` shows it switched on with at least one update method
 - [ ] `/season review` reports nothing blocking, and still offers the **Approve** button
 

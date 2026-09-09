@@ -613,6 +613,21 @@ class ImageRenderService:
         self._config_service = config_service
         self._validity_service = validity_service
 
+    async def _apply_tier_palette(self, server_id: int, root, division_name: str) -> None:
+        """Paint this tier's configured colours into the parsed template (051).
+
+        Reads nothing while the feature is off, which is what keeps it inert: a league that
+        has not asked for per-tier colours pays not even a query for them.
+        """
+        from utils.svg_palette import apply_palette
+
+        config = await self._config_service.get_config(server_id)
+        if config is None or not getattr(config, "per_tier_colour_enabled", False):
+            return
+        palette = await self._config_service.get_tier_palette(server_id, division_name)
+        if palette:
+            apply_palette(root, palette)
+
     async def render(
         self,
         server_id: int,
@@ -621,12 +636,19 @@ class ImageRenderService:
         *,
         output_dir: Path | None = None,
         filename_stem: str | None = None,
+        division_name: str | None = None,
     ) -> RenderOutcome:
         """Render one template.
 
         *spec_builder* is called with the parsed template root and returns a
         :class:`FillSpec`. Keeping it a callback means the caller owns the data and this
         service owns the pipeline.
+
+        *division_name* is the tier the graphic is being drawn for, and is what per-tier
+        colours (051) are resolved against. Omitting it draws the template in the colours it
+        was authored in, which is also what happens while the feature is off — so a posting
+        path that does not pass it is not broken, merely uncoloured. That silence is why
+        `test_every_render_call_site_names_the_division` exists.
 
         *filename_stem* names the PNG on disk, and through it the attachment a league
         receives — see :mod:`utils.image_naming`. It defaults to *image_type*, which is the
@@ -679,6 +701,24 @@ class ImageRenderService:
                     template_key=image_type,
                 )
             )
+
+        # ── Per-tier colours (051) ────────────────────────────────────────
+        # Before the builder, deliberately. Builders read the template's computed style —
+        # `_highlight_paints` pulls the standings highlight ink straight out of the
+        # stylesheet, and the fit engine resolves `fill` through `computed_style` — so
+        # injecting afterwards would leave them reading the unpalette'd file and a league
+        # unable to drive either through a slot.
+        #
+        # Never fatal. A palette that cannot be read is a graphic drawn in the template's
+        # own colours, which is exactly what every league saw before this existed; refusing
+        # to post over it would be a worse answer than posting the wrong shade of blue.
+        if division_name:
+            try:
+                await self._apply_tier_palette(server_id, root, division_name)
+            except Exception:  # noqa: BLE001
+                log.exception(
+                    "render: per-tier palette failed for %s / %s", image_type, division_name
+                )
 
         try:
             spec = spec_builder(root)
@@ -798,6 +838,7 @@ class ImageRenderService:
         bot=None,
         output_dir: Path | None = None,
         filename_stem: str | None = None,
+        division_name: str | None = None,
     ) -> PostingDecision:
         """Render, and decide what the caller should do with a failure.
 
@@ -828,6 +869,7 @@ class ImageRenderService:
             spec_builder,
             output_dir=output_dir,
             filename_stem=filename_stem,
+            division_name=division_name,
         )
 
         if bot is not None and outcome.notices:

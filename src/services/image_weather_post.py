@@ -197,6 +197,7 @@ async def render_forecast(
             ),
             posting_origin=origin,
             bot=bot,
+            division_name=drawing.division_name,
             filename_stem=stem_for_drawing(drawing),
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other

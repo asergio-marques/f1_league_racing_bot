@@ -285,6 +285,34 @@ def declarations(text: str | None) -> dict[str, str]:
     }
 
 
+def merge_style(element: etree._Element, updates: dict[str, str | None]) -> None:
+    """Merge *updates* into the element's inline ``style`` (XIV.2).
+
+    Merged, not replaced: overwriting ``style`` would discard whatever else the template
+    declared on the same element. A value of ``None`` drops the declaration.
+
+    Note that dropping an inline declaration does not undo one the template's own
+    stylesheet makes — inline is the strongest source, so a property that must be
+    cancelled is written with an explicit neutral value rather than removed.
+
+    Inline is the strongest source, which is why two callers need it and it lives here
+    rather than in either of them: :mod:`utils.svg_fill` writes a data-driven recolour this
+    way because XIV.2 requires it beat the template's stylesheet, and
+    :mod:`utils.svg_palette` writes a gradient stop this way because Inkscape will not apply
+    a class rule to a ``<stop>`` at all.
+    """
+    current = declarations(element.get("style"))
+    for name, value in updates.items():
+        if value is None:
+            current.pop(name, None)
+        else:
+            current[name] = value
+    if current:
+        element.set("style", ";".join(f"{n}:{v}" for n, v in current.items()))
+    elif element.get("style") is not None:
+        del element.attrib["style"]
+
+
 def stylesheet(root: etree._Element) -> dict[str, dict[str, str]]:
     """Collect the template's own ``<style>`` rules, keyed by selector.
 

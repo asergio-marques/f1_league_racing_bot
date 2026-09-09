@@ -68,6 +68,15 @@ class ImageConfig:
     date_format: str          # token; see models.image_constants.DATE_FORMATS
     fastest_lap_colour: str   # '#RRGGBB'
 
+    # Per-tier template colours (051). Off by default; nothing the bot ships declares a
+    # colour slot, so the feature draws nothing until a league marks up a template of its own.
+    #
+    # The one field here carrying a default, and it earns it twice over. It matches the SQL
+    # `DEFAULT 0`, so the two cannot drift; and a config object assembled somewhere other
+    # than from a row — which several callers do — then means "off" rather than raising,
+    # which is the only safe reading for a feature flag.
+    per_tier_colour_enabled: bool = False
+
 
 @dataclass
 class ImageAspectToggle:
@@ -171,6 +180,12 @@ class ValidityReport:
     depth_checked: int
     failed_layer: int | None = None
     reason: str | None = None
+
+    #: Every per-tier colour slot this template marks (051), empty for a template that
+    #: marks none — which is every template the bot ships. Recorded here because Layer 1
+    #: has already parsed the file and the alternative is reading all fifteen a second
+    #: time to ask one question about them.
+    colour_slots: frozenset[str] = frozenset()
 
 
 @dataclass
