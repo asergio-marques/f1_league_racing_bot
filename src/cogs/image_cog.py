@@ -214,13 +214,14 @@ class ImageCog(commands.Cog):
         parent=images,
     )
 
-    # The fifteen template filename setters live in their own group rather than under
+    # The sixteen template filename setters live in their own group rather than under
     # `config`. Discord allows at most 25 subcommands per group and forbids a third
-    # nesting level, and `config` would otherwise carry 30: 1 template directory +
-    # 15 filenames + 8 asset directories + 4 preferences + toggle + view.
+    # nesting level, and `config` would otherwise carry 31: 1 template directory +
+    # 16 filenames + 8 asset directories + 4 preferences + toggle + view.
     #
-    # As split, `config` carries 15 of the 25 and `template` the other 15. Each asset class
-    # added costs `config` one, so the arithmetic is worth redoing rather than assuming.
+    # As split, `config` carries 15 of the 25 and `template` the other 16. Each asset class
+    # added costs `config` one and each template costs `template` one, so the arithmetic is
+    # worth redoing rather than assuming.
     template = app_commands.Group(
         name="template",
         description="Set which SVG file backs each kind of image.",
@@ -320,7 +321,7 @@ class ImageCog(commands.Cog):
     async def _set_template_filename(
         self, interaction: discord.Interaction, column: str, filename: str
     ) -> None:
-        """Shared body for the fifteen template filename commands.
+        """Shared body for the sixteen template filename commands.
 
         Validate, **then** store (FR-005). A configuration that cannot be used is refused
         at the moment it is named — the one moment the manager is present, holding the
@@ -330,7 +331,7 @@ class ImageCog(commands.Cog):
         from services.image_validity_service import check_template
 
         # Validation parses the named SVG from disk, which outruns Discord's three-second
-        # window on a slow host as readily as the fifteen-template sweep does.
+        # window on a slow host as readily as the sixteen-template sweep does.
         await interaction.response.defer(ephemeral=True)
 
         if not await self._guard_module_enabled(interaction):
@@ -551,12 +552,12 @@ class ImageCog(commands.Cog):
     async def _set_template_directory(
         self, interaction: discord.Interaction, directory: str
     ) -> None:
-        """Validate, **then** store (FR-005) — as the fifteen filename commands do.
+        """Validate, **then** store (FR-005) — as the sixteen filename commands do.
 
         This is the one directory with no packaged second tier. Every asset class falls
         back to what the bot ships, so an empty artwork folder still draws; the template
         directory is the only place templates are searched, so a folder that does not hold
-        all fifteen, valid, is a configuration that cannot produce a single graphic.
+        all sixteen, valid, is a configuration that cannot produce a single graphic.
 
         Refusing it here refuses it at the one moment the manager is present, holding the
         files, and able to fix it — rather than letting it surface as a render failure at
@@ -585,7 +586,7 @@ class ImageCog(commands.Cog):
 
         stored = relative_to_root(resolved)
 
-        # Fifteen SVG parses will not reliably finish inside Discord's three seconds.
+        # Sixteen SVG parses will not reliably finish inside Discord's three seconds.
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
 
@@ -603,7 +604,7 @@ class ImageCog(commands.Cog):
         #
         # Scoped to the aspects that are switched on, as those two are: a folder holding
         # no verdicts drawing is a perfectly good folder for a league that posts verdicts
-        # as text, and refusing it would force every league to supply all fifteen before
+        # as text, and refusing it would force every league to supply all sixteen before
         # it could move its artwork. Switching an aspect on checks its own drawings at
         # that moment, so nothing reaches a posting path unverified.
         toggles = await self._config_service.get_toggles(interaction.guild_id)
@@ -653,7 +654,7 @@ class ImageCog(commands.Cog):
 
         if problems:
             lines.append("")
-            # Capped: a folder holding no templates at all fails fifteen times, and the
+            # Capped: a folder holding no templates at all fails sixteen times, and the
             # first few name the problem as well as all of them would.
             shown = problems[:6]
             for problem in shown:
@@ -675,7 +676,7 @@ class ImageCog(commands.Cog):
             + (f" ({len(problems)} template(s) unusable)" if problems else ""),
         )
 
-    # ── The fifteen template filename commands ────────────────────────────
+    # ── The sixteen template filename commands ────────────────────────────
     #
     # Identical in shape; only the column differs. Each delegates to
     # `_set_template_filename`, which holds the whole body.
@@ -812,6 +813,16 @@ class ImageCog(commands.Cog):
     async def config_verdicts_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "verdicts_template", filename)
 
+    @template.command(
+        name="verdict-banner",
+        description="Set the verdict banner template filename.",
+    )
+    @app_commands.describe(filename="Filename inside the template directory.")
+    @channel_guard
+    @server_admin_only
+    async def config_verdict_banner_template(self, interaction: discord.Interaction, filename: str) -> None:
+        await self._set_template_filename(interaction, "verdict_banner_template", filename)
+
     # ── The eight asset directory commands ───────────────────────────────
     #
     # Identical in shape to `template-directory`; only the column differs. Each is
@@ -914,6 +925,7 @@ class ImageCog(commands.Cog):
             app_commands.Choice(name="Check-in call", value="rsvp"),
             app_commands.Choice(name="Weather forecasts", value="weather"),
             app_commands.Choice(name="Verdicts", value="verdicts"),
+            app_commands.Choice(name="Verdict banner", value="verdict_banner"),
         ]
     )
     @channel_guard
@@ -923,7 +935,7 @@ class ImageCog(commands.Cog):
     ) -> None:
         # Switching an output *on* reports what still blocks it, and answering that means
         # `_aspect_blocking_reasons` → `template_reports` → `evaluate_all_templates`,
-        # which parses all fifteen template SVGs from disk on every call and caches
+        # which parses all sixteen template SVGs from disk on every call and caches
         # nothing. That is a third of a second on a development machine and several times
         # that on the Raspberry Pi's SD card, so the reply arrived after Discord had
         # already expired the token (404 Unknown interaction) with the toggle written.
@@ -1325,7 +1337,7 @@ class ImageCog(commands.Cog):
         """Every colour slot any valid template of this server marks.
 
         Read off the validity reports, which carry it from the parse Layer 1 already did,
-        so asking costs no second read of fifteen files.
+        so asking costs no second read of sixteen files.
         """
         reports = await self._validity_service.template_reports(server_id)
         return {
@@ -2268,7 +2280,7 @@ def _chunk(content: str, limit: int = 1900) -> list[str]:
 def _verify_template_command_coverage() -> None:
     """Fail loudly at import if a template gains no command.
 
-    The fifteen commands below are written out rather than generated, because
+    The sixteen commands below are written out rather than generated, because
     discord.py resolves a command's parameters from the callback signature and cannot
     tell a class-external callback is a bound method. This check keeps the explicit list
     honest against `TEMPLATE_COLUMNS`, so adding a template to the constants without

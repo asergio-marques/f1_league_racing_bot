@@ -34,6 +34,7 @@ _MIGRATIONS = (
     "047_driver_portraits.sql",
     "048_division_logo_directory.sql",
     "051_per_tier_colours.sql",
+    "052_verdict_banner_template.sql",
 )
 
 

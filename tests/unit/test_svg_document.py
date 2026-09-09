@@ -296,13 +296,13 @@ _SHIPPED_TEMPLATES = sorted(
 
 def test_every_shipped_template_is_found_to_have_templates():
     """Guards the guard: an empty glob would make the test below vacuously true."""
-    assert len(_SHIPPED_TEMPLATES) == 15
+    assert len(_SHIPPED_TEMPLATES) == 16
 
 
 @pytest.mark.parametrize("template", _SHIPPED_TEMPLATES, ids=lambda t: t.stem)
 def test_every_text_field_in_a_shipped_template_receives_a_font_family(template):
     """Each template states its stack once on the root `<svg>`, so this fails for all
-    fifteen at once if the ancestor walk is lost.
+    sixteen at once if the ancestor walk is lost.
 
     It asserts on the declaration the field *receives*, never on the face a host resolves
     it to: which of Inter, Segoe UI or DejaVu Sans is installed differs across the Pi, CI

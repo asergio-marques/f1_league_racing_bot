@@ -106,7 +106,7 @@ def _template_paths():
 
 
 def test_every_shipped_template_is_covered_by_this_check():
-    assert len(_template_paths()) == 15, "the module ships fifteen templates"
+    assert len(_template_paths()) == 16, "the module ships sixteen templates"
 
 
 @pytest.mark.parametrize(
@@ -163,6 +163,7 @@ def test_every_image_slot_of_a_shipped_template_carries_its_classs_aspect(path):
         ("standings_constructors_template", "round_1_flag", "flag"),
         ("attendance_template", "round_1_flag", "flag"),
         ("weather_p1_template", "track_flag", "flag"),
+        ("verdict_banner_template", "track_flag", "flag"),
     ],
 )
 def test_the_packaged_templates_declare_the_expected_slots(template, field_id, asset_class):
@@ -234,7 +235,8 @@ def test_a_season_sheet_does_not_name_a_grand_prix(template):
 
 
 def test_every_other_round_scoped_template_still_names_its_grand_prix():
-    """The check-in, the results sheets, the verdict and the forecasts each draw one round."""
+    """The check-in, the results sheets, the verdict, its banner and the forecasts each
+    draw one round."""
     naming = {
         path.stem
         for path in _template_paths()
@@ -245,6 +247,7 @@ def test_every_other_round_scoped_template_still_names_its_grand_prix():
         "results_qualifying_template",
         "results_race_template",
         "verdicts_template",
+        "verdict_banner_template",
         "weather_p1_template",
         "weather_p2_template",
         "weather_p2_sprint_template",
@@ -448,6 +451,7 @@ THREE_LINE_HEADINGS = (
     "results_qualifying_template",
     "results_race_template",
     "verdicts_template",
+    "verdict_banner_template",
     "weather_p1_template",
     "weather_p2_template",
     "weather_p2_sprint_template",
