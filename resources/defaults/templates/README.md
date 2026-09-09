@@ -1,6 +1,6 @@
 # templates/
 
-The fifteen default templates, one per image type. The bot looks for them here unless a
+The sixteen default templates, one per image type. The bot looks for them here unless a
 server points it elsewhere with `/images config template-directory`.
 
 | File | Draws |
@@ -20,11 +20,31 @@ server points it elsewhere with `/images config template-directory`.
 | `weather_p3_sprint_template.svg` | Phase 3 forecast, sprint round |
 | `weather_mystery_template.svg` | The mystery-round notice |
 | `verdicts_template.svg` | A stewards' verdict |
+| `verdict_banner_template.svg` | The header of a batch of verdicts |
 
 Qualifying and race are separate files, as are the two championships and the attendance
 sheet and check-in call — each pair shares too few columns to share one. A sprint and a
 feature session of the same kind *do* share a template, told apart by the session-name field
 alone, and so do the three kinds of verdict.
+
+## The banner is the heading of a card with nothing under it
+
+`verdict_banner_template.svg` is 1200 × 304 where every other file is 675 or taller, and that is
+the whole of what it is: the masthead of a verdict card — the same eyebrow, the same
+140 / 188 / 220 / 252 rhythm, the same rule — and then it stops. Banner and cards read as one run
+in the channel because they open the same way.
+
+It declares two mandatory fields, `division_name` and `round_number`, and four optional ones:
+`season_number`, `division_tier`, `race_name` and `track_flag`, each in its own `_group`. It
+declines `country_name`, which the catalogue admits — the flag says the country and writing it
+out as well would say it twice, which is the same choice the forecasts make.
+
+**The round takes the headline and the grand prix the line beneath it**, which is the opposite way
+round from a forecast. Do not swap them back. `race_name` is read from the track record the round's
+circuit matches, so a round matching none loses it — along with the flag and the country — and a
+file whose headline was the grand prix would go blank across most of its band exactly when it had
+least else to say. The round is the one thing a banner always knows, so the round holds the
+headline. The verdict card orders the same two facts the same way.
 
 ## The verdict template wraps its prose
 
@@ -264,7 +284,7 @@ same numbers from the other side, including a rasterised check that no text reac
 
 ## None of these files draws a division logo, and yours may
 
-`division_logo` is an optional whole-graphic field every one of the fifteen catalogues admits,
+`division_logo` is an optional whole-graphic field every one of the sixteen catalogues admits,
 and which no file here declares. Add an `<image id="division_logo">` to a copy of any of these
 templates and the bot fills it from `resources/league/division-logos/`, keyed on the division's
 name — `Division 1` looks for `division_1.svg`.
@@ -276,7 +296,7 @@ have each drawn in its own colour, by marking an element with a class naming a s
 `colour-fill-<slot>` paints its fill, `colour-stroke-<slot>` its stroke, `colour-stop-<slot>` a
 gradient stop. The remainder of the class is the slot id, which the league invents.
 
-Every one of the fifteen kinds admits slots and none requires them, so a file declaring none —
+Every one of the sixteen kinds admits slots and none requires them, so a file declaring none —
 which is every file here — is unaffected. The colours themselves are configured per division with
 `/images config per-tier-set-colour`, behind a toggle that is off by default.
 
@@ -299,7 +319,7 @@ Three things separate it from every other image field, and all three follow from
 decoration a league opts into rather than data the bot went looking for:
 
 - **It is never mandatory**, on any template. Leaving the id out is not a fault, which is what
-  keeps these fifteen files valid without it.
+  keeps these sixteen files valid without it.
 - **Nothing is reported when a division has no logo.** The packaged `fallback.svg` for the
   class has nothing drawn in it, and unlike every other class, drawing it raises no notice at
   all. A misnamed file is therefore silent too.

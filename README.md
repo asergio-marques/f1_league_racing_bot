@@ -1551,17 +1551,17 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `aspect` | Choice | ✅ | **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts**, or **Verdicts** |
+| `aspect` | Choice | ✅ | **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts**, **Verdicts**, or **Verdict banner** |
 
-Flips that aspect between a generated image and the text the bot has always posted. All eight start disabled. It is a **toggle**: run it on an aspect that is off and it comes on, run it again and it goes back to text.
+Flips that aspect between a generated image and the text the bot has always posted. All nine start disabled. It is a **toggle**: run it on an aspect that is off and it comes on, run it again and it goes back to text.
 
 **Switching one on checks its drawings first.** If any drawing that aspect needs is missing or unusable, the command is **refused** — it names each fault, and the aspect stays off. That is deliberate: an aspect switched on over a broken drawing posts nothing at all where your drivers would otherwise have read text, and it withholds your season's approval besides. Switching an aspect **off** is never refused, whatever state its drawings are in: text needs no drawing, so you can always retreat to it.
 
 **A broken drawing only blocks a season if the output that draws it is on.** `/season review` and `/season approve` apply the same rule — a fault under a switched-off output is shown as a ⚠️ warning and stops nothing, because nothing would ever post it. Fix it before you switch that output on; the review names it either way so it does not catch you out later.
 
-The choice names above are exactly the names `/images config view` and `/season review` print for the eight aspects, so a `❌` row in either report can hand you the command with the choice already named.
+The choice names above are exactly the names `/images config view` and `/season review` print for the nine aspects, so a `❌` row in either report can hand you the command with the choice already named.
 
-> **All eight aspects post live.** Enabling one changes what the bot posts from its next posting onwards.
+> **All nine aspects post live.** Enabling one changes what the bot posts from its next posting onwards.
 >
 > **`standings` posts two messages where the text posts one** — the driver standings first, the
 > constructor standings after, each carrying its heading and lifecycle label as message text and its
@@ -1631,11 +1631,21 @@ The choice names above are exactly the names `/images config view` and `/season 
 > **A verdict is posted once and never touched again.** It is not edited, replaced or deleted, and an appeal that overturns a penalty is announced as a verdict of its own standing beside the first, which remains a true record of what was decided when it was decided.
 >
 > **A verdict that cannot be drawn never delays a sanction.** The review is finalised and the sanction enforced exactly as they would be with the images module switched off; the picture is made afterwards. A failed render posts that one verdict as text and leaves every other verdict of the same review, and of every other division, untouched. An attendance **pardon** is no verdict: it stays a log-channel record whatever the toggle says.
+>
+> **`verdict_banner` adds a header above a batch of verdicts; it replaces nothing.** With the toggle on, a review that applies penalties posts one banner to the division's verdicts channel before the first verdict, naming the season, the division and the round those decisions were taken on — and the grand prix and its flag where your track list holds a record for the round's circuit. A review that applies appeal corrections posts one of its own. With the toggle off, the channel reads exactly as it does today: nothing is added and nothing is taken away.
+>
+> **It is a separate toggle from `verdicts`, on purpose.** You can have banners without verdict pictures, verdict pictures without banners, both, or neither — and a banner drawing that will not load can never stop a verdict being posted.
+>
+> **The banner names no session and no driver.** One review can sanction a qualifying entry and a race entry in the same breath, so a header naming one session would misname half the verdicts under it. The driver, the team and the sanction are all on the verdict picture itself.
+>
+> **A banner that cannot be drawn never delays a verdict.** Where the toggle is on and the render fails, the bot posts the heading — `**Season 5 Premier Round 8**` — as plain text instead, so the batch is still identified, and every verdict follows as normal.
+>
+> ⚠️ **The banner message carries no text, and Discord's search cannot find it.** This is the trade the banner makes and you should know it before switching it on: because the message body is empty, searching your verdicts channel for "Round 8" will not turn up that round's verdicts. The only handle a search has is the attachment's filename, which the bot names `season5_division1_round8_verdict_banner.png`. Attendance sanctions carry no banner either — the bot enforces those one driver at a time as a round's attendance is finalised, rather than as a batch.
 
 #### `/images template <kind>` — Name the SVG file backing each image
 *Access: Server administrator*
 
-Fifteen subcommands, each taking a `filename` inside the configured template directory:
+Sixteen subcommands, each taking a `filename` inside the configured template directory:
 
 | Subcommand | Default filename |
 |------------|------------------|
@@ -1654,6 +1664,7 @@ Fifteen subcommands, each taking a `filename` inside the configured template dir
 | `weather-p3-sprint` | `weather_p3_sprint_template.svg` |
 | `weather-mystery` | `weather_mystery_template.svg` |
 | `verdicts` | `verdicts_template.svg` |
+| `verdict-banner` | `verdict_banner_template.svg` |
 
 Qualifying and race results are drawn from separate templates, as are the driver and constructor standings, and the attendance sheet and check-in call — each pair shares too few columns to share a file. A sprint and a feature session of the same kind *do* share a template, distinguished by the session-name field alone. Weather phases 2 and 3 have separate sprint variants because a sprint round holds four sessions where every other format holds two.
 
@@ -1670,7 +1681,7 @@ These sit under `/images template` rather than `/images config` because Discord 
 > **If you drew your own copies of these three, rename the field before your next season.** Give the
 > text element `id="classification_label"`, delete the `ROUND` lettering beside it, and give it room
 > for a phrase rather than a two-digit number — `Opening Classification` is a good deal wider than
-> `10`. `/images config template-directory` checks all fifteen files at once and refuses the whole
+> `10`. `/images config template-directory` checks all sixteen files at once and refuses the whole
 > change if one of them still declares the old field, so you will be told rather than finding out at
 > season approval. Every other template — results, check-in, weather, verdicts — keeps `round_number`
 > exactly as it was; those are always about one round.
@@ -1733,6 +1744,12 @@ These sit under `/images template` rather than `/images config` because Discord 
 > Because a team's ordinal is its position in the division, **teams are ordered as you added them** — a team added later takes the next free block, so nothing you have already drawn moves. Renaming a team does not move it either.
 
 > **Divisions may differ however you like.** Different teams, different numbers of them, different seat counts — one lineup file serves them all, and `/season review` no longer asks a season to be uniform. It says something only when a division holds more teams, or a team more drivers, than your template has room for.
+
+> **The verdict banner is the smallest drawing the bot asks for.** It has to declare exactly two fields — `division_name` and `round_number` — and may declare `season_number`, `division_tier`, `race_name`, `country_name` and `track_flag` besides. It names no session, no driver, no team and no sanction: those are all on the verdict picture the banner stands above.
+>
+> The last three go together. `race_name`, `country_name` and `track_flag` are all read from the track record your round's circuit matches, so a round whose circuit is not in your track list loses all three at once — quietly, with nothing reported, because a round with no track record is an ordinary thing rather than a broken drawing. **Wrap each in a `_group` so it takes its label and its plate with it.** The shipped file does, and puts the round in the headline with the grand prix beneath it, so a round with no track record still has a heading; a file built the other way round goes nearly blank in that case.
+>
+> The shipped `verdict_banner_template.svg` is 1200 × 304 — a header, not a page. There is nothing under the rule but a strap.
 
 > **The two results templates are not interchangeable.** They share every field but the columns of their rows: qualifying carries `row_<x>_best_lap`, `row_<x>_gap` and an optional `row_<x>_tyre`; race carries `row_<x>_time`, `row_<x>_fastest_lap` and `row_<x>_ingame_penalty`. Naming a race file in the qualifying slot is refused, and the bot says which field gave it away rather than listing everything the file is missing. Identifiers of your own — layer names, background shapes, anything the bot does not address — are ignored entirely, so you can build the file however suits you. The one thing that is looked at is a linked image, whose file has to exist; see the callout under `/images template` above.
 >
@@ -1803,7 +1820,7 @@ Every directory is a path relative to the project root, and one that resolves ou
 
 | Subcommand | Default | Holds |
 |------------|---------|-------|
-| `template-directory` | `resources/defaults/templates` | The fifteen SVG templates |
+| `template-directory` | `resources/defaults/templates` | The sixteen SVG templates |
 | `track-image-directory` | `resources/league/tracks` | Circuit maps — the calendar and check-in graphics only |
 | `team-image-directory` | `resources/league/teams` | Team logos, badges, cars |
 | `flag-directory` | `resources/league/flags` | Country flags, for drivers and for rounds alike |
@@ -1819,7 +1836,7 @@ Every directory is a path relative to the project root, and one that resolves ou
 
 The subcommands in the table above exist for the league that wants its files somewhere else entirely — any path inside the project root is accepted. Most leagues never need to run one.
 
-**What is already there.** A clone ships the fifteen default templates and a fallback per asset class — two for `markers/`, whose files are not all one shape — so the module draws every graphic from the first render, entirely out of placeholders, before you have made anything. It also ships the five tyre compounds in full, those being the bot's own vocabulary rather than your league's. No circuit, team or driver artwork ships: that is your league's to make, and you replace the placeholders a class at a time, seeing your own files appear as you go. **Driver portraits are the one class you need not draw at all** — the bot can obtain them from your drivers' Discord profile pictures instead. See *Driver portraits from Discord* below.
+**What is already there.** A clone ships the sixteen default templates and a fallback per asset class — two for `markers/`, whose files are not all one shape — so the module draws every graphic from the first render, entirely out of placeholders, before you have made anything. It also ships the five tyre compounds in full, those being the bot's own vocabulary rather than your league's. No circuit, team or driver artwork ships: that is your league's to make, and you replace the placeholders a class at a time, seeing your own files appear as you go. **Driver portraits are the one class you need not draw at all** — the bot can obtain them from your drivers' Discord profile pictures instead. See *Driver portraits from Discord* below.
 
 **A set of filenames is reserved** besides `fallback.svg`, and they are the bot's rather than your league's: `tracks/mystery.svg` and `flags/mystery.svg`, drawn for a round whose circuit is concealed until it is run; `flags/other.svg`, drawn for a driver who chose no nationality in particular; the whole of `tyres/` — `soft.svg`, `medium.svg`, `hard.svg`, `intermediate.svg` and `wet.svg`; and the whole of `markers/` — `position_change_gained.svg`, `position_change_lost.svg` and `position_change_none.svg` for the three directions a standing position can move, the nine standings result marks, and the two attendance limit marks. Every name there says which of the three it belongs to, because one folder holds all three. Replace the artwork freely; keep the names, or the bot will not find them.
 
@@ -1834,7 +1851,7 @@ Your own file always wins where you supply one — this only ever fills a gap. C
 
 > **The bot's own artwork has a fixed shape, and yours need not match it.** What ships is drawn at 3:2 for flags and square for everything else. If you re-shape a class in your templates — see *The shape of a picture is yours to choose* below — the packaged files keep their own shape and are stretched wherever they stand in for something you have not drawn. The bot says so once per graphic, naming both shapes. Drawing your own file for that class is what stops it.
 
-**A division can carry its own logo, and nothing draws one until you ask.** `division-logo-directory` is the one artwork class no template the bot ships uses at all. To turn it on, add an image node with the id `division_logo` to a template of your own — anywhere on the canvas, at any size — and put one SVG per division in `resources/league/division-logos`, named for the division the same way every other file is named for its value: `Division 1` looks for `division_1.svg`. Every one of the fifteen kinds of graphic can carry one, so a league can brand its calendar and its standings differently, or brand nothing.
+**A division can carry its own logo, and nothing draws one until you ask.** `division-logo-directory` is the one artwork class no template the bot ships uses at all. To turn it on, add an image node with the id `division_logo` to a template of your own — anywhere on the canvas, at any size — and put one SVG per division in `resources/league/division-logos`, named for the division the same way every other file is named for its value: `Division 1` looks for `division_1.svg`. Every one of the sixteen kinds of graphic can carry one, so a league can brand its calendar and its standings differently, or brand nothing.
 
 > **A division with no logo is drawn with nothing, and the bot does not tell you.** What ships is an empty picture, and this is the one class whose fallback raises no notice — having no logo is the ordinary state here rather than a gap, and a warning on every graphic you post would be noise. The cost is that a misspelt filename is silent too, and so is renaming a division: rename `Division 1` to `Div 1` and `division_1.svg` stops being drawn with nothing said. If a logo does not appear, check the filename against the division's name first.
 
@@ -1902,7 +1919,7 @@ Colours are stored whether or not the feature is on and whether or not a templat
 
 The reason is that you supply **one file per thing**. There is a single `united_kingdom.svg`, and it goes into every flag box there is. If two boxes on a drawing are different shapes, that one file is letterboxed in one of them, and no artwork you could draw would fix it — the bot never pads or crops to fit.
 
-> **The bot does not compare one drawing against another.** If your calendar draws flags at 3:2 and your standings draws them at 2:1, both are accepted and your flags are letterboxed on one of them. This is deliberate: checking it would make re-shaping a class impossible, because the first drawing you changed would disagree with the other thirteen and be refused. **So when you change the shape of a class, change it in every drawing that uses it.** Flags appear on fourteen of the fifteen templates and team badges on seven — those two are the ones easy to half-finish.
+> **The bot does not compare one drawing against another.** If your calendar draws flags at 3:2 and your standings draws them at 2:1, both are accepted and your flags are letterboxed on one of them. This is deliberate: checking it would make re-shaping a class impossible, because the first drawing you changed would disagree with the other fourteen and be refused. **So when you change the shape of a class, change it in every drawing that uses it.** Flags appear on fifteen of the sixteen templates and team badges on seven — those two are the ones easy to half-finish.
 
 > **`markers` is the exception, and is never checked at all.** That one folder holds the square position-change arrows *and* the marks that stretch into a result cell, so there is no single shape for it to hold you to.
 
@@ -2007,14 +2024,14 @@ No parameters. Lists every setting with a validity status, and each aspect as �
 
 > **Written for you, not for a developer.** Both this report and `/season review` say what is wrong in terms of your drawings and your folders — no field ids, no file paths, no layer numbers. The exact fault goes to the bot's log, where whoever runs the bot can read it. Naming a template file with an `/images template …` command is the exception: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
 
-The report also states **how deeply templates were checked**. Layer 1 — the file resolves, parses as SVG, and declares a canvas — applies to all fifteen. Layer 2 checks that a template carries every field its image needs, and that it carries no field belonging to a different image type. Layer 3 checks that every wrapped field can actually be laid out: its rectangle exists, declares a width and a height, and the field has a line height. All three now apply to all fifteen types, the last of their field sets having been specified. A fourth layer — a trial render — is not yet in force and is reported as *not applied* rather than as passed. The report never claims a template was verified more deeply than it was.
+The report also states **how deeply templates were checked**. Layer 1 — the file resolves, parses as SVG, and declares a canvas — applies to all sixteen. Layer 2 checks that a template carries every field its image needs, and that it carries no field belonging to a different image type. Layer 3 checks that every wrapped field can actually be laid out: its rectangle exists, declares a width and a height, and the field has a line height. All three now apply to all sixteen types, the last of their field sets having been specified. A fourth layer — a trial render — is not yet in force and is reported as *not applied* rather than as passed. The report never claims a template was verified more deeply than it was.
 
 The same summary is appended to `/season review`, which additionally names each template that would block approval. **`/season approve` refuses** while any of them is unusable — the review is where you see the problem, the approval is where the season stops.
 
 #### `/images test` — Preview a kind against your own league
 *Access: Trusted admin*
 
-Eleven commands, one per kind of image. Each is drawn against **your own league** — your rounds, your teams, your drivers, your circuits and your own artwork — and replies with the PNG, visible only to you.
+Twelve commands, one per kind of image. Each is drawn against **your own league** — your rounds, your teams, your drivers, your circuits and your own artwork — and replies with the PNG, visible only to you.
 
 | Command | Parameters |
 |---------|------------|
@@ -2029,6 +2046,7 @@ Eleven commands, one per kind of image. Each is drawn against **your own league*
 | `/images test weather-p3` | `division`, `round` |
 | `/images test weather-mystery` | `division`, `round` |
 | `/images test verdict` | `division`, `round` |
+| `/images test verdict-banner` | `division`, `round` |
 
 `division` completes as you type. Both parameters are required, and your server needs a season for them to name.
 
@@ -2045,21 +2063,23 @@ A season that has been completed or cancelled is not previewable; a server holdi
 
 **When your server has no season**, a preview is refused and tells you to run `/season setup` first. The bot used to invent an entire league here — a division, a calendar, circuits and drivers — but an invented league shows you nothing about *your* configuration, which is the only thing a preview is for. Set a season up and preview against it.
 
-Six of the eleven draw no team and no driver — `calendar`, `rsvp` and the four `weather-*` — so a division with no teams is enough for them. The other five need a roster and are refused until you have added teams.
+Seven of the twelve draw no team and no driver — `calendar`, `rsvp`, `verdict-banner` and the four `weather-*` — so a division with no teams is enough for them. The other five need a roster and are refused until you have added teams.
 
 **What is real, and what is invented.** Everything a league configures is real: the division and its tier, the season number, the calendar, the teams, the seated drivers and their nationalities, and the artwork in the folders you set. What the bot invents is only what a round that has not been run cannot have — the finishing order, the forecast, the attendance points and the steward's verdict. The attendance sheet's point limit is invented with the points, rather than read from what you configured, so that the sheet always carries a driver over the limit, one approaching it and rows marked neither way. A division with no seated driver at all has drivers invented for it as well, and the reply says so.
 
 **Sanctions a preview can draw.** A fabricated verdict carries five seconds added, ten seconds added, three seconds removed, or a disqualification. Those are the sanctions the bot can record and issue; a preview never draws one it cannot.
 
+**`verdict-banner` invents nothing at all**, alone among the twelve. A banner carries the season, the division, the round, the grand prix and its flag, and your server already holds every one of them.
+
 **When a preview is refused**, the reply names the reason and nothing is rendered:
 
 | Refusal | Applies to |
 |---------|-----------|
-| No division of that name in the season being drawn | all eleven |
-| A parameter was omitted — Discord refuses the command before the bot sees it | all eleven |
-| Your server has no season at all | all eleven |
+| No division of that name in the season being drawn | all twelve |
+| A parameter was omitted — Discord refuses the command before the bot sees it | all twelve |
+| Your server has no season at all | all twelve |
 | The division holds no configured round | `calendar` |
-| The division holds no round of that number | the nine that take one |
+| The division holds no round of that number | the ten that take one |
 | The division holds no team beyond Reserve | `lineup`, `results`, `standings`, `attendance` |
 | The round is a mystery round | `weather-p1`, `weather-p2`, `weather-p3` |
 | The round is **not** a mystery round | `weather-mystery` |

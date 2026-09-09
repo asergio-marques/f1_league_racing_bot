@@ -6,7 +6,7 @@ This guide is the **order to do things in**, from switching the module on to a s
 
 - **[Results Module Commands](../../README.md#results-module-commands)** in the main README — every command in full, with the exact submission formats.
 - **[Module Commands](../../README.md#module-commands)** — turning modules on and off, and what each one depends on.
-- **[Image Module](../../README.md#image-module)** — the three settings that turn results, standings and verdicts into pictures, and [Setting up the image module](configuring-the-image-module.md) for the order to do those in.
+- **[Image Module](../../README.md#image-module)** — the settings that turn results, standings and verdicts into pictures and head a batch of verdicts with a banner, and [Setting up the image module](configuring-the-image-module.md) for the order to do those in.
 
 You do not need to read those first. Start here.
 
@@ -146,16 +146,22 @@ Every driver seated in a **team** appears in the drivers' table from the start o
 
 ## Step 6 — Decide between text and pictures
 
-Out of the box, everything this module posts is a text table. The image module turns three of them into graphics, separately:
+Out of the box, everything this module posts is a text table. The image module turns three of them into graphics and adds a fourth of its own, each switched separately:
 
 ```
 /module enable images
 /images config toggle aspect:Session results
 /images config toggle aspect:Standings
 /images config toggle aspect:Verdicts
+/images config toggle aspect:Verdict banner
 ```
 
-`results` replaces each session's classification and `verdicts` replaces the stewarding announcements. Follow [Setting up the image module](configuring-the-image-module.md) for the order — the drawing files, the flags and the badges. Results and standings each need **two** drawing files, one per kind of table, and either half can be broken on its own.
+`results` replaces each session's classification and `verdicts` replaces the stewarding announcements. `Verdict banner` replaces nothing — it *adds* a header above the run of verdicts a review produces, naming the round they were taken on. Follow [Setting up the image module](configuring-the-image-module.md) for the order — the drawing files, the flags and the badges. Results and standings each need **two** drawing files, one per kind of table, and either half can be broken on its own.
+
+> **The verdict banner comes at a cost worth weighing.** Its message carries no words at all, so
+> searching your verdicts channel for "Round 8" stops finding that round's verdicts — the attachment's
+> filename is all a search has to go on. Leave it off if your stewards look decisions up that way.
+> The full trade-off is under *Step 6* of [Setting up the image module](configuring-the-image-module.md#step-6--choose-which-outputs-become-pictures).
 
 > **`standings` posts two pictures where the text posts one message.** The driver standings go first and the constructor standings after, each with its heading and lifecycle label as message text and its table attached. They are redrawn and replaced on every occasion the textual standings were reposted before. Either championship can fail on its own: the one that failed is posted as text, that section by itself, and the one that drew is left alone — so you never read the same table twice.
 

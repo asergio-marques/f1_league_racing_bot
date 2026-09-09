@@ -9,6 +9,7 @@ The bot shall be able to compose images out of preprepared SVG templates and pos
 - Attendance Sheet
 - Weather Phases 1, 2 and 3
 - Verdicts
+- Verdict Banner
 For this purpose, the Discord bot shall require three new dependencies: one with which to modify the SVG (lxml), one with which to convert the SVG to PNG (the Inkscape command-line interface), and one with which to measure the width of a text (fontTools).
 - lxml and fontTools are Python packages and shall be declared as such. Inkscape is not: it is a binary the machine running the bot must carry, and no package declaration installs it.
 - The absence of Inkscape is fatal to the whole module. It shall be reported at season review, and no generation shall be attempted while it stands.
@@ -25,13 +26,14 @@ For this purpose, the Discord bot shall require three new dependencies: one with
     - rsvp - When enabled, the check-in call posted for a round will carry a bot-generated image. When disabled, the check-in call will be posted via the traditional, previously implemented way (an embed alone).
     - weather - When enabled, posting of phase 1, 2 and 3 weather generation, as well as the notice posted for a mystery round, will be done via a bot-generated image. When disabled, weather posting will be done via the traditional, previously implemented way (text).
     - verdicts - When enabled, posting of verdicts will be done via a bot-generated image. When disabled, verdict posting will be done via the traditional, previously implemented way (text).
+    - verdict banner - When enabled, a batch of verdicts posted to a division's verdicts channel shall be headed by a bot-generated image naming the round it pertains to. When disabled, no header is posted at all, this aspect replacing no text.
     - All of the above shall be disabled by default.
     - Fallback behavior: if an error is found at any step of the image generation or posting procedure for any of the above possibilities, then the previous manner of posting this information will be utilized (text).
     - An aspect whose source module does not yet call the image module on the occasions it posts records intent alone, and shall be declared as such.
         - The confirmation of "images config toggle" shall state that the aspect is not yet in effect where the aspect is one of these, and shall state nothing of the kind where it is not. A claim made over every aspect alike ceases to be true of the first one wired, and misleads a manager into thinking a working aspect broken.
         - The addendum to "images config view" shall name such aspects individually, and shall be absent entirely once none remains.
         - Both shall read one and the same declaration of which aspects post, so that the two cannot disagree.
-        - All eight aspects presently post, so neither statement is made and the addendum is absent. The rule stands for any aspect added ahead of its posting path.
+        - All nine aspects presently post, so neither statement is made and the addendum is absent. The rule stands for any aspect added ahead of its posting path.
 - <NEW COMMAND> A new "images config template-directory" will be made available to server administrators which will take in a string standing for the directory in which the image template files will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the template files will be searched in a "resources/defaults/templates" folder located at the project root.
@@ -1386,6 +1388,59 @@ These hold for every image type of the module and are stated here rather than re
     - one exceeding that number by a little, so that the reduction of the font size may be evaluated;
     - one exceeding it by an order of magnitude, so that the reduction past the floor and the non-fatal error it reports may be evaluated;
     - one for which the steward entered neither a description nor a justification.
+
+## Verdict banner image generation
+- A verdict banner represents no decision. It is the header of a batch of verdicts: one graphic standing above the run of verdict graphics a single review produced, naming the round the decisions beneath it were taken upon. It replaces no text that is posted today.
+- Nothing is computed for the banner and nothing is decided for it. It draws facts the league already holds and fabricates none of them.
+- The banner names no session, a single review being free to sanction an entry of the qualifying session and an entry of the race alike. The round is the finest it is drawn to.
+- The banner names no driver, no team and no sanction, each of those belonging to the verdict graphic it introduces.
+- The banner holds no field addressed by an ordinal and declares no collection of any kind. It is the third graphic of which this is true, beside the verdict itself and the notice of a mystery round.
+- For generation of a verdict banner, the template may have the following fields, among which the mandatory fields will be verified at template file setting and before generation:
+    - season_number - Optional - Field on which the season number of the server is placed
+    - division_name - Mandatory - Field on which the name given to the division at "division add" is placed
+    - division_tier - Optional - Field on which the tier given to the division at "division add" is placed
+    - round_number - Mandatory - Field on which the human-readable number of the round the verdicts pertain to is placed as text, read from the round object definition
+    - race_name - Optional - Field on which the grand prix name of that round is placed as text, read from the track object definition
+    - country_name - Optional - Field on which the country of that round is placed as text, read from the track object definition
+    - track_flag - Optional - Field on which an image representing the country of that round will be placed, searched for in the directory configured via "images config flag-directory"
+- The banner carries no image of the track, no date of the round, no result of any session, no points, no lifecycle label and no name of a steward.
+
+### Resolution of the data to be placed
+- The number of the round is read from the round object, and the grand prix name and the country from the track object of the round, as they are for the weather graphic and for the verdict graphics the banner stands above.
+- The grand prix name, the country name and the country flag stand or fall together, all three being read from the one track record the circuit name of the round matches. A round matching no record determines all three to be nothing at once: each shall be emptied, its removable group removed where the template declares one, and no error reported for any of them.
+- A round of the mystery format is drawn as the conventions above require, its race name field reading "Mystery Grand Prix" and its flag resolving as the conventions require of a concealed round.
+- A template shall be free to declare any, all or none of the three. The template the bot ships declares the grand prix name and the flag and declines the country name.
+
+### Handling of mismatches between round and template
+- Every field of this graphic is independent of the data it is filled with, and the catalogue is therefore verified in its entirety at every moment the template is verified, when it is configured, at season review and before every generation alike. No field of it can only be verified against a division, a round or a classification.
+- Each of the following is a fatal error, naming what was found to be at fault:
+    - a mandatory field of the graphic that the template does not hold;
+    - a mandatory field whose value cannot be determined at generation.
+- The flag is resolved as the conventions above require. A round the server holds no track record for draws no flag at all, which is a legitimate outcome and no error whatsoever.
+- The substitution of a font a field declares is non-fatal and reported as such.
+
+### Generation and posting
+- Once a batch of verdicts is to be announced and the "verdict banner" toggle of "images config toggle" is enabled, one banner shall be generated following the rules above via modification of the SVG file, which shall then be converted to PNG and posted to the verdicts channel configured for the division as an attachment of a message carrying no message text.
+- The message carries no text at all, as the calendar and the two classifications of the ends of a season carry none. The banner draws the season, the division and the round, so a heading above it would repeat the graphic rather than introduce it.
+- **A league shall be told what that costs.** A message carrying no text cannot be found by a search of the text of a channel, so a manager looking for the verdicts of one round has the filename of the attachment to go on and nothing besides. The filename names the season, the division and the round as the conventions above require of every generated image. This was chosen knowingly at the introduction of the banner (decided 2026-09-09) and is not an oversight to be corrected by adding a heading.
+- One banner is posted per batch: one for the batch of penalties a penalty review applies, and one for the batch of corrections an appeals review applies. A review applying both shall post one of each, and a review applying nothing shall post neither.
+- The banner shall be posted immediately before the first verdict graphic of its batch, and shall not be posted at all where the batch produces no verdict.
+- A verdict of an attendance sanction carries no banner, such verdicts being enforced one driver at a time as the attendance of a round is finalized rather than as the batch of a stewards' review.
+- The banner is a static graphic, declared as the conventions above require, upon the same ground the verdict beneath it is: it draws a record of the moment a review closed.
+- A banner is posted once and is never edited, replaced nor deleted, and no message ID is persisted for it.
+- The generation and the posting of a banner shall never prevent the posting of a verdict, nor the finalization of a review, nor the enforcement of a sanction. Every failure upon this path shall be reported and passed over.
+- Where the "verdict banner" toggle is disabled, the verdicts channel shall read exactly as it read before banners existed.
+- Should a fatal error be met at any step of the generation of a banner while the toggle is enabled, the heading naming the season, the division and the round shall be posted as message text in its place, so that the batch is still identified where the graphic cannot be drawn. The banner replaces no text, so the text it falls back to is the text it would itself have drawn.
+- Non-fatal errors gathered during generation shall be reported in the logging channel of the server, naming the season, the division and the round they pertain to, and never in the verdicts channel of a division.
+
+### The banner and the verdict are separate aspects
+- The banner is toggled by a toggle of its own and is backed by a template of its own. A league may draw verdict graphics without banners, banners without verdict graphics, or both, or neither.
+- An unusable banner template shall never prevent a verdict being posted.
+
+### Test data
+- The "images test verdict-banner" command shall generate one image for the division and round named, reported to the league manager who invoked the command and never posted to the verdicts channel of a division.
+- It fabricates nothing whatsoever, the season, the division, the round, the grand prix and the country all being facts the server already holds.
+- It shall draw upon a server that has signed up no driver at all, the banner naming nobody.
 
 ### The order of the season approval
 
