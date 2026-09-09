@@ -438,7 +438,7 @@ No parameters. Triggers the season-end flow manually. The bot refuses if any non
 
 > **Note:** Season completion is not automatic. A league manager must run this command once every round in every division has been finalized. Nothing else marks a season complete.
 
-> ⚠️ **The refusal cannot currently be cleared, so no season holding a round can be completed.** The check reads a `finalized` column on each round that nothing in the bot ever sets — the live signal for a finished round is its result status, which the check does not consult. Every non-cancelled round is therefore listed as outstanding however completely it was raced and scored, and because a server holds one live season at a time, the next season cannot be started either. Recorded in [known issues](docs/wip-specs/known_issues.md).
+> ⚠️ **The refusal cannot currently be cleared, so no season holding a round can be completed.** The check reads a `finalized` column on each round that nothing in the bot ever sets — the live signal for a finished round is its result status, which the check does not consult. Every non-cancelled round is therefore listed as outstanding however completely it was raced and scored, and because a server holds one live season at a time, the next season cannot be started either. Recorded in [#154](https://github.com/asergio-marques/f1_league_racing_bot/issues/154).
 
 #### `/round amend` — Amend a round in the active season
 *Access: Trusted admin*
