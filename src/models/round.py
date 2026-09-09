@@ -17,7 +17,7 @@ class RoundStatus(str, Enum):
     Each intermediate state is named for what the round is waiting on rather than for what has
     already happened to it, because what comes next is what a league manager needs to know.
 
-    A round carried two columns until migration 055 — one saying whether it was on, another how
+    A round carried two columns until migration 053 — one saying whether it was on, another how
     settled its results were. Only six of their combinations were ever reachable, and the old
     `PROVISIONAL` covered three of them at once: not yet due, due but unentered, and entered but
     unjudged. That last distinction is the one that matters, and is why cancelling misbehaved.

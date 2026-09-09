@@ -43,7 +43,7 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
 
     await db.execute(
         """
-        -- Mirrors the shape migration 055 leaves, not the migrations themselves: this file
+        -- Mirrors the shape migration 053 leaves, not the migrations themselves: this file
         -- hand-builds a minimal schema. Keep the states in step with models.round.RoundStatus.
         CREATE TABLE rounds (
             id INTEGER PRIMARY KEY,

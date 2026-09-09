@@ -381,7 +381,7 @@ async def test_the_dead_finalized_column_is_gone(tmp_path) -> None:
         cur = await db.execute("PRAGMA table_info(rounds)")
         columns = {row["name"] for row in await cur.fetchall()}
     assert "finalized" not in columns
-    assert "result_status" not in columns, "merged into the single status chain by 055"
+    assert "result_status" not in columns, "merged into the single status chain by 053"
     assert "status" in columns
 
 
@@ -639,7 +639,7 @@ async def test_cancelling_a_season_records_its_drivers_as_cancelled(tmp_path) ->
 
 
 async def test_the_flag_defaults_to_not_cancelled(tmp_path) -> None:
-    """Migration 054 needs no backfill: the table is empty everywhere (see the file's comment)."""
+    """Migration 053 needs no backfill: the table is empty everywhere (see the file's comment)."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -655,7 +655,7 @@ async def test_writing_the_history_twice_adds_nothing(tmp_path) -> None:
 
     So a process that dies part-way leaves the season ACTIVE with history already written, and
     the retry a league is told to run would append a second set that nothing could tell apart.
-    The unique index from migration 054 plus `INSERT OR IGNORE` is what stands in for the
+    The unique index from migration 053 plus `INSERT OR IGNORE` is what stands in for the
     atomicity the sequence does not have — this is the test the migration comment names.
     """
     from unittest.mock import MagicMock

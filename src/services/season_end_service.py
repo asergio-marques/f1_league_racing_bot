@@ -128,7 +128,7 @@ async def _write_driver_history_entries(
     transaction around them, and the season's own row is flipped last — so a process that dies
     part-way leaves the season still ACTIVE with its history already written, and the retry the
     league is told to run would append a second set. `INSERT OR IGNORE` against the unique index
-    from migration 054 is what stands in for the atomicity the sequence does not have. Do not
+    from migration 053 is what stands in for the atomicity the sequence does not have. Do not
     relax it to a plain INSERT on the grounds that the guard above already returns early: that
     guard reads the season *before* this runs, which is precisely the window that fails.
 

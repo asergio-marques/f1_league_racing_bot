@@ -353,7 +353,7 @@ async def test_approving_the_last_rounds_appeals_finishes_the_division(tmp_path)
 async def test_full_lifecycle_states(tmp_path):
     """Walk the lifecycle from results-in to final, verifying each transition.
 
-    The chain gained states with migration 055: the old `PROVISIONAL` covered a round not yet
+    The chain gained states with migration 053: the old `PROVISIONAL` covered a round not yet
     due, one due but unentered, and one entered but unjudged. This walk starts where results are
     in — `_insert_session_with_drivers` puts them there — so the round is awaiting report
     verdicts, then appeal verdicts, then final.
