@@ -43,6 +43,8 @@ it only to place it; the rules governing it belong to its own specification.
 - Where this specification does not state a tier, the command is a league manager's.
 - The administrator permission shall carry the league manager's tier within it. A member holding it shall command the bot without holding the interaction role, a league admin being able to do everything a league manager may.
 - A league admin's command shall be given in the interaction channel, save the initialisation command and the three single-setting commands. Those alone repair the settings the channel itself depends upon, and shall run from any channel.
+- A tier shall govern the action and not the command alone. Where the bot offers an action through a button of its own, that button shall ask the tier its action belongs to, which may be higher than the tier of the command that posted it.
+- A button the bot offers a driver in their own channel shall ask nothing, a driver needing no role.
 - A command given in a channel other than the interaction channel shall be refused, and the refusal shall be seen by the member alone.
 
 ### Channels
