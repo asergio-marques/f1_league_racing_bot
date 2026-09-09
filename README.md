@@ -1634,6 +1634,8 @@ The choice names above are exactly the names `/images config view` and `/season 
 >
 > **`verdict_banner` adds a header above a batch of verdicts; it replaces nothing.** With the toggle on, a review that applies penalties posts one banner to the division's verdicts channel before the first verdict, naming the season, the division and the round those decisions were taken on — and the grand prix and its flag where your track list holds a record for the round's circuit. A review that applies appeal corrections posts one of its own. With the toggle off, the channel reads exactly as it does today: nothing is added and nothing is taken away.
 >
+> **A banner only ever appears where something follows it.** A review you approve with nothing staged, and a round where nobody is penalised and nobody crosses an attendance threshold, post no banner at all — you never get a header standing over an empty channel.
+>
 > **It is a separate toggle from `verdicts`, on purpose.** You can have banners without verdict pictures, verdict pictures without banners, both, or neither — and a banner drawing that will not load can never stop a verdict being posted.
 >
 > **The banner names no session and no driver.** One review can sanction a qualifying entry and a race entry in the same breath, so a header naming one session would misname half the verdicts under it. The driver, the team and the sanction are all on the verdict picture itself.

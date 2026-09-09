@@ -294,14 +294,36 @@ async def test_a_spent_poster_is_not_re_resolved(flow, monkeypatch):
     assert calls == [1]
 
 
-async def test_a_poster_never_called_makes_no_query_at_all(flow, monkeypatch):
-    """An approval applying nothing and sanctioning nobody must cost nothing."""
+async def test_an_approval_with_nothing_to_post_posts_no_banner(flow, monkeypatch):
+    """**No verdicts and no sanctions means no banner** — and no query either.
+
+    The rule the three posting paths each hold to separately, asserted once as the rule it
+    is. Every one of them calls the poster immediately before a verdict that is actually
+    going out and never before deciding there is one, so an approval that applies no
+    penalty and sanctions nobody never calls it at all. `finalize_penalty_review` builds
+    the poster unconditionally, so building one must itself cost nothing.
+    """
 
     async def _boom(*_a, **_k):
         raise AssertionError("the context was read for a banner nobody asked for")
 
     monkeypatch.setattr(vas, "_get_announcement_context", _boom)
-    vas.banner_for_round(_Bot(_Channel()), ":memory:", 1)  # built, never called
+    channel = _Channel()
+    vas.banner_for_round(_Bot(channel), ":memory:", 1)  # built, never called
+    assert channel.sent == []
+
+
+async def test_a_penalty_run_with_nothing_applied_never_reaches_the_poster(flow, monkeypatch):
+    """The guard is above the poster, not below it."""
+
+    async def _boom(*_a, **_k):
+        raise AssertionError("a banner was built for an empty run")
+
+    monkeypatch.setattr(vas, "_banner_once", _boom)
+    channel = _Channel()
+    await vas.post_penalty_announcements(_Bot(channel), _State(0), [])
+    await vas.post_appeal_announcements(_Bot(channel), _State(0), [])
+    assert channel.sent == []
 
 
 async def test_a_poster_survives_a_round_with_no_context(flow, monkeypatch):
@@ -338,13 +360,13 @@ def sanction(monkeypatch, tmp_path):
     """`post_autosanction_announcement` with its database and its card stubbed out."""
     png = tmp_path / "banner.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    state = {"sent_verdicts": [], "png": png}
+    state = {"sent_verdicts": [], "png": png, "row": dict(CONTEXT)}
 
     @contextlib.asynccontextmanager
     async def _connection(_db_path):
         class _Cursor:
             async def fetchone(self):
-                return dict(CONTEXT)
+                return state["row"]
 
         class _Db:
             async def execute(self, *_a, **_k):
@@ -412,6 +434,20 @@ async def test_a_round_sanctioning_three_drivers_raises_one_banner(sanction):
     banners = [entry for entry in channel.sent if entry[1] is not None]
     assert len(banners) == 1
     assert len(sanction["sent_verdicts"]) == 3
+
+
+async def test_a_sanction_that_is_never_announced_raises_no_banner(sanction):
+    """A division with no verdicts channel posts neither the sanction nor a header.
+
+    The `head()` call sits below every early return of `post_autosanction_announcement`
+    for exactly this: a banner over a sanction that was skipped names a round to nobody.
+    """
+    sanction["row"] = dict(CONTEXT, penalty_channel_id=None)
+    channel = _Channel()
+    await _autosanction(_Bot(channel), channel)
+
+    assert channel.sent == []
+    assert sanction["sent_verdicts"] == []
 
 
 async def test_sanctions_of_a_penalty_approval_fall_under_its_banner(sanction):

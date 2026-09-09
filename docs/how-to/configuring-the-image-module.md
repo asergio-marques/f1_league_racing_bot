@@ -597,7 +597,7 @@ This comes last on purpose. Switching something on before its drawing file is bi
 Two of the nine *add* a picture rather than replacing anything, so switching them on takes nothing away from what your drivers read today.
 
 - **The check-in call.** The message, the roster and the buttons all stay exactly as they were.
-- **The verdict banner.** It puts one header above the run of verdicts a review produced, naming the season, the division and the round — and the grand prix and its flag where your track list has a record for that round's circuit. Leave it off and the verdicts channel reads exactly as it does now.
+- **The verdict banner.** It puts one header above the run of verdicts a review produced, naming the season, the division and the round — and the grand prix and its flag where your track list has a record for that round's circuit. Leave it off and the verdicts channel reads exactly as it does now. **You only ever see one where something follows it** — approve a review with nothing staged, or finish a round where nobody was penalised and nobody hit an attendance threshold, and no banner is posted.
 
 **Verdicts and the verdict banner are two separate switches, and you want to know why before you use them.** The banner heads the batch; the verdict pictures are the decisions inside it. You can have either without the other. Keeping them apart also means a banner drawing that will not load can never stop a verdict being posted.
 
