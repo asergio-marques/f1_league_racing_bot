@@ -671,6 +671,33 @@ _SAMPLE_WEATHER_ROUNDS = {
 }
 
 
+def build_verdict_banner_drawing(root, *, case: str | None = None):
+    """The fabricated banner ``/images test verdict-banner`` draws.
+
+    `root` is unused: the type declares no collection to count. `case` of ``"no_track"``
+    draws the round that matched no track record, which is the only state the banner has
+    besides the ordinary one.
+    """
+    from services.image_verdict_banner_service import resolve_drawing
+
+    if case == "no_track":
+        return resolve_drawing(
+            division_name="Test Division",
+            round_number=1,
+            season_number=1,
+            division_tier=1,
+        )
+
+    return resolve_drawing(
+        division_name="Test Division",
+        round_number=1,
+        season_number=1,
+        division_tier=1,
+        race_name=SAMPLE_RESULTS_TRACK,
+        country_name="United Kingdom",
+    )
+
+
 def build_weather_drawing(root, template_key: str):
     """The fabricated forecast ``/images test weather-*`` draws.
 

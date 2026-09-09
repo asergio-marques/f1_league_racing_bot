@@ -98,7 +98,7 @@ async def _rows(db, sql: str, *params) -> list[tuple]:
 def _path_signature(path: Path) -> list:
     """A file's identity for fingerprinting: its name, its size and when it changed.
 
-    Never its content. Hashing fifteen templates and every asset a league supplies would
+    Never its content. Hashing sixteen templates and every asset a league supplies would
     cost more than the render this exists to replace, and size-and-mtime catches every
     edit that is not a byte-identical rewrite inside the same second.
     """

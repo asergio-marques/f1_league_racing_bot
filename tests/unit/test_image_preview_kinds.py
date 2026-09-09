@@ -20,7 +20,7 @@ from models.image_constants import (  # noqa: E402
     ROSTER_DRAWING_KINDS,
 )
 
-#: The eleven, written out rather than derived, so that adding a kind to the constant
+#: The twelve, written out rather than derived, so that adding a kind to the constant
 #: without deciding its three columns fails here.
 EXPECTED_KINDS = {
     "calendar",
@@ -29,6 +29,7 @@ EXPECTED_KINDS = {
     "standings",
     "attendance",
     "verdict",
+    "verdict-banner",
     "rsvp",
     "weather-p1",
     "weather-p2",
@@ -37,7 +38,7 @@ EXPECTED_KINDS = {
 }
 
 
-def test_all_eleven_kinds_are_classified():
+def test_all_twelve_kinds_are_classified():
     assert set(PREVIEW_KINDS) == EXPECTED_KINDS
 
 
@@ -70,11 +71,17 @@ def test_exactly_five_kinds_draw_a_roster():
     assert "rsvp" not in ROSTER_DRAWING_KINDS
 
 
-def test_the_six_roster_free_kinds_are_the_ones_a_bare_server_draws():
+def test_the_seven_roster_free_kinds_are_the_ones_a_bare_server_draws():
+    """`verdict-banner` is roster-free where `verdict` is not.
+
+    They draw the same round, but the banner names nobody — no driver, no team and no
+    badge — so it draws on a server that has signed up not one driver.
+    """
     roster_free = set(PREVIEW_KINDS) - ROSTER_DRAWING_KINDS
     assert roster_free == {
         "calendar",
         "rsvp",
+        "verdict-banner",
         "weather-p1",
         "weather-p2",
         "weather-p3",

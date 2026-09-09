@@ -132,7 +132,7 @@ def portrait_aspect(config) -> float:
     """The shape the league's lineup template draws driver portraits at. 1:1 when unreadable.
 
     The lineup is the only template carrying driver slots, so one file answers this and no
-    survey of the fifteen is needed. Every failure -- no configuration, a template directory
+    survey of the sixteen is needed. Every failure -- no configuration, a template directory
     that does not resolve, a file that will not parse, a lineup declaring no portrait slot at
     all -- lands on 1:1, which is what the bot shipped with and what a league that has
     re-shaped nothing is already using.

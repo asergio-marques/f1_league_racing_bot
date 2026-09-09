@@ -1,14 +1,14 @@
 """Static maps for the Image Module.
 
 These are code constants rather than tables because no command addresses an individual
-template's toggle: the toggle surface is the eight aspects, and the fifteen templates are
+template's toggle: the toggle surface is the nine aspects, and the sixteen templates are
 an implementation detail of what each aspect draws.
 """
 from __future__ import annotations
 
 # ── Templates ─────────────────────────────────────────────────────────────
 
-#: Config column -> default filename. The fifteen templates, in report order.
+#: Config column -> default filename. The sixteen templates, in report order.
 TEMPLATE_COLUMNS: dict[str, str] = {
     "calendar_template": "calendar_template.svg",
     "lineup_template": "lineup_template.svg",
@@ -25,6 +25,7 @@ TEMPLATE_COLUMNS: dict[str, str] = {
     "weather_p3_sprint_template": "weather_p3_sprint_template.svg",
     "weather_mystery_template": "weather_mystery_template.svg",
     "verdicts_template": "verdicts_template.svg",
+    "verdict_banner_template": "verdict_banner_template.svg",
 }
 
 #: Config column -> the subcommand name under ``/images template`` that sets it.
@@ -49,6 +50,7 @@ TEMPLATE_COMMAND_NAMES: dict[str, str] = {
     "weather_p3_sprint_template": "weather-p3-sprint",
     "weather_mystery_template": "weather-mystery",
     "verdicts_template": "verdicts",
+    "verdict_banner_template": "verdict-banner",
 }
 
 #: Config column -> human label used in a validity report. Must name the individual
@@ -69,6 +71,7 @@ TEMPLATE_LABELS: dict[str, str] = {
     "weather_p3_sprint_template": "Weather — phase 3 (sprint)",
     "weather_mystery_template": "Weather — mystery notice",
     "verdicts_template": "Verdicts",
+    "verdict_banner_template": "Verdict banner",
 }
 
 
@@ -84,9 +87,10 @@ ASPECTS: tuple[str, ...] = (
     "rsvp",
     "weather",
     "verdicts",
+    "verdict_banner",
 )
 
-#: Aspect -> the templates backing it. 1 + 1 + 2 + 2 + 1 + 1 + 6 + 1 = 15.
+#: Aspect -> the templates backing it. 1 + 1 + 2 + 2 + 1 + 1 + 6 + 1 + 1 = 16.
 ASPECT_TEMPLATES: dict[str, tuple[str, ...]] = {
     "calendar": ("calendar_template",),
     "lineup": ("lineup_template",),
@@ -103,6 +107,7 @@ ASPECT_TEMPLATES: dict[str, tuple[str, ...]] = {
         "weather_mystery_template",
     ),
     "verdicts": ("verdicts_template",),
+    "verdict_banner": ("verdict_banner_template",),
 }
 
 #: Aspect -> the optional module whose output it replaces, or None for aspects drawn
@@ -116,6 +121,7 @@ ASPECT_SOURCE_MODULE: dict[str, str | None] = {
     "rsvp": "attendance",
     "weather": "weather",
     "verdicts": "results",
+    "verdict_banner": "results",
 }
 
 ASPECT_LABELS: dict[str, str] = {
@@ -127,6 +133,7 @@ ASPECT_LABELS: dict[str, str] = {
     "rsvp": "Check-in call",
     "weather": "Weather forecasts",
     "verdicts": "Verdicts",
+    "verdict_banner": "Verdict banner",
 }
 
 #: The aspects whose toggle changes what the bot posts. An aspect is live once its
@@ -134,10 +141,10 @@ ASPECT_LABELS: dict[str, str] = {
 #: it has an `image_<aspect>_post` module wired into it, the calendar excepted, whose
 #: branch lives inline in `calendar_post_service`.
 #:
-#: All eight are live. The set is kept rather than dissolved into `ASPECTS` because it
+#: All nine are live. The set is kept rather than dissolved into `ASPECTS` because it
 #: is what the toggle reply and the `/images config view` footer read to decide whether
 #: to warn that an aspect records intent alone: with the set full, `PENDING_POSTING_ASPECTS`
-#: is empty and neither surface says anything, without either being edited. A ninth aspect
+#: is empty and neither surface says anything, without either being edited. A tenth aspect
 #: added ahead of its posting path gets that warning back by being left out of here.
 LIVE_POSTING_ASPECTS: frozenset[str] = frozenset(
     {
@@ -149,6 +156,7 @@ LIVE_POSTING_ASPECTS: frozenset[str] = frozenset(
         "rsvp",
         "weather",
         "verdicts",
+        "verdict_banner",
     }
 )
 
@@ -264,6 +272,7 @@ TEST_KIND_TEMPLATES: dict[str, tuple[str, ...]] = {
     "weather-p3": ("weather_p3_template", "weather_p3_sprint_template"),
     "weather-mystery": ("weather_mystery_template",),
     "verdicts": ("verdicts_template",),
+    "verdict-banner": ("verdict_banner_template",),
 }
 
 
@@ -346,7 +355,7 @@ NOTICE_CROP_POINT_OFF_CANVAS = "CROP_POINT_OFF_CANVAS"
 #:
 #: A catalogue names the *class* an image field draws from; the class names the column.
 #: The indirection exists so a catalogue never mentions a configuration column, and a
-#: column can be renamed without touching fifteen catalogues.
+#: column can be renamed without touching sixteen catalogues.
 ASSET_CLASS_DIRECTORIES: dict[str, str] = {
     "track": "track_image_directory",
     "team": "team_image_directory",
@@ -509,7 +518,7 @@ OTHER_ASSET_NAME = "other.svg"
 #: said.
 #:
 #: **What is deliberately not checked** (decided 2026-09-01): agreement *between* templates.
-#: `flag` is drawn by fourteen of the fifteen and `team` by seven, all from the same one file
+#: `flag` is drawn by fifteen of the sixteen and `team` by seven, all from the same one file
 #: per datum, so a league shaping flags 3:2 on the calendar and 2:1 on the standings has that
 #: file letterboxed on one of them and is not told. Checking it would refuse the first file
 #: of any re-shaping -- the other thirteen would still disagree with it -- and a league could
@@ -556,7 +565,7 @@ STRETCHABLE_ASSET_CLASSES: frozenset[str] = frozenset({"marker"})
 #: Not a rule any template must obey. `RATIO_CONSISTENT_ASSET_CLASSES` carries what is
 #: enforced, and it names no numbers at all. This table does two other jobs.
 #:
-#: It is what `resources/defaults/` is authored and verified against, so the fifteen shipped
+#: It is what `resources/defaults/` is authored and verified against, so the sixteen shipped
 #: templates and the artwork that fills them stay coherent with one another now that nothing
 #: in production forces it. And it is what a slot is compared with when a **packaged** file is
 #: drawn into it: a league that re-shapes a class still gets our 3:2 flags for every country
@@ -594,7 +603,7 @@ ASSET_ASPECT_TOLERANCE = 0.01
 #: draws. It replaces the ad-hoc `require_rounds` / `require_teams` / `require_mystery`
 #: flags each call site passed at 045, so that three separate rules — which parameters a
 #: command requires, whether a bare server may draw it, and what format its round must
-#: carry — are read from one table rather than restated eleven times.
+#: carry — are read from one table rather than restated twelve times.
 #:
 #: ``draws_roster`` is the load-bearing column and is settled by reading each builder, not
 #: by reading a specification. Two entries mislead anyone who assumes otherwise:
@@ -604,6 +613,8 @@ ASSET_ASPECT_TOLERANCE = 0.01
 #:     configured no team at all.
 #:   * ``verdict`` opens on ``context.drivers[0]`` and reads that driver's ``team_name``
 #:     for the badge — so it does not.
+#:   * ``verdict-banner`` draws the same round as ``verdict`` and names nobody at all — so
+#:     it draws on a server with no driver signed up, where the card beside it cannot.
 #:
 #: ``format_demanded`` is ``None`` where the kind accepts any round, ``False`` where a
 #: mystery round must be refused, and ``True`` where anything but one must be. The same
@@ -615,6 +626,7 @@ PREVIEW_KINDS: dict[str, dict[str, object]] = {
     "standings":       {"needs_round": True,  "draws_roster": True,  "format_demanded": None},
     "attendance":      {"needs_round": True,  "draws_roster": True,  "format_demanded": None},
     "verdict":         {"needs_round": True,  "draws_roster": True,  "format_demanded": None},
+    "verdict-banner":  {"needs_round": True,  "draws_roster": False, "format_demanded": None},
     "rsvp":            {"needs_round": True,  "draws_roster": False, "format_demanded": None},
     "weather-p1":      {"needs_round": True,  "draws_roster": False, "format_demanded": False},
     "weather-p2":      {"needs_round": True,  "draws_roster": False, "format_demanded": False},

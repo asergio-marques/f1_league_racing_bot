@@ -265,7 +265,7 @@ def test_the_class_records_no_shape_for_its_own_artwork():
 
 
 def test_every_image_type_admits_the_field():
-    """All fifteen, not the handful whose graphics seem to want one.
+    """All sixteen, not the handful whose graphics seem to want one.
 
     Which aspects carry a logo is a league's choice, expressed by which of their own
     templates declare the slot. A catalogue quietly lacking the field would leave one aspect
@@ -274,7 +274,7 @@ def test_every_image_type_admits_the_field():
     """
     from models.image_catalogues import CATALOGUES, DIVISION_LOGO_ASSET
 
-    assert len(CATALOGUES) == 15
+    assert len(CATALOGUES) == 16
     for key, catalogue in sorted(CATALOGUES.items()):
         assert "division_logo" in catalogue.optional, key
         assert catalogue.asset_class_for("division_logo") == DIVISION_LOGO_ASSET, key

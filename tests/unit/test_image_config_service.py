@@ -40,6 +40,7 @@ _MIGRATIONS = (
     "047_driver_portraits.sql",
     "048_division_logo_directory.sql",
     "051_per_tier_colours.sql",
+    "052_verdict_banner_template.sql",
 )
 
 
@@ -90,12 +91,12 @@ async def test_create_with_defaults_leaves_portraits_opt_in(service):
     assert cfg.pfp_daily_time == "03:00"
 
 
-async def test_create_with_defaults_inserts_exactly_eight_disabled_toggles(service):
+async def test_create_with_defaults_inserts_exactly_nine_disabled_toggles(service):
     await service.create_with_defaults(1)
     toggles = await service.get_toggles(1)
 
     assert set(toggles) == set(ASPECTS)
-    assert len(toggles) == 8
+    assert len(toggles) == 9
     assert not any(toggles.values())
 
 
@@ -131,7 +132,7 @@ async def test_allow_list_covers_all_settable_columns(service):
     # (SC-008). The three portrait toggles are booleans and are deliberately outside this
     # set -- they are written through `set_pfp_flag`, not the string-valued `set_field`.
     # The eighth asset directory is the division logo, added 2026-09-02.
-    assert len(SETTABLE_COLUMNS) == 29
+    assert len(SETTABLE_COLUMNS) == 30
     assert not (SETTABLE_COLUMNS & PFP_FLAG_COLUMNS)
     await service.create_with_defaults(1)
     for column in SETTABLE_COLUMNS:
@@ -391,10 +392,22 @@ _VALID_VERDICTS_SVG = (
 )
 
 
+#: The banner heads a batch of verdicts and names nobody: the division and the round are the
+#: whole of what it must carry.
+_VALID_VERDICT_BANNER_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="304">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b"</svg>"
+)
+
+
 def _sound_bytes(filename: str) -> bytes:
     """The soundest template for *filename* at the depth its type is checked to."""
     if filename == TEMPLATE_COLUMNS["verdicts_template"]:
         return _VALID_VERDICTS_SVG
+    if filename == TEMPLATE_COLUMNS["verdict_banner_template"]:
+        return _VALID_VERDICT_BANNER_SVG
     if filename in _WEATHER_BY_FILENAME:
         return _WEATHER_BY_FILENAME[filename]
     if filename == TEMPLATE_COLUMNS["calendar_template"]:

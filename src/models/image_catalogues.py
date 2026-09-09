@@ -791,12 +791,12 @@ class FieldCatalogue:
 def _with_division_logo(catalogue: FieldCatalogue) -> FieldCatalogue:
     """Admit an optional division-logo slot to *catalogue*, and return it.
 
-    Applied to all fifteen rather than to the handful whose graphics seem to want one:
+    Applied to all sixteen rather than to the handful whose graphics seem to want one:
     which aspects carry a logo is a league's choice, expressed by which of their own
     templates declare the slot. Nothing the bot ships declares it.
 
     Written once and wrapped around each constructor, rather than two more keywords in
-    fifteen calls. Fifteen is fifteen chances to miss one, and a catalogue quietly lacking
+    sixteen calls. Sixteen is sixteen chances to miss one, and a catalogue quietly lacking
     the field would not fail -- it would leave that one image type drawing no logo with
     nothing said, which is exactly what this class is least able to report (see
     `BLANK_FALLBACK_ASSET_CLASSES`). It wraps the call rather than rewriting the registry
@@ -1646,9 +1646,48 @@ VERDICTS_CATALOGUE = _with_division_logo(FieldCatalogue(
 ))
 
 
-#: Template column → its catalogue. Fifteen entries, one per image type; all fifteen — the
+
+# ── Verdict banner ────────────────────────────────────────────────────────
+#
+# The header of a batch of verdicts: one graphic above the run of cards a review produced,
+# naming the round the decisions below it were taken upon. It draws no verdict and knows of
+# no driver — the cards do that — so it declares no collection and no singleton, and holds
+# less than any other type of the module.
+#
+# `session_name` is **absent**, and that is the one field a reader of the verdict catalogue
+# would expect to find here. One review closes on a whole round and is free to sanction a
+# qualifying entry and a race entry in the same breath, so a banner naming one session would
+# misname half the cards beneath it. The round is as fine as the banner may be.
+#
+# `race_name`, `country_name` and `track_flag` are the round's optional trio, carried from
+# the forecasts unchanged: the grand prix name, the country written out, and the country
+# drawn as its flag. A template is free to declare any, all or none of them — the packaged
+# file declares the grand prix and the flag and declines the name, this league's file draws
+# all three — and a round whose circuit matches no track record on the server determines
+# every one of them to be nothing at once.
+VERDICT_BANNER_CATALOGUE = _with_division_logo(FieldCatalogue(
+    mandatory=frozenset({"division_name", "round_number"}),
+    optional=frozenset(
+        {
+            "season_number",
+            "season_number_group",
+            "division_tier",
+            "division_tier_group",
+            "race_name",
+            "race_name_group",
+            "country_name",
+            "country_name_group",
+            "track_flag",
+            "track_flag_group",
+        }
+    ),
+    assets={"track_flag": "flag"},
+))
+
+
+#: Template column → its catalogue. Sixteen entries, one per image type; all sixteen — the
 #: calendar, the lineup, the two results types, the two standings types, the two attendance
-#: types, the six weather types and the verdict — are populated.
+#: types, the six weather types, the verdict and its banner — are populated.
 CATALOGUES: dict[str, FieldCatalogue] = {
     column: FieldCatalogue() for column in TEMPLATE_COLUMNS
 }
@@ -1667,6 +1706,7 @@ CATALOGUES["weather_p3_template"] = WEATHER_P3_CATALOGUE
 CATALOGUES["weather_p3_sprint_template"] = WEATHER_P3_SPRINT_CATALOGUE
 CATALOGUES["weather_mystery_template"] = WEATHER_MYSTERY_CATALOGUE
 CATALOGUES["verdicts_template"] = VERDICTS_CATALOGUE
+CATALOGUES["verdict_banner_template"] = VERDICT_BANNER_CATALOGUE
 
 
 def sibling_keys(template_key: str) -> list[str]:

@@ -6,7 +6,7 @@ This guide is the **order to do things in**, from a fresh install to a season ru
 
 - **[Image Module](../../README.md#image-module)** in the main README — every command in full, and under **`/images template <kind>`**, the rules for the drawing files themselves.
 - **[resources/README.md](../../resources/README.md)** — what comes with the bot, and how it finds your artwork.
-- **[resources/defaults/templates/README.md](../../resources/defaults/templates/README.md)** — the fifteen drawing files, one by one.
+- **[resources/defaults/templates/README.md](../../resources/defaults/templates/README.md)** — the sixteen drawing files, one by one.
 
 You do not need to read those first. Start here.
 
@@ -14,7 +14,7 @@ You do not need to read those first. Start here.
 
 ## A note on two words
 
-**Template** — a drawing file the bot fills in. Think of a certificate with blanks: the design is fixed, the bot types the names and numbers into the gaps. There are fifteen, one per kind of picture. They all come with the bot; you can restyle them later.
+**Template** — a drawing file the bot fills in. Think of a certificate with blanks: the design is fixed, the bot types the names and numbers into the gaps. There are sixteen, one per kind of picture. They all come with the bot; you can restyle them later.
 
 **Aspect** — the bot's word for *a kind of output*, like the calendar or the results table. There are eight, and each has its own on/off switch. Unfortunately the word also turns up when talking about the shape of a picture, so in this guide "aspect" always means a kind of output, and artwork gets a plain **size** in pixels instead.
 
@@ -85,6 +85,7 @@ This is the step people skip, and then wonder why nothing appears. A picture nee
 | Check-in call | `attendance` | `/division rsvp-channel` | — |
 | Weather forecasts | `weather` | `/division weather-channel` | — |
 | Verdicts | `results` | `/division verdicts-channel` | — |
+| Verdict banner | `results` | `/division verdicts-channel` | — |
 
 Turn a missing module on with `/module enable <name>`. Set each channel per division — they are per division, not per server, so a league with three divisions sets three of each.
 
@@ -148,7 +149,7 @@ Anything you have not supplied is drawn from what the bot ships, so every pictur
 
 This folder is unlike the other seven, and you can skip it entirely — nothing the bot ships uses it.
 
-**You have to ask for it in a drawing file.** None of the fifteen drawings the bot ships has anywhere to put a logo, so copying files into `resources/league/division-logos` on its own changes nothing. Open a drawing file of your own, add an image box with the id `division_logo` wherever you want the logo to sit, and that is what turns the folder on. Any of the fifteen kinds of picture can carry one, and you choose which — brand your standings and leave your calendar plain if that is what you want. Adding a box to a drawing file belongs to step 5 below; come back here once you have.
+**You have to ask for it in a drawing file.** None of the sixteen drawings the bot ships has anywhere to put a logo, so copying files into `resources/league/division-logos` on its own changes nothing. Open a drawing file of your own, add an image box with the id `division_logo` wherever you want the logo to sit, and that is what turns the folder on. Any of the sixteen kinds of picture can carry one, and you choose which — brand your standings and leave your calendar plain if that is what you want. Adding a box to a drawing file belongs to step 5 below; come back here once you have.
 
 **One file per division, named for the division.** `Division 1` needs `division_1.svg`, `Tier 2 — Pro` needs `tier_2_pro.svg` — the same naming rule as everything else.
 
@@ -293,7 +294,7 @@ Fifteen of them, one per kind of picture, and they all come with the bot. You ca
 
 That folder is `resources/defaults/templates`, and `/images config template-directory` moves it. **It does not behave like the artwork folders in step 4, and the order matters:**
 
-1. Put the drawing files in your new folder first — at least the ones your switched-on outputs need. Copying all fifteen is the simplest thing to do.
+1. Put the drawing files in your new folder first — at least the ones your switched-on outputs need. Copying all sixteen is the simplest thing to do.
 2. *Then* run `/images config template-directory`.
 
 The command checks every drawing your switched-on outputs need before it stores anything, exactly as `/season review` does. If any is missing or unusable it **refuses** the change, tells you which ones and why, and leaves your existing folder in force. A drawing for an output you have switched **off** is not required — that output posts as text and draws nothing — and switching it on later checks its own drawings at that point. An empty artwork folder is harmless — the bot falls back to what it ships — but there is nothing behind a missing drawing file, so a half-filled folder would stop every picture being produced at all. That is why this one is checked and the other eight are not.
@@ -323,6 +324,7 @@ To use your own drawing file, put it in that folder and name it:
 | `/images template weather-p3-sprint` | `weather_p3_sprint_template.svg` |
 | `/images template weather-mystery` | `weather_mystery_template.svg` |
 | `/images template verdicts` | `verdicts_template.svg` |
+| `/images template verdict-banner` | `verdict_banner_template.svg` |
 
 **The bot checks the file before it accepts it.** If the name does not end in `.svg`, if the file is not in that folder, if it is damaged, or if it is missing something the picture needs, the command says no and keeps your old file. It tells you which of those it was. You cannot break things by naming the wrong file — the bot simply refuses it.
 
@@ -365,7 +367,7 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 
 > **The blanks for one kind of picture all have to be the same shape as each other.** The shape itself is yours to pick — draw every flag blank on a drawing at 2:1 and the bot is content. What it refuses is a drawing where they disagree: twenty-three flag blanks at 2:1 and one square. It names the odd one out, what shape it is, and what shape the rest are. The reason is that you supply one file per country, and it goes into every flag blank there is — so if two blanks differ, that file is stretched in one of them and no artwork of yours could put it right.
 >
-> Two things follow. **The bot does not compare one drawing against another**, so if you change a blank's shape, change it in every drawing that uses it — flags appear on fourteen of the fifteen. And **the bot's own stand-in pictures keep their original shape** (flags 3:2, the rest square), so after you re-shape a kind, anything you have not drawn yourself is stretched, and the bot says so on the graphic. The rule and the sizes are in [main README](../../README.md#image-module).
+> Two things follow. **The bot does not compare one drawing against another**, so if you change a blank's shape, change it in every drawing that uses it — flags appear on fifteen of the sixteen. And **the bot's own stand-in pictures keep their original shape** (flags 3:2, the rest square), so after you re-shape a kind, anything you have not drawn yourself is stretched, and the bot says so on the graphic. The rule and the sizes are in [main README](../../README.md#image-module).
 
 > **The weather drawings have a minimum.** Phases 2 and 3 each have two versions — one for sprint weekends, one for everything else — because a sprint weekend has more sessions to show. If a file does not have room for enough sessions, the bot refuses it straight away and tells you how many it needs. Having room to spare is fine; the extra is simply hidden.
 >
@@ -442,7 +444,7 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 > **If you have re-laid any of those three, rename the slot before your next season.** Give the text
 > the id `classification_label`, delete the `ROUND` lettering next to it, and give it room for a
 > phrase rather than a two-digit number. It is required on all three, and `round_number` is no
-> longer read on any of them — `/images config template-directory` checks all fifteen at once and
+> longer read on any of them — `/images config template-directory` checks all sixteen at once and
 > refuses the whole change while one still declares the old slot, so you find out then rather than
 > at season approval. Every other drawing keeps `round_number` unchanged; those are always about
 > one round.
@@ -582,7 +584,7 @@ It changes nothing by itself. It prints commands; you run the ones you want.
 /images config toggle aspect:<which output>
 ```
 
-Eight switches. `aspect` is a dropdown, so you pick rather than type; its eight entries are **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts** and **Verdicts** — the same names `/images config view` and `/season review` use for them. All start off. Each one swaps that output between a picture and the text the bot has always posted.
+Nine switches. `aspect` is a dropdown, so you pick rather than type; its nine entries are **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts**, **Verdicts** and **Verdict banner** — the same names `/images config view` and `/season review` use for them. All start off. Each one swaps that output between a picture and the text the bot has always posted.
 
 It is a **toggle**, not an on/off setting: run it on something that is off and it comes on, run it again and it goes back to text.
 
@@ -592,7 +594,22 @@ It is a **toggle**, not an on/off setting: run it on something that is off and i
 
 This comes last on purpose. Switching something on before its drawing file is big enough is what causes problems; by now everything is in place.
 
-The check-in call is the odd one out — it *adds* a picture rather than replacing anything. The message, the roster and the buttons all stay exactly as they were.
+Two of the nine *add* a picture rather than replacing anything, so switching them on takes nothing away from what your drivers read today.
+
+- **The check-in call.** The message, the roster and the buttons all stay exactly as they were.
+- **The verdict banner.** It puts one header above the run of verdicts a review produced, naming the season, the division and the round — and the grand prix and its flag where your track list has a record for that round's circuit. Leave it off and the verdicts channel reads exactly as it does now. **You only ever see one where something follows it** — approve a review with nothing staged, or finish a round where nobody was penalised and nobody hit an attendance threshold, and no banner is posted.
+
+**Verdicts and the verdict banner are two separate switches, and you want to know why before you use them.** The banner heads the batch; the verdict pictures are the decisions inside it. You can have either without the other. Keeping them apart also means a banner drawing that will not load can never stop a verdict being posted.
+
+> ⚠️ **The banner is a picture with no words beside it, so Discord's search will not find it.** Decide
+> this before you switch it on. The bot posts the banner as an attachment on an otherwise empty
+> message, because the drawing already says the season, the division and the round and a heading above
+> it would only repeat them. The cost is that searching your verdicts channel for "Round 8" no longer
+> finds that round's verdicts — the only handle a search has is the attachment's filename, which reads
+> `season5_division1_round8_verdict_banner.png`. There is no setting that changes this. If searchable
+> verdicts matter more to your league than a tidy channel, leave the banner off.
+
+**Attendance sanctions get a banner too.** The sackings and reserve moves the bot enforces itself go to the same verdicts channel, so they are headed like anything else. Approving a penalty review posts its verdicts and then enforces that round's attendance sanctions, and one banner covers the lot — you read one header over one run, not two. A round with no penalties at all, or a pardon or amendment that makes the bot re-check attendance, raises a banner of its own for whatever it sanctions.
 
 **Standings is the other odd one out: it posts two pictures where the text posts one message.** The driver standings go first and the constructor standings after, each carrying its heading and lifecycle label as message text and its table as an attachment. Both are drawn again and replaced on every occasion the standings were reposted before — a round first posted as provisional, a penalty or appeal phase closed, an amendment approved, a points change recalculating a round, and `/results standings sync`.
 
@@ -683,7 +700,7 @@ Worth running through just before `/season approve`.
 
 - [ ] `/images config view` shows Inkscape as installed
 - [ ] Every folder shows as found — no ⚠️ next to a folder
-- [ ] All fifteen drawing files show ✅
+- [ ] All sixteen drawing files show ✅
 - [ ] Every output you want is switched on, and none shows ⚠️
 - [ ] The module behind each output is enabled — results, attendance or weather
 - [ ] Every division has the channel set for each output you switched on

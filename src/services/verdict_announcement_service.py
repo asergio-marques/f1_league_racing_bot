@@ -84,16 +84,25 @@ def describe_penalty(penalty_type: str | None, time_seconds: int | None) -> str:
 
 
 async def _get_announcement_context(db_path: str, round_id: int) -> dict:
-    """Return season_number, division_name, penalty_channel_id for the round."""
+    """Return the round's season, division, verdicts channel, tier and track record.
+
+    The last three are the banner's, and are read here rather than in a query of its own:
+    this runs once on every review that applies anything, and the round row it already
+    reads carries them. The `tracks` join is the one every other posting path makes --
+    `image_verdict_post._round_context` and the weather path both -- so the banner cannot
+    disagree with the card beneath it about what a round is called.
+    """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT s.season_number, d.name AS division_name,
-                   drc.penalty_channel_id
+            SELECT s.season_number, d.name AS division_name, d.tier AS division_tier,
+                   drc.penalty_channel_id, r.round_number,
+                   t.gp_name AS race_name, t.country AS country_name
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
             LEFT JOIN division_results_config drc ON drc.division_id = d.id
+            LEFT JOIN tracks t ON t.name = r.track_name
             WHERE r.id = ?
             """,
             (round_id,),
@@ -104,8 +113,92 @@ async def _get_announcement_context(db_path: str, round_id: int) -> dict:
     return {
         "season_number": row["season_number"],
         "division_name": row["division_name"],
+        "division_tier": row["division_tier"],
         "penalty_channel_id": row["penalty_channel_id"],
+        "round_number": row["round_number"],
+        "race_name": row["race_name"],
+        "country_name": row["country_name"],
     }
+
+
+def _banner_once(bot, channel, server_id: int, ctx: dict):
+    """A callable that heads a run of verdicts with a banner, at most once.
+
+    **Lazy, and that is the point.** A run can produce nothing: a record whose result
+    context will not load is skipped, and every record of a run may be such a one. Posted
+    eagerly, the banner would then stand alone over an empty run. Called immediately before
+    the first verdict that actually goes out, it cannot.
+
+    **One of these covers a whole approval, not one function.** Approving a penalty review
+    posts the penalty verdicts and then, further down the same call, the attendance
+    sanctions that review's scoring triggered — into the same channel, for the same round.
+    They are one run of verdicts as a league reads them, so `finalize_penalty_review` builds
+    one poster with `banner_for_round` and hands it to both paths; the second finds it
+    already spent. An attendance sanction firing where no penalty was applied heads itself,
+    which is the case a per-function poster left bare (decided 2026-09-09).
+
+    Never raises, and never returns anything the caller must act on: a header failing must
+    not cost a league the decisions it heads.
+    """
+    posted = False
+
+    async def post() -> None:
+        nonlocal posted
+        if posted:
+            return
+        posted = True  # set before the attempt: one try per batch, whatever it returns
+        try:
+            from services import image_verdict_banner_post
+
+            drawing = image_verdict_banner_post.build_drawing(
+                season_number=ctx.get("season_number"),
+                division_name=ctx["division_name"],
+                division_tier=ctx.get("division_tier"),
+                round_number=ctx.get("round_number"),
+                race_name=ctx.get("race_name"),
+                country_name=ctx.get("country_name"),
+            )
+            await image_verdict_banner_post.try_post(bot, channel, server_id, drawing)
+        except Exception:
+            log.exception("verdict banner: could not head the batch for server %s", server_id)
+
+    return post
+
+
+def banner_for_round(bot, db_path: str, round_id: int):
+    """A shared banner poster for every verdict one approval will post.
+
+    The same callable as :func:`_banner_once`, resolving the round's context and channel on
+    the first call rather than being handed them. That is what lets a caller holding neither
+    — `finalize_penalty_review`, which knows only the round — build one poster and pass it
+    to the several paths that post verdicts beneath it.
+
+    Resolving lazily costs nothing where no verdict follows: an approval applying no penalty
+    and triggering no sanction never calls it, so the query is never made.
+    """
+    posted = False
+
+    async def post() -> None:
+        nonlocal posted
+        if posted:
+            return
+        posted = True  # set before the attempt: one try per approval, whatever it returns
+        try:
+            ctx = await _get_announcement_context(db_path, round_id)
+            if not ctx:
+                return
+            channel_id_raw = ctx.get("penalty_channel_id")
+            if channel_id_raw is None:
+                return  # no verdicts channel configured — skip silently
+            channel = bot.get_channel(int(channel_id_raw))
+            if channel is None:
+                return
+            server_id = getattr(getattr(channel, "guild", None), "id", 0)
+            await _banner_once(bot, channel, server_id, ctx)()
+        except Exception:
+            log.exception("verdict banner: could not head round %s", round_id)
+
+    return post
 
 
 async def _get_result_context(db_path: str, race_result_id: int | None, qual_result_id: int | None) -> dict:
@@ -279,11 +372,17 @@ async def post_penalty_announcements(
     bot,
     state,  # PenaltyReviewState
     applied_penalties: list,
+    *,
+    head=None,
 ) -> None:
     """Post one announcement per applied penalty to the verdicts channel.
 
     Skips silently if the verdicts channel is not configured or inaccessible.
     Does not block finalization on any error.
+
+    *head* is the approval's shared banner poster where the caller built one, so that the
+    attendance sanctions posted later in the same approval fall under this run's banner
+    rather than raising a second. Absent one, this run heads itself.
     """
     if not applied_penalties:
         return
@@ -313,6 +412,7 @@ async def post_penalty_announcements(
     division_name = ctx["division_name"]
     server_id = getattr(getattr(target_channel, "guild", None), "id", 0)
     KIND = VerdictKind.PENALTY
+    head_the_batch = head or _banner_once(bot, target_channel, server_id, ctx)
 
     for record in applied_penalties:
         try:
@@ -357,6 +457,8 @@ async def post_penalty_announcements(
                 else getattr(record, "team_role_id", None),
             )
 
+            await head_the_batch()
+
             await _send_verdict(
                 bot,
                 target_channel,
@@ -387,6 +489,8 @@ async def post_appeal_announcements(
     bot,
     state,  # PenaltyReviewState
     applied_corrections: list,
+    *,
+    head=None,
 ) -> None:
     """Post one announcement per applied appeal correction to the verdicts channel.
 
@@ -421,6 +525,7 @@ async def post_appeal_announcements(
     division_name = ctx["division_name"]
     server_id = getattr(getattr(target_channel, "guild", None), "id", 0)
     KIND = VerdictKind.APPEAL
+    head_the_batch = head or _banner_once(bot, target_channel, server_id, ctx)
 
     for record in applied_corrections:
         try:
@@ -464,6 +569,8 @@ async def post_appeal_announcements(
                 else getattr(record, "team_role_id", None),
             )
 
+            await head_the_batch()
+
             await _send_verdict(
                 bot,
                 target_channel,
@@ -498,10 +605,18 @@ async def post_autosanction_announcement(
     driver_display_name: str | None,
     sanction_type: str,  # "AUTOSACK" or "AUTORESERVE"
     threshold: int,
+    head=None,
 ) -> None:
     """Post a verdict-channel announcement for an autosack or autoreserve action.
 
     Skips silently if the verdicts channel is not configured or inaccessible.
+
+    **An attendance sanction is a verdict** (decided 2026-09-09) and is headed like one.
+    *head* is the run's shared banner poster: the sanctions of one round come from a loop in
+    `enforce_attendance_sanctions`, which builds one and passes it to every call, so a round
+    sanctioning three drivers raises one banner and not three. Where that run was itself
+    reached from a penalty approval, the poster is that approval's and is already spent by
+    the penalty verdicts, so the sanctions fall under their banner rather than a second.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -562,6 +677,13 @@ async def post_autosanction_announcement(
         )
 
     try:
+        #  After every check that could still make this a no-op, so a banner is never
+        #  posted over a sanction that is not announced.
+        if head is not None:
+            await head()
+        else:
+            await banner_for_round(bot, db_path, round_id)()
+
         await _send_verdict(
             bot,
             target_channel,

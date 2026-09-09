@@ -1268,7 +1268,7 @@ class SeasonCog(commands.Cog):
         Built from the same `AspectStatus` list `/images config view` renders, so a
         divergence between the two surfaces is impossible by construction. Template
         detail is summarised rather than repeated in full — a season review is already
-        long, and `/images config view` is where the fifteen lines belong.
+        long, and `/images config view` is where the sixteen lines belong.
         """
         from models.image_constants import ASPECT_LABELS
         from models.image_module import STATE_DISABLED, STATE_ENABLED
@@ -4748,7 +4748,7 @@ class SeasonCog(commands.Cog):
         # button where one will not draw; the fingerprint then proves the season is the one
         # that review described. A template broken here is therefore impossible: it was
         # broken at the review, and there was no button, or it has changed since, and the
-        # fingerprint refuses. Re-evaluating fifteen templates at the button would answer a
+        # fingerprint refuses. Re-evaluating sixteen templates at the button would answer a
         # question already answered — and its method was deleted while this call was left
         # behind, so the approval raised `AttributeError` rather than approving anything.
 

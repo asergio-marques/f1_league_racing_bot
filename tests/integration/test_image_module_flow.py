@@ -77,7 +77,7 @@ async def test_enable_creates_defaults(module_service, config_service):
     assert cfg.fastest_lap_colour == "#A020F0"
 
     toggles = await config_service.get_toggles(SERVER_ID)
-    assert len(toggles) == 8
+    assert len(toggles) == 9
     assert set(toggles) == set(ASPECTS)
     assert not any(toggles.values())
 
@@ -359,10 +359,22 @@ VERDICTS_SVG = (
 )
 
 
+#: The banner heads a batch of verdicts and names nobody, so the division and the round
+#: are the whole of what it must carry.
+VERDICT_BANNER_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="304">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b"</svg>"
+)
+
+
 def sound_bytes(template_key: str) -> bytes:
     """The soundest bytes for *template_key* at the depth its type is checked to."""
     if template_key == "verdicts_template":
         return VERDICTS_SVG
+    if template_key == "verdict_banner_template":
+        return VERDICT_BANNER_SVG
     if template_key in WEATHER_SVGS:
         return WEATHER_SVGS[template_key]
     if template_key == "results_qualifying_template":
@@ -386,7 +398,7 @@ def scratch_slot():
 
     Two tests below render RICH_TEMPLATE — a synthetic file belonging to no image type —
     and need a slot whose catalogue will not refuse it. Verdicts served that purpose while
-    it was unspecified; as of 043 every one of the fifteen carries a catalogue, so the
+    it was unspecified; as of 052 every one of the sixteen carries a catalogue, so the
     condition is staged rather than borrowed. What the tests prove is unchanged: a template
     renders, and its notices are raised and persisted.
 
@@ -420,7 +432,7 @@ async def test_template_relocation(module_service, config_service, template_dir)
 
     config = await config_service.get_config(SERVER_ID)
     reports = evaluate_all_templates(config, root=template_dir)
-    assert all(r.valid for r in reports.values()), "baseline: all fifteen resolve"
+    assert all(r.valid for r in reports.values()), "baseline: all sixteen resolve"
 
     # Point one template at a file that is not there.
     await config_service.set_field(SERVER_ID, "standings_drivers_template", "gone.svg")
@@ -428,7 +440,7 @@ async def test_template_relocation(module_service, config_service, template_dir)
     reports = evaluate_all_templates(config, root=template_dir)
 
     assert not reports["standings_drivers_template"].valid
-    assert sum(1 for r in reports.values() if r.valid) == 14
+    assert sum(1 for r in reports.values() if r.valid) == 15
     assert reports["standings_constructors_template"].valid, (
         "the other half of the standings pair must be unaffected"
     )
@@ -1309,7 +1321,7 @@ async def test_every_template_is_independently_relocatable(
         reports = evaluate_all_templates(config, root=template_dir)
 
         assert not reports[column].valid
-        assert sum(1 for r in reports.values() if r.valid) == 14, (
+        assert sum(1 for r in reports.values() if r.valid) == 15, (
             f"relocating {column} disturbed another template"
         )
 
@@ -1548,7 +1560,7 @@ async def test_review_and_approval_read_the_same_evaluation(config_service, conf
 
 
 @pytest.mark.asyncio
-async def test_missing_template_directory_reports_once_not_fifteen_times(
+async def test_missing_template_directory_reports_once_not_sixteen_times(
     config_service, configured
 ):
     """Existing 035 behaviour, retained: one shared reason, still one report each."""
@@ -1560,7 +1572,7 @@ async def test_missing_template_directory_reports_once_not_fifteen_times(
 
     assert len(lines) == len(TEMPLATE_COLUMNS)
     assert all(PLAIN_DIRECTORY_MISSING in line for line in lines)
-    # The folder is the fault, not the fifteen files, and the line says so.
+    # The folder is the fault, not the sixteen files, and the line says so.
     assert not any("can't be found where the bot was told to look" in line for line in lines)
 
 

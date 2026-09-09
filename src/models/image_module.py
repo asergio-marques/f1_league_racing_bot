@@ -45,6 +45,7 @@ class ImageConfig:
     weather_p3_sprint_template: str
     weather_mystery_template: str
     verdicts_template: str
+    verdict_banner_template: str
 
     # Asset location
     track_image_directory: str
@@ -183,7 +184,7 @@ class ValidityReport:
 
     #: Every per-tier colour slot this template marks (051), empty for a template that
     #: marks none — which is every template the bot ships. Recorded here because Layer 1
-    #: has already parsed the file and the alternative is reading all fifteen a second
+    #: has already parsed the file and the alternative is reading all sixteen a second
     #: time to ask one question about them.
     colour_slots: frozenset[str] = frozenset()
 

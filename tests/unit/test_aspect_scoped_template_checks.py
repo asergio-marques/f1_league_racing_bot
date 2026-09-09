@@ -43,16 +43,16 @@ def test_no_aspect_switched_on_wants_no_template():
     assert templates_of_enabled_aspects({aspect: False for aspect in ASPECTS}) == set()
 
 
-def test_every_aspect_switched_on_wants_all_fifteen():
+def test_every_aspect_switched_on_wants_all_sixteen():
     wanted = templates_of_enabled_aspects({aspect: True for aspect in ASPECTS})
 
     assert wanted == set(TEMPLATE_COLUMNS)
-    assert len(wanted) == 15
+    assert len(wanted) == 16
 
 
 @pytest.mark.parametrize("aspect", ASPECTS)
 def test_one_aspect_wants_exactly_its_own_templates(aspect):
-    """Read from ASPECT_TEMPLATES, so a ninth aspect is covered the day it is added."""
+    """Read from ASPECT_TEMPLATES, so a tenth aspect is covered the day it is added."""
     assert templates_of_enabled_aspects({aspect: True}) == set(ASPECT_TEMPLATES[aspect])
 
 

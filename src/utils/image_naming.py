@@ -60,6 +60,7 @@ IMAGE_SUBJECTS: dict[str, str] = {
     "weather_p3_sprint_template": "weather_p3_sprint",
     "weather_mystery_template": "weather_mystery",
     "verdicts_template": "verdict",
+    "verdict_banner_template": "verdict_banner",
 }
 
 #: The longest a division's own name may contribute. A league may call a division anything;

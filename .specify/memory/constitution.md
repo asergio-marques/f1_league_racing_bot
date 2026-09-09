@@ -1,6 +1,63 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-09 — v7.12.0 → v7.12.1: PATCH — a ninth output aspect makes three counts wrong]
+  Version change    : 7.12.0 → 7.12.1
+  Bump rationale    : PATCH. Three statements outside the Core Principles counted the output
+                      aspects and the templates behind them, and a ninth aspect added on
+                      2026-09-09 made all three wrong. This corrects the arithmetic and nothing
+                      else.
+
+                      No Core Principle is added, removed or redefined. Principle XIV is untouched
+                      in every rule it states; the sentence corrected under it counts the
+                      catalogues specified so far and governs nothing. No entity is added or
+                      amended either: `ImageAspectToggle` already admits an arbitrary aspect, being
+                      keyed on (server_id, aspect), so a ninth needed no schema of its own and gets
+                      no `New Entities` block. The project's policy reserves MINOR for "addition of
+                      a new principle, section, or materially expanded guidance", and recording
+                      that a ninth aspect adds no entity would be a new section for a correction
+                      that does not need one — the same reasoning v5.0.1 recorded.
+
+  Modified sections :
+    - Bot Behavior Standards → Principle XIV validity layers: "**All fifteen catalogues are
+      specified**" becomes sixteen. The rule around it is unchanged and is not spent: it still
+      binds the next image type added, and still requires the skip-rather-than-pass behaviour to
+      remain implemented and tested against a catalogue staged empty for the purpose.
+    - Data & State Management → `ImageAspectToggle`: "eight rows per server" becomes nine, and the
+      `aspect` enumeration gains `verdict_banner` after `verdicts`.
+    - Data & State Management → the paragraph beneath it: "eight aspects cover fifteen templates"
+      becomes "nine aspects cover sixteen templates". The rule it illustrates is untouched — the
+      aspect remains the unit a league toggles, the aspect-to-template mapping remains a code
+      constant rather than a table, and no command addresses an individual template's toggle.
+    - Governance footer: version and Last Amended date.
+
+  Added sections    : None
+  Removed sections  : None
+
+  Occasioned by     : verdict banners, added 2026-09-09 (migration 052). The verdicts channel gave
+                      a reader nothing to tell one round's decisions from another's: each verdict
+                      is posted on its own, and once the `verdicts` aspect is enabled the message
+                      text is cut down to the driver's mention alone. A banner heads the run.
+
+                      **It is a ninth aspect rather than a second template of `verdicts`, and that
+                      is the governance-relevant part.** An aspect is the unit a league toggles and
+                      the unit a template fault blocks, so folding the banner into `verdicts` would
+                      have made an unusable banner file stop a verdict being posted, and would have
+                      obliged a league content with its verdict cards to author a second file
+                      before it could keep them. Kept apart, a league may draw cards without
+                      banners, banners without cards, both, or neither.
+
+  Not changed, and deliberately:
+    - Every count inside a historical Sync Impact Report entry. Those record what was true when
+      each amendment was made, and an earlier entry states the rule directly: historical entries
+      retain the old names, being a record of what was decided when. Rewriting them would forge
+      the record rather than correct it.
+    - No template under `.specify/templates/` names an aspect or a template count, so none needed
+      updating. Checked: plan, spec, tasks, checklist, agent-file, constitution templates.
+
+  Follow-up TODOs   : None. The implementation, its tests, the image module wip-spec, the README
+                      and the league-facing guides were brought into line in the same change.
+
 [2026-09-08 — v7.11.0 → v7.12.0: MINOR — a second colour layer, weaker than a recolour, by which
 a league states the colours of each of its tiers]
   Version change    : 7.11.0 → 7.12.0
@@ -5585,7 +5642,7 @@ rejection at the earliest moment).
   state that it was not applied rather than presenting a template as fully valid (invariant 4).
 
 **A deeper layer is ratified per image type**, as that type's field catalogue is specified, and MUST
-NOT be enforced against an image type whose catalogue does not yet exist. **All fifteen
+NOT be enforced against an image type whose catalogue does not yet exist. **All sixteen
 catalogues are specified**, so no type is skipped by Layers 2 and 3 in practice. The rule stands
 none the less and is not spent: it binds the next type added, and the skip-rather-than-pass behaviour
 it requires MUST remain implemented and tested against a catalogue staged empty for the purpose. A
@@ -6928,10 +6985,10 @@ mechanics of the replacement are user-visible and are specified in
 - `asset_root` (TEXT, nullable) — filesystem root for league-supplied assets; null means the
   packaged defaults under `resources/defaults/` are used for every asset class.
 
-**ImageAspectToggle** (per server, per output aspect — eight rows per server):
+**ImageAspectToggle** (per server, per output aspect — nine rows per server):
 - `server_id` (TEXT)
 - `aspect` (TEXT) — one of `calendar`, `lineup`, `results`, `standings`, `attendance`,
-  `rsvp`, `weather`, `verdicts`.
+  `rsvp`, `weather`, `verdicts`, `verdict_banner`.
 - `enabled` (BOOLEAN, default false) — whether this aspect is drawn as an image when the
   module is enabled and its source module is enabled. Allows a league to keep text output
   for individual aspects.
@@ -6939,7 +6996,7 @@ mechanics of the replacement are user-visible and are specified in
 
 The aspect is the unit a league toggles; the templates backing it are an implementation
 detail of what the aspect draws. The mapping from aspect to template is a code constant,
-not a table: eight aspects cover fifteen templates (weather alone accounts for six), and
+not a table: nine aspects cover sixteen templates (weather alone accounts for six), and
 no command addresses an individual template's toggle. `source_module` is likewise a
 constant per aspect rather than a stored column, since it never varies per server.
 
@@ -7108,4 +7165,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.12.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-08
+**Version**: 7.12.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-09

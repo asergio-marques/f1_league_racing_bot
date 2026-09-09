@@ -97,7 +97,7 @@ class TemplateContext:
     #: Parsed trees shared between layers **within one evaluation** (research R5).
     #:
     #: Layer 1 parses to check well-formedness and the canvas; Layer 2 needs the same
-    #: tree to look for mandatory fields. Without sharing, a season review reads fifteen
+    #: tree to look for mandatory fields. Without sharing, a season review reads sixteen
     #: files twice. It is deliberately not memoised across evaluations: a manager edits a
     #: template and re-runs the check expecting to see the change.
     parsed: dict[Path, object] = field(default_factory=dict)
@@ -142,7 +142,7 @@ class ValidityLayer(Protocol):
 
 
 class ResolutionLayer:
-    """Layer 1 — the only mandatory layer, applying to all fifteen templates.
+    """Layer 1 — the only mandatory layer, applying to all sixteen templates.
 
     Three checks, whose failures must be mutually distinguishable: the file resolves
     inside the configured directory, it parses as well-formed SVG, and its root declares
@@ -760,7 +760,7 @@ def check_template(
     # Deliberately the precise reason, not `plain_reason`. This is the answer to a
     # manager naming a file: they are looking at that one template, in the moment they
     # can fix it, and "which field" or "which path" is what they need. The season review
-    # and `/images config view` survey fifteen at once and speak plainly instead.
+    # and `/images config view` survey sixteen at once and speak plainly instead.
     detail = report.reason or f"{label} is not usable."
     return Problem(
         kind=_problem_kind_for(report),
@@ -949,10 +949,10 @@ def evaluate_all_templates(
     root: Path | None = None,
     layers: list[ValidityLayer] | None = None,
 ) -> dict[str, ValidityReport]:
-    """Evaluate all fifteen templates.
+    """Evaluate all sixteen templates.
 
     When the template directory itself does not resolve, every template is reported
-    invalid against that one shared reason rather than producing fifteen near-identical
+    invalid against that one shared reason rather than producing sixteen near-identical
     file-not-found lines. Each template still receives its own report, so the caller's
     rendering is unchanged.
     """
@@ -978,7 +978,7 @@ def evaluate_all_templates(
     # The precise fault is written here and nowhere else. A league is shown
     # `plain_reason` — a sentence they can act on, with no field id, layer number or
     # path in it — so the engineering text has to survive somewhere, and this is where.
-    # One shared directory fault is logged once, not fifteen times, for the same reason
+    # One shared directory fault is logged once, not sixteen times, for the same reason
     # the reports themselves share it.
     if directory_problem is not None:
         log.info("image validity: no template is usable: %s", directory_problem)
@@ -1123,7 +1123,7 @@ def blocking_template_problems(
     One rule, applied by `/season review` and `/season approve` alike so the two cannot
     disagree: **a broken template blocks only where the aspect drawing it is on.** A
     league that never switched verdicts on is not stopped by a verdicts template it has
-    no use for, and used to be — `check_all_templates` surveys all fifteen regardless,
+    no use for, and used to be — `check_all_templates` surveys all sixteen regardless,
     which is right for the question "does this folder hold every drawing?" and wrong for
     "may this season run?".
 
@@ -1187,7 +1187,7 @@ def colour_shortfall(
 
     Measured **per template, against the slots that template actually marks**, so a
     template marking none demands nothing and can never be blocked by this — which is what
-    makes the feature optional on all fifteen kinds and mandatory on none.
+    makes the feature optional on all sixteen kinds and mandatory on none.
 
     A league with no divisions yet demands nothing either: there is no tier to want a
     colour, and reporting a shortfall against an empty season would block a configuration

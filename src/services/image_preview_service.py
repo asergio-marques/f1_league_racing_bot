@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 
 #: The reasons a preview refuses, in the order they are evaluated. A caller reads the
 #: reason; a league manager reads the message. Both come from one raise, so the two cannot
-#: drift apart across eleven commands.
+#: drift apart across twelve commands.
 
 #: Withdrawn at 046 as a *refusal*. A server holding no season now draws a fabricated
 #: league instead, so nothing raises this any more; the name survives only because callers
@@ -106,12 +106,12 @@ class DirectoryFault:
 
 @dataclass
 class PreviewContext:
-    """Everything the eleven previews resolve in common.
+    """Everything the twelve previews resolve in common.
 
     The context is deliberately **self-sufficient**: every datum a builder draws is on it,
     and no builder reaches back to the database for something the context could carry.
     That is what lets one context invented wholesale — a league with no row behind it at
-    all — flow through all eleven builders unchanged (046).
+    all — flow through all twelve builders unchanged (046).
     """
 
     server_id: int
@@ -1212,6 +1212,47 @@ async def build_verdict_preview(bot, context: PreviewContext):
             )
         )
     return requests
+
+
+# ── Verdict banner ────────────────────────────────────────────────────────
+
+
+async def build_verdict_banner_preview(bot, context: PreviewContext):
+    """The banner that heads a batch of verdicts for the named round.
+
+    Fabricates nothing at all, which no other preview can say: a banner draws the season,
+    the division and the round, and every one of those is a fact the server already holds.
+    It names no driver either, which is why it previews on a server that has signed up
+    none — the verdict card beside it opens on `context.drivers[0]` and cannot.
+
+    The grand prix and the country are read the way every posting path reads them, through
+    the shared helpers, so a preview cannot disagree with what the bot will post.
+    """
+    from services.image_verdict_banner_service import build_fill_spec, resolve_drawing
+
+    round_obj = context.round
+    if round_obj is None:
+        return []
+
+    #  A mystery round conceals its circuit, so `_race_name` answers with the mystery
+    #  phrase and `_country_of` with nothing. The banner draws the phrase and drops the
+    #  flag with its group, which is the same pair of answers the check-in call takes.
+    drawing = resolve_drawing(
+        division_name=context.division_name,
+        round_number=round_obj.round_number,
+        season_number=context.season_number,
+        division_tier=context.division_tier,
+        race_name=await _race_name(bot, context),
+        country_name=await _country_of(bot, round_obj),
+    )
+
+    return [
+        (
+            "Verdict banner",
+            "verdict_banner_template",
+            _spec_with_faults(build_fill_spec, drawing, context),
+        )
+    ]
 
 
 # ── Weather ───────────────────────────────────────────────────────────────

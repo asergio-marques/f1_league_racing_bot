@@ -30,6 +30,7 @@ from services.image_preview_service import (  # noqa: E402
     build_results_preview,
     build_rsvp_preview,
     build_standings_preview,
+    build_verdict_banner_preview,
     build_verdict_preview,
     build_weather_preview,
     resolve_context,
@@ -183,7 +184,7 @@ async def league(db_path):
     return division_id
 
 
-#: kind -> (resolve kwargs, builder). The eleven, as the contract lists them.
+#: kind -> (resolve kwargs, builder). The twelve, as the contract lists them.
 KINDS = {
     "calendar": (dict(require_rounds=True), lambda b, c: build_calendar_preview(b, c)),
     "lineup": (dict(require_teams=True), lambda b, c: build_lineup_preview(b, c)),
@@ -203,6 +204,11 @@ KINDS = {
     "verdict": (
         dict(round_number=1, require_teams=True),
         lambda b, c: build_verdict_preview(b, c),
+    ),
+    #  No `require_teams`: the banner names nobody and draws on a bare division.
+    "verdict-banner": (
+        dict(round_number=1),
+        lambda b, c: build_verdict_banner_preview(b, c),
     ),
     "weather-p1": (
         dict(round_number=1, require_mystery=False),
@@ -244,7 +250,7 @@ async def test_every_preview_reaches_a_png(bot, league, kind, tmp_path):
             assert width > 0 and height > 0, f"{kind} / {label} rastered to nothing"
 
 
-async def test_the_eleven_kinds_are_all_covered():
+async def test_the_twelve_kinds_are_all_covered():
     """A kind added to the command surface without a raster check would slip through."""
     from cogs.image_cog import ImageCog
 

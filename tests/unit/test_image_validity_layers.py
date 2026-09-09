@@ -3,7 +3,7 @@
 Written against specs/035-image-module/contracts/validity-layers.md and Constitution
 Principle XIV.9. Layer 1 (Resolution) is the only layer implemented in this increment;
 its three failure modes must be mutually distinguishable, and a missing directory must
-short-circuit rather than produce fifteen identical file-not-found lines.
+short-circuit rather than produce sixteen identical file-not-found lines.
 
 The four extension-point invariants (stable surface, specific attribution, declared depth,
 no silent pass) are tested in this file too, added by T029-T031.
@@ -37,7 +37,7 @@ from services.image_validity_service import (  # noqa: E402
     evaluate_template,
 )
 
-#: One file written to all fifteen template slots, so it must satisfy **every** populated
+#: One file written to all sixteen template slots, so it must satisfy **every** populated
 #: catalogue at once. The round fields are the calendar's (037); the reserve block is the
 #: lineup's (038). The lineup's team fields are deliberately absent: they are keyed by the
 #: league's own teams and are unknowable with no division in view, which is exactly why
@@ -242,10 +242,23 @@ VERDICTS_SVG = (
 )
 
 
+#: The banner heads a batch of verdicts and names nobody, so the division and the round
+#: are the whole of what it must carry. A bare canvas will not do: it is a sibling of the
+#: standings and results templates, and the shared VALID_SVG declares their fields.
+VERDICT_BANNER_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="304">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b"</svg>"
+)
+
+
 def sound_bytes(template_key: str) -> bytes:
     """The soundest bytes for *template_key* at the depth its type is checked to."""
     if template_key == "verdicts_template":
         return VERDICTS_SVG
+    if template_key == "verdict_banner_template":
+        return VERDICT_BANNER_SVG
     if template_key == "results_qualifying_template":
         return RESULTS_QUALIFYING_SVG
     if template_key == "results_race_template":
@@ -265,7 +278,7 @@ def sound_bytes(template_key: str) -> bytes:
 
 #: The image types whose catalogue is populated, and to which Layer 2 therefore applies.
 #: Every other type is checked to Layer 1 alone and must be *reported* as such (XIV.9.4).
-#: As of 043 that is **all fifteen** — the verdict was the last to be specified.
+#: As of 052 that is **all sixteen** — the verdict banner was the last to be specified.
 POPULATED = {
     "calendar_template",
     "lineup_template",
@@ -282,6 +295,7 @@ POPULATED = {
     "weather_p3_sprint_template",
     "weather_mystery_template",
     "verdicts_template",
+    "verdict_banner_template",
 }
 
 #: The key a test *empties* when it needs a type with no catalogue at all. No type is
@@ -327,7 +341,7 @@ def _config(template_directory: str, **overrides) -> ImageConfig:
 
 @pytest.fixture()
 def templates(tmp_path):
-    """A directory carrying all fifteen templates, each valid."""
+    """A directory carrying all sixteen templates, each valid."""
     directory = tmp_path / "templates"
     directory.mkdir()
     for key, filename in TEMPLATE_COLUMNS.items():
@@ -344,13 +358,13 @@ def _evaluate(config, root, template_key):
 # ── T019: Layer 1's three failure modes are distinguishable ───────────────
 
 
-def test_all_fifteen_templates_valid_when_present(tmp_path, templates):
+def test_all_sixteen_templates_valid_when_present(tmp_path, templates):
     config = _config("templates")
     for template_key in TEMPLATE_COLUMNS:
         report = _evaluate(config, tmp_path, template_key)
         assert report.valid, f"{template_key}: {report.reason}"
         assert report.failed_layer is None
-        # All fifteen carry a catalogue as of 043, so Layers 2 and 3 both apply and every
+        # All sixteen carry a catalogue as of 052, so Layers 2 and 3 both apply and every
         # sound template reaches the bounds check.
         expected = LAYER_BOUNDS if template_key in POPULATED else LAYER_RESOLUTION
         assert report.depth_checked == expected, template_key
@@ -442,17 +456,17 @@ def test_one_bad_template_does_not_affect_the_others(tmp_path, templates):
 # ── T020: missing directory short-circuits ────────────────────────────────
 
 
-def test_missing_directory_reported_once_not_fifteen_times(tmp_path):
+def test_missing_directory_reported_once_not_sixteen_times(tmp_path):
     from services.image_validity_service import evaluate_all_templates
 
     config = _config("templates_that_do_not_exist")
     reports = evaluate_all_templates(config, root=tmp_path)
 
-    assert len(reports) == 15, "every template must still receive a report"
+    assert len(reports) == 16, "every template must still receive a report"
     assert all(not r.valid for r in reports.values())
 
     reasons = {r.reason for r in reports.values()}
-    assert len(reasons) == 1, "one shared directory-level reason, not fifteen"
+    assert len(reasons) == 1, "one shared directory-level reason, not sixteen"
     assert "director" in reasons.pop().lower()
 
 
@@ -462,16 +476,16 @@ def test_present_directory_does_not_short_circuit(tmp_path, templates):
     (templates / "calendar_template.svg").unlink()
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
 
-    assert len(reports) == 15
+    assert len(reports) == 16
     assert not reports["calendar_template"].valid
-    assert sum(1 for r in reports.values() if r.valid) == 14
+    assert sum(1 for r in reports.values() if r.valid) == 15
 
 
 def test_directory_escaping_project_root_is_reported_not_raised(tmp_path):
     from services.image_validity_service import evaluate_all_templates
 
     reports = evaluate_all_templates(_config("../../elsewhere"), root=tmp_path)
-    assert len(reports) == 15
+    assert len(reports) == 16
     assert all(not r.valid for r in reports.values())
 
 
@@ -600,7 +614,7 @@ def test_every_template_label_is_unique():
     """Attribution is only specific if no two templates share a label."""
     from models.image_constants import TEMPLATE_LABELS
 
-    assert len(set(TEMPLATE_LABELS.values())) == len(TEMPLATE_LABELS) == 15
+    assert len(set(TEMPLATE_LABELS.values())) == len(TEMPLATE_LABELS) == 16
 
 
 # ── Invariant 3: declared depth (T030, FR-028b, SC-009) ───────────────────
@@ -955,14 +969,14 @@ def test_absent_converter_makes_every_enabled_aspect_invalid(tmp_path, templates
         assert "/images" not in line
 
 
-def test_all_eight_aspects_are_always_reported(tmp_path, templates):
+def test_all_nine_aspects_are_always_reported(tmp_path, templates):
     from services.image_validity_service import build_aspect_statuses, evaluate_all_templates
 
     reports = evaluate_all_templates(_config("templates"), root=tmp_path)
     statuses = build_aspect_statuses({}, reports)
 
     assert [s.aspect for s in statuses] == list(ASPECTS)
-    assert len(statuses) == 8
+    assert len(statuses) == 9
 
 
 # ── T014 / T042: Layer 2 (Catalogue conformance), added by 036 ────────────
@@ -1013,7 +1027,7 @@ def catalogue_override():
 def unspecified(catalogue_override):
     """Empty :data:`UNSPECIFIED_KEY`'s catalogue, standing for a type with none.
 
-    All fifteen catalogues are populated as of 043, so a type checked to Layer 1 alone no
+    All sixteen catalogues are populated as of 052, so a type checked to Layer 1 alone no
     longer occurs on its own. What that case proves — that Layer 2 *skips* rather than
     passes, and that the depth reported says so — still has to hold for the next type
     specified, so the condition is staged here instead of being deleted with the last
@@ -1465,7 +1479,7 @@ def test_an_unknown_field_is_not_judged():
 def test_two_templates_may_disagree_with_each_other_about_a_class(tmp_path):
     """A decided gap, not an oversight (2026-09-01) — do not "fix" this test.
 
-    `flag` is drawn by fourteen of the fifteen templates from one file per country, so a
+    `flag` is drawn by fifteen of the sixteen templates from one file per country, so a
     league shaping flags 3:2 on the calendar and 2:1 on the standings genuinely does get that
     file letterboxed on one of them, and is not told. Checking it would refuse the first file
     of any re-shaping — the other thirteen would still disagree with it — and a league could

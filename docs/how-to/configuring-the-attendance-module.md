@@ -162,7 +162,7 @@ Set either to `0` to switch it off.
 
 > **You can only have one of them.** Setting auto-reserve while auto-sack is active is refused, and the other way round. If you want to swap, set the one you have to `0` first — the refusal tells you which command to run.
 
-Either action is announced in the division's verdicts channel, the same place your penalty decisions go, so your league sees why a driver moved. The lineup post is redrawn to match, and the sheet for that same round is reposted straight away with the driver marked as having reached the limit.
+Either action is announced in the division's verdicts channel, the same place your penalty decisions go, so your league sees why a driver moved. The lineup post is redrawn to match, and the sheet for that same round is reposted straight away with the driver marked as having reached the limit. Where the image module's `Verdict banner` switch is on, these are headed like any other verdict. If the sanction came out of approving a penalty review, it falls under that approval's banner alongside the penalties; if it fired on its own — a clean round, or a pardon that made the bot re-check attendance — it gets a banner of its own.
 
 **Auto-reserve needs somewhere to put them.** If a division has no Reserve team, the sanction is skipped **silently** — nothing is posted to the verdicts channel, nothing to the log channel, nothing anywhere you can see; it reaches only the bot's own log file on the host. A driver already in the Reserve team is left alone, equally silently.
 
