@@ -738,7 +738,7 @@ Historical data is always retained. How much configuration a disable actually cl
 
 > **Disabling `results` disables `attendance` with it**, where attendance is on. The reply names only results; the cascade is recorded in the log channel and audited as `ATTENDANCE_MODULE_CASCADE_DISABLED`.
 
-> **Disabling `weather` cancels more than the weather jobs.** Job cancellation is scoped by round rather than by kind, so it also removes the result-submission job and all three RSVP jobs for every remaining round of an active or setup season. Nothing recreates them short of `/season approve`. See [known issues](docs/wip-specs/known_issues.md).
+> **Disabling `weather` cancels more than the weather jobs.** Job cancellation is scoped by round rather than by kind, so it also removes the result-submission job and all three RSVP jobs for every remaining round of an active or setup season. Nothing recreates them short of `/season approve`. See [#117](https://github.com/asergio-marques/f1_league_racing_bot/issues/117).
 
 Enabling is guarded where disabling is not: `results` and `attendance` both refuse to be enabled while a season is ACTIVE, and neither refuses to be disabled. See [known issues](docs/wip-specs/known_issues.md).
 
@@ -953,7 +953,7 @@ All three of the above must be set before `/signup open` will run, and — while
 
 Deprecated alias retained for backwards compatibility; prefer `/signup base-role` and `/signup complete-role`.
 
-> **`/signup config channel` is non-functional.** It is retained as a deprecated alias but raises `TypeError` on invocation and sets nothing. Use `/signup channel`. See [known issues](docs/wip-specs/known_issues.md).
+> **`/signup config channel` is non-functional.** It is retained as a deprecated alias but raises `TypeError` on invocation and sets nothing. Use `/signup channel`. See [#124](https://github.com/asergio-marques/f1_league_racing_bot/issues/124).
 
 #### `/signup config view` — View current signup configuration
 *Access: Trusted admin*
