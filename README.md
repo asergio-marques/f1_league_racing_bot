@@ -1012,7 +1012,7 @@ Refused unless the signup channel, base role and completion role are all set and
 
 No parameters. If drivers are currently in progress you will be prompted to confirm; the confirmation lists everyone in `PENDING_SIGNUP_COMPLETION`, `PENDING_ADMIN_APPROVAL` and `PENDING_DRIVER_CORRECTION`, but only drivers in `PENDING_SIGNUP_COMPLETION` are transitioned to Not Signed Up. Drivers awaiting approval or correction retain their state and may still be approved after the window has closed.
 
-Refused outright while an auto-close timer set by `/signup open close_time:` is armed. See [known issues](docs/wip-specs/known_issues.md).
+Refused outright while an auto-close timer set by `/signup open close_time:` is armed. See [#125](https://github.com/asergio-marques/f1_league_racing_bot/issues/125).
 
 #### `/signup unassigned list` — List all Unassigned drivers seeded by lap time
 *Access: Trusted admin*
