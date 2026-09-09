@@ -60,6 +60,8 @@ it only to place it; the rules governing it belong to its own specification.
 - Five modules shall be available, each specified in its own document: signup, results and standings, attendance, weather, and image generation.
 - Every module shall be disabled upon a server until a server administrator enables it. A bot with no module enabled holds a calendar and nothing more.
 - The rules governing a module — what enabling it requires, what disabling it clears, and what it depends upon — belong to that module's specification.
+- A disabled module shall produce nothing. While a module is disabled the bot shall neither compute, record nor post any of that module's output, whatever the path arrives at it — a scheduled job, a restart, or a command that amends work arranged while the module was still enabled.
+    - Nothing done while a module was disabled shall be recorded as that module's work, so that enabling the module later does not find its work already done.
 - Which modules are enabled shall be displayed in the season review.
 - Seasons, divisions, rounds, tracks, teams and drivers are foundational and shall not be disabled.
 - Stewarding, statistics and help are recorded as intended modules and are not built.
