@@ -58,12 +58,17 @@ off, or failing to produce it while switched on. Fix before a real season runs.
 **High** — A command or a pipeline does not do its job. The league is blocked, or told something
 untrue, but can see that something is wrong, or can put it right by running something again.
 
-**Medium** — The outcome is correct but described wrongly. Or a way to read something back, or to
-trigger it by hand, is missing. Or the code and the documents disagree, so a decision is owed
-before either can be trusted.
+**Medium** — The outcome is correct but described wrongly. Or a way to trigger something by hand
+is missing, so a pipeline that has stalled cannot be restarted and the loss is terminal for that
+round or season. Or the code and the documents disagree, so a decision is owed before either can
+be trusted.
 
-**Low** — Nobody loses anything. Cosmetic duplicates, wasted work, internal-only detail, dead
-code, code with no live caller, and gaps in test naming or coverage.
+**Low** — Nobody loses anything. Cosmetic duplicates, wasted work, a setting that works but
+cannot be read back, internal-only detail, dead code, code with no live caller, and gaps in test
+naming or coverage.
+
+A missing surface splits between the two. A value you cannot see is an annoyance and is Low; a
+pipeline you cannot restart by hand is a dead end and is Medium.
 
 ### Calibration
 
@@ -76,6 +81,7 @@ Real cases, and why each landed where it did.
 | [#110](https://github.com/asergio-marques/f1_league_racing_bot/issues/110) | High | A configured setting is silently discarded, and the pipeline runs on the wrong one |
 | [#112](https://github.com/asergio-marques/f1_league_racing_bot/issues/112) | Medium | Right outcome, wrong self-description |
 | [#115](https://github.com/asergio-marques/f1_league_racing_bot/issues/115) | Low | The damage self-cleans; a duplicated notice is all that survives |
+| [#118](https://github.com/asergio-marques/f1_league_racing_bot/issues/118) | Low | A setting that is applied correctly but has no command to read it back |
 
 Do not carry a priority across from an older record without re-deriving it. Both of the mistakes
 worth learning from went in opposite directions: an entry filed as middling turned out to break a
