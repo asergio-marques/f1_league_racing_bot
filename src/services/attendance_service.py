@@ -1392,8 +1392,18 @@ async def enforce_attendance_sanctions(
     division_id: int,
     server_id: int,
     season_id: int,
+    head=None,
 ) -> None:
-    """Evaluate every full-time driver against autosack/autoreserve thresholds (FR-022–FR-027)."""
+    """Evaluate every full-time driver against autosack/autoreserve thresholds (FR-022–FR-027).
+
+    *head* is the banner poster for the run of verdicts this belongs to, an attendance
+    sanction being a verdict and headed like one (decided 2026-09-09). A penalty approval
+    reaches this further down the same call that posted its penalty verdicts and passes
+    **its** poster, already spent, so the sanctions fall under that banner rather than
+    raising a second. Reached any other way — a recalculation after a pardon or an amendment
+    — this builds one of its own, which is the case that would otherwise post sanctions
+    with nothing above them.
+    """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT autoreserve_threshold, autosack_threshold FROM attendance_config WHERE server_id = ?",
@@ -1432,6 +1442,8 @@ async def enforce_attendance_sanctions(
 
     from services.placement_service import PlacementService
     from services import verdict_announcement_service as _vas
+    if head is None:
+        head = _vas.banner_for_round(bot, db_path, round_id)
     placement: PlacementService = bot.placement_service  # type: ignore[attr-defined]
     acting_id = bot.user.id
     acting_name = str(bot.user)
@@ -1475,6 +1487,7 @@ async def enforce_attendance_sanctions(
                     driver_display_name=test_display_name,
                     sanction_type="AUTOSACK",
                     threshold=autosack_threshold,
+                    head=head,
                 )
             except ValueError:
                 # Driver already NOT_SIGNED_UP — emit no-op log and continue (I1 edge case).
@@ -1556,6 +1569,7 @@ async def enforce_attendance_sanctions(
                     driver_display_name=test_display_name,
                     sanction_type="AUTORESERVE",
                     threshold=autoreserve_threshold,
+                    head=head,
                 )
             except (ValueError, Exception) as exc:
                 log.warning(

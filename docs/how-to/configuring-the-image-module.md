@@ -609,7 +609,7 @@ Two of the nine *add* a picture rather than replacing anything, so switching the
 > `season5_division1_round8_verdict_banner.png`. There is no setting that changes this. If searchable
 > verdicts matter more to your league than a tidy channel, leave the banner off.
 
-Attendance sanctions — the sackings and reserve moves the bot enforces itself — carry no banner. Those are enforced one driver at a time as a round's attendance is finalised, rather than as the batch a stewards' review produces.
+**Attendance sanctions get a banner too.** The sackings and reserve moves the bot enforces itself go to the same verdicts channel, so they are headed like anything else. Approving a penalty review posts its verdicts and then enforces that round's attendance sanctions, and one banner covers the lot — you read one header over one run, not two. A round with no penalties at all, or a pardon or amendment that makes the bot re-check attendance, raises a banner of its own for whatever it sanctions.
 
 **Standings is the other odd one out: it posts two pictures where the text posts one message.** The driver standings go first and the constructor standings after, each carrying its heading and lifecycle label as message text and its table as an attachment. Both are drawn again and replaced on every occasion the standings were reposted before — a round first posted as provisional, a penalty or appeal phase closed, an amendment approved, a points change recalculating a round, and `/results standings sync`.
 

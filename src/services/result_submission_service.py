@@ -549,10 +549,19 @@ async def finalize_penalty_review(
         except Exception:
             log.exception("finalize_penalty_review: error writing audit log for round %s", round_id)
 
+        # One banner heads everything this approval posts to the verdicts channel — the
+        # penalty verdicts here, and the attendance sanctions the pipeline below enforces
+        # into the same channel for the same round. Built once and handed to both, so a
+        # league reads one header over one run (decided 2026-09-09). Nothing is queried
+        # until the first verdict actually goes out.
+        _verdict_banner = _vas.banner_for_round(bot, db_path, round_id)
+
         # Post verdict announcements (non-blocking: skip silently on any error)
         if applied_records:
             try:
-                await _vas.post_penalty_announcements(bot, state, applied_records)
+                await _vas.post_penalty_announcements(
+                    bot, state, applied_records, head=_verdict_banner
+                )
             except Exception:
                 log.exception(
                     "finalize_penalty_review: error posting penalty announcements for round %s",
@@ -623,6 +632,7 @@ async def finalize_penalty_review(
                     await enforce_attendance_sanctions(
                         bot, guild, db_path, round_id, division_id,
                         _att_server_id, _att_season_id,
+                        head=_verdict_banner,
                     )
             except Exception:
                 log.exception("finalize_penalty_review: enforce_attendance_sanctions failed for round %s", round_id)

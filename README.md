@@ -1640,7 +1640,9 @@ The choice names above are exactly the names `/images config view` and `/season 
 >
 > **A banner that cannot be drawn never delays a verdict.** Where the toggle is on and the render fails, the bot posts the heading — `**Season 5 Premier Round 8**` — as plain text instead, so the batch is still identified, and every verdict follows as normal.
 >
-> ⚠️ **The banner message carries no text, and Discord's search cannot find it.** This is the trade the banner makes and you should know it before switching it on: because the message body is empty, searching your verdicts channel for "Round 8" will not turn up that round's verdicts. The only handle a search has is the attachment's filename, which the bot names `season5_division1_round8_verdict_banner.png`. Attendance sanctions carry no banner either — the bot enforces those one driver at a time as a round's attendance is finalised, rather than as a batch.
+> **Attendance sanctions are verdicts, and they get a banner too.** The sackings and reserve moves the bot enforces itself are announced in the same channel, so they are headed like anything else. Where they were triggered by approving a penalty review, they fall under *that* approval's banner rather than raising a second — you read one header over one run. Where they fire on their own, on a clean round with no penalties, or after a pardon or an amendment recalculates attendance, they raise a banner of their own.
+>
+> ⚠️ **The banner message carries no text, and Discord's search cannot find it.** This is the trade the banner makes and you should know it before switching it on: because the message body is empty, searching your verdicts channel for "Round 8" will not turn up that round's verdicts. The only handle a search has is the attachment's filename, which the bot names `season5_division1_round8_verdict_banner.png`.
 
 #### `/images template <kind>` — Name the SVG file backing each image
 *Access: Server administrator*
