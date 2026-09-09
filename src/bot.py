@@ -178,15 +178,6 @@ async def main() -> None:
         bot.scheduler_service.register_rsvp_last_notice_callback(_rsvp_last_notice_cb)
         bot.scheduler_service.register_rsvp_deadline_callback(_rsvp_deadline_cb)
 
-        # Register season-end callback (stored in _GLOBAL_SERVICE so the
-        # module-level _season_end_job can reach it without pickling a closure)
-        from services.season_end_service import execute_season_end as _execute_season_end
-
-        async def _season_end_cb(server_id: int, season_id: int) -> None:
-            await _execute_season_end(server_id, season_id, bot)
-
-        bot.scheduler_service.register_season_end_callback(_season_end_cb)
-
         # Register the daily driver-portrait refresh and re-arm it after a restart. Unlike
         # every other job here the trigger is recurring, so recovery re-adds it rather than
         # working out whether it was missed: a cron job that did not fire while the bot was
@@ -275,9 +266,6 @@ async def main() -> None:
 
         # Recover any missed phases from before bot restart
         await _recover_missed_phases(bot)
-
-        # Recover any season-end jobs that were lost during a restart
-        await _recover_season_end_jobs(bot)
 
         # Re-arm persistent RSVP embed views for all stored embed messages (T010)
         # and run missed RSVP deadline jobs for rounds whose deadline already passed (T019)
@@ -451,15 +439,6 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
             await run_phase3(round_id, bot)
 
 
-async def _recover_season_end_jobs(bot: commands.Bot) -> None:
-    """No-op: season end is now triggered only via /season complete.
-
-    Previously this re-registered APScheduler season-end jobs on restart and
-    could auto-fire execute_season_end for past-due seasons. That behaviour has
-    been removed — league managers must explicitly run /season complete.
-    """
-
-
 async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
     """Re-arm RsvpView buttons and run missed RSVP deadline jobs on bot restart.
 
@@ -507,7 +486,7 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
                   JOIN divisions d ON d.id = r.division_id
                   JOIN seasons s ON s.id = d.season_id
                   JOIN attendance_config ac ON ac.server_id = s.server_id
-                 WHERE r.status = 'ACTIVE'
+                 WHERE r.status != 'CANCELLED'
                    AND s.status = 'ACTIVE'
                 """
             )
@@ -596,7 +575,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
             """
             SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
                    rsc.results_posted, rsc.staged_penalties, rsc.prompt_message_id,
-                   r.division_id, r.result_status, s.server_id
+                   r.division_id, r.status, s.server_id
             FROM round_submission_channels rsc
             JOIN rounds r    ON r.id  = rsc.round_id
             JOIN divisions d ON d.id  = r.division_id
@@ -614,12 +593,12 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         staged_penalties_json: str | None = row["staged_penalties"]
         prompt_message_id: int | None = row["prompt_message_id"]
         division_id: int = row["division_id"]
-        result_status: str = row["result_status"] if row["result_status"] else "PROVISIONAL"
+        round_status: str = row["status"] or ""
         server_id: int = row["server_id"]
 
         guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
 
-        if in_penalty_review and result_status == "POST_RACE_PENALTY":
+        if in_penalty_review and round_status == "AWAITING_APPEAL_VERDICTS":
             # The bot restarted while a round was awaiting appeals review.
             # Re-post the AppealsReviewView prompt to the submission channel.
             if guild is None:

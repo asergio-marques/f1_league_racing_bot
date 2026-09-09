@@ -79,7 +79,7 @@ async def _seed(db_path, rounds):
         for number, fmt, track in rounds:
             await db.execute(
                 "INSERT INTO rounds (division_id, round_number, format, track_name, "
-                "scheduled_at, status) VALUES (?, ?, ?, ?, ?, 'ACTIVE')",
+                "scheduled_at, status) VALUES (?, ?, ?, ?, ?, 'NOT_RUN')",
                 (
                     division_id,
                     number,

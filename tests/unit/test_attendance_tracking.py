@@ -43,12 +43,16 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
 
     await db.execute(
         """
+        -- Mirrors the shape migration 053 leaves, not the migrations themselves: this file
+        -- hand-builds a minimal schema. Keep the states in step with models.round.RoundStatus.
         CREATE TABLE rounds (
             id INTEGER PRIMARY KEY,
             division_id INTEGER NOT NULL,
             round_number INTEGER NOT NULL DEFAULT 1,
-            status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'CANCELLED')),
-            result_status TEXT NOT NULL DEFAULT 'PROVISIONAL'
+            status TEXT NOT NULL DEFAULT 'NOT_RUN'
+                CHECK (status IN ('NOT_RUN', 'AWAITING_RESULTS',
+                                  'AWAITING_REPORT_VERDICTS', 'AWAITING_APPEAL_VERDICTS',
+                                  'FINAL', 'CANCELLED'))
         )
         """
     )
@@ -462,8 +466,8 @@ async def _make_single_driver_db(tmp_path, *, rsvp_status: str, attended: int) -
         await _create_schema(db)
         await _setup_division(db)
         await db.execute(
-            "INSERT INTO rounds (id, division_id, round_number, result_status) "
-            "VALUES (1, 10, 1, 'POST_RACE_PENALTY')"
+            "INSERT INTO rounds (id, division_id, round_number, status) "
+            "VALUES (1, 10, 1, 'AWAITING_APPEAL_VERDICTS')"
         )
         await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=1)
         await db.execute(
@@ -571,7 +575,7 @@ async def test_point_distribution_all_scenarios(tmp_path):
         await _create_schema(db)
         # Penalty config: no_rsvp=2, absent=1, rsvp_absent=3
         await _setup_division(db)
-        await db.execute("INSERT INTO rounds (id, division_id, round_number, result_status) VALUES (1, 10, 1, 'POST_RACE_PENALTY')")
+        await db.execute("INSERT INTO rounds (id, division_id, round_number, status) VALUES (1, 10, 1, 'AWAITING_APPEAL_VERDICTS')")
 
         scenarios = [
             # (profile_id, rsvp_status, attended, expected_points)
@@ -616,7 +620,7 @@ async def test_point_distribution_with_pardons(tmp_path):
     async with aiosqlite.connect(db_file) as db:
         await _create_schema(db)
         await _setup_division(db)
-        await db.execute("INSERT INTO rounds (id, division_id, round_number, result_status) VALUES (1, 10, 1, 'POST_RACE_PENALTY')")
+        await db.execute("INSERT INTO rounds (id, division_id, round_number, status) VALUES (1, 10, 1, 'AWAITING_APPEAL_VERDICTS')")
 
         # Driver: NO_RSVP + absent → base = 2+1 = 3; with NO_RSVP pardon → net = 1
         await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=1)
@@ -655,13 +659,13 @@ async def test_total_points_after_accumulates_across_rounds(tmp_path):
         await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=1)
 
         # Round 1 — already finalized — driver earned 2 points
-        await db.execute("INSERT INTO rounds (id, division_id, round_number, result_status) VALUES (1, 10, 1, 'POST_RACE_PENALTY')")
+        await db.execute("INSERT INTO rounds (id, division_id, round_number, status) VALUES (1, 10, 1, 'AWAITING_APPEAL_VERDICTS')")
         await db.execute(
             "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, rsvp_status, attended, points_awarded, total_points_after) VALUES (1, 10, 1, 'NO_RSVP', 1, 2, 2)"
         )
 
         # Round 2 — being finalized now
-        await db.execute("INSERT INTO rounds (id, division_id, round_number, result_status) VALUES (2, 10, 2, 'POST_RACE_PENALTY')")
+        await db.execute("INSERT INTO rounds (id, division_id, round_number, status) VALUES (2, 10, 2, 'AWAITING_APPEAL_VERDICTS')")
         await db.execute(
             "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, rsvp_status, attended) VALUES (2, 10, 1, 'NO_RSVP', 1)"
         )
@@ -756,8 +760,8 @@ async def _make_reserve_driver_db(
         await _create_schema(db)
         await _setup_division(db)
         await db.execute(
-            "INSERT INTO rounds (id, division_id, round_number, result_status) "
-            "VALUES (1, 10, 1, 'POST_RACE_PENALTY')"
+            "INSERT INTO rounds (id, division_id, round_number, status) "
+            "VALUES (1, 10, 1, 'AWAITING_APPEAL_VERDICTS')"
         )
         # Driver seated in the Reserve team (is_reserve=1, team_instance_id=2)
         await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=2)
@@ -912,7 +916,7 @@ async def test_amendment_recalculation_preserves_pardons(tmp_path):
         await _create_schema(db)
         await _setup_division(db)
         await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=1)
-        await db.execute("INSERT INTO rounds (id, division_id, round_number, result_status) VALUES (1, 10, 1, 'POST_RACE_PENALTY')")
+        await db.execute("INSERT INTO rounds (id, division_id, round_number, status) VALUES (1, 10, 1, 'AWAITING_APPEAL_VERDICTS')")
         # DRA row with id=10 — driver was absent with NO_RSVP
         await db.execute(
             "INSERT INTO driver_round_attendance (id, round_id, division_id, driver_profile_id, rsvp_status, attended) VALUES (10, 1, 10, 1, 'NO_RSVP', 0)"

@@ -49,14 +49,14 @@ _ROW_PREFIX = "row"
 
 #: The stages at which each sanction phase has closed. Before it closes, the column carries
 #: no value the generation can reach and every cell of it is emptied.
-_PENALTY_CLOSED_AT = frozenset({"POST_RACE_PENALTY", "FINAL"})
+_PENALTY_CLOSED_AT = frozenset({"AWAITING_APPEAL_VERDICTS", "FINAL"})
 _APPEAL_CLOSED_AT = frozenset({"FINAL"})
 
 #: Round result_status -> the lifecycle label. The same mapping the message text carries, so
 #: the label drawn on the graphic and the label beside it cannot disagree.
 _STATUS_LABELS = {
-    "PROVISIONAL": "Provisional Results",
-    "POST_RACE_PENALTY": "Post-Race Penalty Results",
+    "AWAITING_REPORT_VERDICTS": "Provisional Results",
+    "AWAITING_APPEAL_VERDICTS": "Post-Race Penalty Results",
     "FINAL": "Final Results",
 }
 
@@ -155,7 +155,7 @@ def template_key_for(session_type: SessionType) -> str:
 
 def status_label(result_status: str | None) -> str:
     """The lifecycle label for a round's ``result_status``."""
-    return _STATUS_LABELS.get(result_status or "PROVISIONAL", "Results")
+    return _STATUS_LABELS.get(result_status or "", "Results")
 
 
 def _sanction(value: str | None, *, phase_closed: bool) -> str | None:
@@ -211,8 +211,8 @@ def resolve_drawing(
             f"classification to draw"
         )
 
-    penalty_closed = (result_status or "PROVISIONAL") in _PENALTY_CLOSED_AT
-    appeal_closed = (result_status or "PROVISIONAL") in _APPEAL_CLOSED_AT
+    penalty_closed = (result_status or "") in _PENALTY_CLOSED_AT
+    appeal_closed = (result_status or "") in _APPEAL_CLOSED_AT
 
     names = dict(driver_names)
     teams = dict(team_names)

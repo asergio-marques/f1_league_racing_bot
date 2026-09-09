@@ -566,7 +566,7 @@ async def approve_amendment(
                     """
                     SELECT id FROM rounds
                     WHERE division_id = ?
-                      AND result_status IN ('POST_RACE_PENALTY', 'FINAL')
+                      AND status IN ('AWAITING_APPEAL_VERDICTS', 'FINAL')
                     ORDER BY round_number DESC LIMIT 1
                     """,
                     (division_id,),

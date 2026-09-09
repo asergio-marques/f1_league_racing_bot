@@ -125,10 +125,10 @@ async def grid_db(tmp_path):
             INSERT INTO tracks VALUES
                 (1, 'Silverstone Circuit', 'British GP', 'Silverstone', 'United Kingdom', 0, 0),
                 (2, 'Circuit Zandvoort',   'Dutch GP',   'Zandvoort',   'Netherlands',    0, 0);
-            INSERT INTO rounds VALUES (10, 7, 1, 'NORMAL',  'Silverstone Circuit', 'ACTIVE');
-            INSERT INTO rounds VALUES (11, 7, 2, 'MYSTERY', NULL,                  'ACTIVE');
-            INSERT INTO rounds VALUES (12, 7, 3, 'SPRINT',  'Circuit Zandvoort',   'ACTIVE');
-            INSERT INTO rounds VALUES (13, 7, 4, 'NORMAL',  'Suzuka',              'ACTIVE');
+            INSERT INTO rounds VALUES (10, 7, 1, 'NORMAL',  'Silverstone Circuit', 'NOT_RUN');
+            INSERT INTO rounds VALUES (11, 7, 2, 'MYSTERY', NULL,                  'NOT_RUN');
+            INSERT INTO rounds VALUES (12, 7, 3, 'SPRINT',  'Circuit Zandvoort',   'NOT_RUN');
+            INSERT INTO rounds VALUES (13, 7, 4, 'NORMAL',  'Suzuka',              'NOT_RUN');
             INSERT INTO driver_round_attendance VALUES (1, 10, 7, 501, 2);
             INSERT INTO driver_round_attendance VALUES (2, 11, 7, 501, 0);
             INSERT INTO driver_round_attendance VALUES (3, 10, 7, 502, NULL);

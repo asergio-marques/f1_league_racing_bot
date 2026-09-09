@@ -10,7 +10,7 @@ import discord
 
 from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from models.round import RoundFormat
+from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
 from utils import results_formatter
 from utils.batch_notice import batch_notice
@@ -21,6 +21,9 @@ from utils.tyre_compound import (
 )
 
 log = logging.getLogger(__name__)
+
+#: Rendered from the model's own set; see season_service for the same fragment.
+_CANCELLABLE_SQL = ", ".join(f"'{v}'" for v in sorted(ROUND_CANCELLABLE))
 
 # ---------------------------------------------------------------------------
 # Session ordering
@@ -175,7 +178,7 @@ async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
             WHERE rsc.channel_id = ?
               AND rsc.closed = 0
               AND rsc.in_penalty_review = 1
-              AND r.result_status != 'FINAL'
+              AND r.status != 'FINAL'
             """,
             (channel_id,),
         )
@@ -192,7 +195,7 @@ async def _build_penalty_review_state(
     """Reconstruct a :class:`~services.penalty_wizard.PenaltyReviewState` from the DB.
 
     Used by the bot restart-recovery path to re-post the appeals review prompt
-    after a crash during the appeals phase (``result_status = 'POST_RACE_PENALTY'``).
+    after a crash during the appeals phase (``status = 'AWAITING_APPEAL_VERDICTS'``).
     """
     from services.penalty_wizard import PenaltyReviewState
 
@@ -310,6 +313,18 @@ async def enter_penalty_state(
             "UPDATE round_submission_channels SET in_penalty_review = 1 WHERE round_id = ?",
             (round_id,),
         )
+        # The results are in, so the round now waits on report verdicts — and from this point it
+        # can no longer be cancelled, because the drivers have reports and appeals to lodge and
+        # calling the round off would take that from them. Written in the same transaction as the
+        # flag above, and for the same reason: a crash between the two would leave the round and
+        # its channel contradicting each other.
+        #
+        # Guarded to the states before it, so a resubmission cannot drag a round that has already
+        # reached appeals, or ended, backwards.
+        await db.execute(
+            f"UPDATE rounds SET status = ? WHERE id = ? AND status IN ({_CANCELLABLE_SQL})",
+            (RoundStatus.AWAITING_REPORT_VERDICTS.value, round_id),
+        )
         await db.commit()
 
     # ------------------------------------------------------------------
@@ -412,7 +427,7 @@ async def finalize_penalty_review(
     """Apply staged penalties, repost with 'Post-Race Penalty Results' label, and
     transition the submission channel to appeals review.
 
-    Sets rounds.result_status = 'POST_RACE_PENALTY', then posts an AppealsReviewView
+    Sets rounds.status = 'AWAITING_APPEAL_VERDICTS', then posts an AppealsReviewView
     prompt and keeps the submission channel open.
 
     Called from :meth:`ApprovalView.approve_btn` and
@@ -498,11 +513,11 @@ async def finalize_penalty_review(
                 db_path, division_id, round_id, guild, bot=interaction.client,
             )
 
-        # Set result_status = 'POST_RACE_PENALTY'
+        # Report verdicts are in; the round now waits on appeals.
         async with get_connection(db_path) as db:
             await db.execute(
-                "UPDATE rounds SET result_status = 'POST_RACE_PENALTY' WHERE id = ?",
-                (round_id,),
+                "UPDATE rounds SET status = ? WHERE id = ?",
+                (RoundStatus.AWAITING_APPEAL_VERDICTS.value, round_id),
             )
             await db.commit()
 
@@ -518,10 +533,12 @@ async def finalize_penalty_review(
             }
             for sp in state.staged
         ]
-        old_val = _json.dumps({"result_status": "PROVISIONAL", "affected_drivers": pre_snapshot})
+        old_val = _json.dumps(
+            {"status": RoundStatus.AWAITING_REPORT_VERDICTS.value, "affected_drivers": pre_snapshot}
+        )
         new_val = _json.dumps(
             {
-                "result_status": "POST_RACE_PENALTY",
+                "status": RoundStatus.AWAITING_APPEAL_VERDICTS.value,
                 "affected_drivers": post_snapshot,
                 "penalties": penalty_log,
                 "actor_id": actor_id,
@@ -745,19 +762,26 @@ async def finalize_appeals_review(
                 db_path, division_id, round_id, guild, bot=interaction.client,
             )
 
-        # Set result_status = 'FINAL'
+        # Appeal verdicts are in; the results stand.
         async with get_connection(db_path) as db:
             await db.execute(
-                "UPDATE rounds SET result_status = 'FINAL' WHERE id = ?",
-                (round_id,),
+                "UPDATE rounds SET status = ? WHERE id = ?",
+                (RoundStatus.FINAL.value, round_id),
             )
             await db.commit()
 
+        # This is the only place a round becomes finished, and so the only place a division can
+        # become finished by racing. Approving the last round's appeals is what ends a division,
+        # and a division ending is what lets `/season complete` run (issue #154).
+        from services.season_service import SeasonService
+
+        await SeasonService(db_path).refresh_division_status(division_id)
+
         # Audit log APPEALS_REVIEW_APPROVED
-        old_val = _json.dumps({"result_status": "POST_RACE_PENALTY"})
+        old_val = _json.dumps({"status": RoundStatus.AWAITING_APPEAL_VERDICTS.value})
         new_val = _json.dumps(
             {
-                "result_status": "FINAL",
+                "status": RoundStatus.FINAL.value,
                 "actor_id": actor_id,
                 "corrections": len(state.staged_appeals),
             }
@@ -2326,12 +2350,36 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     mention_role_id: int = ctx["mention_role_id"]
 
     # ------------------------------------------------------------------
-    # 2. Module guard
+    # 2. The round's date has arrived — move it off NOT_RUN, and the module guard
     # ------------------------------------------------------------------
-    if not await bot.module_service.is_results_enabled(server_id):  # type: ignore[attr-defined]
+    # This job fires at the round's scheduled time for every round, whatever the format and
+    # whatever the modules, so it is where the one clock-driven transition belongs.
+    #
+    # Where results are enabled the round begins waiting for them. Where they are not, nobody
+    # will ever enter a result, so the round has nothing to wait for and ends here — otherwise
+    # it would sit outstanding for ever and its season could never be completed, which is issue
+    # #154 over again for every league that does not run the results module.
+    results_enabled = await bot.module_service.is_results_enabled(server_id)  # type: ignore[attr-defined]
+    arrived_at = (
+        RoundStatus.AWAITING_RESULTS.value if results_enabled else RoundStatus.FINAL.value
+    )
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE rounds SET status = ? WHERE id = ? AND status = ?",
+            (arrived_at, round_id, RoundStatus.NOT_RUN.value),
+        )
+        await db.commit()
+
+    if not results_enabled:
+        # The round just reached a terminal state, so its division may now be finished.
+        from services.season_service import SeasonService
+
+        await SeasonService(db_path).refresh_division_status(division_id)
         log.info(
-            "run_result_submission_job: results module disabled for server %s — skipping",
+            "run_result_submission_job: results module disabled for server %s — round %s "
+            "closed without results",
             server_id,
+            round_id,
         )
         return
 

@@ -388,8 +388,8 @@ Things change. During an active season:
 | Command | What it does |
 |---|---|
 | `/round amend` | Change a round's track, time or format. Changing the time renumbers the division's rounds; changing **any** of the three throws away every forecast already generated for that round |
-| `/round cancel` | Call off one round. Needs `CONFIRM`, and posts a notice to the division |
-| `/division cancel` | Call off a whole division. Needs `CONFIRM` |
+| `/round cancel` | Call off one round. Needs `CONFIRM`, and posts a notice to the division. Refused once the round's results have been entered — the drivers' reports and appeals depend on them |
+| `/division cancel` | Call off a whole division. Needs `CONFIRM`. Every round of it you have not yet raced is cancelled with it; rounds you have raced keep their results |
 | `/division calendar-sync` | Repost a division's calendar with your changes on it |
 | `/clean-bot` | Delete the bot's own most recent messages in the command channel. You say how many, up to ten, and nobody else's messages are touched. An approved or expired review clears itself, so this is for whatever else the bot has left behind |
 
@@ -405,7 +405,18 @@ Things change. During an active season:
 
 **Nothing ends a season by itself.** You run this once every round in every division has been finalised, and the bot refuses — listing the outstanding rounds — until they are. It then archives the season: it is marked complete, a history entry is written for every driver who raced, each division's **final classification** is posted, and it is announced in the log channel. **Nothing is deleted.**
 
-> ⚠️ **Today that refusal never lifts.** The bot checks a flag on each round that nothing ever sets, so it lists every round as outstanding no matter how completely you have raced and scored the season, and `/season complete` cannot be got past. There is no command that clears it. Because a server holds one live season at a time, this also blocks `/season setup` for next season — `/season cancel` would let you move on, but it destroys the season and every result in it, so it is not a way out of this. Recorded in [#154](https://github.com/asergio-marques/f1_league_racing_bot/issues/154).
+> **What "finalised" means here.** A round is finished once its **appeals review is approved** —
+> not when you submit its results, and not when you approve its penalties. Each stage in between
+> has its own name, and the refusal tells you which one a round is sitting in: *awaiting results*
+> if nobody has entered them, *awaiting report verdicts* if they are posted and the reports are
+> being judged, *awaiting appeal verdicts* if those are done and the appeals are not. Any of them
+> counts as outstanding, which is usually the answer when the refusal names a round you thought was
+> done: go back to its submission channel and finish the review it names. A cancelled round does
+> not hold anything up. A division is finished once every one of its rounds is, and the season
+> completes once every division is finished or cancelled.
+
+> **If you do not run the results module**, a round becomes final as its time passes — there are no
+> results to wait for — so your seasons complete without any of this.
 
 > **The final classification is the mirror of the opening one.** Each division's standings channel
 > gets its final standings and its attendance channel a final sheet, both headed `Final
@@ -425,7 +436,13 @@ If you need to abandon a season rather than finish it:
 /season cancel confirm:CONFIRM
 ```
 
-> ⚠️ **`/season cancel` destroys the season and every result in it, permanently.** It is not `/season complete` with a different name. Use it only for a season that should never have existed.
+> ⚠️ **`/season cancel` is irreversible, and it is not `/season complete` with a different name.**
+> It cascades: every division is cancelled, and with each one every round you have not yet raced.
+> Rounds you *have* raced keep their results — cancelling never throws a result away — and nothing
+> is deleted from the database. Every driver still gets a history entry — a cancelled season is
+> league history, and it is marked as cancelled so it can be told apart from one that ran to its
+> end. What you lose is the ending: no final classification is posted. Use it only for a season
+> that should never have existed. A season that was raced should be completed.
 
 ---
 
@@ -468,7 +485,7 @@ Deletes every season, division, round and result, and keeps your `/bot-init` set
 | A round appears at the wrong time to your drivers | You entered local time, not UTC. `/round amend` it |
 | The calendar in the channel is out of date | It only changes when you run `/division calendar-sync` |
 | A division posts nothing where the others post fine | That division is missing the channel for it. Check step 6 |
-| The season will not complete | Some round is not finalised. The refusal names them |
+| The season will not complete | Some round has not had its appeals review approved. The refusal names them — approve the appeals in each round's submission channel, or cancel a round that will never be raced |
 | Nothing at all is happening on schedule | The bot is not running. Starting it again picks up missed weather phases, missed check-in deadlines and a signup auto-close timer; anything else that came due while it was down is missed |
 
 Anything the bot works out, fails to find, or falls back on is written to the log channel. When something is behaving oddly and this table has not explained it, read that channel — the answer is nearly always sitting in it.

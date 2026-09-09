@@ -154,7 +154,7 @@ def test_the_lifecycle_label_is_drawn_on_the_graphic():
     """XIV.16 (v4.5.0): the split with message text is not exclusive."""
     assert _drivers_drawing(result_status="FINAL").result_status_label == "Final Results"
     assert (
-        _drivers_drawing(result_status="PROVISIONAL").result_status_label
+        _drivers_drawing(result_status="AWAITING_REPORT_VERDICTS").result_status_label
         == "Provisional Results"
     )
 

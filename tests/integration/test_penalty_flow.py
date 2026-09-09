@@ -336,23 +336,38 @@ async def test_penalty_review_flag_lifecycle(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_test_mode_advance_blocked_before_finalize(tmp_path):
-    """is_round_finalized returns False when finalized=0; True after finalized=1."""
+async def test_test_mode_advance_blocked_until_results_are_final(tmp_path):
+    """`/test-mode advance` is blocked until result_status reaches FINAL.
+
+    This test used to set `rounds.finalized = 1` by hand and assert the old
+    `is_round_finalized` picked it up. Nothing in production ever wrote that column, so the test
+    passed while the guard it covered was answering False for every round in existence — and the
+    same dead column made `/season complete` unreachable (issue #154). It now walks the whole
+    chain, and only the last step counts as done: a round awaiting appeal verdicts has had its
+    penalties settled but its results can still change.
+    """
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
     _, division_id, round_id = await _bootstrap(db_path)
 
-    from services.test_mode_service import is_round_finalized
+    from services.test_mode_service import round_result_status
 
-    assert await is_round_finalized(db_path, round_id) is False
+    assert await round_result_status(db_path, round_id) == "NOT_RUN"
 
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE rounds SET finalized = 1 WHERE id = ?", (round_id,)
-        )
-        await db.commit()
+    for status in (
+        "AWAITING_RESULTS",
+        "AWAITING_REPORT_VERDICTS",
+        "AWAITING_APPEAL_VERDICTS",
+        "FINAL",
+    ):
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE rounds SET status = ? WHERE id = ?", (status, round_id)
+            )
+            await db.commit()
+        assert await round_result_status(db_path, round_id) == status
 
-    assert await is_round_finalized(db_path, round_id) is True
+    assert await round_result_status(db_path, 999999) is None
 
 
 # ---------------------------------------------------------------------------

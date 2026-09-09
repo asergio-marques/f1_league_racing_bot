@@ -36,7 +36,7 @@ from discord.ext import commands
 from db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
 from models.division import Division
 from models.round import Round as RoundModel
-from models.round import RoundFormat
+from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from services import season_points_service
 import services.track_service as track_service
 from services.season_service import SeasonImmutableError
@@ -1945,7 +1945,7 @@ class SeasonCog(commands.Cog):
         ]
         for div in divisions:
             rounds = await self.bot.season_service.get_division_rounds(div.id)
-            active_rounds = [r for r in rounds if r.status == "ACTIVE"]
+            active_rounds = [r for r in rounds if r.status != RoundStatus.CANCELLED.value]
             next_round = next(
                 (
                     r for r in active_rounds
@@ -2007,7 +2007,7 @@ class SeasonCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         divisions = await self.bot.season_service.get_divisions(season.id)
-        active_divs = [d for d in divisions if d.status == "ACTIVE"]
+        active_divs = [d for d in divisions if d.status != "CANCELLED"]
         for div in active_divs:
             try:
                 channel = interaction.guild.get_channel(div.forecast_channel_id)
@@ -2025,7 +2025,23 @@ class SeasonCog(commands.Cog):
                 self.bot.scheduler_service.cancel_round(rnd.id)
         self.bot.scheduler_service.cancel_season_end(interaction.guild_id)
 
-        await self.bot.season_service.cancel_season(season.id)
+        # A cancelled season is still league history: it happened, and the drivers raced in it.
+        #
+        # Written *before* the cascade, and marked cancelled explicitly rather than by reading
+        # the divisions. Written after, the rows would be beyond reach of a retry — this command
+        # refuses once the season is no longer active — so a failure in between would lose them
+        # with no way to put them back. Before the cascade, the season is still ACTIVE and the
+        # whole command can simply be run again; the write is idempotent, so running it again
+        # adds nothing.
+        from services.season_end_service import _write_driver_history_entries
+        await _write_driver_history_entries(season, self.bot, force_cancelled=True)
+
+        await self.bot.season_service.cancel_season_cascade(
+            season_id=season.id,
+            server_id=interaction.guild_id,
+            actor_id=interaction.user.id,
+            actor_name=str(interaction.user),
+        )
 
         # Revoke division, team, and signup roles from all assigned drivers
         if interaction.guild is not None:
@@ -2060,18 +2076,42 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        all_done = await self.bot.season_service.all_rounds_finalized(interaction.guild_id)
+        # Bring each division's stored status back in step with its rounds before reading it.
+        # The status is written when a round is finalised or cancelled, but this gate is the one
+        # place a stale row would strand a league with no way forward, so it is worth the reread.
+        divisions = await self.bot.season_service.get_divisions(season.id)
+        for div in divisions:
+            if div.status == "ACTIVE":
+                await self.bot.season_service.refresh_division_status(div.id)
+
+        all_done = await self.bot.season_service.all_divisions_finished(interaction.guild_id)
         if not all_done:
-            pending = await self.bot.season_service.get_unfinalized_rounds(interaction.guild_id)
-            lines = "\n".join(
-                f"• {r['division']} — Round {r['round_number']}"
-                + (f" ({r['track_name']})" if r.get("track_name") else "")
-                for r in pending[:20]
-            )
-            await interaction.response.send_message(
-                f"\u274c Cannot complete season — the following rounds are not yet finalized:\n{lines}",
-                ephemeral=True,
-            )
+            pending = await self.bot.season_service.get_outstanding_rounds(interaction.guild_id)
+            if pending:
+                lines = "\n".join(
+                    f"• {r['division']} — Round {r['round_number']}"
+                    + (f" ({r['track_name']})" if r.get("track_name") else "")
+                    for r in pending[:20]
+                )
+                message = (
+                    "\u274c Cannot complete season — the following rounds are not yet "
+                    f"finalised:\n{lines}"
+                )
+            else:
+                # A refusal naming nothing is what stranded leagues in issue #154: no round is
+                # outstanding, yet some division is neither finished nor cancelled. Name the
+                # divisions instead, so the refusal always says what is holding the season open.
+                unfinished = ", ".join(
+                    f"**{d.name}**"
+                    for d in divisions
+                    if d.status not in ("FINISHED", "CANCELLED")
+                )
+                message = (
+                    "\u274c Cannot complete season — no round is outstanding, but these "
+                    f"divisions have not finished: {unfinished}. Cancel a division that will "
+                    "never run, or report this."
+                )
+            await interaction.response.send_message(message, ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -3857,35 +3897,36 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if rnd.status == "CANCELLED":
+        if rnd.status == RoundStatus.CANCELLED.value:
             await interaction.response.send_message(
                 f"\u274c Round {round_number} in **{division_name}** is already cancelled.",
                 ephemeral=True,
             )
             return
 
-        # Guard: block cancel while a results submission channel is open (FR-020)
+        # A round may only be called off before its results are entered. Afterwards the drivers
+        # have reports and appeals to lodge, and cancelling would take that from them.
+        #
+        # This reads `ROUND_CANCELLABLE`, the same set the cascade in season_service reads. Before
+        # the round states were united, this command tested for submitted results while the
+        # cascade tested a status that could not tell "not yet raced" from "raced but unjudged" —
+        # so `/round cancel` refused a round that `/division cancel` would quietly cancel, taking
+        # a raced result with it. One rule, read from one place, is what stops them disagreeing.
+        if rnd.status not in ROUND_CANCELLABLE:
+            await interaction.response.send_message(
+                f"\u274c Cannot cancel Round {round_number} — its results have already been "
+                "entered, and the drivers' reports and appeals depend on it.",
+                ephemeral=True,
+            )
+            return
+
+        # A submission channel standing open is a separate matter: the round may still be
+        # cancellable, but the wizard would be writing into it as it went (FR-020).
         from services.result_submission_service import is_submission_open
         if await is_submission_open(self.bot.db_path, rnd.id):
             await interaction.response.send_message(
                 f"\u274c Cannot cancel Round {round_number} — a results submission channel is "
                 "currently open. Close the submission first.",
-                ephemeral=True,
-            )
-            return
-
-        # Guard: block cancel if results have already been submitted for this round
-        from db.database import get_connection
-        async with get_connection(self.bot.db_path) as _db:
-            _cur = await _db.execute(
-                "SELECT COUNT(*) FROM session_results WHERE round_id = ? AND status = 'ACTIVE'",
-                (rnd.id,),
-            )
-            _row = await _cur.fetchone()
-        if _row and _row[0] > 0:
-            await interaction.response.send_message(
-                f"\u274c Cannot cancel Round {round_number} — results have already been "
-                "submitted for this round.",
                 ephemeral=True,
             )
             return
@@ -3990,7 +4031,7 @@ class SeasonCog(commands.Cog):
             return
 
         # T009: amend is only permitted on FINAL rounds
-        if rnd.result_status != "FINAL":
+        if rnd.status != "FINAL":
             await interaction.followup.send(
                 "\u274c This round cannot be amended yet. Round results must reach **FINAL** status "
                 "(approved through the full penalty review and appeals process) before they can be amended.",

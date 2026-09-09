@@ -158,7 +158,7 @@ async def _try_post(bot, channel, render, *, origin=None, previous_ids=None,
         team_snapshots=[],
         reserve_user_ids=set(),
         show_reserves=False,
-        result_status="PROVISIONAL",
+        result_status="AWAITING_REPORT_VERDICTS",
         division_name="Main",
     )
     if origin is not None:
@@ -357,7 +357,7 @@ async def test_no_bot_no_guild_and_no_channel_each_stand_the_flow_aside():
             team_snapshots=[],
             reserve_user_ids=set(),
             show_reserves=False,
-            result_status="PROVISIONAL",
+            result_status="AWAITING_REPORT_VERDICTS",
             division_name="Main",
         )
         assert isinstance(outcome, StandingsPostOutcome)
@@ -438,7 +438,7 @@ async def test_a_resolution_fault_reports_once_and_falls_both_back():
             team_snapshots=[],
             reserve_user_ids=set(),
             show_reserves=False,
-            result_status="PROVISIONAL",
+            result_status="AWAITING_REPORT_VERDICTS",
             division_name="Main",
         )
 
@@ -529,7 +529,7 @@ async def _seed_league(tmp_path):
         round_ids = []
         for number in (1, 2):
             cursor = await db.execute(
-                "INSERT INTO rounds (division_id, round_number, format, result_status, "
+                "INSERT INTO rounds (division_id, round_number, format, status, "
                 "track_name, scheduled_at) VALUES (?, ?, 'STANDARD', 'FINAL', "
                 "'Silverstone', '2026-06-01T18:00:00')",
                 (division_id, number),
@@ -872,10 +872,11 @@ async def _seed(tmp_path, *, cancelled=False):
         )
         division_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, result_status, "
-            "scheduled_at, status) VALUES (?, 3, 'STANDARD', 'FINAL', "
-            "'2026-06-01T18:00:00', ?)",
-            (division_id, "CANCELLED" if cancelled else "ACTIVE"),
+            "INSERT INTO rounds (division_id, round_number, format, status, "
+            "scheduled_at) VALUES (?, 3, 'STANDARD', ?, '2026-06-01T18:00:00')",
+            # One chain now: a cancelled round is CANCELLED, and one that ran to the end of
+            # its appeals is FINAL. The two used to be separate columns.
+            (division_id, "CANCELLED" if cancelled else "FINAL"),
         )
         round_id = cursor.lastrowid
         await db.execute(

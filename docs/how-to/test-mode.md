@@ -78,7 +78,7 @@ Phase numbers in the queue entry mean:
 
 Phase 0 never arrives from the job store: there is no mystery prefix in the job-store mapping, and a mystery round's notice is scheduled under the `weather_p1` prefix. A mystery round backed by a live job therefore comes back as phase 1 and `advance` dispatches it to `run_phase1`, which resolves the format and posts the notice. The `get_pending_advance_jobs` docstring claiming `0=mystery notice` is wrong in the same way as the two comments noted below.
 
-**Result submission is the exception: it never comes from the job store.** `get_pending_advance_jobs` filters results jobs out deliberately, so that a past-dated job which already auto-fired can neither block the wizard nor trigger it twice. Phase 4 is detected from database state instead — a round with no active session results and a provisional result status is due for submission — and it is therefore reached for every round format, mystery included.
+**Result submission is the exception: it never comes from the job store.** `get_pending_advance_jobs` filters results jobs out deliberately, so that a past-dated job which already auto-fired can neither block the wizard nor trigger it twice. Phase 4 is detected from database state instead — a round with no active session results, standing at *not run* or *awaiting results*, is due for submission — and it is therefore reached for every round format, mystery included.
 
 That database detection is load-bearing rather than a fallback: `/season approve` skips scheduling result-submission jobs altogether while the test-mode flag is set, so under test mode there is no results job for the job store to hold in the first place.
 

@@ -191,7 +191,7 @@ async def sheet_db(tmp_path):
 
             INSERT INTO seasons  VALUES (1, 1);
             INSERT INTO divisions VALUES (7, 1, 'Division 1');
-            INSERT INTO rounds VALUES (3, 7, 3, 'NORMAL', 'Silverstone Circuit', 'ACTIVE');
+            INSERT INTO rounds VALUES (3, 7, 3, 'NORMAL', 'Silverstone Circuit', 'NOT_RUN');
             INSERT INTO rounds VALUES (9, 7, 9, 'NORMAL', 'Circuit Zandvoort', 'CANCELLED');
             INSERT INTO attendance_config VALUES (1, 10, 20);
             INSERT INTO team_instances VALUES (100, 7, 0, 'Apex Racing');

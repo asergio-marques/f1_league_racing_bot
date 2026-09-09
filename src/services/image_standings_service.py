@@ -46,8 +46,8 @@ _ROUND_PREFIX = "round"
 
 #: The lifecycle labels, shared with the textual standings path (XIV.7).
 _STATUS_LABELS = {
-    "PROVISIONAL": "Provisional Results",
-    "POST_RACE_PENALTY": "Post-Race Penalty Results",
+    "AWAITING_REPORT_VERDICTS": "Provisional Results",
+    "AWAITING_APPEAL_VERDICTS": "Post-Race Penalty Results",
     "FINAL": "Final Results",
 }
 
@@ -289,7 +289,7 @@ class StandingsDrawing:
 
 def status_label(result_status: str | None) -> str:
     """The lifecycle label for a round's ``result_status``."""
-    return _STATUS_LABELS.get(result_status or "PROVISIONAL", "Results")
+    return _STATUS_LABELS.get(result_status or "", "Results")
 
 
 def _entry_key(snapshot, *, drivers: bool) -> int:
