@@ -1,11 +1,6 @@
-"""season_end_service — automatic season completion and archival.
+"""season_end_service — season completion and archival.
 
-Two entry points:
-
-check_and_schedule_season_end(server_id, bot)
-    Called after every Phase 3 completion.  Checks whether all non-Mystery
-    rounds in the active season are done; if so, schedules execute_season_end
-    to fire 7 days after the latest round's scheduled_at.
+One entry point:
 
 execute_season_end(server_id, season_id, bot)
     Archives the season (status → COMPLETED), writes DriverHistoryEntry
@@ -13,12 +8,19 @@ execute_season_end(server_id, season_id, bot)
     and attendance sheet, and announces completion in the log channel.  All
     season data is permanently retained.
     Idempotent: a no-op if no active season is found (handles duplicate calls).
+
+A season ends when a league manager runs `/season complete`, and in no other way. There was once
+a second entry point, `check_and_schedule_season_end`, which armed a timer to end a season seven
+days after its last round. Nothing ever called it — `_recover_season_end_jobs` was a documented
+no-op and `/season complete` calls `execute_season_end` directly — so it sat unreachable while
+reading as live code, and it misled the README into describing automatic completion until
+2026-08-17. It was deleted with issue #154, whose lifecycle settles the question the other way:
+a season is completed explicitly, once every division is finished or cancelled.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from db.database import get_connection
@@ -29,71 +31,6 @@ if TYPE_CHECKING:
     from models.season import Season
 
 log = logging.getLogger(__name__)
-
-
-async def check_and_schedule_season_end(
-    server_id: int,
-    bot: "Bot",
-    *,
-    now: datetime | None = None,
-) -> None:
-    """Schedule season end if all non-Mystery rounds are fully phased.
-
-    If *now* is provided it is used instead of the real wall-clock time (useful
-    for testing and for the startup recovery path).  When the computed fire time
-    is already in the past (``now >= fire_at``), ``execute_season_end`` is
-    called directly instead of scheduling a future job.
-
-    Safe to call multiple times — ``replace_existing=True`` in the scheduler
-    means a duplicate call simply refreshes the job's fire time.
-    """
-    season_svc = bot.season_service  # type: ignore[attr-defined]
-
-    if not await season_svc.all_phases_complete(server_id):
-        return  # Some phases are still pending
-
-    season = await season_svc.get_active_season(server_id)
-    if season is None:
-        return  # Already cleaned up or never activated
-
-    last_at = await season_svc.get_last_scheduled_at(server_id)
-    if last_at is None:
-        log.warning(
-            "check_and_schedule_season_end: no rounds found for server %s", server_id
-        )
-        return
-
-    if last_at.tzinfo is None:
-        last_at = last_at.replace(tzinfo=timezone.utc)
-
-    fire_at = last_at + timedelta(days=7)
-
-    season_id_captured = season.id
-    effective_now = now if now is not None else datetime.now(tz=timezone.utc)
-    if effective_now.tzinfo is None:
-        effective_now = effective_now.replace(tzinfo=timezone.utc)
-
-    if effective_now >= fire_at:
-        # Due date already passed (e.g. bot was down for >7 days); fire now.
-        log.warning(
-            "Season end for server %s (season %s) is overdue (fire_at=%s); "
-            "executing immediately.",
-            server_id,
-            season_id_captured,
-            fire_at.isoformat(),
-        )
-        await execute_season_end(server_id, season_id_captured, bot)
-        return
-
-    bot.scheduler_service.schedule_season_end(  # type: ignore[attr-defined]
-        server_id, fire_at, season_id_captured
-    )
-    log.info(
-        "Season end for server %s (season %s) scheduled at %s",
-        server_id,
-        season_id_captured,
-        fire_at.isoformat(),
-    )
 
 
 async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None:
@@ -176,13 +113,29 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     )
 
 
-async def _write_driver_history_entries(season: "Season", bot: "Bot") -> None:
+async def _write_driver_history_entries(
+    season: "Season", bot: "Bot", *, force_cancelled: bool = False
+) -> None:
     """Write a DriverHistoryEntry for every ASSIGNED driver at season end.
 
     Sources:
     - season_number, division_name, division_tier: from the season/division rows
     - final_position, final_points: from the most recent driver_standings_snapshots row
     - points_gap_to_winner: derived from final points vs the division winner's final points
+    - cancelled: whether the driver's division was cancelled
+
+    **Idempotent, and deliberately so.** Ending a season is a run of separate writes with no
+    transaction around them, and the season's own row is flipped last — so a process that dies
+    part-way leaves the season still ACTIVE with its history already written, and the retry the
+    league is told to run would append a second set. `INSERT OR IGNORE` against the unique index
+    from migration 054 is what stands in for the atomicity the sequence does not have. Do not
+    relax it to a plain INSERT on the grounds that the guard above already returns early: that
+    guard reads the season *before* this runs, which is precisely the window that fails.
+
+    *force_cancelled* marks every entry cancelled without consulting the divisions. `/season
+    cancel` needs it because it writes history **before** cascading — writing afterwards would
+    read the right statuses but put the rows beyond reach of a retry, since the command refuses
+    once the season is no longer active, and a failure between the two would lose them for good.
     """
     db_path: str = bot.db_path  # type: ignore[attr-defined]
 
@@ -191,9 +144,10 @@ async def _write_driver_history_entries(season: "Season", bot: "Bot") -> None:
         cursor = await db.execute(
             """
             SELECT dsa.driver_profile_id,
-                   d.id   AS division_id,
-                   d.name AS division_name,
-                   d.tier AS division_tier
+                   d.id     AS division_id,
+                   d.name   AS division_name,
+                   d.tier   AS division_tier,
+                   d.status AS division_status
             FROM driver_season_assignments dsa
             JOIN divisions d ON d.id = dsa.division_id
             WHERE d.season_id = ?
@@ -238,6 +192,10 @@ async def _write_driver_history_entries(season: "Season", bot: "Bot") -> None:
             div_id = asgn["division_id"]
             div_name = asgn["division_name"]
             div_tier = asgn["division_tier"] or 0
+            # Cancellation reaches a driver only through their division: cancelling a
+            # season cancels each of its divisions first, so the division's status is
+            # the whole answer however the cancellation was ordered.
+            cancelled = 1 if (force_cancelled or asgn["division_status"] == "CANCELLED") else 0
 
             # Fetch the most recent standings snapshot for this driver × division
             cursor = await db.execute(
@@ -261,10 +219,10 @@ async def _write_driver_history_entries(season: "Season", bot: "Bot") -> None:
 
             await db.execute(
                 """
-                INSERT INTO driver_history_entries
+                INSERT OR IGNORE INTO driver_history_entries
                     (driver_profile_id, season_number, division_name, division_tier,
-                     final_position, final_points, points_gap_to_winner)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                     final_position, final_points, points_gap_to_winner, cancelled)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     driver_profile_id,
@@ -274,6 +232,7 @@ async def _write_driver_history_entries(season: "Season", bot: "Bot") -> None:
                     final_position,
                     final_points,
                     points_gap,
+                    cancelled,
                 ),
             )
 

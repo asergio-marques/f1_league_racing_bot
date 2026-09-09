@@ -178,15 +178,6 @@ async def main() -> None:
         bot.scheduler_service.register_rsvp_last_notice_callback(_rsvp_last_notice_cb)
         bot.scheduler_service.register_rsvp_deadline_callback(_rsvp_deadline_cb)
 
-        # Register season-end callback (stored in _GLOBAL_SERVICE so the
-        # module-level _season_end_job can reach it without pickling a closure)
-        from services.season_end_service import execute_season_end as _execute_season_end
-
-        async def _season_end_cb(server_id: int, season_id: int) -> None:
-            await _execute_season_end(server_id, season_id, bot)
-
-        bot.scheduler_service.register_season_end_callback(_season_end_cb)
-
         # Register the daily driver-portrait refresh and re-arm it after a restart. Unlike
         # every other job here the trigger is recurring, so recovery re-adds it rather than
         # working out whether it was missed: a cron job that did not fire while the bot was
@@ -275,9 +266,6 @@ async def main() -> None:
 
         # Recover any missed phases from before bot restart
         await _recover_missed_phases(bot)
-
-        # Recover any season-end jobs that were lost during a restart
-        await _recover_season_end_jobs(bot)
 
         # Re-arm persistent RSVP embed views for all stored embed messages (T010)
         # and run missed RSVP deadline jobs for rounds whose deadline already passed (T019)
@@ -449,15 +437,6 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
         if not p3 and now >= phase3_horizon:
             log.info("Recovery: firing Phase 3 for round %s", round_id)
             await run_phase3(round_id, bot)
-
-
-async def _recover_season_end_jobs(bot: commands.Bot) -> None:
-    """No-op: season end is now triggered only via /season complete.
-
-    Previously this re-registered APScheduler season-end jobs on restart and
-    could auto-fire execute_season_end for past-due seasons. That behaviour has
-    been removed — league managers must explicitly run /season complete.
-    """
 
 
 async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:

@@ -332,7 +332,6 @@ async def get_next_pending_phase(
         # Skip rounds that are fully done or already in results processing.
         # result_status is the canonical post-submission state machine:
         #   PROVISIONAL → ACTIVE (not started) | FINAL/POST_RACE_PENALTY → done/in-review.
-        # rounds.finalized is a legacy column (never set by current code); use result_status.
         if row["result_status"] in ("FINAL", "POST_RACE_PENALTY"):
             return None
 
@@ -434,15 +433,24 @@ async def get_next_pending_phase(
     return None
 
 
-async def is_round_finalized(db_path: str, round_id: int) -> bool:
-    """Return True if the round's penalty review has been approved (``finalized = 1``)."""
+async def round_result_status(db_path: str, round_id: int) -> str | None:
+    """Return a round's ``result_status``, or None if there is no such round.
+
+    PROVISIONAL -> POST_RACE_PENALTY -> FINAL is the post-submission state machine: results
+    submitted, penalties settled, appeals settled. Only FINAL means the round is done — a round
+    at POST_RACE_PENALTY still has its appeals open and its results can change again.
+
+    This replaced `is_round_finalized`, which read `rounds.finalized`: a column nothing has ever
+    written, so it returned False for every round however completely it was scored and
+    `/test-mode advance` treated a finished round as one still in penalty review (issue #154).
+    """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT finalized FROM rounds WHERE id = ?",
+            "SELECT result_status FROM rounds WHERE id = ?",
             (round_id,),
         )
         row = await cursor.fetchone()
-    return bool(row["finalized"]) if row else False
+    return row["result_status"] if row else None
 
 
 # ---------------------------------------------------------------------------

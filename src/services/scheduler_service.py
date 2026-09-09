@@ -87,30 +87,6 @@ async def _portrait_refresh_job(server_id: int) -> None:
     await cb(server_id)
 
 
-async def _season_end_job(server_id: int, season_id: int) -> None:
-    """Module-level APScheduler callable for season-end jobs — avoids closure
-    pickling issues with SQLAlchemyJobStore.
-
-    Mirrors the ``_phase_job`` pattern: looks up the running service instance
-    via ``_GLOBAL_SERVICE`` and delegates to the registered season-end callback.
-    """
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_season_end_job fired but _GLOBAL_SERVICE is None "
-            "(server_id=%s, season_id=%s) — skipping",
-            server_id, season_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._season_end_callback
-    if cb is None:
-        log.warning(
-            "_season_end_job: no callback registered (server_id=%s) — skipping",
-            server_id,
-        )
-        return
-    await cb(server_id, season_id)
-
-
 async def _weather_phase_job(phase_num: int, round_id: int) -> None:
     """Top-level APScheduler callable for all weather-phase jobs.
 
@@ -302,8 +278,6 @@ class SchedulerService:
         )
         # Phase callbacks injected after bot starts (to avoid circular imports)
         self._phase_callbacks: dict[int, Callable] = {}
-        # Season-end callback injected after bot starts
-        self._season_end_callback: "Callable | None" = None
         # Signup auto-close callback injected after bot starts
         self._signup_close_callback: "Callable | None" = None
         self._portrait_refresh_callback: "Callable | None" = None
@@ -328,14 +302,6 @@ class SchedulerService:
         self._phase_callbacks[1] = phase1_cb
         self._phase_callbacks[2] = phase2_cb
         self._phase_callbacks[3] = phase3_cb
-
-    def register_season_end_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked by season-end APScheduler jobs.
-
-        The callable must accept ``(server_id: int, season_id: int)``.
-        Called from bot.py on_ready after the scheduler is started.
-        """
-        self._season_end_callback = callback
 
     def register_mystery_notice_callback(self, callback: Callable) -> None:
         """Register the async callable invoked when a Mystery round notice fires.
@@ -751,32 +717,17 @@ class SchedulerService:
     # Season-end scheduling
     # ------------------------------------------------------------------
 
-    def schedule_season_end(
-        self,
-        server_id: int,
-        fire_at: datetime,
-        season_id: int,
-    ) -> None:
-        """Schedule a one-shot season-end job for *server_id* at *fire_at*.
-
-        Uses the module-level ``_season_end_job`` callable (picklable by
-        SQLAlchemyJobStore) with ``server_id`` and ``season_id`` as kwargs.
-        Uses ``replace_existing=True`` so calling this a second time simply
-        moves the job forward.
-        """
-        job_id = f"season_end_{server_id}"
-        self._scheduler.add_job(
-            _season_end_job,
-            trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
-            id=job_id,
-            replace_existing=True,
-            name=f"Season end for server {server_id}",
-            kwargs={"server_id": server_id, "season_id": season_id},
-        )
-        log.info("Scheduled season_end_%s at %s", server_id, fire_at.isoformat())
-
     def cancel_season_end(self, server_id: int) -> None:
-        """Remove the season-end job for *server_id* if it exists."""
+        """Remove the season-end job for *server_id* if it exists.
+
+        Nothing schedules one any more. A season ends when a league manager runs
+        `/season complete`, and `schedule_season_end` — along with the timer that armed it seven
+        days after the last round — was deleted with issue #154. This is kept because a
+        `scheduler.db` written by an older version may still carry a `season_end_*` job, and
+        because `/season cancel` and `reset` should go on saying so plainly. A stale job whose
+        callable no longer exists is dropped by APScheduler on load, with a warning, rather than
+        failing start-up.
+        """
         job_id = f"season_end_{server_id}"
         try:
             self._scheduler.remove_job(job_id)

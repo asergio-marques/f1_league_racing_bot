@@ -290,6 +290,61 @@ async def test_zero_corrections_advances_to_final(tmp_path):
     assert await _is_channel_closed(db_path, round_id)
 
 
+async def test_approving_the_last_rounds_appeals_finishes_the_division(tmp_path):
+    """The end-to-end link that lets a season be completed at all (issue #154).
+
+    Approving a round's appeals is the only place a round becomes FINAL, and so the only place a
+    division can finish by racing. Until this was wired up, `/season complete` gated on a column
+    nothing wrote and no season could ever be completed. This test starts from the division a
+    league actually has — ACTIVE, with its last round in appeals — and asserts the whole chain,
+    rather than calling refresh_division_status directly as the unit tests do.
+    """
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+    _, division_id, round_id = await _bootstrap(db_path)
+    await _insert_session_with_drivers(db_path, round_id, division_id)
+    await _insert_submission_channel(db_path, round_id)
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE rounds SET result_status = 'POST_RACE_PENALTY' WHERE id = ?", (round_id,)
+        )
+        await db.execute(
+            "UPDATE divisions SET status = 'ACTIVE' WHERE id = ?", (division_id,)
+        )
+        await db.commit()
+
+    bot = _make_bot()
+    guild = _make_guild()
+    state = _make_state(db_path, round_id, division_id, bot)
+    interaction = _make_interaction(guild)
+
+    async def _division_status() -> str:
+        async with get_connection(db_path) as db:
+            cur = await db.execute(
+                "SELECT status FROM divisions WHERE id = ?", (division_id,)
+            )
+            return (await cur.fetchone())["status"]
+
+    assert await _division_status() == "ACTIVE"
+
+    with (
+        patch("services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
+        patch("services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
+        patch("services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
+        patch("services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
+    ):
+        from services.result_submission_service import finalize_appeals_review
+        await finalize_appeals_review(interaction, state)
+
+    assert await _get_result_status(db_path, round_id) == "FINAL"
+    assert await _division_status() == "FINISHED"
+
+    # and with its only division finished, the season is now completable
+    from services.season_service import SeasonService
+    assert await SeasonService(db_path).all_divisions_finished(1) is True
+
+
 # ---------------------------------------------------------------------------
 # T028-3: Full lifecycle PROVISIONAL → POST_RACE_PENALTY → FINAL
 # ---------------------------------------------------------------------------

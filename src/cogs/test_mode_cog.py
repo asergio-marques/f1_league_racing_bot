@@ -348,17 +348,25 @@ class TestModeCog(commands.Cog):
                 run_result_submission_job,
                 is_submission_open,
             )
-            from services.test_mode_service import is_round_finalized
+            from services.test_mode_service import round_result_status
 
             # Guard: if a submission channel is already open, the admin must complete
             # that submission before advancing to the next round.
             if await is_submission_open(self.bot.db_path, entry["round_id"]):  # type: ignore[attr-defined]
-                # Check if we're in penalty-review state (results submitted but not finalized)
-                if not await is_round_finalized(self.bot.db_path, entry["round_id"]):  # type: ignore[attr-defined]
+                # Results are not final until the appeals review is approved. A round sitting
+                # at POST_RACE_PENALTY has had its penalties settled and is waiting on appeals,
+                # so name whichever review is actually standing rather than always the first.
+                status = await round_result_status(self.bot.db_path, entry["round_id"])  # type: ignore[attr-defined]
+                if status != "FINAL":
+                    review = (
+                        "appeals review"
+                        if status == "POST_RACE_PENALTY"
+                        else "penalty review"
+                    )
                     await interaction.followup.send(
                         f"⏸️ **{entry['division_name']}** — **Round {entry['round_number']}** "
-                        f"is awaiting penalty review approval. Please approve or dismiss the "
-                        f"penalties in the submission channel before advancing.",
+                        f"is awaiting {review} approval. Please complete the {review} in the "
+                        f"submission channel before advancing.",
                         ephemeral=True,
                     )
                     return

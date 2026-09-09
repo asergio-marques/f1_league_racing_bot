@@ -423,22 +423,40 @@ No parameters. Shows active season overview: divisions, next scheduled round per
 #### `/season cancel` — Delete the active season
 *Access: Trusted admin*
 
-> ⚠️ **Destructive — irreversible.** All season data, rounds, and results are permanently deleted.
+> ⚠️ **Irreversible.** A cancelled season cannot be reopened, and every command that would change one is refused from then on.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
 
-Posts a cancellation notice to each active division's forecast channel before deleting.
+Posts a cancellation notice to each division that is not already cancelled, then cascades: every
+division of the season is cancelled, and with each one every round of it **not yet raced**. A round
+that has been raced and scored keeps its results and its status — cancelling a season never
+discards a result. The season row is marked `CANCELLED` last.
+
+**Nothing is deleted.** The season, its divisions, rounds, results and standings all stay in the
+database and remain readable by the stats commands; what changes is that they become immutable and
+stop counting as the server's live season. Every placed driver gets a history entry just as they
+would on completion, **marked as cancelled** so a season that was called off can be told apart
+from one that ran to its end. Cancel a season that should never have existed — one
+that was raced should be completed instead.
 
 #### `/season complete` — Mark the active season as complete
 *Access: Trusted admin*
 
-No parameters. Triggers the season-end flow manually. The bot refuses if any non-cancelled round is not yet finalized, and lists the outstanding rounds. Once all rounds are finalized it archives the season: status becomes `COMPLETED`, a history entry is written for every assigned driver, and completion is announced in the log channel. **No data is deleted** — that is what distinguishes this from `/season cancel`.
+No parameters. Triggers the season-end flow manually. The bot refuses while any division of the
+season is neither finished nor cancelled, and lists the rounds still to be finalised. Once every
+division is done it archives the season: status becomes `COMPLETED`, a history entry is written for
+every assigned driver, each division's final classification is posted, and completion is announced
+in the log channel. **No data is deleted** — that is what distinguishes this from `/season cancel`.
 
-> **Note:** Season completion is not automatic. A league manager must run this command once every round in every division has been finalized. Nothing else marks a season complete.
+A **round** is finished when its results are final — that is, once its appeals review has been
+approved — or when it has been cancelled. A round whose penalties have been settled but whose
+appeals are still open is *not* finished; its results can change again. A **division** is finished
+once every one of its rounds is.
 
-> ⚠️ **The refusal cannot currently be cleared, so no season holding a round can be completed.** The check reads a `finalized` column on each round that nothing in the bot ever sets — the live signal for a finished round is its result status, which the check does not consult. Every non-cancelled round is therefore listed as outstanding however completely it was raced and scored, and because a server holds one live season at a time, the next season cannot be started either. Recorded in [#154](https://github.com/asergio-marques/f1_league_racing_bot/issues/154).
+> **Note:** Season completion is not automatic. A league manager must run this command once every
+> round in every division has been finalised. Nothing else marks a season complete.
 
 #### `/round amend` — Amend a round in the active season
 *Access: Trusted admin*
@@ -474,7 +492,10 @@ Cancels scheduled jobs for the round, sets its status to `CANCELLED`, and posts 
 | `name` | String | ✅ | Name of the division to cancel |
 | `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
 
-Cancels all scheduled rounds in the division (jobs + status flags) and posts a notice to the forecast channel.
+Unschedules every round of the division, cancels each one **not yet raced**, marks the division
+`CANCELLED`, and posts a notice to its forecast channel. A round already raced and scored keeps its
+results and its status. A cancelled division is excluded from tier validation, from the standings,
+and from the gate on completing the season.
 
 #### `/division weather-channel` — Set the weather forecast channel for a division
 *Access: Trusted admin · Weather module required*

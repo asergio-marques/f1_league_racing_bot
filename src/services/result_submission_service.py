@@ -753,6 +753,13 @@ async def finalize_appeals_review(
             )
             await db.commit()
 
+        # This is the only place a round becomes finished, and so the only place a division can
+        # become finished by racing. Approving the last round's appeals is what ends a division,
+        # and a division ending is what lets `/season complete` run (issue #154).
+        from services.season_service import SeasonService
+
+        await SeasonService(db_path).refresh_division_status(division_id)
+
         # Audit log APPEALS_REVIEW_APPROVED
         old_val = _json.dumps({"result_status": "POST_RACE_PENALTY"})
         new_val = _json.dumps(

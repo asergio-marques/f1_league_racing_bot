@@ -94,6 +94,8 @@ it only to place it; the rules governing it belong to its own specification.
 - A season shall carry the edition of the game it is raced on.
 - A completed or cancelled season shall be immutable. Every command that would change one shall be refused.
 - No season shall end of its own accord. A league manager shall complete it.
+- A round is finished when its results are final or it has been cancelled. A division is finished when every one of its rounds is finished. A season may be completed when every one of its divisions is finished or cancelled.
+    - A round whose penalties have been settled but whose appeals are still open is not finished. Its results may change again.
 
 ### Building a season
 - A season shall be begun by a setup command naming the edition of the game.
@@ -149,13 +151,19 @@ it only to place it; the rules governing it belong to its own specification.
 - A cancellation is irreversible.
 
 ### Ending a season
+- Completing a season shall be refused while any division of it is neither finished nor cancelled, and the refusal shall name the rounds still to be finalised.
 - Completing a season shall post each division's final classification, shall record a history entry for every placed driver, shall revoke the division, team and signup roles from them, and shall mark the season completed.
 - Cancelling a season shall require the word `CONFIRM`, shall post a notice to each division still running, shall cancel every piece of scheduled work, and shall revoke the same roles. A season is cancelled where it should never have existed; a season that was raced is completed.
+- Cancelling a season shall cancel every division of it that is not already cancelled, and only then mark the season itself cancelled.
+- Cancelling a season shall record a history entry for every placed driver, as completing one does. A season that was cancelled is league history: it happened, and its drivers raced in it.
+- A cancellation shall never discard a result. A round that has been raced and scored shall keep its results and shall not be cancelled by the cancelling of the division or season above it; only a round not yet raced shall be cancelled with it.
 
 ### The archive
 - A completed season and everything belonging to it shall be retained permanently and shall never be changed or deleted: its divisions, its rounds and their amendments, its weather, its results, its standings, its placements, its points configurations and its record of changes.
 - The archive shall be the source from which season history and statistics are drawn.
-- Each driver placed in a completed season shall gain a history entry stating the season's number, the division's name and tier, and the driver's final position, final points and gap to the winner of that division.
+- Each driver placed in a season that has ended shall gain a history entry stating the season's number, the division's name and tier, and the driver's final position, final points and gap to the winner of that division.
+    - The entry shall record whether the driver's division was cancelled. Cancellation reaches a driver only through their division, so a season cancelled outright marks every one of its entries.
+    - A driver created by test mode shall gain a history entry as any other driver does.
 
 ## Divisions
 - A division shall be created during setup, taking a name, a role and a tier.
@@ -168,7 +176,8 @@ it only to place it; the rules governing it belong to its own specification.
     - A division created by duplication shall inherit none of the source division's channels.
 - A division may be renamed, and its name, tier and role amended, during setup alone.
 - A division deleted during setup shall take with it its rounds, its sessions, its teams and seats, and the placements made in it.
-- A division of an active season may be cancelled, upon the word `CONFIRM`. Its rounds shall be unscheduled, a notice shall be posted to it, and it shall thereafter be excluded from the validation of tiers, from the standings and from the end of the season.
+- A division shall stand in one of four states: setup while its season is being built, active once its season is being raced, finished once every one of its rounds is finished, and cancelled where it was called off.
+- A division of an active season may be cancelled, upon the word `CONFIRM`. Its rounds shall be unscheduled, every one of them not yet raced shall be cancelled, a notice shall be posted to it, and it shall thereafter be excluded from the validation of tiers, from the standings and from the end of the season.
 - Every division shall carry a role, which the bot mentions when it posts to that division.
 - A division's calendar may be reposted on demand. A calendar already posted shall not update itself.
 
