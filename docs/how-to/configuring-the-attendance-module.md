@@ -140,7 +140,7 @@ Set a penalty to `0` to stop charging for that case entirely.
 
 The only line that stacks two penalties is the driver who ignored the call and then did not show, and the one your drivers will argue about is the accepted-and-absent driver — which is why it is its own setting rather than sharing the absent penalty. A reserve the bot seated for the round is only ever charged that last one; a reserve it did not seat is charged nothing.
 
-> **`/attendance config rsvp-absent-penalty` does not work.** Run it and the bot fails to respond — the setting is never written, whatever value you pass. That penalty is therefore stuck at 1 point for everybody, and `/attendance config show` will keep reporting 1 no matter what you do. The other two penalties are unaffected and set normally. This is a defect in the bot, recorded in [known issues](../wip-specs/known_issues.md), not something you have configured wrongly.
+> **`/attendance config rsvp-absent-penalty` does not work.** Run it and the bot fails to respond — the setting is never written, whatever value you pass. That penalty is therefore stuck at 1 point for everybody, and `/attendance config show` will keep reporting 1 no matter what you do. The other two penalties are unaffected and set normally. This is a defect in the bot, recorded in [#119](https://github.com/asergio-marques/f1_league_racing_bot/issues/119), not something you have configured wrongly.
 
 ---
 

@@ -438,7 +438,7 @@ No parameters. Triggers the season-end flow manually. The bot refuses if any non
 
 > **Note:** Season completion is not automatic. A league manager must run this command once every round in every division has been finalized. Nothing else marks a season complete.
 
-> ⚠️ **The refusal cannot currently be cleared, so no season holding a round can be completed.** The check reads a `finalized` column on each round that nothing in the bot ever sets — the live signal for a finished round is its result status, which the check does not consult. Every non-cancelled round is therefore listed as outstanding however completely it was raced and scored, and because a server holds one live season at a time, the next season cannot be started either. Recorded in [known issues](docs/wip-specs/known_issues.md).
+> ⚠️ **The refusal cannot currently be cleared, so no season holding a round can be completed.** The check reads a `finalized` column on each round that nothing in the bot ever sets — the live signal for a finished round is its result status, which the check does not consult. Every non-cancelled round is therefore listed as outstanding however completely it was raced and scored, and because a server holds one live season at a time, the next season cannot be started either. Recorded in [#154](https://github.com/asergio-marques/f1_league_racing_bot/issues/154).
 
 #### `/round amend` — Amend a round in the active season
 *Access: Trusted admin*
@@ -738,9 +738,9 @@ Historical data is always retained. How much configuration a disable actually cl
 
 > **Disabling `results` disables `attendance` with it**, where attendance is on. The reply names only results; the cascade is recorded in the log channel and audited as `ATTENDANCE_MODULE_CASCADE_DISABLED`.
 
-> **Disabling `weather` cancels more than the weather jobs.** Job cancellation is scoped by round rather than by kind, so it also removes the result-submission job and all three RSVP jobs for every remaining round of an active or setup season. Nothing recreates them short of `/season approve`. See [known issues](docs/wip-specs/known_issues.md).
+> **Disabling `weather` cancels more than the weather jobs.** Job cancellation is scoped by round rather than by kind, so it also removes the result-submission job and all three RSVP jobs for every remaining round of an active or setup season. Nothing recreates them short of `/season approve`. See [#117](https://github.com/asergio-marques/f1_league_racing_bot/issues/117).
 
-Enabling is guarded where disabling is not: `results` and `attendance` both refuse to be enabled while a season is ACTIVE, and neither refuses to be disabled. See [known issues](docs/wip-specs/known_issues.md).
+Enabling is guarded where disabling is not: `results` and `attendance` both refuse to be enabled while a season is ACTIVE, and neither refuses to be disabled. See [#114](https://github.com/asergio-marques/f1_league_racing_bot/issues/114).
 
 ---
 
@@ -953,7 +953,7 @@ All three of the above must be set before `/signup open` will run, and — while
 
 Deprecated alias retained for backwards compatibility; prefer `/signup base-role` and `/signup complete-role`.
 
-> **`/signup config channel` is non-functional.** It is retained as a deprecated alias but raises `TypeError` on invocation and sets nothing. Use `/signup channel`. See [known issues](docs/wip-specs/known_issues.md).
+> **`/signup config channel` is non-functional.** It is retained as a deprecated alias but raises `TypeError` on invocation and sets nothing. Use `/signup channel`. See [#124](https://github.com/asergio-marques/f1_league_racing_bot/issues/124).
 
 #### `/signup config view` — View current signup configuration
 *Access: Trusted admin*
@@ -1012,7 +1012,7 @@ Refused unless the signup channel, base role and completion role are all set and
 
 No parameters. If drivers are currently in progress you will be prompted to confirm; the confirmation lists everyone in `PENDING_SIGNUP_COMPLETION`, `PENDING_ADMIN_APPROVAL` and `PENDING_DRIVER_CORRECTION`, but only drivers in `PENDING_SIGNUP_COMPLETION` are transitioned to Not Signed Up. Drivers awaiting approval or correction retain their state and may still be approved after the window has closed.
 
-Refused outright while an auto-close timer set by `/signup open close_time:` is armed. See [known issues](docs/wip-specs/known_issues.md).
+Refused outright while an auto-close timer set by `/signup open close_time:` is armed. See [#125](https://github.com/asergio-marques/f1_league_racing_bot/issues/125).
 
 #### `/signup unassigned list` — List all Unassigned drivers seeded by lap time
 *Access: Trusted admin*
@@ -1406,7 +1406,7 @@ Same modal and same input rules as [`/results config bulk-session`](#results-con
 
 No parameters. Displays a diff of the staged changes against the current season points. Approve to atomically overwrite season points, recalculate all standings for every division from the first round, and switch amendment mode back off. Reject to leave the modification store and amendment mode as they are.
 
-> **The recalculation currently lands in the database only.** Approving reports that standings were "recomputed and reposted"; the recomputation happens, and every attempt to repost fails with an error in the log channel, so the results and standings channels keep showing the old points. Run [`/results rounds sync`](#results-rounds-sync--force-a-full-results-repost-for-a-division) and [`/results standings sync`](#results-standings-sync--force-a-full-standings-repost-for-a-division) for **each** division afterwards. Recorded in [known issues](docs/wip-specs/known_issues.md).
+> **The recalculation currently lands in the database only.** Approving reports that standings were "recomputed and reposted"; the recomputation happens, and every attempt to repost fails with an error in the log channel, so the results and standings channels keep showing the old points. Run [`/results rounds sync`](#results-rounds-sync--force-a-full-results-repost-for-a-division) and [`/results standings sync`](#results-standings-sync--force-a-full-standings-repost-for-a-division) for **each** division afterwards. Recorded in [#130](https://github.com/asergio-marques/f1_league_racing_bot/issues/130).
 
 ---
 

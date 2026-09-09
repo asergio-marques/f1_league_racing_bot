@@ -130,7 +130,7 @@ Times go in as `20:00` or as `8:00pm`; both work. The list numbers them in day-a
 
 Slots are locked while the window is open. Get the list right before you open, because changing it afterwards means closing first.
 
-> **Removing a slot renumbers the ones after it, and old answers do not follow.** The numbers are positions in the list, not permanent labels. Delete `#2` and the old `#3` becomes the new `#2`. Drivers who already told you they were free at `#3` are now recorded as free at a different time, and the export will show the wrong column. If you must edit the list after anyone has signed up, **add** rather than remove, and if you do remove one, check the export against what drivers actually said. See [known issues](../wip-specs/known_issues.md).
+> **Removing a slot renumbers the ones after it, and old answers do not follow.** The numbers are positions in the list, not permanent labels. Delete `#2` and the old `#3` becomes the new `#2`. Drivers who already told you they were free at `#3` are now recorded as free at a different time, and the export will show the wrong column. If you must edit the list after anyone has signed up, **add** rather than remove, and if you do remove one, check the export against what drivers actually said. See [#126](https://github.com/asergio-marques/f1_league_racing_bot/issues/126).
 
 ---
 
@@ -154,7 +154,7 @@ The bot checks things in order and stops at the first problem: test mode must be
 
 When it goes through, the bot posts a green **Driver Signups Are Open!** message in your signup channel listing your slots, the tracks, the time type, whether a screenshot is needed, whether nationality is asked, and the auto-close time if you set one. Underneath is the **Sign Up** button, and the message pings your base role.
 
-> **Setting a close time is close to irreversible.** With a timer armed, `/signup close` refuses and tells you to cancel the timer with a command that **does not exist in the bot**. Your only ways out are to let the timer run or to disable the module, which loses your channel and roles. Leave `close_time` off unless you are certain of the date. See [known issues](../wip-specs/known_issues.md).
+> **Setting a close time is close to irreversible.** With a timer armed, `/signup close` refuses and tells you to cancel the timer with a command that **does not exist in the bot**. Your only ways out are to let the timer run or to disable the module, which loses your channel and roles. Leave `close_time` off unless you are certain of the date. See [#125](https://github.com/asergio-marques/f1_league_racing_bot/issues/125).
 
 > **No tracks means no seeding.** Open the window without `track_ids` and nobody submits a lap time, so every approved driver has no total to sort on and the queue falls back to the order you approved people in. That is fine if you never intended to rank by pace — just know that the seed numbers then mean nothing.
 
@@ -212,7 +212,7 @@ If nobody is mid-signup it closes immediately. Otherwise you get a confirmation 
 
 Closing deletes the Sign Up button, posts a **Signups are now closed** notice in the channel, and tells anyone still filling in the questionnaire that it is over.
 
-> **It drops fewer drivers than it warns you about.** The confirmation says every in-progress driver will be reset, and counts everyone still filling the form in *plus* everyone waiting on you. Only the ones still filling it in are actually dropped. Drivers waiting for your approval, or fixing something you sent back, keep their place — you can still approve them after the window has shut, and you should. See [known issues](../wip-specs/known_issues.md).
+> **It drops fewer drivers than it warns you about.** The confirmation says every in-progress driver will be reset, and counts everyone still filling the form in *plus* everyone waiting on you. Only the ones still filling it in are actually dropped. Drivers waiting for your approval, or fixing something you sent back, keep their place — you can still approve them after the window has shut, and you should. See [#128](https://github.com/asergio-marques/f1_league_racing_bot/issues/128).
 
 > **The confirmation expires after five minutes, silently.** Leave the dialog sitting and the buttons simply stop responding, with nothing to tell you why. Run the command again.
 

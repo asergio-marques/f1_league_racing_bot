@@ -65,6 +65,7 @@
     - In practice, this means that any changes done while there is no season, or while a season is being setup, will be valid to any season that is approved in the future, regardless of whether the modified configuration is attached or not.
     - However, if there is an ongoing approved season, the modifications done to the configurations in the server points schema store are NOT applied to the season's own configuration of the same name.
 - There shall be the possibility to amend a points system mid-season, but it will require higher permissions. Once an amending session is started (by enabling amending), a copy of the season's current points schema store will be made and placed in a "modification schema store". Any changes made will be done to this "modification store". Only upon review and approval will the settings in the modification store overwrite the points schema store of the season completely. After they are overwritten, all results and standings posted after every round of every division shall be reposted taking into consideration the new values.
+    - The higher permission is the league admin's tier, and it is asked of the approval alone. Starting an amending session, making changes to the modification store, reviewing them and rejecting them are a league manager's. Approval overwrites the season's points entire and nothing undoes it.
 
 #### Results and standings
 - The schema for results and standings is as follows:

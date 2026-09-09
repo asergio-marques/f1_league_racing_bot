@@ -107,7 +107,7 @@ A configuration starts with **every position in every session worth nothing**. F
 
 Reads a configuration back to you privately. Positions worth nothing at the bottom of the table are collapsed into a single `P11+` line rather than listed one by one.
 
-> **Nothing is checked at the moment you set it, and nothing catches it later either.** You can give second place more points than first, and the bot will take it. There is a check meant to run at `/season approve` — but on a first approval it inspects a table the season has not been given yet, finds nothing, and passes. Do not rely on it: read the table back with `/results config view` before you approve, because a wrongly built table costs you a wrong championship rather than a refused approval. See [known issues](../wip-specs/known_issues.md).
+> **Nothing is checked at the moment you set it, and nothing catches it later either.** You can give second place more points than first, and the bot will take it. There is a check meant to run at `/season approve` — but on a first approval it inspects a table the season has not been given yet, finds nothing, and passes. Do not rely on it: read the table back with `/results config view` before you approve, because a wrongly built table costs you a wrong championship rather than a refused approval. See [#131](https://github.com/asergio-marques/f1_league_racing_bot/issues/131).
 
 > **`/results config view` needs a season.** Between seasons there is none, and the command refuses — so a table you may want to check before starting your next season setup is unreachable until you have run `/season setup`. There is also no command that lists what configurations you hold, so keep a note of the names you chose.
 
