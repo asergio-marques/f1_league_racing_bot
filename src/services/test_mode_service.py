@@ -190,7 +190,7 @@ async def get_next_pending_phase(
                 r.phase1_done,
                 r.phase2_done,
                 r.phase3_done,
-                r.result_status,
+                r.status,
                 d.name         AS division_name
             FROM rounds r
             JOIN divisions d ON d.id  = r.division_id
@@ -330,9 +330,8 @@ async def get_next_pending_phase(
         is_mystery = str(row["format"]).upper() == "MYSTERY"
 
         # Skip rounds that are fully done or already in results processing.
-        # result_status is the canonical post-submission state machine:
-        #   PROVISIONAL → ACTIVE (not started) | FINAL/POST_RACE_PENALTY → done/in-review.
-        if row["result_status"] in ("FINAL", "POST_RACE_PENALTY"):
+        # A round that has ended, or whose appeals are being judged, offers no more phases.
+        if row["status"] in ("FINAL", "AWAITING_APPEAL_VERDICTS"):
             return None
 
         def _make(phase: int) -> PhaseEntry:
@@ -380,7 +379,9 @@ async def get_next_pending_phase(
 
         # ── Phase 4: result submission ────────────────────────────────────
         if results_module_enabled:
-            if rid not in rounds_with_results and row["result_status"] == "PROVISIONAL":
+            if rid not in rounds_with_results and row["status"] in (
+                "NOT_RUN", "AWAITING_RESULTS"
+            ):
                 return _make(4)
 
         return None
@@ -434,11 +435,11 @@ async def get_next_pending_phase(
 
 
 async def round_result_status(db_path: str, round_id: int) -> str | None:
-    """Return a round's ``result_status``, or None if there is no such round.
+    """Return a round's lifecycle state, or None if there is no such round.
 
-    PROVISIONAL -> POST_RACE_PENALTY -> FINAL is the post-submission state machine: results
-    submitted, penalties settled, appeals settled. Only FINAL means the round is done — a round
-    at POST_RACE_PENALTY still has its appeals open and its results can change again.
+    NOT_RUN -> AWAITING_RESULTS -> AWAITING_REPORT_VERDICTS -> AWAITING_APPEAL_VERDICTS -> FINAL,
+    with CANCELLED as the other ending. Only FINAL and CANCELLED are terminal — a round awaiting
+    appeal verdicts still has its results open to change.
 
     This replaced `is_round_finalized`, which read `rounds.finalized`: a column nothing has ever
     written, so it returned False for every round however completely it was scored and
@@ -446,11 +447,11 @@ async def round_result_status(db_path: str, round_id: int) -> str | None:
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT result_status FROM rounds WHERE id = ?",
+            "SELECT status FROM rounds WHERE id = ?",
             (round_id,),
         )
         row = await cursor.fetchone()
-    return row["result_status"] if row else None
+    return row["status"] if row else None
 
 
 # ---------------------------------------------------------------------------
@@ -532,7 +533,7 @@ async def build_review_summary(
                 r.phase1_done,
                 r.phase2_done,
                 r.phase3_done,
-                r.result_status,
+                r.status,
                 d.name        AS division_name,
                 d.id          AS division_id
             FROM rounds r
@@ -629,7 +630,7 @@ async def build_review_summary(
 
             # ── Result submission ─────────────────────────────────────────
             if results_module_enabled:
-                if row["result_status"] == "FINAL":
+                if row["status"] == "FINAL":
                     res = "✅ finalized"
                 elif rid in rounds_with_results:
                     res = "⏸️ pending review"

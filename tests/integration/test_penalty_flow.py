@@ -342,9 +342,9 @@ async def test_test_mode_advance_blocked_until_results_are_final(tmp_path):
     This test used to set `rounds.finalized = 1` by hand and assert the old
     `is_round_finalized` picked it up. Nothing in production ever wrote that column, so the test
     passed while the guard it covered was answering False for every round in existence — and the
-    same dead column made `/season complete` unreachable (issue #154). It now walks the real
-    state machine, including the POST_RACE_PENALTY step, which must *not* count as done: the
-    penalties are settled but the appeals are still open.
+    same dead column made `/season complete` unreachable (issue #154). It now walks the whole
+    chain, and only the last step counts as done: a round awaiting appeal verdicts has had its
+    penalties settled but its results can still change.
     """
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -352,12 +352,17 @@ async def test_test_mode_advance_blocked_until_results_are_final(tmp_path):
 
     from services.test_mode_service import round_result_status
 
-    assert await round_result_status(db_path, round_id) == "PROVISIONAL"
+    assert await round_result_status(db_path, round_id) == "NOT_RUN"
 
-    for status in ("POST_RACE_PENALTY", "FINAL"):
+    for status in (
+        "AWAITING_RESULTS",
+        "AWAITING_REPORT_VERDICTS",
+        "AWAITING_APPEAL_VERDICTS",
+        "FINAL",
+    ):
         async with get_connection(db_path) as db:
             await db.execute(
-                "UPDATE rounds SET result_status = ? WHERE id = ?", (status, round_id)
+                "UPDATE rounds SET status = ? WHERE id = ?", (status, round_id)
             )
             await db.commit()
         assert await round_result_status(db_path, round_id) == status

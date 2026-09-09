@@ -209,11 +209,11 @@ async def _get_result_status(db_path: str, round_id: int) -> str:
     """The round's results lifecycle stage, from which both phase closures follow (039)."""
     async with get_connection(db_path) as db:
         row = await (
-            await db.execute("SELECT result_status FROM rounds WHERE id = ?", (round_id,))
+            await db.execute("SELECT status FROM rounds WHERE id = ?", (round_id,))
         ).fetchone()
-    if row is None or not row["result_status"]:
-        return "PROVISIONAL"
-    return row["result_status"]
+    if row is None or not row["status"]:
+        return ""
+    return row["status"]
 
 
 async def _get_division_tier(db_path: str, division_id: int) -> int | None:
@@ -228,8 +228,8 @@ async def _get_division_tier(db_path: str, division_id: int) -> int | None:
 def _label_from_status(result_status: str) -> str:
     """Map a round result_status value to the user-visible lifecycle label."""
     return {
-        "PROVISIONAL": "Provisional Results",
-        "POST_RACE_PENALTY": "Post-Race Penalty Results",
+        "AWAITING_REPORT_VERDICTS": "Provisional Results",
+        "AWAITING_APPEAL_VERDICTS": "Post-Race Penalty Results",
         "FINAL": "Final Results",
     }.get(result_status, "Results")
 
@@ -1027,7 +1027,7 @@ async def repost_results_for_division(
         cursor = await db.execute(
             """
             SELECT DISTINCT r.id AS round_id, r.round_number, r.track_name, r.format,
-                   r.result_status
+                   r.status
             FROM rounds r
             JOIN session_results sr ON sr.round_id = r.id
             WHERE r.division_id = ? AND sr.status = 'ACTIVE'
@@ -1045,7 +1045,7 @@ async def repost_results_for_division(
         round_number: int = rnd["round_number"]
         track_name: str = rnd["track_name"] or "Unknown"
         is_sprint: bool = str(rnd["format"]).upper() == "SPRINT"
-        rnd_label: str = _label_from_status(rnd["result_status"] or "PROVISIONAL")
+        rnd_label: str = _label_from_status(rnd["status"] or "")
 
         async with get_connection(db_path) as db:
             cursor = await db.execute(
@@ -1110,7 +1110,7 @@ async def repost_standings_for_division(
         cursor = await db.execute(
             """
             SELECT DISTINCT r.id AS round_id, r.round_number, r.track_name,
-                   r.result_status, drc.standings_channel_id
+                   r.status, drc.standings_channel_id
             FROM rounds r
             JOIN session_results sr ON sr.round_id = r.id
             LEFT JOIN division_results_config drc ON drc.division_id = r.division_id
@@ -1143,7 +1143,7 @@ async def repost_standings_for_division(
         round_id: int = row["round_id"]
         round_number: int = row["round_number"]
         track_name: str = row["track_name"] or "Unknown"
-        rsd_label: str = _label_from_status(row["result_status"] or "PROVISIONAL")
+        rsd_label: str = _label_from_status(row["status"] or "")
 
         # Delete the existing standings message(s) for this round (if any), both
         # championships, whichever flow posted them.
@@ -1304,7 +1304,7 @@ async def repost_subsequent_standings(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT r.id AS round_id, r.round_number, r.track_name, r.result_status,
+            SELECT r.id AS round_id, r.round_number, r.track_name, r.status,
                    drc.standings_channel_id, drc.reserves_in_standings
             FROM rounds r
             LEFT JOIN division_results_config drc ON drc.division_id = r.division_id
@@ -1321,7 +1321,7 @@ async def repost_subsequent_standings(
         rnd_id: int = rnd["round_id"]
         rnd_number: int = rnd["round_number"]
         rnd_track: str = rnd["track_name"] or "Unknown"
-        rnd_label: str = _label_from_status(rnd["result_status"] or "PROVISIONAL")
+        rnd_label: str = _label_from_status(rnd["status"] or "")
         standings_ch_id: int | None = rnd["standings_channel_id"]
         show_reserves: bool = bool(rnd["reserves_in_standings"]) if rnd["reserves_in_standings"] is not None else True
 

@@ -108,16 +108,16 @@ def test_the_session_name_drops_the_feature_prefix_off_a_sprint_round():
 
 
 def test_status_label_matches_the_text_the_message_carries():
-    assert status_label("PROVISIONAL") == "Provisional Results"
-    assert status_label("POST_RACE_PENALTY") == "Post-Race Penalty Results"
+    assert status_label("AWAITING_REPORT_VERDICTS") == "Provisional Results"
+    assert status_label("AWAITING_APPEAL_VERDICTS") == "Post-Race Penalty Results"
     assert status_label("FINAL") == "Final Results"
 
 
 @pytest.mark.parametrize(
     "status,penalty_closed,appeal_closed",
     [
-        ("PROVISIONAL", False, False),
-        ("POST_RACE_PENALTY", True, False),
+        ("AWAITING_REPORT_VERDICTS", False, False),
+        ("AWAITING_APPEAL_VERDICTS", True, False),
         ("FINAL", True, True),
     ],
 )
@@ -128,7 +128,7 @@ def test_the_phase_closures_follow_the_result_status(status, penalty_closed, app
 
 
 def test_provisional_empties_both_sanction_cells_on_every_row():
-    drawing = _resolve([_qual(1, 10), _qual(2, 11)], result_status="PROVISIONAL")
+    drawing = _resolve([_qual(1, 10), _qual(2, 11)], result_status="AWAITING_REPORT_VERDICTS")
     assert all(entry.postrace_penalty is None for entry in drawing.entries)
     assert all(entry.appeal_penalty is None for entry in drawing.entries)
 
@@ -140,7 +140,7 @@ def test_a_closed_phase_that_applied_nothing_carries_a_dash():
 
 
 def test_a_closed_penalty_phase_with_an_open_appeal_resolves_one_and_empties_the_other():
-    drawing = _resolve([_qual(1, 10)], result_status="POST_RACE_PENALTY")
+    drawing = _resolve([_qual(1, 10)], result_status="AWAITING_APPEAL_VERDICTS")
     assert drawing.entries[0].postrace_penalty == "—"
     assert drawing.entries[0].appeal_penalty is None
 

@@ -728,7 +728,7 @@ async def distribute_attendance_points(
                 JOIN rounds r ON r.id = dra2.round_id
                 WHERE dra2.driver_profile_id = ?
                   AND dra2.division_id = ?
-                  AND r.result_status IN ('POST_RACE_PENALTY', 'FINAL')
+                  AND r.status IN ('AWAITING_APPEAL_VERDICTS', 'FINAL')
                   AND dra2.round_id != ?
                   AND dra2.points_awarded IS NOT NULL
                 """,
@@ -795,7 +795,7 @@ async def distribute_attendance_points(
                 JOIN rounds r ON r.id = dra2.round_id
                 WHERE dra2.driver_profile_id = ?
                   AND dra2.division_id = ?
-                  AND r.result_status IN ('POST_RACE_PENALTY', 'FINAL')
+                  AND r.status IN ('AWAITING_APPEAL_VERDICTS', 'FINAL')
                   AND dra2.round_id != ?
                   AND dra2.points_awarded IS NOT NULL
                 """,
@@ -1614,7 +1614,7 @@ async def recalculate_attendance_for_round(
             """
             SELECT id FROM rounds
             WHERE division_id = ?
-              AND result_status IN ('POST_RACE_PENALTY', 'FINAL')
+              AND status IN ('AWAITING_APPEAL_VERDICTS', 'FINAL')
               AND round_number > (SELECT round_number FROM rounds WHERE id = ?)
             ORDER BY round_number ASC
             """,

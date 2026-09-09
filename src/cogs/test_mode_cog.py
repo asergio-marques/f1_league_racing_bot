@@ -354,13 +354,13 @@ class TestModeCog(commands.Cog):
             # that submission before advancing to the next round.
             if await is_submission_open(self.bot.db_path, entry["round_id"]):  # type: ignore[attr-defined]
                 # Results are not final until the appeals review is approved. A round sitting
-                # at POST_RACE_PENALTY has had its penalties settled and is waiting on appeals,
+                # awaiting appeal verdicts has had its report verdicts settled already,
                 # so name whichever review is actually standing rather than always the first.
                 status = await round_result_status(self.bot.db_path, entry["round_id"])  # type: ignore[attr-defined]
                 if status != "FINAL":
                     review = (
                         "appeals review"
-                        if status == "POST_RACE_PENALTY"
+                        if status == "AWAITING_APPEAL_VERDICTS"
                         else "penalty review"
                     )
                     await interaction.followup.send(

@@ -97,8 +97,8 @@ async def test_post_penalty_announcements_skips_when_no_channel_configured(tmp_p
         )
         division_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, result_status, scheduled_at) "
-            "VALUES (?, 1, 'STANDARD', 'PROVISIONAL', '2026-01-01T18:00:00')",
+            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
+            "VALUES (?, 1, 'STANDARD', 'AWAITING_REPORT_VERDICTS', '2026-01-01T18:00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid
@@ -143,8 +143,8 @@ async def test_post_penalty_announcements_skips_when_channel_inaccessible(tmp_pa
         )
         division_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, result_status, scheduled_at) "
-            "VALUES (?, 1, 'STANDARD', 'PROVISIONAL', '2026-01-01T18:00:00')",
+            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
+            "VALUES (?, 1, 'STANDARD', 'AWAITING_REPORT_VERDICTS', '2026-01-01T18:00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid

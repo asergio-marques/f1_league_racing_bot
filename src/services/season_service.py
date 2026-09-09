@@ -7,9 +7,15 @@ from datetime import date, datetime
 
 from db.database import get_connection
 from models.division import Division
-from models.round import Round, RoundFormat
+from models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, Round, RoundFormat
 from models.season import Season, SeasonStatus
 from models.session import Session, SessionType, SESSIONS_BY_FORMAT
+
+#: Rendered from the model's sets so the queries below cannot drift from the rule they
+#: encode. Interpolated rather than bound because they are our own enum values and the
+#: count varies; nothing here comes from a user.
+_TERMINAL_SQL = ", ".join(f"'{v}'" for v in sorted(ROUND_TERMINAL))
+_CANCELLABLE_SQL = ", ".join(f"'{v}'" for v in sorted(ROUND_CANCELLABLE))
 
 log = logging.getLogger(__name__)
 
@@ -772,9 +778,9 @@ class SeasonService:
     async def refresh_division_status(self, division_id: int) -> bool:
         """Move a division ACTIVE -> FINISHED once none of its rounds is outstanding.
 
-        A round is outstanding while it is neither cancelled nor FINAL. `result_status` is the
-        state machine that decides it (PROVISIONAL -> POST_RACE_PENALTY -> FINAL); a round left at
-        POST_RACE_PENALTY is still in appeals and does not count as finished.
+        A round is outstanding until it reaches one of its two terminal states, FINAL or
+        CANCELLED. Every other state is a round still waiting on somebody: for its date, for its
+        results, for report verdicts, or for appeal verdicts.
 
         Division status is stored rather than derived, so that cancelling a division can record
         the fact and `/season cancel` can tell the running divisions apart from the called-off
@@ -791,11 +797,10 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                """
+                f"""
                 SELECT COUNT(*) FROM rounds
-                WHERE division_id     = ?
-                  AND status         != 'CANCELLED'
-                  AND result_status  != 'FINAL'
+                WHERE division_id = ?
+                  AND status NOT IN ({_TERMINAL_SQL})
                 """,
                 (division_id,),
             )
@@ -838,16 +843,15 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                """
+                f"""
                 SELECT d.name AS division, r.round_number, r.track_name
                 FROM rounds r
                 JOIN divisions d ON d.id = r.division_id
                 JOIN seasons   s ON s.id = d.season_id
                 WHERE s.server_id = ?
                   AND s.status    = 'ACTIVE'
-                  AND r.status   != 'CANCELLED'
+                  AND r.status NOT IN ({_TERMINAL_SQL})
                   AND d.status   != 'CANCELLED'
-                  AND r.result_status != 'FINAL'
                 ORDER BY d.name, r.round_number
                 """,
                 (server_id,),
@@ -1232,10 +1236,12 @@ class SeasonService:
     ) -> None:
         """Cancel a division and its unraced rounds on an already-open connection.
 
-        Only rounds still PROVISIONAL are cancelled. A round that reached POST_RACE_PENALTY or
-        FINAL was raced and scored, and cancelling it would say it never happened while its
-        results sat in the archive contradicting that. Its results stand; the division around it
-        is what was called off.
+        Only rounds that may still be cancelled are — those not yet run, and those whose
+        results have not been entered. Once results are in, the drivers have reports and appeals
+        to lodge and calling the round off would take that from them, so it keeps its place and
+        its results; the division around it is what was called off. `ROUND_CANCELLABLE` carries
+        the rule, and `/round cancel` reads the same set, so one round and a whole division
+        cannot disagree about what may be called off.
         """
         cursor = await db.execute(
             "SELECT status FROM divisions WHERE id = ?", (division_id,)
@@ -1244,11 +1250,10 @@ class SeasonService:
         previous = row["status"] if row else "ACTIVE"
 
         cursor = await db.execute(
-            """
+            f"""
             SELECT id FROM rounds
-            WHERE division_id    = ?
-              AND status        != 'CANCELLED'
-              AND result_status  = 'PROVISIONAL'
+            WHERE division_id = ?
+              AND status IN ({_CANCELLABLE_SQL})
             ORDER BY round_number
             """,
             (division_id,),
@@ -1466,7 +1471,7 @@ class SeasonService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
-                "phase1_done, phase2_done, phase3_done, status, result_status FROM rounds WHERE id = ?",
+                "phase1_done, phase2_done, phase3_done, status FROM rounds WHERE id = ?",
                 (round_id,),
             )
             row = await cursor.fetchone()
@@ -1477,7 +1482,7 @@ class SeasonService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
-                "phase1_done, phase2_done, phase3_done, status, result_status FROM rounds "
+                "phase1_done, phase2_done, phase3_done, status FROM rounds "
                 "WHERE division_id = ? ORDER BY round_number",
                 (division_id,),
             )
@@ -1696,7 +1701,6 @@ def _row_to_round(row: object) -> Round:
         phase2_done=bool(row["phase2_done"]),
         phase3_done=bool(row["phase3_done"]),
         status=row["status"],
-        result_status=row["result_status"],
     )
 
 

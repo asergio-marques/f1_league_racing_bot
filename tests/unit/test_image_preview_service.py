@@ -105,7 +105,7 @@ async def _seed_round(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, track_name, "
-            "scheduled_at, status) VALUES (?, ?, ?, ?, ?, 'ACTIVE')",
+            "scheduled_at, status) VALUES (?, ?, ?, ?, ?, 'NOT_RUN')",
             (
                 division_id,
                 number,

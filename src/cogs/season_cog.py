@@ -36,7 +36,7 @@ from discord.ext import commands
 from db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
 from models.division import Division
 from models.round import Round as RoundModel
-from models.round import RoundFormat
+from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from services import season_points_service
 import services.track_service as track_service
 from services.season_service import SeasonImmutableError
@@ -1945,7 +1945,7 @@ class SeasonCog(commands.Cog):
         ]
         for div in divisions:
             rounds = await self.bot.season_service.get_division_rounds(div.id)
-            active_rounds = [r for r in rounds if r.status == "ACTIVE"]
+            active_rounds = [r for r in rounds if r.status != RoundStatus.CANCELLED.value]
             next_round = next(
                 (
                     r for r in active_rounds
@@ -3897,35 +3897,36 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if rnd.status == "CANCELLED":
+        if rnd.status == RoundStatus.CANCELLED.value:
             await interaction.response.send_message(
                 f"\u274c Round {round_number} in **{division_name}** is already cancelled.",
                 ephemeral=True,
             )
             return
 
-        # Guard: block cancel while a results submission channel is open (FR-020)
+        # A round may only be called off before its results are entered. Afterwards the drivers
+        # have reports and appeals to lodge, and cancelling would take that from them.
+        #
+        # This reads `ROUND_CANCELLABLE`, the same set the cascade in season_service reads. Before
+        # the round states were united, this command tested for submitted results while the
+        # cascade tested a status that could not tell "not yet raced" from "raced but unjudged" —
+        # so `/round cancel` refused a round that `/division cancel` would quietly cancel, taking
+        # a raced result with it. One rule, read from one place, is what stops them disagreeing.
+        if rnd.status not in ROUND_CANCELLABLE:
+            await interaction.response.send_message(
+                f"\u274c Cannot cancel Round {round_number} — its results have already been "
+                "entered, and the drivers' reports and appeals depend on it.",
+                ephemeral=True,
+            )
+            return
+
+        # A submission channel standing open is a separate matter: the round may still be
+        # cancellable, but the wizard would be writing into it as it went (FR-020).
         from services.result_submission_service import is_submission_open
         if await is_submission_open(self.bot.db_path, rnd.id):
             await interaction.response.send_message(
                 f"\u274c Cannot cancel Round {round_number} — a results submission channel is "
                 "currently open. Close the submission first.",
-                ephemeral=True,
-            )
-            return
-
-        # Guard: block cancel if results have already been submitted for this round
-        from db.database import get_connection
-        async with get_connection(self.bot.db_path) as _db:
-            _cur = await _db.execute(
-                "SELECT COUNT(*) FROM session_results WHERE round_id = ? AND status = 'ACTIVE'",
-                (rnd.id,),
-            )
-            _row = await _cur.fetchone()
-        if _row and _row[0] > 0:
-            await interaction.response.send_message(
-                f"\u274c Cannot cancel Round {round_number} — results have already been "
-                "submitted for this round.",
                 ephemeral=True,
             )
             return
@@ -4030,7 +4031,7 @@ class SeasonCog(commands.Cog):
             return
 
         # T009: amend is only permitted on FINAL rounds
-        if rnd.result_status != "FINAL":
+        if rnd.status != "FINAL":
             await interaction.followup.send(
                 "\u274c This round cannot be amended yet. Round results must reach **FINAL** status "
                 "(approved through the full penalty review and appeals process) before they can be amended.",

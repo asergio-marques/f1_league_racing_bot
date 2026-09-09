@@ -486,7 +486,7 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
                   JOIN divisions d ON d.id = r.division_id
                   JOIN seasons s ON s.id = d.season_id
                   JOIN attendance_config ac ON ac.server_id = s.server_id
-                 WHERE r.status = 'ACTIVE'
+                 WHERE r.status != 'CANCELLED'
                    AND s.status = 'ACTIVE'
                 """
             )
@@ -575,7 +575,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
             """
             SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
                    rsc.results_posted, rsc.staged_penalties, rsc.prompt_message_id,
-                   r.division_id, r.result_status, s.server_id
+                   r.division_id, r.status, s.server_id
             FROM round_submission_channels rsc
             JOIN rounds r    ON r.id  = rsc.round_id
             JOIN divisions d ON d.id  = r.division_id
@@ -593,12 +593,12 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         staged_penalties_json: str | None = row["staged_penalties"]
         prompt_message_id: int | None = row["prompt_message_id"]
         division_id: int = row["division_id"]
-        result_status: str = row["result_status"] if row["result_status"] else "PROVISIONAL"
+        round_status: str = row["status"] or ""
         server_id: int = row["server_id"]
 
         guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
 
-        if in_penalty_review and result_status == "POST_RACE_PENALTY":
+        if in_penalty_review and round_status == "AWAITING_APPEAL_VERDICTS":
             # The bot restarted while a round was awaiting appeals review.
             # Re-post the AppealsReviewView prompt to the submission channel.
             if guild is None:

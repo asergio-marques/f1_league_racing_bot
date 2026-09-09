@@ -1,11 +1,11 @@
-"""Integration tests for round lifecycle: PROVISIONAL → POST_RACE_PENALTY → FINAL.
+"""Integration tests for round lifecycle: results in → report verdicts → appeal verdicts.
 
 Tests cover:
 - result_status transitions in the DB
-- Zero-staged-penalties still advances to POST_RACE_PENALTY (FR-009)
+- Zero-staged-penalties still advances to AWAITING_APPEAL_VERDICTS (FR-009)
 - Zero-staged-corrections still advances to FINAL (FR-010)
 - channel-close only at FINAL (round_submission_channels.closed = 1)
-- round results amend rejected at PROVISIONAL and POST_RACE_PENALTY, accepted at FINAL
+- round results amend rejected before FINAL, accepted at FINAL
 - penalty_records and appeal_records rows created when staged lists are non-empty
 """
 from __future__ import annotations
@@ -49,8 +49,8 @@ async def _bootstrap(db_path: str) -> tuple[int, int, int]:
         )
         division_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, result_status, scheduled_at) "
-            "VALUES (?, 1, 'STANDARD', 'PROVISIONAL', '2026-01-01T18:00:00')",
+            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
+            "VALUES (?, 1, 'STANDARD', 'AWAITING_RESULTS', '2026-01-01T18:00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid
@@ -196,11 +196,11 @@ def _make_guild() -> MagicMock:
     return guild
 
 
-async def _get_result_status(db_path: str, round_id: int) -> str:
+async def _get_round_status(db_path: str, round_id: int) -> str:
     async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT result_status FROM rounds WHERE id = ?", (round_id,))
+        cursor = await db.execute("SELECT status FROM rounds WHERE id = ?", (round_id,))
         row = await cursor.fetchone()
-    return row["result_status"] if row else "UNKNOWN"
+    return row["status"] if row else "UNKNOWN"
 
 
 async def _is_channel_closed(db_path: str, round_id: int) -> bool:
@@ -213,12 +213,12 @@ async def _is_channel_closed(db_path: str, round_id: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# T028-1: PROVISIONAL → POST_RACE_PENALTY with zero staged penalties (FR-009)
+# T028-1: AWAITING_REPORT_VERDICTS → AWAITING_APPEAL_VERDICTS, zero staged penalties (FR-009)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_zero_penalties_advances_to_post_race_penalty(tmp_path):
-    """Empty staged list — round advances to POST_RACE_PENALTY, channel stays open."""
+    """Empty staged list — round advances to AWAITING_APPEAL_VERDICTS, channel stays open."""
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
     _, division_id, round_id = await _bootstrap(db_path)
@@ -240,16 +240,16 @@ async def test_zero_penalties_advances_to_post_race_penalty(tmp_path):
         from services.result_submission_service import finalize_penalty_review
         await finalize_penalty_review(interaction, state)
 
-    # result_status must be POST_RACE_PENALTY
-    status = await _get_result_status(db_path, round_id)
-    assert status == "POST_RACE_PENALTY"
+    # the round must now be awaiting appeal verdicts
+    status = await _get_round_status(db_path, round_id)
+    assert status == "AWAITING_APPEAL_VERDICTS"
 
     # Channel must NOT be closed
     assert not await _is_channel_closed(db_path, round_id)
 
 
 # ---------------------------------------------------------------------------
-# T028-2: POST_RACE_PENALTY → FINAL with zero staged corrections (FR-010)
+# T028-2: AWAITING_APPEAL_VERDICTS → FINAL with zero staged corrections (FR-010)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -264,7 +264,7 @@ async def test_zero_corrections_advances_to_final(tmp_path):
     # Manually set status to POST_RACE_PENALTY
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE rounds SET result_status = 'POST_RACE_PENALTY' WHERE id = ?", (round_id,)
+            "UPDATE rounds SET status = 'AWAITING_APPEAL_VERDICTS' WHERE id = ?", (round_id,)
         )
         await db.commit()
 
@@ -282,8 +282,8 @@ async def test_zero_corrections_advances_to_final(tmp_path):
         from services.result_submission_service import finalize_appeals_review
         await finalize_appeals_review(interaction, state)
 
-    # result_status must be FINAL
-    status = await _get_result_status(db_path, round_id)
+    # the results must now be final
+    status = await _get_round_status(db_path, round_id)
     assert status == "FINAL"
 
     # Channel must be closed
@@ -307,7 +307,7 @@ async def test_approving_the_last_rounds_appeals_finishes_the_division(tmp_path)
 
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE rounds SET result_status = 'POST_RACE_PENALTY' WHERE id = ?", (round_id,)
+            "UPDATE rounds SET status = 'AWAITING_APPEAL_VERDICTS' WHERE id = ?", (round_id,)
         )
         await db.execute(
             "UPDATE divisions SET status = 'ACTIVE' WHERE id = ?", (division_id,)
@@ -337,7 +337,7 @@ async def test_approving_the_last_rounds_appeals_finishes_the_division(tmp_path)
         from services.result_submission_service import finalize_appeals_review
         await finalize_appeals_review(interaction, state)
 
-    assert await _get_result_status(db_path, round_id) == "FINAL"
+    assert await _get_round_status(db_path, round_id) == "FINAL"
     assert await _division_status() == "FINISHED"
 
     # and with its only division finished, the season is now completable
@@ -350,8 +350,14 @@ async def test_approving_the_last_rounds_appeals_finishes_the_division(tmp_path)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_full_lifecycle_three_states(tmp_path):
-    """Walk through the complete lifecycle and verify each state transition."""
+async def test_full_lifecycle_states(tmp_path):
+    """Walk the lifecycle from results-in to final, verifying each transition.
+
+    The chain gained states with migration 055: the old `PROVISIONAL` covered a round not yet
+    due, one due but unentered, and one entered but unjudged. This walk starts where results are
+    in — `_insert_session_with_drivers` puts them there — so the round is awaiting report
+    verdicts, then appeal verdicts, then final.
+    """
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
     _, division_id, round_id = await _bootstrap(db_path)
@@ -362,8 +368,13 @@ async def test_full_lifecycle_three_states(tmp_path):
     guild = _make_guild()
     state = _make_state(db_path, round_id, division_id, bot)
 
-    # 1. Verify initial state
-    assert await _get_result_status(db_path, round_id) == "PROVISIONAL"
+    # 1. Results are in, so reports are what the round is waiting on
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE rounds SET status = 'AWAITING_REPORT_VERDICTS' WHERE id = ?", (round_id,)
+        )
+        await db.commit()
+    assert await _get_round_status(db_path, round_id) == "AWAITING_REPORT_VERDICTS"
 
     with (
         patch("services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
@@ -377,16 +388,16 @@ async def test_full_lifecycle_three_states(tmp_path):
             finalize_appeals_review,
         )
 
-        # 2. Penalty review → POST_RACE_PENALTY
+        # 2. Report verdicts approved → awaiting appeal verdicts
         interaction1 = _make_interaction(guild)
         await finalize_penalty_review(interaction1, state)
-        assert await _get_result_status(db_path, round_id) == "POST_RACE_PENALTY"
+        assert await _get_round_status(db_path, round_id) == "AWAITING_APPEAL_VERDICTS"
         assert not await _is_channel_closed(db_path, round_id)
 
-        # 3. Appeals review → FINAL
+        # 3. Appeal verdicts approved → final
         interaction2 = _make_interaction(guild)
         await finalize_appeals_review(interaction2, state)
-        assert await _get_result_status(db_path, round_id) == "FINAL"
+        assert await _get_round_status(db_path, round_id) == "FINAL"
         assert await _is_channel_closed(db_path, round_id)
 
 
@@ -495,7 +506,7 @@ async def test_is_channel_in_penalty_review_false_after_final(tmp_path):
     # Advance to FINAL
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE rounds SET result_status = 'FINAL' WHERE id = ?", (round_id,)
+            "UPDATE rounds SET status = 'FINAL' WHERE id = ?", (round_id,)
         )
         await db.commit()
 
@@ -513,7 +524,7 @@ async def test_is_channel_in_penalty_review_true_at_post_race_penalty(tmp_path):
 
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE rounds SET result_status = 'POST_RACE_PENALTY' WHERE id = ?", (round_id,)
+            "UPDATE rounds SET status = 'AWAITING_APPEAL_VERDICTS' WHERE id = ?", (round_id,)
         )
         await db.commit()
 

@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 pytestmark = pytest.mark.asyncio
 
 
-async def _seeded(tmp_path, *, result_status="PROVISIONAL", message_id=None):
+async def _seeded(tmp_path, *, result_status="AWAITING_REPORT_VERDICTS", message_id=None):
     """A database holding one season, division, round and session result."""
     from db.database import get_connection, run_migrations
     from models.session_result import SessionResult
@@ -41,7 +41,7 @@ async def _seeded(tmp_path, *, result_status="PROVISIONAL", message_id=None):
         )
         division_id = cur.lastrowid
         cur = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, result_status, "
+            "INSERT INTO rounds (division_id, round_number, format, status, "
             "scheduled_at) VALUES (?, 5, 'STANDARD', ?, '2026-06-01T18:00:00')",
             (division_id, result_status),
         )
@@ -468,8 +468,8 @@ async def test_an_unreadable_toggle_never_breaks_a_posting(tmp_path):
 @pytest.mark.parametrize(
     "status,penalty_closed,appeal_closed",
     [
-        ("PROVISIONAL", False, False),
-        ("POST_RACE_PENALTY", True, False),
+        ("AWAITING_REPORT_VERDICTS", False, False),
+        ("AWAITING_APPEAL_VERDICTS", True, False),
         ("FINAL", True, True),
     ],
 )

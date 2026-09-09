@@ -328,7 +328,7 @@
 
 ### Revising results
 #### Penalties and appeals are settled in the submission channel
-Penalties are not applied by a command. Once every session of a round has been submitted or cancelled, the submission channel remains open and carries the round through two review stages before it closes. Each stage is worked from buttons, and a round passes through three published states: provisional, post-race penalty, and final.
+Penalties are not applied by a command. Once every session of a round has been submitted or cancelled, the submission channel remains open and carries the round through two review stages before it closes. Each stage is worked from buttons, and the results are published under three headings in turn: provisional, post-race penalty, and final. These are the labels the league reads on the posted results; the round's own lifecycle states, which the two reviews move it through, are set out in the [core specification](core_specification.md).
 
 - Any message posted in the submission channel while it is in a review stage shall be deleted, with a reply saying why.
 - Every button in both stages shall be usable by holders of the server's interaction role.

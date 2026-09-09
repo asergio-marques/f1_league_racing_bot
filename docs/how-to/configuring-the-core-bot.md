@@ -388,7 +388,7 @@ Things change. During an active season:
 | Command | What it does |
 |---|---|
 | `/round amend` | Change a round's track, time or format. Changing the time renumbers the division's rounds; changing **any** of the three throws away every forecast already generated for that round |
-| `/round cancel` | Call off one round. Needs `CONFIRM`, and posts a notice to the division |
+| `/round cancel` | Call off one round. Needs `CONFIRM`, and posts a notice to the division. Refused once the round's results have been entered — the drivers' reports and appeals depend on them |
 | `/division cancel` | Call off a whole division. Needs `CONFIRM`. Every round of it you have not yet raced is cancelled with it; rounds you have raced keep their results |
 | `/division calendar-sync` | Repost a division's calendar with your changes on it |
 | `/clean-bot` | Delete the bot's own most recent messages in the command channel. You say how many, up to ten, and nobody else's messages are touched. An approved or expired review clears itself, so this is for whatever else the bot has left behind |
@@ -406,12 +406,17 @@ Things change. During an active season:
 **Nothing ends a season by itself.** You run this once every round in every division has been finalised, and the bot refuses — listing the outstanding rounds — until they are. It then archives the season: it is marked complete, a history entry is written for every driver who raced, each division's **final classification** is posted, and it is announced in the log channel. **Nothing is deleted.**
 
 > **What "finalised" means here.** A round is finished once its **appeals review is approved** —
-> not when you submit its results, and not when you approve its penalties. A round sitting at
-> post-race penalties still has its appeals open and still counts as outstanding, which is usually
-> the answer when the refusal names a round you thought was done: go back to its submission channel
-> and approve the appeals review. A cancelled round does not hold anything up. A division is
-> finished once every one of its rounds is, and the season completes once every division is
-> finished or cancelled.
+> not when you submit its results, and not when you approve its penalties. Each stage in between
+> has its own name, and the refusal tells you which one a round is sitting in: *awaiting results*
+> if nobody has entered them, *awaiting report verdicts* if they are posted and the reports are
+> being judged, *awaiting appeal verdicts* if those are done and the appeals are not. Any of them
+> counts as outstanding, which is usually the answer when the refusal names a round you thought was
+> done: go back to its submission channel and finish the review it names. A cancelled round does
+> not hold anything up. A division is finished once every one of its rounds is, and the season
+> completes once every division is finished or cancelled.
+
+> **If you do not run the results module**, a round becomes final as its time passes — there are no
+> results to wait for — so your seasons complete without any of this.
 
 > **The final classification is the mirror of the opening one.** Each division's standings channel
 > gets its final standings and its attendance channel a final sheet, both headed `Final

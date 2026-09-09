@@ -23,10 +23,10 @@ from services.results_post_service import _label_from_status
 
 class TestLabelFromStatus:
     def test_provisional_label(self):
-        assert _label_from_status("PROVISIONAL") == "Provisional Results"
+        assert _label_from_status("AWAITING_REPORT_VERDICTS") == "Provisional Results"
 
     def test_post_race_penalty_label(self):
-        assert _label_from_status("POST_RACE_PENALTY") == "Post-Race Penalty Results"
+        assert _label_from_status("AWAITING_APPEAL_VERDICTS") == "Post-Race Penalty Results"
 
     def test_final_label(self):
         assert _label_from_status("FINAL") == "Final Results"
@@ -39,8 +39,8 @@ class TestLabelFromStatus:
 
     def test_all_three_values_are_distinct(self):
         labels = {
-            _label_from_status("PROVISIONAL"),
-            _label_from_status("POST_RACE_PENALTY"),
+            _label_from_status("AWAITING_REPORT_VERDICTS"),
+            _label_from_status("AWAITING_APPEAL_VERDICTS"),
             _label_from_status("FINAL"),
         }
         assert len(labels) == 3
@@ -76,8 +76,8 @@ async def test_post_session_results_includes_heading_and_label(tmp_path):
         )
         division_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, result_status, scheduled_at) "
-            "VALUES (?, 5, 'STANDARD', 'PROVISIONAL', '2026-06-01T18:00:00')",
+            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
+            "VALUES (?, 5, 'STANDARD', 'AWAITING_REPORT_VERDICTS', '2026-06-01T18:00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid
@@ -167,7 +167,7 @@ async def test_post_session_results_label_appears_for_all_status_values(tmp_path
         )
         division_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, result_status, scheduled_at) "
+            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
             "VALUES (?, 1, 'STANDARD', 'FINAL', '2026-06-01T18:00:00')",
             (division_id,),
         )
@@ -195,7 +195,7 @@ async def test_post_session_results_label_appears_for_all_status_values(tmp_path
     mock_guild.get_member.return_value = None
     mock_guild.fetch_member = AsyncMock(side_effect=Exception("not found"))
 
-    for status in ("PROVISIONAL", "POST_RACE_PENALTY", "FINAL"):
+    for status in ("AWAITING_REPORT_VERDICTS", "AWAITING_APPEAL_VERDICTS", "FINAL"):
         label = _label_from_status(status)
         captured: list[str] = []
 
@@ -251,7 +251,7 @@ async def test_post_standings_includes_heading_and_label(tmp_path):
         )
         division_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, result_status, scheduled_at) "
+            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
             "VALUES (?, 3, 'STANDARD', 'FINAL', '2026-06-01T18:00:00')",
             (division_id,),
         )

@@ -711,7 +711,7 @@ async def _division_with_rounds(db, count: int, *, cancelled: tuple[int, ...] = 
 
     round_ids: list[int] = []
     for number in range(1, count + 1):
-        status = "CANCELLED" if number in cancelled else "ACTIVE"
+        status = "CANCELLED" if number in cancelled else "NOT_RUN"
         cursor = await db.execute(
             "INSERT INTO rounds "
             "(division_id, round_number, format, scheduled_at, status) "

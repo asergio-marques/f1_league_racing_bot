@@ -450,10 +450,15 @@ division is done it archives the season: status becomes `COMPLETED`, a history e
 every assigned driver, each division's final classification is posted, and completion is announced
 in the log channel. **No data is deleted** — that is what distinguishes this from `/season cancel`.
 
-A **round** is finished when its results are final — that is, once its appeals review has been
-approved — or when it has been cancelled. A round whose penalties have been settled but whose
-appeals are still open is *not* finished; its results can change again. A **division** is finished
-once every one of its rounds is.
+A **round** moves through six states, and the middle ones are named for what the round is waiting
+on: **not run** before its time comes, **awaiting results** once it has, **awaiting report
+verdicts** once the results are posted, **awaiting appeal verdicts** once those verdicts are, then
+**final**. **Cancelled** is the other ending. A round is finished when it is final or cancelled —
+nothing earlier counts, because until the appeals are judged the results can still change. A
+**division** is finished once every one of its rounds is.
+
+If your league does not run the results module, a round becomes final when its time passes: there
+are no results to wait for, so nothing holds the season open.
 
 > **Note:** Season completion is not automatic. A league manager must run this command once every
 > round in every division has been finalised. Nothing else marks a season complete.
@@ -1326,8 +1331,8 @@ Approving here — or **No Changes / Confirm** with nothing staged — deletes a
 - Any message posted in the submission channel while it is in penalty review state is automatically deleted with an explanatory reply.
 - Penalties can be positive (`+5s`, `5s`, `5`) or negative (`-3s`, `-3`) for race sessions.
 - A DSQ on the fastest-lap holder forfeits the bonus; no other driver receives it.
-- A round that has been submitted but has not reached **FINAL** blocks `/test-mode advance` until both review stages are approved.
-- `/round cancel` is refused once a submission channel is open or any results exist for the round.
+- A round that has been submitted but has not reached **final** blocks `/test-mode advance` until both review stages are approved. The refusal names whichever review is standing.
+- `/round cancel` is refused once the round's results have been entered — from then on the drivers have reports and appeals to lodge, and cancelling would take that from them. It is also refused while a submission channel stands open. The same rule governs `/division cancel` and `/season cancel`, so a round that cannot be cancelled on its own is not cancelled by a cascade either.
 - On bot restart, a channel already in penalty or appeals review is restored and its prompt reposted. A channel still **mid-submission** is not: the round's submitted sessions are discarded and collection restarts from the first session, with a notice in the log channel.
 - A round in which every session is submitted as `CANCELLED` skips both review stages entirely — the channel closes and no standings are computed for it.
 

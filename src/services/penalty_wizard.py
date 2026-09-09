@@ -597,11 +597,11 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
         async with get_connection(self.state.db_path) as db:
             # --- Check round is not already finalized (FR-011) ---
             cursor = await db.execute(
-                "SELECT result_status FROM rounds WHERE id = ?",
+                "SELECT status FROM rounds WHERE id = ?",
                 (self.state.round_id,),
             )
             round_row = await cursor.fetchone()
-            if round_row and round_row["result_status"] == "POST_RACE_PENALTY":
+            if round_row and round_row["status"] == "AWAITING_APPEAL_VERDICTS":
                 await interaction.followup.send(
                     "❌ Post-race penalties have already been finalized for this round. "
                     "No further attendance pardons may be applied.",
