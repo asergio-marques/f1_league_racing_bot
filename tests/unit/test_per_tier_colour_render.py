@@ -41,6 +41,7 @@ CALL_SITES = {
     "services/image_rsvp_post.py": "drawing.division_name",
     "services/image_standings_post.py": "drawing.division_name",
     "services/image_verdict_post.py": "drawing.division_name",
+    "services/image_verdict_banner_post.py": "drawing.division_name",
     "services/image_weather_post.py": "drawing.division_name",
     "cogs/image_cog.py": "context.division_name",
 }
@@ -125,7 +126,7 @@ def test_every_render_call_site_names_the_division(path, expected):
 
 
 def test_render_for_posting_hands_the_tier_on():
-    """Seven of the nine paths reach `render` only through this wrapper."""
+    """Eight of the ten paths reach `render` only through this wrapper."""
     source = inspect.getsource(ImageRenderService.render_for_posting)
     assert "division_name: str | None = None" in source
     assert "division_name=division_name," in source
