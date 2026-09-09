@@ -37,10 +37,16 @@ The question every level answers: **how much does a league lose, and can they ge
 4. **How do you get there?** A path a league walks every season raises it. A narrow combination,
    or something needing an API failure to bite, lowers it.
 
-### The override
+### The override, and its ceiling
 
 **A stated rule broken is at least High, whatever the blast radius.** Rules exist so the rest of
 the system can rely on them, and a rule that holds in most places is not a rule.
+
+**A raise cannot carry a lesser impact into Critical.** Critical is reserved for damage to the
+championship and for the module-output rule. Silence and irrecoverability raise a level within
+that ceiling — they do not lift a cosmetic or presentational defect to the top. A forecast
+published at the wrong time is silent and cannot be put right, and is still not Critical, because
+nothing about the championship is wrong.
 
 ### The levels
 
