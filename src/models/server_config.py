@@ -11,6 +11,12 @@ class ServerConfig:
     interaction_role_id: int
     interaction_channel_id: int
     log_channel_id: int
+    #: The role that holds the league admin tier. ``None`` where the league has not yet
+    #: chosen one, which is every server configured before the role existed — a league
+    #: admin command is refused while it stands rather than falling back to a Discord
+    #: permission, a league that has not picked the role not having decided who may cancel
+    #: its season. Set by ``/bot-admin-role``, and by ``/bot-init`` on a new server.
+    league_admin_role_id: int | None = None
     test_mode_active: bool = field(default=False)
     #: The test-mode counterpart of signup nationality collection. While test mode is
     #: active this stands in for it, so a maintainer may preview a league that collects no

@@ -21,7 +21,8 @@ class ConfigService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT server_id, interaction_role_id, interaction_channel_id, "
-                "       log_channel_id, test_mode_active, test_mode_nationality_required, "
+                "       log_channel_id, league_admin_role_id, test_mode_active, "
+                "       test_mode_nationality_required, "
                 "       weather_module_enabled, signup_module_enabled "
                 "FROM server_configs WHERE server_id = ?",
                 (server_id,),
@@ -35,6 +36,7 @@ class ConfigService:
             interaction_role_id=row["interaction_role_id"],
             interaction_channel_id=row["interaction_channel_id"],
             log_channel_id=row["log_channel_id"],
+            league_admin_role_id=row["league_admin_role_id"],
             test_mode_active=bool(row["test_mode_active"]),
             test_mode_nationality_required=bool(row["test_mode_nationality_required"]),
             weather_module_enabled=bool(row["weather_module_enabled"]),
@@ -59,9 +61,10 @@ class ConfigService:
                 """
                 INSERT INTO server_configs
                     (server_id, interaction_role_id, interaction_channel_id,
-                     log_channel_id, test_mode_active, test_mode_nationality_required,
+                     log_channel_id, league_admin_role_id, test_mode_active,
+                     test_mode_nationality_required,
                      weather_module_enabled, signup_module_enabled)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(server_id) DO NOTHING
                 """,
                 (
@@ -69,6 +72,7 @@ class ConfigService:
                     cfg.interaction_role_id,
                     cfg.interaction_channel_id,
                     cfg.log_channel_id,
+                    cfg.league_admin_role_id,
                     int(cfg.test_mode_active),
                     int(cfg.test_mode_nationality_required),
                     int(cfg.weather_module_enabled),
@@ -78,19 +82,20 @@ class ConfigService:
             await db.commit()
             return cursor.rowcount > 0
 
-    #: The three settings `/bot-init` establishes and the three commands beside it repair.
+    #: The four settings `/bot-init` establishes and the four commands beside it repair.
     #: Named here rather than interpolated from the caller so that no command can reach a
     #: column of its own choosing.
     _SETTABLE_COLUMNS = {
         "interaction_role_id",
         "interaction_channel_id",
         "log_channel_id",
+        "league_admin_role_id",
     }
 
     async def set_core_setting(self, server_id: int, column: str, value: int) -> bool:
         """Write one core-config column, leaving every other column untouched.
 
-        One column at a time is the point: test mode, the module flags and the other two
+        One column at a time is the point: test mode, the module flags and the other three
         settings are each written by their own command, and a whole-row save from any of
         them would carry stale values over the others.
 
