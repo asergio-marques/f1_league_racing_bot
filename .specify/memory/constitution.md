@@ -57,10 +57,16 @@ SYNC IMPACT REPORT
     - Lines inside sync impact reports were left untouched throughout. They are the historical
       record and say what was true when written.
 
+  Decided here rather than renamed:
+    - **A League Ban is imposed and lifted by a league admin.** No document had stated a tier,
+      so the default would have made a permanent ban a league manager's. It is kin to sacking
+      a driver, which is a league admin's because nothing puts it back, and it decides who
+      races at all. Both directions ask the same tier: a bar that is harder to lift than to
+      impose would be the wrong asymmetry.
+    - A Season Ban is untouched and stays a league manager's. It is bounded by
+      `ban_races_remaining` and expires of its own accord, so it is not of the same kind.
+
   Not settled here:
-    - The League Banned state says a ban is "lifted by an administrator" and its transition
-      table says "Administrator explicitly lifts ban". No document states which tier lifts a
-      league ban, so this is a decision rather than a rename and is left open.
     - The out-of-channel refusal clause and the three references to the deleted
       `docs/wip-specs/known_issues.md`, both tracked in issue #145.
 
@@ -4250,7 +4256,7 @@ their Discord User ID in server scope. The following rules are non-negotiable:
 | Unassigned | Signup approved; not yet placed in any division-team seat. |
 | Assigned | Placed in at least one division-team seat. |
 | Season Banned | Banned for `ban_races_remaining` rounds (see Season Banned mechanics). Cannot sign up. |
-| League Banned | Permanently banned. Cannot sign up until explicitly lifted by an administrator. |
+| League Banned | Permanently banned. Cannot sign up until explicitly lifted by a league admin. |
 
 #### Permitted Transitions
 
@@ -4271,9 +4277,9 @@ their Discord User ID in server scope. The following rules are non-negotiable:
 | Unassigned | Not Signed Up | `/driver sack` |
 | Assigned | Not Signed Up | `/driver sack` |
 | Any (except League Banned, Season Banned) | Season Banned | Ban command issued |
-| Any (except League Banned) | League Banned | Ban command issued |
+| Any (except League Banned) | League Banned | Ban command issued by a league admin |
 | Season Banned | Not Signed Up | `ban_races_remaining` decrements to 0 |
-| League Banned | Not Signed Up | Administrator explicitly lifts ban |
+| League Banned | Not Signed Up | League admin explicitly lifts ban |
 | Not Signed Up | Unassigned | Test mode: admin direct-assign |
 | Not Signed Up | Assigned | Test mode: admin direct-assign |
 
