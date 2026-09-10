@@ -1,6 +1,6 @@
 # Attendance module
-- <COMMAND CHANGE> The attendance module may be enabled via a "module enable" command akin to other modules. May only be used by server admins.
-- <COMMAND CHANGE> The attendance module may be disabled via a "module disable" command akin to other modules. May only be used by server admins.
+- <COMMAND CHANGE> The attendance module may be enabled via a "module enable" command akin to other modules. May only be used by league admins.
+- <COMMAND CHANGE> The attendance module may be disabled via a "module disable" command akin to other modules. May only be used by league admins.
 - The attendance module is disabled by default.
 - The attendance module may not be enabled once the season is approved.
 - Due to being dependent on the results module, the attendance module cannot be enabled while the results & standings module is disabled.

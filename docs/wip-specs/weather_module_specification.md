@@ -1,6 +1,6 @@
 # Weather module
-- The weather module may be enabled via a "module enable" command akin to other modules. May only be used by server admins.
-- The weather module may be disabled via a "module disable" command akin to other modules. May only be used by server admins.
+- The weather module may be enabled via a "module enable" command akin to other modules. May only be used by league admins.
+- The weather module may be disabled via a "module disable" command akin to other modules. May only be used by league admins.
 - The weather module is disabled by default.
 - The weather module may be enabled while a season is active, provided every division of that season already has a forecast channel configured. If any division lacks one, the command shall be rejected and the offending divisions named.
 - Upon being enabled, the bot shall immediately perform any phase whose horizon has already passed for every round of the active season, and schedule the remainder. Should any such phase fail, the enable shall be rolled back in full and the module left disabled.

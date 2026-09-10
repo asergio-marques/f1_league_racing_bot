@@ -34,44 +34,44 @@ For this purpose, the Discord bot shall require three new dependencies: one with
         - The addendum to "images config view" shall name such aspects individually, and shall be absent entirely once none remains.
         - Both shall read one and the same declaration of which aspects post, so that the two cannot disagree.
         - All nine aspects presently post, so neither statement is made and the addendum is absent. The rule stands for any aspect added ahead of its posting path.
-- <NEW COMMAND> A new "images config template-directory" will be made available to server administrators which will take in a string standing for the directory in which the image template files will be searched.
+- <NEW COMMAND> A new "images config template-directory" will take in a string standing for the directory in which the image template files will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the template files will be searched in a "resources/defaults/templates" folder located at the project root.
     - The directory named shall be verified before it is stored, upon the same evaluation the season review makes: every template belonging to an aspect that is switched on shall be found in it and shall be valid. A directory failing this shall be refused, naming each template at fault with its own reason, and the configuration left as it stood. A template belonging only to aspects that are switched off shall not refuse the directory, that aspect drawing nothing until it is switched on, at which point its own templates are verified.
         - This directory alone is verified thus, and is the only directory for which a league's artwork may be absent without consequence but a template may not. No other class is refused for holding nothing, every one of them having a packaged directory behind it.
-- <NEW COMMAND> A new "images template calendar" command will be made available to server administrators which will take in a string standing for the filename of the template calendar image.
+- <NEW COMMAND> A new "images template calendar" command will take in a string standing for the filename of the template calendar image.
     - By default, the filename shall be "calendar_template.svg".
-- <NEW COMMAND> A new "images template lineup" command will be made available to server administrators which will take in a string standing for the filename of the template lineup image.
+- <NEW COMMAND> A new "images template lineup" command will take in a string standing for the filename of the template lineup image.
     - By default, the filename shall be "lineup_template.svg".
-- <NEW COMMAND> A new "images template results-qualifying" command will be made available to server administrators which will take in a string standing for the filename of the template image for qualifying session results.
+- <NEW COMMAND> A new "images template results-qualifying" command will take in a string standing for the filename of the template image for qualifying session results.
     - By default, the filename shall be "results_qualifying_template.svg".
-- <NEW COMMAND> A new "images template results-race" command will be made available to server administrators which will take in a string standing for the filename of the template image for race session results.
+- <NEW COMMAND> A new "images template results-race" command will take in a string standing for the filename of the template image for race session results.
     - By default, the filename shall be "results_race_template.svg".
 - The results of a qualifying session and those of a race session share no columns beyond the driver, the team, the sanctions and the points, and are therefore drawn from two templates and not one. A sprint session and a feature session of the same kind share a template, the two being distinguished by the text placed on the session name field alone.
-- <NEW COMMAND> A new "images template standings-drivers" command will be made available to server administrators which will take in a string standing for the filename of the template image for the driver standings.
+- <NEW COMMAND> A new "images template standings-drivers" command will take in a string standing for the filename of the template image for the driver standings.
     - By default, the filename shall be "standings_drivers_template.svg".
-- <NEW COMMAND> A new "images template standings-constructors" command will be made available to server administrators which will take in a string standing for the filename of the template image for the constructor standings.
+- <NEW COMMAND> A new "images template standings-constructors" command will take in a string standing for the filename of the template image for the constructor standings.
     - By default, the filename shall be "standings_constructors_template.svg".
 - The driver standings and the constructor standings share no columns beyond the team, the position and the points, and are therefore drawn from two templates and not one.
-- <NEW COMMAND> A new "images template attendance" command will be made available to server administrators which will take in a string standing for the filename of the template attendance image.
+- <NEW COMMAND> A new "images template attendance" command will take in a string standing for the filename of the template attendance image.
     - By default, the filename shall be "attendance_template.svg".
-- <NEW COMMAND> A new "images template rsvp" command will be made available to server administrators which will take in a string standing for the filename of the template image for the check-in call posted for a round.
+- <NEW COMMAND> A new "images template rsvp" command will take in a string standing for the filename of the template image for the check-in call posted for a round.
     - By default, the filename shall be "rsvp_template.svg".
 - The attendance sheet and the check-in call share no field beyond the heading fields and those naming the round, and are therefore drawn from two templates and not one.
-- <NEW COMMAND> A new "images template weather-p1" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 1 image.
+- <NEW COMMAND> A new "images template weather-p1" command will take in a string standing for the filename of the template weather phase 1 image.
     - By default, the filename shall be "weather_p1_template.svg".
-- <NEW COMMAND> A new "images template weather-p2" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 2 image.
+- <NEW COMMAND> A new "images template weather-p2" command will take in a string standing for the filename of the template weather phase 2 image.
     - By default, the filename shall be "weather_p2_template.svg".
-- <NEW COMMAND> A new "images template weather-p3" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 3 image.
+- <NEW COMMAND> A new "images template weather-p3" command will take in a string standing for the filename of the template weather phase 3 image.
     - By default, the filename shall be "weather_p3_template.svg".
-- <NEW COMMAND> A new "images template weather-p2-sprint" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 2 image of a round of the sprint format.
+- <NEW COMMAND> A new "images template weather-p2-sprint" command will take in a string standing for the filename of the template weather phase 2 image of a round of the sprint format.
     - By default, the filename shall be "weather_p2_sprint_template.svg".
-- <NEW COMMAND> A new "images template weather-p3-sprint" command will be made available to server administrators which will take in a string standing for the filename of the template weather phase 3 image of a round of the sprint format.
+- <NEW COMMAND> A new "images template weather-p3-sprint" command will take in a string standing for the filename of the template weather phase 3 image of a round of the sprint format.
     - By default, the filename shall be "weather_p3_sprint_template.svg".
-- <NEW COMMAND> A new "images template weather-mystery" command will be made available to server administrators which will take in a string standing for the filename of the template image for the notice posted for a mystery round.
+- <NEW COMMAND> A new "images template weather-mystery" command will take in a string standing for the filename of the template image for the notice posted for a mystery round.
     - By default, the filename shall be "weather_mystery_template.svg".
 - The three phases of a weather forecast share no field beyond the heading fields and those naming the track, and the notice of a mystery round shares none beyond the heading fields, and are therefore drawn from separate templates and not one. Phases 2 and 3 are drawn from two templates each, a round of the sprint format holding four sessions and a round of every other format two, and a canvas serving one of the two well serving the other poorly. Six weather templates are therefore configured in all.
-- <NEW COMMAND> A new "images template verdicts" command will be made available to server administrators which will take in a string standing for the filename of the template verdicts image.
+- <NEW COMMAND> A new "images template verdicts" command will take in a string standing for the filename of the template verdicts image.
     - By default, the filename shall be "verdicts_template.svg".
 - The fifteen commands naming a template file stand under "images template" and not under "images config", and drop the "-template" suffix their names would otherwise carry. Discord admits at most twenty-five subcommands to a group and no third level of nesting, and "images config" carries fifteen commands beside these: one naming the template directory, eight naming an asset directory, four carrying a presentation preference, the toggle and the view. The two groups shall be kept within that limit as the module grows, and a command added to either shall be counted against it.
 - <MODIFY COMMAND> The "season review" command shall be augumented to display the enabling status of the images module, as well as all of the configurations above and if they are valid.
@@ -99,26 +99,26 @@ For this purpose, the Discord bot shall require three new dependencies: one with
 - The default directory of every asset class shall be the "resources/league/<class>" folder at the project root, which is the folder a league places its own artwork in and which an update of the bot shall not overwrite. A league placing a file there shall have it drawn without configuring anything. The packaged directory of the class answers every datum for which no file is placed there, upon the two-tier resolution defined in the conventions below, so a league that has placed nothing draws every graphic all the same.
     - The template directory is not of this kind and does not move. It has no packaged directory behind it, a template being sought in the configured directory alone.
     - The default governs a configuration newly created and no other. A server already configured shall keep the directory it holds for every class, whether it named that directory itself or inherited it as the default of an earlier version. A value a league is presently drawing from shall not be altered beneath it.
-- <NEW COMMAND> A new "images config track-image-directory" command will be made available to server administrators which will take in a string standing for the directory in which the map files to be used to represent the track will be searched. Only the calendar and check-in graphics draw from this directory.
+- <NEW COMMAND> A new "images config track-image-directory" command will take in a string standing for the directory in which the map files to be used to represent the track will be searched. Only the calendar and check-in graphics draw from this directory.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the map files will be searched in a "resources/league/tracks" folder located at the project root.
-- <NEW COMMAND> A new "images config team-image-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a team (logo, badge, car) will be searched.
+- <NEW COMMAND> A new "images config team-image-directory" command will take in a string standing for the directory in which the image files to be used to represent a team (logo, badge, car) will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the team image files will be searched in a "resources/league/teams" folder located at the project root.
-- <NEW COMMAND> A new "images config flag-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a country will be searched. One directory serves both the nationality of a driver and the country of a round, and its files are named for countries.
+- <NEW COMMAND> A new "images config flag-directory" command will take in a string standing for the directory in which the image files to be used to represent a country will be searched. One directory serves both the nationality of a driver and the country of a round, and its files are named for countries.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the flag image files will be searched in a "resources/league/flags" folder located at the project root.
-- <NEW COMMAND> A new "images config driver-image-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a driver themselves (portrait, photograph, avatar) will be searched.
+- <NEW COMMAND> A new "images config driver-image-directory" command will take in a string standing for the directory in which the image files to be used to represent a driver themselves (portrait, photograph, avatar) will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the driver image files will be searched in a "resources/league/drivers" folder located at the project root.
-- <NEW COMMAND> A new "images use-pfp toggle" command will be made available to server administrators, which governs whether the bot may obtain a driver's portrait for itself from the server profile picture of that driver's Discord account.
+- <NEW COMMAND> A new "images use-pfp toggle" command will, which governs whether the bot may obtain a driver's portrait for itself from the server profile picture of that driver's Discord account.
     - It shall be disabled by default. The module obtains nothing whatever until a league has asked it to.
     - The command shall fail where the images module is not enabled.
     - While it is disabled the module shall obtain no portrait by any means, and a portrait a league placed itself shall be drawn exactly as it is drawn today.
-- <NEW COMMAND> A new "images use-pfp prerender-toggle" command will be made available to server administrators, which governs whether the portraits a graphic requires are brought up to date immediately before that graphic is drawn.
+- <NEW COMMAND> A new "images use-pfp prerender-toggle" command will, which governs whether the portraits a graphic requires are brought up to date immediately before that graphic is drawn.
     - It shall be enabled by default.
     - The command shall fail where the images module is not enabled, and where "images use-pfp toggle" is disabled.
-- <NEW COMMAND> A new "images use-pfp daily-toggle" command will be made available to server administrators, which governs whether the portraits of the drivers of the active season are brought up to date once a day, at a time of day the league configures.
+- <NEW COMMAND> A new "images use-pfp daily-toggle" command will, which governs whether the portraits of the drivers of the active season are brought up to date once a day, at a time of day the league configures.
     - It shall be disabled by default, and the time of day shall be "03:00" until a league names another.
     - On being used to enable the updates, a modal shall be presented in which the league names the time of day, prefilled with the time presently configured, and the setting shall be committed only upon a confirmation given after that modal. Where the league cancels at either step the command shall fail and the configuration be left as it stood.
     - On being used to disable them, no time is required and no modal shall be presented.
@@ -127,18 +127,18 @@ For this purpose, the Discord bot shall require three new dependencies: one with
 - Where "images use-pfp toggle" is enabled, at least one of "images use-pfp prerender-toggle" and "images use-pfp daily-toggle" shall be enabled, and both may be. A configuration enabling neither obtains a portrait at no moment whatever, which is what disabling the feature outright already provides, and is not a configuration the module shall hold.
     - A command that would leave neither enabled shall be refused and the configuration left as it stood, naming the toggle that must be enabled first. A league exchanging one of the two for the other shall therefore enable the second before it disables the first.
     - The season review shall state all three settings, and shall withhold the approval of a season while the configuration enables neither.
-- <NEW COMMAND> A new "images config marker-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files of every mark the bot draws over a cell will be searched: the direction of a change of standing position, the mark a standings result cell earns, and the mark an attendance total earns.
+- <NEW COMMAND> A new "images config marker-directory" command will take in a string standing for the directory in which the image files of every mark the bot draws over a cell will be searched: the direction of a change of standing position, the mark a standings result cell earns, and the mark an attendance total earns.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the marker image files will be searched in a "resources/league/markers" folder located at the project root.
     - The class is a closed set. The marks of a standings result cell and of an attendance total are drawn into slots that stretch; the markers of a change of standing position are not. The class is held to no aspect at all, serving three shapes of slot from one directory.
-- <NEW COMMAND> A new "images config weather-icon-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a weather condition will be searched.
+- <NEW COMMAND> A new "images config weather-icon-directory" command will take in a string standing for the directory in which the image files to be used to represent a weather condition will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the weather icon files will be searched in a "resources/league/weather" folder located at the project root.
-- <NEW COMMAND> A new "images config tyre-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent a tyre compound will be searched.
+- <NEW COMMAND> A new "images config tyre-directory" command will take in a string standing for the directory in which the image files to be used to represent a tyre compound will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the tyre icon files will be searched in a "resources/league/tyres" folder located at the project root.
     - The class is a closed set. The compounds a session may be run on are "Soft", "Medium", "Hard", "Intermediate" and "Wet", and there is no sixth.
-- <NEW COMMAND> A new "images config division-logo-directory" command will be made available to server administrators which will take in a string standing for the directory in which the image files to be used to represent the logo of a division will be searched.
+- <NEW COMMAND> A new "images config division-logo-directory" command will take in a string standing for the directory in which the image files to be used to represent the logo of a division will be searched.
     - The directory will always be assumed to be a path relative to the project root.
     - By default, the division logo files will be searched in a "resources/league/division-logos" folder located at the project root.
     - The class is not a closed set, a division being named by the league. The datum of the class is the name of the division, normalized as every other datum of every other class is.
