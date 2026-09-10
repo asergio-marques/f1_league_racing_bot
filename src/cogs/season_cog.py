@@ -42,7 +42,12 @@ import services.track_service as track_service
 from services.season_service import SeasonImmutableError
 from utils.autocomplete import bounded_autocomplete
 from utils.batch_notice import batch_notice
-from utils.channel_guard import league_admin_only, league_manager_only
+from utils.channel_guard import (
+    is_league_admin,
+    is_league_manager,
+    league_admin_only,
+    league_manager_only,
+)
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from utils.output_router import _chunk_message
 from utils.round_import import (
@@ -1435,9 +1440,9 @@ class SeasonCog(commands.Cog):
         name="review",
         description="Review pending season configuration before approving.",
     )
-    # `admin_only` is deliberately absent (2026-09-07). A league manager holding only
-    # the interaction role may review a season: the report is what the review is for.
-    # Approving it is the narrower right, and `_ApproveView` is where that is enforced.
+    # A league manager's, deliberately (2026-09-07). Reading what a season is configured to
+    # be is not an administrative act: the report is what the review is for. Approving it is
+    # the narrower right, and `_ApproveView` is where that is enforced.
     @league_manager_only
     async def season_review(self, interaction: discord.Interaction) -> None:
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
@@ -4169,10 +4174,18 @@ class SeasonCog(commands.Cog):
 
             @discord.ui.button(label="❌ Cancel Amendment", style=discord.ButtonStyle.danger)
             async def cancel_btn(self_v, bi: discord.Interaction, btn: discord.ui.Button) -> None:
-                if bi.user.id != interaction.user.id:
-                    if admin_role is None or admin_role not in getattr(bi.user, "roles", []):
-                        await bi.response.send_message("⛔ Only league managers can cancel.", ephemeral=True)
-                        return
+                # The member who opened the amendment, or anyone holding the league manager
+                # tier. Reading `admin_role` by hand tested the interaction role alone, so a
+                # league admin without it was refused a button they are entitled to press.
+                if bi.user.id != interaction.user.id and not (
+                    server_cfg is not None
+                    and isinstance(bi.user, discord.Member)
+                    and is_league_manager(server_cfg, bi.user)
+                ):
+                    await bi.response.send_message(
+                        "⛔ Only league managers can cancel.", ephemeral=True
+                    )
+                    return
                 cancelled_flag[0] = True
                 self_v.stop()
                 await bi.response.send_message("Amendment cancelled.", ephemeral=True)
@@ -4328,7 +4341,7 @@ class SeasonCog(commands.Cog):
                 config_name = existing_config_name
             else:
                 from services.result_submission_service import _ConfigSelectView  # type: ignore[attr-defined]
-                cfg_view = _ConfigSelectView(config_names)
+                cfg_view = _ConfigSelectView(config_names, server_cfg)
                 await amend_channel.send(
                     "Select the points configuration for this session:", view=cfg_view
                 )
@@ -5290,17 +5303,28 @@ class _ApproveView(discord.ui.View):
         except Exception:  # noqa: BLE001
             log.exception("season review: could not clear the approve prompt")
 
-    def _may_approve(self, member) -> bool:
-        """The reviewer, or a server administrator.
+    async def _may_approve(self, interaction: discord.Interaction) -> bool:
+        """The reviewer, or a league admin.
 
-        Deliberately *not* Manage Server, which is the tier that used to be required to run
-        the review at all: widening who may review and narrowing who may approve is the
-        whole point of the split.
+        Widening who may review and narrowing who may approve is the whole point of the
+        split: the review is a league manager's, the approval a league admin's.
+
+        It asked for Discord's Administrator permission until the two tiers became roles
+        (issue #116). The tier is a property of the league, so the role is what it reads
+        now — and reading it through `is_league_admin` is what keeps this button and the
+        league admin commands answering the same question.
         """
+        member = interaction.user
         if getattr(member, "id", None) == self._reviewer_id:
             return True
-        permissions = getattr(member, "guild_permissions", None)
-        return bool(permissions is not None and permissions.administrator)
+        if not isinstance(member, discord.Member):
+            return False
+        config = await self._cog.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None:
+            return False
+        return is_league_admin(config, member)
 
     async def on_timeout(self) -> None:
         """Delete the question and say the review has expired.
@@ -5350,9 +5374,9 @@ class _ApproveView(discord.ui.View):
         # Checked first, the fingerprint included: the message is public, so anyone who can
         # read the channel can press this. Nothing is read and nothing is approved for a
         # member who may not approve.
-        if not self._may_approve(interaction.user):
+        if not await self._may_approve(interaction):
             await interaction.response.send_message(
-                "⛔ Only the person who ran this review, or a server administrator, "
+                "⛔ Only the person who ran this review, or a league admin, "
                 "can approve it. **Nothing has been approved.**",
                 ephemeral=True,
             )

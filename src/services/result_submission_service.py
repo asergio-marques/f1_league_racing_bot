@@ -5,6 +5,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 import discord
 
@@ -14,6 +15,7 @@ from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
 from utils import results_formatter
 from utils.batch_notice import batch_notice
+from utils.channel_guard import is_league_manager
 from utils.tyre_compound import (
     canonicalise_tyre,
     records_no_tyre,
@@ -1870,11 +1872,22 @@ def _format_time_ms(total_ms: int) -> str:
 # ---------------------------------------------------------------------------
 
 class _ConfigSelectView(discord.ui.View):
-    """Button view for selecting an attached points config."""
+    """Button view for selecting an attached points config.
 
-    def __init__(self, config_names: list[str]) -> None:
+    **A league manager's, and it asked nothing at all until 2026-09-10.** This view is
+    posted publicly into the submission and amendment channels — never ephemerally — from
+    three call sites, so every member who could read one of those channels could decide
+    which points configuration scored the session, and the first press won the race against
+    whoever was actually running the round.
+
+    Choosing how a session is scored is running the league, so it asks the league manager
+    tier, the same as the commands that attach a configuration in the first place.
+    """
+
+    def __init__(self, config_names: list[str], config: Any | None = None) -> None:
         super().__init__(timeout=None)
         self.selected: str | None = None
+        self._config = config
         for name in config_names:
             button = discord.ui.Button(
                 label=name[:80],
@@ -1886,12 +1899,28 @@ class _ConfigSelectView(discord.ui.View):
                 interaction: discord.Interaction,
                 _name: str = name,
             ) -> None:
+                if not self._may_choose(interaction):
+                    await interaction.response.send_message(
+                        "⛔ Only league managers can choose the points configuration.",
+                        ephemeral=True,
+                    )
+                    return
                 self.selected = _name
                 self.stop()
                 await interaction.response.defer()
 
             button.callback = _cb
             self.add_item(button)
+
+    def _may_choose(self, interaction: discord.Interaction) -> bool:
+        """Whether the presser holds the league manager tier.
+
+        Refuses when the server configuration could not be read: a view that cannot tell who
+        is pressing must not guess in the permissive direction.
+        """
+        if self._config is None or not isinstance(interaction.user, discord.Member):
+            return False
+        return is_league_manager(self._config, interaction.user)
 
 
 # ---------------------------------------------------------------------------
@@ -2608,7 +2637,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                     f"✅ Auto-selected config **{selected_config}** (only one attached)."
                 )
             elif len(config_names) > 1:
-                view = _ConfigSelectView(config_names)
+                view = _ConfigSelectView(config_names, server_cfg)
                 config_msg = await sub_channel.send(
                     "🔧 Select the points configuration for this session:",
                     view=view,
@@ -2803,6 +2832,9 @@ async def _resubmit_collection_task(
     round_number: int = ctx["round_number"]
     round_format = RoundFormat(ctx["round_format"])
 
+    # Read for `_ConfigSelectView`, which asks the league manager tier of whoever presses it.
+    server_cfg = await bot.config_service.get_server_config(server_id)
+
     guild = bot.get_guild(server_id)
     if guild is None:
         log.error("_resubmit_collection_task: guild %s not found for round %s", server_id, round_id)
@@ -2902,7 +2934,7 @@ async def _resubmit_collection_task(
                 selected_config = config_names[0]
                 await sub_channel.send(f"✅ Auto-selected config **{selected_config}**.")
             elif len(config_names) > 1:
-                view = _ConfigSelectView(config_names)
+                view = _ConfigSelectView(config_names, server_cfg)
                 config_msg = await sub_channel.send("🔧 Select the points configuration for this session:", view=view)
                 await view.wait()
                 selected_config = view.selected
