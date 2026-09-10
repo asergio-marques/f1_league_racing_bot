@@ -96,11 +96,12 @@ later polish phase.
 is expected to pass in full. Any failure is a real one; do not write it off as pre-existing
 without first confirming it on a clean tree.
 
-**Run a targeted subset while you work; keep the full suite for the end.** A full run takes
-about an hour on the Pi, so running everything after each step of a change buys wall time and
-nothing else. Grep out the tests covering the code you just touched and run those as you go.
-The full `pytest tests/ -q` at the end of the change is not optional, and it is what "the suite
-passes" means.
+**A full run is cheap — use it.** `pytest tests/ -q` is some 4,980 tests and finishes in about
+five minutes on the Pi (measured 2026-09-10 at 319s), because the schema-template substitution
+described below removed the per-test migration cost. Guidance that a full run costs the better
+part of an hour predates that change and is wrong by an order of magnitude; there is no need to
+work from a grep-derived subset to avoid it. A subset is a convenience while iterating on one
+module, never a substitute for the full run the paragraph above asks for.
 
 **Never run two pytest sessions at once.** They race on the shared schema template described
 below, and the loser reads a half-built database — which surfaces as a mass failure scattered
