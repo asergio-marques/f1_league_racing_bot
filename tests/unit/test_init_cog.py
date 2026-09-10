@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from cogs.init_cog import InitCog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.config_service import ConfigService  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 4242
 
@@ -44,13 +45,13 @@ CONFIGURED_ADMIN_ROLE = 444
 
 
 def _unwrap(cmd):
-    """Strip `admin_only` and return the command body.
+    """Strip `bot_setup_only` and return the command body.
 
-    One layer, because these commands carry no `channel_guard`. Unwrapping cannot by itself
-    notice a guard being added — it would simply strip the new outer layer instead — so the
-    absence of one is pinned separately, behaviourally and structurally, below.
+    Unwrapping cannot by itself notice a guard being changed — it would simply strip the new
+    layer instead — so the tier these commands sit at, and their exemption from the
+    interaction channel, are pinned separately below.
     """
-    return cmd.callback.__wrapped__
+    return undecorate(cmd)
 
 
 async def _make_db(tmp_path) -> str:
@@ -286,22 +287,66 @@ async def test_a_setting_command_refuses_an_unconfigured_server(
 @pytest.mark.parametrize(
     "attribute,column,factory,new_id", _SETTINGS, ids=[s[1] for s in _SETTINGS]
 )
-async def test_a_setting_command_requires_manage_server(
+async def test_a_setting_command_refuses_a_member_of_neither_tier(
     tmp_path, attribute, column, factory, new_id
 ):
-    """`admin_only` is the whole of the gate on these, so it had better be on."""
+    """`bot_setup_only` is the whole of the gate on these, so it had better be on."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     cog = InitCog(_bot(db_path))
 
     interaction = _interaction()
-    interaction.user.guild_permissions.manage_guild = False
+    interaction.user.guild_permissions.administrator = False
 
     # The decorated command, not the unwrapped body.
     await getattr(cog, attribute).callback(cog, interaction, factory(new_id))
 
-    assert "Manage Server" in interaction.response.send_message.call_args.args[0]
+    reply = interaction.response.send_message.call_args.args[0]
+    assert "Administrator" in reply
     assert (await _row(db_path))[column] != new_id
+
+
+@pytest.mark.parametrize(
+    "attribute,column,factory,new_id", _SETTINGS, ids=[s[1] for s in _SETTINGS]
+)
+async def test_a_setting_command_admits_the_league_admin_role(
+    tmp_path, attribute, column, factory, new_id
+):
+    """The role is the tier; Administrator is only the way back when the role is gone."""
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    cog = InitCog(_bot(db_path))
+
+    interaction = _interaction()
+    interaction.user.guild_permissions.administrator = False
+    interaction.user.roles = [_role(CONFIGURED_ADMIN_ROLE)]
+
+    await getattr(cog, attribute).callback(cog, interaction, factory(new_id))
+
+    assert (await _row(db_path))[column] == new_id
+
+
+async def test_a_setting_command_admits_an_administrator_before_the_bot_is_configured(
+    tmp_path,
+):
+    """The bootstrap. `/bot-init` has no configuration to read a role out of."""
+    db_path = await _make_db(tmp_path)
+    cog = InitCog(_bot(db_path))
+
+    interaction = _interaction()
+    interaction.user.guild_permissions.administrator = True
+    interaction.user.roles = []
+
+    await cog.handle_bot_init.callback(
+        cog,
+        interaction,
+        _role(CONFIGURED_ROLE),
+        _role(CONFIGURED_ADMIN_ROLE),
+        _channel(CONFIGURED_CHANNEL),
+        _channel(CONFIGURED_LOG),
+    )
+
+    assert (await _row(db_path))["league_admin_role_id"] == CONFIGURED_ADMIN_ROLE
 
 
 async def test_set_core_setting_refuses_a_column_of_the_callers_choosing(tmp_path):
@@ -319,19 +364,22 @@ async def test_set_core_setting_refuses_a_column_of_the_callers_choosing(tmp_pat
 @pytest.mark.parametrize(
     "attribute", [s[0] for s in _SETTINGS] + ["handle_bot_init"]
 )
-def test_no_core_command_is_channel_guarded(attribute):
-    """Exactly one decorator — `admin_only` — stands between the command and its body.
+def test_no_core_command_is_bound_to_the_interaction_channel(attribute):
+    """Stated structurally as well as behaviourally, because the reason is easy to lose.
 
-    Stated structurally as well as behaviourally because the reason is easy to lose: these
-    commands repair the interaction channel and the interaction role, so a guard that reads
-    either would refuse precisely the administrator who needs them.
+    These commands repair the interaction channel and the two roles, so a guard that read
+    any of them would refuse precisely the person who needs them. The tier the guard records
+    is asserted rather than the number of decorators: counting them said the same thing only
+    for as long as the guards came in pairs, and said nothing about which guards they were.
     """
     from cogs.init_cog import InitCog as Cog
+    from utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_ADMIN, TIER_ATTRIBUTE
 
-    body = getattr(Cog, attribute).callback.__wrapped__
-    assert not hasattr(body, "__wrapped__"), (
-        f"{attribute} carries more than one decorator — if that is a channel_guard, an "
-        f"admin whose interaction channel was deleted can no longer repair it"
+    callback = getattr(Cog, attribute).callback
+    assert getattr(callback, TIER_ATTRIBUTE) == LEAGUE_ADMIN
+    assert getattr(callback, CHANNEL_EXEMPT_ATTRIBUTE) is True, (
+        f"{attribute} is bound to the interaction channel — a league whose interaction "
+        f"channel was deleted can no longer repair it"
     )
 
 

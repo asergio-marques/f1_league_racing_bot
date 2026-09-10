@@ -19,7 +19,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from models.server_config import ServerConfig
-from utils.channel_guard import admin_only
+from utils.channel_guard import bot_setup_only
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class InitCog(commands.Cog):
         interaction_channel="The channel where bot commands are accepted.",
         log_channel="The channel where calculation logs are posted.",
     )
-    @admin_only
+    @bot_setup_only
     async def handle_bot_init(
         self,
         interaction: discord.Interaction,
@@ -186,7 +186,7 @@ class InitCog(commands.Cog):
         description="Change the channel the bot writes its calculation log to.",
     )
     @app_commands.describe(channel="The channel where calculation logs are posted.")
-    @admin_only
+    @bot_setup_only
     async def handle_log_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
@@ -204,7 +204,7 @@ class InitCog(commands.Cog):
         description="Change the channel the bot accepts commands in.",
     )
     @app_commands.describe(channel="The channel where bot commands are accepted.")
-    @admin_only
+    @bot_setup_only
     async def handle_interaction_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
@@ -222,7 +222,7 @@ class InitCog(commands.Cog):
         description="Change the role allowed to use bot commands.",
     )
     @app_commands.describe(role="The role allowed to use bot commands.")
-    @admin_only
+    @bot_setup_only
     async def handle_interaction_role(
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
@@ -240,7 +240,7 @@ class InitCog(commands.Cog):
         description="Change the role that governs the bot and may undo a league entire.",
     )
     @app_commands.describe(role="The role holding the league admin tier.")
-    @admin_only
+    @bot_setup_only
     async def handle_admin_role(
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
