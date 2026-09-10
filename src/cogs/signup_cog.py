@@ -837,6 +837,16 @@ class SignupCog(commands.Cog):
         # became the server-wide `find_channel_use` check.
         server_cfg = await self.bot.config_service.get_server_config(server_id)
         interaction_role = guild.get_role(server_cfg.interaction_role_id) if server_cfg else None
+        # The league admin role gets the same sight of the channel as the interaction role.
+        # A league admin holds the league manager tier within their own, so a channel opened
+        # to one tier and not the other would show them a signup they may action and no way
+        # to read it (issue #116). Skipped where the two are the same role, or where the
+        # league has not set an admin role yet.
+        admin_role = (
+            guild.get_role(server_cfg.league_admin_role_id)
+            if server_cfg and server_cfg.league_admin_role_id
+            else None
+        )
         base_role = guild.get_role(cfg.base_role_id) if cfg.base_role_id else None
         overwrites: dict = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -848,10 +858,11 @@ class SignupCog(commands.Cog):
                 send_messages=False,
                 use_application_commands=True,
             )
-        if interaction_role:
-            overwrites[interaction_role] = discord.PermissionOverwrite(
-                view_channel=True, send_messages=True
-            )
+        for role in (interaction_role, admin_role):
+            if role is not None:
+                overwrites[role] = discord.PermissionOverwrite(
+                    view_channel=True, send_messages=True
+                )
         try:
             await channel.edit(overwrites=overwrites)
         except Exception as exc:

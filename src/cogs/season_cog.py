@@ -4115,6 +4115,13 @@ class SeasonCog(commands.Cog):
         admin_role: discord.Role | None = None
         if server_cfg and server_cfg.interaction_role_id:
             admin_role = interaction.guild.get_role(server_cfg.interaction_role_id)
+        # The league admin role is opened to the amendment channel on the same terms. A
+        # league admin holds the league manager tier within their own, so a channel opened to
+        # one role and not the other would leave them able to cancel an amendment they cannot
+        # see (issue #116).
+        league_admin_role: discord.Role | None = None
+        if server_cfg and server_cfg.league_admin_role_id:
+            league_admin_role = interaction.guild.get_role(server_cfg.league_admin_role_id)
 
         # Derive category from bot command channel (same pattern as submission channel)
         category: discord.CategoryChannel | None = None
@@ -4132,10 +4139,11 @@ class SeasonCog(commands.Cog):
             overwrites[interaction.guild.me] = discord.PermissionOverwrite(
                 read_messages=True, send_messages=True, manage_messages=True
             )
-        if admin_role is not None:
-            overwrites[admin_role] = discord.PermissionOverwrite(
-                read_messages=True, send_messages=True
-            )
+        for role in (admin_role, league_admin_role):
+            if role is not None:
+                overwrites[role] = discord.PermissionOverwrite(
+                    read_messages=True, send_messages=True
+                )
         amend_channel = await interaction.guild.create_text_channel(
             name=amend_ch_name,
             category=category,

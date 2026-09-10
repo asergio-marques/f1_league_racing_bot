@@ -76,11 +76,15 @@ async def create_submission_channel(
     *,
     bot_cmd_channel_id: int | None = None,
     admin_role: discord.Role | None = None,
+    league_admin_role: discord.Role | None = None,
 ) -> discord.TextChannel:
     """Create a transient text channel for result submission.
 
-    The channel is named S{season_number}-{slug}-R{round_number}-results, placed
-    in the bot command channel's category, and restricted to tier-2 admins only.
+    The channel is named S{season_number}-{slug}-R{round_number}-results, placed in the bot
+    command channel's category, and opened to both tiers of the league — the interaction
+    role and the league admin role. Every button of the penalty and appeals reviews lives in
+    here, so a league admin who does not also hold the interaction role would otherwise be
+    shut out of a round they are entitled to judge (issue #116).
     """
     slug = _make_slug(division_name)
     name = f"S{season_number}-{slug}-R{round_number}-results"
@@ -92,7 +96,7 @@ async def create_submission_channel(
         if cmd_channel is not None:
             category = getattr(cmd_channel, "category", None)
 
-    # Deny @everyone; grant the bot itself and the tier-2 admin role
+    # Deny @everyone; grant the bot itself and both of the league's tiers
     overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
         guild.default_role: discord.PermissionOverwrite(read_messages=False),
     }
@@ -101,10 +105,11 @@ async def create_submission_channel(
         overwrites[bot_member] = discord.PermissionOverwrite(
             read_messages=True, send_messages=True, manage_messages=True
         )
-    if admin_role is not None:
-        overwrites[admin_role] = discord.PermissionOverwrite(
-            read_messages=True, send_messages=True
-        )
+    for role in (admin_role, league_admin_role):
+        if role is not None:
+            overwrites[role] = discord.PermissionOverwrite(
+                read_messages=True, send_messages=True
+            )
 
     channel = await guild.create_text_channel(
         name=name,
@@ -2471,14 +2476,17 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # ------------------------------------------------------------------
     # 5. Create submission channel
     # ------------------------------------------------------------------
-    # Look up tier-2 admin role and bot-command channel for channel setup
+    # Look up both of the league's roles and the bot-command channel for channel setup
     server_cfg = await bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
     admin_role: discord.Role | None = None
+    league_admin_role: discord.Role | None = None
     bot_cmd_channel_id: int | None = None
     if server_cfg is not None:
         bot_cmd_channel_id = server_cfg.interaction_channel_id
         if server_cfg.interaction_role_id:
             admin_role = guild.get_role(server_cfg.interaction_role_id)
+        if server_cfg.league_admin_role_id:
+            league_admin_role = guild.get_role(server_cfg.league_admin_role_id)
 
     try:
         sub_channel = await create_submission_channel(
@@ -2490,6 +2498,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             db_path,
             bot_cmd_channel_id=bot_cmd_channel_id,
             admin_role=admin_role,
+            league_admin_role=league_admin_role,
         )
     except discord.HTTPException:
         log.exception(
