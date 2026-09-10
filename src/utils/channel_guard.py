@@ -43,146 +43,21 @@ import logging
 from typing import Callable, Any
 
 import discord
-from discord import app_commands, Interaction
+from discord import Interaction
+
+# `app_commands` is imported for its side effect on *other* modules, and removing it as an
+# unused import breaks every command whose signature names it.
+#
+# `functools.wraps` gives each guard's wrapper the identity of the function it wraps, but not
+# its globals: the wrapper is defined here, so `wrapper.__globals__` is this module's. Cogs
+# run under `from __future__ import annotations`, so a parameter annotated
+# `app_commands.Range[int, 1, 10]` reaches discord.py as the *string* "app_commands.Range[...]",
+# and `_extract_parameters_from_callback` resolves it against `callback.__globals__` — this
+# namespace. A name a command signature uses must therefore be importable here, however
+# unused it looks. Pinned by `test_a_command_annotation_resolves_against_this_module`.
+from discord import app_commands  # noqa: F401
 
 log = logging.getLogger(__name__)
-
-
-def channel_guard(func: Callable) -> Callable:
-    """Decorator for app_commands callback methods.
-
-    Usage:
-        @app_commands.command(...)
-        @channel_guard
-        async def my_command(self, interaction: Interaction, ...) -> None:
-            ...
-
-    The decorated command must be a method of a Cog; `self.bot` must have a
-    `config_service` attribute with a `get_server_config(server_id)` method.
-
-    Behaviour:
-        1. Fetch ServerConfig for the guild.
-        2. If command is not in interaction_channel_id → silently ignore.
-        3. If invoker does not have interaction_role_id → ephemeral error.
-        4. Otherwise run the original command.
-    """
-
-    @functools.wraps(func)
-    async def wrapper(self: Any, interaction: Interaction, *args: Any, **kwargs: Any) -> None:
-        config = await self.bot.config_service.get_server_config(interaction.guild_id)
-
-        if config is None:
-            # Bot not initialised; silently pass through (init_cog is exempt)
-            await func(self, interaction, *args, **kwargs)
-            return
-
-        # 1. Channel check — error and log
-        if interaction.channel_id != config.interaction_channel_id:
-            log.warning(
-                "channel_guard: command /%s blocked — wrong channel (channel_id=%s, expected=%s) "
-                "by user %s (id=%s) in guild %s",
-                func.__name__,
-                interaction.channel_id,
-                config.interaction_channel_id,
-                interaction.user,
-                interaction.user.id,
-                interaction.guild_id,
-            )
-            await interaction.response.send_message(
-                "⛔ This command can only be used in the configured interaction channel.",
-                ephemeral=True,
-            )
-            return
-
-        # 2. Role check — ephemeral error
-        member = interaction.user
-        if not isinstance(member, discord.Member):
-            await interaction.response.send_message(
-                "⛔ This command can only be used inside a server.",
-                ephemeral=True,
-            )
-            return
-
-        role_ids = {role.id for role in member.roles}
-        if config.interaction_role_id not in role_ids:
-            await interaction.response.send_message(
-                "⛔ You don't have permission to use this command.",
-                ephemeral=True,
-            )
-            return
-
-        await func(self, interaction, *args, **kwargs)
-
-    return wrapper
-
-
-def admin_only(func: Callable) -> Callable:
-    """Additional decorator for commands that require `MANAGE_GUILD` permission.
-
-    Apply *after* channel_guard when both are needed:
-        @channel_guard
-        @admin_only
-        async def my_command(...)
-
-    This is separate from channel_guard so /bot init can use admin_only without
-    channel_guard (chicken-and-egg: no config exists yet).
-    """
-
-    @functools.wraps(func)
-    async def wrapper(self: Any, interaction: Interaction, *args: Any, **kwargs: Any) -> None:
-        member = interaction.user
-        if not isinstance(member, discord.Member):
-            await interaction.response.send_message(
-                "⛔ This command can only be used inside a server.",
-                ephemeral=True,
-            )
-            return
-
-        if not member.guild_permissions.manage_guild:
-            await interaction.response.send_message(
-                "⛔ You need the **Manage Server** permission to use this command.",
-                ephemeral=True,
-            )
-            return
-
-        await func(self, interaction, *args, **kwargs)
-
-    return wrapper
-
-
-def server_admin_only(func: Callable) -> Callable:
-    """Additional decorator for commands that require the Discord ``Administrator`` permission.
-
-    Apply *after* channel_guard when both are needed::
-
-        @channel_guard
-        @server_admin_only
-        async def my_command(...)
-
-    Used for module enable/disable so only Discord server administrators
-    can arm or disarm optional capabilities server-wide.
-    """
-
-    @functools.wraps(func)
-    async def wrapper(self: Any, interaction: Interaction, *args: Any, **kwargs: Any) -> None:
-        member = interaction.user
-        if not isinstance(member, discord.Member):
-            await interaction.response.send_message(
-                "⛔ This command can only be used inside a server.",
-                ephemeral=True,
-            )
-            return
-
-        if not member.guild_permissions.administrator:
-            await interaction.response.send_message(
-                "⛔ You need the **Administrator** permission to use this command.",
-                ephemeral=True,
-            )
-            return
-
-        await func(self, interaction, *args, **kwargs)
-
-    return wrapper
 
 
 # ---------------------------------------------------------------------------

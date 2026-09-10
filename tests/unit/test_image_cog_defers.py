@@ -144,7 +144,7 @@ def _toggle_interaction():
 
 
 async def _toggle(cog, aspect="verdicts"):
-    """The command body, past `channel_guard` and `admin_only`.
+    """The command body, past its tier guard.
 
     Both guards have their own cover, and neither is what these are about — a stub cog
     carries no `bot`, and the interaction's user is not a `discord.Member`.

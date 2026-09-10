@@ -2,12 +2,13 @@
 
 Three properties are pinned here, each of which a plausible tidy-up would undo.
 
-**The four setting commands are not `channel_guard`-ed.** That guard admits a command only
-in the configured interaction channel and only to a holder of the configured interaction
-role. These commands exist to repair those very settings, so guarding them would lock an
-administrator out of the failure they are for — a deleted interaction channel would be
-unrecoverable short of wiping the configuration. The tests below invoke them from the wrong
-channel, by a user without the role, and require them to work anyway.
+**The four setting commands are not bound to the interaction channel.** The tier guards
+admit a command only in the configured interaction channel and only to a holder of one of
+the league's two roles. These commands exist to repair those very settings, so guarding them
+would lock a league out of the failure they are for — a deleted interaction channel, or an
+admin role removed from the server, would be unrecoverable short of wiping the
+configuration. The tests below invoke them from the wrong channel, by a user holding no
+role, and require them to work anyway.
 
 **Each writes exactly one column.** `save_server_config` once carried a whole `ServerConfig`
 into an upsert, which is how `/bot-init force:True` came to switch test mode off: the model
@@ -259,7 +260,7 @@ async def test_a_setting_command_works_outside_the_interaction_channel(
     await _seed_config(db_path)
     cog = InitCog(_bot(db_path))
 
-    # The whole decorator chain, not the unwrapped body: a `channel_guard` added later
+    # The whole decorator chain, not the unwrapped body: a channel-bound guard added later
     # would refuse this interaction, and refusing it is the failure this test is for.
     interaction = _interaction(channel_id=CONFIGURED_CHANNEL + 12345)
     await getattr(cog, attribute).callback(cog, interaction, factory(new_id))

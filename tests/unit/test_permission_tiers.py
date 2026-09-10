@@ -347,3 +347,34 @@ def test_a_guard_records_the_tier_it_asks_for(decorator, tier, exempt):
     command, _ = _guarded(decorator)
     assert getattr(command, TIER_ATTRIBUTE) == tier
     assert getattr(command, CHANNEL_EXEMPT_ATTRIBUTE) is exempt
+
+
+# ── The wrapper's globals ─────────────────────────────────────────────────
+
+
+def test_a_command_annotation_resolves_against_this_module():
+    """A guard's wrapper carries this module's globals, and discord.py reads them.
+
+    `functools.wraps` copies a function's identity but not its namespace, so
+    `wrapper.__globals__` is `utils.channel_guard`'s. Cogs run under
+    `from __future__ import annotations`, so a parameter annotated
+    `app_commands.Range[int, 1, 10]` arrives at discord.py as a string and
+    `_extract_parameters_from_callback` resolves it against `callback.__globals__` — here.
+
+    `app_commands` therefore has to be importable in the guard module even though nothing in
+    it uses the name, and deleting it as an unused import raises `NameError: name
+    'app_commands' is not defined` at *class body* time in every cog that annotates a
+    parameter with it — an import-time explosion a long way from its cause.
+
+    `/clean-bot` is the live example: `count: app_commands.Range[int, 1, 10]`.
+    """
+    from cogs.clean_cog import CleanCog
+
+    callback = CleanCog.clean_bot.callback
+    assert "app_commands" in callback.__globals__
+    assert "discord" in callback.__globals__
+
+    # And the parameter really did resolve, rather than being skipped.
+    count = next(p for p in CleanCog.clean_bot.parameters if p.name == "count")
+    assert count.min_value == 1
+    assert count.max_value == 10

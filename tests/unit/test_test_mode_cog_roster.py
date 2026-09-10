@@ -5,8 +5,8 @@
 tests run the callbacks against a migrated database with Discord stubbed — no gateway, no
 server, no running bot.
 
-The guards are unwrapped as the other cog suites unwrap them: `channel_guard` and
-`admin_only` have their own cover, and a stubbed interaction is not a `discord.Member`.
+The guards are unwrapped as the other cog suites unwrap them: the tier guards have their
+own cover, and a stubbed interaction is not a `discord.Member`.
 """
 from __future__ import annotations
 
