@@ -96,6 +96,18 @@ later polish phase.
 is expected to pass in full. Any failure is a real one; do not write it off as pre-existing
 without first confirming it on a clean tree.
 
+**A full run is cheap — use it.** `pytest tests/ -q` is some 4,980 tests and finishes in about
+five minutes on the Pi (measured 2026-09-10 at 319s), because the schema-template substitution
+described below removed the per-test migration cost. Guidance that a full run costs the better
+part of an hour predates that change and is wrong by an order of magnitude; there is no need to
+work from a grep-derived subset to avoid it. A subset is a convenience while iterating on one
+module, never a substitute for the full run the paragraph above asks for.
+
+**Never run two pytest sessions at once.** They race on the shared schema template described
+below, and the loser reads a half-built database — which surfaces as a mass failure scattered
+across unrelated modules, not as a lock error. If a run is already going, wait for it rather
+than opening a second terminal to check one thing.
+
 **Every change to production code carries its unit tests with it.** Update or add the tests in
 the same change as the code, then run the suite — a production change reported complete without
 a test run, or leaving tests that no longer exercise the new behaviour, is not complete.
@@ -156,6 +168,12 @@ tmpfs `/tmp` is on the Pi — which fails dishonestly, as 0-byte PNGs and `datab
 full` scattered across unrelated modules. To inspect a failing test's scratch, restore
 retention for that run only: `pytest tests/ -q -o tmp_path_retention_count=3`. Both mechanisms
 are pinned by `tests/unit/test_scratch_retention.py` (decided 2026-09-08).
+
+**A mass failure across unrelated modules is a full `/tmp` until proved otherwise.** The two
+mechanisms above exist to prevent it and either can be defeated — by an interrupted run that
+left its trees behind, or by something else on the host filling the tmpfs. Check `df -h /tmp`
+before reading a broad red run as a regression, and never read a suite's exit code through
+`| tail`, which reports the pager's status instead.
 
 **The schema is built once, not once per test.** `tests/conftest.py` substitutes
 `run_migrations` with a version that raises the schema a single time and copies the finished
