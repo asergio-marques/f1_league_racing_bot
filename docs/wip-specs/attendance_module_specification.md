@@ -39,6 +39,7 @@
 - <NEW COMMAND> An "attendance config no-show-penalty" command will be made available to league managers, which shall have as input an integer standing for the number of attendance points gained upon failing to show up for a round after having accepted the check-in.
     - By default, this value will be 1.
 - <NEW COMMAND> An "attendance config autosack" command will be made available to league managers, which shall have as input an integer standing for the number of attendance points upon which a driver will be automatically sacked from all team seats. A value of 0 means that the autosack functionality is disabled.
+    - It is a league manager's though sacking a driver by command is a league admin's, the setting being the configuration of a module and undone by setting it back. What follows from it is a sanction the league has published in advance and which a driver earns by their own absences, and not a command destroying what a league is built from.
     - By default, this value will be false (disabled).
 - <NEW COMMAND> An "attendance config autoreserve" command will be made available to league managers, which shall have as input an integer standing for the number of attendance points upon which a driver will be unassigned from their current seat and assigned to the reserve team of the same division. A value of 0 means that the autoreserve functionality is disabled.
     - By default, this value will be false (disabled).

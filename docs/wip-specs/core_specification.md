@@ -82,7 +82,7 @@ it only to place it; the rules governing it belong to its own specification.
 ### Starting over
 - A reset command shall delete a server's league data entire — its seasons, divisions, rounds, sessions, weather results, teams of a season, seats, driver placements and the record of changes — and shall cancel every piece of scheduled work.
     - It shall require the word `CONFIRM` to be typed exactly.
-    - A fuller form shall additionally clear the server's three settings, so that the bot may be initialised again.
+    - A fuller form shall additionally clear the server's four settings, so that the bot may be initialised again.
     - The server's team list shall survive either form.
     - It shall report what was deleted and shall be written to the log channel.
     - It shall be given in the interaction channel. It is a league admin's command and not a repair of the settings, the initialisation command being the footing it does not share.
