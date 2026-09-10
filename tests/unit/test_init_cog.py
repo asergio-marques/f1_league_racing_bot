@@ -1,8 +1,8 @@
-"""Core server configuration — `/bot-init` and the three settings beside it.
+"""Core server configuration — `/bot-init` and the four settings beside it.
 
 Three properties are pinned here, each of which a plausible tidy-up would undo.
 
-**The three setting commands are not `channel_guard`-ed.** That guard admits a command only
+**The four setting commands are not `channel_guard`-ed.** That guard admits a command only
 in the configured interaction channel and only to a holder of the configured interaction
 role. These commands exist to repair those very settings, so guarding them would lock an
 administrator out of the failure they are for — a deleted interaction channel would be
@@ -40,6 +40,7 @@ SERVER_ID = 4242
 CONFIGURED_CHANNEL = 111
 CONFIGURED_ROLE = 222
 CONFIGURED_LOG = 333
+CONFIGURED_ADMIN_ROLE = 444
 
 
 def _unwrap(cmd):
@@ -67,9 +68,11 @@ async def _seed_config(db_path: str, *, test_mode: int = 1) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id, test_mode_active, "
-            "weather_module_enabled, signup_module_enabled) VALUES (?, ?, ?, ?, ?, 1, 1)",
-            (SERVER_ID, CONFIGURED_ROLE, CONFIGURED_CHANNEL, CONFIGURED_LOG, test_mode),
+            "interaction_channel_id, log_channel_id, league_admin_role_id, "
+            "test_mode_active, weather_module_enabled, signup_module_enabled) "
+            "VALUES (?, ?, ?, ?, ?, ?, 1, 1)",
+            (SERVER_ID, CONFIGURED_ROLE, CONFIGURED_CHANNEL, CONFIGURED_LOG,
+             CONFIGURED_ADMIN_ROLE, test_mode),
         )
         await db.commit()
 
@@ -135,18 +138,20 @@ async def test_bot_init_configures_an_unconfigured_server(tmp_path):
         cog,
         interaction,
         _role(CONFIGURED_ROLE),
+        _role(CONFIGURED_ADMIN_ROLE),
         _channel(CONFIGURED_CHANNEL),
         _channel(CONFIGURED_LOG),
     )
 
     row = await _row(db_path)
     assert row["interaction_role_id"] == CONFIGURED_ROLE
+    assert row["league_admin_role_id"] == CONFIGURED_ADMIN_ROLE
     assert row["interaction_channel_id"] == CONFIGURED_CHANNEL
     assert row["log_channel_id"] == CONFIGURED_LOG
     bot.team_service.seed_default_teams_if_empty.assert_awaited_once_with(SERVER_ID)
 
 
-async def test_bot_init_refuses_a_second_run_and_names_the_three_commands(tmp_path):
+async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     bot = _bot(db_path)
@@ -154,7 +159,7 @@ async def test_bot_init_refuses_a_second_run_and_names_the_three_commands(tmp_pa
     interaction = _interaction()
 
     await _unwrap(cog.handle_bot_init)(
-        cog, interaction, _role(900), _channel(901), _channel(902)
+        cog, interaction, _role(900), _role(903), _channel(901), _channel(902)
     )
 
     reply = interaction.response.send_message.call_args.args[0]
@@ -162,9 +167,11 @@ async def test_bot_init_refuses_a_second_run_and_names_the_three_commands(tmp_pa
     assert "/bot-log-channel" in reply
     assert "/bot-interaction-channel" in reply
     assert "/bot-interaction-role" in reply
+    assert "/bot-admin-role" in reply
 
     row = await _row(db_path)
     assert row["interaction_role_id"] == CONFIGURED_ROLE
+    assert row["league_admin_role_id"] == CONFIGURED_ADMIN_ROLE
     assert row["interaction_channel_id"] == CONFIGURED_CHANNEL
     assert row["log_channel_id"] == CONFIGURED_LOG
     bot.team_service.seed_default_teams_if_empty.assert_not_awaited()
@@ -182,7 +189,7 @@ async def test_a_second_bot_init_does_not_switch_test_mode_off(tmp_path):
     cog = InitCog(_bot(db_path))
 
     await _unwrap(cog.handle_bot_init)(
-        cog, _interaction(), _role(900), _channel(901), _channel(902)
+        cog, _interaction(), _role(900), _role(903), _channel(901), _channel(902)
     )
 
     assert (await _row(db_path))["test_mode_active"] == 1
@@ -209,13 +216,14 @@ async def test_save_server_config_will_not_overwrite_an_existing_row(tmp_path):
     assert (await _row(db_path))["log_channel_id"] == CONFIGURED_LOG
 
 
-# ── The three settings ────────────────────────────────────────────────────
+# ── The four settings ─────────────────────────────────────────────────────
 
 #: (command attribute, column, factory, the id it sets)
 _SETTINGS = [
     ("handle_log_channel", "log_channel_id", _channel, 555),
     ("handle_interaction_channel", "interaction_channel_id", _channel, 556),
     ("handle_interaction_role", "interaction_role_id", _role, 557),
+    ("handle_admin_role", "league_admin_role_id", _role, 558),
 ]
 
 
@@ -325,3 +333,66 @@ def test_no_core_command_is_channel_guarded(attribute):
         f"{attribute} carries more than one decorator — if that is a channel_guard, an "
         f"admin whose interaction channel was deleted can no longer repair it"
     )
+
+
+# ── The league admin role ─────────────────────────────────────────────────
+
+
+def test_bot_init_requires_the_league_admin_role():
+    """A required parameter, not an optional one.
+
+    The role is the whole of the league admin tier, so a server initialised without one has
+    nobody who may cancel its season — every league admin command would be refused until
+    somebody noticed. Asking for it up front is what stops that, and making the parameter
+    optional again would quietly undo it.
+    """
+    from cogs.init_cog import InitCog as Cog
+
+    parameter = next(
+        p for p in Cog.handle_bot_init.parameters if p.name == "league_admin_role"
+    )
+    assert parameter.required
+
+
+async def test_save_server_config_persists_the_league_admin_role(tmp_path):
+    from models.server_config import ServerConfig
+
+    db_path = await _make_db(tmp_path)
+    service = ConfigService(db_path)
+
+    created = await service.save_server_config(
+        ServerConfig(
+            server_id=SERVER_ID,
+            interaction_role_id=CONFIGURED_ROLE,
+            league_admin_role_id=CONFIGURED_ADMIN_ROLE,
+            interaction_channel_id=CONFIGURED_CHANNEL,
+            log_channel_id=CONFIGURED_LOG,
+        )
+    )
+
+    assert created is True
+    assert (await _row(db_path))["league_admin_role_id"] == CONFIGURED_ADMIN_ROLE
+    stored = await service.get_server_config(SERVER_ID)
+    assert stored is not None
+    assert stored.league_admin_role_id == CONFIGURED_ADMIN_ROLE
+
+
+async def test_a_server_configured_before_the_role_existed_reads_none(tmp_path):
+    """The migration adds the column nullable, and NULL means "not yet chosen".
+
+    No value is invented for a league that predates the role. Reading it back as ``None``
+    is what lets the guards refuse a league admin command and name `/bot-admin-role`,
+    rather than falling back to a Discord permission the league never picked.
+    """
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, ?, ?, ?)",
+            (SERVER_ID, CONFIGURED_ROLE, CONFIGURED_CHANNEL, CONFIGURED_LOG),
+        )
+        await db.commit()
+
+    stored = await ConfigService(db_path).get_server_config(SERVER_ID)
+    assert stored is not None
+    assert stored.league_admin_role_id is None
