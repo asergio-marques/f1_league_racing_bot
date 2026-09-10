@@ -33,7 +33,7 @@ from models.driver_profile import DriverState
 from models.signup_module import SignupModuleConfig, SignupModuleSettings
 from services import track_service
 from utils.time_parsing import parse_time_of_day
-from utils.channel_guard import admin_only, channel_guard, server_admin_only
+from utils.channel_guard import league_manager_only
 from utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
@@ -684,8 +684,7 @@ class SignupCog(commands.Cog):
 
     @config_group.command(name="channel", description="Set the signup channel.")
     @app_commands.describe(channel="Channel for signup interactions")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
@@ -697,8 +696,7 @@ class SignupCog(commands.Cog):
         base_role="Role granted to all members eligible to sign up",
         signed_up_role="Role granted on successful signup completion",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_roles(
         self,
         interaction: discord.Interaction,
@@ -735,8 +733,7 @@ class SignupCog(commands.Cog):
         )
 
     @config_group.command(name="view", description="View current signup module configuration.")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_view(self, interaction: discord.Interaction) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         cfg = await self.bot.signup_module_service.get_config(server_id)
@@ -777,8 +774,7 @@ class SignupCog(commands.Cog):
 
     @signup.command(name="channel", description="Set the signup channel and apply permission overwrites.")
     @app_commands.describe(channel="Channel for signup interactions")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def signup_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
@@ -893,8 +889,7 @@ class SignupCog(commands.Cog):
 
     @signup.command(name="base-role", description="Set the role that grants eligibility to sign up.")
     @app_commands.describe(role="Role granted to all members eligible to sign up")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def signup_base_role(
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
@@ -958,8 +953,7 @@ class SignupCog(commands.Cog):
 
     @signup.command(name="complete-role", description="Set the role granted on successful signup completion.")
     @app_commands.describe(role="Role granted when a driver's signup is approved")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def signup_complete_role(
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
@@ -1000,8 +994,7 @@ class SignupCog(commands.Cog):
     # ── /signup nationality toggle (T020) ──────────────────────────────
 
     @signup.command(name="nationality", description="Toggle whether nationality is required in signups.")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def nationality(self, interaction: discord.Interaction) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         settings = await self.bot.signup_module_service.get_settings(server_id)
@@ -1035,8 +1028,7 @@ class SignupCog(commands.Cog):
     # ── /signup time-type toggle (T021) ────────────────────────────────
 
     @signup.command(name="time-type", description="Toggle the time type setting (Time Trial / Short Qualification).")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def time_type(self, interaction: discord.Interaction) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         settings = await self.bot.signup_module_service.get_settings(server_id)
@@ -1072,8 +1064,7 @@ class SignupCog(commands.Cog):
     # ── /signup time-image toggle (T022) ───────────────────────────────
 
     @signup.command(name="time-image", description="Toggle whether a time image is required in signups.")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def time_image(self, interaction: discord.Interaction) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         settings = await self.bot.signup_module_service.get_settings(server_id)
@@ -1115,8 +1106,7 @@ class SignupCog(commands.Cog):
     @time_slot_group.command(name="add", description="Add an availability time slot.")
     @app_commands.describe(day="Day of week", time="Time in HH:MM 24h or 12h format (e.g. 14:30 or 2:30pm)")
     @app_commands.choices(day=_DAY_CHOICES)
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def time_slot_add(
         self,
         interaction: discord.Interaction,
@@ -1186,8 +1176,7 @@ class SignupCog(commands.Cog):
 
     @time_slot_group.command(name="remove", description="Remove an availability time slot by its sequence ID.")
     @app_commands.describe(slot_id="Stable sequence ID shown in /signup time-slot list")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def time_slot_remove(
         self, interaction: discord.Interaction, slot_id: int
     ) -> None:
@@ -1240,8 +1229,7 @@ class SignupCog(commands.Cog):
         )
 
     @time_slot_group.command(name="list", description="List all configured availability time slots.")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def time_slot_list(self, interaction: discord.Interaction) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         slots = await self.bot.signup_module_service.get_slots(server_id)
@@ -1256,8 +1244,7 @@ class SignupCog(commands.Cog):
         track_ids="Optional: space- or comma-separated track IDs (e.g. '1 3 12')",
         close_time="Optional: auto-close UTC datetime in ISO 8601 format (e.g. 2025-06-15T20:00:00)",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def signup_open(
         self,
         interaction: discord.Interaction,
@@ -1458,8 +1445,7 @@ class SignupCog(commands.Cog):
     # ── /signup close (T019) ──────────────────────────────────────────
 
     @signup.command(name="close", description="Close the signup window.")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def signup_close(self, interaction: discord.Interaction) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
@@ -1541,8 +1527,7 @@ class SignupCog(commands.Cog):
         name="list",
         description="List all Unassigned drivers, seeded by total lap time.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def signup_unassigned_list(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
@@ -1589,8 +1574,7 @@ class SignupCog(commands.Cog):
         name="export",
         description="Export all Unassigned drivers to a CSV file.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def signup_unassigned_export(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]

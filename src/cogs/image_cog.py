@@ -1,8 +1,10 @@
 """ImageCog — /images commands.
 
-Permission tiers (FR-041, FR-042):
-  * ``@channel_guard`` + ``@server_admin_only``  — template and asset locations
-  * ``@channel_guard`` + ``@admin_only``         — toggles, preferences, view, test
+Every command here is a league manager's — ``@league_manager_only`` throughout. Naming a
+template file or an asset directory used to ask for Discord's Administrator permission while
+the toggles and the previews asked for Manage Server, a split that put the artwork a league
+draws with above the league that draws it. Both are the configuration of a module, which the
+core specification places at the league manager's tier.
 
 Every response is ephemeral (FR-044), and every command refuses to act while the module
 is disabled (FR-005).
@@ -29,7 +31,7 @@ from models.image_constants import (
 )
 from models.image_module import STATE_DISABLED, STATE_ENABLED
 from services.image_config_service import pfp_change_refusal
-from utils.channel_guard import admin_only, channel_guard, server_admin_only
+from utils.channel_guard import league_manager_only
 from utils.paths import PathContainmentError, relative_to_root
 from utils.time_parsing import parse_time_of_day
 from utils.timezones import clear_zone_cache, is_known_zone, zone_names
@@ -452,8 +454,7 @@ class ImageCog(commands.Cog):
         name="toggle",
         description="Obtain driver portraits from their Discord profile pictures.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def use_pfp_toggle(self, interaction: discord.Interaction) -> None:
         if not await self._guard_module_enabled(interaction):
             return
@@ -484,8 +485,7 @@ class ImageCog(commands.Cog):
         name="prerender-toggle",
         description="Update the portraits a graphic needs just before drawing it.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def use_pfp_prerender_toggle(self, interaction: discord.Interaction) -> None:
         config = await self._guard_portraits_enabled(interaction)
         if config is None:
@@ -502,8 +502,7 @@ class ImageCog(commands.Cog):
         name="daily-toggle",
         description="Update every driver's portrait once a day, at a time you choose.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def use_pfp_daily_toggle(self, interaction: discord.Interaction) -> None:
         config = await self._guard_portraits_enabled(interaction)
         if config is None:
@@ -542,8 +541,7 @@ class ImageCog(commands.Cog):
         description="Set the folder searched for SVG template files.",
     )
     @app_commands.describe(directory="Path relative to the project root.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_template_directory(
         self, interaction: discord.Interaction, directory: str
     ) -> None:
@@ -683,15 +681,13 @@ class ImageCog(commands.Cog):
 
     @template.command(name="calendar", description="Set the calendar template filename.")
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_calendar_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "calendar_template", filename)
 
     @template.command(name="lineup", description="Set the lineup template filename.")
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_lineup_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "lineup_template", filename)
 
@@ -700,8 +696,7 @@ class ImageCog(commands.Cog):
         description="Set the qualifying session results template filename.",
     )
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_results_qualifying_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "results_qualifying_template", filename)
 
@@ -710,8 +705,7 @@ class ImageCog(commands.Cog):
         description="Set the race session results template filename.",
     )
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_results_race_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "results_race_template", filename)
 
@@ -720,8 +714,7 @@ class ImageCog(commands.Cog):
         description="Set the driver standings template filename.",
     )
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_standings_drivers_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "standings_drivers_template", filename)
 
@@ -730,29 +723,25 @@ class ImageCog(commands.Cog):
         description="Set the constructor standings template filename.",
     )
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_standings_constructors_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "standings_constructors_template", filename)
 
     @template.command(name="attendance", description="Set the attendance sheet template filename.")
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_attendance_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "attendance_template", filename)
 
     @template.command(name="rsvp", description="Set the check-in call template filename.")
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_rsvp_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "rsvp_template", filename)
 
     @template.command(name="weather-p1", description="Set the weather phase 1 template filename.")
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_weather_p1_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "weather_p1_template", filename)
 
@@ -761,8 +750,7 @@ class ImageCog(commands.Cog):
         description="Set the weather phase 2 template filename (non-sprint rounds).",
     )
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_weather_p2_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "weather_p2_template", filename)
 
@@ -771,8 +759,7 @@ class ImageCog(commands.Cog):
         description="Set the weather phase 3 template filename (non-sprint rounds).",
     )
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_weather_p3_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "weather_p3_template", filename)
 
@@ -781,8 +768,7 @@ class ImageCog(commands.Cog):
         description="Set the weather phase 2 template filename for sprint rounds.",
     )
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_weather_p2_sprint_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "weather_p2_sprint_template", filename)
 
@@ -791,8 +777,7 @@ class ImageCog(commands.Cog):
         description="Set the weather phase 3 template filename for sprint rounds.",
     )
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_weather_p3_sprint_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "weather_p3_sprint_template", filename)
 
@@ -801,15 +786,13 @@ class ImageCog(commands.Cog):
         description="Set the mystery round notice template filename.",
     )
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_weather_mystery_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "weather_mystery_template", filename)
 
     @template.command(name="verdicts", description="Set the verdicts template filename.")
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_verdicts_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "verdicts_template", filename)
 
@@ -818,8 +801,7 @@ class ImageCog(commands.Cog):
         description="Set the verdict banner template filename.",
     )
     @app_commands.describe(filename="Filename inside the template directory.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_verdict_banner_template(self, interaction: discord.Interaction, filename: str) -> None:
         await self._set_template_filename(interaction, "verdict_banner_template", filename)
 
@@ -833,8 +815,7 @@ class ImageCog(commands.Cog):
         description="Set the folder searched for circuit images.",
     )
     @app_commands.describe(directory="Path relative to the project root.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_track_image_directory(self, interaction: discord.Interaction, directory: str) -> None:
         await self._set_directory(interaction, "track_image_directory", directory, "Circuit images")
 
@@ -843,8 +824,7 @@ class ImageCog(commands.Cog):
         description="Set the folder searched for team logos, badges and cars.",
     )
     @app_commands.describe(directory="Path relative to the project root.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_team_image_directory(self, interaction: discord.Interaction, directory: str) -> None:
         await self._set_directory(interaction, "team_image_directory", directory, "Team badges")
 
@@ -853,8 +833,7 @@ class ImageCog(commands.Cog):
         description="Set the folder searched for driver nationality flags.",
     )
     @app_commands.describe(directory="Path relative to the project root.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_flag_directory(self, interaction: discord.Interaction, directory: str) -> None:
         await self._set_directory(interaction, "flag_directory", directory, "Nationality flags")
 
@@ -863,8 +842,7 @@ class ImageCog(commands.Cog):
         description="Set the folder searched for driver portraits.",
     )
     @app_commands.describe(directory="Path relative to the project root.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_driver_image_directory(self, interaction: discord.Interaction, directory: str) -> None:
         await self._set_directory(interaction, "driver_image_directory", directory, "Driver portraits")
 
@@ -873,8 +851,7 @@ class ImageCog(commands.Cog):
         description="Set the folder searched for markers and result marks.",
     )
     @app_commands.describe(directory="Path relative to the project root.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_marker_directory(self, interaction: discord.Interaction, directory: str) -> None:
         await self._set_directory(interaction, "marker_directory", directory, "Markers and result marks")
 
@@ -883,8 +860,7 @@ class ImageCog(commands.Cog):
         description="Set the folder searched for weather condition icons.",
     )
     @app_commands.describe(directory="Path relative to the project root.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_weather_icon_directory(self, interaction: discord.Interaction, directory: str) -> None:
         await self._set_directory(interaction, "weather_icon_directory", directory, "Weather icons")
 
@@ -893,8 +869,7 @@ class ImageCog(commands.Cog):
         description="Set the folder searched for tyre compound icons.",
     )
     @app_commands.describe(directory="Path relative to the project root.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_tyre_directory(self, interaction: discord.Interaction, directory: str) -> None:
         await self._set_directory(interaction, "tyre_directory", directory, "Tyre compounds")
 
@@ -903,8 +878,7 @@ class ImageCog(commands.Cog):
         description="Set the folder searched for division logos.",
     )
     @app_commands.describe(directory="Path relative to the project root.")
-    @channel_guard
-    @server_admin_only
+    @league_manager_only
     async def config_division_logo_directory(self, interaction: discord.Interaction, directory: str) -> None:
         await self._set_directory(interaction, "division_logo_directory", directory, "Division logos")
 
@@ -928,8 +902,7 @@ class ImageCog(commands.Cog):
             app_commands.Choice(name="Verdict banner", value="verdict_banner"),
         ]
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_toggle(
         self, interaction: discord.Interaction, aspect: app_commands.Choice[str]
     ) -> None:
@@ -1034,8 +1007,7 @@ class ImageCog(commands.Cog):
         description="Set the colour distinguishing the fastest lap of a race.",
     )
     @app_commands.describe(colour="A '#' followed by exactly six hex digits, e.g. #A020F0.")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_fastest_lap_colour(
         self, interaction: discord.Interaction, colour: str
     ) -> None:
@@ -1091,8 +1063,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(
         enable="Whether your templates should take each tier's own colours."
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_per_tier_colour_toggle(
         self, interaction: discord.Interaction, enable: bool
     ) -> None:
@@ -1102,7 +1073,7 @@ class ImageCog(commands.Cog):
         """Shared body for the toggle, so it can be exercised without a gateway.
 
         The same split `_set_directory` uses and for the same reason: the command itself is
-        wrapped by `@channel_guard` and `@admin_only` and cannot be invoked in a test.
+        wrapped by its tier guard and cannot be invoked in a test.
         """
         if not await self._guard_module_enabled(interaction):
             return
@@ -1149,8 +1120,7 @@ class ImageCog(commands.Cog):
         slot="The slot id your template marks, for example `accent`.",
         colour="A '#' followed by exactly six hex digits, e.g. #A78BFA.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_per_tier_set_colour(
         self, interaction: discord.Interaction, division: str, slot: str, colour: str
     ) -> None:
@@ -1212,8 +1182,7 @@ class ImageCog(commands.Cog):
         description="Set several of one tier's colour slots at once.",
     )
     @app_commands.describe(division="The division the colours apply to.")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_per_tier_bulk_colour(
         self, interaction: discord.Interaction, division: str
     ) -> None:
@@ -1260,8 +1229,7 @@ class ImageCog(commands.Cog):
         description="Import colours for several tiers at once (file attachment or modal).",
     )
     @app_commands.describe(file="Optional XML file. Omit it to paste into a modal instead.")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_colour_xml_import(
         self, interaction: discord.Interaction, file: discord.Attachment | None = None
     ) -> None:
@@ -1405,8 +1373,7 @@ class ImageCog(commands.Cog):
         description="Set the time zone times are displayed in on images.",
     )
     @app_commands.describe(zone="An IANA zone name, e.g. Europe/Lisbon.")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_time_zone(self, interaction: discord.Interaction, zone: str) -> None:
         if not await self._guard_module_enabled(interaction):
             return
@@ -1460,8 +1427,7 @@ class ImageCog(commands.Cog):
             app_commands.Choice(name="12-hour (2:30 PM)", value="12H"),
         ]
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_time_format(
         self, interaction: discord.Interaction, clock: app_commands.Choice[str]
     ) -> None:
@@ -1505,8 +1471,7 @@ class ImageCog(commands.Cog):
             ),
         ]
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_date_format(
         self, interaction: discord.Interaction, style: app_commands.Choice[str]
     ) -> None:
@@ -1524,8 +1489,7 @@ class ImageCog(commands.Cog):
         name="view",
         description="Show the whole image configuration and whether it holds together.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_view(self, interaction: discord.Interaction) -> None:
         if not await self._guard_module_enabled(interaction):
             return
@@ -1817,8 +1781,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(
         division="The division whose calendar to draw."
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def test_calendar(
         self, interaction: discord.Interaction, division: str
     ) -> None:
@@ -1842,8 +1805,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(
         division="The division whose lineup to draw."
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def test_lineup(
         self, interaction: discord.Interaction, division: str
     ) -> None:
@@ -1868,8 +1830,7 @@ class ImageCog(commands.Cog):
         division="The division to draw for. Omit where this server has no season.",
         round="The round number to draw for. Omit where this server has no season.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def test_results(
         self,
         interaction: discord.Interaction,
@@ -1898,8 +1859,7 @@ class ImageCog(commands.Cog):
         division="The division to draw for. Omit where this server has no season.",
         round="The round number to draw for. Omit where this server has no season.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def test_standings(
         self,
         interaction: discord.Interaction,
@@ -1928,8 +1888,7 @@ class ImageCog(commands.Cog):
         division="The division to draw for. Omit where this server has no season.",
         round="The round number to draw for. Omit where this server has no season.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def test_attendance(
         self,
         interaction: discord.Interaction,
@@ -1958,8 +1917,7 @@ class ImageCog(commands.Cog):
         division="The division to draw for. Omit where this server has no season.",
         round="The round number to draw for. Omit where this server has no season.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def test_rsvp(
         self,
         interaction: discord.Interaction,
@@ -1988,8 +1946,7 @@ class ImageCog(commands.Cog):
         division="The division to draw for. Omit where this server has no season.",
         round="The round number to draw for. Omit where this server has no season.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def test_verdict(
         self,
         interaction: discord.Interaction,
@@ -2018,8 +1975,7 @@ class ImageCog(commands.Cog):
         division="The division to draw for. Omit where this server has no season.",
         round="The round number to draw for. Omit where this server has no season.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def test_verdict_banner(
         self,
         interaction: discord.Interaction,
@@ -2048,8 +2004,7 @@ class ImageCog(commands.Cog):
         division="The division to draw for. Omit where this server has no season.",
         round="The round number to draw for. Omit where this server has no season.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def test_weather_p1(
         self,
         interaction: discord.Interaction,
@@ -2078,8 +2033,7 @@ class ImageCog(commands.Cog):
         division="The division to draw for. Omit where this server has no season.",
         round="The round number to draw for. Omit where this server has no season.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def test_weather_p2(
         self,
         interaction: discord.Interaction,
@@ -2108,8 +2062,7 @@ class ImageCog(commands.Cog):
         division="The division to draw for. Omit where this server has no season.",
         round="The round number to draw for. Omit where this server has no season.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def test_weather_p3(
         self,
         interaction: discord.Interaction,
@@ -2138,8 +2091,7 @@ class ImageCog(commands.Cog):
         division="The division to draw for. Omit where this server has no season.",
         round="The round number to draw for. Omit where this server has no season.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def test_weather_mystery(
         self,
         interaction: discord.Interaction,
