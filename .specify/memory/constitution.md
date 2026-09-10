@@ -38,13 +38,31 @@ SYNC IMPACT REPORT
     - Three references to `docs/wip-specs/known_issues.md`, a document migrated to the GitHub
       issue tracker and deleted on 2026-09-09.
 
-  Known residual vocabulary:
-    - Sixteen passages outside Principle I still say "tier-2 admin" or "trusted user". They name
-      the tier this amendment has just renamed to "league manager" and remain readable, but the
-      vocabulary is now inconsistent with Principle I. Line 4437 ("Only tier-2 admins ... may
-      submit, amend, or penalise") additionally contradicts the results module specification,
-      which opens every button of the submission and appeals flows to the interaction role.
-      Neither is a change to what the bot does and both are left for a sweep of their own.
+  Vocabulary swept through the body:
+    - Every passage outside Principle I that said "tier-2 admin", "Trusted user" or "trusted
+      users" now says "league manager", and the two that additionally named "server
+      administrators" as a permission tier now say "league admins". Twenty-two lines in all,
+      across the driver-state tables, the signup channel visibility rules, the results
+      submission and penalty/appeals rules, and the schema column comments for `submitted_by`,
+      `applied_by` and `reviewed_by`.
+    - This resolved a contradiction rather than only renaming one. "Only tier-2 admins ... may
+      submit, amend, or penalise" read, under the old Principle I, as a tier *above* the
+      interaction role — which contradicted the results module specification, where every
+      button of the submission and appeals flows accepts the interaction role. With tier 2
+      defined as the interaction role itself, the two agree.
+    - Six further passages named a Discord administrator where a tier was meant, and follow
+      decisions this amendment has already taken: re-keying a driver profile, the test-mode
+      overrides, enabling and disabling a module, and the default team set — which is split,
+      a league manager adding and modifying, a league admin removing.
+    - Lines inside sync impact reports were left untouched throughout. They are the historical
+      record and say what was true when written.
+
+  Not settled here:
+    - The League Banned state says a ban is "lifted by an administrator" and its transition
+      table says "Administrator explicitly lifts ban". No document states which tier lifts a
+      league ban, so this is a decision rather than a rename and is left open.
+    - The out-of-channel refusal clause and the three references to the deleted
+      `docs/wip-specs/known_issues.md`, both tracked in issue #145.
 
   Follow-up TODOs: none.
 -->
@@ -4117,9 +4135,9 @@ identifier, division, and UTC timestamp.
 All mutations that affect a published schedule MUST post a human-readable confirmation to the
 calculation log channel. The bot MUST NOT silently accept or silently discard any command.
 
-**Rationale**: League administrators and drivers need an unambiguous, channel-visible record
-of computations and changes, especially when disputing weather outcomes or schedule
-alterations.
+**Rationale**: A league's managers, its admins and its drivers need an unambiguous,
+channel-visible record of computations and changes, especially when disputing weather
+outcomes or schedule alterations.
 
 ### VI. Incremental Scope Expansion
 
@@ -4150,7 +4168,7 @@ domains are formally in-scope as of this version:
 10. **Penalty adjudication and appeals**: application of post-race penalties (time
     penalties, disqualifications) via a stewards workflow, posting of penalty decisions
     to a dedicated channel, and a second-level appeals process allowing interaction-role
-    members to contest a penalty, resolved by a tier-2 admin.
+    members to contest a penalty, resolved by a league manager.
 11. **Driver attendance management**: round RSVP check-in flow, reserve distribution at
     the RSVP deadline, attendance tracking once round results are submitted, attendance
     point accumulation per driver, attendance pardon workflow inside the penalty wizard,
@@ -4227,7 +4245,7 @@ their Discord User ID in server scope. The following rules are non-negotiable:
 | Not Signed Up | Inactive; eligible to initiate signup. Default when no profile exists. |
 | Pending Signup Completion | Wizard engaged; bot is collecting signup parameters. |
 | Pending Admin Approval | All parameters collected; awaiting trusted-role review. |
-| Awaiting Correction Parameter | Trusted user clicked "request changes"; selecting which field to re-collect (5-minute window). |
+| Awaiting Correction Parameter | League manager clicked "request changes"; selecting which field to re-collect (5-minute window). |
 | Pending Driver Correction | Specific field flagged; driver must re-submit that field only. |
 | Unassigned | Signup approved; not yet placed in any division-team seat. |
 | Assigned | Placed in at least one division-team seat. |
@@ -4241,13 +4259,13 @@ their Discord User ID in server scope. The following rules are non-negotiable:
 | Not Signed Up | Pending Signup Completion | Driver presses signup button (signups must be open) |
 | Pending Signup Completion | Pending Admin Approval | Driver completes all wizard steps |
 | Pending Signup Completion | Not Signed Up | Driver withdraws; or 24 h inactivity timeout |
-| Pending Admin Approval | Awaiting Correction Parameter | Trusted user clicks "request changes" |
-| Awaiting Correction Parameter | Pending Driver Correction | Trusted user selects field to correct |
+| Pending Admin Approval | Awaiting Correction Parameter | League manager clicks "request changes" |
+| Awaiting Correction Parameter | Pending Driver Correction | League manager selects field to correct |
 | Awaiting Correction Parameter | Pending Admin Approval | 5-minute timeout with no field selected |
 | Pending Driver Correction | Pending Admin Approval | Driver submits valid corrected field |
 | Pending Driver Correction | Not Signed Up | Driver withdraws; or 24 h inactivity timeout |
-| Pending Admin Approval | Unassigned | Trusted user approves signup |
-| Pending Admin Approval | Not Signed Up | Trusted user rejects signup; or driver withdraws |
+| Pending Admin Approval | Unassigned | League manager approves signup |
+| Pending Admin Approval | Not Signed Up | League manager rejects signup; or driver withdraws |
 | Unassigned | Assigned | `/driver assign` places driver in their first seat |
 | Assigned | Unassigned | `/driver unassign` removes driver's last seat assignment |
 | Unassigned | Not Signed Up | `/driver sack` |
@@ -4272,11 +4290,11 @@ their Discord User ID in server scope. The following rules are non-negotiable:
   MUST be rejected.
 - **Deletion rule**: Transitioning to *Not Signed Up* with `former_driver = false` MUST delete
   the record atomically in the same transaction as the state change.
-- **User ID reassignment**: Only a server administrator may change the Discord User ID.
+- **User ID reassignment**: Only a league admin may change the Discord User ID.
   Both old and new IDs MUST be logged as an audit event (Principle V). Upon reassignment,
   the stored Discord username and server display name MUST be overwritten by those of the
   new account.
-- **Test-mode overrides**: When test mode is active, administrators MAY directly set
+- **Test-mode overrides**: When test mode is active, league admins MAY directly set
   `former_driver` to `true` or `false`, and MAY assign *Not Signed Up* drivers directly to
   *Unassigned* or *Assigned*. All such overrides MUST produce audit log entries.
 - **Absent profile semantics**: A Discord user with no database record is treated as
@@ -4321,8 +4339,9 @@ point:
   team's history.
 - **Configurable teams**: The standard ten constructor teams (Alpine, Aston Martin, Ferrari,
   Haas, McLaren, Mercedes, Racing Bulls, Red Bull, Sauber, Williams) each carry exactly 2 seats
-  by default. A server administrator MAY add, modify, or remove configurable teams from the
-  server-level default set at any time. Changes to the default set MAY be applied to all
+  by default. A league manager MAY add or modify configurable teams in the server-level
+  default set at any time, and a league admin MAY remove one — a removed team taking its
+  seats with it, and nothing putting it back. Changes to the default set MAY be applied to all
   divisions of the current season ONLY during the `SETUP` lifecycle phase.
 - **Division isolation**: A team definition or seat assignment in Division A MUST NOT affect
   Division B. Team data is partitioned per division, per season.
@@ -4356,9 +4375,9 @@ per server and MUST survive bot restarts.
 - Driver profile management
 - Season lifecycle management
 
-**Optional modules** (disabled by default; enabled explicitly per server by a server
-administrator via a dedicated `/module enable <name>` command — or its equivalent
-structured subcommand):
+**Optional modules** (disabled by default; enabled explicitly per server by a league admin
+via a dedicated `/module enable <name>` command — or its equivalent structured
+subcommand):
 - **Weather generation module**: arms the three-phase scheduler, registers weather channel
   configs, and processes the forecast pipeline (Principle IV).
 - **Signup module**: manages the signup wizard flow, the general signup channel, per-driver
@@ -4424,12 +4443,12 @@ The following rules MUST hold for every optional module:
    **Rationale for the exception**: The clearing rule exists so that a re-enabled module
    cannot act on stale bindings to server objects that may have been deleted or reassigned
    while it was off. A filesystem path or a colour has no such binding — it is as true after
-   a disable as before it, and discarding thirty such values punishes an administrator for
+   a disable as before it, and discarding thirty such values punishes a league admin for
    toggling a module off to diagnose a problem.
 
 **Rationale**: The bot's growth toward full league management requires a clean separation
 between always-on infrastructure (divisions, drivers, teams) and capability modules that
-server administrators opt into. Mandatory modules establish the data model that all other
+league admins opt into. Mandatory modules establish the data model that all other
 modules build on; optional modules add functionality only when the server is ready for it.
 The default-off policy prevents accidental activation of unintended features and keeps the
 initial setup experience simple.
@@ -4445,14 +4464,14 @@ lifecycle state (Principle VIII). The following rules are non-negotiable:
   share state with any other.
 - **Channel lifecycle**:
   - On wizard start, the bot MUST create a private channel named `<username>-signup`, visible
-    only to the driver, tier-2 admins, and server administrators.
+    only to the driver, league managers, and league admins.
   - The channel MUST be deleted after a 24-hour hold period following any terminal event
     (approval, rejection, withdrawal, or timeout cancellation). During the hold period the
     channel is read-only for the driver.
   - The channel MUST be deleted immediately (no hold) when the driver leaves the server.
   - If a driver with an existing signup channel re-presses the signup button, the old channel
     MUST be deleted immediately and a new one created.
-  - Tier-2 admins and server administrators MAY write freely in any signup channel at any time.
+  - League managers and league admins MAY write freely in any signup channel at any time.
 - **Sequential collection (normal flow)**: In the normal wizard (Pending Signup Completion),
   parameter collection MUST follow the exact order specified in the feature specification.
   Each step MUST wait for a valid response before advancing.
@@ -4519,7 +4538,7 @@ governs the **Results & Standings optional module** (Principle X).
 
 #### Authorization & Module Gate
 
-- Only tier-2 admins (season/config authority, Principle I) may submit, amend, or penalise
+- Only league managers (Principle I) may submit, amend, or penalise
   result records.
 - All commands in this module MUST check that the Results & Standings module is enabled before
   executing, and return a clear error if it is not (Principle X, rule 5).
@@ -4561,7 +4580,7 @@ governs the **Results & Standings optional module** (Principle X).
       session maps to Feature Race for result-type and points-configuration purposes.
     - **Mystery**: no result sessions; result collection MUST NOT be triggered.
 - The bot creates a transient submission channel adjacent to the division's results channel
-  at the scheduled round start time, notifying tier-2 admins to enter results. This channel
+  at the scheduled round start time, notifying league managers to enter results. This channel
   is a module-introduced channel category registered per Principle VII.
 - Each session result row MUST carry: session type, round ID, division ID, driver Discord
   User ID, finishing position (1-indexed positive integer), team role, tyre (qualifying)
@@ -4569,7 +4588,7 @@ governs the **Results & Standings optional module** (Principle X).
   CLASSIFIED (eligible for points), DNF / DNS / DSQ (0 points, ineligible for fastest-lap
   bonus except as noted). A special CANCELLED result MAY be recorded for sessions not run.
 - After a session's results are accepted, the bot presents one button per named seasonal
-  configuration; the tier-2 admin MUST choose one. The chosen configuration name is
+  configuration; the league manager MUST choose one. The chosen configuration name is
   persisted with the session result and used for all points calculations for that session.
 - A CLASSIFIED driver is eligible for the chosen configuration's fastest-lap bonus if, and
   only if, their finishing position is at or above the configured position limit for that
@@ -4580,7 +4599,7 @@ governs the **Results & Standings optional module** (Principle X).
 
 #### Amendment & Penalty
 
-- A tier-2 admin MAY amend any session's results entirely (full re-entry) or apply
+- A league manager MAY amend any session's results entirely (full re-entry) or apply
   targeted time penalties or disqualifications per driver via a guided wizard. Each
   amendment or penalty MUST produce an audit log entry per Principle V.
 - On amendment or penalty application, standings for the affected round and all subsequent
@@ -4590,12 +4609,12 @@ governs the **Results & Standings optional module** (Principle X).
   only be cancelled once all pending result sessions have been submitted or explicitly
   marked CANCELLED.
 - The amendment-mode toggle MUST reject a request to disable (toggle off) while
-  `modified_flag` is `true`. Tier-2 admins MUST first either approve (overwriting the
+  `modified_flag` is `true`. League managers MUST first either approve (overwriting the
   season points store) or revert (discarding the modification store) before amendment
   mode may be disabled.
 - Mid-season scoring table amendments follow a **modification store** workflow: a copy of
   the season points store is placed into a modification store; changes are applied there;
-  only upon tier-2 admin approval does the modification store overwrite the season store.
+  only upon league manager approval does the modification store overwrite the season store.
   On approval, all affected results and standings MUST be reposted. A `modified_flag`
   (default false) tracks uncommitted changes; it is set on any modification and cleared
   on approval or revert.
@@ -4607,7 +4626,7 @@ governs the **Results & Standings optional module** (Principle X).
   channel** (`penalty_channel_id` on `DivisionResultsConfig`).
 - The announcement MUST include: the affected driver's display name, the round name, the
   session type, the penalty type and magnitude (e.g., "+5 seconds" or "DSQ"), a reason if
-  provided by the tier-2 admin, and the Discord display name of the admin who applied it.
+  provided by the league manager, and the Discord display name of the admin who applied it.
 - If no penalty announcement channel is configured for a division, announcements fall back
   to that division's results channel.
 - The penalty announcement channel is a module-introduced channel category governed by
@@ -4616,10 +4635,10 @@ governs the **Results & Standings optional module** (Principle X).
 
 #### Penalty Appeals
 
-- The appeals stage is fully admin-driven. After the penalty review is approved, a tier-2
-  admin runs an appeals review wizard (mirroring the penalty review wizard) in the same
-  transient submission channel. The admin stages corrections and approves them; no driver
-  submission step exists in this increment.
+- The appeals stage is fully manager-driven. After the penalty review is approved, a league
+  manager runs an appeals review wizard (mirroring the penalty review wizard) in the same
+  transient submission channel. The league manager stages corrections and approves them; no
+  driver submission step exists in this increment.
 - Appeals follow a two-outcome lifecycle: **Upheld** (correction applied to the result) or
   **Overturned** (no change; reserved for future use). Every correction staged and approved
   in this increment is stored as `UPHELD`. A `PENDING` state and driver-initiated appeal
@@ -6638,7 +6657,7 @@ for the season persistence increment.
 - Data schemas MUST be versioned. Migrations MUST be applied automatically on bot startup with
   a clear log of which migrations ran.
 - A full data export of any division's season (schedule, amendments, weather log, phase
-  computation records, audit trail) MUST be available to trusted users on demand.
+  computation records, audit trail) MUST be available to league managers on demand.
 
 ### New Entities (v2.0.0)
 
@@ -6816,7 +6835,7 @@ Standings module):
 - `status` (ENUM: ACTIVE / CANCELLED — CANCELLED when the special "CANCELLED" input is used)
 - `applied_config_id` (TEXT, nullable — name of the seasonal config chosen for this session;
   null if CANCELLED)
-- `submitted_by` (TEXT — Discord User ID of submitting tier-2 admin)
+- `submitted_by` (TEXT — Discord User ID of submitting league manager)
 - `submitted_at` (TEXT — UTC ISO 8601 timestamp)
 
 **DriverSessionResult** (per driver, per SessionResult):
@@ -6872,8 +6891,8 @@ for team-level aggregates):
 - `driver_session_result_id` (INTEGER, FK → DriverSessionResult)
 - `penalty_type` (ENUM: TIME_PENALTY / DSQ)
 - `time_seconds` (INTEGER, nullable — magnitude in seconds; null for DSQ)
-- `reason` (TEXT, nullable — free-text reason supplied by the tier-2 admin)
-- `applied_by` (TEXT — Discord User ID of the tier-2 admin who applied the penalty)
+- `reason` (TEXT, nullable — free-text reason supplied by the league manager)
+- `applied_by` (TEXT — Discord User ID of the league manager who applied the penalty)
 - `applied_at` (TEXT — UTC ISO 8601 timestamp)
 - `voided` (BOOLEAN, default false — set to true when an AppealRecord with status
   OVERTURNED is resolved against this penalty)
@@ -6889,7 +6908,7 @@ for team-level aggregates):
 - `status` (ENUM: PENDING / UPHELD / OVERTURNED, default PENDING)
 - `submitted_by` (TEXT — Discord User ID of the driver submitting the appeal)
 - `submitted_at` (TEXT — UTC ISO 8601 timestamp)
-- `reviewed_by` (TEXT, nullable — Discord User ID of the reviewing tier-2 admin)
+- `reviewed_by` (TEXT, nullable — Discord User ID of the reviewing league manager)
 - `reviewed_at` (TEXT, nullable — UTC ISO 8601 timestamp)
 - `review_reason` (TEXT, nullable — free-text outcome reason supplied by the reviewer)
 - Uniquely keyed on `penalty_id`; a second appeal row for the same penalty MUST be
@@ -7149,7 +7168,7 @@ round while the Attendance module is enabled):
 - `pardon_type` (ENUM: NO_RSVP / ABSENT / NO_SHOW)
 - `justification` (TEXT, nullable — logged to calculation log channel only; never
   displayed in public-facing output)
-- `applied_by` (TEXT — Discord User ID of the tier-2 admin who applied the pardon)
+- `applied_by` (TEXT — Discord User ID of the league manager who applied the pardon)
 - `applied_at` (TEXT — UTC ISO 8601 timestamp)
 - Uniquely keyed on (attendance_id, pardon_type) — at most one pardon per event type
   per driver per round.
