@@ -19,30 +19,37 @@ it only to place it; the rules governing it belong to its own specification.
 - Team: a constructor a driver races for. A team holds seats.
 - Seat: one place in a team, held by at most one driver.
 - Driver: a person who holds a driver profile upon the server.
-- Module: an optional part of the bot, switched on by a server administrator.
+- Module: an optional part of the bot, switched on by a league admin.
 - League manager: a member holding the interaction role, who commands the bot in the interaction channel.
+- League admin: a member holding the league admin role, who governs the bot upon the server and may undo a league entire.
 
 ## The league on a server
 
 ### Setting the bot up
-- A single initialisation command shall establish the bot upon a server, taking three settings at once: the interaction role, the interaction channel and the log channel.
+- A single initialisation command shall establish the bot upon a server, taking four settings at once: the interaction role, the league admin role, the interaction channel and the log channel.
     - The interaction role is the role a member shall hold to command the bot at all.
+    - The league admin role is the role a member shall hold to govern the bot and to do what may undo a league entire.
     - The interaction channel is the only channel in which the bot accepts commands.
     - The log channel is where the bot records what it did, what it could not find, and why something fell back.
 - The initialisation command shall run once. A second run shall be refused rather than overwrite what stands, and shall name the commands that change a single setting.
-- Each of the three settings shall have a command changing that setting alone.
-- The initialisation command and the three single-setting commands are a league admin's, and shall run from any channel, holding the interaction role being no part of it. They are what repairs the three settings, and a deleted channel or a withdrawn role would otherwise be unrepairable.
+- Each of the four settings shall have a command changing that setting alone.
+- The initialisation command and the four single-setting commands are a league admin's, and shall run from any channel, holding either role being no part of it. They are what repairs the four settings, and a deleted channel or a withdrawn role would otherwise be unrepairable.
+    - These five commands alone shall additionally accept the server's administrator permission in place of the league admin role. They are the only way back for a server that has no league admin role — one that was configured before the role existed, or one whose role has been deleted — and without them such a server could never gain one.
+- A server holding no league admin role shall refuse every league admin command, and the refusal shall name the command that sets the role. It shall not fall back to the administrator permission: a league that has not chosen the role has not decided who may undo it.
 - Initialisation shall create the Reserve team where the server holds no team. No other team shall be created.
 
 ### Who may do what
 - A driver shall need no role and no channel. A driver reaches the bot through the buttons it posts and through their own channels.
 - Two tiers of authority shall govern every command, and every command shall sit in one of them and no other.
-    - **A league admin** shall hold the server's administrator permission. A league admin governs what the bot is upon the server, and everything that may undo a league entire: initialising the bot and repairing its three settings, enabling and disabling a module, starting over, and every command of test mode.
-        - A command destroying what a league is built from shall be a league admin's, where nothing puts it back: deleting or cancelling a division, a round or a season, completing a season, removing a team, sacking a driver, and deleting the bot's own messages. A command whose undoing is another command — closing a signup window that may be opened again, unassigning a driver who may be assigned again — is a league manager's.
+    - **A league admin** shall hold the league admin role. A league admin governs what the bot is upon the server, and everything that may undo a league entire: initialising the bot and repairing its four settings, enabling and disabling a module, starting over, and every command of test mode.
+        - A command destroying what a league is built from shall be a league admin's, where nothing puts it back: deleting or cancelling a division, a round or a season, completing a season, removing a team, sacking a driver, deleting the bot's own messages, amending the results of a round already final, approving an amendment of a season's points, and deleting a points configuration. A command whose undoing is another command — closing a signup window that may be opened again, unassigning a driver who may be assigned again, discarding an amendment not yet approved — is a league manager's.
     - **A league manager** shall hold the interaction role and shall command the bot in the interaction channel. A league manager runs the league: its seasons, divisions, rounds, tracks, teams, drivers and seats; the configuration of every module and the templates and artwork it draws from; the channels each division posts to; and the results, standings, verdicts, check-ins and signups that follow.
 - Where this specification does not state a tier, the command is a league manager's.
-- The administrator permission shall carry the league manager's tier within it. A member holding it shall command the bot without holding the interaction role, a league admin being able to do everything a league manager may.
-- A league admin's command shall be given in the interaction channel, save the initialisation command and the three single-setting commands. Those alone repair the settings the channel itself depends upon, and shall run from any channel.
+- **Both tiers shall be roles the league configures, and a permission of the server shall be a route to neither.** A permission is a property of the Discord server and is given for reasons that have nothing to do with a league; a tier is a property of the league. A member may run a championship without being trusted to restructure the server, and may administer the server without being anywhere near the championship.
+    - The sole exception is the initialisation command and the four single-setting commands, which the section above sets out.
+- The league admin role shall carry the league manager's tier within it. A member holding it shall command the bot without also holding the interaction role, a league admin being able to do everything a league manager may.
+- A league admin's command shall be given in the interaction channel, save the initialisation command and the four single-setting commands. Those alone repair the settings the channel itself depends upon, and shall run from any channel.
+- A channel the bot opens to the interaction role shall be opened to the league admin role on the same terms, so that a league admin may read what they are entitled to act upon.
 - A tier shall govern the action and not the command alone. Where the bot offers an action through a button of its own, that button shall ask the tier its action belongs to, which may be higher than the tier of the command that posted it.
 - A button the bot offers a driver in their own channel shall ask nothing, a driver needing no role.
 - A command given in a channel other than the interaction channel shall be refused, and the refusal shall be seen by the member alone.
@@ -64,7 +71,7 @@ it only to place it; the rules governing it belong to its own specification.
 
 ### Modules
 - Five modules shall be available, each specified in its own document: signup, results and standings, attendance, weather, and image generation.
-- Every module shall be disabled upon a server until a server administrator enables it. A bot with no module enabled holds a calendar and nothing more.
+- Every module shall be disabled upon a server until a league admin enables it. A bot with no module enabled holds a calendar and nothing more.
 - The rules governing a module — what enabling it requires, what disabling it clears, and what it depends upon — belong to that module's specification.
 - A disabled module shall produce nothing. While a module is disabled the bot shall neither compute, record nor post any of that module's output, whatever the path arrives at it — a scheduled job, a restart, or a command that amends work arranged while the module was still enabled.
     - Nothing done while a module was disabled shall be recorded as that module's work, so that enabling the module later does not find its work already done.
@@ -93,7 +100,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A season shall carry a number, assigned by the bot as one higher than the count of seasons that have left setup. That number shall be the one displayed in all bot output.
 - A season shall carry the edition of the game it is raced on.
 - A completed or cancelled season shall be immutable. Every command that would change one shall be refused.
-- No season shall end of its own accord. A league manager shall complete it.
+- No season shall end of its own accord. A league admin shall complete it, completing a season being among the acts nothing puts back.
 - A round shall stand in one of six states, each of the middle four naming what the round is waiting on:
     - **not run**, before its moment has arrived;
     - **awaiting results**, once its moment has passed and its results have not been entered;
@@ -124,7 +131,7 @@ it only to place it; the rules governing it belong to its own specification.
 - No command shall approve a season. A season shall be approved by the button the season review posts, and by no other means.
 - The button shall be carried by a message of its own, asking whether the season configuration is accepted and naming both the member who ran the review and who may answer it.
 - That message shall be posted publicly, and not to the reviewer alone. A reviewer who may not approve is thereby able to put the question to a member who may.
-- The button shall be pressed only by the member who ran the review, or by a server administrator. A press by any other member shall be refused, shall say who may approve, and shall approve nothing; the refusal is seen by the presser alone.
+- The button shall be pressed only by the member who ran the review, or by a league admin. A press by any other member shall be refused, shall say who may approve, and shall approve nothing; the refusal is seen by the presser alone.
 - Who is pressing shall be the first thing the button settles, before the state of the season is read.
 - The button shall carry no other action. The season is amended by the commands that amend it and reviewed again.
 - The button shall stand for five minutes from the posting of the review that carries it. Upon their passing its message shall be deleted, and a notice posted in its place naming the reviewer, saying that the review has expired and that it must be run again.
@@ -305,14 +312,14 @@ it only to place it; the rules governing it belong to its own specification.
 - Every successful placement, removal and sacking shall cause the division's lineup to be deleted and posted again in its lineup channel.
 
 ### Changing the account behind a profile
-- A server administrator shall be able to re-key a driver profile onto another Discord account, so that a person changing account keeps their history.
+- A league admin shall be able to re-key a driver profile onto another Discord account, so that a person changing account keeps their history.
 - The new account shall be accepted whether or not it is still a member of the server.
 - A profile shall not be re-keyed onto an account that already holds one.
 
 ## When the bot stops
 - The bot is a program somebody shall keep running. While it is stopped nothing happens.
 - When it starts again it shall recover: the weather phases that came due, where the weather module is enabled; the check-in calls and deadlines that came due; a signup window's closing timer, closing the window at once where its moment has passed; interrupted result submissions, which shall be cleared and reopened with the league manager told to submit again; penalty and appeal reviews, which shall be posted again rather than discarded; abandoned amendment channels, which shall be deleted; season reviews left standing, which shall be expired; and seasons left part-built.
-- The end of a season shall not be recovered. A league manager shall complete it.
+- The end of a season shall not be recovered. A league admin shall complete it.
 - Anything else that came due while the bot was stopped is missed.
 - A message the bot failed to post shall be retried until it is delivered, shall survive a restart, and its eventual delivery shall be recorded in the log channel. A message still undelivered after about an hour shall be reported there.
 
@@ -327,15 +334,15 @@ section states the rules it holds to.
 - Test mode shall provide a command reporting, for every round, which of its scheduled work has run and which remains.
 - Test mode shall provide synthetic drivers, so that a division may be filled and raced without real Discord accounts.
 - While test mode is enabled, a switch of its own shall stand in for the signup module's nationality setting, so that both may be seen without altering what a league's real signups ask.
-- While test mode is enabled, a server administrator shall be able to set a driver's former-driver flag by hand, to true or to false. This shall be possible in no other circumstance.
+- While test mode is enabled, a league admin shall be able to set a driver's former-driver flag by hand, to true or to false. This shall be possible in no other circumstance.
 - Every test mode command but the toggle shall re-read the state at the moment it is given and shall be refused while test mode is off.
 
 ### Entering and leaving it
 - A server shall be either running a real league or under test, never both.
 - Test mode shall not be enabled while the server holds a real driver whose state is anything other than Not Signed Up. A driver profile retained at Not Signed Up is a former driver and shall not stand in the way.
     - The refusal shall name how many real drivers the server holds, and the state of test mode shall be left unchanged.
-- Test mode shall not be enabled while the signup window is open. The refusal shall direct the administrator to close the window, and the window shall be left open — enabling test mode shall not close it.
-- Test mode shall not be disabled while a season that has started holds a driver created by test mode. Such a season shall hold test mode open until it is completed, and the refusal shall direct the administrator to complete it.
+- Test mode shall not be enabled while the signup window is open. The refusal shall direct the league admin to close the window, and the window shall be left open — enabling test mode shall not close it.
+- Test mode shall not be disabled while a season that has started holds a driver created by test mode. Such a season shall hold test mode open until it is completed, and the refusal shall direct the league admin to complete it.
     - Neither a season yet to start nor a completed one shall stand in the way.
 - While test mode is enabled:
     - A real driver shall not begin a signup. The sign-up button shall refuse them, and the command opening a signup window shall be refused.
@@ -357,7 +364,7 @@ section states the rules it holds to.
 
 ### Saving a state and returning to it
 - Four commands shall be available for saving the state of the bot and returning to it: one saving, one locking what was saved, one reporting what is saved, and one restoring it. They shall be subcommands of the test mode commands, that being the only circumstance in which they run.
-- Every one of them shall be refused unless the server is in test mode, and unless the member holds the administrator permission of the server.
+- Every one of them shall be refused unless the server is in test mode, and unless the member holds the league admin role.
 - Saving shall copy both the league database and the database of the scheduler, so that the jobs of a season are restored beside the season itself.
 - Saving shall replace whatever was saved before, save where the saved state has been locked.
 - The lock shall be set and unset by the same command. A state locked shall refuse to be overwritten by a save, and the lock shall record the member who set it and the moment they did.
