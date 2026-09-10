@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from cogs.test_mode_cog import TestModeCog as Cog  # noqa: E402
 from cogs.test_mode_cog import _jobstore_path  # noqa: E402
 from services import backup_service as bs  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 4400
 USER_ID = 99
@@ -80,8 +81,8 @@ def _interaction():
 
 
 def _body(command):
-    """The command body, past `channel_guard` and `server_admin_only`."""
-    return command.callback.__wrapped__.__wrapped__
+    """The command body, past whatever tier guard it wears."""
+    return undecorate(command)
 
 
 def _reply(interaction) -> str:

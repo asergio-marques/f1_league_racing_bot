@@ -6,6 +6,7 @@ import os
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from tests.support.undecorate import undecorate  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
@@ -62,8 +63,8 @@ def _make_bot(
 
 
 def _unwrap(cmd):
-    """Return the innermost callback (bypasses channel_guard and admin_only)."""
-    return cmd.callback.__wrapped__.__wrapped__
+    """Return the innermost callback, past whatever tier guard the command wears."""
+    return undecorate(cmd)
 
 
 # ---------------------------------------------------------------------------

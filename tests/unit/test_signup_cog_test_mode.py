@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs import signup_cog  # noqa: E402
 from models.server_config import ServerConfig  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 4242
 
@@ -75,8 +76,8 @@ def _bot(*, test_mode: bool):
 
 
 def _unwrap(cmd):
-    """The innermost callback, bypassing channel_guard and admin_only."""
-    return cmd.callback.__wrapped__.__wrapped__
+    """The innermost callback, bypassing whatever tier guard the command wears."""
+    return undecorate(cmd)
 
 
 async def _press_the_button(bot) -> _Interaction:
