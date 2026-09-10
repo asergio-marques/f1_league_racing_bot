@@ -3976,6 +3976,17 @@ class SeasonCog(commands.Cog):
         round_number: int,
         session: app_commands.Choice[str] | None = None,
     ) -> None:
+        """Amend the results of a round that has reached FINAL.
+
+        **A league admin's**, unlike the rest of `/round`, and unlike what a reading of the
+        name suggests. Amending does not supersede: `amend_session_results` updates the
+        header in place and deletes the round's driver rows before re-inserting them, so the
+        classification the league actually raced is gone and no command puts it back. It sits
+        with the other commands that destroy what a league is built from.
+
+        Adding, amending and importing rounds stay a league manager's; cancelling and
+        deleting one are a league admin's for the same reason this is.
+        """
         if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
             await interaction.response.send_message(
                 "\u274c The Results & Standings module is not enabled.", ephemeral=True

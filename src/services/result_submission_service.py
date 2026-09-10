@@ -1032,7 +1032,15 @@ async def amend_session_result(
         server_id_for_profile: int | None = season_row["server_id"] if season_row else None
         season_id: int | None = season_row["season_id"] if season_row else None
 
-        # Mark all current rows as superseded in new tables
+        # **Nothing is superseded here, and nothing keeps the classification being replaced.**
+        # The header below is updated in place and the driver rows are deleted outright a few
+        # lines down, then re-inserted from the amendment. A comment here claimed the old rows
+        # were "marked as superseded"; they never were, and no such row survives the call.
+        #
+        # That is why `/round results amend` is a league admin's command rather than a league
+        # manager's (issue #116): amending a FINAL round overwrites what the league raced, and
+        # no command puts the previous classification back.
+        #
         # Update the session_results header
         await db.execute(
             """
