@@ -1,6 +1,57 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-10 — v7.12.1 → v8.0.0: MAJOR — both access tiers become roles the league configures]
+  Version change    : 7.12.1 → 8.0.0
+  Bump rationale    : MAJOR. Principle I's tier 2 is redefined backward-incompatibly and one of
+                      its rules is removed outright, which the versioning policy reserves MAJOR
+                      for.
+
+                      Tier 2 was "a subset of interaction-role members ... This tier MUST also be
+                      explicitly configured; holding the general interaction role alone is
+                      insufficient." It is now the interaction role itself. Any league that had
+                      configured a separate season/config role under the old wording is governed
+                      differently by the new one, which is what makes this incompatible rather
+                      than clarifying.
+
+                      "No implicit super-user status exists for either tier" is removed. It is now
+                      false by design: the league admin role carries the league manager tier
+                      within it, so that no member has to be given both roles.
+
+                      The rule that a *Discord permission* gates the higher tier is replaced by a
+                      configured role. The permission survives in exactly one place — the five
+                      commands that set the bot up — and that exemption is stated rather than
+                      implied.
+
+  Modified sections :
+    - Principle I (Trusted Configuration Authority) — rewritten. The two tiers are named
+      (league manager, league admin) and both are bound to configured roles. Added: the higher
+      tier carrying the lower; the default that an unstated tier is a league manager's; the four
+      settings and the five commands that repair them; the refusal owed by a server with no
+      league admin role; the rule that a tier governs the action and not only the command, and
+      that a channel opened to one role is opened to the other.
+
+  Deliberately NOT changed (tracked in issue #145, out of scope here):
+    - "The bot MUST reject out-of-channel commands silently (no response)" — the bot in fact
+      replies with an ephemeral refusal, and the core specification and the how-to guide both
+      document that behaviour. Which of the two is right is a separate decision.
+    - Three references to `docs/wip-specs/known_issues.md`, a document migrated to the GitHub
+      issue tracker and deleted on 2026-09-09.
+
+  Known residual vocabulary:
+    - Sixteen passages outside Principle I still say "tier-2 admin" or "trusted user". They name
+      the tier this amendment has just renamed to "league manager" and remain readable, but the
+      vocabulary is now inconsistent with Principle I. Line 4437 ("Only tier-2 admins ... may
+      submit, amend, or penalise") additionally contradicts the results module specification,
+      which opens every button of the submission and appeals flows to the interaction role.
+      Neither is a change to what the bot does and both are left for a sweep of their own.
+
+  Follow-up TODOs: none.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-09 — v7.12.0 → v7.12.1: PATCH — a ninth output aspect makes three counts wrong]
   Version change    : 7.12.0 → 7.12.1
   Bump rationale    : PATCH. Three statements outside the Core Principles counted the output
@@ -3924,25 +3975,59 @@ Follow-up TODOs   : None — all placeholders resolved
 
 ### I. Trusted Configuration Authority
 
-Two distinct access tiers MUST be maintained and configured independently:
+Two access tiers MUST govern every command, and every command MUST sit in exactly one of
+them. **Both tiers are Discord roles the league configures.** A Discord permission MUST NOT
+be a route to either, save the single exception stated below.
 
-1. **Interaction role**: A server-level Discord role that gates all bot commands. Only members
-   holding this role may issue any command to the bot. Commands MUST be accepted only when
-   sent in a single, administrator-configured interaction channel. Both the role and the
-   channel are set during initial bot setup, separately from season configuration.
+1. **Tier 2 — league manager**: held by the configured **interaction role**, or by the league
+   admin role. A league manager runs the league: seasons, divisions, rounds, tracks, teams,
+   drivers and seats; the configuration of every module and the artwork it draws from; the
+   channels each division posts to; and the results, standings, verdicts, check-ins and
+   signups that follow. Commands MUST be accepted only when sent in the single configured
+   interaction channel.
 
-2. **Season/config authority**: A subset of interaction-role members (e.g., Race Director,
-   Admin) who are additionally permitted to create or mutate season data — divisions, track
-   schedules, race dates/times, round formats, and any amendments. This tier MUST also be
-   explicitly configured; holding the general interaction role alone is insufficient.
+2. **Tier 1 — league admin**: held by the configured **league admin role**. A league admin
+   governs what the bot is upon the server and everything that may undo a league entire:
+   initialising the bot and repairing its four settings, enabling and disabling a module,
+   starting over, every command of test mode, and every command that destroys what a league
+   is built from where nothing puts it back.
+
+The league admin role MUST carry the league manager tier within it: a member holding it
+commands the bot without also holding the interaction role. Where this constitution does not
+state a tier, the command is a league manager's.
+
+**The four settings** — interaction role, league admin role, interaction channel, log channel
+— are set by the initialisation command and by four commands that each change one of them.
+**Those five commands alone** MUST additionally accept Discord's Administrator permission in
+place of the league admin role, and MUST run from any channel. They repair the settings every
+other guard reads: a deleted channel, or a league admin role removed from the server, would
+otherwise be unrepairable.
+
+A server with no league admin role configured MUST refuse every league admin command and MUST
+name the command that sets the role. It MUST NOT fall back to a Discord permission.
+
+A tier governs the **action**, not only the command. Where the bot offers an action through a
+button of its own, that button MUST ask the tier its action belongs to, which may be higher
+than the tier of the command that posted it. A channel the bot opens to the interaction role
+MUST be opened to the league admin role on the same terms, so that a league admin can read
+what they are entitled to act upon. A button offered to a driver in their own channel MUST
+ask nothing, a driver needing no role.
 
 The bot MUST reject out-of-channel commands silently (no response) and MUST reject
 unauthorized configuration commands with a clear, actionable permission error.
-No implicit super-user status exists for either tier.
 
 **Rationale**: Separating "who can read weather" from "who can change the season" prevents
-casual members from accidentally triggering configuration commands, while still allowing
-the broader league membership to interact with the bot in controlled ways.
+casual members from accidentally triggering configuration commands, while still allowing the
+broader league membership to interact with the bot in controlled ways.
+
+Making both tiers *roles* rather than Discord permissions is the substance of the 8.0.0
+amendment. A Discord permission is a property of the **server**: Administrator carries the
+power to delete channels, ban members and rewrite roles, and it is granted for reasons that
+have nothing to do with a racing league. A tier is a property of the **league**. A member may
+run a championship without being trusted to restructure the server, and may administer the
+server without being anywhere near the championship. Reading the permission conflated the
+two, and — because a permission is not a role — it also refused the league's own
+administrators the commands they were meant to hold.
 
 ### II. Multi-Division Isolation
 
@@ -7165,4 +7250,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 7.12.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-09
+**Version**: 8.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-10
