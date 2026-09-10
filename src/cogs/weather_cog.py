@@ -11,7 +11,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.channel_guard import admin_only, channel_guard
+from utils.channel_guard import league_manager_only
 
 log = logging.getLogger(__name__)
 
@@ -64,8 +64,7 @@ class WeatherCog(commands.Cog):
         description="Set days before round to publish Phase 1 weather (default 5).",
     )
     @app_commands.describe(days="Number of days before the round (positive integer)")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def phase_1_deadline(self, interaction: discord.Interaction, days: int) -> None:
         if not await self._weather_gate(interaction):
             return
@@ -107,8 +106,7 @@ class WeatherCog(commands.Cog):
         description="Set days before round to publish Phase 2 weather (default 2).",
     )
     @app_commands.describe(days="Number of days before the round (positive integer)")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def phase_2_deadline(self, interaction: discord.Interaction, days: int) -> None:
         if not await self._weather_gate(interaction):
             return
@@ -150,8 +148,7 @@ class WeatherCog(commands.Cog):
         description="Set hours before round to publish Phase 3 weather (default 2).",
     )
     @app_commands.describe(hours="Number of hours before the round (positive integer)")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def phase_3_deadline(self, interaction: discord.Interaction, hours: int) -> None:
         if not await self._weather_gate(interaction):
             return

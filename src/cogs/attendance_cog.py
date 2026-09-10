@@ -10,7 +10,7 @@ from discord.ext import commands
 
 from db.database import get_connection
 from services.attendance_service import validate_timing_invariant
-from utils.channel_guard import admin_only, channel_guard
+from utils.channel_guard import league_manager_only
 
 log = logging.getLogger(__name__)
 
@@ -62,8 +62,7 @@ class AttendanceCog(commands.Cog):
         description="Set how many days before the race to send the first RSVP notice.",
     )
     @app_commands.describe(days="Number of days before the race for the RSVP notice (≥ 1)")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_rsvp_notice(
         self, interaction: discord.Interaction, days: int
     ) -> None:
@@ -104,8 +103,7 @@ class AttendanceCog(commands.Cog):
         description="Set hours before the race for the last RSVP reminder (0 = disabled).",
     )
     @app_commands.describe(hours="Hours before the race for the last notice (0 to disable)")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_rsvp_last_notice(
         self, interaction: discord.Interaction, hours: int
     ) -> None:
@@ -148,8 +146,7 @@ class AttendanceCog(commands.Cog):
         description="Set the RSVP deadline in hours before the race.",
     )
     @app_commands.describe(hours="Hours before the race when RSVPs close")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_rsvp_deadline(
         self, interaction: discord.Interaction, hours: int
     ) -> None:
@@ -190,8 +187,7 @@ class AttendanceCog(commands.Cog):
         description="Set the point penalty for failing to RSVP.",
     )
     @app_commands.describe(points="Penalty points (≥ 0)")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_no_rsvp_penalty(
         self, interaction: discord.Interaction, points: int
     ) -> None:
@@ -217,8 +213,7 @@ class AttendanceCog(commands.Cog):
         description="Penalty for absent drivers without ACCEPTED RSVP (stacks with no-RSVP penalty for NO_RSVP drivers).",
     )
     @app_commands.describe(points="Penalty points (≥ 0)")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_absent_penalty(
         self, interaction: discord.Interaction, points: int
     ) -> None:
@@ -244,8 +239,7 @@ class AttendanceCog(commands.Cog):
         description="Penalty for a driver who RSVP'd ACCEPTED but did not attend.",
     )
     @app_commands.describe(points="Penalty points (≥ 0)")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_rsvp_absent_penalty(
         self, interaction: discord.Interaction, points: int
     ) -> None:
@@ -271,8 +265,7 @@ class AttendanceCog(commands.Cog):
         description="Set the cumulative no-show threshold that triggers auto-sack (0 = disabled).",
     )
     @app_commands.describe(points="Cumulative threshold for auto-sack (0 to disable)")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_autosack(
         self, interaction: discord.Interaction, points: int
     ) -> None:
@@ -310,8 +303,7 @@ class AttendanceCog(commands.Cog):
         description="Set the cumulative threshold that triggers auto-reserve (0 = disabled).",
     )
     @app_commands.describe(points="Cumulative threshold for auto-reserve (0 to disable)")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_autoreserve(
         self, interaction: discord.Interaction, points: int
     ) -> None:
@@ -348,8 +340,7 @@ class AttendanceCog(commands.Cog):
         name="show",
         description="Show the current attendance configuration for this server.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_show(self, interaction: discord.Interaction) -> None:
         if not await self._guard_module_enabled(interaction):
             return
