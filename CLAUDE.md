@@ -96,6 +96,17 @@ later polish phase.
 is expected to pass in full. Any failure is a real one; do not write it off as pre-existing
 without first confirming it on a clean tree.
 
+**Run a targeted subset while you work; keep the full suite for the end.** A full run takes
+about an hour on the Pi, so running everything after each step of a change buys wall time and
+nothing else. Grep out the tests covering the code you just touched and run those as you go.
+The full `pytest tests/ -q` at the end of the change is not optional, and it is what "the suite
+passes" means.
+
+**Never run two pytest sessions at once.** They race on the shared schema template described
+below, and the loser reads a half-built database — which surfaces as a mass failure scattered
+across unrelated modules, not as a lock error. If a run is already going, wait for it rather
+than opening a second terminal to check one thing.
+
 **Every change to production code carries its unit tests with it.** Update or add the tests in
 the same change as the code, then run the suite — a production change reported complete without
 a test run, or leaving tests that no longer exercise the new behaviour, is not complete.
@@ -156,6 +167,12 @@ tmpfs `/tmp` is on the Pi — which fails dishonestly, as 0-byte PNGs and `datab
 full` scattered across unrelated modules. To inspect a failing test's scratch, restore
 retention for that run only: `pytest tests/ -q -o tmp_path_retention_count=3`. Both mechanisms
 are pinned by `tests/unit/test_scratch_retention.py` (decided 2026-09-08).
+
+**A mass failure across unrelated modules is a full `/tmp` until proved otherwise.** The two
+mechanisms above exist to prevent it and either can be defeated — by an interrupted run that
+left its trees behind, or by something else on the host filling the tmpfs. Check `df -h /tmp`
+before reading a broad red run as a regression, and never read a suite's exit code through
+`| tail`, which reports the pager's status instead.
 
 **The schema is built once, not once per test.** `tests/conftest.py` substitutes
 `run_migrations` with a version that raises the schema a single time and copies the finished
