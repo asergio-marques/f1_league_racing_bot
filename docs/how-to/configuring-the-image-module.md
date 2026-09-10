@@ -46,9 +46,8 @@ If somebody else hosts the bot for you, you will need their help for the artwork
 
 | Commands | You need |
 |---|---|
-| Anything that names a folder or a drawing file | **Administrator** |
-| The on/off switches, the display settings, `view` and `test` | **Manage Server** |
-| `/module enable images` | **Administrator** |
+| `/module enable images` and `/module disable images` | The **league admin role** |
+| Everything else under `/images` — folders, drawing files, the on/off switches, the display settings, `view` and `test` | The **interaction role** |
 
 ---
 

@@ -52,45 +52,58 @@ If somebody else hosts the bot for you, you need their help for those three step
 ## Step 1 — Tell the bot who is in charge
 
 ```
-/bot-init interaction_role:@Stewards interaction_channel:#bot-commands log_channel:#bot-logs
+/bot-init interaction_role:@Stewards league_admin_role:@Owners interaction_channel:#bot-commands log_channel:#bot-logs
 ```
 
-Three decisions, and they shape everything after:
+Four decisions, and they shape everything after:
 
 | What you set | What it means |
 |---|---|
 | **Interaction role** | The role a person must hold to command the bot at all |
+| **League admin role** | The role a person must hold to govern the bot, and to do anything that cannot be undone |
 | **Interaction channel** | The **only** channel the bot accepts commands in |
 | **Log channel** | Where the bot explains itself — what it worked out, what it could not find, why something fell back |
 
-Run it anywhere; it is one of only two commands that do not require the command channel, because until it has run there is no command channel. `/bot-reset` is the other.
+Run it anywhere, and run it as a server administrator: until it has run there is no command channel to run it in and no league admin role to hold. It is one of five commands on that footing, and the other four are below.
+
+**Give the two roles to different people, or the same people — that is your call.** The league admin role is the smaller circle: it is who may cancel a season, sack a driver or wipe the bot. The interaction role is everyone who runs race weekends. Anyone holding the admin role can do everything the interaction role can, so there is no need to give somebody both.
 
 **Pick a private channel for logs.** The bot writes a great deal there — every command that succeeded, every picture it could not draw, every driver it could not place. It is written for you, not for your drivers.
 
-**Two levels of permission.** The interaction role gets you in the door. Beyond it:
+**Two levels of permission, and both are roles you pick.**
 
 | To run | You need |
 |---|---|
-| Most commands in this guide | The interaction role **and** Discord's **Manage Server** permission |
-| `/season status`, `/season review`, and `/division weather-channel`, `results-channel` and `standings-channel` | The interaction role alone |
-| Approving a season, on the button `/season review` posts | Whoever ran that review, or Discord's **Administrator** permission |
-| `/module enable` and `/module disable` | Discord's **Administrator** permission |
-| `/bot-init` and `/bot-reset` | **Manage Server**, from any channel |
-| `/bot-log-channel`, `/bot-interaction-channel`, `/bot-interaction-role` | **Manage Server**, from any channel |
+| Most commands in this guide | The **interaction role** — the league manager tier |
+| Anything that cannot be undone: `/bot-reset`, `/clean-bot`, `/module enable` and `/module disable`, cancelling or deleting a season, division or round, completing a season, `/team remove`, `/driver sack`, and every `/test-mode` command | The **league admin role** |
+| Approving a season, on the button `/season review` posts | Whoever ran that review, or the league admin role |
+| `/bot-init` and the four commands that change one setting | The league admin role **or** Discord's **Administrator** permission, from any channel |
 
-So the interaction role is not a licence to reconfigure the league — it is the gate everything else sits behind. Drivers do not need it.
+The league admin role carries the interaction role's tier within it, so whoever holds it can
+run everything in this guide without also being given the interaction role.
 
-**`/bot-init` runs once.** Run it a second time and it politely refuses — it will not overwrite what is already there. To change one of the three settings afterwards, use the command for that setting:
+**Discord's own permissions do not come into it.** Administrator and Manage Server govern
+your *server*; these two roles govern your *league*, and the bot reads only the roles. The
+one exception is the five setup commands in the row above — they take Administrator too,
+because they are what repairs the settings everything else depends on.
+
+So the interaction role is not a licence to reconfigure the league — it is the gate
+everything else sits behind. Drivers do not need it.
+
+**`/bot-init` runs once.** Run it a second time and it politely refuses — it will not overwrite what is already there. To change one of the four settings afterwards, use the command for that setting:
 
 ```
 /bot-log-channel channel:#new-bot-logs
 /bot-interaction-channel channel:#new-bot-commands
 /bot-interaction-role role:@NewStewards
+/bot-admin-role role:@NewOwners
 ```
 
 Each changes that one setting and touches nothing else.
 
-> **These work from any channel, and need only Manage Server.** That is on purpose. They exist for the day something goes wrong with the three settings themselves — somebody deletes the log channel, archives the command channel, or removes the steward role. If they needed the command channel or the role to run, the one thing you could not repair would be the thing that had broken. So they sit behind Manage Server instead, which is the permission that let you set the bot up in the first place.
+> **These work from any channel, and a server administrator can run them.** That is on purpose. They exist for the day something goes wrong with the four settings themselves — somebody deletes the log channel, archives the command channel, or removes one of the two roles. If they needed the command channel or a league role to run, the one thing you could not repair would be the thing that had broken; and if they needed the league admin role, a server that had lost that role could never get it back. So these five, and only these five, also accept Discord's **Administrator** permission.
+>
+> `/bot-reset` is **not** one of them. It destroys the settings rather than repairing them, so it asks for the league admin role and is given in the command channel like everything else.
 
 If you would rather start over from nothing, `/bot-reset full:True` clears the configuration and `/bot-init` becomes available again.
 
@@ -335,7 +348,7 @@ Two warnings it raises that are easy to skim past:
 
 The review ends by asking whether you accept the configuration, with a **✅ Approve** button beneath it. Press it. **There is no `/season approve` command** — approving commits your season, and the review is the evidence it is committed on, so the two are deliberately one action.
 
-**You can press it if you ran the review, or if you are a server administrator.** Anybody else who presses is told privately that they cannot, and nothing is approved. Running the review needs only the interaction role, so you may well be able to review a season you cannot approve — that is why the question is posted where everyone can see it rather than to you alone. Show it to an administrator and they can answer it from the same message.
+**You can press it if you ran the review, or if you hold the league admin role.** Anybody else who presses is told privately that they cannot, and nothing is approved. Running the review needs only the interaction role, so you may well be able to review a season you cannot approve — that is why the question is posted where everyone can see it rather than to you alone. Show it to a league admin and they can answer it from the same message.
 
 > **The button stands for five minutes, and only for the season it was posted for.** When they pass, the message is deleted and replaced by one mentioning you to say the review has expired — run `/season review` again. If the bot restarts while a review is waiting, the same thing happens as soon as it comes back up, because the five minutes cannot have run while it was off.
 >
@@ -459,7 +472,7 @@ Deletes every season, division, round and result, and keeps your `/bot-init` set
 ## Checklist before you approve
 
 - [ ] The bot is running, and its role sits above every role it must grant
-- [ ] `/bot-init` has been run, and the log channel is one your drivers cannot read
+- [ ] `/bot-init` has been run, both roles are set, and the log channel is one your drivers cannot read
 - [ ] Every module you want is on — including the two you cannot change later
 - [ ] Every team is on the list, each with a role, and the Reserve team has one too
 - [ ] Division tiers run 1, 2, 3… with no gaps
@@ -476,9 +489,10 @@ Deletes every season, division, round and result, and keeps your `/bot-init` set
 
 | What you see | Usually means |
 |---|---|
-| A command refuses with a short message only you can see | You are not in the command channel, or you lack the interaction role. Check the channel first — it is almost always the channel |
+| A command refuses with a short message only you can see | You are not in the command channel, or you hold neither of the two roles. Check the channel first — it is almost always the channel |
 | A command does not appear in Discord's menu at all | The command list has not reached your server yet. Whoever hosts the bot can push it through immediately with `!sync` |
-| "You need the Administrator permission" | `/module enable` and `/module disable` ask for it, as do the three `/signup` commands that name a channel or a role and every `/images` command that names a folder or a drawing file. Someone with it has to run them |
+| "This command is a league admin's" | It asks for the league admin role, which you do not hold. The table at the top of this guide lists which commands those are; someone holding that role has to run them |
+| "No league admin role is configured" | Your league was set up before the bot had one. A server administrator can put that right from any channel with `/bot-admin-role`, and every league admin command works again |
 | The bot placed a driver but the role did not appear | The bot's own role sits below the role it is trying to grant. Move it up |
 | Approval refuses over tiers | A division was deleted and left a gap. `/division amend` something into it |
 | "Unknown track" | The circuit name has to match exactly. Use the ID instead, or `/track list` to see the spellings |

@@ -36,9 +36,9 @@ This guide covers the attendance module only. Setting the bot up, creating a sea
 
 | Commands | You need |
 |---|---|
-| `/module enable results` and `/module enable attendance` | **Administrator** |
-| `/attendance config` — all of them | **Manage Server** |
-| `/division rsvp-channel` and `/division attendance-channel` | **Manage Server** |
+| `/module enable results` and `/module enable attendance` | The **league admin role** |
+| `/attendance config` — all of them | The **interaction role** |
+| `/division rsvp-channel` and `/division attendance-channel` | The **interaction role** |
 | The check-in buttons | Nothing. Any driver seated in that division can press them |
 | The pardon button on a penalty review | Whoever runs your penalty reviews |
 | Anything under `/images` | See the image guide |

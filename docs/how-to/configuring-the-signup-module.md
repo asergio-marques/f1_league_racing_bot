@@ -41,12 +41,14 @@ A driver's status lives on the driver, not on their signup form. "Reserve" is an
 
 | Commands | You need |
 |---|---|
-| `/module enable signup` | **Administrator** |
-| `/signup channel`, `/signup base-role`, `/signup complete-role` | **Administrator** |
-| Everything else under `/signup` | **Manage Server** |
-| `/driver assign`, `/driver unassign`, `/driver sack` | **Manage Server** |
+| `/module enable signup` and `/module disable signup` | The **league admin role** |
+| `/driver sack` | The **league admin role** |
+| Everything under `/signup`, including `/signup channel`, `/signup base-role` and `/signup complete-role` | The **interaction role** |
+| `/driver assign`, `/driver unassign`, `/driver reassign` | The **interaction role** |
 
-> **The bot role is required on top of the Discord permission, not instead of it.** An Administrator who does not hold the interaction role is refused every command here, and so is anyone running one outside the interaction channel. Being the server owner does not get you past it.
+> **Both tiers are roles, and Discord's permissions are not one of them.** Someone holding Administrator but neither role is refused every command here, and so is anyone running one outside the interaction channel. Being the server owner does not get you past it — give yourself one of the two roles instead.
+>
+> The league admin role carries the interaction role's tier within it, so a league admin needs only the one role. Note the asymmetry in the table above: unassigning a driver is a league manager's, because assigning them again puts it back; sacking one is a league admin's, because nothing does.
 
 ---
 
@@ -74,9 +76,9 @@ Turning the module off force-closes an open window, hands back the permissions i
 /signup complete-role role:@Driver
 ```
 
-Three things, all **Administrator**, and the module does nothing at all until it has all three.
+Three things, and the module does nothing at all until it has all three. They ask for the interaction role like the rest of `/signup` — naming a channel and two roles is configuring a module, not governing the bot.
 
-**The channel** is where the Sign Up button gets posted. Setting it rewrites the channel's permissions: everyone loses sight of it, the base role can see it but cannot type in it, and holders of the bot role can see and type. That is deliberate — the only thing a driver should be doing in there is pressing the button.
+**The channel** is where the Sign Up button gets posted. Setting it rewrites the channel's permissions: everyone loses sight of it, the base role can see it but cannot type in it, and holders of either league role can see and type. That is deliberate — the only thing a driver should be doing in there is pressing the button.
 
 **The base role** is who the signups are for. It decides who can see the channel, and it is the role that gets pinged when you open the window.
 
@@ -188,7 +190,7 @@ When a driver finishes, the bot posts a **Signup Review** panel in their channel
 
 **Reject** ends it. They are told, with your reason, and are back to Not Signed Up.
 
-Anyone holding the bot role, or Manage Server, can press these.
+Anyone holding either of the league's two roles can press these. The driver whose signup it is cannot — they can read the channel, so the buttons check who is pressing.
 
 > **Your next message in that channel becomes the reason.** After pressing Reject or Request Changes, the very next thing you type there is taken as the reason and deleted. Do not press the button and then start chatting to the driver — say your piece first, then press.
 
@@ -330,7 +332,7 @@ Worth running through before you open the window.
 
 | What you see | Usually means |
 |---|---|
-| Every `/signup` command refused | You are outside the interaction channel, or you do not hold the bot role. Administrator does not get you past either |
+| Every `/signup` command refused | You are outside the interaction channel, or you hold neither of the league's two roles. Discord's Administrator permission does not get you past either |
 | `/signup open` refused | Something in the chain is missing — the channel, one of the roles, or any time slot at all. The reply names it |
 | A season that will not approve | The signup module is on but missing its channel or a role. The bot names which |
 | Drivers press the button and nothing happens after | The Message Content intent is off, so the bot cannot see anything they type |

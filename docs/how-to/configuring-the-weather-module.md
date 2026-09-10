@@ -32,9 +32,9 @@ This guide covers the weather module only. Setting the bot up, creating a season
 
 | Commands | You need |
 |---|---|
-| `/module enable weather` | **Administrator** |
-| `/weather config` — the three timing commands | **Manage Server**, and the module already on |
-| `/division weather-channel` | The usual bot role, and the module already on |
+| `/module enable weather` and `/module disable weather` | The **league admin role** |
+| `/weather config` — the three timing commands | The **interaction role**, and the module already on |
+| `/division weather-channel` | The **interaction role**, and the module already on |
 | Anything under `/images` | See the image guide |
 
 > **Every command in this guide is gated on the module being on.** Run one before step 1 and you are told the weather module is not enabled — not that you lack a permission. Step 1 genuinely has to come first.
