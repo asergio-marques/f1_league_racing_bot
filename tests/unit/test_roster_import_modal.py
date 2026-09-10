@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.test_mode_cog import TestModeCog as Cog  # noqa: E402
 from cogs.test_mode_cog import _RosterImportModal, _format_roster_errors  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 7700
 
@@ -59,7 +60,7 @@ async def test_the_command_opens_the_box_without_deferring():
     cog = _cog()
     interaction = _interaction()
 
-    await Cog.roster_add_bulk.callback.__wrapped__.__wrapped__(cog, interaction)
+    await undecorate(Cog.roster_add_bulk)(cog, interaction)
 
     interaction.response.send_modal.assert_awaited_once()
     interaction.response.defer.assert_not_awaited()
@@ -69,7 +70,7 @@ async def test_the_command_is_refused_outside_test_mode():
     cog = _cog(test_mode=False)
     interaction = _interaction()
 
-    await Cog.roster_add_bulk.callback.__wrapped__.__wrapped__(cog, interaction)
+    await undecorate(Cog.roster_add_bulk)(cog, interaction)
 
     interaction.response.send_modal.assert_not_awaited()
     assert "test mode" in interaction.response.send_message.await_args.args[0]

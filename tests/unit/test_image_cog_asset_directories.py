@@ -12,7 +12,7 @@ things separate them from `template-directory`, which used to share it:
   present and holding the files, where a render failure at the next scheduled post is not.
 
 The commands are exercised through the shared body rather than through the decorated
-callbacks, which are wrapped by `@channel_guard` and `@server_admin_only` and cannot be
+callbacks, which are wrapped by `@league_manager_only` and cannot be
 invoked without a gateway.
 """
 from __future__ import annotations

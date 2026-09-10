@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.channel_guard import channel_guard, admin_only
+from utils.channel_guard import league_admin_only, league_manager_only
 from services.season_service import SeasonImmutableError
 
 log = logging.getLogger(__name__)
@@ -37,8 +37,7 @@ class DriverCog(commands.Cog):
         old_user_id="Raw Discord snowflake ID, for users who have left the server.",
         new_user="The target Discord account. Must not already have a driver profile.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def reassign(
         self,
         interaction: discord.Interaction,
@@ -105,8 +104,7 @@ class DriverCog(commands.Cog):
         division="Division tier number or name.",
         team="Exact team name as it appears in the division.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def assign(
         self,
         interaction: discord.Interaction,
@@ -204,8 +202,7 @@ class DriverCog(commands.Cog):
         user="The Discord member to unassign.",
         division="Division tier number or name.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def unassign(
         self,
         interaction: discord.Interaction,
@@ -295,8 +292,7 @@ class DriverCog(commands.Cog):
     @app_commands.describe(
         user="The Discord member to sack.",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def sack(
         self,
         interaction: discord.Interaction,

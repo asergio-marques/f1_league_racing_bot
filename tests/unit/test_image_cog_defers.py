@@ -23,6 +23,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.image_cog import ImageCog  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
 
 #: The commands that read a template from disk before they can answer.
 READS_TEMPLATES = ["config_toggle", "_set_template_filename"]
@@ -143,7 +144,7 @@ def _toggle_interaction():
 
 
 async def _toggle(cog, aspect="verdicts"):
-    """The command body, past `channel_guard` and `admin_only`.
+    """The command body, past its tier guard.
 
     Both guards have their own cover, and neither is what these are about — a stub cog
     carries no `bot`, and the interaction's user is not a `discord.Member`.
@@ -152,7 +153,7 @@ async def _toggle(cog, aspect="verdicts"):
 
     from cogs.image_cog import ImageCog
 
-    body = ImageCog.config_toggle.callback.__wrapped__.__wrapped__
+    body = undecorate(ImageCog.config_toggle)
     choice = app_commands.Choice(name=aspect, value=aspect)
     await body(cog, _toggle_interaction(), choice)
 

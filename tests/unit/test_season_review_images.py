@@ -705,25 +705,49 @@ from cogs.season_cog import _ApproveView  # noqa: E402
 REVIEWER = 4242
 
 
-def _approve_view(reviewer_id: int = REVIEWER):
+ADMIN_ROLE = 444
+
+
+def _approve_view(reviewer_id: int = REVIEWER, *, admin_role: int | None = ADMIN_ROLE):
+    from models.server_config import ServerConfig
+
     cog = MagicMock()
     cog._do_approve = AsyncMock()
     cog.bot.db_path = "/nonexistent/nowhere.db"
+    cog.bot.config_service.get_server_config = AsyncMock(
+        return_value=ServerConfig(
+            server_id=7,
+            interaction_role_id=222,
+            league_admin_role_id=admin_role,
+            interaction_channel_id=111,
+            log_channel_id=333,
+        )
+    )
     view = _ApproveView(cog, reviewer_id)
     view._server_id = 7
     view._season_id = 1
     return view, cog
 
 
-def _member(user_id: int, administrator: bool = False):
-    member = MagicMock()
+def _member(user_id: int, league_admin: bool = False):
+    """A presser. `league_admin` gives them the league admin role, which is the tier now.
+
+    Discord's Administrator permission is deliberately absent: it stopped being a route to
+    any tier when both became roles the league configures (issue #116).
+    """
+    import discord
+
+    member = MagicMock(spec=discord.Member)
     member.id = user_id
-    member.guild_permissions.administrator = administrator
+    role = MagicMock()
+    role.id = ADMIN_ROLE
+    member.roles = [role] if league_admin else []
     return member
 
 
 def _button_interaction(user=None):
     interaction = MagicMock()
+    interaction.guild_id = 7
     interaction.response.send_message = AsyncMock()
     interaction.user = user if user is not None else _member(REVIEWER)
     return interaction
@@ -737,9 +761,9 @@ async def test_the_reviewer_may_approve():
     cog._do_approve.assert_awaited_once()
 
 
-async def test_a_server_administrator_may_approve_somebody_elses_review():
+async def test_a_league_admin_may_approve_somebody_elses_review():
     view, cog = _approve_view()
-    presser = _member(99, administrator=True)
+    presser = _member(99, league_admin=True)
 
     await _ApproveView.approve(view, _button_interaction(presser), MagicMock())
 
@@ -747,11 +771,9 @@ async def test_a_server_administrator_may_approve_somebody_elses_review():
 
 
 async def test_another_league_manager_may_not_approve():
-    """The case the public message creates. Manage Server is deliberately not enough —
-    only the reviewer or a server administrator."""
+    """The case the public message creates — only the reviewer or a league admin."""
     view, cog = _approve_view()
-    presser = _member(99, administrator=False)
-    presser.guild_permissions.manage_guild = True
+    presser = _member(99, league_admin=False)
     interaction = _button_interaction(presser)
 
     await _ApproveView.approve(view, interaction, MagicMock())
@@ -760,6 +782,22 @@ async def test_another_league_manager_may_not_approve():
     reply = interaction.response.send_message.await_args.args[0]
     assert "Nothing has been approved" in reply
     assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
+
+
+async def test_nobody_but_the_reviewer_may_approve_while_no_admin_role_is_set():
+    """A league that predates the role, or deleted it. The reviewer still may.
+
+    Holding Discord's Administrator permission is not a way in: the presser below would
+    have passed this button before the tiers became roles.
+    """
+    view, cog = _approve_view(admin_role=None)
+    presser = _member(99, league_admin=True)
+    interaction = _button_interaction(presser)
+
+    await _ApproveView.approve(view, interaction, MagicMock())
+
+    cog._do_approve.assert_not_awaited()
+    assert "Nothing has been approved" in interaction.response.send_message.await_args.args[0]
 
 
 async def test_the_access_check_runs_before_the_fingerprint():
@@ -994,17 +1032,19 @@ async def test_the_review_offers_only_the_approve_button():
 
 
 def test_a_league_manager_may_run_the_review():
-    """`admin_only` is withdrawn from the command; approving is the narrower right."""
-    import inspect
+    """Reading what a season is configured to be is not an administrative act.
 
+    Approving it is the narrower right, and lives on the button rather than the command —
+    so the review sits at the league manager tier while the button asks for more.
+
+    Asserted through the tier the guard records rather than by reading the decorator names
+    out of the source: the names have already changed once, and a test that greps for them
+    reports a rename as a permission change.
+    """
     from cogs.season_cog import SeasonCog
+    from utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE
 
-    source = inspect.getsource(SeasonCog)
-    block = source[: source.index("async def season_review")]
-    decorators = block[block.rindex("@season.command") :]
-
-    assert "@channel_guard" in decorators
-    assert "@admin_only" not in decorators
+    assert getattr(SeasonCog.season_review.callback, TIER_ATTRIBUTE) == LEAGUE_MANAGER
 
 
 def test_the_approve_command_is_withdrawn():

@@ -144,8 +144,15 @@ class WizardService:
         member: discord.Member,
         signup_channel_id: int | None,
         interaction_role_id: int | None,
+        league_admin_role_id: int | None = None,
     ) -> discord.TextChannel:
-        """Create a private ``<username>-signup`` channel for the driver."""
+        """Create a private ``<username>-signup`` channel for the driver.
+
+        Visible to the driver, the bot, and both tiers of the league. The admin review panel
+        is posted into this channel, so a league admin who does not also hold the interaction
+        role would otherwise be unable to see the signup they are entitled to approve
+        (issue #116).
+        """
         safe_name = re.sub(r"[^a-z0-9_-]", "-", member.name.lower())
         channel_name = f"{safe_name}-signup"
 
@@ -154,8 +161,10 @@ class WizardService:
             member: discord.PermissionOverwrite(view_channel=True, send_messages=True),
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
         }
-        if interaction_role_id:
-            role = guild.get_role(interaction_role_id)
+        for role_id in (interaction_role_id, league_admin_role_id):
+            if not role_id:
+                continue
+            role = guild.get_role(role_id)
             if role:
                 overwrites[role] = discord.PermissionOverwrite(
                     view_channel=True, send_messages=True
@@ -350,6 +359,7 @@ class WizardService:
             member,
             signup_cfg.signup_channel_id,
             server_cfg.interaction_role_id if server_cfg else None,
+            server_cfg.league_admin_role_id if server_cfg else None,
         )
 
         # Capture config snapshot

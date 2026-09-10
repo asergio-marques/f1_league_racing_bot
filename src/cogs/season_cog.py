@@ -42,7 +42,12 @@ import services.track_service as track_service
 from services.season_service import SeasonImmutableError
 from utils.autocomplete import bounded_autocomplete
 from utils.batch_notice import batch_notice
-from utils.channel_guard import channel_guard, admin_only
+from utils.channel_guard import (
+    is_league_admin,
+    is_league_manager,
+    league_admin_only,
+    league_manager_only,
+)
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from utils.output_router import _chunk_message
 from utils.round_import import (
@@ -458,8 +463,7 @@ class SeasonCog(commands.Cog):
     @app_commands.describe(
         game_edition="Game edition year (e.g. 25 for F1 25). Required.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def season_setup(
         self,
         interaction: discord.Interaction,
@@ -1436,10 +1440,10 @@ class SeasonCog(commands.Cog):
         name="review",
         description="Review pending season configuration before approving.",
     )
-    # `admin_only` is deliberately absent (2026-09-07). A league manager holding only
-    # the interaction role may review a season: the report is what the review is for.
-    # Approving it is the narrower right, and `_ApproveView` is where that is enforced.
-    @channel_guard
+    # A league manager's, deliberately (2026-09-07). Reading what a season is configured to
+    # be is not an administrative act: the report is what the review is for. Approving it is
+    # the narrower right, and `_ApproveView` is where that is enforced.
+    @league_manager_only
     async def season_review(self, interaction: discord.Interaction) -> None:
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
@@ -1926,7 +1930,7 @@ class SeasonCog(commands.Cog):
         name="status",
         description="View a summary of the active season.",
     )
-    @channel_guard
+    @league_manager_only
     async def season_status(self, interaction: discord.Interaction) -> None:
         season = await self.bot.season_service.get_active_season(interaction.guild_id)
         if season is None:
@@ -1973,8 +1977,7 @@ class SeasonCog(commands.Cog):
         description="Cancel and delete the active season (server admin only, irreversible).",
     )
     @app_commands.describe(confirm='Type "CONFIRM" to proceed with season cancellation.')
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def season_cancel(
         self,
         interaction: discord.Interaction,
@@ -2063,8 +2066,7 @@ class SeasonCog(commands.Cog):
         name="complete",
         description="Manually mark the current season as complete (requires all rounds finalized).",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def season_complete(
         self,
         interaction: discord.Interaction,
@@ -2143,8 +2145,7 @@ class SeasonCog(commands.Cog):
         role="The Discord role to mention for this division",
         tier="Tier number for this division (1 = top tier, must be sequential and unique)",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_add(
         self,
         interaction: discord.Interaction,
@@ -2220,8 +2221,7 @@ class SeasonCog(commands.Cog):
         day_offset="Days to shift all round datetimes (can be negative)",
         hour_offset="Hours to shift all round datetimes (can be negative, decimals OK)",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_duplicate(
         self,
         interaction: discord.Interaction,
@@ -2339,8 +2339,7 @@ class SeasonCog(commands.Cog):
         description="Remove a division and all its rounds from pending setup.",
     )
     @app_commands.describe(name="Name of the division to delete")
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def division_delete(
         self,
         interaction: discord.Interaction,
@@ -2389,8 +2388,7 @@ class SeasonCog(commands.Cog):
         current_name="Current name of the division",
         new_name="New name for the division",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_rename(
         self,
         interaction: discord.Interaction,
@@ -2453,8 +2451,7 @@ class SeasonCog(commands.Cog):
         tier="New tier number (optional, must be unique within this season)",
         role="New Discord role (optional)",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_amend(
         self,
         interaction: discord.Interaction,
@@ -2574,8 +2571,7 @@ class SeasonCog(commands.Cog):
         name="Name of the division to cancel",
         confirm='Type "CONFIRM" to proceed.',
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def division_cancel(
         self,
         interaction: discord.Interaction,
@@ -2786,7 +2782,7 @@ class SeasonCog(commands.Cog):
         description="Set the weather forecast channel for a division.",
     )
     @app_commands.describe(name="Division name", channel="Weather forecast channel")
-    @channel_guard
+    @league_manager_only
     async def division_weather_channel(
         self,
         interaction: discord.Interaction,
@@ -2805,7 +2801,7 @@ class SeasonCog(commands.Cog):
         description="Set the results posting channel for a division.",
     )
     @app_commands.describe(name="Division name", channel="Results channel")
-    @channel_guard
+    @league_manager_only
     async def division_results_channel(
         self,
         interaction: discord.Interaction,
@@ -2824,7 +2820,7 @@ class SeasonCog(commands.Cog):
         description="Set the standings posting channel for a division.",
     )
     @app_commands.describe(name="Division name", channel="Standings channel")
-    @channel_guard
+    @league_manager_only
     async def division_standings_channel(
         self,
         interaction: discord.Interaction,
@@ -2843,8 +2839,7 @@ class SeasonCog(commands.Cog):
         description="Set the verdicts (penalty announcement) channel for a division.",
     )
     @app_commands.describe(name="Division name", channel="Verdicts announcement channel")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_verdicts_channel(
         self,
         interaction: discord.Interaction,
@@ -2930,8 +2925,7 @@ class SeasonCog(commands.Cog):
         description="Set the RSVP notice channel for a division (attendance module).",
     )
     @app_commands.describe(name="Division name", channel="RSVP notice channel")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_rsvp_channel(
         self,
         interaction: discord.Interaction,
@@ -3018,8 +3012,7 @@ class SeasonCog(commands.Cog):
         description="Set the attendance logging channel for a division (attendance module).",
     )
     @app_commands.describe(name="Division name", channel="Attendance logging channel")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_attendance_channel(
         self,
         interaction: discord.Interaction,
@@ -3106,8 +3099,7 @@ class SeasonCog(commands.Cog):
         description="Set the lineup posting channel for a division (signup module).",
     )
     @app_commands.describe(name="Division name", channel="Lineup channel")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_lineup_channel(
         self,
         interaction: discord.Interaction,
@@ -3172,8 +3164,7 @@ class SeasonCog(commands.Cog):
         description="Set the calendar posting channel for a division.",
     )
     @app_commands.describe(name="Division name", channel="Calendar channel")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_calendar_channel(
         self,
         interaction: discord.Interaction,
@@ -3238,8 +3229,7 @@ class SeasonCog(commands.Cog):
         description="Redraw a division's calendar and replace the posted message.",
     )
     @app_commands.describe(name="Division name")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_calendar_sync(
         self, interaction: discord.Interaction, name: str
     ) -> None:
@@ -3339,8 +3329,7 @@ class SeasonCog(commands.Cog):
         scheduled_at="Race date/time in ISO format (YYYY-MM-DDTHH:MM:SS UTC)",
         track="Track ID or name (e.g. 27 or United Kingdom). Leave blank for Mystery rounds.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def round_add(
         self,
         interaction: discord.Interaction,
@@ -3490,8 +3479,7 @@ class SeasonCog(commands.Cog):
         description="Add many rounds to one division from a pasted list (setup only).",
     )
     @app_commands.describe(division_name="Division these rounds belong to")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def round_add_bulk(
         self, interaction: discord.Interaction, division_name: str
     ) -> None:
@@ -3507,8 +3495,7 @@ class SeasonCog(commands.Cog):
         name="add-xml",
         description="Add rounds to one or more divisions from XML (setup only).",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def round_add_xml(self, interaction: discord.Interaction) -> None:
         """Open the XML import modal.
 
@@ -3554,8 +3541,7 @@ class SeasonCog(commands.Cog):
         scheduled_at="New race datetime in ISO format YYYY-MM-DDTHH:MM:SS (leave blank to keep current)",
         format="New format: NORMAL, SPRINT, MYSTERY, or ENDURANCE (leave blank to keep current)",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def round_amend(
         self,
         interaction: discord.Interaction,
@@ -3773,8 +3759,7 @@ class SeasonCog(commands.Cog):
         division_name="Name of the division containing this round",
         round_number="Round number to delete",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def round_delete(
         self,
         interaction: discord.Interaction,
@@ -3846,8 +3831,7 @@ class SeasonCog(commands.Cog):
         round_number="The round number to cancel",
         confirm='Type "CONFIRM" to proceed.',
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def round_cancel(
         self,
         interaction: discord.Interaction,
@@ -3989,8 +3973,7 @@ class SeasonCog(commands.Cog):
         app_commands.Choice(name="Feature Qualifying", value="FEATURE_QUALIFYING"),
         app_commands.Choice(name="Feature Race", value="FEATURE_RACE"),
     ])
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def round_results_amend(
         self,
         interaction: discord.Interaction,
@@ -3998,6 +3981,17 @@ class SeasonCog(commands.Cog):
         round_number: int,
         session: app_commands.Choice[str] | None = None,
     ) -> None:
+        """Amend the results of a round that has reached FINAL.
+
+        **A league admin's**, unlike the rest of `/round`, and unlike what a reading of the
+        name suggests. Amending does not supersede: `amend_session_results` updates the
+        header in place and deletes the round's driver rows before re-inserting them, so the
+        classification the league actually raced is gone and no command puts it back. It sits
+        with the other commands that destroy what a league is built from.
+
+        Adding, amending and importing rounds stay a league manager's; cancelling and
+        deleting one are a league admin's for the same reason this is.
+        """
         if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
             await interaction.response.send_message(
                 "\u274c The Results & Standings module is not enabled.", ephemeral=True
@@ -4121,6 +4115,13 @@ class SeasonCog(commands.Cog):
         admin_role: discord.Role | None = None
         if server_cfg and server_cfg.interaction_role_id:
             admin_role = interaction.guild.get_role(server_cfg.interaction_role_id)
+        # The league admin role is opened to the amendment channel on the same terms. A
+        # league admin holds the league manager tier within their own, so a channel opened to
+        # one role and not the other would leave them able to cancel an amendment they cannot
+        # see (issue #116).
+        league_admin_role: discord.Role | None = None
+        if server_cfg and server_cfg.league_admin_role_id:
+            league_admin_role = interaction.guild.get_role(server_cfg.league_admin_role_id)
 
         # Derive category from bot command channel (same pattern as submission channel)
         category: discord.CategoryChannel | None = None
@@ -4138,10 +4139,11 @@ class SeasonCog(commands.Cog):
             overwrites[interaction.guild.me] = discord.PermissionOverwrite(
                 read_messages=True, send_messages=True, manage_messages=True
             )
-        if admin_role is not None:
-            overwrites[admin_role] = discord.PermissionOverwrite(
-                read_messages=True, send_messages=True
-            )
+        for role in (admin_role, league_admin_role):
+            if role is not None:
+                overwrites[role] = discord.PermissionOverwrite(
+                    read_messages=True, send_messages=True
+                )
         amend_channel = await interaction.guild.create_text_channel(
             name=amend_ch_name,
             category=category,
@@ -4180,10 +4182,18 @@ class SeasonCog(commands.Cog):
 
             @discord.ui.button(label="❌ Cancel Amendment", style=discord.ButtonStyle.danger)
             async def cancel_btn(self_v, bi: discord.Interaction, btn: discord.ui.Button) -> None:
-                if bi.user.id != interaction.user.id:
-                    if admin_role is None or admin_role not in getattr(bi.user, "roles", []):
-                        await bi.response.send_message("⛔ Only league managers can cancel.", ephemeral=True)
-                        return
+                # The member who opened the amendment, or anyone holding the league manager
+                # tier. Reading `admin_role` by hand tested the interaction role alone, so a
+                # league admin without it was refused a button they are entitled to press.
+                if bi.user.id != interaction.user.id and not (
+                    server_cfg is not None
+                    and isinstance(bi.user, discord.Member)
+                    and is_league_manager(server_cfg, bi.user)
+                ):
+                    await bi.response.send_message(
+                        "⛔ Only league managers can cancel.", ephemeral=True
+                    )
+                    return
                 cancelled_flag[0] = True
                 self_v.stop()
                 await bi.response.send_message("Amendment cancelled.", ephemeral=True)
@@ -4339,7 +4349,7 @@ class SeasonCog(commands.Cog):
                 config_name = existing_config_name
             else:
                 from services.result_submission_service import _ConfigSelectView  # type: ignore[attr-defined]
-                cfg_view = _ConfigSelectView(config_names)
+                cfg_view = _ConfigSelectView(config_names, server_cfg)
                 await amend_channel.send(
                     "Select the points configuration for this session:", view=cfg_view
                 )
@@ -5301,17 +5311,28 @@ class _ApproveView(discord.ui.View):
         except Exception:  # noqa: BLE001
             log.exception("season review: could not clear the approve prompt")
 
-    def _may_approve(self, member) -> bool:
-        """The reviewer, or a server administrator.
+    async def _may_approve(self, interaction: discord.Interaction) -> bool:
+        """The reviewer, or a league admin.
 
-        Deliberately *not* Manage Server, which is the tier that used to be required to run
-        the review at all: widening who may review and narrowing who may approve is the
-        whole point of the split.
+        Widening who may review and narrowing who may approve is the whole point of the
+        split: the review is a league manager's, the approval a league admin's.
+
+        It asked for Discord's Administrator permission until the two tiers became roles
+        (issue #116). The tier is a property of the league, so the role is what it reads
+        now — and reading it through `is_league_admin` is what keeps this button and the
+        league admin commands answering the same question.
         """
+        member = interaction.user
         if getattr(member, "id", None) == self._reviewer_id:
             return True
-        permissions = getattr(member, "guild_permissions", None)
-        return bool(permissions is not None and permissions.administrator)
+        if not isinstance(member, discord.Member):
+            return False
+        config = await self._cog.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+            interaction.guild_id
+        )
+        if config is None:
+            return False
+        return is_league_admin(config, member)
 
     async def on_timeout(self) -> None:
         """Delete the question and say the review has expired.
@@ -5361,9 +5382,9 @@ class _ApproveView(discord.ui.View):
         # Checked first, the fingerprint included: the message is public, so anyone who can
         # read the channel can press this. Nothing is read and nothing is approved for a
         # member who may not approve.
-        if not self._may_approve(interaction.user):
+        if not await self._may_approve(interaction):
             await interaction.response.send_message(
-                "⛔ Only the person who ran this review, or a server administrator, "
+                "⛔ Only the person who ran this review, or a league admin, "
                 "can approve it. **Nothing has been approved.**",
                 ephemeral=True,
             )

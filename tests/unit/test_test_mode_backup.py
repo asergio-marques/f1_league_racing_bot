@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from cogs.test_mode_cog import TestModeCog as Cog  # noqa: E402
 from cogs.test_mode_cog import _jobstore_path  # noqa: E402
 from services import backup_service as bs  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 4400
 USER_ID = 99
@@ -80,8 +81,8 @@ def _interaction():
 
 
 def _body(command):
-    """The command body, past `channel_guard` and `server_admin_only`."""
-    return command.callback.__wrapped__.__wrapped__
+    """The command body, past whatever tier guard it wears."""
+    return undecorate(command)
 
 
 def _reply(interaction) -> str:
@@ -131,9 +132,18 @@ async def test_the_flag_is_read_at_the_moment_of_the_command(live):
     cog.bot.config_service.get_server_config.assert_awaited()
 
 
-def test_every_command_requires_a_server_administrator():
-    """Not Manage Server: a restore replaces everything the bot holds."""
-    import inspect
+def test_every_command_is_a_league_admins():
+    """A restore replaces everything the bot holds, so it sits at the higher tier.
+
+    The whole of test mode does, in fact — the core specification places it there and does
+    not single backup out. These four are pinned separately all the same, because they are
+    the ones where getting it wrong loses a league's database rather than a test driver.
+
+    Asserted through the tier the guard records rather than by grepping the source for a
+    decorator name. The names have already changed once, and a source grep reports a rename
+    as a permission change while missing an actual one.
+    """
+    from utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_ADMIN, TIER_ATTRIBUTE
 
     for command in (
         Cog.backup_save,
@@ -141,12 +151,8 @@ def test_every_command_requires_a_server_administrator():
         Cog.backup_restore,
         Cog.backup_status,
     ):
-        source = inspect.getsource(Cog)
-        assert "server_admin_only" in source
-        # The decorator wraps the callback twice — channel_guard and server_admin_only —
-        # which is what `_body` unwraps. A command carrying only one would fail here.
-        assert hasattr(command.callback, "__wrapped__")
-        assert hasattr(command.callback.__wrapped__, "__wrapped__")
+        assert getattr(command.callback, TIER_ATTRIBUTE) == LEAGUE_ADMIN, command.name
+        assert getattr(command.callback, CHANNEL_EXEMPT_ATTRIBUTE) is False, command.name
 
 
 # ── Save ──────────────────────────────────────────────────────────────────

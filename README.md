@@ -135,14 +135,15 @@ These must be enabled in the **Discord Developer Portal → Bot → Privileged G
 
 ## First-time Server Setup
 
-After inviting the bot, a **server administrator** (Manage Server permission) must run:
+After inviting the bot, somebody holding Discord's **Administrator** permission must run:
 
 ```
-/bot-init interaction_role:@YourRole interaction_channel:#commands log_channel:#bot-logs
+/bot-init interaction_role:@YourRole league_admin_role:@YourAdmins interaction_channel:#commands log_channel:#bot-logs
 ```
 
 This registers:
 - **Interaction role** -- who can use bot commands
+- **League admin role** -- who governs the bot, and who may do what cannot be undone
 - **Interaction channel** -- the only channel where commands are accepted
 - **Log channel** -- where computation audit logs are posted
 
@@ -170,42 +171,64 @@ Clears any guild-scoped command overrides and pushes the latest global slash com
 
 ## Slash Commands
 
+Every command below carries an `*Access:*` line naming the level of permission it asks for.
+There are two, and both are **roles you configure**, not Discord permissions. (These are
+nothing to do with a division's *tier*, which is where it sits in your pecking order.)
+
+| Level | Held by | What it covers |
+|---|---|---|
+| **League manager** | the interaction role, or the league admin role | Running the league — seasons, divisions, rounds, tracks, teams, drivers and seats; the configuration of every module and the artwork it draws from; the channels each division posts to; and the results, standings, verdicts, check-ins and signups that follow |
+| **League admin** | the league admin role | Governing the bot upon the server, and anything that may undo a league entire — starting over, enabling and disabling a module, every command of test mode, and the commands that destroy something no other command puts back |
+
+A league admin can do everything a league manager can, so nobody needs both roles. Drivers
+need neither: they reach the bot through the buttons it posts and through their own channels.
+
+**A Discord permission is not a route to either.** Administrator, Manage Server and the rest
+govern the *server*; these two roles govern the *league*, and the bot only reads the roles.
+The single exception is `/bot-init` and the four commands that change one setting each —
+those accept Discord's **Administrator** permission as well, because they are what repairs
+the settings everything else depends on.
+
+Every command is given in the interaction channel, except those same five.
+
 ### `/bot-init` — One-time server setup
-*Access: Server administrator (Manage Server permission)*
+*Access: League admin · Can be run from any channel, or by a server administrator*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `interaction_role` | Role | ✅ | The Discord role permitted to use bot commands |
+| `league_admin_role` | Role | ✅ | The Discord role that governs the bot and may undo a league entire |
 | `interaction_channel` | Channel | ✅ | The only channel where bot commands are accepted |
 | `log_channel` | Channel | ✅ | Channel where computation audit logs are posted |
 
-Exempt from the interaction-channel rule, since no channel is configured until it has run. Requires **Manage Server** instead.
+Exempt from the interaction-channel rule, since no channel is configured until it has run — and it accepts Discord's **Administrator** permission, since the league admin role is one of the things it is setting.
 
-**It runs once.** A second `/bot-init` on a configured server is refused, not applied — it names the three commands below instead. To start over entirely, `/bot-reset full:True` removes the configuration first.
+**It runs once.** A second `/bot-init` on a configured server is refused, not applied — it names the four commands below instead. To start over entirely, `/bot-reset full:True` removes the configuration first.
 
 It also seeds the team list with the **Reserve** team, which has unlimited seats and cannot be removed or renamed. No other team is created — build the rest of the list with `/team add`.
 
 ---
 
-### `/bot-log-channel`, `/bot-interaction-channel`, `/bot-interaction-role` — Change one setting
-*Access: Server administrator (Manage Server permission) · Can be run from any channel*
+### `/bot-log-channel`, `/bot-interaction-channel`, `/bot-interaction-role`, `/bot-admin-role` — Change one setting
+*Access: League admin · Can be run from any channel, or by a server administrator*
 
 | Command | Parameter | Changes |
 |---|---|---|
 | `/bot-log-channel` | `channel` | Where the bot writes its calculation log |
 | `/bot-interaction-channel` | `channel` | The only channel where bot commands are accepted |
 | `/bot-interaction-role` | `role` | The role permitted to use bot commands |
+| `/bot-admin-role` | `role` | The role that governs the bot and may undo a league entire |
 
-Each changes **one** setting and leaves everything else exactly as it stands — the other two settings, your module switches, and test mode.
+Each changes **one** setting and leaves everything else exactly as it stands — the other three settings, your module switches, and test mode.
 
-> **These are deliberately usable from any channel, by anyone holding Manage Server.** They exist for when one of the three settings is wrong — a log channel deleted, an interaction channel archived, a role removed by mistake. Requiring the interaction channel or the interaction role to run them would lock you out of the very failure they repair. Manage Server is the gate instead.
+> **These are deliberately usable from any channel, and by a server administrator as well as by a league admin.** They exist for when one of the four settings is wrong — a log channel deleted, an interaction channel archived, either role removed by mistake. Requiring the interaction channel or a league role to run them would lock you out of the very failure they repair, and requiring the league admin role would leave a server that has lost it with no way to set one. These five commands are the only place Discord's Administrator permission reaches the bot at all.
 
 If the bot has never been configured on the server, these refuse and point you at `/bot-init`.
 
 ---
 
 ### `/clean-bot` — Delete recent bot messages in this channel
-*Access: Trusted admin*
+*Access: League admin*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -224,7 +247,7 @@ Deletes the bot's `count` most recent messages in the interaction channel, newes
 ---
 
 ### `/bot-reset` — Reset server data
-*Access: Server administrator (Manage Server permission) · Can be run from any channel*
+*Access: League admin*
 
 Removes all season data for this server. Use `full:True` to also wipe the bot configuration (equivalent to a factory reset).
 
@@ -248,7 +271,7 @@ Season configuration is a multi-step flow: run `/season setup`, add divisions wi
 > This is not tidiness: several postings **replace** the message they last put up, finding it by an id stored against the channel, so two purposes in one channel is how one output deletes another's message. Setting a channel to the value it already holds is refused too, in its own words — nothing else holds it, and nothing changes.
 
 #### `/season setup` — Start season configuration
-*Access: Trusted admin*
+*Access: League manager*
 
 Creates a pending season tied to today's date and enables the `/division` and `/round` setup commands. Refused if a season is already in setup or active for this server — a server holds **one** live season at a time, so finish the running one with `/season complete` (or approve or cancel the pending one) before starting another. Completed and cancelled seasons do not count and are kept indefinitely.
 
@@ -257,7 +280,7 @@ Creates a pending season tied to today's date and enables the `/division` and `/
 | `game_edition` | Integer | ✅ | Game edition year — `25` for F1 25. Range 1–9999 |
 
 #### `/division add` — Add a division
-*Access: Trusted admin · Requires active `/season setup` session*
+*Access: League manager · Requires active `/season setup` session*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -270,7 +293,7 @@ Tiers must additionally be **sequential from 1 with no gaps** across the whole s
 Division channels are not set here. Assign them afterwards with the `/division *-channel` commands.
 
 #### `/division duplicate` — Copy a division with a datetime offset
-*Access: Trusted admin · Setup only*
+*Access: League manager · Setup only*
 
 Clones all rounds from an existing division into a new one, shifting every scheduled_at by the given offset. Useful for multi-division season setups with staggered schedules.
 
@@ -284,7 +307,7 @@ Clones all rounds from an existing division into a new one, shifting every sched
 | `hour_offset` | Float | — | Hours to shift all round datetimes (can be negative; decimals OK). Default: `0.0` |
 
 #### `/division delete` — Remove a division from setup
-*Access: Trusted admin · Setup only*
+*Access: League admin · Setup only*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -293,7 +316,7 @@ Clones all rounds from an existing division into a new one, shifting every sched
 Permanently removes the division and all its rounds from the pending setup.
 
 #### `/division rename` — Rename a division
-*Access: Trusted admin · Setup only*
+*Access: League manager · Setup only*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -301,7 +324,7 @@ Permanently removes the division and all its rounds from the pending setup.
 | `new_name` | String | ✅ | New name for the division |
 
 #### `/division amend` — Correct a division's name, tier or role
-*Access: Trusted admin · Setup only*
+*Access: League manager · Setup only*
 
 At least one optional field must be provided; the command is refused if all three are omitted. Correcting a division after the fact is what this is for — `/division rename` changes only the name.
 
@@ -313,7 +336,7 @@ At least one optional field must be provided; the command is refused if all thre
 | `role` | Role | — | New Discord role for the division |
 
 #### `/round add` — Add a round to a division
-*Access: Trusted admin · Requires active `/season setup` session*
+*Access: League manager · Requires active `/season setup` session*
 
 Round numbers are **auto-assigned** by sorting all rounds in the division by `scheduled_at`; there is no manual `round_number` parameter.
 
@@ -327,7 +350,7 @@ Round numbers are **auto-assigned** by sorting all rounds in the division by `sc
 > **Two rounds of one division cannot share a start time.** The command refuses the second, naming the round already there. `/season approve` has always refused a season holding such a pair — this catches it at the moment you can still fix it easily.
 
 #### `/round add-bulk` — Add many rounds at once from a pasted list
-*Access: Trusted admin · Requires active `/season setup` session*
+*Access: League manager · Requires active `/season setup` session*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -344,7 +367,7 @@ Opens a box. Write one round per line as `datetime, format, track`, with the tim
 The track takes the same forms `/round add` takes — an ID, a name, or the dropdown's `14 – Hungaroring`. A `MYSTERY` round may leave it out. The box holds 2000 characters — comfortably a full season with short track IDs, fewer if you write circuit names out.
 
 #### `/round add-xml` — Add rounds to several divisions from XML
-*Access: Trusted admin · Requires active `/season setup` session*
+*Access: League manager · Requires active `/season setup` session*
 
 No parameters. Opens a box taking a calendar for one or more divisions:
 
@@ -368,7 +391,7 @@ Unlike the other two commands, `<datetime>` is a **local** time in the zone `<ti
 > **One bad entry rejects the whole import.** Nothing is added, and every fault is listed at once with the line it is on, so you fix the text and paste it again. This is deliberate: round numbers come from sorting the whole division by date, so a half-finished import would renumber the rounds around whichever ones landed.
 
 #### `/round delete` — Remove a round from setup
-*Access: Trusted admin · Setup only*
+*Access: League admin · Setup only*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -391,7 +414,7 @@ The image subsection also lists the eight **asset directories** and the path eac
 > **A picture that cannot be drawn withholds the Approve button.** You are told what is wrong, that section falls back to its text so the review is still complete, and the review ends with a note that the image module is not correctly configured instead of the button. There is no command that approves around it — the button is the only route — so fix the template or the artwork it names and run `/season review` again.
 
 #### Approving — the button in `/season review`
-*Access: the reviewer, or a server administrator*
+*Access: the reviewer, or a league admin*
 
 **There is no `/season approve` command.** A season is approved by pressing **✅ Approve** on the report `/season review` posts, and from nowhere else. Approving commits a season, and the review is the evidence it is committed on — a command that could be run without one let a manager commit a season they had not looked at.
 
@@ -399,7 +422,7 @@ Pressing it saves all pending divisions and rounds to the database and arms the 
 
 **The review is deleted once the season is approved** — the whole report, pictures included, not just the button. It described a season waiting on a decision, and the decision has been made; leaving it would put a long stale scroll above everything the bot posts next. Your confirmation that the season was approved is private to you and stays. An expired review is cleared the same way, for the same reason.
 
-**Who may press it.** The person who ran the review, or a **server administrator** — someone with Discord's Administrator permission. Anyone else who presses is told so privately and nothing is approved. That check matters because the question is posted publicly: a league manager can review a season and then ask an administrator to approve it, which is the point of putting it where both can see it. Manage Server is not enough on its own.
+**Who may press it.** The person who ran the review, or a **league admin**. Anyone else who presses is told so privately and nothing is approved. That check matters because the question is posted publicly: a league manager can review a season and then ask a league admin to approve it, which is the point of putting it where both can see it.
 
 > **The button stands for five minutes**, and only for the season it was posted for. When they pass, the message is deleted and replaced by a notice mentioning whoever ran the review, saying it has expired and must be run again. The same happens if the bot restarts while a review is standing — the five minutes cannot have run while it was down, so the question is cleared at startup rather than left waiting for a press nothing would answer.
 >
@@ -416,12 +439,12 @@ Pressing it saves all pending divisions and rounds to the database and arms the 
 ### Active Season Commands
 
 #### `/season status` — Active season summary
-*Access: Interaction role*
+*Access: League manager*
 
 No parameters. Shows active season overview: divisions, next scheduled round per division, and its track and datetime.
 
 #### `/season cancel` — Delete the active season
-*Access: Trusted admin*
+*Access: League admin*
 
 > ⚠️ **Irreversible.** A cancelled season cannot be reopened, and every command that would change one is refused from then on.
 
@@ -442,7 +465,7 @@ from one that ran to its end. Cancel a season that should never have existed —
 that was raced should be completed instead.
 
 #### `/season complete` — Mark the active season as complete
-*Access: Trusted admin*
+*Access: League admin*
 
 No parameters. Triggers the season-end flow manually. The bot refuses while any division of the
 season is neither finished nor cancelled, and lists the rounds still to be finalised. Once every
@@ -464,7 +487,7 @@ are no results to wait for, so nothing holds the season open.
 > round in every division has been finalised. Nothing else marks a season complete.
 
 #### `/round amend` — Amend a round in the active season
-*Access: Trusted admin*
+*Access: League manager*
 
 At least one optional field must be provided. Amending `scheduled_at` automatically re-sorts and renumbers all rounds in the division.
 
@@ -479,7 +502,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 > **Amending a round costs it its check-in.** The scheduler is re-triggered for the forecasts only. A round's RSVP notice, last reminder and deadline are cancelled along with everything else and are never rescheduled, so an amended round posts no check-in call, opens no attendance records, and counts nothing against anyone. Nothing warns you at the time.
 
 #### `/round cancel` — Cancel a round in the active season
-*Access: Trusted admin*
+*Access: League admin*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -490,7 +513,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 Cancels scheduled jobs for the round, sets its status to `CANCELLED`, and posts a notice to the division's forecast channel.
 
 #### `/division cancel` — Cancel a division in the active season
-*Access: Trusted admin*
+*Access: League admin*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -503,7 +526,7 @@ results and its status. A cancelled division is excluded from tier validation, f
 and from the gate on completing the season.
 
 #### `/division weather-channel` — Set the weather forecast channel for a division
-*Access: Trusted admin · Weather module required*
+*Access: League manager · Weather module required*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -513,7 +536,7 @@ and from the gate on completing the season.
 Required for every division while the weather module is enabled: `/season approve` is refused until each one has a forecast channel, and a division created by `/division duplicate` does not inherit the source division's. For the rest of the module's setup, see [Configuring the weather module](docs/how-to/configuring-the-weather-module.md).
 
 #### `/division results-channel` — Set the results posting channel for a division
-*Access: Trusted admin · Results & Standings module required*
+*Access: League manager · Results & Standings module required*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -521,7 +544,7 @@ Required for every division while the weather module is enabled: `/season approv
 | `channel` | Channel | ✅ | Channel where session results are posted |
 
 #### `/division standings-channel` — Set the standings posting channel for a division
-*Access: Trusted admin · Results & Standings module required*
+*Access: League manager · Results & Standings module required*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -531,7 +554,7 @@ Required for every division while the weather module is enabled: `/season approv
 Required for every division while the results & standings module is enabled, along with [`/division verdicts-channel`](#division-verdicts-channel--set-the-verdicts-channel-for-a-division): `/season approve` is refused until each division has all three, and a division created by `/division duplicate` does not inherit them. For the rest of the module's setup, see [Configuring the results & standings module](docs/how-to/configuring-the-results-module.md).
 
 #### `/division lineup-channel` — Set the lineup posting channel for a division
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -539,7 +562,7 @@ Required for every division while the results & standings module is enabled, alo
 | `channel` | Channel | ✅ | Channel where the division's lineup is posted |
 
 #### `/division calendar-channel` — Set the calendar posting channel for a division
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -549,7 +572,7 @@ Required for every division while the results & standings module is enabled, alo
 > **Neither of these two is enforced at approval**, unlike the six module channels above. A division missing its lineup or calendar channel is silently skipped — `/season approve` neither refuses nor warns, and the division simply posts no lineup and no calendar for the whole season.
 
 #### `/division attendance-channel` — Set the attendance logging channel for a division
-*Access: Trusted admin · Attendance module required*
+*Access: League manager · Attendance module required*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -557,7 +580,7 @@ Required for every division while the results & standings module is enabled, alo
 | `channel` | Channel | ✅ | Channel where the attendance sheet is posted |
 
 #### `/division rsvp-channel` — Set the RSVP notice channel for a division
-*Access: Trusted admin · Attendance module required*
+*Access: League manager · Attendance module required*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -565,7 +588,7 @@ Required for every division while the results & standings module is enabled, alo
 | `channel` | Channel | ✅ | Channel where check-in calls are posted |
 
 #### `/division verdicts-channel` — Set the verdicts channel for a division
-*Access: Trusted admin · Results & Standings module required*
+*Access: League manager · Results & Standings module required*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -575,7 +598,7 @@ Required for every division while the results & standings module is enabled, alo
 > These eight channels are one per kind of image output. The image module draws nothing where its source module posts nothing, so an output with no channel set produces no picture — see [Configuring the image module](docs/how-to/configuring-the-image-module.md).
 
 #### `/division calendar-sync` — Repost a division's calendar
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -594,7 +617,7 @@ It reposts in whichever form your configuration calls for: the image where the i
 Test mode drives the season's scheduled events on demand, without waiting for their real fire times. Useful for verifying a setup before a live season. See [Testing with test mode](docs/how-to/test-mode.md) for the workflow.
 
 #### `/test-mode toggle` — Enable or disable test mode
-*Access: Trusted admin*
+*Access: League admin*
 
 No parameters. Flips test mode on/off; state persists across bot restarts.
 
@@ -607,7 +630,7 @@ No parameters. Flips test mode on/off; state persists across bot restarts.
 Enabling it seeds the **Standard** and **Half Points** points configurations onto the current season if none are attached, as ordinary server configurations that `/results config` can view and edit like any other. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**; the two configurations are kept, being configuration rather than scaffolding.
 
 #### `/test-mode nationality` — Toggle nationality for fake drivers
-*Access: Trusted admin · Requires test mode active*
+*Access: League admin · Requires test mode active*
 
 No parameters. Flips whether a fake driver may be given a nationality. On by default, as `/signup nationality` is.
 
@@ -616,19 +639,19 @@ While test mode is on, this switch — not `/signup nationality` — is the one 
 A real posting is suppressed the same way: the switch is read before the driver's own value, so a driver who stated a nationality before you turned collection off loses their flag along with everyone else. A preview and a posting of the same division draw the same thing.
 
 #### `/test-mode advance` — Execute the next pending event
-*Access: Trusted admin · Requires test mode active*
+*Access: League admin · Requires test mode active*
 
 No parameters. Immediately runs the next pending scheduled event, bypassing its fire time. The queue is read from the scheduler itself, so it holds only what was genuinely scheduled — with the weather module off, no weather phase is ever advanced.
 
 Events are taken in scheduled-fire-time order, tie-broken by round then phase, and cover mystery-round notices, weather phases 1–3, and result submission.
 
 #### `/test-mode review` — View phase completion status
-*Access: Trusted admin · Requires test mode active*
+*Access: League admin · Requires test mode active*
 
 No parameters. Displays a summary of all rounds for the active season, showing which phases (✅/⏳) have been completed per round and division.
 
 #### `/test-mode set-former-driver` — Override the former_driver flag
-*Access: Trusted admin · Requires test mode active*
+*Access: League admin · Requires test mode active*
 
 Manually sets the `former_driver` flag on a driver profile. Only available when test mode is enabled.
 
@@ -638,7 +661,7 @@ Manually sets the `former_driver` flag on a driver profile. Only available when 
 | `value` | Boolean | ✅ | The new value for the `former_driver` flag (`True` / `False`) |
 
 #### `/test-mode roster add` — Add a fake driver
-*Access: Trusted admin · Requires test mode active*
+*Access: League admin · Requires test mode active*
 
 Creates a synthetic driver profile occupying a real seat, so a division can be filled without real Discord accounts. Responds with a mention string to paste into result submissions.
 
@@ -652,7 +675,7 @@ Creates a synthetic driver profile occupying a real seat, so a division can be f
 A fake driver has no signup record behind it, so the nationality is recorded on the driver itself. Give one and the driver draws a flag like anybody else; leave it out and the driver is drawn without one. The value is refused if it is not a nationality the bot knows, and refused outright while `/test-mode nationality` is off.
 
 #### `/test-mode roster add-bulk` — Seat a whole roster at once
-*Access: Trusted admin · Requires test mode active*
+*Access: League admin · Requires test mode active*
 
 No parameters. Opens a box; paste the `roster.csv` the roster generator writes, header row and all, and every driver in it is seated across every division it names.
 
@@ -665,14 +688,14 @@ No parameters. Opens a box; paste the `roster.csv` the roster generator writes, 
 > Discord caps the box at 4000 characters, which is roughly seventy drivers. A larger grid goes in two passes, a division at a time.
 
 #### `/test-mode roster remove` — Remove one fake driver
-*Access: Trusted admin · Requires test mode active*
+*Access: League admin · Requires test mode active*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `user_id` | String | ✅ | Synthetic user ID, as shown by `roster add` or `roster list` |
 
 #### `/test-mode roster list` — List a division's fake drivers
-*Access: Trusted admin · Requires test mode active*
+*Access: League admin · Requires test mode active*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -681,14 +704,14 @@ No parameters. Opens a box; paste the `roster.csv` the roster generator writes, 
 Prints each fake driver with their synthetic user ID, their team and their nationality — the cheat sheet for result submission. A driver recorded with no nationality shows a dash. A roster too long for one Discord message is sent as several, each a complete table with the heading repeated.
 
 #### `/test-mode roster clear` — Remove every fake driver from a division
-*Access: Trusted admin · Requires test mode active*
+*Access: League admin · Requires test mode active*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `division` | String | ✅ | Division name |
 
 #### `/test-mode rsvp set-status` — Bulk-set RSVP statuses
-*Access: Trusted admin · Requires test mode active · Attendance module*
+*Access: League admin · Requires test mode active · Attendance module*
 
 Opens a modal for setting the RSVP status of every test driver in the division's currently open check-in, so a check-in can be driven to a known state without waiting on button presses.
 
@@ -704,7 +727,7 @@ See [Testing with test mode](docs/how-to/test-mode.md) for how these fit togethe
 
 #### `/test-mode backup` — Save the database and put it back
 
-*Access: Server administrator, **and the server must be in test mode***
+*Access: League manager*
 
 Save the whole database and return to it later, so a state reached once while testing need not be built again. Four subcommands, none of which take a parameter.
 
@@ -728,7 +751,7 @@ Save the whole database and return to it later, so a state reached once while te
 Modules extend the bot beyond weather generation. Five modules are available: **weather**, **signup**, **results**, **attendance**, and **images**. All are disabled by default.
 
 #### `/module enable` — Enable a bot module
-*Access: Server administrator*
+*Access: League admin*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -746,7 +769,7 @@ Ordering and timing constraints:
 | `signup`, `images` | No constraint |
 
 #### `/module disable` — Disable a bot module
-*Access: Server administrator*
+*Access: League admin*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -788,21 +811,21 @@ All three commands share the same preconditions, checked in this order:
 **When they take effect.** The values in force for a season are those stored when it is approved. Changing a deadline never moves a forecast for a season already running.
 
 #### `/weather config phase-1-deadline` — Days before the round to publish Phase 1
-*Access: Trusted admin · Weather module required · Setup only*
+*Access: League manager · Weather module required · Setup only*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `days` | Integer | ✅ | Number of days before the round. Minimum 1. Default **5** |
 
 #### `/weather config phase-2-deadline` — Days before the round to publish Phase 2
-*Access: Trusted admin · Weather module required · Setup only*
+*Access: League manager · Weather module required · Setup only*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `days` | Integer | ✅ | Number of days before the round. Minimum 1. Default **2** |
 
 #### `/weather config phase-3-deadline` — Hours before the round to publish Phase 3
-*Access: Trusted admin · Weather module required · Setup only*
+*Access: League manager · Weather module required · Setup only*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -819,7 +842,7 @@ Every successful reply echoes the other two deadlines, and the change is written
 ### Driver Commands
 
 #### `/driver reassign` — Re-key a driver profile to a new Discord account
-*Access: Trusted admin*
+*Access: League manager*
 
 Transfers an existing driver profile from one Discord account to another. Provide either `old_user` (mention) or `old_user_id` (raw snowflake) for users who have left the server.
 
@@ -830,7 +853,7 @@ Transfers an existing driver profile from one Discord account to another. Provid
 | `old_user_id` | String | — | Raw Discord snowflake ID, for users who have left the server |
 
 #### `/driver assign` — Assign a driver to a team and division
-*Access: Trusted admin*
+*Access: League manager*
 
 Places an Unassigned driver into a specific team seat within a division. Requires a season in either **SETUP** or **ACTIVE** state — placement does not wait for approval.
 
@@ -847,7 +870,7 @@ Refused while test mode is active: a real driver is never seated in a division u
 | `team` | String | ✅ | Exact team name as it appears in the division |
 
 #### `/driver unassign` — Remove a driver from a division
-*Access: Trusted admin*
+*Access: League manager*
 
 Removes a driver's placement from one division. If this was their only assignment the driver reverts to Unassigned. Requires a season in **SETUP** or **ACTIVE** state.
 
@@ -859,7 +882,7 @@ For an **ACTIVE** season this revokes the division role and, if no other seat ma
 | `division` | String | ✅ | Division tier number or name |
 
 #### `/driver sack` — Sack a driver
-*Access: Trusted admin*
+*Access: League admin*
 
 Revokes all placement roles, removes all season assignments, and transitions the driver back to Not Signed Up. For former drivers the profile row is retained; for others it is deleted.
 
@@ -872,7 +895,7 @@ Revokes all placement roles, removes all season assignments, and transitions the
 ### Team Commands
 
 #### `/team add` — Add a team to the server list
-*Access: Trusted admin*
+*Access: League manager*
 
 Adds the team to the server's default team list and saves its role mapping (granted/revoked on driver placement). If a SETUP season is active the team is also seeded into every division with 2 seats.
 
@@ -894,7 +917,7 @@ Adds the team to the server's default team list and saves its role mapping (gran
 > Only the **new** name is checked by `/team rename`, and `/team remove` checks nothing. A team named before these rules existed stays renameable and removable.
 
 #### `/team remove` — Remove a team from the server list
-*Access: Trusted admin*
+*Access: League admin*
 
 Removes the team from the server's default list and clears its role mapping. If a SETUP season is active the team is also removed from every division in that season.
 
@@ -903,7 +926,7 @@ Removes the team from the server's default list and clears its role mapping. If 
 | `name` | String | ✅ | Exact name of the team to remove |
 
 #### `/team rename` — Rename a team
-*Access: Trusted admin*
+*Access: League manager*
 
 Renames the team in the server's default list and updates its role mapping key. If a SETUP season is active the name is also updated across every division in that season.
 
@@ -913,12 +936,12 @@ Renames the team in the server's default list and updates its role mapping key. 
 | `new_name` | String | ✅ | Replacement name (max 50 chars) |
 
 #### `/team list` — List all teams and their role mappings
-*Access: Trusted admin*
+*Access: League manager*
 
 Displays all teams on the server's default list alongside their configured Discord roles. If a SETUP season is active and its team list differs from the server default, the divergence is shown with a warning.
 
 #### `/team lineup` — Show team lineups for the active season
-*Access: Trusted admin*
+*Access: League manager*
 
 Displays the placed drivers for each team seat in the active season. If a division name or tier number is provided only that division is shown; otherwise all divisions are listed. Requires an active season.
 
@@ -928,7 +951,7 @@ Displays the placed drivers for each team seat in the active season. If a divisi
 | `public` | Boolean | — | Post the lineup visibly in the channel; defaults to ephemeral (only visible to you) |
 
 #### `/team reserve-role` — Set or clear the Reserve team's Discord role
-*Access: Trusted admin*
+*Access: League manager*
 
 Sets the Discord role granted to (and revoked from) drivers placed in the Reserve team. Omit the `role` parameter to clear any existing mapping.
 
@@ -945,7 +968,7 @@ Sets the Discord role granted to (and revoked from) drivers placed in the Reserv
 All commands below require the signup module to be enabled (`/module enable signup`). Most commands also require being invoked from the configured interaction channel.
 
 #### `/signup channel` — Set the signup channel
-*Access: Server administrator*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -954,14 +977,14 @@ All commands below require the signup module to be enabled (`/module enable sign
 Applies the channel's permission overwrites: `@everyone` cannot view, the base role can view but not send, and the interaction role can view and send. Setting a new signup channel clears **all** overwrites from the previously configured channel. The signup channel may not be the interaction channel.
 
 #### `/signup base-role` — Set the base role
-*Access: Server administrator*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `role` | Role | ✅ | Role granted to all members eligible to sign up |
 
 #### `/signup complete-role` — Set the completion role
-*Access: Server administrator*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -970,7 +993,7 @@ Applies the channel's permission overwrites: `@everyone` cannot view, the base r
 All three of the above must be set before `/signup open` will run, and — while the signup module is enabled — before `/season approve` will commit a season.
 
 #### `/signup config roles` — Set both signup roles at once
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -982,29 +1005,29 @@ Deprecated alias retained for backwards compatibility; prefer `/signup base-role
 > **`/signup config channel` is non-functional.** It is retained as a deprecated alias but raises `TypeError` on invocation and sets nothing. Use `/signup channel`. See [#124](https://github.com/asergio-marques/f1_league_racing_bot/issues/124).
 
 #### `/signup config view` — View current signup configuration
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters. Displays the current signup module configuration as an embed.
 
 #### `/signup nationality` — Toggle nationality requirement
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters. Toggles whether drivers must provide their nationality during signup. On by default.
 
 While test mode is active, `/test-mode nationality` stands in for this setting everywhere the images module reads it, so testing the no-flags look leaves your real signups alone.
 
 #### `/signup time-type` — Toggle the time type setting
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters. Cycles the lap time type between Time Trial and Short Qualification.
 
 #### `/signup time-image` — Toggle time image requirement
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters. Toggles whether drivers must attach a screenshot of their lap time.
 
 #### `/signup time-slot add` — Add an availability time slot
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1012,19 +1035,19 @@ No parameters. Toggles whether drivers must attach a screenshot of their lap tim
 | `time` | String | ✅ | Time in `HH:MM` 24 h or 12 h format (e.g. `14:30` or `2:30pm`) |
 
 #### `/signup time-slot remove` — Remove an availability time slot
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `slot_id` | Integer | ✅ | Stable sequence ID shown in `/signup time-slot list` |
 
 #### `/signup time-slot list` — List all configured availability time slots
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters.
 
 #### `/signup open` — Open the signup window
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1034,19 +1057,19 @@ No parameters.
 Refused unless the signup channel, base role and completion role are all set and at least one availability time slot exists. Also refused while test mode is active — no real driver may sign up under test mode, so the window would be one nobody could use. Opening with no `track_ids` collects no lap times, so approved drivers have no total to seed on.
 
 #### `/signup close` — Close the signup window
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters. If drivers are currently in progress you will be prompted to confirm; the confirmation lists everyone in `PENDING_SIGNUP_COMPLETION`, `PENDING_ADMIN_APPROVAL` and `PENDING_DRIVER_CORRECTION`, but only drivers in `PENDING_SIGNUP_COMPLETION` are transitioned to Not Signed Up. Drivers awaiting approval or correction retain their state and may still be approved after the window has closed.
 
 Refused outright while an auto-close timer set by `/signup open close_time:` is armed. See [#125](https://github.com/asergio-marques/f1_league_racing_bot/issues/125).
 
 #### `/signup unassigned list` — List all Unassigned drivers seeded by lap time
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters. Displays all drivers in the Unassigned state, ordered by total lap time ascending (fastest first), in an ephemeral reply. Drivers with no lap time on record appear last; ties break on **submission** order — the moment the driver sent their form in or last corrected it, not the moment they were approved.
 
 #### `/signup unassigned export` — Export Unassigned drivers to CSV
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters. Returns `unassigned_drivers.csv` in an ephemeral reply, with the columns `Seed`, `Display Name`, `Discord User ID`, `Driver Type`, `Lap Total`, one column per configured availability slot (marked `X` where the driver selected it), `Preferred Team 1`–`3`, `Platform` and `Platform ID`.
 
@@ -1058,12 +1081,12 @@ No parameters. Returns `unassigned_drivers.csv` in an ephemeral reply, with the 
 
 > **Setting the results & standings module up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, follow [Configuring the results & standings module](docs/how-to/configuring-the-results-module.md).
 
-All commands below require the results module to be enabled (`/module enable results`) and the **Manage Server** permission. Where results, standings and verdicts are posted is set per division by [`/division results-channel`](#division-results-channel--set-the-results-posting-channel-for-a-division), [`/division standings-channel`](#division-standings-channel--set-the-standings-posting-channel-for-a-division) and [`/division verdicts-channel`](#division-verdicts-channel--set-the-verdicts-channel-for-a-division); all three are required before a season can be approved.
+All commands below require the results module to be enabled (`/module enable results`) and the interaction role, unless their own `*Access:*` line says otherwise. Where results, standings and verdicts are posted is set per division by [`/division results-channel`](#division-results-channel--set-the-results-posting-channel-for-a-division), [`/division standings-channel`](#division-standings-channel--set-the-standings-posting-channel-for-a-division) and [`/division verdicts-channel`](#division-verdicts-channel--set-the-verdicts-channel-for-a-division); all three are required before a season can be approved.
 
 #### Points Config Management
 
 ##### `/results config add` — Create a named points configuration
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1072,14 +1095,14 @@ All commands below require the results module to be enabled (`/module enable res
 All positions default to 0 points after creation.
 
 ##### `/results config remove` — Delete a named points configuration
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Config name to remove |
 
 ##### `/results config session` — Set points for a finishing position
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1089,7 +1112,7 @@ All positions default to 0 points after creation.
 | `points` | Integer | ✅ | Points awarded |
 
 ##### `/results config fl` — Set the fastest-lap bonus
-*Access: Trusted admin*
+*Access: League manager*
 
 Only applicable to race session types (`Feature Race`, `Sprint Race`).
 
@@ -1100,7 +1123,7 @@ Only applicable to race session types (`Feature Race`, `Sprint Race`).
 | `points` | Integer | ✅ | Bonus points for fastest lap |
 
 ##### `/results config fl-plimit` — Set the fastest-lap position eligibility limit
-*Access: Trusted admin*
+*Access: League manager*
 
 Only applicable to race session types. For example `limit:10` means only drivers finishing in positions 1–10 are eligible.
 
@@ -1111,7 +1134,7 @@ Only applicable to race session types. For example `limit:10` means only drivers
 | `limit` | Integer | ✅ | Highest eligible position |
 
 ##### `/results config append` — Attach a config to the current season
-*Access: Trusted admin*
+*Access: League manager*
 
 Only allowed when the season is in **SETUP** status.
 
@@ -1120,7 +1143,7 @@ Only allowed when the season is in **SETUP** status.
 | `name` | String | ✅ | Config name to attach |
 
 ##### `/results config detach` — Detach a config from the current season
-*Access: Trusted admin*
+*Access: League manager*
 
 Only allowed when the season is in **SETUP** status.
 
@@ -1129,7 +1152,7 @@ Only allowed when the season is in **SETUP** status.
 | `name` | String | ✅ | Config name to detach |
 
 ##### `/results config view` — View a points config
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1139,7 +1162,7 @@ Only allowed when the season is in **SETUP** status.
 Displays position-to-points mappings and fastest-lap settings. Works for both server-level configs (SETUP) and season-attached configs (ACTIVE).
 
 ##### `/results config bulk-session` — Set many positions at once via a modal
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1149,7 +1172,7 @@ Displays position-to-points mappings and fastest-lap settings. Works for both se
 Opens a modal taking one `position, points` pair per line (up to 2 000 characters). Blank lines are skipped. `position` must be ≥ 1 and `points` ≥ 0; a repeated position takes its last value and the override is reported. Valid pairs are applied even when other lines fail, and every rejected line is listed back. Applied changes are written to the log channel.
 
 ##### `/results config xml-import` — Import a full points configuration from XML
-*Access: Trusted admin · Results module required*
+*Access: League manager · Results module required*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1355,7 +1378,7 @@ Rules:
 - The header is ignored for qualifying submissions.
 
 ##### `/round results amend` — Re-submit results for a completed session
-*Access: Trusted admin · Results module required*
+*Access: League manager · Results module required*
 
 Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in the same category as the bot commands channel. Paste the corrected results in that channel; the bot validates and applies them, recalculates standings, then deletes the channel automatically. The optional `FL: @Driver` fastest-lap override header (see above) is supported here as well. A **❌ Cancel Amendment** button is posted in the channel to abort at any time. If `session` is omitted you will be prompted to choose one before the channel is created.
 
@@ -1370,19 +1393,19 @@ Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in
 #### Mid-Season Points Amendment
 
 ##### `/results amend toggle` — Enable or disable amendment mode
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters. Toggles amendment mode for the active season. When amendment mode is active, changes made via `/results amend session`, `/results amend fl`, and `/results amend fl-plimit` are staged in a modification store and do not affect live standings until approved with `/results amend review`.
 
 Disabling amendment mode while there are uncommitted changes is blocked — use `/results amend revert` to discard them first.
 
 ##### `/results amend revert` — Discard modification store changes
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters. Resets the modification store to match the current season points and clears the modified flag.
 
 ##### `/results amend session` — Stage a points change in the modification store
-*Access: Trusted admin*
+*Access: League manager*
 
 Requires amendment mode to be active.
 
@@ -1394,7 +1417,7 @@ Requires amendment mode to be active.
 | `points` | Integer | ✅ | New points value |
 
 ##### `/results amend fl` — Stage a fastest-lap bonus change
-*Access: Trusted admin*
+*Access: League manager*
 
 Requires amendment mode to be active. Race session types only.
 
@@ -1405,7 +1428,7 @@ Requires amendment mode to be active. Race session types only.
 | `points` | Integer | ✅ | New FL bonus value |
 
 ##### `/results amend fl-plimit` — Stage a fastest-lap position limit change
-*Access: Trusted admin*
+*Access: League manager*
 
 Requires amendment mode to be active. Race session types only.
 
@@ -1416,7 +1439,7 @@ Requires amendment mode to be active. Race session types only.
 | `limit` | Integer | ✅ | New position limit |
 
 ##### `/results amend bulk-session` — Stage many position changes at once via a modal
-*Access: Trusted admin*
+*Access: League manager*
 
 Requires amendment mode to be active.
 
@@ -1428,7 +1451,7 @@ Requires amendment mode to be active.
 Same modal and same input rules as [`/results config bulk-session`](#results-config-bulk-session--set-many-positions-at-once-via-a-modal), writing to the modification store instead of the server config.
 
 ##### `/results amend review` — Review and approve modification store changes
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters. Displays a diff of the staged changes against the current season points. Approve to atomically overwrite season points, recalculate all standings for every division from the first round, and switch amendment mode back off. Reject to leave the modification store and amendment mode as they are.
 
@@ -1438,7 +1461,7 @@ No parameters. Displays a diff of the staged changes against the current season 
 
 #### Reserve Driver Visibility
 ##### `/results standings sync` — Force a full standings repost for a division
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|--------------|
@@ -1449,7 +1472,7 @@ Deletes every existing standings Discord message for the division and reposts fr
 ---
 
 ##### `/results rounds sync` — Force a full results repost for a division
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|--------------|
@@ -1459,7 +1482,7 @@ Deletes every existing session results Discord message for the division and repo
 
 ---
 ##### `/results reserves toggle` — Toggle reserve driver visibility in standings
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1478,42 +1501,42 @@ All commands below require the attendance module to be enabled (`/module enable 
 > **A check-in call that fails to post is reported in the log channel**, naming the season, the division and the round. This matters more than it sounds: when a call cannot be posted, the round's attendance rows are never opened, so nobody is asked to check in and nothing is ever counted against anyone — the round ends up recorded as perfect attendance for the whole division. The report tells you to post it again once the cause is cleared, though no command currently does so — a call that failed is lost with the round. It appears whether or not the images module is enabled, because the fault is in the call and not in any picture.
 
 #### `/attendance config rsvp-notice` — Set the RSVP notice lead time
-*Access: Trusted admin · No active season*
+*Access: League manager · No active season*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `days` | Integer | ✅ | Days before the race to send the first RSVP notice (≥ 1) |
 
 #### `/attendance config rsvp-last-notice` — Set the last RSVP reminder
-*Access: Trusted admin · No active season*
+*Access: League manager · No active season*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `hours` | Integer | ✅ | Hours before the race for the last reminder (`0` to disable) |
 
 #### `/attendance config rsvp-deadline` — Set the RSVP deadline
-*Access: Trusted admin · No active season*
+*Access: League manager · No active season*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `hours` | Integer | ✅ | Hours before the race when RSVPs close |
 
 #### `/attendance config no-rsvp-penalty` — Set the no-RSVP penalty
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `points` | Integer | ✅ | Points applied when a driver fails to submit any RSVP response (≥ 0) |
 
 #### `/attendance config absent-penalty` — Set the absent penalty
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `points` | Integer | ✅ | Points applied when a NO_RSVP, TENTATIVE, or DECLINED driver does not appear in results (≥ 0). Stacks with the no-RSVP penalty for NO_RSVP drivers. |
 
 #### `/attendance config rsvp-absent-penalty` — Set the no-show penalty
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1522,7 +1545,7 @@ All commands below require the attendance module to be enabled (`/module enable 
 > **Limitation:** This command does not currently work. It calls a service method that does not exist, so the interaction fails and the value is never written — the penalty stays at its default of **1** for every server and cannot be changed by any means. `/attendance config show` still reports it, correctly, as 1.
 
 #### `/attendance config autoreserve` — Set the auto-reserve threshold
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1535,7 +1558,7 @@ When a driver's cumulative attendance-penalty total reaches this value they are 
 ---
 
 #### `/attendance config autosack` — Set the auto-sack threshold
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1548,7 +1571,7 @@ When a driver's cumulative attendance-penalty total reaches this value they are 
 ---
 
 #### `/attendance config show` — View the current attendance configuration
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters. Displays the full attendance configuration for this server as an ephemeral message, including:
 
@@ -1573,7 +1596,7 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 **A batch of pictures announces itself.** Drawing takes a few seconds per picture, and some jobs draw a run of them — `/season review` draws a lineup and a calendar per division, and closing a penalty review redraws every session's results, both championships, one verdict per penalty and the attendance sheet. A short message saying the pictures are being drawn is posted before the batch starts and deleted once it has finished. It goes to the channel you gave the command in — the bot interaction channel for a command you type, the round's results channel for the button presses that drive the results flow — and never to the channels the pictures themselves land in. Nothing is lost when it disappears: a fault is reported to you and to the log channel in its own right.
 
 #### `/images config toggle` — Choose image or text, per kind of output
-*Access: Trusted admin*
+*Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1673,7 +1696,7 @@ The choice names above are exactly the names `/images config view` and `/season 
 > ⚠️ **The banner message carries no text, and Discord's search cannot find it.** This is the trade the banner makes and you should know it before switching it on: because the message body is empty, searching your verdicts channel for "Round 8" will not turn up that round's verdicts. The only handle a search has is the attachment's filename, which the bot names `season5_division1_round8_verdict_banner.png`.
 
 #### `/images template <kind>` — Name the SVG file backing each image
-*Access: Server administrator*
+*Access: League manager*
 
 Sixteen subcommands, each taking a `filename` inside the configured template directory:
 
@@ -1842,7 +1865,7 @@ These sit under `/images template` rather than `/images config` because Discord 
 > **The standings grids are 1728 px wide.** They were 1200 and 1128, and the columns were too narrow for the widest thing a cell can hold — a `DSQ` with another outcome raised beside it — which overran into the next round with nothing said about it. Each session column is now 54 px. If you have re-laid a standings template of your own, give your columns the same room; nothing checks it for you, because SVG text simply overruns and reports nothing.
 
 #### `/images config <directory>` — Where files are searched for
-*Access: Server administrator*
+*Access: League manager*
 
 Every directory is a path relative to the project root, and one that resolves outside it is rejected.
 
@@ -1968,7 +1991,7 @@ The reason is that you supply **one file per thing**. There is a single `united_
 Placing your own files is the operator's job; the bot resolves the paths and reports what it finds.
 
 #### `/images use-pfp` — Driver portraits from Discord
-*Access: Trusted admin*
+*Access: League manager*
 
 The lineup graphic draws a portrait for every seated driver, and looks for it in your driver
 image directory under the driver's **Discord user ID** — `198273645123456789.svg`, not their
@@ -2022,7 +2045,7 @@ seat reverts to the placeholder. `/season review` states all three settings, and
 offer the approve button while the configuration is one that could never fetch anything.
 
 #### `/images config` — Presentation
-*Access: Trusted admin*
+*Access: League manager*
 
 | Subcommand | Parameter | Default | Description |
 |------------|-----------|---------|-------------|
@@ -2044,7 +2067,7 @@ offer the approve button while the configuration is one that could never fetch a
 > **One zone for everyone.** A text post writes a session time as a Discord timestamp, so every driver reads it in their own local zone. A picture cannot do that: whatever zone you set here is drawn on the graphic for every reader alike, with its abbreviation after the time. Set it to the zone your league actually runs in — it is the one thing an image tells a driver less precisely than the text it replaces.
 
 #### `/images config view` — Show the configuration and whether it holds together
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters. Lists every setting with a validity status, and each aspect as ✅ enabled, ❌ disabled, or ⚠️ enabled but invalid. An invalid report names the individual template at fault — which weather phase and variant, or which half of a results or standings pair — never just the group.
 
@@ -2059,7 +2082,7 @@ The report also states **how deeply templates were checked**. Layer 1 — the fi
 The same summary is appended to `/season review`, which additionally names each template that would block approval. **`/season approve` refuses** while any of them is unusable — the review is where you see the problem, the approval is where the season stops.
 
 #### `/images test` — Preview a kind against your own league
-*Access: Trusted admin*
+*Access: League manager*
 
 Twelve commands, one per kind of image. Each is drawn against **your own league** — your rounds, your teams, your drivers, your circuits and your own artwork — and replies with the PNG, visible only to you.
 
@@ -2133,7 +2156,7 @@ Seven of the twelve draw no team and no driver — `calendar`, `rsvp`, `verdict-
 ### Track Commands
 
 #### `/track list` — List the available circuits
-*Access: Trusted admin*
+*Access: League manager*
 
 No parameters. Returns the ID, circuit name and Grand Prix name of every track the bot carries, ephemerally.
 

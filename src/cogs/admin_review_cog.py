@@ -15,6 +15,7 @@ import discord
 from discord.ext import commands
 
 from models.driver_profile import DriverState
+from utils.channel_guard import is_league_manager
 
 log = logging.getLogger(__name__)
 
@@ -23,29 +24,37 @@ log = logging.getLogger(__name__)
 _PENDING_REASONS: dict[tuple[int, int], dict] = {}
 
 
-async def _is_tier2_or_admin(interaction: discord.Interaction) -> bool:
-    """Return True if the user has tier-2 role or Manage Guild permission."""
+async def _may_review_signup(interaction: discord.Interaction) -> bool:
+    """Whether the presser holds the league manager tier, or better.
+
+    This panel is posted publicly into the driver's own signup channel, which the driver
+    themselves can read — so this check is the only thing standing between a driver and
+    approving their own signup. It is not a formality.
+
+    It used to admit Discord's Manage Guild permission, a level the two-tier model has no
+    room for, and it read the interaction role by hand. Both are now one question asked of
+    `is_league_manager`, so the button and the commands agree by construction rather than by
+    two implementations happening to match.
+
+    The bare `except` is kept deliberately: a config-service failure must not become a
+    silent *grant*, so it falls through to False.
+    """
     if not interaction.guild or not isinstance(interaction.user, discord.Member):
         return False
-    member = interaction.user
-    if member.guild_permissions.manage_guild:
-        return True
     bot = interaction.client  # type: ignore[attr-defined]
     try:
         server_cfg = await bot.config_service.get_server_config(interaction.guild.id)  # type: ignore[attr-defined]
-        if server_cfg and server_cfg.interaction_role_id:
-            role = interaction.guild.get_role(server_cfg.interaction_role_id)
-            if role is not None and role in member.roles:
-                return True
     except Exception:
-        pass
-    return False
+        return False
+    if server_cfg is None:
+        return False
+    return is_league_manager(server_cfg, interaction.user)
 
 
 class AdminReviewView(discord.ui.View):
     """Approve / Request Changes / Reject buttons for admin signup review (T031).
 
-    Restricted to tier-2 role or Manage Guild permission.
+    Restricted to the league manager tier — the interaction role, or the league admin role.
     First action wins; subsequent interactions receive an ephemeral error.
     FR-039, A-004.
     """
@@ -70,7 +79,7 @@ class AdminReviewView(discord.ui.View):
 
     async def _guard(self, interaction: discord.Interaction):
         """Check permissions and race-condition guard.  Returns (True, bot, server_id, user_id) to proceed."""
-        if not await _is_tier2_or_admin(interaction):
+        if not await _may_review_signup(interaction):
             await interaction.response.send_message(
                 "⛔ Insufficient permissions.", ephemeral=True
             )
@@ -185,7 +194,7 @@ class CorrectionParameterView(discord.ui.View):
 
             def make_callback(p: str) -> ...:  # type: ignore[return]
                 async def callback(inter: discord.Interaction) -> None:
-                    if not await _is_tier2_or_admin(inter):
+                    if not await _may_review_signup(inter):
                         await inter.response.send_message(
                             "⛔ Insufficient permissions.", ephemeral=True
                         )

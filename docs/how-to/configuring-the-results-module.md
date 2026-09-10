@@ -38,15 +38,16 @@ This guide covers the results & standings module only. Setting the bot up, creat
 
 | Commands | You need |
 |---|---|
-| `/module enable results` and `/module disable results` | **Administrator** |
-| Everything under `/results` — configurations, amendments, syncs, reserves | **Manage Server** |
-| `/round results amend` | **Manage Server** |
-| `/division results-channel` and `/division standings-channel` | The bot's usual role. **Not** Manage Server |
-| `/division verdicts-channel` | **Manage Server** |
-| Reading the submission channel, pasting results into it, and every button in it | The bot's usual role |
+| `/module enable results` and `/module disable results` | The **league admin role** |
+| `/results config remove`, `/results amend review` and `/round results amend` | The **league admin role** |
+| Everything else under `/results` — configurations, amendments, syncs, reserves | The **interaction role** |
+| `/division results-channel`, `/division standings-channel` and `/division verdicts-channel` | The **interaction role** |
+| Reading the submission channel, pasting results into it, and every button in it | The **interaction role** |
 | Anything under `/images` | See the image guide |
 
-> **The people who submit results are not the people who configure them.** Everything under `/results` needs Manage Server, but the submission channel is opened to anyone holding the bot's usual role, and every button in it — including the one that applies your penalties and the one that closes the round — accepts them. Pick that role accordingly; it is the role that actually runs your race weekends.
+> **Three of these cannot be undone, and they ask for more.** Deleting a points configuration removes it whether or not a season stands on it. Approving a mid-season points amendment overwrites the season's points entire. Amending a round that has already gone final overwrites the classification your drivers raced — it does not keep the old one. Those three ask for the league admin role; the rest of `/results` asks for the interaction role, which is the role that actually runs your race weekends.
+>
+> The submission channel is opened to both roles, and every button in it — including the one that applies your penalties and the one that closes the round — accepts either. Pick the interaction role accordingly.
 
 ---
 

@@ -21,6 +21,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.clean_cog import MAX_DELETIONS, CleanCog  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
 
 BOT_USER = MagicMock(name="bot_user")
 SOMEONE_ELSE = MagicMock(name="a_person")
@@ -64,8 +65,8 @@ def _cog():
 
 
 async def _run(cog, interaction, count):
-    """The command body, past `channel_guard` and `admin_only`."""
-    body = CleanCog.clean_bot.callback.__wrapped__.__wrapped__
+    """The command body, past whatever tier guard it wears."""
+    body = undecorate(CleanCog.clean_bot)
     await body(cog, interaction, count)
 
 

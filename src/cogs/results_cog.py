@@ -18,7 +18,7 @@ from services.season_points_service import (
     ConfigNotAttachedError,
     SeasonNotInSetupError,
 )
-from utils.channel_guard import admin_only, channel_guard
+from utils.channel_guard import league_admin_only, league_manager_only
 
 log = logging.getLogger(__name__)
 
@@ -383,8 +383,7 @@ class ResultsCog(commands.Cog):
 
     @config_group.command(name="add", description="Add a named points configuration to this server.")
     @app_commands.describe(name="Unique config name, e.g. '100%'")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_add(self, interaction: discord.Interaction, name: str) -> None:
         if not await self._module_gate(interaction):
             return
@@ -407,9 +406,20 @@ class ResultsCog(commands.Cog):
 
     @config_group.command(name="remove", description="Remove a named points configuration.")
     @app_commands.describe(name="Config name to remove")
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def config_remove(self, interaction: discord.Interaction, name: str) -> None:
+        """Delete a named points configuration.
+
+        **A league admin's**, unlike the rest of `/results config`. The delete is
+        unconditional — nothing checks whether the configuration is attached to the standing
+        season — and there is no undo: rebuilding one means retyping every position of every
+        session type by hand. That places it squarely under the core specification's rule
+        that a command destroying what a league is built from, where nothing puts it back,
+        is a league admin's.
+
+        Adding, appending, detaching and editing a configuration stay a league manager's.
+        Each of those has another command that reverses it.
+        """
         if not await self._module_gate(interaction):
             return
         await interaction.response.defer(ephemeral=True)
@@ -435,8 +445,7 @@ class ResultsCog(commands.Cog):
         points="Points awarded",
     )
     @app_commands.choices(session=_SESSION_CHOICES)
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_session(
         self,
         interaction: discord.Interaction,
@@ -478,8 +487,7 @@ class ResultsCog(commands.Cog):
         points="Bonus points for fastest lap",
     )
     @app_commands.choices(session=_RACE_SESSION_CHOICES)
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_fl(
         self,
         interaction: discord.Interaction,
@@ -520,8 +528,7 @@ class ResultsCog(commands.Cog):
         limit="Highest eligible position (e.g. 10 → positions 1–10 eligible)",
     )
     @app_commands.choices(session=_RACE_SESSION_CHOICES)
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_fl_plimit(
         self,
         interaction: discord.Interaction,
@@ -557,8 +564,7 @@ class ResultsCog(commands.Cog):
 
     @config_group.command(name="append", description="Attach a server config to the current season in SETUP.")
     @app_commands.describe(name="Config name to attach")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_append(self, interaction: discord.Interaction, name: str) -> None:
         if not await self._module_gate(interaction):
             return
@@ -587,8 +593,7 @@ class ResultsCog(commands.Cog):
 
     @config_group.command(name="detach", description="Detach a config from the current season in SETUP.")
     @app_commands.describe(name="Config name to detach")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_detach(self, interaction: discord.Interaction, name: str) -> None:
         if not await self._module_gate(interaction):
             return
@@ -630,8 +635,7 @@ class ResultsCog(commands.Cog):
         session="Optional: filter to a specific session type",
     )
     @app_commands.choices(session=_SESSION_CHOICES)
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_view(
         self,
         interaction: discord.Interaction,
@@ -722,8 +726,7 @@ class ResultsCog(commands.Cog):
     )
     @app_commands.describe(name="Config name", session="Session type")
     @app_commands.choices(session=_SESSION_CHOICES)
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def bulk_config_session(
         self,
         interaction: discord.Interaction,
@@ -741,8 +744,7 @@ class ResultsCog(commands.Cog):
         description="Import a full points configuration from an XML payload (modal or file attachment).",
     )
     @app_commands.describe(name="Config name", file="Optional XML file attachment (skips modal)")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def config_xml_import(
         self,
         interaction: discord.Interaction,
@@ -794,8 +796,7 @@ class ResultsCog(commands.Cog):
     )
 
     @amend_group.command(name="toggle", description="Enable or disable amendment mode for the current season.")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def amend_toggle(self, interaction: discord.Interaction) -> None:
         if not await self._module_gate(interaction):
             return
@@ -843,8 +844,7 @@ class ResultsCog(commands.Cog):
                 )
 
     @amend_group.command(name="revert", description="Revert all modification store changes to the season points.")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def amend_revert(self, interaction: discord.Interaction) -> None:
         if not await self._module_gate(interaction):
             return
@@ -883,8 +883,7 @@ class ResultsCog(commands.Cog):
         points="Points to award",
     )
     @app_commands.choices(session=_SESSION_CHOICES)
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def amend_session(
         self,
         interaction: discord.Interaction,
@@ -929,8 +928,7 @@ class ResultsCog(commands.Cog):
         points="FL bonus points",
     )
     @app_commands.choices(session=_RACE_SESSION_CHOICES)
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def amend_fl(
         self,
         interaction: discord.Interaction,
@@ -972,8 +970,7 @@ class ResultsCog(commands.Cog):
         limit="Highest eligible position",
     )
     @app_commands.choices(session=_RACE_SESSION_CHOICES)
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def amend_fl_plimit(
         self,
         interaction: discord.Interaction,
@@ -1014,8 +1011,7 @@ class ResultsCog(commands.Cog):
     )
     @app_commands.describe(name="Config name", session="Session type")
     @app_commands.choices(session=_SESSION_CHOICES)
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def bulk_amend_session(
         self,
         interaction: discord.Interaction,
@@ -1029,9 +1025,22 @@ class ResultsCog(commands.Cog):
         )
 
     @amend_group.command(name="review", description="Review modification store changes and approve or reject.")
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def amend_review(self, interaction: discord.Interaction) -> None:
+        """Review the modification store and approve or reject it.
+
+        **A league admin's**, and the only command of `/results amend` that is. Approval
+        overwrites the season's points entire and nothing undoes it; everything else in the
+        group writes the modification store, which `/results amend revert` discards.
+
+        The tier is asked of the whole command rather than of the ✅ Approve button alone,
+        which is where it naturally belongs. The panel below is sent `ephemeral=True`, so
+        only the member who ran the command can see or press it — a button asking a higher
+        tier than the command that posted it would show a league manager a button they
+        cannot press, with no league admin able to see it either. Splitting the two would
+        need the panel made public, on the model of the season-approval question, and that
+        is a larger change than this one.
+        """
         if not await self._module_gate(interaction):
             return
         await interaction.response.defer(ephemeral=True)
@@ -1112,8 +1121,7 @@ class ResultsCog(commands.Cog):
 
     @reserves_group.command(name="toggle", description="Toggle reserve driver visibility in division standings.")
     @app_commands.describe(division="Division name")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def reserves_toggle(self, interaction: discord.Interaction, division: str) -> None:
         if not await self._module_gate(interaction):
             return
@@ -1178,8 +1186,7 @@ class ResultsCog(commands.Cog):
 
     @standings_group.command(name="sync", description="Force a standings repost for a division.")
     @app_commands.describe(division="Division name")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def standings_sync(self, interaction: discord.Interaction, division: str) -> None:
         if not await self._module_gate(interaction):
             return
@@ -1232,8 +1239,7 @@ class ResultsCog(commands.Cog):
 
     @rounds_group.command(name="sync", description="Force a results repost for all rounds in a division.")
     @app_commands.describe(division="Division name")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def rounds_sync(self, interaction: discord.Interaction, division: str) -> None:
         if not await self._module_gate(interaction):
             return

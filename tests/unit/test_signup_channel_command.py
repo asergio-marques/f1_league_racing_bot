@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.signup_cog import SignupCog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 5511
 INTERACTION_ROLE = 900
@@ -93,8 +94,8 @@ def _cog(db_path):
 
 
 async def _run(cog, interaction, channel):
-    """The command body, past `channel_guard` and `server_admin_only`."""
-    body = SignupCog.signup_channel.callback.__wrapped__.__wrapped__
+    """The command body, past whatever tier guard it wears."""
+    body = undecorate(SignupCog.signup_channel)
     await body(cog, interaction, channel)
 
 

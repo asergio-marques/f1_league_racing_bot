@@ -28,6 +28,7 @@ from cogs.season_cog import (  # noqa: E402
     SeasonCog,
     XmlRoundModal,
 )
+from tests.support.undecorate import undecorate  # noqa: E402
 
 
 def _interaction() -> MagicMock:
@@ -66,8 +67,8 @@ def _pending() -> PendingConfig:
 
 
 async def _run_command(name: str, interaction, **kwargs) -> None:
-    """The command body, past `channel_guard` and `admin_only`."""
-    body = getattr(SeasonCog, name).callback.__wrapped__.__wrapped__
+    """The command body, past whatever tier guard it wears."""
+    body = undecorate(getattr(SeasonCog, name))
     await body(MagicMock(), interaction, **kwargs)
 
 
@@ -277,7 +278,7 @@ def test_a_long_list_of_faults_is_capped():
 
 
 async def _run_round_add(interaction, cog, **kwargs):
-    body = SeasonCog.round_add.callback.__wrapped__.__wrapped__
+    body = undecorate(SeasonCog.round_add)
     await body(cog, interaction, **kwargs)
 
 

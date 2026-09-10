@@ -18,7 +18,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.channel_guard import admin_only, channel_guard
+from utils.channel_guard import league_admin_only
 
 log = logging.getLogger(__name__)
 
@@ -44,8 +44,7 @@ class CleanCog(commands.Cog):
     @app_commands.describe(
         count=f"How many of the bot's most recent messages to delete (1–{MAX_DELETIONS})."
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def clean_bot(
         self,
         interaction: discord.Interaction,

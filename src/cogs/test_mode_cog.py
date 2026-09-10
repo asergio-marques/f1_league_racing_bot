@@ -12,7 +12,9 @@ APScheduler triggers:
   /test-mode rsvp …            — set the RSVP status of fake drivers
   /test-mode backup …          — save the whole database, and put it back
 
-All commands are gated by @channel_guard (interaction role + channel).
+Every command here is a league admin's — the core specification places the whole of test
+mode at that tier, backup and restore no more than the rest — and is given in the
+interaction channel.
 Every command but toggle additionally requires test mode to be active. Toggle itself
 refuses to *enable* test mode while the server holds real drivers or its signup window
 is open, and to *disable* it while a running season holds fake drivers.
@@ -35,7 +37,7 @@ from services.test_mode_service import (
     build_review_summary,
 )
 from services import backup_service
-from utils.channel_guard import channel_guard, admin_only, server_admin_only
+from utils.channel_guard import league_admin_only
 from utils.message_builder import paginate_fenced
 
 log = logging.getLogger(__name__)
@@ -64,8 +66,7 @@ class TestModeCog(commands.Cog):
         name="toggle",
         description="Enable or disable test mode. State persists across bot restarts.",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def toggle(self, interaction: discord.Interaction) -> None:
         """Flip test mode, refusing to enable it while the server holds real drivers.
 
@@ -210,8 +211,7 @@ class TestModeCog(commands.Cog):
         name="nationality",
         description="Toggle whether mock drivers carry a nationality.",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def nationality(self, interaction: discord.Interaction) -> None:
         """The test-mode counterpart of /signup nationality.
 
@@ -257,8 +257,7 @@ class TestModeCog(commands.Cog):
         name="advance",
         description="Execute the next pending scheduled event (weather phase or result submission) immediately.",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def advance(self, interaction: discord.Interaction) -> None:
         # Check test mode is active before doing any heavy work
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
@@ -544,8 +543,7 @@ class TestModeCog(commands.Cog):
         name="review",
         description="Show season configuration and phase completion status.",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def review(self, interaction: discord.Interaction) -> None:
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
             interaction.guild_id
@@ -580,8 +578,7 @@ class TestModeCog(commands.Cog):
         user="The driver whose flag is being updated.",
         value="The new value for the former_driver flag.",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def set_former_driver(
         self,
         interaction: discord.Interaction,
@@ -672,8 +669,7 @@ class TestModeCog(commands.Cog):
         name="save",
         description="Save the current database and scheduler as a backup.",
     )
-    @channel_guard
-    @server_admin_only
+    @league_admin_only
     async def backup_save(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         if await self._refuse_outside_test_mode(interaction):
@@ -723,8 +719,7 @@ class TestModeCog(commands.Cog):
         name="lock",
         description="Lock or unlock the saved backup, so a save cannot overwrite it.",
     )
-    @channel_guard
-    @server_admin_only
+    @league_admin_only
     async def backup_lock(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         if await self._refuse_outside_test_mode(interaction):
@@ -753,8 +748,7 @@ class TestModeCog(commands.Cog):
         name="status",
         description="Show whether a backup exists, when it was taken, and if it is locked.",
     )
-    @channel_guard
-    @server_admin_only
+    @league_admin_only
     async def backup_status(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         if await self._refuse_outside_test_mode(interaction):
@@ -783,8 +777,7 @@ class TestModeCog(commands.Cog):
         name="restore",
         description="Replace the database with the saved backup. Needs a restart.",
     )
-    @channel_guard
-    @server_admin_only
+    @league_admin_only
     async def backup_restore(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         if await self._refuse_outside_test_mode(interaction):
@@ -844,8 +837,7 @@ class TestModeCog(commands.Cog):
         division="Name of the division.",
         nationality="Optional. A nationality (e.g. British), a country name (e.g. United Kingdom), or 'other'.",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def roster_add(
         self,
         interaction: discord.Interaction,
@@ -920,8 +912,7 @@ class TestModeCog(commands.Cog):
         name="add-bulk",
         description="Seat a whole roster from the generator's roster.csv.",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def roster_add_bulk(self, interaction: discord.Interaction) -> None:
         """Open the box a roster is pasted into.
 
@@ -948,8 +939,7 @@ class TestModeCog(commands.Cog):
     @app_commands.describe(
         user_id="Synthetic user ID of the fake driver (shown in /test-mode roster list or roster add).",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def roster_remove(
         self,
         interaction: discord.Interaction,
@@ -1004,8 +994,7 @@ class TestModeCog(commands.Cog):
         description="Show all fake drivers in a division (cheat sheet for result submission).",
     )
     @app_commands.describe(division="Name of the division.")
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def roster_list(
         self,
         interaction: discord.Interaction,
@@ -1070,8 +1059,7 @@ class TestModeCog(commands.Cog):
         description="Remove all fake drivers from a division.",
     )
     @app_commands.describe(division="Name of the division to clear.")
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def roster_clear(
         self,
         interaction: discord.Interaction,
@@ -1137,8 +1125,7 @@ class TestModeCog(commands.Cog):
     @app_commands.describe(
         division="Division name whose active RSVP round to update.",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def rsvp_set_status(
         self,
         interaction: discord.Interaction,

@@ -1,12 +1,13 @@
-"""InitCog — core server configuration: /bot-init and the three settings beside it.
+"""InitCog — core server configuration: /bot-init and the four settings beside it.
 
-Every command here is exempt from `channel_guard` and gated on MANAGE_GUILD instead.
-For `/bot-init` that is the original chicken-and-egg: no configuration exists to gate
-against. For the other three it is load-bearing in a different way — `channel_guard`
-admits a command only in the configured interaction channel and only to holders of the
-configured interaction role, so gating these on the settings they exist to repair would
-lock an administrator out of the exact failure they are for. A deleted interaction channel
-would otherwise be unrecoverable short of wiping the configuration.
+Every command here is exempt from the interaction-channel rule, and each accepts Discord's
+Administrator permission as well as the league admin role. For `/bot-init` that is the
+original chicken-and-egg: no configuration exists to gate against. For the other four it is
+load-bearing in a different way — the ordinary guards admit a command only in the configured
+interaction channel and only to holders of a configured role, so gating these on the very
+settings they exist to repair would lock a league out of the exact failure they are for. A
+deleted interaction channel, or a league admin role removed from the server, would otherwise
+be unrecoverable short of wiping the configuration.
 """
 
 from __future__ import annotations
@@ -18,13 +19,14 @@ from discord import app_commands
 from discord.ext import commands
 
 from models.server_config import ServerConfig
-from utils.channel_guard import admin_only
+from utils.channel_guard import bot_setup_only
 
 log = logging.getLogger(__name__)
 
 #: Named in every refusal, so an administrator meeting one is told where to go next.
 _SETTINGS_COMMANDS = (
-    "`/bot-log-channel`, `/bot-interaction-channel` and `/bot-interaction-role`"
+    "`/bot-log-channel`, `/bot-interaction-channel`, `/bot-interaction-role` "
+    "and `/bot-admin-role`"
 )
 
 
@@ -42,24 +44,31 @@ class InitCog(commands.Cog):
     )
     @app_commands.describe(
         interaction_role="The role allowed to use bot commands.",
+        league_admin_role="The role that governs the bot and may undo a league entire.",
         interaction_channel="The channel where bot commands are accepted.",
         log_channel="The channel where calculation logs are posted.",
     )
-    @admin_only
+    @bot_setup_only
     async def handle_bot_init(
         self,
         interaction: discord.Interaction,
         interaction_role: discord.Role,
+        league_admin_role: discord.Role,
         interaction_channel: discord.TextChannel,
         log_channel: discord.TextChannel,
     ) -> None:
         """Register the bot configuration for this server, once.
 
         There is no `force`: a second run is refused outright rather than overwriting.
-        Each of the three settings has a command of its own now, so the only thing an
+        Each of the four settings has a command of its own now, so the only thing an
         overwrite offered was the chance to reset the others by accident — which is
         precisely what it did to test mode. `/bot-reset full:True` removes the row for a
         server that genuinely means to start again.
+
+        The league admin role is asked for here rather than left to be set afterwards
+        because it is the tier that governs the bot: a server initialised without one has
+        nobody who may cancel its season, and the refusal every league admin command would
+        then give is a worse introduction than one more parameter.
         """
         server_id = interaction.guild_id
 
@@ -76,6 +85,7 @@ class InitCog(commands.Cog):
         cfg = ServerConfig(
             server_id=server_id,
             interaction_role_id=interaction_role.id,
+            league_admin_role_id=league_admin_role.id,
             interaction_channel_id=interaction_channel.id,
             log_channel_id=log_channel.id,
         )
@@ -176,7 +186,7 @@ class InitCog(commands.Cog):
         description="Change the channel the bot writes its calculation log to.",
     )
     @app_commands.describe(channel="The channel where calculation logs are posted.")
-    @admin_only
+    @bot_setup_only
     async def handle_log_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
@@ -194,7 +204,7 @@ class InitCog(commands.Cog):
         description="Change the channel the bot accepts commands in.",
     )
     @app_commands.describe(channel="The channel where bot commands are accepted.")
-    @admin_only
+    @bot_setup_only
     async def handle_interaction_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
@@ -212,7 +222,7 @@ class InitCog(commands.Cog):
         description="Change the role allowed to use bot commands.",
     )
     @app_commands.describe(role="The role allowed to use bot commands.")
-    @admin_only
+    @bot_setup_only
     async def handle_interaction_role(
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
@@ -222,5 +232,30 @@ class InitCog(commands.Cog):
             value=role.id,
             command="/bot-interaction-role",
             label="Interaction role",
+            mention=f"<@&{role.id}>",
+        )
+
+    @app_commands.command(
+        name="bot-admin-role",
+        description="Change the role that governs the bot and may undo a league entire.",
+    )
+    @app_commands.describe(role="The role holding the league admin tier.")
+    @bot_setup_only
+    async def handle_admin_role(
+        self, interaction: discord.Interaction, role: discord.Role
+    ) -> None:
+        """Set the league admin role.
+
+        The one command that can be reached without it. A league configured before the role
+        existed holds none, and every league admin command is refused until this has run —
+        so it is gated on Discord's Administrator permission alongside the role, as its four
+        siblings are, and runs from any channel for the same reason they do.
+        """
+        await self._set_one(
+            interaction,
+            column="league_admin_role_id",
+            value=role.id,
+            command="/bot-admin-role",
+            label="League admin role",
             mention=f"<@&{role.id}>",
         )

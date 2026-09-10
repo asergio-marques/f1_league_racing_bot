@@ -18,6 +18,7 @@ import discord
 from db.database import get_connection
 from models.points_config import SessionType
 from services.penalty_service import StagedPenalty, validate_penalty_input, _time_to_ms
+from utils.channel_guard import is_league_manager
 
 log = logging.getLogger(__name__)
 
@@ -110,14 +111,22 @@ async def _is_league_manager(
     db_path: str,
     bot: Any,
 ) -> bool:
-    """Return True if the interacting member has the league-manager role."""
+    """Return True if the interacting member holds the league manager tier.
+
+    This asked for the interaction role and nothing else, so a league admin who did not also
+    hold that role was refused all thirteen buttons of the penalty and appeals reviews — the
+    same defect the commands had (issue #116), on the half of the bot that is entirely
+    button-driven and where it was therefore never noticed.
+
+    Asking `is_league_manager` is what makes the buttons and the commands agree: the higher
+    tier carries the lower, so the admin role passes here without anybody needing both.
+    """
     if not isinstance(interaction.user, discord.Member):
         return False
     config = await bot.config_service.get_server_config(interaction.guild_id)
     if config is None:
         return False
-    role_ids = {r.id for r in interaction.user.roles}
-    return config.interaction_role_id in role_ids
+    return is_league_manager(config, interaction.user)
 
 
 async def _require_lm(

@@ -27,6 +27,7 @@ from cogs import test_mode_cog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.config_service import ConfigService  # noqa: E402
 from services.signup_module_service import SignupModuleService  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 7272
 
@@ -66,8 +67,8 @@ class _Interaction:
 
 
 def _unwrap(cmd):
-    """The innermost callback, bypassing channel_guard and admin_only."""
-    return cmd.callback.__wrapped__.__wrapped__
+    """The innermost callback, bypassing whatever tier guard the command wears."""
+    return undecorate(cmd)
 
 
 async def _toggle(cog) -> _Interaction:

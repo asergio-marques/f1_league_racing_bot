@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.channel_guard import channel_guard, admin_only
+from utils.channel_guard import league_admin_only, league_manager_only
 
 log = logging.getLogger(__name__)
 
@@ -37,8 +37,7 @@ class TeamCog(commands.Cog):
         name="Name of the new team (max 50 chars).",
         role="Discord role to associate with this team.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def team_add(
         self,
         interaction: discord.Interaction,
@@ -93,8 +92,7 @@ class TeamCog(commands.Cog):
         description="Remove a team from the server list. Also applies to the current SETUP season if one is active.",
     )
     @app_commands.describe(name="Exact team name to remove.")
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def team_remove(
         self,
         interaction: discord.Interaction,
@@ -159,8 +157,7 @@ class TeamCog(commands.Cog):
         current_name="Exact current name of the team.",
         new_name="Replacement name (max 50 chars).",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def team_rename(
         self,
         interaction: discord.Interaction,
@@ -212,8 +209,7 @@ class TeamCog(commands.Cog):
         name="list",
         description="List all teams in the server list with their mapped roles.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def team_list(
         self,
         interaction: discord.Interaction,
@@ -280,8 +276,7 @@ class TeamCog(commands.Cog):
         division="Division name or tier number. Omit to show all divisions.",
         public="Post the lineup visibly in the channel (default: only visible to you).",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def team_lineup(
         self,
         interaction: discord.Interaction,
@@ -400,8 +395,7 @@ class TeamCog(commands.Cog):
     @app_commands.describe(
         role="Role to grant to Reserve drivers. Omit (or leave blank) to clear the current mapping.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def team_reserve_role(
         self,
         interaction: discord.Interaction,

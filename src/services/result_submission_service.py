@@ -5,6 +5,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 import discord
 
@@ -14,6 +15,7 @@ from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
 from utils import results_formatter
 from utils.batch_notice import batch_notice
+from utils.channel_guard import is_league_manager
 from utils.tyre_compound import (
     canonicalise_tyre,
     records_no_tyre,
@@ -74,11 +76,15 @@ async def create_submission_channel(
     *,
     bot_cmd_channel_id: int | None = None,
     admin_role: discord.Role | None = None,
+    league_admin_role: discord.Role | None = None,
 ) -> discord.TextChannel:
     """Create a transient text channel for result submission.
 
-    The channel is named S{season_number}-{slug}-R{round_number}-results, placed
-    in the bot command channel's category, and restricted to tier-2 admins only.
+    The channel is named S{season_number}-{slug}-R{round_number}-results, placed in the bot
+    command channel's category, and opened to both tiers of the league — the interaction
+    role and the league admin role. Every button of the penalty and appeals reviews lives in
+    here, so a league admin who does not also hold the interaction role would otherwise be
+    shut out of a round they are entitled to judge (issue #116).
     """
     slug = _make_slug(division_name)
     name = f"S{season_number}-{slug}-R{round_number}-results"
@@ -90,7 +96,7 @@ async def create_submission_channel(
         if cmd_channel is not None:
             category = getattr(cmd_channel, "category", None)
 
-    # Deny @everyone; grant the bot itself and the tier-2 admin role
+    # Deny @everyone; grant the bot itself and both of the league's tiers
     overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
         guild.default_role: discord.PermissionOverwrite(read_messages=False),
     }
@@ -99,10 +105,11 @@ async def create_submission_channel(
         overwrites[bot_member] = discord.PermissionOverwrite(
             read_messages=True, send_messages=True, manage_messages=True
         )
-    if admin_role is not None:
-        overwrites[admin_role] = discord.PermissionOverwrite(
-            read_messages=True, send_messages=True
-        )
+    for role in (admin_role, league_admin_role):
+        if role is not None:
+            overwrites[role] = discord.PermissionOverwrite(
+                read_messages=True, send_messages=True
+            )
 
     channel = await guild.create_text_channel(
         name=name,
@@ -1032,7 +1039,15 @@ async def amend_session_result(
         server_id_for_profile: int | None = season_row["server_id"] if season_row else None
         season_id: int | None = season_row["season_id"] if season_row else None
 
-        # Mark all current rows as superseded in new tables
+        # **Nothing is superseded here, and nothing keeps the classification being replaced.**
+        # The header below is updated in place and the driver rows are deleted outright a few
+        # lines down, then re-inserted from the amendment. A comment here claimed the old rows
+        # were "marked as superseded"; they never were, and no such row survives the call.
+        #
+        # That is why `/round results amend` is a league admin's command rather than a league
+        # manager's (issue #116): amending a FINAL round overwrites what the league raced, and
+        # no command puts the previous classification back.
+        #
         # Update the session_results header
         await db.execute(
             """
@@ -1862,11 +1877,22 @@ def _format_time_ms(total_ms: int) -> str:
 # ---------------------------------------------------------------------------
 
 class _ConfigSelectView(discord.ui.View):
-    """Button view for selecting an attached points config."""
+    """Button view for selecting an attached points config.
 
-    def __init__(self, config_names: list[str]) -> None:
+    **A league manager's, and it asked nothing at all until 2026-09-10.** This view is
+    posted publicly into the submission and amendment channels — never ephemerally — from
+    three call sites, so every member who could read one of those channels could decide
+    which points configuration scored the session, and the first press won the race against
+    whoever was actually running the round.
+
+    Choosing how a session is scored is running the league, so it asks the league manager
+    tier, the same as the commands that attach a configuration in the first place.
+    """
+
+    def __init__(self, config_names: list[str], config: Any | None = None) -> None:
         super().__init__(timeout=None)
         self.selected: str | None = None
+        self._config = config
         for name in config_names:
             button = discord.ui.Button(
                 label=name[:80],
@@ -1878,12 +1904,28 @@ class _ConfigSelectView(discord.ui.View):
                 interaction: discord.Interaction,
                 _name: str = name,
             ) -> None:
+                if not self._may_choose(interaction):
+                    await interaction.response.send_message(
+                        "⛔ Only league managers can choose the points configuration.",
+                        ephemeral=True,
+                    )
+                    return
                 self.selected = _name
                 self.stop()
                 await interaction.response.defer()
 
             button.callback = _cb
             self.add_item(button)
+
+    def _may_choose(self, interaction: discord.Interaction) -> bool:
+        """Whether the presser holds the league manager tier.
+
+        Refuses when the server configuration could not be read: a view that cannot tell who
+        is pressing must not guess in the permissive direction.
+        """
+        if self._config is None or not isinstance(interaction.user, discord.Member):
+            return False
+        return is_league_manager(self._config, interaction.user)
 
 
 # ---------------------------------------------------------------------------
@@ -2434,14 +2476,17 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # ------------------------------------------------------------------
     # 5. Create submission channel
     # ------------------------------------------------------------------
-    # Look up tier-2 admin role and bot-command channel for channel setup
+    # Look up both of the league's roles and the bot-command channel for channel setup
     server_cfg = await bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
     admin_role: discord.Role | None = None
+    league_admin_role: discord.Role | None = None
     bot_cmd_channel_id: int | None = None
     if server_cfg is not None:
         bot_cmd_channel_id = server_cfg.interaction_channel_id
         if server_cfg.interaction_role_id:
             admin_role = guild.get_role(server_cfg.interaction_role_id)
+        if server_cfg.league_admin_role_id:
+            league_admin_role = guild.get_role(server_cfg.league_admin_role_id)
 
     try:
         sub_channel = await create_submission_channel(
@@ -2453,6 +2498,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             db_path,
             bot_cmd_channel_id=bot_cmd_channel_id,
             admin_role=admin_role,
+            league_admin_role=league_admin_role,
         )
     except discord.HTTPException:
         log.exception(
@@ -2600,7 +2646,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                     f"✅ Auto-selected config **{selected_config}** (only one attached)."
                 )
             elif len(config_names) > 1:
-                view = _ConfigSelectView(config_names)
+                view = _ConfigSelectView(config_names, server_cfg)
                 config_msg = await sub_channel.send(
                     "🔧 Select the points configuration for this session:",
                     view=view,
@@ -2795,6 +2841,9 @@ async def _resubmit_collection_task(
     round_number: int = ctx["round_number"]
     round_format = RoundFormat(ctx["round_format"])
 
+    # Read for `_ConfigSelectView`, which asks the league manager tier of whoever presses it.
+    server_cfg = await bot.config_service.get_server_config(server_id)
+
     guild = bot.get_guild(server_id)
     if guild is None:
         log.error("_resubmit_collection_task: guild %s not found for round %s", server_id, round_id)
@@ -2894,7 +2943,7 @@ async def _resubmit_collection_task(
                 selected_config = config_names[0]
                 await sub_channel.send(f"✅ Auto-selected config **{selected_config}**.")
             elif len(config_names) > 1:
-                view = _ConfigSelectView(config_names)
+                view = _ConfigSelectView(config_names, server_cfg)
                 config_msg = await sub_channel.send("🔧 Select the points configuration for this session:", view=view)
                 await view.wait()
                 selected_config = view.selected

@@ -216,7 +216,7 @@ Building a season to test one thing is slow, and testing the next thing usually 
 /test-mode backup restore    put the saved one back
 ```
 
-**These run only in test mode, and only for a server administrator.** They copy and replace `bot.db` wholesale, which is not something to do to a league that is running — and test mode already refuses to switch on while a real driver sits in a live season, so a server that can run them has nothing real to lose.
+**These run only in test mode, and only for a league admin.** They copy and replace `bot.db` wholesale, which is not something to do to a league that is running — and test mode already refuses to switch on while a real driver sits in a live season, so a server that can run them has nothing real to lose.
 
 **A restore needs a restart.** The bot holds its databases open the whole time it runs, so the files cannot be swapped underneath it. `/test-mode backup restore` checks the backup, keeps a copy of what is live, and stages the swap; the bot picks it up the next time it starts. Under a service that happens on its own — stop it and it comes back restored. From a terminal, stop it and run it again.
 
@@ -247,6 +247,6 @@ Building a season to test one thing is slow, and testing the next thing usually 
 
 ## Access
 
-Every command in this document requires the interaction role, the configured command channel, and Discord's **Manage Server** permission — the same as the rest of the administrative surface. Full parameter tables are in the [Test Mode Commands](../../README.md#test-mode-commands) section of the README.
+Every command in this document is a **league admin's** — it requires the league admin role and the configured command channel. The whole of test mode sits at that tier, `/test-mode backup` no more than the rest: switching test mode on rewrites what the bot believes about a server, and a restore replaces everything it holds. Full parameter tables are in the [Test Mode Commands](../../README.md#test-mode-commands) section of the README.
 
-The `/test-mode backup` commands are the exception: they ask for Discord's **Administrator** permission, since a restore replaces everything the bot holds.
+The league admin role carries the interaction role's tier within it, so a league admin does not need to be given the interaction role as well. Discord's Administrator permission is not a way in — it reaches only `/bot-init` and the four commands that change one setting each.

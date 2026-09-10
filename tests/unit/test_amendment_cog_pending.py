@@ -9,6 +9,7 @@ import pytest
 
 from cogs.season_cog import SeasonCog, PendingConfig, PendingDivision
 from models.round import RoundFormat
+from tests.support.undecorate import undecorate  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +93,7 @@ async def test_pending_amend_track_change() -> None:
     mock_cm.__aexit__ = AsyncMock(return_value=False)
 
     with patch("cogs.season_cog.get_connection", return_value=mock_cm):
-        await cog.round_amend.callback.__wrapped__.__wrapped__(cog, interaction,
+        await undecorate(cog.round_amend)(cog, interaction,
             division_name="Pro",
             round_number=1,
             track="Australia",
@@ -115,7 +116,7 @@ async def test_pending_amend_scheduled_at_change() -> None:
     interaction = _make_interaction()
 
     new_dt = "2026-06-15T18:00:00"
-    await cog.round_amend.callback.__wrapped__.__wrapped__(cog, interaction,
+    await undecorate(cog.round_amend)(cog, interaction,
         division_name="Pro",
         round_number=2,
         scheduled_at=new_dt,
@@ -136,7 +137,7 @@ async def test_pending_amend_format_to_mystery_clears_track() -> None:
     interaction = _make_interaction()
 
     # Round 1 currently has track "United Kingdom"; change format to MYSTERY
-    await cog.round_amend.callback.__wrapped__.__wrapped__(cog, interaction,
+    await undecorate(cog.round_amend)(cog, interaction,
         division_name="Pro",
         round_number=1,
         format="MYSTERY",
@@ -156,7 +157,7 @@ async def test_pending_amend_format_away_from_mystery_no_track_empty_stored_reje
     interaction = _make_interaction()
 
     # Round 3 is MYSTERY with track_name=None
-    await cog.round_amend.callback.__wrapped__.__wrapped__(cog, interaction,
+    await undecorate(cog.round_amend)(cog, interaction,
         division_name="Pro",
         round_number=3,
         format="NORMAL",
@@ -185,7 +186,7 @@ async def test_pending_amend_format_away_from_mystery_preserves_existing_track()
     cog, _ = _make_cog(pending)
     interaction = _make_interaction()
 
-    await cog.round_amend.callback.__wrapped__.__wrapped__(cog, interaction,
+    await undecorate(cog.round_amend)(cog, interaction,
         division_name="Pro",
         round_number=3,
         format="NORMAL",
@@ -210,7 +211,7 @@ async def test_pending_amend_division_not_found() -> None:
     cog, _ = _make_cog(pending)
     interaction = _make_interaction()
 
-    await cog.round_amend.callback.__wrapped__.__wrapped__(cog, interaction,
+    await undecorate(cog.round_amend)(cog, interaction,
         division_name="Nonexistent",
         round_number=1,
         track="Australia",
@@ -228,7 +229,7 @@ async def test_pending_amend_round_not_found() -> None:
     cog, _ = _make_cog(pending)
     interaction = _make_interaction()
 
-    await cog.round_amend.callback.__wrapped__.__wrapped__(cog, interaction,
+    await undecorate(cog.round_amend)(cog, interaction,
         division_name="Pro",
         round_number=99,
         track="Australia",
@@ -246,7 +247,7 @@ async def test_pending_amend_no_fields_supplied() -> None:
     cog, _ = _make_cog(pending)
     interaction = _make_interaction()
 
-    await cog.round_amend.callback.__wrapped__.__wrapped__(cog, interaction,
+    await undecorate(cog.round_amend)(cog, interaction,
         division_name="Pro",
         round_number=1,
         # all defaults (empty strings)
@@ -262,7 +263,7 @@ async def test_no_pending_cfg_falls_through_to_db_path() -> None:
     cog, bot = _make_cog(pending_cfg=None)
     interaction = _make_interaction()
 
-    await cog.round_amend.callback.__wrapped__.__wrapped__(cog, interaction,
+    await undecorate(cog.round_amend)(cog, interaction,
         division_name="Pro",
         round_number=1,
         track="Australia",

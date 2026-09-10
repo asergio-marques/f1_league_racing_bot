@@ -10,7 +10,7 @@ from discord.ext import commands
 
 from db.database import get_connection
 import services.track_service as track_service
-from utils.channel_guard import channel_guard, admin_only
+from utils.channel_guard import league_manager_only
 
 log = logging.getLogger(__name__)
 
@@ -36,8 +36,7 @@ class TrackCog(commands.Cog):
         name="list",
         description="List all available tracks.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def track_list(
         self,
         interaction: discord.Interaction,

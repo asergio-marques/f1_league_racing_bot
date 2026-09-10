@@ -5,8 +5,8 @@
 tests run the callbacks against a migrated database with Discord stubbed — no gateway, no
 server, no running bot.
 
-The guards are unwrapped as the other cog suites unwrap them: `channel_guard` and
-`admin_only` have their own cover, and a stubbed interaction is not a `discord.Member`.
+The guards are unwrapped as the other cog suites unwrap them: the tier guards have their
+own cover, and a stubbed interaction is not a `discord.Member`.
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from cogs import test_mode_cog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.config_service import ConfigService  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 6161
 DIVISION = "Division 1"
@@ -76,8 +77,8 @@ class _Interaction:
 
 
 def _unwrap(cmd):
-    """The innermost callback, bypassing channel_guard and admin_only."""
-    return cmd.callback.__wrapped__.__wrapped__
+    """The innermost callback, bypassing whatever tier guard the command wears."""
+    return undecorate(cmd)
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────

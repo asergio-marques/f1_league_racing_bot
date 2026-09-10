@@ -1,9 +1,16 @@
 """ResetCog — /bot-reset command.
 
-This command is intentionally exempt from channel_guard (chicken-and-egg:
-after a full reset the server_configs row is gone, so the configured channel
-no longer exists).  It requires MANAGE_GUILD permission instead, matching the
-/bot-init pattern.
+A league admin's command, given in the interaction channel like every other.
+
+It used to be exempt from the channel rule on the reasoning that a full reset deletes the
+`server_configs` row, so the configured channel no longer exists once it has run. That is
+true and beside the point: the guard reads the configuration *before* the command runs, and
+the row is still there at that moment. What the exemption actually bought was a destructive
+wipe of a league's entire history reachable from any channel on the server.
+
+It does not share `/bot-init`'s footing either. The setup commands run from anywhere because
+they *repair* the settings the guards read; a reset destroys them, which is the opposite
+errand. A league that has reset itself runs `/bot-init` again, and that command is exempt.
 """
 
 from __future__ import annotations
@@ -15,7 +22,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from services import reset_service
-from utils.channel_guard import admin_only
+from utils.channel_guard import league_admin_only
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +49,7 @@ class ResetCog(commands.Cog):
             "(you must run /bot-init again afterwards)."
         ),
     )
-    @admin_only
+    @league_admin_only
     async def handle_bot_reset(
         self,
         interaction: discord.Interaction,

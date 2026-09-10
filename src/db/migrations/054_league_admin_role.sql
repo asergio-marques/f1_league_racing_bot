@@ -1,0 +1,35 @@
+-- Migration 054: the league admin role — the bot's fourth setting.
+--
+-- Until now the bot held three settings, and authority above the interaction role was read
+-- off Discord's own permissions: `manage_guild` for most commands and `administrator` for a
+-- few. That conflated two different things. A Discord permission is a property of the
+-- *server* — it carries the power to delete channels, ban members and rewrite roles, and it
+-- is given to people for reasons that have nothing to do with a racing league. A tier is a
+-- property of the *league*. Someone can run a championship without being trusted to
+-- restructure the Discord server, and someone can administer the Discord server without
+-- being anywhere near the championship.
+--
+-- So the higher tier becomes a role the league configures, exactly as the interaction role
+-- already is, and Discord's permissions stop being a route to any command of the bot.
+--
+-- ── Why the column is nullable ──
+--
+-- Every server that already exists has no such role, and there is no honest value to invent
+-- for them: guessing at one from `manage_guild` holders would silently hand league-admin
+-- authority to whoever happened to hold a Discord permission, which is the very conflation
+-- being removed. NULL therefore means "not yet configured", and a league admin command is
+-- refused while it stands — naming `/bot-admin-role`, which an administrator of the server
+-- may run from any channel to settle it.
+--
+-- That refusal is deliberate rather than a fallback to the old behaviour. A league that has
+-- not chosen its admin role has not decided who may cancel its season, and the bot should
+-- say so once rather than keep acting on a permission the league never picked.
+--
+-- The five commands that set the bot up — `/bot-init` and the four single-setting commands,
+-- of which `/bot-admin-role` is now one — accept the Administrator permission as well as the
+-- role, and they alone do. They are what repairs the settings the other commands depend
+-- upon: a role deleted from the server, or a league that has not set one yet, would
+-- otherwise be unrepairable, which is the same reasoning that already exempts them from the
+-- interaction-channel rule.
+
+ALTER TABLE server_configs ADD COLUMN league_admin_role_id INTEGER;

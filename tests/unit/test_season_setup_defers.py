@@ -26,7 +26,29 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from cogs.season_cog import SeasonCog, PendingConfig, PendingDivision
+from models.server_config import ServerConfig
 from models.round import RoundFormat
+
+
+CHANNEL = 111
+MANAGER_ROLE = 222
+
+
+def _role() -> MagicMock:
+    role = MagicMock()
+    role.id = MANAGER_ROLE
+    role.name = "Stewards"
+    return role
+
+
+def _config() -> ServerConfig:
+    return ServerConfig(
+        server_id=1,
+        interaction_role_id=MANAGER_ROLE,
+        league_admin_role_id=444,
+        interaction_channel_id=CHANNEL,
+        log_channel_id=333,
+    )
 
 
 def _interaction() -> MagicMock:
@@ -35,12 +57,16 @@ def _interaction() -> MagicMock:
 
     interaction = MagicMock()
     interaction.guild_id = 1
-    # admin_only rejects anything that is not a Member holding Manage Server, so the
-    # user has to satisfy both for the command body to be reached at all.
+    interaction.channel_id = CHANNEL
+    # The tier guard admits a Member holding the interaction role, in the interaction
+    # channel, and nothing else — so the user has to satisfy both for the command body to
+    # be reached at all.
     interaction.user = MagicMock(spec=discord.Member)
     interaction.user.id = 42
     interaction.user.display_name = "Manager"
-    interaction.user.guild_permissions.manage_guild = True
+    interaction.user.roles = [_role()]
+    interaction.user.guild_permissions.administrator = False
+    interaction.guild.get_role = lambda role_id: _role() if role_id == MANAGER_ROLE else None
     interaction.response.defer = AsyncMock()
     interaction.response.send_message = AsyncMock(
         side_effect=AssertionError(
@@ -54,9 +80,10 @@ def _interaction() -> MagicMock:
 def _bot() -> MagicMock:
     bot = MagicMock()
     bot.db_path = ":memory:"
-    # No ServerConfig: channel_guard and admin_only both pass an uninitialised
-    # server straight through, which is what lets the command body be reached here.
-    bot.config_service.get_server_config = AsyncMock(return_value=None)
+    # A configured server. An uninitialised one used to be passed straight through by both
+    # guards, which is how these tests once reached the command body without one; the tier
+    # guards refuse it instead, there being no channel to check and no role to hold.
+    bot.config_service.get_server_config = AsyncMock(return_value=_config())
     bot.season_service.get_active_season = AsyncMock(return_value=None)
     bot.season_service.get_setup_season = AsyncMock(return_value=None)
     bot.season_service.save_pending_snapshot = AsyncMock(return_value=(42, 1))

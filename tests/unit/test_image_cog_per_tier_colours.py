@@ -1,6 +1,6 @@
 """The two per-tier colour commands (051).
 
-The commands themselves are wrapped by `@channel_guard` and `@admin_only` and cannot be
+The commands themselves are wrapped by `@league_manager_only` and cannot be
 invoked without a gateway, so — as in `test_image_cog_asset_directories` — the shared body
 is called unbound against a `MagicMock(spec=ImageCog)`. What is asserted is what a manager
 would see and what was stored, which is all the command decides.

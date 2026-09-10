@@ -18,13 +18,14 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.image_cog import ImageCog, PortraitTimeConfirm, PortraitTimeModal  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 4242
 
 
 def _unwrap(command):
-    """Past @channel_guard and @admin_only to the body."""
-    return command.callback.__wrapped__.__wrapped__
+    """Past whatever tier guard the command wears, to the body."""
+    return undecorate(command)
 
 
 def _interaction():
