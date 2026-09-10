@@ -994,17 +994,19 @@ async def test_the_review_offers_only_the_approve_button():
 
 
 def test_a_league_manager_may_run_the_review():
-    """`admin_only` is withdrawn from the command; approving is the narrower right."""
-    import inspect
+    """Reading what a season is configured to be is not an administrative act.
 
+    Approving it is the narrower right, and lives on the button rather than the command —
+    so the review sits at the league manager tier while the button asks for more.
+
+    Asserted through the tier the guard records rather than by reading the decorator names
+    out of the source: the names have already changed once, and a test that greps for them
+    reports a rename as a permission change.
+    """
     from cogs.season_cog import SeasonCog
+    from utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE
 
-    source = inspect.getsource(SeasonCog)
-    block = source[: source.index("async def season_review")]
-    decorators = block[block.rindex("@season.command") :]
-
-    assert "@channel_guard" in decorators
-    assert "@admin_only" not in decorators
+    assert getattr(SeasonCog.season_review.callback, TIER_ATTRIBUTE) == LEAGUE_MANAGER
 
 
 def test_the_approve_command_is_withdrawn():

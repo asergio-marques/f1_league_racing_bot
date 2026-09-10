@@ -42,7 +42,7 @@ import services.track_service as track_service
 from services.season_service import SeasonImmutableError
 from utils.autocomplete import bounded_autocomplete
 from utils.batch_notice import batch_notice
-from utils.channel_guard import channel_guard, admin_only
+from utils.channel_guard import league_admin_only, league_manager_only
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from utils.output_router import _chunk_message
 from utils.round_import import (
@@ -458,8 +458,7 @@ class SeasonCog(commands.Cog):
     @app_commands.describe(
         game_edition="Game edition year (e.g. 25 for F1 25). Required.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def season_setup(
         self,
         interaction: discord.Interaction,
@@ -1439,7 +1438,7 @@ class SeasonCog(commands.Cog):
     # `admin_only` is deliberately absent (2026-09-07). A league manager holding only
     # the interaction role may review a season: the report is what the review is for.
     # Approving it is the narrower right, and `_ApproveView` is where that is enforced.
-    @channel_guard
+    @league_manager_only
     async def season_review(self, interaction: discord.Interaction) -> None:
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
@@ -1926,7 +1925,7 @@ class SeasonCog(commands.Cog):
         name="status",
         description="View a summary of the active season.",
     )
-    @channel_guard
+    @league_manager_only
     async def season_status(self, interaction: discord.Interaction) -> None:
         season = await self.bot.season_service.get_active_season(interaction.guild_id)
         if season is None:
@@ -1973,8 +1972,7 @@ class SeasonCog(commands.Cog):
         description="Cancel and delete the active season (server admin only, irreversible).",
     )
     @app_commands.describe(confirm='Type "CONFIRM" to proceed with season cancellation.')
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def season_cancel(
         self,
         interaction: discord.Interaction,
@@ -2063,8 +2061,7 @@ class SeasonCog(commands.Cog):
         name="complete",
         description="Manually mark the current season as complete (requires all rounds finalized).",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def season_complete(
         self,
         interaction: discord.Interaction,
@@ -2143,8 +2140,7 @@ class SeasonCog(commands.Cog):
         role="The Discord role to mention for this division",
         tier="Tier number for this division (1 = top tier, must be sequential and unique)",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_add(
         self,
         interaction: discord.Interaction,
@@ -2220,8 +2216,7 @@ class SeasonCog(commands.Cog):
         day_offset="Days to shift all round datetimes (can be negative)",
         hour_offset="Hours to shift all round datetimes (can be negative, decimals OK)",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_duplicate(
         self,
         interaction: discord.Interaction,
@@ -2339,8 +2334,7 @@ class SeasonCog(commands.Cog):
         description="Remove a division and all its rounds from pending setup.",
     )
     @app_commands.describe(name="Name of the division to delete")
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def division_delete(
         self,
         interaction: discord.Interaction,
@@ -2389,8 +2383,7 @@ class SeasonCog(commands.Cog):
         current_name="Current name of the division",
         new_name="New name for the division",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_rename(
         self,
         interaction: discord.Interaction,
@@ -2453,8 +2446,7 @@ class SeasonCog(commands.Cog):
         tier="New tier number (optional, must be unique within this season)",
         role="New Discord role (optional)",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_amend(
         self,
         interaction: discord.Interaction,
@@ -2574,8 +2566,7 @@ class SeasonCog(commands.Cog):
         name="Name of the division to cancel",
         confirm='Type "CONFIRM" to proceed.',
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def division_cancel(
         self,
         interaction: discord.Interaction,
@@ -2786,7 +2777,7 @@ class SeasonCog(commands.Cog):
         description="Set the weather forecast channel for a division.",
     )
     @app_commands.describe(name="Division name", channel="Weather forecast channel")
-    @channel_guard
+    @league_manager_only
     async def division_weather_channel(
         self,
         interaction: discord.Interaction,
@@ -2805,7 +2796,7 @@ class SeasonCog(commands.Cog):
         description="Set the results posting channel for a division.",
     )
     @app_commands.describe(name="Division name", channel="Results channel")
-    @channel_guard
+    @league_manager_only
     async def division_results_channel(
         self,
         interaction: discord.Interaction,
@@ -2824,7 +2815,7 @@ class SeasonCog(commands.Cog):
         description="Set the standings posting channel for a division.",
     )
     @app_commands.describe(name="Division name", channel="Standings channel")
-    @channel_guard
+    @league_manager_only
     async def division_standings_channel(
         self,
         interaction: discord.Interaction,
@@ -2843,8 +2834,7 @@ class SeasonCog(commands.Cog):
         description="Set the verdicts (penalty announcement) channel for a division.",
     )
     @app_commands.describe(name="Division name", channel="Verdicts announcement channel")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_verdicts_channel(
         self,
         interaction: discord.Interaction,
@@ -2930,8 +2920,7 @@ class SeasonCog(commands.Cog):
         description="Set the RSVP notice channel for a division (attendance module).",
     )
     @app_commands.describe(name="Division name", channel="RSVP notice channel")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_rsvp_channel(
         self,
         interaction: discord.Interaction,
@@ -3018,8 +3007,7 @@ class SeasonCog(commands.Cog):
         description="Set the attendance logging channel for a division (attendance module).",
     )
     @app_commands.describe(name="Division name", channel="Attendance logging channel")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_attendance_channel(
         self,
         interaction: discord.Interaction,
@@ -3106,8 +3094,7 @@ class SeasonCog(commands.Cog):
         description="Set the lineup posting channel for a division (signup module).",
     )
     @app_commands.describe(name="Division name", channel="Lineup channel")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_lineup_channel(
         self,
         interaction: discord.Interaction,
@@ -3172,8 +3159,7 @@ class SeasonCog(commands.Cog):
         description="Set the calendar posting channel for a division.",
     )
     @app_commands.describe(name="Division name", channel="Calendar channel")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_calendar_channel(
         self,
         interaction: discord.Interaction,
@@ -3238,8 +3224,7 @@ class SeasonCog(commands.Cog):
         description="Redraw a division's calendar and replace the posted message.",
     )
     @app_commands.describe(name="Division name")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def division_calendar_sync(
         self, interaction: discord.Interaction, name: str
     ) -> None:
@@ -3339,8 +3324,7 @@ class SeasonCog(commands.Cog):
         scheduled_at="Race date/time in ISO format (YYYY-MM-DDTHH:MM:SS UTC)",
         track="Track ID or name (e.g. 27 or United Kingdom). Leave blank for Mystery rounds.",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def round_add(
         self,
         interaction: discord.Interaction,
@@ -3490,8 +3474,7 @@ class SeasonCog(commands.Cog):
         description="Add many rounds to one division from a pasted list (setup only).",
     )
     @app_commands.describe(division_name="Division these rounds belong to")
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def round_add_bulk(
         self, interaction: discord.Interaction, division_name: str
     ) -> None:
@@ -3507,8 +3490,7 @@ class SeasonCog(commands.Cog):
         name="add-xml",
         description="Add rounds to one or more divisions from XML (setup only).",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def round_add_xml(self, interaction: discord.Interaction) -> None:
         """Open the XML import modal.
 
@@ -3554,8 +3536,7 @@ class SeasonCog(commands.Cog):
         scheduled_at="New race datetime in ISO format YYYY-MM-DDTHH:MM:SS (leave blank to keep current)",
         format="New format: NORMAL, SPRINT, MYSTERY, or ENDURANCE (leave blank to keep current)",
     )
-    @channel_guard
-    @admin_only
+    @league_manager_only
     async def round_amend(
         self,
         interaction: discord.Interaction,
@@ -3773,8 +3754,7 @@ class SeasonCog(commands.Cog):
         division_name="Name of the division containing this round",
         round_number="Round number to delete",
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def round_delete(
         self,
         interaction: discord.Interaction,
@@ -3846,8 +3826,7 @@ class SeasonCog(commands.Cog):
         round_number="The round number to cancel",
         confirm='Type "CONFIRM" to proceed.',
     )
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def round_cancel(
         self,
         interaction: discord.Interaction,
@@ -3989,8 +3968,7 @@ class SeasonCog(commands.Cog):
         app_commands.Choice(name="Feature Qualifying", value="FEATURE_QUALIFYING"),
         app_commands.Choice(name="Feature Race", value="FEATURE_RACE"),
     ])
-    @channel_guard
-    @admin_only
+    @league_admin_only
     async def round_results_amend(
         self,
         interaction: discord.Interaction,
