@@ -171,10 +171,11 @@ Clears any guild-scoped command overrides and pushes the latest global slash com
 
 ## Slash Commands
 
-Every command below carries an `*Access:*` line naming the tier it asks for. There are two,
-and both are **roles you configure**, not Discord permissions:
+Every command below carries an `*Access:*` line naming the level of permission it asks for.
+There are two, and both are **roles you configure**, not Discord permissions. (These are
+nothing to do with a division's *tier*, which is where it sits in your pecking order.)
 
-| Tier | Held by | What it covers |
+| Level | Held by | What it covers |
 |---|---|---|
 | **League manager** | the interaction role, or the league admin role | Running the league — seasons, divisions, rounds, tracks, teams, drivers and seats; the configuration of every module and the artwork it draws from; the channels each division posts to; and the results, standings, verdicts, check-ins and signups that follow |
 | **League admin** | the league admin role | Governing the bot upon the server, and anything that may undo a league entire — starting over, enabling and disabling a module, every command of test mode, and the commands that destroy something no other command puts back |
@@ -182,11 +183,11 @@ and both are **roles you configure**, not Discord permissions:
 A league admin can do everything a league manager can, so nobody needs both roles. Drivers
 need neither: they reach the bot through the buttons it posts and through their own channels.
 
-**A Discord permission is not a route to either tier.** Administrator, Manage Server and the
-rest govern the *server*; these two roles govern the *league*, and the bot only reads the
-roles. The single exception is `/bot-init` and the four commands that change one setting
-each — those accept Discord's **Administrator** permission as well, because they are what
-repairs the settings everything else depends on.
+**A Discord permission is not a route to either.** Administrator, Manage Server and the rest
+govern the *server*; these two roles govern the *league*, and the bot only reads the roles.
+The single exception is `/bot-init` and the four commands that change one setting each —
+those accept Discord's **Administrator** permission as well, because they are what repairs
+the settings everything else depends on.
 
 Every command is given in the interaction channel, except those same five.
 
@@ -1080,7 +1081,7 @@ No parameters. Returns `unassigned_drivers.csv` in an ephemeral reply, with the 
 
 > **Setting the results & standings module up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, follow [Configuring the results & standings module](docs/how-to/configuring-the-results-module.md).
 
-All commands below require the results module to be enabled (`/module enable results`) and the league manager tier. Where results, standings and verdicts are posted is set per division by [`/division results-channel`](#division-results-channel--set-the-results-posting-channel-for-a-division), [`/division standings-channel`](#division-standings-channel--set-the-standings-posting-channel-for-a-division) and [`/division verdicts-channel`](#division-verdicts-channel--set-the-verdicts-channel-for-a-division); all three are required before a season can be approved.
+All commands below require the results module to be enabled (`/module enable results`) and the interaction role, unless their own `*Access:*` line says otherwise. Where results, standings and verdicts are posted is set per division by [`/division results-channel`](#division-results-channel--set-the-results-posting-channel-for-a-division), [`/division standings-channel`](#division-standings-channel--set-the-standings-posting-channel-for-a-division) and [`/division verdicts-channel`](#division-verdicts-channel--set-the-verdicts-channel-for-a-division); all three are required before a season can be approved.
 
 #### Points Config Management
 

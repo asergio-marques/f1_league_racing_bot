@@ -74,12 +74,12 @@ Run it anywhere, and run it as a server administrator: until it has run there is
 
 | To run | You need |
 |---|---|
-| Most commands in this guide | The **interaction role** — the league manager tier |
+| Most commands in this guide | The **interaction role** |
 | Anything that cannot be undone: `/bot-reset`, `/clean-bot`, `/module enable` and `/module disable`, cancelling or deleting a season, division or round, completing a season, `/team remove`, `/driver sack`, and every `/test-mode` command | The **league admin role** |
 | Approving a season, on the button `/season review` posts | Whoever ran that review, or the league admin role |
 | `/bot-init` and the four commands that change one setting | The league admin role **or** Discord's **Administrator** permission, from any channel |
 
-The league admin role carries the interaction role's tier within it, so whoever holds it can
+The league admin role covers everything the interaction role does, so whoever holds it can
 run everything in this guide without also being given the interaction role.
 
 **Discord's own permissions do not come into it.** Administrator and Manage Server govern
