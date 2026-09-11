@@ -517,7 +517,7 @@
   - The format of the final output is determined in another section.
 - Only after the final output is determined for all appeals pertaining to a given round of a given division, will they be posted, in appeal ID alphabetical order (which will coincide with the submission order of the original reports), in the verdicts channel.
 - After the verdicts are published, a 7 day countdown will be initiated, at the end of which the channel will be deleted.
-  - <SKETCH OUT> Is it practical to save these? Perhaps the channels could be exported onto a Json or text file, on the device running the bot, or even uploaded to a drive of sorts...
+  - <TBD> - SKETCH OUT - Is it practical to save these? Perhaps the channels could be exported onto a Json or text file, on the device running the bot, or even uploaded to a drive of sorts...
 - The appeal deliberation phase is only considered over once all appeals pertaining to a given round of a given division are posted to the appropriate channel.
 - Once the appeal deliberation phase is considered over, the round results and the standings after the round will be reposted with the appeals' time penalties factored in.
   - This functionality is somewhat implemented already, just a matter of reusing it.
@@ -525,12 +525,7 @@
 
 ### Cycle close
 - Once all tickets for a given round of a given division reach this stage, warning points, penalty points, qualifying bans, race bans, season bans and league bans are made effective and added to a driver's license. After this is done, it will be checked whether the driving licenses of any driver infringe upon any of the auto-rules configured.
-- If any auto-rule configured is infringed upon, then an additional automated verdict document will be published by the bot, informing of which rule was broken, and the punishment to be handed out.
-  - The structure of this automated verdict document will be outlined in a later section.
-  - For output purposes, the "S<x>_D<y>_R<z>_AR<w>" format will be followed, where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the auto-rule triggering for this round.
-  - It is possible that an auto-rule triggers another auto-rule. In practice, the easiest way to implement this is to check all auto-rules, and if one is triggered, check all auto-rules again until a cycle occurs in which no auto-rules were triggered.
-- As a way to prevent drivers from being penalized twice for going over a threshold (e.g. an auto rule being triggered when a driver's license reaches 4 penalty points when a driver goes from 2 penalty points to 5, meaning they could be handed out two instances of the automated penalty), thresholds shall function in a flip-flop manner. This means that, in the example given, once a driver goes over the 4 penalty point threshold of the automated penalty, they can only infringe it after their license's active penalty points tally goes under 4 penalty points.
-  - <DISCUSS/WEAK POINT> is this harsh? I mean, it's on the drivers, but I wonder if there's a more robust design here.
+  - Auto-rule handling is specified in another section.
 - Once auto-rules are verified, the previous license sheet shall be deleted, and an updated one, with the penalties of the latest round updated, will be posted.
   - License sheet posting will be specified in another section.
 - <NEW COMMAND> A "steward republish-verdict" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory input the unique ID for a report or appeal. If the input ID was indeed a valid one, then a modal dialog will show up, containing the original information of the report/appeal chosen (ID, involved drivers, outcome, driver struck with outcome, justification). Of these, all but justification will be greyed-out, and this exception shall be only modifiable aspect. The user must confirm before validation of the change is done.
@@ -554,7 +549,6 @@
   - Evidence links - Optional - 0..5 links - One or multiple images or video links that provide basis for the claims in the complaint.
     - Between "evidence files" and "evidence links", there must be at least one file/link. Otherwise, the report will not be valid.
 - Usage of the "steward conduct-inv start" shall be valid at all times of a season's, a division's, or round's lifecycle, and is therefore not pegged to any one round, division or season.
-  - <SKETCH OUT> Then how to handle outputs? Surely we can't just put the output in a division's verdict channel like that, we need a dedicated channel for "moderation" aka discipline stuff.
 - The validation of the information will be performed before closing the modal, so that users do not have to input information twice.
   - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
 - After valid submission, the report will be henceforth be identified with a unique ID following the format "COC_INV<x>", where <x> is the number of the previous CoC investigation of this league plus 1, with at least two zeros to the left (e.g. COC_INV001, COC_INV067, COC_INV203...)
@@ -610,7 +604,23 @@
 - After the verdict is posted successfully, the channel will be deleted, and the conduct cycle considered closed.
 
 ### Cycle close
-- The verdict output of a Code of Conduct investigation will be posted immediately after leaving the investigation deliberation stage. <TBD>
+- After leaving the investigation deliberation stage, the verdict output of a Code of Conduct investigation will be posted immediately.
+- After leaving the investigation deliberation stage, all outcomes are made effective and added to the user's driver's license. After that, it will be checked whether the driving licenses of any driver infringe upon any of the auto-rules configured.
+  - If for some reason the user does not have a driver license at this point, it will be created before applying the outcome.
+  - Auto-rule handling is specified in another section.
+- Once auto-rules are verified, the previous license sheet of all divisions to which the user belongs to shall be deleted, and an updated one, with the penalties of the latest round updated, will be posted.
+  - This is only valid if the user is a driver and a season is currently active.
+  - License sheet posting will be specified in another section.
+
+## Auto-rule triggering
+- If any auto-rule configured is infringed upon, then an additional automated verdict document will be published by the bot in the same channel the verdict which triggered the auto-rule was. This document shall inform which rule was broken, and the punishment to be handed out.
+  - The structure of this automated verdict document will be outlined in a later section.
+  - For output purposes, two different formats may be used, depending on what was the trigger of the auto-rule:
+    - If the trigger was a report or an appeal, the "S<x>_D<y>_R<z>_AR<w>" format will be followed, where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the auto-rule triggering for this round.
+    - If the trigger was a CoC investigation, the "COC_INV<x>_AR<y>" format will be followed, where <x> is the number of the CoC investigation which triggered the auto-rule, with at least two zeros to the left (e.g. COC_INV001, COC_INV067, COC_INV203...), and <y> is the number of the auto-rule triggered (as in, if there were multiple auto-rules triggered, you start at 1, and increment with each one).
+  - It is possible that an auto-rule triggers another auto-rule. In practice, the easiest way to implement this is to check all auto-rules, and if one is triggered, check all auto-rules again until a cycle occurs in which no auto-rules were triggered.
+- As a way to prevent drivers from being penalized twice for going over a threshold (e.g. an auto rule being triggered when a driver's license reaches 4 penalty points when a driver goes from 2 penalty points to 5, meaning they could be handed out two instances of the automated penalty), thresholds shall function in a flip-flop manner. This means that, in the example given, once a driver goes over the 4 penalty point threshold of the automated penalty, they can only infringe it after their license's active penalty points tally goes under 4 penalty points.
+  - <TBD> - DISCUSS/WEAK POINT - is this harsh? I mean, it's on the drivers, but I wonder if there's a more robust design here.
 
 ## Bans
 ### Qualifying bans
@@ -645,19 +655,22 @@
 
 ### Season bans
 - Whether a driver has a season ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
-- If a driver who is participating in <TBD>
+- <TBD> - CONTINUE SPECIFICATION
 
 ### League bans
 - Whether a driver has a league ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
-- If a driver who is participating in <TBD>
+- <TBD> - CONTINUE SPECIFICATION
 
 ## Verdict output
 - The current verdict output is utilized and governed by the results & standings module. The detailed specification below applies to the output of verdicts by the stewarding module only, not interfering with the way the results & standings module works at the moment.
-- The latter's implementation must be used as much as possible, down to the templates.
-- Verdicts shall be posted sequentially and in alphabetic order of their unique ID, in the verdicts channel of the division to which the verdicts pertain.
+  - The latter's implementation must be used as much as possible, down to the templates.
+- This section specifies how the verdicts for reports, appeals, CoC investigations and auto-rule triggering must be shaped and formatted.
+- Verdicts shall be posted sequentially and in alphabetic order of their unique ID.
   - This means that "S1_D1_R1_001", "S1_D1_R1_002", ""S1_D1_R1_003", ... will be the correct order.
   - For the purpose of appeals, the ID of the report to which they correspond will be taken and suffixed with "-APPEAL".
-- When reports are first posted for a round, the bot will post text that denotes what rounds the reports pertain to by referring to the season, division, round, and Grand Prix name.
+- If they pertain to a report, appeal, or auto-rule triggered by either (including auto-rules which were triggered by other auto-rules which were triggered by reports or appeals), verdicts shall be posted in the verdicts channel of the division to which they pertain.
+  - When reports are first posted for a round, the bot will post text that denotes what rounds the reports pertain to by referring to the season, division, round, and Grand Prix name.
+- If they pertain to a Code of Conduct investigation, or auto-rule triggered by a CoC investigation's own verdict (or an auto-rule triggered by auto-rule triggered by CoC inv), verdicts shall be posted in the channel configured by "division conduct-verdicts-channel".
 
 ### Textual
 - The textual output of verdicts shall have the following data, all on the same message:
@@ -668,6 +681,7 @@
   - Original complaint (report and appeal both) - Mandatory
   - Outcome (if the outcome has multiple penalties, they shall be separated by commas)
   - Justification given for outcome
+- <TBD> - CONTINUE SPECIFICATION
 
 ### Image
 - The image output of verdicts shall support the following data fields for the bot to insert information:
@@ -682,9 +696,11 @@
   - Outcome (if the outcome has multiple penalties, they shall be separated by commas) - Mandatory
   - Justification given for outcome - Mandatory
   - Any others that may be useful? idk
+- <TBD> - CONTINUE SPECIFICATION
 
 ## License sheet output
 ### Textual
-
+- <TBD> - SPECIFY
 
 ### Image
+- <TBD> - SPECIFY
