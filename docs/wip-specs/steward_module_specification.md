@@ -9,11 +9,13 @@
 - The stewarding module is connected to the signup module, and modifies its outputs.
 - Stewarding module activation status shall be displayed in the season review.
 - This module must work with the fake driver rosters used in test mode.
+- The stewarding module introduces two new levels of permission, both of which are impermanent and are applied to different groups of people depending on conditions. These are the head steward (level 3) and steward (level 4) levels of permission.
+- Throughout this document references are made to "league managers" and "league admins". Each one of those is to be understood as users with level 2 permission and level 1 permission respectively.
 
 ## Concepts
 - Driver license - A individual record of a driver's history in the league, onto which the driver's history of warning points, penalty points, discipline points, qualifying bans, race bans, season bans and league bans, including active status and date of incidence, is recorded. Likewise, a tally of the total of each penalty type is kept.
-- Steward - A trusted user denoted with a special role which may be different from that of league managers, which are able to see tickets and pass judgement on them.
-- Head steward - A privileged user denoted with a special role that serves as the leader of the stewarding team. It is mandatory that a stewarding team has a head steward. They may confer acting head steward responsabilities onto another member of the stewarding team for a temporary period. By default, the head steward is the effective head steward for all tickets.
+- Steward - A trusted user with level 4 permission, denoted with a special role which may be different from that of league managers, which are able to see tickets and pass judgement on them.
+- Head steward - A privileged user with level 3 permission denoted with a special role that serves as the leader of the stewarding team. It is mandatory that a stewarding team has a head steward. They may confer acting head steward responsabilities onto another member of the stewarding team for a temporary period. By default, the head steward is the effective head steward for all tickets.
 - Acting head steward - Also referred to as temporary or temp head steward. A privileged user denoted with a special role with similar privileges as the head steward, which lasts only for a limited amount of time, as a result of being deferred head steward responsabilities temporarily. While a temporary head steward is active, the head steward loses their default status as effective head steward on all tickets and the ability to use commands which require head steward privilege.
 - Effective head steward - The designated head steward for a specific ticket. By default, this is the head steward, or the acting head steward if the latter functionality is in use. This user is able to add or remove drivers from tickets, approve requests to do either, or to approve steward exclusions from tickets. Their vote may also serve as a tie-breaker when outcomes voted for a given ticket are equally split. The effective head steward for a given ticket may change while the stewarding cycle is underway.
 - Stewarding team - The collective composed of all stewards.
@@ -63,7 +65,7 @@
 - Race ban - A possible direct or indirect outcome of a verdict for all ticket types. Race bans are appended to a driver's license. The driver that receives this sanction is thereby forbidden from taking part in the next round of the division in which they received a qualifying ban for, be it in the current season, or the next. This means that they may not be present in the classification of any sessions for the round they are banned for. If configured, the bot may automatically detect a failure to serve a race ban via a round's results, and automatically open a steward team report againt the offending driver. Race bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
 - Season ban - A possible direct or indirect outcome of a verdict for all ticket types. Season bans are appended to a driver's license. The driver that receives this sanction loses all their current seats for all divisions, full-time and reserve both. Drivers with a season ban will be assigned a special role, and will be unable to engage with the signup wizard. A season ban will expire after a set number of races (which may be a hard-bound value or the length of the current season), upon the current season's end (or the next season's end, if received on the final round), or after a fixed period of time. Season bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
 - League ban - A possible direct or indirect outcome of a verdict for all ticket types. League bans are appended to a driver's license. The driver that receives this sanction thereby loses all their current seats for all divisions, full-time and reserve both. A driver that receives a league ban will be banned from the league server for a configured duration of time. Upon rejoining the server, all users that receive a league ban will be assigned a special role, and will be unable to engage with the signup wizard. League bans are only applied to a driver's license once the stewarding cycle in which it was bestowed is complete.
-- Auto-rule - A predefined, league-configured automated penalty handed out by the bot if a driver meets the criteria configured in the rule. These rules can be one of four types:
+- Automated penalty rule - Also referred to as an auto-rule. A predefined, league-configured automated penalty handed out by the bot if a driver meets the criteria configured in the rule. These rules can be one of four types:
   - Single round - Rules that verify only multiples of a specific penalty accured in a single round for one driver.
   - Multi round - Rules that verify only multiples of a specific penalty accured across multiple rounds for one driver.
   - Active accumulation - Rules that verify only the accumulation of a specific active penalty on a driver's license.
@@ -76,6 +78,9 @@
 
 ### Channels
 - <NEW COMMAND> A "division ticket-channel" command will be made available to league managers, which shall have as input a division name and a channel in which drivers for that division can interact to initiate tickets (reports and appeals both).
+- The stewarding module shall inherit the "division verdicts-channel" command from the results module.
+- <NEW COMMAND> A "division conduct-verdicts-channel" command will be made to league managers, which shall have as input a channel in which the verdicts for CoC investigations will be posted.
+  - This is only mandatory if the CoC investigations feature is enabled.
 - <NEW COMMAND> A "steward command-channel" command will be made available to league managers, which shall have as input a channel in which stewards will be able to input certain special bot commands. These commands must be explicitly marked as steward team actionable in these specifications, otherwise their use will be rejected, and no other commands but those will be accepted in this channel.
 - <NEW COMMAND> A "steward log-channel" command will be made available to league managers, which shall have as input a channel in which ALL commands utilized in the channel configured by "steward command-channel" will be logged for audit purposes, much in the same way they are already done by the log channel input in "bot init".
 
@@ -231,7 +236,7 @@
   - Race ban - 0
   - Season ban - 0
 
-### Automated penalties
+### Automated penalty rules
 - <NEW COMMAND> A "steward auto-rule add-single-round" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks for configured criteria on the outcomes of that round exclusively upon the closing of the stewarding cycle of any given round. Upon usage of this command, a modal dialog will open, with the following fields:
   - ID - Mandatory - String - Unique ID for this rule. Must not overlap with that of other auto rules, regardless of type. Maximum of 12 characters.
   - Infringement - Optional - String - An optional string for league managers to add a rule number to be printed out in the verdict.
@@ -337,6 +342,7 @@
 ### Report submission
 - At the scheduled start datetime of a round for a given division, the bot shall delete the "default" message, and post a "Report incident" button to the configured ticket channel of the division, without mentioning the division role.
 - At the scheduled start datetime of a round for a given division, a countdown with the period of time configured by "steward report-submission-period" will start. Once this time elapses, the default message shall be displayed once more in the divisions' reports channel, and the "Report incident" button removed.
+- It shall be possible to members of the stewarding team to report an incident in the same manner a regular driver can.
 - When a user presses the "Report incident" button, a modal dialog shall appear, with the following elements:
   - Season - Mandatory - Integer - Automatically generated, cannot be changed by anyone. Derived from the current season's number.
   - Division - Mandatory - String - Automatically generated, cannot be changed by anyone. Derived from the division to which the report channel is associated.
@@ -446,6 +452,7 @@
   - Division - Mandatory - String - Automatically generated, cannot be changed by anyone. Derived from the division to which the report channel is associated.
   - Round - Mandatory -  Integer - Automatically generated, cannot be changed by anyone. Derived from the most recent round that took place.
   - Report ID - Mandatory - String - The unique ID of the report that the drivers wishes to appeal, as per the report channel's title.
+    - Auto-rule verdicts' or other appeals' IDs are not accepted.
   - Justification - Mandatory - String - Reason for the appeal, outlining the reason as to why the user disagreed with the initial verdict handed out.
   - Evidence files - Optional - 0..5 media (image or video) - One or multiple images or video files that provide basis for the claims in the complaint.
   - Evidence links - Optional - 0..5 links - One or multiple images or video links that provide basis for the claims in the complaint.
@@ -520,6 +527,8 @@
 - Once all tickets for a given round of a given division reach this stage, warning points, penalty points, qualifying bans, race bans, season bans and league bans are made effective and added to a driver's license. After this is done, it will be checked whether the driving licenses of any driver infringe upon any of the auto-rules configured.
 - If any auto-rule configured is infringed upon, then an additional automated verdict document will be published by the bot, informing of which rule was broken, and the punishment to be handed out.
   - The structure of this automated verdict document will be outlined in a later section.
+  - For output purposes, the "S<x>_D<y>_R<z>_AR<w>" format will be followed, where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the auto-rule triggering for this round.
+  - It is possible that an auto-rule triggers another auto-rule. In practice, the easiest way to implement this is to check all auto-rules, and if one is triggered, check all auto-rules again until a cycle occurs in which no auto-rules were triggered.
 - As a way to prevent drivers from being penalized twice for going over a threshold (e.g. an auto rule being triggered when a driver's license reaches 4 penalty points when a driver goes from 2 penalty points to 5, meaning they could be handed out two instances of the automated penalty), thresholds shall function in a flip-flop manner. This means that, in the example given, once a driver goes over the 4 penalty point threshold of the automated penalty, they can only infringe it after their license's active penalty points tally goes under 4 penalty points.
   - <DISCUSS/WEAK POINT> is this harsh? I mean, it's on the drivers, but I wonder if there's a more robust design here.
 - Once auto-rules are verified, the previous license sheet shall be deleted, and an updated one, with the penalties of the latest round updated, will be posted.
@@ -531,14 +540,77 @@
   - It shall not be possible to execute this command on an appeal if the stewarding cycle of the round after the one to which the appeal pertains has moved past the report deliberation phase.
 
 ## Conduct cycle
+- All inputs of the conduct cycle must be auditable via the steward log channel. Attempts to file an investigation (and its data), user addition/removal to tickets, etc etc etc. All logs must include the display name (and user ID) of the input.
+- It is imperative that the steward team is seen as a unified front, so no public messages will identify or mention a member of the steward team when acting in their capabilities as steward.
+  - However, as stated above, steward logs shall identify them when needed.
+- Once an investigation's verdict is posted in the appropriate channel by the end of the investigation deliberation phase, the incident (investigation) is deemed closed and final.
+
 ### Trigger
-- <NEW COMMAND> A "steward conduct-inv start" command will be made available to the head steward and temporary head steward roles to be utilized in the channel configured by "steward command-channel" exclusively, which will have as input 1 or more user IDs of a server member (not necessarily a driver, only requires the "base_role" as configured by "module enable signup"), so that a CoC investigation is opened against said user.
+- <NEW COMMAND> A "steward conduct-inv start" command will be made available to the stewarding team, to be utilized in the channel configured by "steward command-channel" exclusively, which will have as input 1 or more user IDs of a server member (not necessarily a driver, only requires the "base_role" as configured by "module enable signup"), so that a CoC investigation is opened against said user.
+- When valid usage, a modal dialog shall be displayed, with the following elements:
+  - Involved users - Mandatory - 0..n mentions - Other users directly or indirectly involved in the event being investigated, whose footage or evidence may be of use to the steward team's deliberations.
+  - Complaint - Mandatory - String - Full description of the event being investigated by the steward team.
+  - Evidence files - Optional - 0..5 media (image or video) - One or multiple images or video files that provide basis for the claims in the complaint.
+  - Evidence links - Optional - 0..5 links - One or multiple images or video links that provide basis for the claims in the complaint.
+    - Between "evidence files" and "evidence links", there must be at least one file/link. Otherwise, the report will not be valid.
+- Usage of the "steward conduct-inv start" shall be valid at all times of a season's, a division's, or round's lifecycle, and is therefore not pegged to any one round, division or season.
+  - <SKETCH OUT> Then how to handle outputs? Surely we can't just put the output in a division's verdict channel like that, we need a dedicated channel for "moderation" aka discipline stuff.
+- The validation of the information will be performed before closing the modal, so that users do not have to input information twice.
+  - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
+- After valid submission, the report will be henceforth be identified with a unique ID following the format "COC_INV<x>", where <x> is the number of the previous CoC investigation of this league plus 1, with at least two zeros to the left (e.g. COC_INV001, COC_INV067, COC_INV203...)
+- After valid submission, a channel bearing the report's unique ID as the title will be created, with the information from the modal dialog input by the reportee summarized and posted as the header message in the channel. All involved users shall be mentioned properly in this message.
+- If the effective head steward is one of the involved users, or has a conflict of interest as defined by "steward toggle-conflict", the bot will post a message with a button to assign effective head steward for the ticket to someone else of the steward team. The user will be validated for the criteria above, and after they are designated effective head steward, the former one will be removed from the effective steward team for the report.
+  - If the effective head steward does not assign anyone else by the time the report deliberation phase is reached, a random member of the effective steward team is to be chosen by the bot for this position.
+- Upon valid submission, a CoC investigation ticket will move immediately onto the defense submission stage.
 
 ### Defense submission
-- <NEW COMMAND> A "steward conduct-inv add" command will be made available to the league managers... <<< --- TBD --- >>>
+- Once the investigation information is validated and the channel opened with the relevant information, a countdown with the period of time configured by "steward conduct defense-submission-period" will start. Once this time elapses, the ticket will enter the investigation deliberation phase.
+- Once the channel is created, the same buttons as those created for the defense submission phase shall be made available in the header, with the same permissions and logic.
+- During this phase, members of the effective stewarding team (regular members and the effective head) shall have read, write and attachment permissions on the channel.
+- During this phase, members of the effective stewarding team (regular members and the effective head) shall be able to utilize the aforementioned buttons (as per their own specification).
+- During this phase, all users marked as involved users shall have read/write and attach media permission for the channel.
+- This phase cannot be terminated early.
 
 ### Investigation deliberation
-- 
+- Once this phase is entered, the involved users lose all permission to read, write or attach media to the channel.
+- Once this phase is entered, a countdown with the period of time configured by "steward conduct inv-deliberation-period" will start.
+- Once this phase is entered, a single button titled "Vote" is posted by the bot. This button will serve for members of the effective stewarding team to cast, modify, or remove their vote on the outcome of the report. The button opens a modal which is as follows:
+  - Steward's display name - String - Greyed out, cannot be changed. Display name of the steward that initiated the vote.
+  - Report ID - String - Greyed out, cannot be changed. Unique ID of the report which is being voted on.
+  - User - Dropdown - Contains the display names of all involved users, allowing the steward to pick the display name of the user which is to receive the outcome. Greyed-out if outcome chosen is NFA.
+  - Outcome - Dropdown - Mandatory - Dropdown containing all discipline outcomes currently configured, displaying their IDs, allowing the steward to select 1 of them.
+    - If outcome chosen is NFA, then the user pick will become "None".
+    - PROBLEM WITH THIS DESIGN: what if a steward wants to penalize multiple users? this current approach stops that. A method I thought of would be to construct the modal dynamically, with each involved users getting an outcome field, but that would make the tally of the votes and the generation of the verdict a pain.
+  - Infringement - String - Optional - String standing for the ID/number which was allegedly violated. Useful for final verdict write-up.
+  - Justification - String - Mandatory - A free form text with a 1000 character limit for the steward to give their reasonings for the vote.
+  - Two or three buttons at the bottom - "Cancel", "Remove vote" if the steward is reopening the vote dialog after having voted, and "Confirm".
+- A steward's vote is only valid via "Confirm" if all mandatory fields are filled.
+- If the steward has voted for outcome NFA, their vote is only valid if the user picked is "None".
+- Once a steward's vote is deemed valid, all data for the vote will be recorded and persisted.
+- If a steward reopens the vote modal dialog after having voted, the dialog will be pre-filled with their previous data.
+- If the steward has chosen "Confirm" upon reopening the dialog, the previously persisted vote information will be modified to align with the current information in the modal.
+- If the steward has chosen "Cancel" upon reopening the dialog, no change is to occur to their current vote.
+- If the steward has chosen "Remove vote" upon reopening the dialog, the previously persisted vote information will be deleted, and it will be as if the steward had never voted.
+- At the end of the countdown period for this phase, all stewarding team members except for the effective head steward lose message write permission for the investigation channel.
+- At the end of the countdown period for this phase, all outcomes from votes will be counted. For the purpose of counting, only cast votes will be taken into consideration for the determination of plurality. This means that in a situation where the effective stewarding team for a ticket consists of 9 people, and only 5 of those people have voted, only those 5 votes will be used for assessing the ultimate verdict.
+- User-outcome pairs are both considered a vote for the purpose of vote tallying. This means that "User A-Outcome X" and "User B-Outcome X" are votes for two different things.
+- If any one user-outcome pair reaches plurality without a tie, the ultimate result of the investigation will be that outcome being applied to that user.
+- If two or more user-outcome pairs are tied, and the effective head steward has voted in one of them, the ultimate result of the investigation will be the outcome voted by the effective head steward.
+- If two or more user-outcome pairs are tied, and the effective head steward has not voted in either of them (also covers the possibility of the effective head steward not voting at all), the bot will trigger a cascade of events:
+  - On the investigation's channel, the bot shall post a button per user-outcome pair that is tied as the most voted option. The one assigned as effective head steward will be the only one able to use these buttons. The pair chosen dictates the ultimate verdict.
+  - A timer counts down 1 hour from the moment the buttons are posted; if the effective head steward has not picked an user-outcome pair once this timer runs out, then the user-outcome pair that reached their final vote count the earliest will be the final verdict.
+- Once the ultimate result of an investigation is reached through any of the mediums above, the bot will:
+  - Post a message informing the effective head steward of the decision reached (which user is struck with what penalty), providing a default justification text determined via the method configured by "steward final-justification-mode" (or "steward final-justification-mode", if the primary method is not feasible).
+  - Buttons usable only by the effective head steward of the ticket, one for accepting the default justification text as provided by the bot as-is, another to modify the default justification via a modal (text is already autoloaded into modal prompt).
+  - In a message different from the one above, the justifications provided by all stewards that chose this user-outcome pair will be presented as a reference.
+  - Start a timer counting down 1 hour from the moment the buttons are posted; if the effective head steward has not confirmed the justification text once this timer runs out, then the one provided by the bot will be utilized for the verdict post.
+- Once the justification message is settled, either via effective head steward confirmation or by timeout, the bot will remove all write permissions to the channel, and generate the final output to be posted in the verdicts channel.
+  - The format of the final output is determined in another section.
+- Only after the final output is determined for the investigation, it will be posted immediately in the channel configured by "division conduct-verdicts-channel".
+- After the verdict is posted successfully, the channel will be deleted, and the conduct cycle considered closed.
+
+### Cycle close
+- The verdict output of a Code of Conduct investigation will be posted immediately after leaving the investigation deliberation stage. <TBD>
 
 ## Bans
 ### Qualifying bans
@@ -573,17 +645,43 @@
 
 ### Season bans
 - Whether a driver has a season ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
-- If a driver who is participating in 
+- If a driver who is participating in <TBD>
 
 ### League bans
 - Whether a driver has a league ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
+- If a driver who is participating in <TBD>
 
 ## Verdict output
-### Textual
+- The current verdict output is utilized and governed by the results & standings module. The detailed specification below applies to the output of verdicts by the stewarding module only, not interfering with the way the results & standings module works at the moment.
+- The latter's implementation must be used as much as possible, down to the templates.
+- Verdicts shall be posted sequentially and in alphabetic order of their unique ID, in the verdicts channel of the division to which the verdicts pertain.
+  - This means that "S1_D1_R1_001", "S1_D1_R1_002", ""S1_D1_R1_003", ... will be the correct order.
+  - For the purpose of appeals, the ID of the report to which they correspond will be taken and suffixed with "-APPEAL".
+- When reports are first posted for a round, the bot will post text that denotes what rounds the reports pertain to by referring to the season, division, round, and Grand Prix name.
 
+### Textual
+- The textual output of verdicts shall have the following data, all on the same message:
+  - Unique ID of the report/appeal/CoC investigation
+  - Season, division, round number
+  - Grand prix name, session name, lap (if session is a race session)
+  - Involved drivers
+  - Original complaint (report and appeal both) - Mandatory
+  - Outcome (if the outcome has multiple penalties, they shall be separated by commas)
+  - Justification given for outcome
 
 ### Image
-
+- The image output of verdicts shall support the following data fields for the bot to insert information:
+  - Unique ID of the report/appeal/CoC investigation - Mandatory
+  - Season, division, round number - Mandatory
+  - Grand prix name - Optional
+  - Grand prix flag - Optional
+  - Session name - Mandatory
+  - Lap (if session is a race session) - Optional
+  - Involved drivers - Mandatory - multi field in which multiple display names must be mandatorily supported, but flags and team logos can be optionally supported too
+  - Original complaint (report and appeal both) - Mandatory
+  - Outcome (if the outcome has multiple penalties, they shall be separated by commas) - Mandatory
+  - Justification given for outcome - Mandatory
+  - Any others that may be useful? idk
 
 ## License sheet output
 ### Textual
