@@ -78,8 +78,13 @@
 
 ### Channels
 - <NEW COMMAND> A "division ticket-channel" command will be made available to league managers, which shall have as input a division name and a channel in which drivers for that division can interact to initiate tickets (reports and appeals both).
+  - If a ticket channel is not configured for a division in the season review when the stewarding module is enabled, then the season will fail validation.
+  - Each division's ticket channel will be displayed in the season review much alike other division channels.
 - The stewarding module shall inherit the "division verdicts-channel" command from the results module.
-- <NEW COMMAND> A "division conduct-verdicts-channel" command will be made to league managers, which shall have as input a channel in which the verdicts for CoC investigations will be posted.
+- <NEW COMMAND> A "division license-channel" command will be made available to league managers, which shall have as input a division name and a channel in which the license information for the drivers of the division will be posted by the bot.
+  - If a license channel is not configured for a division in the season review when the stewarding module is enabled, then the season will fail validation.
+  - Each division's license channel will be displayed in the season review much alike other division channels.
+- <NEW COMMAND> A "division conduct-verdicts-channel" command will be made available to league managers, which shall have as input a channel in which the verdicts for CoC investigations will be posted.
   - This is only mandatory if the CoC investigations feature is enabled.
 - <NEW COMMAND> A "steward command-channel" command will be made available to league managers, which shall have as input a channel in which stewards will be able to input certain special bot commands. These commands must be explicitly marked as steward team actionable in these specifications, otherwise their use will be rejected, and no other commands but those will be accepted in this channel.
 - <NEW COMMAND> A "steward log-channel" command will be made available to league managers, which shall have as input a channel in which ALL commands utilized in the channel configured by "steward command-channel" will be logged for audit purposes, much in the same way they are already done by the log channel input in "bot init".
@@ -691,7 +696,6 @@
   - Original complaint (report and appeal both) - Mandatory
   - Outcome (if the outcome has multiple penalties, they shall be separated by commas)
   - Justification given for outcome
-- <TBD> - CONTINUE SPECIFICATION
 
 ### Image
 - The image output of verdicts shall support the following data fields for the bot to insert information:
@@ -705,12 +709,24 @@
   - Original complaint (report and appeal both) - Mandatory
   - Outcome (if the outcome has multiple penalties, they shall be separated by commas) - Mandatory
   - Justification given for outcome - Mandatory
-  - Any others that may be useful? idk
-- <TBD> - CONTINUE SPECIFICATION
 
 ## License sheet output
+- The license sheet for a given division shall be posted in the channel configured by "division license-channel".
+- Once either the stewarding cycle for a division or the conduct cycle for a driver in a given division has closed, the last message containing the license sheet for the division will be deleted, and an updated one will be posted.
+- The license sheet shall be posted in the appropriate channel at the start of a season as well.
+- The license sheet shall contain obligatorily all full-time and reserve drivers assigned to that division.
+- The drivers will be listed ordered according to the following list of criteria in descending order of priority:
+  - Number of penalty points;
+  - Number of warning points;
+  - Team name alphabetical order;
+  - Display name alphabetical order.
+
 ### Textual
-- <TBD> - SPECIFY
+- There will be two main parts to the license sheet: current points status and outstanding bans to be served.
+- The current points status will consist of a list of all drivers, with their corresponding current tally of active penalty points and active warning points.
+  - The order will be as specified above.
+- The outstanding bans list will consist of a list of all drivers with active qualifying bans or race bans to server, ordered with race bans first, then qualifying bans.
+  - Season and league bans shall not appear, as once they are handed out, drivers are automatically unassigned from their seats.
 
 ### Image
 - <TBD> - SPECIFY
