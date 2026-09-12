@@ -112,6 +112,7 @@
   - Number of races - The season ban expires only after a hard number of races equivalent to the total number of rounds of the season in which the ban was acquired (or the previous season, if for some reason there is no present season)
   - Season end - The season ban expires only a week after the current season's final scheduled round amidst all divisions takes place (or the next season, if for some reason there is no present season)
   - Timed - The season ban expires only after a set amount of time, expressed in days. If this option is picked, a modal dialog shall appear for the user to introduce the number of days for the season ban, and if confirmed, it will take effect.
+  - By default, this will be set to "number of races".
 - <NEW COMMAND> A "steward penalty league-ban-role" command will be made available to league managers, which shall have as mandatory single input a role to be attributed when any driver is season banned, and removed when any driver's league ban is revoked.
 
 ### Stewarding cycle setup
@@ -655,11 +656,20 @@
 
 ### Season bans
 - Whether a driver has a season ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
-- <TBD> - CONTINUE SPECIFICATION
+- If a driver who is currently participating in a division gets a season ban, they will immediately be unassigned from all seats they hold, including Reserve team seats, across all divisions.
+- If the attendance module is enabled and any driver has a season ban enforced unto them, their vote in any divisions' check-in will be immediately discarded/deleted by the bot if present, and a message shall be posted to the check-in channel informing that they cannot check-in due to a season ban.
+- If the sign-up module is enabled and any driver has a season ban enforced unto them, any existing sign-ups, completed and uncompleted, will be cancelled and discarded.
+- If the sign-up module is enabled and any driver has a season ban enforced unto them, they will be unable to engage the sign-up wizard.
+- If any driver has a season ban, regardless of sign-up module status, they will be unable to be assigned to a team.
+- Season bans will be considered served after the criteria configured in "steward penalty season-ban-type".
 
 ### League bans
 - Whether a driver has a league ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
-- <TBD> - CONTINUE SPECIFICATION
+- If a driver who is currently participating in a division gets a league ban, they will immediately be unassigned from all seats they hold, including Reserve team seats, across all divisions.
+- If the attendance module is enabled and any driver has a league ban enforced unto them, their vote in any divisions' check-in will be immediately discarded/deleted by the bot if present, and a message shall be posted to the check-in channel informing that they cannot check-in due to a league ban.
+- If the sign-up module is enabled and any driver has a league ban enforced unto them, any existing sign-ups, completed and uncompleted, will be cancelled and discarded.
+- If the sign-up module is enabled and any driver has a league ban enforced unto them, they will be unable to engage the sign-up wizard.
+- If any driver has a league ban, regardless of sign-up module status, they will be unable to be assigned to a team.
 
 ## Verdict output
 - The current verdict output is utilized and governed by the results & standings module. The detailed specification below applies to the output of verdicts by the stewarding module only, not interfering with the way the results & standings module works at the moment.
