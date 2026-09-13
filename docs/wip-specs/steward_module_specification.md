@@ -201,6 +201,12 @@
   - Qualifying ban - 0
   - Race ban - 0
   - Season ban - 0
+- <NEW COMMAND> A "steward backup toggle-report" command will be made available to league admins (tier 1), which shall have no inputs. When toggled on, once closed, the content of channels pertaining to reports and appeals will be persisted in disk to a directory.
+  - This functionality shall be disabled by default.
+  - The directory shall be "./tickets" by default (same as used by "steward backup toggle-conmduct").
+  - Channel content shall be formatted as a Json file. Each message shall be saved as an individual element, with an ID and display name of the one sending the message associated.
+  - When saving, a directory shall be created with the unique ID of the report, and the channel content shall be saved to that directory as "channel.json".
+  - Any attached videos and images will be downloaded and saved, with their original filenames, to the same directory. This includes the content from the original message.
 
 ### Conduct cycle setup
 - <NEW COMMAND> A "steward conduct toggle" command will be made available to league managers, which shall have no inputs.
@@ -241,6 +247,12 @@
   - Qualifying ban - 0
   - Race ban - 0
   - Season ban - 0
+- <NEW COMMAND> A "steward backup toggle-conduct" command will be made available to league admins (tier 1), which shall have no inputs. When toggled on, once closed, the content of channels pertaining to Code of Conduct investigations will be persisted in disk to a directory.
+  - This functionality shall be disabled by default.
+  - The directory shall be "./tickets" by default (same as used by "steward backup toggle-report")
+  - Channel content shall be formatted as a Json file. Each message shall be saved as an individual element, with an ID and display name of the one sending the message associated.
+  - When saving, a directory shall be created with the unique ID of the report, and the channel content shall be saved to that directory as "channel.json".
+  - Any attached videos and images will be downloaded and saved, with their original filenames, to the same directory. This includes the content from the original message.
 
 ### Automated penalty rules
 - <NEW COMMAND> A "steward auto-rule add-single-round" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks for configured criteria on the outcomes of that round exclusively upon the closing of the stewarding cycle of any given round. Upon usage of this command, a modal dialog will open, with the following fields:
@@ -522,8 +534,8 @@
 - Once the justification message is settled, either via effective head steward confirmation or by timeout, the bot will remove all write permissions to the channel, and generate the final output to be posted in the verdicts channel.
   - The format of the final output is determined in another section.
 - Only after the final output is determined for all appeals pertaining to a given round of a given division, will they be posted, in appeal ID alphabetical order (which will coincide with the submission order of the original reports), in the verdicts channel.
-- After the verdicts are published, a 7 day countdown will be initiated, at the end of which the channel will be deleted.
-  - <TBD> - SKETCH OUT - Is it practical to save these? Perhaps the channels could be exported onto a Json or text file, on the device running the bot, or even uploaded to a drive of sorts...
+- After the verdicts are published, if "steward backup toggle-report" is toggled on, the content of the channels of all channels will be immediately persisted onto memory, and once successful, the channels will be deleted.
+- After the verdicts are published, if "steward backup toggle-report" is toggled off, a 7 day countdown will be initiated, at the end of which the channels will be deleted.
 - The appeal deliberation phase is only considered over once all appeals pertaining to a given round of a given division are posted to the appropriate channel.
 - Once the appeal deliberation phase is considered over, the round results and the standings after the round will be reposted with the appeals' time penalties factored in.
   - This functionality is somewhat implemented already, just a matter of reusing it.
@@ -607,7 +619,9 @@
 - Once the justification message is settled, either via effective head steward confirmation or by timeout, the bot will remove all write permissions to the channel, and generate the final output to be posted in the verdicts channel.
   - The format of the final output is determined in another section.
 - Only after the final output is determined for the investigation, it will be posted immediately in the channel configured by "division conduct-verdicts-channel".
-- After the verdict is posted successfully, the channel will be deleted, and the conduct cycle considered closed.
+- After the verdict is posted successfully, the conduct cycle will be considered closed.
+- After the verdicts are published, if "steward backup toggle-conduct" is toggled on, the content of the channels of all channels will be immediately persisted onto memory, and once successful, the channels will be deleted.
+- After the verdicts are published, if "steward backup toggle-conduct" is toggled off, a 7 day countdown will be initiated, at the end of which the channels will be deleted.
 
 ### Cycle close
 - After leaving the investigation deliberation stage, the verdict output of a Code of Conduct investigation will be posted immediately.
