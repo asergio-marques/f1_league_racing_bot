@@ -701,6 +701,9 @@
 - The image output of verdicts shall support the following data fields for the bot to insert information:
   - Unique ID of the report/appeal/CoC investigation - Mandatory
   - Season, division, round number - Mandatory
+  - League logo - Optional
+  - Division logo - Optional
+  - Division colors support - Optional
   - Grand prix name - Optional
   - Grand prix flag - Optional
   - Session name - Mandatory
@@ -729,4 +732,23 @@
   - Season and league bans shall not appear, as once they are handed out, drivers are automatically unassigned from their seats.
 
 ### Image
-- <TBD> - SPECIFY
+- The image output will be similar to that of the attendance sheet. The following data elements shall be allowed:
+  - Season, division - Mandatory
+  - After Round X - Mandatory
+  - Grand Prix name - Optional
+  - Type of post - Mandatory, always "License Information", can be hardcoded
+  - League logo - Optional
+  - Division logo - Optional
+  - Division colors support - Optional
+  - Table-list of drivers - Mandatory, with the following columns:
+    - Driver display name - Mandatory
+    - Driver nationality flag - Optional
+    - Team name - Optional
+    - Team logo - Optional
+    - Total penalty points - Mandatory if penalty points enabled
+    - Total warning points - Mandatory if warning points enabled
+    - Total active penalty points from prior season - Mandatory if penalty points enabled and penalty points may carry over
+    - Total active warning points from prior season - Mandatory if warning points enabled and warning points may carry over
+    - Column for each round - Optional, displays data as 1PP (penalty point), 1W (warning), QB (qualifying ban), RB (race ban), SB (season ban), LB (league ban), can show multiples of those
+      - Cells with penalties may gain a highlighting background as well!
+    - Current outstanding ban to serve - Mandatory
