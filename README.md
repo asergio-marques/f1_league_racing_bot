@@ -502,7 +502,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 | `division_name` | String | ✅ | Name of the division containing the round |
 | `round_number` | Integer | ✅ | The round number to amend |
 | `track` | String | — | New track — track ID or circuit name, use the autocomplete dropdown (e.g. `4` or `Bahrain International Circuit`). What the dropdown displays (`04 – Bahrain International Circuit`) is accepted too, and names are matched regardless of case. Refused while a forecast drawn for the current circuit still stands, or once the round has started. |
-| `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC). Amending re-triggers the scheduler and renumbers rounds. |
+| `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC). Amending re-triggers the scheduler and renumbers rounds. Refused if the moment has already passed. |
 | `format` | String | — | New format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE`. Refused while the second forecast, drawn for the current sessions, still stands, or once the round has started. |
 
 **An amendment is one change.** Whatever combination of the three fields you give, the round is judged and amended once. If any rule refuses any part of it, none of it happens and the round is left exactly as it was — so amending a circuit and a date together is a single decision, and a circuit that could not be changed on its own often can be when the round moves with it.
@@ -512,6 +512,8 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 **What survives an amendment.** The round's check-in and its result submission are re-armed along with its forecasts; only the work a switched-off module owns is left unarmed. A check-in call that has already gone out is posted again carrying what changed, with every answer already given kept — drivers who have replied do not have to reply twice, and anyone who has joined the division since is asked afresh.
 
 > **Past the check-in deadline, the check-in is settled.** Amend a round whose deadline has gone by and the call is neither reposted nor taken down, and no answer can be changed: the reserves have been distributed against it and reopening it would unsettle a grid already told who is racing. Moving such a round far enough out puts its check-in back in play.
+
+> **A round cannot be moved into the past**, whatever modules you run. A round's result submission opens at the round's own moment, and one armed in the past is thrown away rather than opened — the round would never take results at all, and no command opens a submission by hand. Give it a moment still to come. Moving a round *forward* is untouched, and is how you correct a circuit or a format late.
 
 > **A round cannot be moved inside its own check-in deadline.** With the default two-hour deadline, moving a round to less than two hours away is refused outright — the check-in would open and close in the same instant, and the round would read afterwards as perfect attendance for a division nobody asked. Move it further out, or shorten the deadline first.
 

@@ -239,7 +239,8 @@ it only to place it; the rules governing it belong to its own specification.
 - Each of a round's scheduled jobs shall be identified in a way that stays unique to that round for its whole life, so that renumbering a division cannot make one round's work overwrite another's.
 
 #### Amending a round's moment
-- A round's moment may always be amended, subject to the rules above.
+- A round's moment may be amended to any moment still to come, subject to the rules above.
+- A round shall not be moved to a moment that has already passed, and this shall hold whatever the modules enabled. A round's result submission is armed against its own moment and is the round's one passage from awaiting its moment to awaiting its results; armed in the past it is discarded rather than run, and no command opens a submission afterwards, so the round could never take results at all. Moving a round *forward* is untouched and remains the remedy for a circuit or a format that must be corrected late.
 - The amendment shall be refused where the check-in deadline computed from the round's new moment has already passed. A check-in that would open and close in the same instant asks a question nobody can answer, and the round would be recorded afterwards as perfect attendance for the whole division.
 - Where the check-in deadline computed from the round's new moment has passed, nothing shall be posted afresh and no answer may be changed: the check-in is settled and the reserves are distributed against it.
 
