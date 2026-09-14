@@ -12,6 +12,7 @@ from models.points_config import (
     PointsConfigStore,
     SessionType,
 )
+from utils.points_ordering import ordering_violations
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +90,46 @@ async def set_session_points(
             (config_id, session_type.value, position, points),
         )
         await db.commit()
+
+
+async def ordering_warnings(
+    db_path: str,
+    server_id: int,
+    config_name: str,
+    session_type: SessionType,
+) -> list[str]:
+    """Return how one session's table now reads out of order, if it does.
+
+    Called after a write, not before one. A points edit that breaks the ordering
+    **warns and still applies** (decided 2026-09-14): a manager filling a table in
+    position by position passes through states that are momentarily out of order —
+    setting second place before first, or repairing a table from the bottom up — and
+    refusing the write would make ordinary ways of building a table impossible to
+    follow. The refusal belongs at the two moments a table is committed to a season,
+    `/season approve` and `/results amend review`, where there is nothing transient
+    left about it.
+
+    Returns an empty list for a config that does not exist: the caller has just been
+    told so by :class:`ConfigNotFoundError` and does not need telling twice.
+    """
+    async with get_connection(db_path) as db:
+        try:
+            config_id = await _get_config_id(db, server_id, config_name)
+        except ConfigNotFoundError:
+            return []
+        cursor = await db.execute(
+            "SELECT position, points FROM points_config_entries "
+            "WHERE config_id = ? AND session_type = ?",
+            (config_id, session_type.value),
+        )
+        rows = await cursor.fetchall()
+
+    return [
+        f"position {position} ({points} pts) < position {next_position} ({next_points} pts)"
+        for position, points, next_position, next_points in ordering_violations(
+            [(r["position"], r["points"]) for r in rows]
+        )
+    ]
 
 
 async def set_fl_bonus(

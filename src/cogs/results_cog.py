@@ -36,6 +36,32 @@ _RACE_SESSION_CHOICES = [
 
 
 # ---------------------------------------------------------------------------
+# Ordering notice
+# ---------------------------------------------------------------------------
+
+def _ordering_notice(config_name: str, session_label: str, violations: list[str]) -> str:
+    """The block appended to a points edit that has left a table out of order.
+
+    Empty string when there is nothing wrong, so a caller can concatenate it
+    unconditionally.
+
+    The edit itself has already been applied by the time this is written — a points
+    edit warns rather than refuses (decided 2026-09-14). The notice therefore has one
+    job beyond naming the fault: saying who *will* refuse, so a manager knows this is
+    something to fix rather than a note they can read past.
+    """
+    if not violations:
+        return ""
+    bullets = "\n".join(f"  • {v}" for v in violations)
+    return (
+        f"\n\u26a0\ufe0f **{config_name}**'s {session_label} table is now out of order:\n"
+        f"{bullets}\n"
+        f"A lower position cannot be worth as much as the one above it. The change has "
+        f"been saved, but a season cannot be approved on this table."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Bulk-parse helper (T012)
 # ---------------------------------------------------------------------------
 
@@ -155,6 +181,22 @@ class BulkConfigSessionModal(discord.ui.Modal, title="Bulk Set Session Points"):
             )
         if errors:
             lines.append("\u26a0\ufe0f Errors:\n" + "\n".join(f"  • {e}" for e in errors))
+        # The ordering is judged once, on the table the whole paste has left behind,
+        # rather than line by line. A bulk paste is one act of authorship, and a
+        # complaint per line would bury the reply under restatements of one fault.
+        if applied:
+            notice = _ordering_notice(
+                self._config_name,
+                self._session.name,
+                await points_config_service.ordering_warnings(
+                    self._db_path,
+                    self._guild_id,
+                    self._config_name,
+                    SessionType(self._session.value),
+                ),
+            )
+            if notice:
+                lines.append(notice.lstrip("\n"))
         await interaction.followup.send("\n".join(lines) or "Done.", ephemeral=True)
 
         if applied:
@@ -469,8 +511,16 @@ class ResultsCog(commands.Cog):
         except ConfigNotFoundError:
             await interaction.followup.send(f"\u274c Config **{name}** not found.", ephemeral=True)
             return
+        notice = _ordering_notice(
+            name,
+            session.name,
+            await points_config_service.ordering_warnings(
+                self.bot.db_path, interaction.guild_id, name, SessionType(session.value)
+            ),
+        )
         await interaction.followup.send(
-            f"\u2705 Set **{session.name}** position {position} \u2192 {points} pts in config **{name}**.",
+            f"\u2705 Set **{session.name}** position {position} \u2192 {points} pts in config **{name}**."
+            + notice,
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
