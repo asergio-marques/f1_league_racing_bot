@@ -142,7 +142,7 @@ Five modules, **all off to begin with**. The bot works without any of them, but 
 
 > **Turning `results` off takes `attendance` with it.** If attendance is on, disabling results disables it too, in the same breath. Your reply says nothing about it — only the log channel records it.
 
-**Turning a module off clears less than you would expect.** Only the signup module behaves the way the phrase suggests: it forgets its channel and its two roles, though it keeps its time slots and its question settings whatever the message says. Of the rest, `attendance` forgets only which channels each division posts to, and `weather`, `results` and `images` forget nothing at all — every channel, deadline, penalty value and points configuration survives, and the module comes back as it was. What weather does do is cancel the scheduled jobs for every remaining round.
+**Turning a module off clears less than you would expect.** Only the signup module behaves the way the phrase suggests: it forgets its channel and its two roles, though it keeps its time slots and its question settings whatever the message says. Of the rest, `attendance` forgets only which channels each division posts to, and `weather`, `results` and `images` forget nothing at all — every channel, deadline, penalty value and points configuration survives, and the module comes back as it was. What weather does do is cancel its own scheduled jobs — the forecasts for every remaining round. Turning a module off stops that module's work and nobody else's: the jobs belonging to the modules you left on go on running.
 
 Each module then has its own configuration, which is not covered here. Start from [Slash Commands](../../README.md#slash-commands) in the README and find that module's section.
 
