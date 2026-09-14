@@ -1,196 +1,245 @@
-"""Unit tests for PlacementService.get_unassigned_drivers_for_export — T018."""
+"""Unit tests for PlacementService.get_unassigned_drivers_for_export.
+
+These tests drive the real service against a real migrated database. They used to
+drive a hand-copied reimplementation of the row-building logic instead, which is why
+the suite agreed with issue #126 for months: the copy carried the same defect as the
+code, so the two agreed with each other and neither was checked. Do not reintroduce a
+local copy of the production logic here.
+"""
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+from unittest.mock import MagicMock
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from db.database import get_connection, run_migrations  # noqa: E402
+
+SERVER_ID = 1
+
 
 # ---------------------------------------------------------------------------
-# Stub helpers
+# Fixtures
 # ---------------------------------------------------------------------------
 
-class _Slot:
-    """Minimal AvailabilitySlot stand-in."""
-    def __init__(self, slot_sequence_id: int, display_label: str = "") -> None:
-        self.slot_sequence_id = slot_sequence_id
-        self.display_label = display_label
+
+async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | None = None):
+    """A server holding `drivers` as Unassigned profiles, plus `slots` as (day, time)."""
+    db_path = str(tmp_path / "placement_export.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 1, 2, 3)",
+            (SERVER_ID,),
+        )
+        for day, time_hhmm in slots or []:
+            await db.execute(
+                "INSERT INTO signup_availability_slots (server_id, day_of_week, time_hhmm) "
+                "VALUES (?, ?, ?)",
+                (SERVER_ID, day, time_hhmm),
+            )
+        for i, d in enumerate(drivers, start=1):
+            uid = d.get("discord_user_id", str(9000 + i))
+            await db.execute(
+                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
+                "VALUES (?, ?, ?, 'UNASSIGNED')",
+                (i, SERVER_ID, uid),
+            )
+            await db.execute(
+                "INSERT INTO signup_records (server_id, discord_user_id, discord_username, "
+                "server_display_name, platform, platform_id, availability_slot_ids, "
+                "driver_type, preferred_teams, total_lap_ms, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    SERVER_ID,
+                    uid,
+                    d.get("discord_username"),
+                    d.get("server_display_name"),
+                    d.get("platform"),
+                    d.get("platform_id"),
+                    json.dumps(d.get("availability", [])),
+                    d.get("driver_type"),
+                    json.dumps(d.get("preferred_teams", [])),
+                    d.get("total_lap_ms"),
+                    d.get("updated_at", f"2026-01-0{i}T00:00:00+00:00"),
+                ),
+            )
+        await db.commit()
+    return db_path
 
 
-def _make_service():
-    """Import PlacementService with a dummy db_path (no actual DB needed for pure logic)."""
+def _service(db_path):
     from services.placement_service import PlacementService
-    return PlacementService.__new__(PlacementService)
+
+    return PlacementService(db_path, bot=MagicMock())
+
+
+def _signup_service(db_path):
+    from services.signup_module_service import SignupModuleService
+
+    return SignupModuleService(db_path)
+
+
+async def _export(db_path):
+    """Export exactly as the cog does — live slots, chronologically ordered."""
+    slots = await _signup_service(db_path).get_slots(SERVER_ID)
+    slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
+    rows = await _service(db_path).get_unassigned_drivers_for_export(SERVER_ID, slots_ordered)
+    return rows, slots_ordered
 
 
 # ---------------------------------------------------------------------------
-# Pure-logic tests on post-processing helpers (tested via public method stubs)
+# Slot presence — the defect in issue #126
 # ---------------------------------------------------------------------------
 
-class TestExportRowBuilding:
-    """Tests that verify the row-building logic from get_unassigned_drivers_for_export.
 
-    Because the method queries the DB we test the row-composition logic
-    by exercising the get_unassigned_drivers_for_export code path via a minimal
-    mock of the database cursor.
-    """
-
-    def _build_row(self, row_data: dict, slots: list[_Slot]) -> dict:
-        """Replicate the row-building logic from the service method."""
-        import json
-        from services.placement_service import _fmt_ms  # type: ignore
-
-        slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
-        total_ms = row_data.get("total_lap_ms")
-        slot_ids_raw: list[int] = json.loads(row_data.get("availability_slot_ids") or "[]")
-        slot_presence = {s.slot_sequence_id: (s.slot_sequence_id in slot_ids_raw) for s in slots_ordered}
-
-        preferred_teams_raw: list[str] = json.loads(row_data.get("preferred_teams") or "[]")
-        preferred_team_1 = preferred_teams_raw[0] if len(preferred_teams_raw) > 0 else ""
-        preferred_team_2 = preferred_teams_raw[1] if len(preferred_teams_raw) > 1 else ""
-        preferred_team_3 = preferred_teams_raw[2] if len(preferred_teams_raw) > 2 else ""
-
-        display_name = (
-            row_data.get("server_display_name")
-            or row_data.get("discord_username")
-            or row_data.get("discord_user_id")
+class TestSlotPresence:
+    async def test_slot_present_marked_true(self, tmp_path):
+        db_path = await _seed(
+            tmp_path,
+            [{"availability": ["Mon_19_00", "Fri_21_00"]}],
+            slots=[(1, "19:00"), (3, "20:00"), (5, "21:00")],
         )
-        return {
-            "seed": row_data.get("_seed", 1),
-            "display_name": display_name,
-            "discord_user_id": row_data.get("discord_user_id", ""),
-            "driver_type": row_data.get("driver_type") or "",
-            "total_lap_fmt": _fmt_ms(total_ms) if total_ms is not None else "",
-            "slot_presence": slot_presence,
-            "preferred_team_1": preferred_team_1,
-            "preferred_team_2": preferred_team_2,
-            "preferred_team_3": preferred_team_3,
-            "platform": row_data.get("platform") or "",
-            "platform_id": row_data.get("platform_id") or "",
-        }
+        rows, _ = await _export(db_path)
+        assert rows[0]["slot_presence"] == {1: True, 2: False, 3: True}
 
-    def test_slot_present_marked_true(self):
-        slots = [_Slot(1), _Slot(2), _Slot(3)]
-        row = self._build_row(
-            {"availability_slot_ids": "[1, 3]", "preferred_teams": "[]"},
-            slots,
+    async def test_slot_absent_marked_false(self, tmp_path):
+        db_path = await _seed(
+            tmp_path, [{"availability": []}], slots=[(1, "19:00"), (3, "20:00")]
         )
-        assert row["slot_presence"][1] is True
-        assert row["slot_presence"][2] is False
-        assert row["slot_presence"][3] is True
+        rows, _ = await _export(db_path)
+        assert rows[0]["slot_presence"] == {1: False, 2: False}
 
-    def test_slot_absent_marked_false(self):
-        slots = [_Slot(1), _Slot(2)]
-        row = self._build_row(
-            {"availability_slot_ids": "[]", "preferred_teams": "[]"},
-            slots,
+    async def test_export_columns_survive_a_slot_removal(self, tmp_path):
+        """The issue's worked example, end to end.
+
+        Slots Mon 19:00, Wed 20:00, Fri 21:00. A driver is available on Friday only.
+        Monday is removed. The driver's X must still sit under Friday.
+        """
+        db_path = await _seed(
+            tmp_path,
+            [{"availability": ["Fri_21_00"]}],
+            slots=[(1, "19:00"), (3, "20:00"), (5, "21:00")],
         )
-        assert row["slot_presence"][1] is False
-        assert row["slot_presence"][2] is False
+        before_rows, before_slots = await _export(db_path)
+        marked_before = [
+            s.display_label for s in before_slots if before_rows[0]["slot_presence"][s.slot_sequence_id]
+        ]
+        assert marked_before == ["Friday 21:00 UTC"]
 
-    def test_platform_id_included(self):
-        slots = [_Slot(1)]
-        row = self._build_row(
-            {
-                "availability_slot_ids": "[]",
-                "preferred_teams": "[]",
-                "platform": "Steam",
-                "platform_id": "MyPlatformID",
-            },
-            slots,
+        await _signup_service(db_path).remove_slot_by_rank(SERVER_ID, 1)  # remove Monday
+
+        after_rows, after_slots = await _export(db_path)
+        marked_after = [
+            s.display_label for s in after_slots if after_rows[0]["slot_presence"][s.slot_sequence_id]
+        ]
+        assert marked_after == ["Friday 21:00 UTC"]
+
+    async def test_export_columns_survive_a_slot_being_added(self, tmp_path):
+        """Inserting an earlier slot must not shift anyone's X one column left."""
+        db_path = await _seed(
+            tmp_path,
+            [{"availability": ["Wed_20_00"]}],
+            slots=[(1, "19:00"), (3, "20:00"), (5, "21:00")],
         )
-        assert row["platform"] == "Steam"
-        assert row["platform_id"] == "MyPlatformID"
+        await _signup_service(db_path).add_slot(SERVER_ID, 1, "08:00")
 
-    def test_null_platform_id_becomes_empty_string(self):
-        slots = [_Slot(1)]
-        row = self._build_row(
-            {
-                "availability_slot_ids": "[]",
-                "preferred_teams": "[]",
-                "platform": None,
-                "platform_id": None,
-            },
-            slots,
+        rows, slots = await _export(db_path)
+        marked = [s.display_label for s in slots if rows[0]["slot_presence"][s.slot_sequence_id]]
+        assert marked == ["Wednesday 20:00 UTC"]
+
+    async def test_an_answer_for_a_removed_slot_marks_nothing(self, tmp_path):
+        """A driver's only slot is deleted: no column is marked, and none is invented."""
+        db_path = await _seed(
+            tmp_path,
+            [{"availability": ["Mon_19_00"]}],
+            slots=[(1, "19:00"), (3, "20:00"), (5, "21:00")],
         )
-        assert row["platform"] == ""
-        assert row["platform_id"] == ""
+        await _signup_service(db_path).remove_slot_by_rank(SERVER_ID, 1)
 
-    def test_preferred_teams_split_into_three_columns(self):
-        slots: list[_Slot] = []
-        row = self._build_row(
-            {
-                "availability_slot_ids": "[]",
-                "preferred_teams": '["Red Bull", "Mercedes", "Ferrari"]',
-            },
-            slots,
+        rows, _ = await _export(db_path)
+        assert rows[0]["slot_presence"] == {1: False, 2: False}
+
+
+# ---------------------------------------------------------------------------
+# The rest of the exported row
+# ---------------------------------------------------------------------------
+
+
+class TestExportRow:
+    async def test_platform_id_included(self, tmp_path):
+        db_path = await _seed(
+            tmp_path, [{"platform": "Steam", "platform_id": "MyPlatformID"}]
         )
-        assert row["preferred_team_1"] == "Red Bull"
-        assert row["preferred_team_2"] == "Mercedes"
-        assert row["preferred_team_3"] == "Ferrari"
+        rows, _ = await _export(db_path)
+        assert rows[0]["platform"] == "Steam"
+        assert rows[0]["platform_id"] == "MyPlatformID"
 
-    def test_fewer_than_three_teams_padded_with_empty_strings(self):
-        slots: list[_Slot] = []
-        row = self._build_row(
-            {
-                "availability_slot_ids": "[]",
-                "preferred_teams": '["Alpine"]',
-            },
-            slots,
+    async def test_null_platform_id_becomes_empty_string(self, tmp_path):
+        db_path = await _seed(tmp_path, [{"platform": None, "platform_id": None}])
+        rows, _ = await _export(db_path)
+        assert rows[0]["platform"] == ""
+        assert rows[0]["platform_id"] == ""
+
+    async def test_preferred_teams_split_into_three_columns(self, tmp_path):
+        db_path = await _seed(
+            tmp_path, [{"preferred_teams": ["Red Bull", "Mercedes", "Ferrari"]}]
         )
-        assert row["preferred_team_1"] == "Alpine"
-        assert row["preferred_team_2"] == ""
-        assert row["preferred_team_3"] == ""
+        rows, _ = await _export(db_path)
+        assert rows[0]["preferred_team_1"] == "Red Bull"
+        assert rows[0]["preferred_team_2"] == "Mercedes"
+        assert rows[0]["preferred_team_3"] == "Ferrari"
 
-    def test_seed_ordering_by_total_lap_ms(self):
+    async def test_fewer_than_three_teams_padded_with_empty_strings(self, tmp_path):
+        db_path = await _seed(tmp_path, [{"preferred_teams": ["Alpine"]}])
+        rows, _ = await _export(db_path)
+        assert rows[0]["preferred_team_1"] == "Alpine"
+        assert rows[0]["preferred_team_2"] == ""
+        assert rows[0]["preferred_team_3"] == ""
+
+    async def test_seed_ordering_by_total_lap_ms(self, tmp_path):
         """Lower total_lap_ms → lower seed (earlier in list → higher priority)."""
         from services.placement_service import _fmt_ms  # type: ignore
 
-        row_a = self._build_row(
-            {"_seed": 1, "availability_slot_ids": "[]", "preferred_teams": "[]", "total_lap_ms": 83456},
-            [],
+        db_path = await _seed(
+            tmp_path,
+            [
+                {"discord_user_id": "slow", "total_lap_ms": 90000},
+                {"discord_user_id": "fast", "total_lap_ms": 83456},
+            ],
         )
-        row_b = self._build_row(
-            {"_seed": 2, "availability_slot_ids": "[]", "preferred_teams": "[]", "total_lap_ms": 90000},
-            [],
-        )
-        assert row_a["seed"] < row_b["seed"]
-        assert row_a["total_lap_fmt"] == _fmt_ms(83456)
+        rows, _ = await _export(db_path)
+        assert [r["discord_user_id"] for r in rows] == ["fast", "slow"]
+        assert [r["seed"] for r in rows] == [1, 2]
+        assert rows[0]["total_lap_fmt"] == _fmt_ms(83456)
 
-    def test_total_lap_ms_none_becomes_empty_string(self):
-        slots: list[_Slot] = []
-        row = self._build_row(
-            {"availability_slot_ids": "[]", "preferred_teams": "[]", "total_lap_ms": None},
-            slots,
-        )
-        assert row["total_lap_fmt"] == ""
+    async def test_total_lap_ms_none_becomes_empty_string(self, tmp_path):
+        db_path = await _seed(tmp_path, [{"total_lap_ms": None}])
+        rows, _ = await _export(db_path)
+        assert rows[0]["total_lap_fmt"] == ""
 
-    def test_display_name_fallback_to_discord_username(self):
-        row = self._build_row(
-            {
+    async def test_display_name_fallback_to_discord_username(self, tmp_path):
+        db_path = await _seed(
+            tmp_path,
+            [{
+                "discord_user_id": "999",
                 "server_display_name": None,
                 "discord_username": "Driver#1234",
-                "discord_user_id": "999",
-                "availability_slot_ids": "[]",
-                "preferred_teams": "[]",
-            },
-            [],
+            }],
         )
-        assert row["display_name"] == "Driver#1234"
+        rows, _ = await _export(db_path)
+        assert rows[0]["display_name"] == "Driver#1234"
 
-    def test_display_name_fallback_to_user_id(self):
-        row = self._build_row(
-            {
-                "server_display_name": None,
-                "discord_username": None,
-                "discord_user_id": "999",
-                "availability_slot_ids": "[]",
-                "preferred_teams": "[]",
-            },
-            [],
+    async def test_display_name_fallback_to_user_id(self, tmp_path):
+        db_path = await _seed(
+            tmp_path,
+            [{"discord_user_id": "999", "server_display_name": None, "discord_username": None}],
         )
-        assert row["display_name"] == "999"
+        rows, _ = await _export(db_path)
+        assert rows[0]["display_name"] == "999"

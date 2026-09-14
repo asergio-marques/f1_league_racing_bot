@@ -331,6 +331,12 @@ class PlacementService:
           slot_presence (dict {slot_sequence_id: bool}),
           preferred_team_1, preferred_team_2, preferred_team_3,
           platform, platform_id
+
+        ``slot_presence`` is **keyed** by the display ordinal, because that is the CSV
+        column order, but each answer is **matched** on the slot's durable ID. Matching
+        on the ordinal is the defect in issue #126: it is a chronological position
+        recomputed on every read, so a slot added or removed since the driver signed up
+        would put their X under somebody else's time.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -364,8 +370,8 @@ class PlacementService:
         results = []
         for i, row in enumerate(rows, start=1):
             total_ms = row["total_lap_ms"]
-            slot_ids_raw: list[int] = json.loads(row["availability_slot_ids"] or "[]")
-            slot_presence = {s.slot_sequence_id: (s.slot_sequence_id in slot_ids_raw) for s in slots_ordered}
+            slot_ids_raw: list[str] = json.loads(row["availability_slot_ids"] or "[]")
+            slot_presence = {s.slot_sequence_id: (s.slot_id in slot_ids_raw) for s in slots_ordered}
 
             preferred_teams_raw: list[str] = json.loads(row["preferred_teams"] or "[]")
             preferred_team_1 = preferred_teams_raw[0] if len(preferred_teams_raw) > 0 else ""
