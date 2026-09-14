@@ -93,6 +93,8 @@ Every reply also tells you where the other two stand, which saves setting one an
 
 **Do this before the season is approved.** The bot notes the timings at approval and works to those for the whole season. Afterwards the commands are refused outright, and there is no way to shift a running season's forecasts.
 
+> **They also decide how late you can approve.** A season holding a round whose phase 1, 2 or 3 deadline has already passed is refused at approval, naming the round and the deadline — a first round three days away cannot honour a five-day phase 1. Approve earlier, shorten the deadline, or move the round with `/round amend`. Test mode is not exempt, so a test season needs its rounds set beyond all three.
+
 > **The wording of the posts does not follow these settings.** The messages say "5 days out", "2 days out" and "2 hours out" whatever you set. Change phase 1 to seven days and the forecast still arrives seven days ahead — but it will describe itself as five. Worth knowing before your drivers ask.
 
 > **An amended round falls back to the standard timings.** If a round's track, time or format is changed after the season is running, its forecasts are rescheduled at 5 days, 2 days and 2 hours regardless of what you set here.
@@ -204,6 +206,7 @@ Worth running through before the season is approved.
 - [ ] Every division has the role you want pinged
 - [ ] The log channel is one you can read, since every calculation goes there
 - [ ] The three timings are what you want, and `/season review` shows them
+- [ ] The first round is far enough away to honour all three — the approval refuses it if not
 - [ ] Every non-mystery round has a track
 - [ ] Rounds you meant to be mystery rounds are set as mystery, and the rest are not
 - [ ] If you want pictures: the image module is on, weather is toggled on, and all six weather drawing files pass

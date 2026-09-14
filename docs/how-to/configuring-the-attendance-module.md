@@ -110,7 +110,9 @@ They have to stay in that order — the call first, the reminder after it, the d
 
 **Do this before the season is approved.** The bot reads all three at approval and schedules every round of the season against them there and then. Afterwards the commands are refused, and there is no way to shift a running season's check-ins.
 
-> **Approving a season close to its first race silently costs you that round's check-in.** Anything whose moment has already passed at the point of approval is simply not scheduled — approve on the Thursday with a 5-day notice and round 1's call never happens, its reminder never happens, and because the call is what opens the attendance records, that round counts nothing against anybody. Nothing warns you. Approve early, or shorten the notice for a season that starts soon.
+> **A season approved too close to its first race is refused, not scheduled.** Approve on the Thursday with a 5-day notice and round 1's call was due two days ago — so the approval stops, names the round and the window, and commits nothing. Approve earlier, shorten the notice, or move the round with `/round amend`. Which of those is right is your decision, and it is why the bot will not pick one: the alternative is a round whose call never happens, whose reminder never happens, and which — because the call is what opens the attendance records — counts nothing against anybody and reads afterwards as perfect attendance for the whole division.
+>
+> This is checked under test mode too, so a test season needs its rounds set beyond every one of these three timings.
 
 To see what is currently set, run `/attendance config show`, which answers privately with the timings, the penalties and the thresholds in one message. `/season review` shows the same block alongside everything else.
 
@@ -287,7 +289,7 @@ Worth running through before the season is approved.
 - [ ] Every division has the role you want pinged
 - [ ] Every division has drivers seated in its Reserve team, if you want reserves distributed
 - [ ] The three timings are what you want, and `/attendance config show` agrees
-- [ ] The first round is far enough away that its check-in has not already been missed
+- [ ] The first round is far enough away that its check-in has not already been missed — the approval refuses it if not, so this one is worth settling before you get there
 - [ ] The two working penalties are set — remembering the third is stuck at 1
 - [ ] Auto-reserve or auto-sack is set to a number you would defend, or deliberately left off
 - [ ] If either is on, every division has a Reserve team and a verdicts channel

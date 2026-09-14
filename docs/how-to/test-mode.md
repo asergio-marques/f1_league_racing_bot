@@ -82,7 +82,11 @@ Phase 0 never arrives from the job store: there is no mystery prefix in the job-
 
 That database detection is load-bearing rather than a fallback: `/season approve` skips scheduling result-submission jobs altogether while the test-mode flag is set, so under test mode there is no results job for the job store to hold in the first place.
 
-**Database state also covers everything the job store has lost.** Before returning a scheduler job, `advance` checks every chronologically earlier round for work the scheduler cannot see: phases evicted by misfire grace, RSVP jobs never created because the round was already past-dated at approval, and result submission. Where the job store holds nothing at all, that same check drives the whole queue. This is why `advance` still works on a test season built entirely in the past, when almost nothing was ever scheduled.
+**Database state also covers everything the job store has lost.** Before returning a scheduler job, `advance` checks every chronologically earlier round for work the scheduler cannot see: phases evicted by misfire grace, RSVP jobs never created because their round was already past-dated when they were scheduled, and result submission. Where the job store holds nothing at all, that same check drives the whole queue. This is why `advance` still works on a season most of whose jobs were never created.
+
+> **Approval is no longer a route to such a season** (decided 2026-09-10). A season holding a round already inside one of its enabled modules' configured windows is refused at approval, and test mode is not exempt — so a test season has to be built with its rounds beyond the check-in notice and every weather phase deadline. The generator in step 2 of [A workable order](#a-workable-order) does this for you, dating its calendars in the year after the run.
+>
+> The database fallback above is still load-bearing. A past-dated round arrives by other routes — `/round amend` moving one backwards on a running season, or a restored save whose rounds have since gone by — and the misfire-grace evictions it covers have nothing to do with approval at all.
 
 > `get_next_pending_phase` carries a comment claiming `schedule_round` skips the results job for `MYSTERY` rounds. It does not — it schedules one for every format. The behaviour above does not depend on the claim; only the comment is wrong. (`get_pending_advance_jobs`'s comment says something different and correct: results jobs are excluded so a past-dated auto-fired job cannot block or double-trigger the wizard.)
 
@@ -235,7 +239,7 @@ Building a season to test one thing is slow, and testing the next thing usually 
 ## A workable order
 
 1. `/test-mode toggle` — before `/season approve`, so the points configurations get seeded, and before any real driver signs up, since a server holding one is refused.
-2. Build and approve a season as normal. Filling a calendar by hand is tedious, and `tools/data-generator/calendar-data/` writes one for you — random circuits, a weekday and an evening slot per division, rounds a week apart — as the XML `/round add-xml` takes. See [the generator's README](../../tools/data-generator/README.md).
+2. Build and approve a season as normal. Filling a calendar by hand is tedious, and `tools/data-generator/calendar-data/` writes one for you — random circuits, a weekday and an evening slot per division, rounds a week apart — as the XML `/round add-xml` takes. See [the generator's README](../../tools/data-generator/README.md). **Keep every round beyond the configured windows**: a first round inside the check-in notice or a weather phase deadline is refused at approval, test mode included. The generator's own dates, in the year after the run, clear them all.
 3. `/test-mode roster add` until each division is seated — with a `nationality` on each if you mean to look at the graphics. `/test-mode roster list` to collect the mention strings.
 4. `/test-mode advance` repeatedly, checking each posted message as it appears.
 5. For attendance rounds, `/test-mode rsvp set-status` once the check-in has been advanced into existence.
