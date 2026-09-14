@@ -1122,6 +1122,20 @@ All commands below require the results module to be enabled (`/module enable res
 
 #### Points Config Management
 
+**The ordering rule applies however a table is built.** Within one configuration and one session type, a lower finishing position may never be worth as much as or more than the position above it. Two positive values tying is a violation; positions worth nothing at the bottom of the table are not, being the ordinary shape of a points table.
+
+Where it is enforced differs by what you are doing:
+
+| Command | What happens to a table out of order |
+|---------|--------------------------------------|
+| `/results config session`, `/results config bulk-session` | Applied, with a warning naming every position at fault |
+| `/results config xml-import` | Rejected outright; the configuration is left untouched |
+| `/season approve` | Refused, naming every position at fault |
+| `/results amend session`, `/results amend bulk-session` | Staged, with a warning naming every position at fault |
+| `/results amend review` | Refused; nothing is written and the staged changes are left to repair |
+
+An edit warns rather than refuses because building a table in passes through states that are momentarily out of order — setting second place before first, or repairing a table from the bottom up. The refusals fall where a table stops being a draft and starts scoring a championship.
+
 ##### `/results config add` — Create a named points configuration
 *Access: League manager*
 
@@ -1147,6 +1161,8 @@ All positions default to 0 points after creation.
 | `session` | Choice | ✅ | Session type: `Feature Qualifying`, `Feature Race`, `Sprint Qualifying`, or `Sprint Race` |
 | `position` | Integer | ✅ | Finishing position (1-indexed) |
 | `points` | Integer | ✅ | Points awarded |
+
+The change is always applied. If it leaves that session's table out of order, the confirmation says so and names the positions at fault.
 
 ##### `/results config fl` — Set the fastest-lap bonus
 *Access: League manager*
@@ -1453,6 +1469,8 @@ Requires amendment mode to be active.
 | `position` | Integer | ✅ | Finishing position |
 | `points` | Integer | ✅ | New points value |
 
+The change is always staged. If it leaves that session's staged table out of order, the confirmation says so and names the positions at fault — and `/results amend review` will refuse to approve it until they are repaired.
+
 ##### `/results amend fl` — Stage a fastest-lap bonus change
 *Access: League manager*
 
@@ -1491,6 +1509,8 @@ Same modal and same input rules as [`/results config bulk-session`](#results-con
 *Access: League manager*
 
 No parameters. Displays a diff of the staged changes against the current season points. Approve to atomically overwrite season points, recalculate all standings for every division from the first round, repost every round's results and standings in the division's own channels, and switch amendment mode back off. Reject to leave the modification store and amendment mode as they are.
+
+> **An amendment that would leave the points out of order is refused.** The diff names the positions at fault, and pressing Approve writes nothing — the season keeps the points it has, and the staged changes are left in place to repair. This is the same rule `/season approve` holds at the start of a season.
 
 > **Only rounds that have been raced are reposted**, and each one is reposted under the label it currently stands at — a round at Final Results stays "Final Results". Rounds still to come are left alone.
 
