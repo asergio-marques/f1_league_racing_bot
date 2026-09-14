@@ -130,9 +130,11 @@ Times go in as `20:00` or as `8:00pm`; both work. The list numbers them in day-a
 
 **Every slot is UTC.** There is no timezone setting anywhere in the module, and the bot writes "UTC" after every time whatever you meant. If your league runs on local time, work out the UTC equivalent before you type it.
 
-Slots are locked while the window is open. Get the list right before you open, because changing it afterwards means closing first.
+**The numbers move, and that is fine.** They are positions in the list, not permanent labels. Add a Monday morning slot and everything after it counts up by one; delete `#2` and the old `#3` becomes the new `#2`. What your drivers told you does not move with them — their availability is recorded against the slot itself, so editing the list never changes anyone's answer and the export always marks the times they actually chose. Remove a slot and put it back at the same day and time, and the drivers who chose it are on it again.
 
-> **Removing a slot renumbers the ones after it, and old answers do not follow.** The numbers are positions in the list, not permanent labels. Delete `#2` and the old `#3` becomes the new `#2`. Drivers who already told you they were free at `#3` are now recorded as free at a different time, and the export will show the wrong column. If you must edit the list after anyone has signed up, **add** rather than remove, and if you do remove one, check the export against what drivers actually said. See [#126](https://github.com/asergio-marques/f1_league_racing_bot/issues/126).
+**You cannot edit the list while anyone is waiting to be placed.** Two blocks sit on `add` and `remove`. The first is the window: slots are locked while signups are open, so changing the list means closing first. The second outlasts it — while any driver holds a completed signup you have not yet placed, both commands are refused and the reply tells you how many are waiting. Removing a slot does delete the answers that named it, and either change renumbers the list you are reading off while you place people by hand.
+
+So get the list right before you open, and if you do need to change it between seasons, place or clear last season's queue first — `/signup unassigned list` is the same queue the block counts.
 
 ---
 
@@ -319,7 +321,7 @@ Worth running through before you open the window.
 - [ ] The signup channel is a channel of its own, not one with permissions you care about
 - [ ] The base role and the complete role are both set, and are two different roles — one is who may sign up, the other is who got through
 - [ ] Your teams are added, so the preferred-team question has something to offer
-- [ ] Every slot you might race in is on the list, in UTC, and you are happy with it — because editing it later shifts the numbers
+- [ ] Every slot you might race in is on the list, in UTC, and you are happy with it — because the list locks once the window opens, and again while anyone is waiting to be placed
 - [ ] You have decided about lap times, and have the track IDs to hand if you want them
 - [ ] `/signup config view` shows what you expect
 - [ ] You have run one signup end to end yourself
@@ -340,7 +342,7 @@ Worth running through before you open the window.
 | `/signup config channel` errors out | Known: that command is broken. Use `/signup channel` |
 | `/signup close` refused, telling you to cancel a timer | Known: you set a `close_time`, and the cancel command does not exist. Wait for the timer, or disable the module and set the channel and roles again |
 | Drivers you expected to be dropped by a close are still there | Known: closing only drops drivers still filling the form in. Anyone waiting on you keeps their place — approve them |
-| The export shows the wrong availability | Known: a slot was removed, which renumbered the rest. The answers still point at the old numbers |
+| `/signup time-slot add` or `remove` refused, naming a number of drivers | Drivers are waiting to be placed. Place or clear them — `/signup unassigned list` is the same queue |
 | Your time slots came back after disabling the module | Known: disabling clears the channel and roles only, whatever the message says |
 | A driver stuck waiting after Request Changes | The bot restarted mid-correction, so the five-minute timer is gone and the window will never close on its own. The field buttons still work — pick one and the flow carries on. Failing that, ask them to press **Cancel Signup** and start again |
 | Roles not granted after `/driver assign` | The season is still in setup. They are all granted at `/season approve` |

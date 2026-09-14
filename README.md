@@ -1061,12 +1061,25 @@ No parameters. Toggles whether drivers must attach a screenshot of their lap tim
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `slot_id` | Integer | ✅ | Stable sequence ID shown in `/signup time-slot list` |
+| `slot_id` | Integer | ✅ | The number shown beside the slot in `/signup time-slot list` |
 
 #### `/signup time-slot list` — List all configured availability time slots
 *Access: League manager*
 
 No parameters.
+
+> **The numbers are positions, and they move.** A slot's number is its place in the chronological
+> list, recomputed every time the list is shown. Add a Monday morning slot and everything after it
+> counts up by one; remove one and everything after it counts down. What does **not** move is what
+> your drivers told you: their availability is recorded against the slot itself, so editing the list
+> never changes anyone's answer and the export always marks the times they actually chose. Remove a
+> slot and put it back at the same day and time, and the drivers who chose it are on it again.
+
+> **Slots cannot be edited while anyone is waiting to be placed.** Both `add` and `remove` are
+> refused while signups are open, and also while any driver holds a completed signup you have not
+> yet placed — the drivers `/signup unassigned list` shows you. The refusal says how many are
+> waiting. Removing a slot deletes the answers that named it, and either change renumbers the list
+> you are reading off while you place people by hand, so the block stays up until the queue is clear.
 
 #### `/signup open` — Open the signup window
 *Access: League manager*
