@@ -567,3 +567,96 @@ async def test_dsq_fastest_lap_not_redistributed(tmp_path):
             assert (row["fastest_lap_bonus"] or 0) == 0, (
                 f"Driver {row['driver_user_id']} should NOT receive the forfeited fastest-lap bonus"
             )
+
+
+# ---------------------------------------------------------------------------
+# apply_penalties reposts when it is not told to skip (#130)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_apply_penalties_reposts_when_not_skipping(tmp_path):
+    """The second, latent instance of the missing-label defect (#130).
+
+    Both production callers pass ``_skip_post=True`` and repost themselves, so this path
+    never runs today — which is exactly why nothing caught that its
+    ``repost_round_results`` call omitted the required ``label`` and would raise
+    ``TypeError`` the moment anything called ``apply_penalties`` without that flag.
+
+    The staged list is deliberately empty: the defect is in the repost that follows the
+    loop, not in the penalty application itself, and an empty list reaches it with the
+    fewest moving parts in between.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    from db.database import get_connection, run_migrations
+    from services.penalty_service import apply_penalties
+
+    path = str(tmp_path / "penalty_repost.db")
+    await run_migrations(path)
+
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
+        )
+        cursor = await db.execute(
+            "INSERT INTO seasons (server_id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+        )
+        season_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id) VALUES (?, 'Alpha', 777)",
+            (season_id,),
+        )
+        division_id = cursor.lastrowid
+        await db.execute(
+            "INSERT INTO division_results_config "
+            "(division_id, results_channel_id, standings_channel_id) VALUES (?, 501, 502)",
+            (division_id,),
+        )
+        cursor = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
+            "VALUES (?, 1, 'STANDARD', 'AWAITING_APPEAL_VERDICTS', '2026-06-01T18:00:00')",
+            (division_id,),
+        )
+        round_id = cursor.lastrowid
+        await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
+            (round_id, division_id),
+        )
+        await db.commit()
+
+    posted: list[str] = []
+
+    guild = MagicMock()
+    guild.get_member.return_value = None
+    guild.fetch_member = AsyncMock(side_effect=Exception("not found"))
+
+    def get_channel(channel_id):
+        channel = AsyncMock()
+
+        async def fake_send(content=None, **kwargs):
+            posted.append(content or "")
+            msg = MagicMock()
+            msg.id = 4242
+            return msg
+
+        channel.send = fake_send
+        channel.id = channel_id
+        return channel
+
+    guild.get_channel = get_channel
+
+    bot = MagicMock()
+    bot.get_guild.return_value = guild
+    bot.output_router.post_log = AsyncMock()
+
+    await apply_penalties(
+        path, round_id, division_id, [], applied_by=99, bot=bot,
+    )
+
+    assert posted, "apply_penalties reposted nothing"
+    # The label is the round's own stage, derived rather than demanded of the caller.
+    assert any("Post-Race Penalty Results" in content for content in posted), posted
