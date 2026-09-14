@@ -25,6 +25,7 @@ from models.round import Round, RoundFormat, RoundStatus  # noqa: E402
 from services.approval_window_service import (  # noqa: E402
     AttendanceWindows,
     WeatherWindows,
+    calendar_faults,
     overdue_windows,
 )
 
@@ -394,3 +395,153 @@ async def test_the_report_is_capped_so_discord_keeps_it():
 
     assert any("further round(s) in the same state" in line for line in lines)
     assert len("\n".join(lines)) < 2000
+
+
+# ── `calendar_faults` — one division reduced to the rounds that bound it ──────
+#
+# #181: a league running neither weather nor attendance contributed no windows at all, so
+# `overdue_windows` answered empty for a season every round of which was already in the past
+# and the approval let it through. A round's own moment is judged here instead, and whatever
+# the modules are.
+#
+# The reduction is the second half of this module's job. A division's fault is the last round
+# already run and — where it is a later round — the last round holding an elapsed window, and
+# nothing else: every earlier round is implied by them, because a manager who moves the
+# calendar past the round named has moved it past all of them.
+
+
+def _faults(rounds, *, attendance=None, weather=None, now=NOW):
+    return calendar_faults(rounds, now=now, attendance=attendance, weather=weather)
+
+
+def test_a_season_wholly_in_the_past_is_a_fault_with_no_modules_at_all():
+    """#181, reduced to the arithmetic underneath it.
+
+    Both modules off, so there is not one configured window to check — and before this the
+    answer was that the season was fine. Every round would have sat at *not run* for good.
+    """
+    fault = _faults([_round(days_out=-90, number=1), _round(days_out=-60, number=2)])
+
+    assert fault is not None
+    assert fault.latest_past.round_number == 2
+    assert fault.latest_window is None
+
+
+def test_the_latest_past_round_is_named_and_not_the_first():
+    """The last one bounds the calendar. Naming round 1 would understate what must move."""
+    rounds = [_round(days_out=d, number=n) for n, d in ((1, -30), (2, -20), (3, -10), (4, 30))]
+
+    fault = _faults(rounds)
+
+    assert fault.latest_past.round_number == 3
+
+
+def test_a_later_round_inside_a_window_is_named_as_well():
+    """Two findings, because they are two different things to fix.
+
+    Round 1 has gone; round 2 is still to come but its five-day check-in call has not.
+    """
+    rounds = [_round(days_out=-1, number=1), _round(days_out=3, number=2)]
+
+    fault = _faults(rounds, attendance=DEFAULT_ATTENDANCE)
+
+    assert fault.latest_past.round_number == 1
+    assert fault.latest_window.round_number == 2
+    assert fault.latest_window.label == "Check-in call"
+
+
+def test_a_round_already_run_is_not_also_named_for_its_windows():
+    """The suppression rule. A round behind us has missed all six of its windows.
+
+    Reporting it as both the latest past round and the latest windowed round says one thing
+    twice, and the remedy — move it — is the same either way.
+    """
+    fault = _faults(
+        [_round(days_out=-1)], attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER
+    )
+
+    assert fault.latest_past.round_number == 1
+    assert fault.latest_window is None
+
+
+def test_the_furthest_overdue_window_of_that_round_is_the_one_named():
+    """Clearing the earliest-due window clears the rest, so it sets how far the round moves.
+
+    A round three days out has missed the five-day check-in call and the five-day Phase 1,
+    but not the 24-hour last notice. The call is named, being the earliest due of them.
+    """
+    fault = _faults(
+        [_round(days_out=3)], attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER
+    )
+
+    assert fault.latest_past is None
+    assert fault.latest_window.fire_at == fault.latest_window.scheduled_at - timedelta(days=5)
+    assert fault.latest_window.label in {"Check-in call", "Weather Phase 1"}
+
+
+def test_a_healthy_calendar_is_no_fault_at_all():
+    """The gate must not stand in the way of an ordinary season."""
+    rounds = [_round(days_out=d, number=n) for n, d in ((1, 30), (2, 37), (3, 44))]
+
+    assert _faults(rounds, attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER) is None
+
+
+def test_no_rounds_at_all_is_no_fault():
+    assert _faults([], attendance=DEFAULT_ATTENDANCE) is None
+
+
+def test_a_round_exactly_now_has_already_run():
+    """``scheduled_at <= now``, the threshold `judge_amendment` refuses a backwards move on.
+
+    The two doors must agree about a round landing on this instant, or a moment `/round amend`
+    refuses would still be approvable.
+    """
+    fault = _faults([_round(days_out=0)])
+
+    assert fault.latest_past is not None
+    assert fault.latest_past.scheduled_at == NOW
+
+
+def test_a_cancelled_round_is_no_fault_however_far_behind():
+    """Refusing a season over one would leave a league unable to approve at all until they
+    deleted a round they may well want to keep a record of."""
+    rounds = [
+        _round(days_out=-30, number=1, status=RoundStatus.CANCELLED.value),
+        _round(days_out=30, number=2),
+    ]
+
+    assert _faults(rounds, attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER) is None
+
+
+def test_a_division_of_nothing_but_cancelled_rounds_is_no_fault():
+    cancelled = _round(days_out=-30, status=RoundStatus.CANCELLED.value)
+
+    assert _faults([cancelled]) is None
+
+
+def test_a_naive_scheduled_at_is_read_as_utc_here_too():
+    """Rounds come back from the database without a timezone, as they do everywhere here."""
+    naive = Round(
+        id=1,
+        division_id=1,
+        round_number=1,
+        format=RoundFormat.NORMAL,
+        track_name="Silverstone",
+        scheduled_at=datetime(2026, 9, 1, 12, 0),  # no tzinfo, and behind NOW
+    )
+
+    fault = _faults([naive])
+
+    assert fault is not None and fault.latest_past.round_number == 1
+
+
+def test_two_rounds_at_one_moment_break_the_tie_on_round_number():
+    """Never the order a host's database handed them back in.
+
+    Two rounds of one division should never share a moment — approval refuses that too — but
+    the answer must not depend on row order while one slips through.
+    """
+    same = [_round(days_out=-1, number=2), _round(days_out=-1, number=1)]
+
+    assert _faults(same).latest_past.round_number == 2
+    assert _faults(list(reversed(same))).latest_past.round_number == 2
