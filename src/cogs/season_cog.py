@@ -4859,9 +4859,32 @@ class SeasonCog(commands.Cog):
                 return
 
             # ── Gate 2a: monotonic ordering check (FR-008) ───────────────────
-            mono_errors = await season_points_service.validate_monotonic_ordering(
-                self.bot.db_path, cfg.season_id
-            )
+            #
+            # Two checks, because the points a season will run on can arrive from two
+            # directions and this gate has to see both (#131).
+            #
+            # The attached server-level configs are the ones a first approval will copy
+            # in below, at `snapshot_configs_to_season` — and until it runs, the season's
+            # own table is empty. Reading only that table is what made this gate pass
+            # every first approval it was ever asked about, which is the whole of the
+            # defect: a league could approve a season scoring second place above first
+            # and be told nothing.
+            #
+            # The season's own table is still read as well. `snapshot_configs_to_season`
+            # writes with INSERT OR REPLACE and clears nothing first, so a season being
+            # approved a second time can still be holding entries an earlier approval
+            # left behind, and those are not in any attached config to be found.
+            # A re-approval sees the same fault from both sides, so the two lists are
+            # merged rather than concatenated — a manager reading the refusal should see
+            # each broken position once, in the order the checks found them.
+            mono_errors = list(dict.fromkeys(
+                await season_points_service.validate_attached_config_ordering(
+                    self.bot.db_path, cfg.season_id, cfg.server_id
+                )
+                + await season_points_service.validate_monotonic_ordering(
+                    self.bot.db_path, cfg.season_id
+                )
+            ))
             if mono_errors:
                 bullet_list = "\n\u2022 ".join(mono_errors)
                 msg = (
