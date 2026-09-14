@@ -519,17 +519,28 @@ class SignupModuleService:
         snapshot: ConfigSnapshot | None = None
         if row["config_snapshot_json"]:
             d = json.loads(row["config_snapshot_json"])
+            # The snapshot stores each slot's durable identity; the display ordinal is
+            # rebuilt from chronological order, which is how get_slots derived it in the
+            # first place, so a driver mid-wizard still sees the numbers they were shown.
+            # A snapshot written before the durable identity existed carries
+            # slot_sequence_id and no slot_id: both are derived here, so it reads
+            # correctly without migrating stored JSON.
+            snapshot_slots = sorted(
+                d.get("slots", []),
+                key=lambda s: (s["day_of_week"], s["time_hhmm"]),
+            )
             slots = [
                 AvailabilitySlot(
                     id=s["id"],
                     server_id=s["server_id"],
-                    slot_id=AvailabilitySlot.make_slot_id(s["day_of_week"], s["time_hhmm"]),
-                    slot_sequence_id=s["slot_sequence_id"],
+                    slot_id=s.get("slot_id")
+                    or AvailabilitySlot.make_slot_id(s["day_of_week"], s["time_hhmm"]),
+                    slot_sequence_id=i,
                     day_of_week=s["day_of_week"],
                     time_hhmm=s["time_hhmm"],
                     display_label=AvailabilitySlot.make_label(s["day_of_week"], s["time_hhmm"]),
                 )
-                for s in d.get("slots", [])
+                for i, s in enumerate(snapshot_slots, start=1)
             ]
             snapshot = ConfigSnapshot(
                 nationality_required=d["nationality_required"],
@@ -601,6 +612,12 @@ class SignupModuleService:
 
     @staticmethod
     def _snapshot_to_dict(snapshot: ConfigSnapshot) -> dict:
+        """Freeze the configuration a wizard started against.
+
+        Each slot is stored by its durable identity. The display ordinal is deliberately
+        **not** stored: it is a chronological position, and storing one is what issue #126
+        was. ``_row_to_wizard_record`` rebuilds it from the snapshot's own order.
+        """
         return {
             "nationality_required": snapshot.nationality_required,
             "time_type": snapshot.time_type,
@@ -611,7 +628,7 @@ class SignupModuleService:
                 {
                     "id": s.id,
                     "server_id": s.server_id,
-                    "slot_sequence_id": s.slot_sequence_id,
+                    "slot_id": s.slot_id,
                     "day_of_week": s.day_of_week,
                     "time_hhmm": s.time_hhmm,
                 }

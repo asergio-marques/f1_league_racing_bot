@@ -288,6 +288,126 @@ class TestDurableSlotIdentity:
         assert "Wed_20_00" in {s.slot_id for s in await svc.get_slots(1)}
 
 
+class TestSnapshotStoresTheDurableIdentity:
+    """A frozen wizard snapshot stores each slot by identity, not by position.
+
+    The display ordinal is rebuilt from the snapshot's own chronological order, so the
+    driver mid-wizard still sees the numbers they were shown, and no ordinal is persisted
+    anywhere — which is what issue #126 was.
+    """
+
+    async def _saved_snapshot(self, db_path, slots):
+        from models.signup_module import (
+            ConfigSnapshot, SignupWizardRecord, WizardState,
+        )
+        from services.signup_module_service import SignupModuleService
+
+        svc = SignupModuleService(db_path)
+        await svc.save_wizard(SignupWizardRecord(
+            id=0, server_id=1, discord_user_id="snap",
+            wizard_state=WizardState.COLLECTING_AVAILABILITY,
+            signup_channel_id=888,
+            config_snapshot=ConfigSnapshot(
+                nationality_required=False,
+                time_type="TIME_TRIAL",
+                time_image_required=False,
+                selected_track_ids=[],
+                slots=slots,
+            ),
+            draft_answers={},
+            current_lap_track_index=0,
+            last_activity_at="2026-01-01T00:00:00",
+        ))
+        return svc
+
+    async def test_no_display_ordinal_is_persisted(self, db_path):
+        import json
+
+        from db.database import get_connection
+        from services.signup_module_service import SignupModuleService
+
+        svc = SignupModuleService(db_path)
+        for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
+            await svc.add_slot(1, day, time_hhmm)
+        await self._saved_snapshot(db_path, await svc.get_slots(1))
+
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT config_snapshot_json FROM signup_wizard_records "
+                "WHERE discord_user_id = 'snap'"
+            )
+            stored = json.loads((await cursor.fetchone())[0])
+        assert [s["slot_id"] for s in stored["slots"]] == [
+            "Mon_19_00", "Wed_20_00", "Fri_21_00",
+        ]
+        assert all("slot_sequence_id" not in s for s in stored["slots"])
+
+    async def test_display_ordinals_rebuilt_on_read(self, db_path):
+        from services.signup_module_service import SignupModuleService
+
+        svc = SignupModuleService(db_path)
+        for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
+            await svc.add_slot(1, day, time_hhmm)
+        await self._saved_snapshot(db_path, await svc.get_slots(1))
+
+        snap = (await svc.get_wizard(1, "snap")).config_snapshot
+        assert [s.slot_sequence_id for s in snap.slots] == [1, 2, 3]
+        assert [s.slot_id for s in snap.slots] == [
+            "Mon_19_00", "Wed_20_00", "Fri_21_00",
+        ]
+
+    async def test_ordinals_rebuilt_chronologically_however_stored(self, db_path):
+        """Order in the stored JSON must not decide the numbers a driver was shown."""
+        from services.signup_module_service import SignupModuleService
+
+        svc = SignupModuleService(db_path)
+        for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
+            await svc.add_slot(1, day, time_hhmm)
+        scrambled = list(reversed(await svc.get_slots(1)))
+        await self._saved_snapshot(db_path, scrambled)
+
+        snap = (await svc.get_wizard(1, "snap")).config_snapshot
+        assert [(s.slot_sequence_id, s.slot_id) for s in snap.slots] == [
+            (1, "Mon_19_00"), (2, "Wed_20_00"), (3, "Fri_21_00"),
+        ]
+
+    async def test_a_snapshot_written_before_durable_ids_still_reads(self, db_path):
+        """An in-flight wizard from before this change carries no slot_id — derive it."""
+        import json
+
+        from db.database import get_connection
+        from services.signup_module_service import SignupModuleService
+
+        legacy = {
+            "nationality_required": False,
+            "time_type": "TIME_TRIAL",
+            "time_image_required": False,
+            "selected_track_ids": [],
+            "team_names": [],
+            "slots": [
+                {"id": 1, "server_id": 1, "slot_sequence_id": 1,
+                 "day_of_week": 1, "time_hhmm": "19:00"},
+                {"id": 2, "server_id": 1, "slot_sequence_id": 2,
+                 "day_of_week": 5, "time_hhmm": "21:00"},
+            ],
+        }
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO signup_wizard_records (server_id, discord_user_id, "
+                "wizard_state, signup_channel_id, config_snapshot_json, "
+                "draft_answers_json, current_lap_track_index, last_activity_at) "
+                "VALUES (1, 'legacy', 'COLLECTING_AVAILABILITY', 888, ?, '{}', 0, "
+                "'2026-01-01T00:00:00')",
+                (json.dumps(legacy),),
+            )
+            await db.commit()
+
+        snap = (await SignupModuleService(db_path).get_wizard(1, "legacy")).config_snapshot
+        assert [(s.slot_sequence_id, s.slot_id) for s in snap.slots] == [
+            (1, "Mon_19_00"), (2, "Fri_21_00"),
+        ]
+
+
 class TestWindowState:
     async def _make_config(self, db_path):
         """Helper: insert a signup_module_config row for server 1."""
