@@ -505,7 +505,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 | `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC). Amending re-triggers the scheduler and renumbers rounds. |
 | `format` | String | — | New format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE`. Amending invalidates prior weather phases. |
 
-> **Amending a round costs it its check-in.** The scheduler is re-triggered for the forecasts only. A round's RSVP notice, last reminder and deadline are cancelled along with everything else and are never rescheduled, so an amended round posts no check-in call, opens no attendance records, and counts nothing against anyone. Nothing warns you at the time.
+> **Amending a round costs it its check-in.** The scheduler is re-triggered for the forecasts only, and only while the weather module is on — with it off, the round's old forecasts are still thrown away, but none is drawn or posted in their place until you switch the module on. A round's RSVP notice, last reminder and deadline are cancelled along with everything else and are never rescheduled, so an amended round posts no check-in call, opens no attendance records, and counts nothing against anyone. Nothing warns you at the time.
 
 #### `/round cancel` — Cancel a round in the active season
 *Access: League admin*
