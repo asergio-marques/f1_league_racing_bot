@@ -785,7 +785,7 @@ Ordering and timing constraints:
 
 | Module | Constraint |
 |---|---|
-| `results` | Cannot be enabled or disabled while a season is **active** |
+| `results` | Cannot be **enabled** while a season is **active**. It can be disabled at any time, but disabling it while a season is active destroys that season's results — see [`/module disable`](#module-disable--disable-a-bot-module) |
 | `attendance` | Requires `results` to be enabled first, and cannot be enabled while a season is **active** |
 | `weather` | If a season is active, every division must already have a forecast channel. Enabling runs any overdue phases immediately and schedules the rest |
 | `signup`, `images` | No constraint |
