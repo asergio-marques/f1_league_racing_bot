@@ -913,16 +913,30 @@ async def repost_round_results(
     round_id: int,
     division_id: int,
     guild: discord.Guild,
-    label: str,
+    label: str | None = None,
     *,
     bot=None,
 ) -> None:
-    """Load the division's channels and repost/edit round results and standings."""
+    """Load the division's channels and repost/edit round results and standings.
+
+    **The label is derived from the round, not demanded of the caller** (#130). Every
+    caller reposts rounds it does not choose — the amendment cascade walks a whole
+    season at once, and its rounds sit at different lifecycle stages — so no single
+    label a caller could pass would be right for all of them. Omitting *label* takes
+    the round's own status through ``_label_from_status``, which is what the two sync
+    commands do. An explicit *label* still wins, for a caller that means to override it.
+
+    **A round with no ACTIVE session results is skipped entirely.** Nothing was posted
+    for it, so there is nothing to repost. ``post_round_results`` already guards itself
+    this way but ``post_standings`` does not, and the amendment cascade walks every
+    non-cancelled round of the division — future ones included. Without this guard,
+    approving an amendment would post standings for rounds that have not been raced.
+    """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
             SELECT d.season_id, drc.results_channel_id, drc.standings_channel_id,
-                   r.round_number, r.track_name
+                   r.round_number, r.track_name, r.status
             FROM divisions d
             LEFT JOIN division_results_config drc ON drc.division_id = d.id
             JOIN rounds r ON r.id = ?
@@ -940,6 +954,16 @@ async def repost_round_results(
     standings_ch_id: int | None = row["standings_channel_id"]
     round_number: int = row["round_number"]
     track_name: str = row["track_name"] or "Unknown"
+
+    if label is None:
+        label = _label_from_status(row["status"] or "")
+
+    if not await _round_has_posted_results(db_path, round_id):
+        log.debug(
+            "repost_round_results: round %s has no ACTIVE session results — nothing to repost",
+            round_id,
+        )
+        return
 
     if results_ch_id:
         rc = guild.get_channel(results_ch_id)
@@ -961,6 +985,22 @@ async def repost_round_results(
                 db_path, division_id, round_id, round_number, track_name, sc,
                 driver_snaps, team_snaps, guild, show_reserves, label, bot=bot,
             )
+
+
+async def _round_has_posted_results(db_path: str, round_id: int) -> bool:
+    """Whether *round_id* has any ACTIVE session results — i.e. whether it has been raced.
+
+    The same condition the two sync commands select on, so a repost covers exactly the
+    rounds a resynchronisation would.
+    """
+    async with get_connection(db_path) as db:
+        row = await (
+            await db.execute(
+                "SELECT 1 FROM session_results WHERE round_id = ? AND status = 'ACTIVE' LIMIT 1",
+                (round_id,),
+            )
+        ).fetchone()
+    return row is not None
 
 
 async def _get_show_reserves(db_path: str, division_id: int) -> bool:

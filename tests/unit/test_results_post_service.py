@@ -388,3 +388,174 @@ def test_the_two_sections_posted_apart_say_everything_the_joint_message_says():
     for body in (_DRIVERS, _TEAMS):
         assert body in joint
         assert sum(body in message for message in apart) == 1
+
+
+# ---------------------------------------------------------------------------
+# repost_round_results — the label is the round's own, and an unraced round is
+# skipped (#130)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_division_for_repost(
+    tmp_path,
+    *,
+    round_status: str,
+    with_session_results: bool = True,
+):
+    """A season, a division with both channels configured, and one round.
+
+    Returns ``(db_path, division_id, round_id)``.
+    """
+    from db.database import run_migrations, get_connection
+
+    db_path = str(tmp_path / "repost.db")
+    await run_migrations(db_path)
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
+        )
+        cursor = await db.execute(
+            "INSERT INTO seasons (server_id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 2)"
+        )
+        season_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id) VALUES (?, 'Alpha', 777)",
+            (season_id,),
+        )
+        division_id = cursor.lastrowid
+        await db.execute(
+            "INSERT INTO division_results_config "
+            "(division_id, results_channel_id, standings_channel_id) VALUES (?, 501, 502)",
+            (division_id,),
+        )
+        cursor = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
+            "VALUES (?, 4, 'STANDARD', ?, '2026-06-01T18:00:00')",
+            (division_id, round_status),
+        )
+        round_id = cursor.lastrowid
+        if with_session_results:
+            await db.execute(
+                "INSERT INTO session_results (round_id, division_id, session_type, status) "
+                "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
+                (round_id, division_id),
+            )
+        await db.commit()
+
+    return db_path, division_id, round_id
+
+
+def _guild_capturing_sends(captured: list[str]):
+    """A guild whose two configured channels record whatever is sent to them."""
+    async def fake_send(content=None, **kwargs):
+        captured.append(content or "")
+        msg = MagicMock()
+        msg.id = 4242
+        return msg
+
+    def get_channel(channel_id):
+        channel = AsyncMock()
+        channel.send = fake_send
+        channel.id = channel_id
+        return channel
+
+    guild = MagicMock()
+    guild.get_channel = get_channel
+    guild.get_member.return_value = None
+    guild.fetch_member = AsyncMock(side_effect=Exception("not found"))
+    return guild
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_needs_no_label(tmp_path):
+    """The two production call sites pass no label; that must not raise (#130).
+
+    Before the fix ``label`` was a required positional parameter, so this call raised
+    ``TypeError: missing a required argument: 'label'`` — swallowed by the amendment
+    cascade's per-round ``try/except``, which is why a league saw stale standings.
+    """
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="FINAL"
+    )
+    captured: list[str] = []
+
+    await repost_round_results(
+        db_path, round_id, division_id, _guild_capturing_sends(captured)
+    )
+
+    assert captured, "nothing was reposted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("round_status", "expected_label"),
+    [
+        ("AWAITING_REPORT_VERDICTS", "Provisional Results"),
+        ("AWAITING_APPEAL_VERDICTS", "Post-Race Penalty Results"),
+        ("FINAL", "Final Results"),
+    ],
+)
+async def test_repost_round_results_labels_from_round_status(
+    tmp_path, round_status, expected_label
+):
+    """An omitted label is the round's own lifecycle stage, as the sync commands derive it."""
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status=round_status
+    )
+    captured: list[str] = []
+
+    await repost_round_results(
+        db_path, round_id, division_id, _guild_capturing_sends(captured)
+    )
+
+    assert captured
+    assert any(expected_label in content for content in captured), (
+        f"no posted message carried {expected_label!r}: {captured}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_honours_an_explicit_label(tmp_path):
+    """A caller that passes a label still overrides the derivation."""
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="FINAL"
+    )
+    captured: list[str] = []
+
+    await repost_round_results(
+        db_path, round_id, division_id, _guild_capturing_sends(captured),
+        "Provisional Results (amended)",
+    )
+
+    assert any("Provisional Results (amended)" in content for content in captured)
+    assert not any("Final Results" in content for content in captured)
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_skips_a_round_with_no_results(tmp_path):
+    """A round that has not been raced has nothing to repost — not even standings (#130).
+
+    The amendment cascade walks every non-cancelled round of the division, so without
+    this guard approving an amendment would post standings for future rounds.
+    """
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="NOT_RUN", with_session_results=False
+    )
+    captured: list[str] = []
+
+    await repost_round_results(
+        db_path, round_id, division_id, _guild_capturing_sends(captured)
+    )
+
+    assert captured == []
