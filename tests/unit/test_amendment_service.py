@@ -197,3 +197,74 @@ async def test_approve_amendment_overwrites_season_points(db_path):
     assert state is not None
     assert not state.amendment_active
     assert not state.modified_flag
+
+
+# ---------------------------------------------------------------------------
+# amend_round actually amends — the query it opens with must name real columns
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_amend_round_changes_the_field(tmp_path):
+    """`/round amend` was dead on arrival: its opening SELECT asked `divisions` for a
+    `division_id` column, which that table has never had, so every amendment of an active
+    season's round raised `no such column: d.division_id` and the league was told the
+    amendment failed. Nothing else in the suite executed this path.
+    """
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import AsyncMock, MagicMock
+
+    from services.amendment_service import AmendmentService
+
+    path = str(tmp_path / "amend_round.db")
+    await run_migrations(path)
+    scheduled_at = datetime.now(timezone.utc) + timedelta(days=30)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO server_configs "
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+            "VALUES (1, 10, 20, 30)"
+        )
+        await db.execute(
+            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
+            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 1)"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
+            "VALUES (1, 1, 'Div A', 1, 999, 555)"
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at) "
+            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain International Circuit', ?)",
+            (scheduled_at.isoformat(),),
+        )
+        await db.commit()
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+
+    bot = MagicMock()
+    bot.db_path = path
+    bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+    bot.output_router.post_forecast = AsyncMock(return_value=None)
+    bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.scheduler_service.cancel_round = MagicMock()
+    bot.scheduler_service.schedule_round = MagicMock()
+
+    await AmendmentService(path).amend_round(
+        1, actor, "track_name", "Silverstone Circuit", bot
+    )
+
+    async with get_connection(path) as db:
+        cursor = await db.execute("SELECT track_name FROM rounds WHERE id = 1")
+        row = await cursor.fetchone()
+        audit = await db.execute(
+            "SELECT change_type, old_value, new_value FROM audit_entries WHERE server_id = 1"
+        )
+        entry = await audit.fetchone()
+
+    assert row["track_name"] == "Silverstone Circuit"
+    assert entry["change_type"] == "round.track_name"
+    assert entry["old_value"] == "Bahrain International Circuit"
+    assert entry["new_value"] == "Silverstone Circuit"

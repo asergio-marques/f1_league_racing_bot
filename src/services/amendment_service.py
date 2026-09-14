@@ -42,13 +42,33 @@ class AmendmentService:
         3. Update round field.
         4. Invalidate all PhaseResults and clear session phase data.
         5. Reset phase done flags.
-        6. Cancel and re-schedule scheduler jobs.
-        7. Post invalidation message if any prior phase was done.
-        8. Immediately re-run any phase whose horizon has already passed.
+        6. Cancel and re-schedule scheduler jobs — weather only.
+        7. Post invalidation message if any prior phase was done — weather only.
+        8. Immediately re-run any phase whose horizon has already passed — weather only.
+
+        **What the weather gate covers, and what it deliberately does not** (issue #113). The
+        re-scheduling, the invalidation notice and the re-run of overdue phases all produce the
+        weather module's output — a scheduled job, a post to the forecast channel, and a forecast
+        computed, recorded and posted — so all three ask ``is_weather_enabled`` first. Only the
+        re-scheduling did, which is how an amendment with weather switched off came to draw a
+        forecast, post it, and mark the phase done, leaving a later ``/module enable weather`` to
+        skip it for good. The audit line beside the notice is not weather output and is not gated.
+
+        Resetting the done flags, invalidating the phase results and deleting the stored forecast
+        messages all stay unconditional, and that is not an oversight. They *clear* weather work
+        rather than produce any: the round's circuit or date has changed, so the forecasts behind
+        it are wrong whatever the module's state, and clearing them is exactly what makes a later
+        enable find the work not already done — the second half of the rule this restores. The
+        message deletion likewise removes stale output; leaving wrong-circuit forecasts standing
+        in the channel while the records behind them are invalidated is the worse of the two
+        outcomes.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT r.*, d.division_id, s.server_id, "
+                # ``r.*`` already carries rounds.division_id, which is the one every reader
+                # below wants. Asking ``divisions`` for a division_id of its own — that table
+                # has only ``id`` — made this statement raise on every amendment.
+                "SELECT r.*, s.server_id, "
                 "       d.forecast_channel_id, d.mention_role_id, d.tier AS division_tier, "
                 "       s.status AS season_status, s.season_number "
                 "FROM rounds r "
@@ -149,8 +169,8 @@ class AmendmentService:
         # drivers; we must not fire the mystery notice retroactively (FR-009).
         # For non-mystery rounds we always re-schedule; overdue phases are
         # immediately re-run below.
-        _schedule_weather = await bot.module_service.is_weather_enabled(server_id)
-        if _schedule_weather:
+        _weather_on = await bot.module_service.is_weather_enabled(server_id)
+        if _weather_on:
             from models.round import RoundFormat as _RoundFormat
             if updated_round.format != _RoundFormat.MYSTERY or now < p1_horizon:
                 bot.scheduler_service.schedule_round(
@@ -176,9 +196,15 @@ class AmendmentService:
                 forecast_channel_id = row["forecast_channel_id"]
 
             amended_track = str(db_value) if field == "track_name" else track_name
-            await bot.output_router.post_forecast(
-                _Div(), invalidation_message(amended_track), server_id=server_id
-            )
+            # The notice goes to the forecast channel and is about forecasts, so it is the
+            # weather module's output and waits on the module. Reachable with weather off —
+            # phases run, module switched off, round amended — which is issue #113 again by a
+            # second route. The log line below is amendment audit, not weather output, and is
+            # posted either way.
+            if _weather_on:
+                await bot.output_router.post_forecast(
+                    _Div(), invalidation_message(amended_track), server_id=server_id
+                )
             await bot.output_router.post_log(
                 server_id,
                 f"{actor.display_name} (<@{actor.id}>) | /round amend (field) | Success\n"
@@ -188,12 +214,12 @@ class AmendmentService:
                 f"  new: {db_value}",
             )
 
-        # 7. Re-run missed phases (non-MYSTERY only)
+        # 7. Re-run missed phases (non-MYSTERY only, and only with weather on)
         from services.phase1_service import run_phase1
         from services.phase2_service import run_phase2
         from services.phase3_service import run_phase3
 
-        if updated_round.format != RoundFormat.MYSTERY:
+        if _weather_on and updated_round.format != RoundFormat.MYSTERY:
             if now >= p1_horizon:
                 await run_phase1(round_id, bot)
             if now >= p2_horizon:

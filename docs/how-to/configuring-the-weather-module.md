@@ -174,7 +174,9 @@ The higher the chance of rain from phase 1, the more rain and mixed sessions pha
 
 - **A mystery round notice**, at the phase 1 moment, pinging nobody.
 - **An invalidation notice**, if a round's track, time or format is changed after a forecast has gone out. It tells drivers the old forecasts no longer count, and a fresh one follows automatically.
-- **A cancellation notice**, if a round, a division or the whole season is called off. All three are posted to the forecast channel, and they arrive whether or not the weather module is on.
+- **A cancellation notice**, if a round, a division or the whole season is called off. All three are posted to the forecast channel.
+
+> **Only the cancellation notice arrives with the module switched off.** A cancellation is announced in the forecast channel whether or not weather is on. The mystery round notice and the invalidation notice are this module's own output and wait for it: with weather off, amending a round still throws its old forecasts away and deletes the messages that carried them, but nothing is posted in their place and no new forecast is drawn. Switch weather on afterwards and that round's forecasts are drawn then, as though they had never been attempted.
 
 **And one disappears.** Twenty-four hours after a race starts, the bot deletes that round's final forecast, so the channel holds the forecast that matters and nothing else.
 
