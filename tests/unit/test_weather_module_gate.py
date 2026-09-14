@@ -196,7 +196,7 @@ async def test_amend_round_runs_no_overdue_phase_while_weather_is_disabled(tmp_p
         "services.phase3_service.run_phase3", new=AsyncMock()
     ) as p3:
         await AmendmentService(db_path).amend_round(
-            1, _make_actor(), "track_name", "Silverstone Circuit", bot
+            1, _make_actor(), [("track_name", "Silverstone Circuit")], bot
         )
 
     p1.assert_not_awaited()
@@ -216,7 +216,7 @@ async def test_amend_round_leaves_the_phases_for_a_later_enable(tmp_path):
     bot = _amend_bot(db_path, weather_enabled=False)
 
     await AmendmentService(db_path).amend_round(
-        1, _make_actor(), "track_name", "Silverstone Circuit", bot
+        1, _make_actor(), [("track_name", "Silverstone Circuit")], bot
     )
 
     assert await _phase_state(db_path) == (0, 0, 0, 0)
@@ -237,7 +237,7 @@ async def test_amend_round_runs_overdue_phases_while_weather_is_enabled(tmp_path
         "services.phase3_service.run_phase3", new=AsyncMock()
     ) as p3:
         await AmendmentService(db_path).amend_round(
-            1, _make_actor(), "track_name", "Silverstone Circuit", bot
+            1, _make_actor(), [("track_name", "Silverstone Circuit")], bot
         )
 
     p1.assert_awaited_once()
@@ -252,7 +252,7 @@ async def test_amend_round_posts_no_invalidation_notice_while_weather_is_disable
     bot = _amend_bot(db_path, weather_enabled=False)
 
     await AmendmentService(db_path).amend_round(
-        1, _make_actor(), "track_name", "Silverstone Circuit", bot
+        1, _make_actor(), [("track_name", "Silverstone Circuit")], bot
     )
 
     bot.output_router.post_forecast.assert_not_awaited()
@@ -271,7 +271,7 @@ async def test_amend_round_posts_the_invalidation_notice_while_weather_is_enable
         "services.phase2_service.run_phase2", new=AsyncMock()
     ), patch("services.phase3_service.run_phase3", new=AsyncMock()):
         await AmendmentService(db_path).amend_round(
-            1, _make_actor(), "track_name", "Silverstone Circuit", bot
+            1, _make_actor(), [("track_name", "Silverstone Circuit")], bot
         )
 
     bot.output_router.post_forecast.assert_awaited_once()

@@ -253,7 +253,7 @@ async def test_amend_round_changes_the_field(tmp_path):
     bot.scheduler_service.schedule_round = MagicMock()
 
     await AmendmentService(path).amend_round(
-        1, actor, "track_name", "Silverstone Circuit", bot
+        1, actor, [("track_name", "Silverstone Circuit")], bot
     )
 
     async with get_connection(path) as db:
@@ -268,3 +268,93 @@ async def test_amend_round_changes_the_field(tmp_path):
     assert entry["change_type"] == "round.track_name"
     assert entry["old_value"] == "Bahrain International Circuit"
     assert entry["new_value"] == "Silverstone Circuit"
+
+
+# ---------------------------------------------------------------------------
+# A compound amendment is one amendment — issue #115
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_amending_two_fields_amends_once(tmp_path):
+    """Amending a round's track and its date together is one amendment, not two.
+
+    `/round amend` called the service once per field the manager gave, so changing both ran the
+    whole amendment twice: the league was told twice that its forecasts had been thrown away,
+    and the round was cancelled, re-armed and had its overdue phases re-run twice over. Two
+    audit entries are right — one per field — and everything else happens exactly once.
+    """
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import AsyncMock, MagicMock
+
+    from services.amendment_service import AmendmentService
+
+    path = str(tmp_path / "amend_two.db")
+    await run_migrations(path)
+    scheduled_at = datetime.now(timezone.utc) + timedelta(days=30)
+    new_moment = scheduled_at + timedelta(days=7)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO server_configs "
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+            "VALUES (1, 10, 20, 30)"
+        )
+        await db.execute(
+            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
+            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 1)"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
+            "VALUES (1, 1, 'Div A', 1, 999, 555)"
+        )
+        # phase1_done = 1 so the invalidation notice path is reached at all.
+        await db.execute(
+            "INSERT INTO rounds "
+            "(id, division_id, round_number, format, track_name, scheduled_at, phase1_done) "
+            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain International Circuit', ?, 1)",
+            (scheduled_at.isoformat(),),
+        )
+        await db.commit()
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+
+    bot = MagicMock()
+    bot.db_path = path
+    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    bot.output_router.post_forecast = AsyncMock(return_value=None)
+    bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.scheduler_service.cancel_round = MagicMock()
+    bot.scheduler_service.schedule_round = MagicMock()
+
+    # Both horizons stay in the future, so no overdue phase re-runs and the count below is
+    # measuring the amendment itself rather than the catch-up.
+    await AmendmentService(path).amend_round(
+        1,
+        actor,
+        [("track_name", "Silverstone Circuit"), ("scheduled_at", new_moment)],
+        bot,
+        now=datetime.now(timezone.utc),
+    )
+
+    async with get_connection(path) as db:
+        cursor = await db.execute("SELECT track_name, scheduled_at FROM rounds WHERE id = 1")
+        rnd = await cursor.fetchone()
+        cursor = await db.execute(
+            "SELECT change_type FROM audit_entries WHERE server_id = 1 ORDER BY change_type"
+        )
+        audit = [r["change_type"] for r in await cursor.fetchall()]
+
+    # Both fields landed, in one amendment.
+    assert rnd["track_name"] == "Silverstone Circuit"
+    assert rnd["scheduled_at"] == new_moment.isoformat()
+
+    # One audit entry per field — the one thing that is right to do twice.
+    assert audit == ["round.scheduled_at", "round.track_name"]
+
+    # Everything else exactly once.
+    assert bot.output_router.post_forecast.await_count == 1
+    assert bot.output_router.post_log.await_count == 1
+    assert bot.scheduler_service.cancel_round.call_count == 1
+    assert bot.scheduler_service.schedule_round.call_count == 1

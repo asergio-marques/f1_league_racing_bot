@@ -5628,23 +5628,21 @@ class _ConfirmView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
 
         scheduled_at_changed = any(f == "scheduled_at" for f, _ in self._amendments)
-        errors: list[str] = []
-        for field_name, new_value in self._amendments:
-            try:
-                await self._cog.bot.amendment_service.amend_round(
-                    self._round_id,
-                    interaction.user,
-                    field_name,
-                    new_value,
-                    self._cog.bot,
-                )
-            except Exception as exc:
-                log.exception("Amendment failed for %s: %s", field_name, exc)
-                errors.append(f"`{field_name}`: {exc}")
 
-        if errors:
+        # One call carrying every field, not one call per field. Amending a round's track and
+        # its date used to run the whole amendment twice \u2014 two invalidation notices, two
+        # cancels, two re-arms, two re-runs of every overdue phase (issue #115).
+        try:
+            await self._cog.bot.amendment_service.amend_round(
+                self._round_id,
+                interaction.user,
+                self._amendments,
+                self._cog.bot,
+            )
+        except Exception as exc:
+            log.exception("Amendment failed for round %s: %s", self._round_id, exc)
             await interaction.followup.send(
-                "\u26a0\ufe0f Some amendments failed:\n" + "\n".join(errors),
+                f"\u26a0\ufe0f The amendment failed: {exc}",
                 ephemeral=True,
             )
             self.stop()

@@ -30,16 +30,39 @@ class AmendmentService:
         self,
         round_id: int,
         actor: discord.Member,
-        field: str,
-        new_value: Any,
+        changes: list[tuple[str, Any]],
         bot: "Bot",
+        now: datetime | None = None,
     ) -> None:
-        """Atomically amend *field* on *round_id*.
+        """Atomically apply every amendment in *changes* to *round_id*, as one change.
+
+        *changes* is ``[(field, new_value), ...]`` over ``track_name``, ``format`` and
+        ``scheduled_at``. Every field is validated before anything is written, all of them are
+        written in one statement, and the work that follows — the cancel, the re-arm, the
+        invalidation notice, the re-run of overdue phases — happens exactly once however many
+        fields were given.
+
+        **Why a change set rather than a field** (issue #115). This took one field and the
+        command called it once per field the manager gave, so amending a round's track *and* its
+        date ran the whole amendment twice: two audit entries were right, but two invalidation
+        notices, two cancels, two re-arms and two re-runs of every overdue phase were not, and a
+        league amending two things at once was told twice that its forecasts had been thrown
+        away. It also made the amendment rules impossible to apply, those being rules about the
+        round as it will stand once *all* the changes are in — a track change is judged against
+        the new date when one is given in the same breath.
+
+        **The rules are judged by the caller, not here** — as `approval_window_service` is judged
+        by `_do_approve` rather than by the season service. `amendment_rules_service` is pure and
+        decides; the command refuses on its answer and calls this only for an amendment that may
+        proceed. Keeping the judgement out of here is what lets a test drive an amendment the
+        rules would now refuse, which is how the issue #113 gate below is still covered: its
+        round is deliberately past-dated so the overdue phases re-run, and that is an amendment
+        `/round amend` itself would decline.
 
         Steps (inside one transaction):
         1. Load current Round.
-        2. Record AuditEntry with old/new values.
-        3. Update round field.
+        2. Record an AuditEntry per field, with old/new values.
+        3. Update every amended field at once.
         4. Invalidate all PhaseResults and clear session phase data.
         5. Reset phase done flags.
         6. Cancel and re-schedule scheduler jobs — weather only.
@@ -87,47 +110,61 @@ class AmendmentService:
                 f"Round {round_id} belongs to an archived season and cannot be amended."
             )
 
-        old_value = row[field] if field in row.keys() else None
         server_id: int = row["server_id"]
         track_name: str = row["track_name"] or "Unknown"
         any_phase_done = bool(row["phase1_done"] or row["phase2_done"] or row["phase3_done"])
 
-        now = datetime.now(timezone.utc)
+        if now is None:
+            now = datetime.now(timezone.utc)
 
-        db_value = new_value
-        if isinstance(new_value, datetime):
-            db_value = new_value.isoformat()
-        elif isinstance(new_value, RoundFormat):
-            db_value = new_value.value
-
-        async with get_connection(self._db_path) as db:
-            # 1. Audit entry
-            await db.execute(
-                """
-                INSERT INTO audit_entries
-                    (server_id, actor_id, actor_name, division_id, change_type,
-                     old_value, new_value, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    server_id,
-                    actor.id,
-                    str(actor),
-                    row["division_id"],
-                    f"round.{field}",
-                    str(old_value) if old_value is not None else "",
-                    str(db_value),
-                    now.isoformat(),
-                ),
-            )
-
-            # 2. Update round field
-            allowed = {"track_name", "format", "scheduled_at"}
+        # Validate every field before writing any of them: a change set carrying one bad field
+        # must leave the round exactly as it stood, not half-amended.
+        allowed = {"track_name", "format", "scheduled_at"}
+        if not changes:
+            raise ValueError("An amendment must carry at least one field")
+        for field, _ in changes:
             if field not in allowed:
                 raise ValueError(f"Field {field!r} is not amendable")
+
+        # (field, old value, value as the database will hold it), in the order given.
+        applied: list[tuple[str, Any, Any]] = []
+        for field, new_value in changes:
+            db_value = new_value
+            if isinstance(new_value, datetime):
+                db_value = new_value.isoformat()
+            elif isinstance(new_value, RoundFormat):
+                db_value = new_value.value
+            applied.append((field, row[field] if field in row.keys() else None, db_value))
+
+        async with get_connection(self._db_path) as db:
+            # 1. One audit entry per field
+            for field, old_value, db_value in applied:
+                await db.execute(
+                    """
+                    INSERT INTO audit_entries
+                        (server_id, actor_id, actor_name, division_id, change_type,
+                         old_value, new_value, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        server_id,
+                        actor.id,
+                        str(actor),
+                        row["division_id"],
+                        f"round.{field}",
+                        str(old_value) if old_value is not None else "",
+                        str(db_value),
+                        now.isoformat(),
+                    ),
+                )
+
+            # 2. Update every amended field at once. The column names are the validated
+            # members of ``allowed`` above and never reach here from user input.
+            _assignments = ", ".join(f"{field} = ?" for field, _, _ in applied)
             await db.execute(
-                f"UPDATE rounds SET {field} = ?, phase1_done = 0, phase2_done = 0, phase3_done = 0 WHERE id = ?",  # noqa: S608
-                (db_value, round_id),
+                f"UPDATE rounds SET {_assignments}, "  # noqa: S608
+                "phase1_done = 0, phase2_done = 0, phase3_done = 0 WHERE id = ?",
+                (*[db_value for _, _, db_value in applied], round_id),
             )
 
             # 3. Invalidate phase results
@@ -195,7 +232,10 @@ class AmendmentService:
             class _Div:
                 forecast_channel_id = row["forecast_channel_id"]
 
-            amended_track = str(db_value) if field == "track_name" else track_name
+            amended_track = next(
+                (str(db_value) for f, _, db_value in applied if f == "track_name"),
+                track_name,
+            )
             # The notice goes to the forecast channel and is about forecasts, so it is the
             # weather module's output and waits on the module. Reachable with weather off —
             # phases run, module switched off, round amended — which is issue #113 again by a
@@ -205,13 +245,14 @@ class AmendmentService:
                 await bot.output_router.post_forecast(
                     _Div(), invalidation_message(amended_track), server_id=server_id
                 )
+            _changed = "\n".join(
+                f"  {f}: {old_value} → {db_value}" for f, old_value, db_value in applied
+            )
             await bot.output_router.post_log(
                 server_id,
                 f"{actor.display_name} (<@{actor.id}>) | /round amend (field) | Success\n"
                 f"  round: {updated_round.round_number}\n"
-                f"  field: {field}\n"
-                f"  old: {old_value}\n"
-                f"  new: {db_value}",
+                f"{_changed}",
             )
 
         # 7. Re-run missed phases (non-MYSTERY only, and only with weather on)
