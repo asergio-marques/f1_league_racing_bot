@@ -228,7 +228,26 @@ it only to place it; the rules governing it belong to its own specification.
 - What a mystery round receives in place of a forecast is specified by [the weather module](weather_module_specification.md).
 
 ### Amending and cancelling a round
-- A round of an active season may have its track, its moment or its format amended, behind a confirmation. The amendment shall be recorded, the weather already drawn for the round invalidated, its scheduled work re-armed, a notice posted, and every phase whose horizon has passed run again.
+- A round of an active season may have its track, its moment or its format amended, behind a confirmation.
+- An amendment shall be judged and carried out as one change, however many of the three fields it alters. Where any rule refuses any part of it, none of it shall happen and the round shall stand exactly as it did, and the manager shall be told so.
+- Every rule shall read the round as it will stand once amended: its new moment where one is given, its present moment otherwise.
+- The rules shall be judged again at the moment the amendment is confirmed and not only when it is offered, a window being able to pass while the confirmation stands. Where the answer has changed the amendment shall be abandoned and the manager invited to start again.
+- A round shall not be amended once its results have been entered, nor once it has been cancelled. From the moment results are entered the drivers have reports and appeals to lodge against them, and an amendment would take that from them.
+- The amendment shall be recorded in the record of what changed, whatever the modules enabled.
+- The confirmation shall name what the amendment will cost before it is made: which forecasts will be withdrawn, or that those already posted will stand, and any window the round will no longer have.
+- The scheduled work of an amended round shall be cancelled and armed again against its new moment. Each module shall specify what its own share of that work becomes, and a module disabled shall have none armed. The round's result submission shall be armed whatever the modules, being the round's own passage from awaiting its moment to awaiting its results.
+- Each of a round's scheduled jobs shall be identified in a way that stays unique to that round for its whole life, so that renumbering a division cannot make one round's work overwrite another's.
+
+#### Amending a round's moment
+- A round's moment may always be amended, subject to the rules above.
+- The amendment shall be refused where the check-in deadline computed from the round's new moment has already passed. A check-in that would open and close in the same instant asks a question nobody can answer, and the round would be recorded afterwards as perfect attendance for the whole division.
+- Where the check-in deadline computed from the round's new moment has passed, nothing shall be posted afresh and no answer may be changed: the check-in is settled and the reserves are distributed against it.
+
+#### Amending a round's track or format
+- A round's track shall not be amended while a forecast drawn for it still stands, and its format shall not be amended while a forecast drawn for its sessions still stands.
+- Neither shall be amended once the round's moment has passed.
+- Where the round's moment is amended in the same change, both rules shall read the new moment and the forecasts as they will stand once it is amended. Moving a round is therefore the league's remedy for a circuit or a format that must be corrected late.
+- A mystery round names no circuit, so its track shall not be amended unless its format is amended in the same change.
 - A round may be cancelled upon the word `CONFIRM`. Its scheduled work shall be cancelled and a notice posted.
 - A round shall not be cancelled once its results have been entered. From that moment the drivers have reports and appeals to lodge against them, and calling the round off would take that from them.
 - A round shall not be cancelled while a results submission for it stands open.

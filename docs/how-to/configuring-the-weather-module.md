@@ -97,7 +97,9 @@ Every reply also tells you where the other two stand, which saves setting one an
 
 > **The wording of the posts does not follow these settings.** The messages say "5 days out", "2 days out" and "2 hours out" whatever you set. Change phase 1 to seven days and the forecast still arrives seven days ahead — but it will describe itself as five. Worth knowing before your drivers ask.
 
-> **An amended round falls back to the standard timings.** If a round's track, time or format is changed after the season is running, its forecasts are rescheduled at 5 days, 2 days and 2 hours regardless of what you set here.
+> **An amended round keeps the timings you set here.** It used to fall back to 5 days, 2 days and 2 hours whatever you had configured; it no longer does. A forecast is thrown away only where the round has moved far enough that it would not have been drawn yet — move a round by an hour and the forecasts already posted stand, move it by a month and they are withdrawn and drawn again. The confirmation names which before you commit.
+
+> **A round's circuit is fixed once its first forecast is out.** That forecast was drawn for that circuit and cannot be unsaid, so `/round amend` refuses a bare track change from then on — and refuses a format change once the second forecast is out, that one having been drawn for the round's sessions. Moving the round in the same change puts the forecasts back in question and lets both through, which is the way to correct a circuit late.
 
 > **So does a restart.** When the bot starts again with forecasts still outstanding, it works out which ones it missed using 5 days, 2 days and 2 hours — not your settings. A league running custom timings loses them quietly every time the bot is restarted.
 

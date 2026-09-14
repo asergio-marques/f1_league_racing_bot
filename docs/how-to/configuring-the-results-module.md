@@ -370,7 +370,7 @@ Worth knowing so you do not go looking for the setting.
 | A championship scoring second place above first | Known: the ordering check at `/season approve` does not fire on a first approval, so a wrongly ordered table gets through. Read it back with `/results config view` before you approve |
 | Season refused for having no points configuration | Nothing is attached. `/results config append` first |
 | No submission channel when a round started | The module is off, the division has no results channel, or the round was cancelled. The log channel says which |
-| No submission channel for a round you moved | Known: `/round amend` cancels the round's submission and only puts it back if the weather module is enabled. With weather off, that round can never be submitted |
+| No submission channel for a round you moved | `/round amend` re-arms the round's submission whatever your modules. If one still does not open, check the round actually reached its scheduled time |
 | A submission rejected over a team role | The Reserve role in a team column, three lines under one team, or a driver under a different team from the one another session of the round already records |
 | A submission rejected over a driver | Not mentioned, or not seated in that division. A reserve also needs `/team reserve-role` set |
 | Everything you pasted gone after a restart | Known: a part-finished submission is discarded and reopened from the first session |

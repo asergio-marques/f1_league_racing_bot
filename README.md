@@ -501,11 +501,19 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 |-----------|------|----------|-------------|
 | `division_name` | String | ✅ | Name of the division containing the round |
 | `round_number` | Integer | ✅ | The round number to amend |
-| `track` | String | — | New track — track ID or circuit name, use the autocomplete dropdown (e.g. `4` or `Bahrain International Circuit`). What the dropdown displays (`04 – Bahrain International Circuit`) is accepted too, and names are matched regardless of case. Amending invalidates prior weather phases. |
+| `track` | String | — | New track — track ID or circuit name, use the autocomplete dropdown (e.g. `4` or `Bahrain International Circuit`). What the dropdown displays (`04 – Bahrain International Circuit`) is accepted too, and names are matched regardless of case. Refused while a forecast drawn for the current circuit still stands, or once the round has started. |
 | `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC). Amending re-triggers the scheduler and renumbers rounds. |
-| `format` | String | — | New format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE`. Amending invalidates prior weather phases. |
+| `format` | String | — | New format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE`. Refused while the second forecast, drawn for the current sessions, still stands, or once the round has started. |
 
-> **Amending a round costs it its check-in.** The scheduler is re-triggered for the forecasts only, and only while the weather module is on — with it off, the round's old forecasts are still thrown away, but none is drawn or posted in their place until you switch the module on. A round's RSVP notice, last reminder and deadline are cancelled along with everything else and are never rescheduled, so an amended round posts no check-in call, opens no attendance records, and counts nothing against anyone. Nothing warns you at the time.
+**An amendment is one change.** Whatever combination of the three fields you give, the round is judged and amended once. If any rule refuses any part of it, none of it happens and the round is left exactly as it was — so amending a circuit and a date together is a single decision, and a circuit that could not be changed on its own often can be when the round moves with it.
+
+**It tells you what it will cost before it does it.** The confirmation names the forecasts that will be withdrawn and redrawn, or says the ones already posted will stand, along with anything the round will no longer get — a reminder that can no longer fire, for instance. The rules are checked again when you press Confirm, so an amendment that was fine when offered but is not any more is abandoned rather than applied.
+
+**What survives an amendment.** The round's check-in and its result submission are re-armed along with its forecasts; only the work a switched-off module owns is left unarmed. A check-in call that has already gone out is posted again carrying what changed, with every answer already given kept — drivers who have replied do not have to reply twice, and anyone who has joined the division since is asked afresh.
+
+> **Past the check-in deadline, the check-in is settled.** Amend a round whose deadline has gone by and the call is neither reposted nor taken down, and no answer can be changed: the reserves have been distributed against it and reopening it would unsettle a grid already told who is racing. Moving such a round far enough out puts its check-in back in play.
+
+> **A round cannot be moved inside its own check-in deadline.** With the default two-hour deadline, moving a round to less than two hours away is refused outright — the check-in would open and close in the same instant, and the round would read afterwards as perfect attendance for a division nobody asked. Move it further out, or shorten the deadline first.
 
 #### `/round cancel` — Cancel a round in the active season
 *Access: League admin*
@@ -841,7 +849,7 @@ Every successful reply echoes the other two deadlines, and the change is written
 
 > **The posted forecasts do not describe your configured horizons.** The message text carries the fixed wording "(5 days out)", "(2 days out)" and "(2 hours out)" whatever the deadlines are set to. The forecast is published at the configured time; only its self-description is wrong.
 
-> **An amended round reverts to 5 / 2 / 2.** Rescheduling after `/round amend` uses the packaged defaults rather than the configured deadlines, as does phase recovery after a bot restart.
+> **Phase recovery after a restart uses 5 / 2 / 2.** Rescheduling after a bot restart uses the packaged defaults rather than your configured deadlines. `/round amend` no longer does — an amended round keeps the horizons you set.
 
 ---
 
