@@ -66,7 +66,6 @@ async def db_path(tmp_path):
                                      ON DELETE CASCADE,
                 day_of_week      INTEGER NOT NULL,
                 time_hhmm        TEXT NOT NULL,
-                slot_sequence_id INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(server_id, day_of_week, time_hhmm)
             );
 
@@ -112,6 +111,30 @@ async def db_path(tmp_path):
 # ---------------------------------------------------------------------------
 # Slot tests
 # ---------------------------------------------------------------------------
+
+
+class TestSlotIdFormat:
+    """The durable slot identity is "Mon_19_00" — see AvailabilitySlot's docstring."""
+
+    def test_slot_id_format(self):
+        from models.signup_module import AvailabilitySlot
+        assert AvailabilitySlot.make_slot_id(1, "19:00") == "Mon_19_00"
+        assert AvailabilitySlot.make_slot_id(5, "21:30") == "Fri_21_30"
+        assert AvailabilitySlot.make_slot_id(7, "09:05") == "Sun_09_05"
+
+    def test_slot_id_covers_every_weekday(self):
+        from models.signup_module import AvailabilitySlot
+        assert [AvailabilitySlot.make_slot_id(d, "12:00") for d in range(1, 8)] == [
+            "Mon_12_00", "Tue_12_00", "Wed_12_00", "Thu_12_00",
+            "Fri_12_00", "Sat_12_00", "Sun_12_00",
+        ]
+
+    async def test_get_slots_populates_slot_id(self, db_path):
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        await svc.add_slot(1, 5, "21:00")
+        slots = await svc.get_slots(1)
+        assert slots[0].slot_id == "Fri_21_00"
 
 
 class TestSlotAdd:
@@ -183,8 +206,13 @@ class TestChronologicalRanking:
         assert slots[0].day_of_week == 1 and slots[0].slot_sequence_id == 1
         assert slots[1].day_of_week == 3 and slots[1].slot_sequence_id == 2
 
-    async def test_slot_ids_resequenced_after_remove(self, db_path):
-        """After a removal, slot sequence IDs are resequenced 1..N in chronological order."""
+    async def test_display_ordinals_recomputed_after_remove(self, db_path):
+        """Display ordinals are always 1..N chronologically, so a removal renumbers them.
+
+        That is intended: the ordinal is a display convenience, recomputed on read. What
+        must not move with it is a driver's recorded availability — see
+        ``TestDurableSlotIdentity``.
+        """
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.add_slot(1, 1, "14:30")   # Mon 14:30 → seq 1
@@ -199,6 +227,185 @@ class TestChronologicalRanking:
         assert slots[0].day_of_week == 1 and slots[0].time_hhmm == "14:30" and slots[0].slot_sequence_id == 1
         assert slots[1].day_of_week == 3 and slots[1].time_hhmm == "19:00" and slots[1].slot_sequence_id == 2
         assert slots[2].day_of_week == 5 and slots[2].time_hhmm == "18:00" and slots[2].slot_sequence_id == 3
+
+
+class TestDurableSlotIdentity:
+    """Issue #126: changing the slot list must not change what a driver said.
+
+    The ordinals shift — that is what ``test_display_ordinals_recomputed_after_remove``
+    pins — but the identity a driver's answer is stored against must not.
+    """
+
+    async def _friday_league(self, db_path):
+        """Mon 19:00 (#1), Wed 20:00 (#2), Fri 21:00 (#3) — the issue's worked example."""
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        await svc.add_slot(1, 1, "19:00")
+        await svc.add_slot(1, 3, "20:00")
+        await svc.add_slot(1, 5, "21:00")
+        return svc
+
+    async def test_removing_a_slot_does_not_change_other_slot_ids(self, db_path):
+        """A driver picks Friday (#3). Monday is removed. They are still on Friday."""
+        svc = await self._friday_league(db_path)
+        slots = await svc.get_slots(1)
+        chosen = next(s for s in slots if s.slot_sequence_id == 3).slot_id
+        assert chosen == "Fri_21_00"
+
+        await svc.remove_slot_by_rank(1, 1)   # remove Mon 19:00
+
+        remaining = await svc.get_slots(1)
+        # Friday's display ordinal has moved from 3 to 2 …
+        assert [s.slot_sequence_id for s in remaining] == [1, 2]
+        # … but the answer still names the same time, and still matches a live slot.
+        assert chosen in {s.slot_id for s in remaining}
+        assert next(s for s in remaining if s.slot_id == chosen).display_label == (
+            "Friday 21:00 UTC"
+        )
+
+    async def test_adding_an_earlier_slot_does_not_shift_stored_answers(self, db_path):
+        """Inserting a slot before the one a driver chose must not move their answer."""
+        svc = await self._friday_league(db_path)
+        chosen = next(
+            s for s in await svc.get_slots(1) if s.slot_sequence_id == 3
+        ).slot_id
+
+        await svc.add_slot(1, 1, "08:00")   # a new Monday morning slot, earliest of all
+
+        after = await svc.get_slots(1)
+        assert [s.slot_sequence_id for s in after] == [1, 2, 3, 4]
+        # Friday is now #4, yet the stored answer resolves to Friday as before.
+        assert next(s for s in after if s.slot_id == chosen).time_hhmm == "21:00"
+        assert next(s for s in after if s.slot_id == chosen).slot_sequence_id == 4
+
+    async def test_a_re_added_slot_recovers_its_own_answers(self, db_path):
+        """Remove a slot and put it back: answers naming it mean the same time again."""
+        svc = await self._friday_league(db_path)
+        await svc.remove_slot_by_rank(1, 2)   # remove Wed 20:00
+        assert "Wed_20_00" not in {s.slot_id for s in await svc.get_slots(1)}
+
+        await svc.add_slot(1, 3, "20:00")
+        assert "Wed_20_00" in {s.slot_id for s in await svc.get_slots(1)}
+
+
+class TestSnapshotStoresTheDurableIdentity:
+    """A frozen wizard snapshot stores each slot by identity, not by position.
+
+    The display ordinal is rebuilt from the snapshot's own chronological order, so the
+    driver mid-wizard still sees the numbers they were shown, and no ordinal is persisted
+    anywhere — which is what issue #126 was.
+    """
+
+    async def _saved_snapshot(self, db_path, slots):
+        from models.signup_module import (
+            ConfigSnapshot, SignupWizardRecord, WizardState,
+        )
+        from services.signup_module_service import SignupModuleService
+
+        svc = SignupModuleService(db_path)
+        await svc.save_wizard(SignupWizardRecord(
+            id=0, server_id=1, discord_user_id="snap",
+            wizard_state=WizardState.COLLECTING_AVAILABILITY,
+            signup_channel_id=888,
+            config_snapshot=ConfigSnapshot(
+                nationality_required=False,
+                time_type="TIME_TRIAL",
+                time_image_required=False,
+                selected_track_ids=[],
+                slots=slots,
+            ),
+            draft_answers={},
+            current_lap_track_index=0,
+            last_activity_at="2026-01-01T00:00:00",
+        ))
+        return svc
+
+    async def test_no_display_ordinal_is_persisted(self, db_path):
+        import json
+
+        from db.database import get_connection
+        from services.signup_module_service import SignupModuleService
+
+        svc = SignupModuleService(db_path)
+        for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
+            await svc.add_slot(1, day, time_hhmm)
+        await self._saved_snapshot(db_path, await svc.get_slots(1))
+
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT config_snapshot_json FROM signup_wizard_records "
+                "WHERE discord_user_id = 'snap'"
+            )
+            stored = json.loads((await cursor.fetchone())[0])
+        assert [s["slot_id"] for s in stored["slots"]] == [
+            "Mon_19_00", "Wed_20_00", "Fri_21_00",
+        ]
+        assert all("slot_sequence_id" not in s for s in stored["slots"])
+
+    async def test_display_ordinals_rebuilt_on_read(self, db_path):
+        from services.signup_module_service import SignupModuleService
+
+        svc = SignupModuleService(db_path)
+        for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
+            await svc.add_slot(1, day, time_hhmm)
+        await self._saved_snapshot(db_path, await svc.get_slots(1))
+
+        snap = (await svc.get_wizard(1, "snap")).config_snapshot
+        assert [s.slot_sequence_id for s in snap.slots] == [1, 2, 3]
+        assert [s.slot_id for s in snap.slots] == [
+            "Mon_19_00", "Wed_20_00", "Fri_21_00",
+        ]
+
+    async def test_ordinals_rebuilt_chronologically_however_stored(self, db_path):
+        """Order in the stored JSON must not decide the numbers a driver was shown."""
+        from services.signup_module_service import SignupModuleService
+
+        svc = SignupModuleService(db_path)
+        for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
+            await svc.add_slot(1, day, time_hhmm)
+        scrambled = list(reversed(await svc.get_slots(1)))
+        await self._saved_snapshot(db_path, scrambled)
+
+        snap = (await svc.get_wizard(1, "snap")).config_snapshot
+        assert [(s.slot_sequence_id, s.slot_id) for s in snap.slots] == [
+            (1, "Mon_19_00"), (2, "Wed_20_00"), (3, "Fri_21_00"),
+        ]
+
+    async def test_a_snapshot_written_before_durable_ids_still_reads(self, db_path):
+        """An in-flight wizard from before this change carries no slot_id — derive it."""
+        import json
+
+        from db.database import get_connection
+        from services.signup_module_service import SignupModuleService
+
+        legacy = {
+            "nationality_required": False,
+            "time_type": "TIME_TRIAL",
+            "time_image_required": False,
+            "selected_track_ids": [],
+            "team_names": [],
+            "slots": [
+                {"id": 1, "server_id": 1, "slot_sequence_id": 1,
+                 "day_of_week": 1, "time_hhmm": "19:00"},
+                {"id": 2, "server_id": 1, "slot_sequence_id": 2,
+                 "day_of_week": 5, "time_hhmm": "21:00"},
+            ],
+        }
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO signup_wizard_records (server_id, discord_user_id, "
+                "wizard_state, signup_channel_id, config_snapshot_json, "
+                "draft_answers_json, current_lap_track_index, last_activity_at) "
+                "VALUES (1, 'legacy', 'COLLECTING_AVAILABILITY', 888, ?, '{}', 0, "
+                "'2026-01-01T00:00:00')",
+                (json.dumps(legacy),),
+            )
+            await db.commit()
+
+        snap = (await SignupModuleService(db_path).get_wizard(1, "legacy")).config_snapshot
+        assert [(s.slot_sequence_id, s.slot_id) for s in snap.slots] == [
+            (1, "Mon_19_00"), (2, "Fri_21_00"),
+        ]
 
 
 class TestWindowState:

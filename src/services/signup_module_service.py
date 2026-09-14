@@ -140,8 +140,13 @@ class SignupModuleService:
     # ── Availability slots ────────────────────────────────────────────
 
     async def get_slots(self, server_id: int) -> list[AvailabilitySlot]:
-        """Return slots ordered chronologically (Mon→Sun, time asc). Sequence IDs are
-        always 1..N matching display order, regardless of stored values."""
+        """Return slots ordered chronologically (Mon→Sun, time asc).
+
+        ``slot_sequence_id`` is the display ordinal, always 1..N in that order, and is
+        therefore **recomputed on every call** — it changes whenever the slot list does.
+        ``slot_id`` is the durable identity and is what a driver's recorded availability
+        is stored against; see ``AvailabilitySlot``.
+        """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, server_id, day_of_week, time_hhmm "
@@ -155,6 +160,7 @@ class SignupModuleService:
             AvailabilitySlot(
                 id=row["id"],
                 server_id=row["server_id"],
+                slot_id=AvailabilitySlot.make_slot_id(row["day_of_week"], row["time_hhmm"]),
                 slot_sequence_id=i,
                 day_of_week=row["day_of_week"],
                 time_hhmm=row["time_hhmm"],
@@ -164,13 +170,18 @@ class SignupModuleService:
         ]
 
     async def add_slot(self, server_id: int, day_of_week: int, time_hhmm: str) -> AvailabilitySlot:
-        """Insert a slot and resequence all slots chronologically; raises ValueError on duplicate."""
+        """Insert a slot; raises ValueError on duplicate.
+
+        Nothing is renumbered. The display ordinals of later slots do shift, because
+        they are chronological positions computed on read, but no driver's recorded
+        availability moves with them — it names the slot itself (issue #126).
+        """
         async with get_connection(self._db_path) as db:
             try:
                 await db.execute(
                     "INSERT INTO signup_availability_slots "
-                    "(server_id, day_of_week, time_hhmm, slot_sequence_id) "
-                    "VALUES (?, ?, ?, 0)",  # 0 is a placeholder; resequence fixes it
+                    "(server_id, day_of_week, time_hhmm) "
+                    "VALUES (?, ?, ?)",
                     (server_id, day_of_week, time_hhmm),
                 )
             except Exception as exc:
@@ -179,7 +190,6 @@ class SignupModuleService:
                         f"Slot already exists: day={day_of_week} time={time_hhmm}"
                     ) from exc
                 raise
-            await self._resequence_slots(db, server_id)
             await db.commit()
 
         # Fetch the newly assigned sequence ID for the inserted slot
@@ -192,7 +202,12 @@ class SignupModuleService:
         return inserted
 
     async def remove_slot_by_rank(self, server_id: int, slot_id: int) -> bool:
-        """Remove the slot at chronological rank slot_id and resequence. Returns False if not found."""
+        """Remove the slot at chronological rank slot_id. Returns False if not found.
+
+        The rank is the display ordinal a league types, not anything stored. Removing a
+        slot renumbers nothing: every remaining slot keeps its durable identity, so the
+        answers of drivers who chose them still mean the same times.
+        """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id FROM signup_availability_slots "
@@ -208,25 +223,8 @@ class SignupModuleService:
                 "DELETE FROM signup_availability_slots WHERE id = ?",
                 (target_id,),
             )
-            await self._resequence_slots(db, server_id)
             await db.commit()
         return True
-
-    @staticmethod
-    async def _resequence_slots(db, server_id: int) -> None:
-        """Assign slot_sequence_id values 1..N in chronological order (Mon → Sun, then time)."""
-        cursor = await db.execute(
-            "SELECT id FROM signup_availability_slots "
-            "WHERE server_id = ? "
-            "ORDER BY day_of_week ASC, time_hhmm ASC",
-            (server_id,),
-        )
-        rows = await cursor.fetchall()
-        for seq, row in enumerate(rows, start=1):
-            await db.execute(
-                "UPDATE signup_availability_slots SET slot_sequence_id = ? WHERE id = ?",
-                (seq, row["id"]),
-            )
 
     # ── Window state helpers ──────────────────────────────────────────
 
@@ -521,16 +519,28 @@ class SignupModuleService:
         snapshot: ConfigSnapshot | None = None
         if row["config_snapshot_json"]:
             d = json.loads(row["config_snapshot_json"])
+            # The snapshot stores each slot's durable identity; the display ordinal is
+            # rebuilt from chronological order, which is how get_slots derived it in the
+            # first place, so a driver mid-wizard still sees the numbers they were shown.
+            # A snapshot written before the durable identity existed carries
+            # slot_sequence_id and no slot_id: both are derived here, so it reads
+            # correctly without migrating stored JSON.
+            snapshot_slots = sorted(
+                d.get("slots", []),
+                key=lambda s: (s["day_of_week"], s["time_hhmm"]),
+            )
             slots = [
                 AvailabilitySlot(
                     id=s["id"],
                     server_id=s["server_id"],
-                    slot_sequence_id=s["slot_sequence_id"],
+                    slot_id=s.get("slot_id")
+                    or AvailabilitySlot.make_slot_id(s["day_of_week"], s["time_hhmm"]),
+                    slot_sequence_id=i,
                     day_of_week=s["day_of_week"],
                     time_hhmm=s["time_hhmm"],
                     display_label=AvailabilitySlot.make_label(s["day_of_week"], s["time_hhmm"]),
                 )
-                for s in d.get("slots", [])
+                for i, s in enumerate(snapshot_slots, start=1)
             ]
             snapshot = ConfigSnapshot(
                 nationality_required=d["nationality_required"],
@@ -602,6 +612,12 @@ class SignupModuleService:
 
     @staticmethod
     def _snapshot_to_dict(snapshot: ConfigSnapshot) -> dict:
+        """Freeze the configuration a wizard started against.
+
+        Each slot is stored by its durable identity. The display ordinal is deliberately
+        **not** stored: it is a chronological position, and storing one is what issue #126
+        was. ``_row_to_wizard_record`` rebuilds it from the snapshot's own order.
+        """
         return {
             "nationality_required": snapshot.nationality_required,
             "time_type": snapshot.time_type,
@@ -612,7 +628,7 @@ class SignupModuleService:
                 {
                     "id": s.id,
                     "server_id": s.server_id,
-                    "slot_sequence_id": s.slot_sequence_id,
+                    "slot_id": s.slot_id,
                     "day_of_week": s.day_of_week,
                     "time_hhmm": s.time_hhmm,
                 }
