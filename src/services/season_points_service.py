@@ -133,6 +133,49 @@ async def validate_monotonic_ordering(db_path: str, season_id: int) -> list[str]
     return errors
 
 
+async def validate_attached_config_ordering(
+    db_path: str,
+    season_id: int,
+    server_id: int,
+) -> list[str]:
+    """Return ordering errors in the server-level configs this season will snapshot.
+
+    The companion to :func:`validate_monotonic_ordering`, and the one that can speak
+    before a season has been approved for the first time.
+
+    **Why this reads the source rather than the season's own copy.** A season's points
+    live in ``season_points_entries``, and the only thing that writes them on the
+    approval path is :func:`snapshot_configs_to_season`, which runs *after* every gate —
+    deliberately, because it is a write and writes belong after the backup offer. So a
+    gate that reads the season's copy reads an empty table on a first approval and
+    passes whatever the league built. The snapshot is a straight copy of the attached
+    configs, so checking those checks exactly the points the season is about to take,
+    and needs nothing undone when the answer is no.
+
+    A config name attached but never created is **skipped, not raised**. That is issue
+    #132's fault to fix, and refusing here would only change which command reports it.
+    """
+    errors: list[str] = []
+    for config_name in await get_attached_config_names(db_path, season_id):
+        try:
+            entries, _ = await points_config_service.get_config_entries(
+                db_path, server_id, config_name
+            )
+        except points_config_service.ConfigNotFoundError:
+            continue
+        by_session: dict[str, list[tuple[int, int]]] = {}
+        for entry in entries:
+            by_session.setdefault(entry.session_type.value, []).append(
+                (entry.position, entry.points)
+            )
+        for session_type in sorted(by_session):
+            errors.extend(
+                _ordering_message(config_name, session_type, violation)
+                for violation in ordering_violations(by_session[session_type])
+            )
+    return errors
+
+
 def _ordering_message(config_name: str, session_type: str, violation: Violation) -> str:
     """The one sentence a league reads when a points table is out of order.
 
