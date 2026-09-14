@@ -243,3 +243,35 @@ async def test_amend_round_runs_overdue_phases_while_weather_is_enabled(tmp_path
     p1.assert_awaited_once()
     p2.assert_awaited_once()
     p3.assert_awaited_once()
+
+
+async def test_amend_round_posts_no_invalidation_notice_while_weather_is_disabled(tmp_path):
+    """The same rule by a second route: weather on, phases run, weather off, round amended."""
+    db_path = await _make_db(str(tmp_path))
+    await _seed(db_path, phase1_done=1)
+    bot = _amend_bot(db_path, weather_enabled=False)
+
+    await AmendmentService(db_path).amend_round(
+        1, _make_actor(), "track_name", "Silverstone Circuit", bot
+    )
+
+    bot.output_router.post_forecast.assert_not_awaited()
+    # The amendment's own audit line is not weather output and is posted either way.
+    bot.output_router.post_log.assert_awaited_once()
+
+
+async def test_amend_round_posts_the_invalidation_notice_while_weather_is_enabled(tmp_path):
+    """A league with weather on must still be told its forecasts were thrown away."""
+    db_path = await _make_db(str(tmp_path))
+    await _seed(db_path, phase1_done=1)
+    await _set_weather(db_path, True)
+    bot = _amend_bot(db_path, weather_enabled=True)
+
+    with patch("services.phase1_service.run_phase1", new=AsyncMock()), patch(
+        "services.phase2_service.run_phase2", new=AsyncMock()
+    ), patch("services.phase3_service.run_phase3", new=AsyncMock()):
+        await AmendmentService(db_path).amend_round(
+            1, _make_actor(), "track_name", "Silverstone Circuit", bot
+        )
+
+    bot.output_router.post_forecast.assert_awaited_once()

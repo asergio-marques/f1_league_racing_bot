@@ -43,15 +43,16 @@ class AmendmentService:
         4. Invalidate all PhaseResults and clear session phase data.
         5. Reset phase done flags.
         6. Cancel and re-schedule scheduler jobs — weather only.
-        7. Post invalidation message if any prior phase was done.
+        7. Post invalidation message if any prior phase was done — weather only.
         8. Immediately re-run any phase whose horizon has already passed — weather only.
 
-        **What the weather gate covers, and what it deliberately does not** (issue #113). Both
-        the re-scheduling and the re-run of overdue phases produce the weather module's output —
-        a scheduled job, and a forecast computed, recorded and posted — so both ask
-        ``is_weather_enabled`` first. Only the re-scheduling did, which is how an amendment with
-        weather switched off came to draw a forecast, post it, and mark the phase done, leaving a
-        later ``/module enable weather`` to skip it for good.
+        **What the weather gate covers, and what it deliberately does not** (issue #113). The
+        re-scheduling, the invalidation notice and the re-run of overdue phases all produce the
+        weather module's output — a scheduled job, a post to the forecast channel, and a forecast
+        computed, recorded and posted — so all three ask ``is_weather_enabled`` first. Only the
+        re-scheduling did, which is how an amendment with weather switched off came to draw a
+        forecast, post it, and mark the phase done, leaving a later ``/module enable weather`` to
+        skip it for good. The audit line beside the notice is not weather output and is not gated.
 
         Resetting the done flags, invalidating the phase results and deleting the stored forecast
         messages all stay unconditional, and that is not an oversight. They *clear* weather work
@@ -195,9 +196,15 @@ class AmendmentService:
                 forecast_channel_id = row["forecast_channel_id"]
 
             amended_track = str(db_value) if field == "track_name" else track_name
-            await bot.output_router.post_forecast(
-                _Div(), invalidation_message(amended_track), server_id=server_id
-            )
+            # The notice goes to the forecast channel and is about forecasts, so it is the
+            # weather module's output and waits on the module. Reachable with weather off —
+            # phases run, module switched off, round amended — which is issue #113 again by a
+            # second route. The log line below is amendment audit, not weather output, and is
+            # posted either way.
+            if _weather_on:
+                await bot.output_router.post_forecast(
+                    _Div(), invalidation_message(amended_track), server_id=server_id
+                )
             await bot.output_router.post_log(
                 server_id,
                 f"{actor.display_name} (<@{actor.id}>) | /round amend (field) | Success\n"
