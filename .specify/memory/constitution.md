@@ -1,6 +1,58 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-14 — v8.0.0 → v9.0.0: MAJOR — a round amendment is judged per phase, not all-or-nothing]
+  Version change    : 8.0.0 → 9.0.0
+  Bump rationale    : MAJOR. Principle IV, a NON-NEGOTIABLE principle, is redefined backward-
+                      incompatibly, and Principle III is narrowed.
+
+                      Principle IV said that amending a round after any phase completed
+                      invalidated ALL previously posted weather outputs, that the bot MUST
+                      immediately post an invalidation notice, and that it MUST re-execute
+                      whichever phases had passed their horizon. All three are now conditional on
+                      a per-phase judgement, and two of them are now *forbidden* in cases the old
+                      rule mandated: a phase that would still have been performed under the
+                      round's amended moment is left standing rather than invalidated, and no
+                      notice is posted where nothing was withdrawn. A league governed by the old
+                      wording is governed differently by the new one, which is what makes this
+                      incompatible rather than clarifying. The v4.7.0 precedent took MINOR for a
+                      Principle IV correction because nothing was removed and the change only
+                      permitted a form the old rule did not reach; that reasoning does not carry
+                      here, where mandated behaviour is withdrawn.
+
+                      Principle III promised mid-season plan changes "at any point in an active
+                      season". Track and format substitutions are now refused while a weather
+                      output drawn for the round's present circuit or sessions still stands, and
+                      once the round's moment has passed. The postponement is preserved as the
+                      change that cannot be denied and as the remedy for every gate, so no change
+                      becomes impossible — but "at any point" is no longer true as written.
+
+  Modified sections :
+    - Principle III (Resilient Schedule Management) — "at any point" replaced by the gates and
+      the postponement remedy. Added: an amendment is one change, judged against the round as it
+      will stand, and judged again at the moment it is committed; a round's scheduled work is
+      re-armed for every module's share; each job is identified uniquely to its round for that
+      round's life, so resequencing round numbers cannot make one round's work displace another's.
+    - Principle IV (Three-Phase Weather Pipeline) — "Amendment invalidation" rewritten as a
+      per-phase judgement, with the three outcomes (withdrawn, stands, never performed but due).
+      Added: the notice is owed only where something was withdrawn; the division holds the latest
+      phase that stands; phases are re-armed at the league's configured horizons, not the
+      packaged defaults; withdrawal of a phase's record happens whatever the module's state.
+    - Principle XIII (Attendance & Check-in Integrity) — new "Round Amendment" subsection. The
+      principle said nothing about amendment at all, which is how an amended round came to lose
+      its check-in permanently with no rule broken.
+    - Data & State Management, "Amendment invalidation" — narrowed to the withdrawn phase, and
+      (c) narrowed to a phase whose horizon has passed and which has not been performed.
+
+  Deliberately NOT changed:
+    - Principle III's "Re-generating weather after a schedule change MUST use a fresh, distinct
+      seed" — unchanged and still binding for every phase that is in fact drawn again.
+    - Principle XII (Race Results) — the result-submission job is now re-armed by an amendment
+      whatever the modules, but that principle never stated otherwise.
+    - "The bot MUST reject out-of-channel commands silently (no response)" and the three
+      references to the deleted `docs/wip-specs/known_issues.md` — still wrong, still tracked in
+      issue #145, still out of scope here.
+
 [2026-09-10 — v7.12.1 → v8.0.0: MAJOR — both access tiers become roles the league configures]
   Version change    : 7.12.1 → 8.0.0
   Bump rationale    : MAJOR. Principle I's tier 2 is redefined backward-incompatibly and one of
@@ -4067,16 +4119,34 @@ confusion.
 
 ### III. Resilient Schedule Management
 
-The bot MUST accommodate mid-season plan changes at any point in an active season:
+The bot MUST accommodate mid-season plan changes in an active season:
 
 - **Track substitutions**: replace a scheduled circuit with another.
 - **Postponements**: shift a race date and/or time forward without losing round identity.
 - **Cancellations**: remove a round and resequence the calendar cleanly.
 
+A postponement MUST remain available for as long as the round's results have not been entered;
+it is the change a league cannot be denied, and it is the remedy for every gate below. A track
+or format substitution MUST be refused while a weather output drawn for the round's present
+circuit or sessions still stands, and once the round's moment has passed — but MUST be admitted
+where the same change moves the round such that those outputs no longer stand.
+
+An amendment MUST be judged and applied as a single change however many fields it alters, and
+MUST be judged against the round as it will stand once every field is applied. Where any rule
+refuses any part of it, none of it may be applied. The judgement MUST be made again at the
+moment the change is committed rather than only when it is offered, a horizon being able to
+pass in between.
+
 Each change MUST be applied atomically; partial updates are not permitted. The bot MUST
 preserve the original schedule alongside the current one so the full amendment history is
 recoverable. Re-generating weather after a schedule change MUST use a fresh, distinct seed
 and MUST log the reason for re-generation.
+
+A round's scheduled work MUST be re-armed against its new moment, and each job MUST be
+identified in a way that remains unique to its round for that round's whole life, so that
+resequencing a division's round numbers cannot cause one round's work to displace another's.
+The re-arming MUST cover every module's share of that work, not only the module whose change
+prompted it.
 
 **Rationale**: Real leagues face unavoidable logistical disruptions. The bot MUST absorb these
 without requiring a full season reset or manual data repair.
@@ -4111,12 +4181,27 @@ result is written, and nothing is logged to the calculation channel. In place of
 The notice is the round's only weather output, and it is a posting the module makes rather than one
 it withholds — which is what allows an image type to draw it (Principle XIV, Rule 8).
 
-**Amendment invalidation**: If a round is amended (track change, postponement, format change)
-after any phase has completed, ALL previously posted weather outputs for that round are
-invalidated. The bot MUST immediately post an invalidation notice to the division channel and
-re-execute whichever phases have already passed their horizon. Previously computed `Rpc`,
-session-type draws, and slot draws MUST be discarded from active state but retained in the
-audit log with an `INVALIDATED` status marker.
+**Amendment invalidation**: If a round is amended (track change, postponement, format change),
+each phase MUST be judged separately, by whether it would have been performed already had the
+round always stood at its amended moment.
+
+- A phase that would **not** have been performed is withdrawn: its posted output is deleted, its
+  `Rpc`, session-type draws and slot draws are discarded from active state but retained in the
+  audit log with an `INVALIDATED` status marker, it is marked not performed, and it is armed
+  again for its new horizon.
+- A phase that **would** have been performed stands: its output, its draws and its record are
+  left exactly as they are. A horizon already past MUST NOT be honoured retroactively.
+- A phase that would have been performed but never was MUST be executed immediately.
+
+The bot MUST post an invalidation notice to the division channel where any phase has been
+withdrawn, and MUST NOT post one where none has — the forecast the division holds being, in
+that case, still the one that stands. The division holds the latest phase that stands.
+
+Phases MUST be re-armed at the league's own configured horizons, not at the packaged defaults.
+
+Withdrawal of a phase's record — the `INVALIDATED` marker, the cleared draws, the not-performed
+flag and the deletion of its posted output — MUST happen whatever the module's enabled state, a
+forecast that no longer stands being wrong however the module stands.
 
 All random draws MUST be logged with the input state at the moment of drawing so any result
 can be independently audited or challenged.
@@ -4795,6 +4880,34 @@ distribution is determined, the bot MUST post a message in the division's RSVP c
   racing for.
 - Mentioning each standby reserve and informing them they are on standby and should be
   ready to substitute.
+
+#### Round Amendment
+
+- When a round is amended, its check-in work MUST be armed again against the round's amended
+  moment, and only while the module is enabled. No other pathway arms it: the check-in is
+  otherwise armed once, when the season is approved, and an approved season cannot be approved
+  again. A round left unarmed asks nobody whether they are racing, opens no attendance record,
+  distributes no reserve and charges nobody, and is recorded afterwards as full attendance for
+  its whole division.
+- The call, the last notice and the deadline MUST each be judged as a weather phase is judged
+  (Principle IV): by whether it would have been posted already had the round always stood at its
+  amended moment. One that would not is armed for its new moment; one that would is not honoured
+  retroactively.
+- An amendment MUST be refused where the check-in deadline computed from the round's amended
+  moment has already passed, a check-in that opens and closes in the same instant being one no
+  driver can answer.
+- A check-in call already posted MUST be handled as follows:
+  - Where its own window would have passed under the amended moment and the deadline has not,
+    the call is posted again carrying what changed.
+  - Where its window is ahead again, the standing call is taken down and the armed call posts
+    afresh at its new moment.
+  - Where the deadline computed from the amended moment has passed, nothing is posted and
+    nothing taken down; the check-in is settled and the reserve distribution stands against it.
+- Where a call is posted again, every answer already recorded MUST be carried over and MUST
+  remain changeable until the deadline. A driver of the division with no recorded answer is
+  recorded as not having answered; an answer belonging to a driver no longer of the division is
+  discarded. The last notice and distribution announcements belonging to the withdrawn call MUST
+  be taken down with it.
 
 #### Attendance Recording
 
@@ -6655,11 +6768,11 @@ for the season persistence increment.
   Phase 2 session-type draws MUST similarly be persisted per session until Phase 3 consumes
   them. In-memory caching of these values is permitted only as a read-through layer; the
   durable store is always authoritative.
-- **Amendment invalidation**: When a round amendment triggers phase invalidation (Principle IV),
-  the bot MUST atomically: (a) mark existing phase outputs `INVALIDATED` in the audit log,
-  (b) clear active phase state for that round, and (c) re-execute all phases whose time
-  horizons have already passed. This MUST happen in a single transaction; a partial update
-  is not permitted.
+- **Amendment invalidation**: When a round amendment withdraws a phase (Principle IV), the bot
+  MUST atomically: (a) mark that phase's outputs `INVALIDATED` in the audit log, (b) clear its
+  active phase state for that round, and (c) execute any phase whose time horizon has already
+  passed and which has not been performed. A phase that still stands MUST be left untouched by
+  all three. This MUST happen in a single transaction; a partial update is not permitted.
 - Data schemas MUST be versioned. Migrations MUST be applied automatically on bot startup with
   a clear log of which migrations ran.
 - A full data export of any division's season (schedule, amendments, weather log, phase
@@ -7275,4 +7388,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 8.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-10
+**Version**: 9.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-14
