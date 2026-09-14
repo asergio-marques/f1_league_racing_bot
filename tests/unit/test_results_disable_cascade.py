@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
 from cogs.module_cog import ModuleCog, _ConfirmDisableResultsView  # noqa: E402
+from services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 6611
 ACTOR_ID = 4242
@@ -38,7 +39,9 @@ ACTOR_ID = 4242
 # ---------------------------------------------------------------------------
 
 
-async def _make_db(tmp_path, *, attendance_enabled: bool) -> str:
+async def _make_db(
+    tmp_path, *, attendance_enabled: bool, season_status: str = "SETUP"
+) -> str:
     db_path = os.path.join(str(tmp_path), "cascade.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -56,10 +59,13 @@ async def _make_db(tmp_path, *, attendance_enabled: bool) -> str:
             "INSERT INTO attendance_config (server_id, module_enabled) VALUES (?, ?)",
             (SERVER_ID, int(attendance_enabled)),
         )
+        # SETUP by default, so the cascade is the only thing at stake here. A running season
+        # puts its own — far larger — warning in front of the disable, and that is tested in
+        # `test_results_disable_purges_the_season.py`.
         await db.execute(
             "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (1, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SERVER_ID,),
+            "VALUES (1, ?, 1, '2026-01-01', ?)",
+            (SERVER_ID, season_status),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -81,6 +87,10 @@ def _make_cog(db_path: str, *, attendance_enabled: bool) -> ModuleCog:
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
     bot.output_router.post_log = AsyncMock(return_value=None)
+    # A real one: the disable asks it whether a season is running, and then to close any round
+    # only the results module could have moved (issue #167).
+    bot.season_service = SeasonService(db_path)
+    bot.get_guild = MagicMock(return_value=None)
     cog.bot = bot
     return cog
 
@@ -199,7 +209,12 @@ async def test_only_the_actor_may_confirm(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_no_warning_where_attendance_is_already_off(tmp_path):
+async def test_no_warning_where_neither_attendance_nor_a_season_is_at_stake(tmp_path):
+    """With attendance off and no season running, the disable costs the league nothing.
+
+    It is then the cheap command it always was: no confirmation, nothing deleted, and the
+    module comes straight back when the league next wants it.
+    """
     db_path = await _make_db(tmp_path, attendance_enabled=False)
     cog = _make_cog(db_path, attendance_enabled=False)
     interaction = _make_interaction()
