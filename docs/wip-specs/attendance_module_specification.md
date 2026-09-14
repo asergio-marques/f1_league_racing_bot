@@ -4,7 +4,10 @@
 - The attendance module is disabled by default.
 - The attendance module may not be enabled once the season is approved.
 - Due to being dependent on the results module, the attendance module cannot be enabled while the results & standings module is disabled.
-- If the results & standings module is disabled, then the attendance module shall be disabled as well.
+- If the results & standings module is disabled, then the attendance module shall be disabled as well. Where the attendance module is enabled, disabling the results & standings module shall first warn the league that attendance will go with it and what that costs, and shall write nothing until the league confirms; the reply that follows shall name both modules as disabled. Where the attendance module is already disabled, no warning shall be given.
+- Disabling the attendance module shall stop every check-in call, reminder, deadline and reserve distribution still to come, for the remainder of the season, however that work is reached — a scheduled job, a restart, or a button on a check-in call already posted.
+    - A check-in call already posted shall not be withdrawn, but its buttons shall record no further answer.
+    - The season's scheduled work shall not be destroyed by the disabling, so that nothing is lost that only approving a season could create again.
 - Attendance module activation status shall be displayed in the season review.
 - This module must work with the fake driver rosters used in test mode.
 

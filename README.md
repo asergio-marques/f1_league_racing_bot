@@ -786,14 +786,14 @@ Historical data is always retained. How much configuration a disable actually cl
 | Module | What disabling clears |
 |---|---|
 | `signup` | The signup channel and the two roles. Its availability time slots and its three wizard settings survive and are restored on re-enabling, though the reply reports that all configuration has been cleared |
-| `attendance` | The per-division channel bindings only. The server-level notice, reminder and deadline timings and every penalty value survive |
+| `attendance` | The per-division channel bindings only. The server-level notice, reminder and deadline timings and every penalty value survive. Every check-in call, reminder and deadline still to come stops at once, for the rest of the season — a call already posted stays where it is, but its buttons no longer record an answer |
 | `weather` | Nothing. Division forecast channels, the configured phase deadlines, recorded phase results and forecast messages already posted all survive; its own scheduled jobs — the three forecast phases and the post-race cleanup, for every round still to come — are cancelled, and the result-submission and check-in jobs belonging to the other modules are left running |
 | `results` | Nothing. Channels, points configurations and season attachments all survive |
 | `images` | Nothing. It stores only filesystem paths and display preferences, none of which can go stale while it is off, so re-enabling restores the configuration exactly |
 
-> **Disabling `results` disables `attendance` with it**, where attendance is on. The reply names only results; the cascade is recorded in the log channel and audited as `ATTENDANCE_MODULE_CASCADE_DISABLED`.
+> **Disabling `results` disables `attendance` with it**, where attendance is on. Because that costs you every division's check-in and attendance channels and cannot be undone until the season ends, the bot warns you first and writes nothing until you confirm: you are told what the cascade will take, and the reply that follows names both modules. Where attendance is already off there is nothing to warn about and results is disabled straight away. The cascade is recorded in the log channel and audited as `ATTENDANCE_MODULE_CASCADE_DISABLED`.
 
-Enabling is guarded where disabling is not: `results` and `attendance` both refuse to be enabled while a season is ACTIVE, and neither refuses to be disabled. See [#114](https://github.com/asergio-marques/f1_league_racing_bot/issues/114).
+Enabling is guarded where disabling is not: `results` and `attendance` both refuse to be enabled while a season is ACTIVE, and neither refuses to be disabled. Disabling either one mid-season is safe — the module stops producing anything immediately — but it is one-way until the season ends.
 
 ---
 
