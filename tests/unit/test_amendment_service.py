@@ -212,7 +212,7 @@ async def test_amend_round_changes_the_field(tmp_path):
     amendment failed. Nothing else in the suite executed this path.
     """
     from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     from services.amendment_service import AmendmentService
 
@@ -286,7 +286,7 @@ async def test_amending_two_fields_amends_once(tmp_path):
     audit entries are right — one per field — and everything else happens exactly once.
     """
     from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     from services.amendment_service import AmendmentService
 
@@ -382,7 +382,7 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
     are withdrawn and armed again.
     """
     from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     from services.amendment_service import AmendmentService
 
@@ -476,7 +476,7 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     phase would be judged at seven days and armed at five.
     """
     from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     from services.amendment_service import AmendmentService
 
@@ -542,7 +542,7 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
 
 def _amend_bot_with_attendance(path, *, attendance: bool, weather: bool = False):
     from types import SimpleNamespace
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     bot = MagicMock()
     bot.db_path = path
@@ -553,6 +553,8 @@ def _amend_bot_with_attendance(path, *, attendance: bool, weather: bool = False)
             rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2
         )
     )
+    # No call has gone out for these rounds, so there is nothing to take down or repost.
+    bot.attendance_service.get_embed_message = AsyncMock(return_value=None)
     bot.output_router.post_forecast = AsyncMock(return_value=None)
     bot.output_router.post_log = AsyncMock(return_value=None)
     bot.scheduler_service.cancel_round = MagicMock()
@@ -719,3 +721,111 @@ async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
 
     bot.scheduler_service.schedule_round.assert_called_once()
     bot.scheduler_service.schedule_result_submission_jobs.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# What becomes of a check-in call that has already gone out
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_standing_call_is_taken_down_when_the_round_moves_out_of_its_window(tmp_path):
+    """Moved far enough that the call would not have gone out, so the one standing is withdrawn.
+
+    The armed job posts a fresh one at the new time. Leaving the old one up would have the
+    division reading a call for a circuit, a date or a set of sessions the round no longer has.
+    """
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from services.amendment_service import AmendmentService
+
+    path = str(tmp_path / "amend_withdraw.db")
+    await run_migrations(path)
+    now = datetime.now(timezone.utc)
+    await _seed_one_round(path, now + timedelta(days=2))
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+    bot = _amend_bot_with_attendance(path, attendance=True)
+    _withdrawn = AsyncMock(return_value=True)
+    _reposted = AsyncMock(return_value=None)
+
+    with patch("services.rsvp_service.withdraw_rsvp_call", _withdrawn), patch(
+        "services.rsvp_service.repost_rsvp_call", _reposted
+    ):
+        await AmendmentService(path).amend_round(
+            1, actor, [("scheduled_at", now + timedelta(days=40))], bot, now=now
+        )
+
+    _withdrawn.assert_awaited_once()
+    _reposted.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_standing_call_is_posted_again_when_its_window_has_passed(tmp_path):
+    """The call was due and is still open, so it goes out again carrying what changed."""
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from services.amendment_service import AmendmentService
+
+    path = str(tmp_path / "amend_repost.db")
+    await run_migrations(path)
+    now = datetime.now(timezone.utc)
+    # Two days out: the call (5 days before) is behind us, the deadline (2 hours) is not.
+    await _seed_one_round(path, now + timedelta(days=2))
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+    bot = _amend_bot_with_attendance(path, attendance=True)
+    _withdrawn = AsyncMock(return_value=True)
+    _reposted = AsyncMock(return_value=None)
+
+    with patch("services.rsvp_service.withdraw_rsvp_call", _withdrawn), patch(
+        "services.rsvp_service.repost_rsvp_call", _reposted
+    ):
+        await AmendmentService(path).amend_round(
+            1, actor, [("track_name", "Silverstone Circuit")], bot, now=now
+        )
+
+    _reposted.assert_awaited_once()
+    _withdrawn.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_closed_check_in_is_left_alone(tmp_path):
+    """Past its deadline the check-in is settled and the reserves are distributed against it.
+
+    Reopening it would unsettle a grid already told who is racing, so nothing is posted and
+    nothing is taken down — the amendment touches the forecasts and the schedule alone.
+    """
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from services.amendment_service import AmendmentService
+
+    path = str(tmp_path / "amend_closed.db")
+    await run_migrations(path)
+    now = datetime.now(timezone.utc)
+    # One hour out, so the deadline two hours before it has gone by.
+    await _seed_one_round(path, now + timedelta(hours=1))
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+    bot = _amend_bot_with_attendance(path, attendance=True)
+    _withdrawn = AsyncMock(return_value=True)
+    _reposted = AsyncMock(return_value=None)
+
+    with patch("services.rsvp_service.withdraw_rsvp_call", _withdrawn), patch(
+        "services.rsvp_service.repost_rsvp_call", _reposted
+    ):
+        await AmendmentService(path).amend_round(
+            1, actor, [("track_name", "Silverstone Circuit")], bot, now=now
+        )
+
+    _reposted.assert_not_awaited()
+    _withdrawn.assert_not_awaited()

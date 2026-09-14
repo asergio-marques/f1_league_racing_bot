@@ -622,6 +622,85 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
     )
 
 
+# ── withdraw_rsvp_call / repost_rsvp_call ─────────────────────────────────────
+
+
+async def withdraw_rsvp_call(round_id: int, division_id: int, bot) -> bool:  # type: ignore[type-arg]
+    """Take down the check-in call posted for *round_id*, and everything posted beside it.
+
+    Returns True where a call was standing and has been removed, False where there was none.
+
+    `run_rsvp_notice` clears a division's *previous* rounds' messages and deliberately skips the
+    round it is posting for, so a round whose call is posted twice would end up with both
+    standing. This is the other half: it removes the call, its last notice and its distribution
+    announcement for one round, so a fresh call can take their place.
+
+    The recorded answers are **not** touched. They are what a repost carries over — a driver who
+    said they were racing has not unsaid it because the round moved, and asking the division to
+    answer again from nothing is how an amendment comes to look like nobody replied.
+    """
+    stored = await bot.attendance_service.get_embed_message(round_id, division_id)
+    if stored is None:
+        return False
+
+    channel = bot.get_channel(int(stored.channel_id))
+    if channel is not None:
+        for message_id in (
+            stored.message_id,
+            stored.last_notice_msg_id,
+            stored.distribution_msg_id,
+        ):
+            if message_id is None:
+                continue
+            try:
+                message = await channel.fetch_message(int(message_id))
+                await message.delete()
+            except discord.HTTPException:
+                pass  # Already gone, or no permission — the row goes either way.
+
+    async with get_connection(bot.db_path) as db:
+        await db.execute(
+            "DELETE FROM rsvp_embed_messages WHERE round_id = ? AND division_id = ?",
+            (round_id, division_id),
+        )
+        await db.commit()
+    return True
+
+
+async def repost_rsvp_call(round_id: int, division_id: int, bot) -> None:  # type: ignore[type-arg]
+    """Post a round's check-in call again, carrying over every answer already given.
+
+    Used when a round is amended and its call has already gone out: the call names the circuit,
+    the sessions and the moment, and all three can have just changed under it.
+
+    What survives is every answer from a driver still of the division. A driver who has joined
+    since has no answer recorded and is asked afresh; an answer belonging to a driver who has
+    left is discarded, so the new call cannot show a name the division no longer holds.
+    `bulk_insert_attendance_rows` inserts-or-ignores, so the rows that remain are left exactly
+    as the drivers set them.
+    """
+    await withdraw_rsvp_call(round_id, division_id, bot)
+
+    # Drop answers belonging to drivers the division no longer holds.
+    roster = await query_division_roster(bot.db_path, division_id)
+    current = [d["driver_profile_id"] for team in roster for d in team["drivers"]]
+    async with get_connection(bot.db_path) as db:
+        if current:
+            _marks = ", ".join("?" for _ in current)
+            await db.execute(
+                "DELETE FROM driver_round_attendance "  # noqa: S608
+                f"WHERE round_id = ? AND driver_profile_id NOT IN ({_marks})",
+                (round_id, *current),
+            )
+        else:
+            await db.execute(
+                "DELETE FROM driver_round_attendance WHERE round_id = ?", (round_id,)
+            )
+        await db.commit()
+
+    await run_rsvp_notice(round_id, bot)
+
+
 # ── run_rsvp_last_notice ──────────────────────────────────────────────────────
 
 

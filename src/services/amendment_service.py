@@ -145,8 +145,27 @@ class AmendmentService:
         # and the windows the phases are actually judged at cannot disagree about a round.
         from models.round import Round as _Round
         from services.amendment_rules_service import judge_amendment
-        from services.approval_window_service import WeatherWindows
+        from services.approval_window_service import AttendanceWindows, WeatherWindows
         from services.weather_config_service import get_weather_pipeline_config
+
+        # Read before the verdict, because the verdict is what decides the fate of the round's
+        # check-in as well as its forecasts. The config is only fetched where the module is on:
+        # ``get_or_create_config`` writes a row, and a disabled module should leave no trace.
+        _attendance_on = await bot.module_service.is_attendance_enabled(server_id)
+        _acfg = (
+            await bot.attendance_service.get_or_create_config(server_id)
+            if _attendance_on
+            else None
+        )
+        _attendance_windows = (
+            AttendanceWindows(
+                notice_days=_acfg.rsvp_notice_days,
+                last_notice_hours=_acfg.rsvp_last_notice_hours,
+                deadline_hours=_acfg.rsvp_deadline_hours,
+            )
+            if _acfg is not None
+            else None
+        )
 
         _wcfg = await get_weather_pipeline_config(self._db_path, server_id)
         _verdict = judge_amendment(
@@ -164,6 +183,7 @@ class AmendmentService:
             ),
             dict(changes),
             now=now,
+            attendance=_attendance_windows,
             weather=WeatherWindows(
                 phase_1_days=_wcfg.phase_1_days,
                 phase_2_days=_wcfg.phase_2_days,
@@ -308,8 +328,7 @@ class AmendmentService:
         # ``schedule_attendance_round`` arms only the windows still ahead, which is the same rule
         # the verdict above holds to: a window that would have run under the round's new moment
         # stands, and is not honoured retroactively.
-        if await bot.module_service.is_attendance_enabled(server_id):
-            _acfg = await bot.attendance_service.get_or_create_config(server_id)
+        if _attendance_on and _acfg is not None:
             bot.scheduler_service.schedule_attendance_round(
                 updated_round,
                 season_number=row["season_number"],
@@ -318,6 +337,26 @@ class AmendmentService:
                 last_notice_hours=_acfg.rsvp_last_notice_hours,
                 deadline_hours=_acfg.rsvp_deadline_hours,
             )
+
+            # What becomes of a call that has already gone out. The call names the circuit, the
+            # sessions and the moment, and the amendment can have changed all three under it.
+            #
+            #   * Its window would have passed under the round's new moment, and the check-in is
+            #     still open — the call is posted again, carrying every answer already given, so
+            #     the division sees what actually changed and may still answer.
+            #   * Its window is ahead again, the round having moved far enough — the standing
+            #     call is taken down and the job armed above posts a fresh one at the new time.
+            #   * The deadline has passed under the new moment too — nothing is posted and
+            #     nothing is taken down. The check-in is closed, the reserves are distributed
+            #     against it, and reopening it would unsettle a grid already told who is racing.
+            from services.rsvp_service import repost_rsvp_call, withdraw_rsvp_call
+
+            _division_id = row["division_id"]
+            if not _verdict.check_in_stays_closed:
+                if _verdict.check_in["call"].stands:
+                    await repost_rsvp_call(round_id, _division_id, bot)
+                else:
+                    await withdraw_rsvp_call(round_id, _division_id, bot)
 
         # Erase the stored forecast message of each withdrawn phase, and only those (FR-011).
         # A phase that still stands keeps its message, which is what leaves the division holding
