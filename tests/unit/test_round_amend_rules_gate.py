@@ -209,3 +209,70 @@ async def test_the_summary_does_not_claim_to_withdraw_a_forecast_that_stands(tmp
     reply = _reply(interaction)
     assert "will stand" in reply
     assert "withdraw" not in reply
+
+
+# ---------------------------------------------------------------------------
+# The rules are judged again when the amendment is confirmed
+# ---------------------------------------------------------------------------
+#
+# `_ConfirmView` stands for two minutes. The world can move inside them, and an amendment
+# allowed on the strength of a window that has since closed is the silent loss these rules
+# exist to prevent. Every test below constructs a View, so every one is `async def`: apt's
+# discord.py 2.5.0 calls `asyncio.get_running_loop()` in `View.__init__`.
+
+
+def _view(cog, amendments):
+    from cogs.season_cog import _ConfirmView
+
+    return _ConfirmView(
+        cog=cog, interaction_user_id=USER_ID, round_id=1, amendments=amendments
+    )
+
+
+async def test_a_window_passing_while_the_confirmation_stands_refuses_it(tmp_path):
+    """Offered while the check-in deadline was ahead, pressed once it is behind.
+
+    The round sits an hour out, so its deadline — two hours before it — has already gone by.
+    Confirming would apply an amendment the command itself would no longer offer.
+    """
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(hours=1))
+    cog = _cog(path)
+    cog.bot.amendment_service.amend_round = AsyncMock()
+    interaction = _interaction()
+
+    await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
+
+    assert "can no longer be amended" in _reply(interaction)
+    cog.bot.amendment_service.amend_round.assert_not_awaited()
+
+
+async def test_results_entered_while_the_confirmation_stands_refuses_it(tmp_path):
+    """The other way the world moves: the round's results come in before the button is pressed."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    async with get_connection(path) as db:
+        await db.execute(
+            "UPDATE rounds SET status = 'AWAITING_REPORT_VERDICTS' WHERE id = 1"
+        )
+        await db.commit()
+    cog = _cog(path)
+    cog.bot.amendment_service.amend_round = AsyncMock()
+    interaction = _interaction()
+
+    await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
+
+    assert "results have been entered" in _reply(interaction)
+    cog.bot.amendment_service.amend_round.assert_not_awaited()
+
+
+async def test_a_confirmation_the_rules_still_allow_goes_through(tmp_path):
+    """The gate must not cost a manager an amendment that is still perfectly good."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    cog = _cog(path)
+    cog.bot.amendment_service.amend_round = AsyncMock()
+    interaction = _interaction()
+
+    await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
+
+    cog.bot.amendment_service.amend_round.assert_awaited_once()
+    # And the whole change set went in one call, not one call per field.
+    assert cog.bot.amendment_service.amend_round.await_args.args[2] == [("track_name", NEW_TRACK)]
