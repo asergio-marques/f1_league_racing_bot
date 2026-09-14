@@ -264,7 +264,13 @@ def test_the_question_falls_after_every_gate_and_before_every_write():
 
     for gate in ("_portrait_configuration_blocker", "_lineup_problems", "_team_name_problems"):
         assert source.index(gate) < asked, f"{gate} runs after the backup question"
-    for write in ("snapshot_configs_to_season", "transition_to_active"):
+    # Anchored on the `await`, not the bare name: a gate above may legitimately discuss a
+    # write in a comment — Gate 2a explains why it does not read the snapshot's table —
+    # and a search for the name alone would find the prose and read the order backwards.
+    for write in (
+        "await season_points_service.snapshot_configs_to_season",
+        "await season_svc.transition_to_active",
+    ):
         assert asked < source.index(write), f"{write} runs before the backup question"
 
 
