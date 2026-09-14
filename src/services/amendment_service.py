@@ -263,10 +263,19 @@ class AmendmentService:
         if _weather_on:
             from models.round import RoundFormat as _RoundFormat
             if updated_round.format != _RoundFormat.MYSTERY or now < p1_horizon:
+                # The league's own horizons, the same ones the verdict above was measured
+                # against. Left to its defaults `schedule_round` arms at the packaged 5 / 2 / 2,
+                # so a league that had configured its own quietly got them back every time a
+                # round was amended (issue #110) — and now that the rules read the configured
+                # horizons, arming at the packaged ones would have the amendment judge a phase
+                # at one moment and schedule it at another.
                 bot.scheduler_service.schedule_round(
                     updated_round,
                     season_number=row["season_number"],
                     division_tier=row["division_tier"],
+                    phase_1_days=_wcfg.phase_1_days,
+                    phase_2_days=_wcfg.phase_2_days,
+                    phase_3_hours=_wcfg.phase_3_hours,
                 )
 
         # Erase the stored forecast message of each withdrawn phase, and only those (FR-011).

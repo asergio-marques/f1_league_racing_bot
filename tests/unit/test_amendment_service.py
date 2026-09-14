@@ -455,3 +455,77 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
 
     # Phase 3 never ran and is still ahead either way.
     assert flags["phase3_done"] == 0
+
+
+# ---------------------------------------------------------------------------
+# An amended round is re-armed at the league's own horizons — issue #110
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
+    """A league that configured its own forecast horizons keeps them across an amendment.
+
+    `schedule_round` falls back to the packaged 5 / 2 / 2 when it is not told otherwise, and the
+    amendment never told it — so a league running 7 / 3 / 4 had the defaults quietly restored
+    every time it moved a round, and the phases fired at moments nobody had chosen. It also put
+    the amendment at odds with itself once the rules began reading the configured horizons: a
+    phase would be judged at seven days and armed at five.
+    """
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import AsyncMock, MagicMock
+
+    from services.amendment_service import AmendmentService
+
+    path = str(tmp_path / "amend_horizons.db")
+    await run_migrations(path)
+    now = datetime.now(timezone.utc)
+    scheduled_at = now + timedelta(days=30)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO server_configs "
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+            "VALUES (1, 10, 20, 30)"
+        )
+        await db.execute(
+            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
+            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 1)"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
+            "VALUES (1, 1, 'Div A', 1, 999, 555)"
+        )
+        await db.execute(
+            "INSERT INTO rounds "
+            "(id, division_id, round_number, format, track_name, scheduled_at) "
+            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain International Circuit', ?)",
+            (scheduled_at.isoformat(),),
+        )
+        # Anything but the packaged 5 / 2 / 2, so a fallback cannot pass by coincidence.
+        await db.execute(
+            "INSERT INTO weather_pipeline_config (server_id, phase_1_days, phase_2_days, phase_3_hours) "
+            "VALUES (1, 7, 3, 4)"
+        )
+        await db.commit()
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+
+    bot = MagicMock()
+    bot.db_path = path
+    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    bot.output_router.post_forecast = AsyncMock(return_value=None)
+    bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.scheduler_service.cancel_round = MagicMock()
+    bot.scheduler_service.schedule_round = MagicMock()
+
+    await AmendmentService(path).amend_round(
+        1, actor, [("track_name", "Silverstone Circuit")], bot, now=now
+    )
+
+    bot.scheduler_service.schedule_round.assert_called_once()
+    kwargs = bot.scheduler_service.schedule_round.call_args.kwargs
+    assert kwargs["phase_1_days"] == 7
+    assert kwargs["phase_2_days"] == 3
+    assert kwargs["phase_3_hours"] == 4
