@@ -479,6 +479,38 @@ async def validate_modification_ordering(db_path: str, season_id: int) -> list[s
     return errors
 
 
+async def modification_ordering_warnings(
+    db_path: str,
+    season_id: int,
+    config_name: str,
+    session_type: str,
+) -> list[str]:
+    """Return how one staged session's table now reads out of order, if it does.
+
+    The modification store's answer to
+    :func:`services.points_config_service.ordering_warnings`, and given on the same
+    terms: a staged edit that breaks the ordering **warns and still applies**. A manager
+    restructuring a table mid-season moves through the same transient states as one
+    building it in the first place, and the refusal waits for
+    :func:`approve_amendment`, which is where the table would stop being staged and
+    start scoring a championship.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT position, points FROM season_modification_entries "
+            "WHERE season_id = ? AND config_name = ? AND session_type = ?",
+            (season_id, config_name, session_type),
+        )
+        rows = await cursor.fetchall()
+
+    return [
+        f"position {position} ({points} pts) < position {next_position} ({next_points} pts)"
+        for position, points, next_position, next_points in ordering_violations(
+            [(r["position"], r["points"]) for r in rows]
+        )
+    ]
+
+
 async def get_amendment_state(db_path: str, season_id: int):
     """Return SeasonAmendmentState or None if no record exists."""
     from models.amendment_state import SeasonAmendmentState

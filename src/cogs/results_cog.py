@@ -39,7 +39,20 @@ _RACE_SESSION_CHOICES = [
 # Ordering notice
 # ---------------------------------------------------------------------------
 
-def _ordering_notice(config_name: str, session_label: str, violations: list[str]) -> str:
+#: What a manager loses by leaving a table out of order, at each of the two ends. The
+#: rule is one rule; only the moment it is enforced differs, so only this clause does.
+BLOCKS_APPROVAL = "The change has been saved, but a season cannot be approved on this table."
+BLOCKS_AMENDMENT = (
+    "The change has been staged, but this amendment cannot be approved on this table."
+)
+
+
+def _ordering_notice(
+    config_name: str,
+    session_label: str,
+    violations: list[str],
+    consequence: str = BLOCKS_APPROVAL,
+) -> str:
     """The block appended to a points edit that has left a table out of order.
 
     Empty string when there is nothing wrong, so a caller can concatenate it
@@ -48,7 +61,8 @@ def _ordering_notice(config_name: str, session_label: str, violations: list[str]
     The edit itself has already been applied by the time this is written — a points
     edit warns rather than refuses (decided 2026-09-14). The notice therefore has one
     job beyond naming the fault: saying who *will* refuse, so a manager knows this is
-    something to fix rather than a note they can read past.
+    something to fix rather than a note they can read past. *consequence* is which of
+    the two refusals is coming, the season's approval or the amendment's.
     """
     if not violations:
         return ""
@@ -56,8 +70,7 @@ def _ordering_notice(config_name: str, session_label: str, violations: list[str]
     return (
         f"\n\u26a0\ufe0f **{config_name}**'s {session_label} table is now out of order:\n"
         f"{bullets}\n"
-        f"A lower position cannot be worth as much as the one above it. The change has "
-        f"been saved, but a season cannot be approved on this table."
+        f"A lower position cannot be worth as much as the one above it. {consequence}"
     )
 
 
@@ -233,7 +246,11 @@ class BulkAmendSessionModal(discord.ui.Modal, title="Bulk Amend Session Points")
         self._guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
-        from services.amendment_service import AmendmentNotActiveError, modify_session_points
+        from services.amendment_service import (
+            AmendmentNotActiveError,
+            modification_ordering_warnings,
+            modify_session_points,
+        )
 
         await interaction.response.defer(ephemeral=True)
 
@@ -276,6 +293,19 @@ class BulkAmendSessionModal(discord.ui.Modal, title="Bulk Amend Session Points")
             )
         if errors:
             lines.append("\u26a0\ufe0f Errors:\n" + "\n".join(f"  • {e}" for e in errors))
+        # Judged once, on the table the whole paste has left staged — as the config
+        # modal above does, and for the same reason.
+        if applied:
+            notice = _ordering_notice(
+                self._config_name,
+                self._session.name,
+                await modification_ordering_warnings(
+                    self._db_path, season.id, self._config_name, self._session.value
+                ),
+                BLOCKS_AMENDMENT,
+            )
+            if notice:
+                lines.append(notice.lstrip("\n"))
         await interaction.followup.send("\n".join(lines) or "Done.", ephemeral=True)
 
         if applied:
@@ -946,7 +976,11 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        from services.amendment_service import AmendmentNotActiveError, modify_session_points
+        from services.amendment_service import (
+            AmendmentNotActiveError,
+            modification_ordering_warnings,
+            modify_session_points,
+        )
 
         season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
         if season is None:
@@ -960,8 +994,17 @@ class ResultsCog(commands.Cog):
         except AmendmentNotActiveError:
             await interaction.followup.send("\u274c Amendment mode is not active.", ephemeral=True)
             return
+        notice = _ordering_notice(
+            name,
+            session.name,
+            await modification_ordering_warnings(
+                self.bot.db_path, season.id, name, session.value
+            ),
+            BLOCKS_AMENDMENT,
+        )
         await interaction.followup.send(
-            f"\u2705 Updated in modification store: **{name}** {session.name} P{position} \u2192 {points} pts.",
+            f"\u2705 Updated in modification store: **{name}** {session.name} P{position} \u2192 {points} pts."
+            + notice,
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
@@ -1096,9 +1139,11 @@ class ResultsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         from services.amendment_service import (
+            NonMonotonicAmendmentError,
             approve_amendment,
             get_amendment_state,
             get_modification_store_diff,
+            validate_modification_ordering,
         )
 
         season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
@@ -1112,6 +1157,20 @@ class ResultsCog(commands.Cog):
             return
 
         diff = await get_modification_store_diff(self.bot.db_path, season.id)
+
+        # The ordering is shown in the panel, not saved for the press. A manager asked to
+        # approve a change should be able to see what is wrong with it while deciding,
+        # rather than press Approve and be refused — the diff is the whole basis for the
+        # decision, and this is part of what the diff means.
+        ordering_errors = await validate_modification_ordering(self.bot.db_path, season.id)
+        if ordering_errors:
+            bullet_list = "\n\u2022 ".join(ordering_errors)
+            diff += (
+                f"\n\n\u26a0\ufe0f **These changes cannot be approved \u2014 the points would be "
+                f"out of order:**\n\u2022 {bullet_list}\n"
+                f"A lower position cannot be worth as much as the one above it. Repair the "
+                f"staged table, or `/results amend revert` to start again from the season's own."
+            )
 
         class _ReviewView(discord.ui.View):
             def __init__(self_v) -> None:
@@ -1149,9 +1208,28 @@ class ResultsCog(commands.Cog):
             return
 
         if view.approved:
-            await approve_amendment(
-                self.bot.db_path, season.id, interaction.user.id, interaction.client
-            )
+            # Asked again at the press rather than trusted from above: the panel has no
+            # timeout, so a staged table can change between the diff being drawn and the
+            # button being pressed — in either direction.
+            try:
+                await approve_amendment(
+                    self.bot.db_path, season.id, interaction.user.id, interaction.client
+                )
+            except NonMonotonicAmendmentError as exc:
+                bullet_list = "\n\u2022 ".join(exc.errors)
+                await interaction.followup.send(
+                    f"\u274c Amendment not approved \u2014 the points would be out of order:\n"
+                    f"\u2022 {bullet_list}\n"
+                    f"Nothing has been changed. The staged changes are still there to repair.",
+                    ephemeral=True,
+                )
+                await self.bot.output_router.post_log(
+                    interaction.guild_id,
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+                    f"| /results amend review | Refused (points out of order)\n"
+                    f"  {'; '.join(exc.errors)}",
+                )
+                return
             await interaction.followup.send(
                 "\u2705 Amendment approved. All standings recomputed and reposted.", ephemeral=True
             )

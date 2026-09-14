@@ -286,3 +286,168 @@ async def test_a_bulk_paste_that_applies_nothing_is_not_warned_about(db_path):
     replies = _replies(interaction)
     assert "Errors" in replies
     assert "out of order" not in replies
+
+
+# ---------------------------------------------------------------------------
+# The amendment side
+#
+# The same rule, at the other end of a season. The edit warns and applies; the approval
+# refuses. A manager restructuring a table mid-season passes through the same transient
+# states as one building it in the first place, so refusing the edit would be as wrong
+# here as it would be there — and letting the approval through would be worse, because
+# an approved amendment rescores and reposts every round of every division at once.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def season(db_path):
+    """A season in amendment mode, holding 25 for a win and 18 for second."""
+    from services.amendment_service import enable_amendment_mode
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO seasons (server_id, start_date, status, season_number) "
+            "VALUES (?, '2026-01-01', 'ACTIVE', 1)",
+            (SERVER_ID,),
+        )
+        season_id = cursor.lastrowid
+        for position, points in [(1, 25), (2, 18)]:
+            await db.execute(
+                "INSERT INTO season_points_entries "
+                "(season_id, config_name, session_type, position, points) "
+                "VALUES (?, '100%', 'FEATURE_RACE', ?, ?)",
+                (season_id, position, points),
+            )
+        await db.commit()
+    await enable_amendment_mode(db_path, season_id)
+    return season_id
+
+
+def _cog_with_season(db_path, season_id):
+    cog = _cog(db_path)
+    cog.bot.season_service.get_season_for_server = AsyncMock(
+        return_value=SimpleNamespace(id=season_id)
+    )
+    return cog
+
+
+async def _staged(db_path, season_id, position: int) -> int | None:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT points FROM season_modification_entries "
+            "WHERE season_id = ? AND position = ?",
+            (season_id, position),
+        )
+        row = await cursor.fetchone()
+    return row["points"] if row else None
+
+
+@pytest.mark.asyncio
+async def test_amend_session_warns_and_still_stages_the_change(db_path, season):
+    cog = _cog_with_season(db_path, season)
+    interaction = _interaction()
+
+    await undecorate(ResultsCog.amend_session)(
+        cog, interaction, name="100%", session=_FEATURE_RACE, position=2, points=30
+    )
+
+    replies = _replies(interaction)
+    assert "✅ Updated in modification store" in replies, "the edit is staged, not refused"
+    assert "out of order" in replies
+    assert "amendment cannot be approved" in replies, "and it names the refusal that is coming"
+    assert await _staged(db_path, season, 2) == 30
+
+
+@pytest.mark.asyncio
+async def test_amend_session_says_nothing_extra_about_a_clean_change(db_path, season):
+    cog = _cog_with_season(db_path, season)
+    interaction = _interaction()
+
+    await undecorate(ResultsCog.amend_session)(
+        cog, interaction, name="100%", session=_FEATURE_RACE, position=1, points=30
+    )
+
+    replies = _replies(interaction)
+    assert "✅ Updated in modification store" in replies
+    assert "out of order" not in replies
+
+
+@pytest.mark.asyncio
+async def test_a_bulk_amend_out_of_order_warns_once_and_stages_every_line(db_path, season):
+    from cogs.results_cog import BulkAmendSessionModal
+
+    modal = BulkAmendSessionModal("100%", _FEATURE_RACE, db_path, SERVER_ID)
+    modal.entries._value = "1, 10\n2, 25"
+    interaction = _interaction()
+    interaction.client.season_service.get_season_for_server = AsyncMock(
+        return_value=SimpleNamespace(id=season)
+    )
+
+    await modal.on_submit(interaction)
+
+    replies = _replies(interaction)
+    assert "✅ Amended in modification store" in replies
+    assert replies.count("out of order") == 1
+    assert await _staged(db_path, season, 2) == 25
+
+
+@pytest.mark.asyncio
+async def test_the_review_panel_shows_the_ordering_problem_with_the_diff(db_path, season):
+    """A manager deciding whether to approve should see the fault while deciding."""
+    from services.amendment_service import modify_session_points
+
+    await modify_session_points(db_path, season, "100%", "FEATURE_RACE", 2, 30)
+    cog = _cog_with_season(db_path, season)
+    interaction = _interaction()
+    interaction.followup.send = AsyncMock(side_effect=_stop_view)
+
+    await undecorate(ResultsCog.amend_review)(cog, interaction)
+
+    panel = _replies(interaction)
+    assert "cannot be approved" in panel
+    assert "Config '100%'" in panel
+
+
+def _stop_view(*_args, **kwargs) -> None:
+    """Press nothing: stop the panel's view so `view.wait()` returns at once.
+
+    A plain function, not a coroutine — `AsyncMock` awaits on the caller's behalf and
+    uses whatever this returns, so handing it a coroutine only leaks one.
+    """
+    view = kwargs.get("view")
+    if view is not None:
+        view.stop()
+
+
+@pytest.mark.asyncio
+async def test_pressing_approve_on_an_out_of_order_table_refuses_and_changes_nothing(
+    db_path, season
+):
+    """The guard is asked again at the press — the panel has no timeout."""
+    from services.amendment_service import modify_session_points
+
+    await modify_session_points(db_path, season, "100%", "FEATURE_RACE", 2, 30)
+    cog = _cog_with_season(db_path, season)
+    interaction = _interaction()
+
+    def _approve(*_args, **kwargs) -> None:
+        view = kwargs.get("view")
+        if view is not None:
+            view.approved = True
+            view.stop()
+
+    interaction.followup.send = AsyncMock(side_effect=_approve)
+
+    await undecorate(ResultsCog.amend_review)(cog, interaction)
+
+    replies = _replies(interaction)
+    assert "Amendment not approved" in replies
+    assert "Nothing has been changed" in replies
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT position, points FROM season_points_entries WHERE season_id = ?",
+            (season,),
+        )
+        points = {r["position"]: r["points"] for r in await cursor.fetchall()}
+    assert points == {1: 25, 2: 18}, "the season's own points were changed by a refusal"
