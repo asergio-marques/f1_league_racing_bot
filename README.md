@@ -418,6 +418,12 @@ The image subsection also lists the eight **asset directories** and the path eac
 
 **There is no `/season approve` command.** A season is approved by pressing **✅ Approve** on the report `/season review` posts, and from nowhere else. Approving commits a season, and the review is the evidence it is committed on — a command that could be run without one let a manager commit a season they had not looked at.
 
+> **A round already inside one of its windows refuses the approval.** Every scheduled thing a season does happens a configured distance *before* the round — the check-in call five days out, the last notice a day out, the check-in deadline two hours out, and each weather phase at its own deadline. Approve on the Thursday before Sunday's race and the five-day call is two days behind you. The approval is refused, privately, with **nothing committed**, and it names each round and each window that has passed along with when it was due.
+>
+> Fix it by moving the round with [`/round amend`](#round-amend--amend-a-round-in-the-active-season) or by shortening the window, then run `/season review` again. Both are your call, which is exactly why the bot will not choose for you: the alternatives are posting the call late, posting nothing, or running the round with no check-in at all — and that last one records **perfect attendance for the whole division** for a round nobody was asked about.
+>
+> Only the enabled modules' windows count, and a cancelled round is ignored. **Test mode is not exempt**, so a test season has to be built with its rounds beyond every configured window.
+
 Pressing it saves all pending divisions and rounds to the database and arms the weather scheduler, and — with the attendance module on — every round's check-in call, reminder and deadline.
 
 **The review is deleted once the season is approved** — the whole report, pictures included, not just the button. It described a season waiting on a decision, and the decision has been made; leaving it would put a long stale scroll above everything the bot posts next. Your confirmation that the season was approved is private to you and stays. An expired review is cleared the same way, for the same reason.
@@ -809,6 +815,8 @@ All three commands share the same preconditions, checked in this order:
 **Ordering.** Compared in hours, the three deadlines must be **strictly** decreasing: `phase_1_days × 24 > phase_2_days × 24 > phase_3_hours`. A rejection names both values in hours, so `phase-3-deadline: 48` against a 2-day Phase 2 is refused for landing at the same moment rather than before it.
 
 **When they take effect.** The values in force for a season are those stored when it is approved. Changing a deadline never moves a forecast for a season already running.
+
+**They also decide how late a season can be approved.** A season holding a round whose Phase 1, 2 or 3 deadline has already passed is refused at approval — a first round three days away cannot honour a five-day Phase 1. See [Approving](#approving--the-button-in-season-review).
 
 #### `/weather config phase-1-deadline` — Days before the round to publish Phase 1
 *Access: League manager · Weather module required · Setup only*
@@ -1499,6 +1507,8 @@ Toggles whether reserve drivers appear in the publicly posted standings for the 
 All commands below require the attendance module to be enabled (`/module enable attendance`). Where check-in calls and attendance sheets are posted is set per division by [`/division rsvp-channel`](#division-rsvp-channel--set-the-rsvp-notice-channel-for-a-division) and [`/division attendance-channel`](#division-attendance-channel--set-the-attendance-logging-channel-for-a-division).
 
 > **A check-in call that fails to post is reported in the log channel**, naming the season, the division and the round. This matters more than it sounds: when a call cannot be posted, the round's attendance rows are never opened, so nobody is asked to check in and nothing is ever counted against anyone — the round ends up recorded as perfect attendance for the whole division. The report tells you to post it again once the cause is cleared, though no command currently does so — a call that failed is lost with the round. It appears whether or not the images module is enabled, because the fault is in the call and not in any picture.
+
+> **The three lead times below also decide how late a season can be approved.** A season holding a round whose notice, last notice or deadline has already passed is refused — a first round three days away cannot honour a five-day notice. See [Approving](#approving--the-button-in-season-review).
 
 #### `/attendance config rsvp-notice` — Set the RSVP notice lead time
 *Access: League manager · No active season*

@@ -348,6 +348,7 @@ section states the rules it holds to.
     - A real driver shall not begin a signup. The sign-up button shall refuse them, and the command opening a signup window shall be refused.
     - A real driver shall not be placed in a team. A driver created by test mode shall still be placed freely.
 - Enabling test mode shall create and attach two ordinary points configurations, "Standard" and "Half Points", to a season standing in setup or active, unless a configuration of that name is already attached to it. They shall be created as ordinary configurations of the server and shall be indistinguishable from ones a league made itself, so that a test season passes the points requirement of approval without one being built by hand.
+- Test mode shall not relax any requirement of approval beyond the points configurations above. In particular, a season holding a round already inside one of its enabled modules' configured windows shall be refused under test mode exactly as it is refused otherwise, so a test season built in the past shall not be approvable. A test season that quietly lost its check-ins would misreport attendance precisely as a real one does, and is a worse thing to be testing against than a calendar that has to be moved forward.
 - Disabling test mode shall delete every driver created by test mode upon the server, across every division.
 
 ### Fake drivers and rosters
