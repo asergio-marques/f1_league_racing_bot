@@ -125,6 +125,8 @@ it only to place it; the rules governing it belong to its own specification.
 - Each subsection shall further be divided across as many messages as its own length requires.
 - The validations that belong to the season rather than to a module shall be posted with the first subsection, whatever modules are enabled.
 - Each division's block shall state its role and every channel configured for it, and shall show its calendar and its lineup as the league will actually receive them.
+- A division's calendar shall carry the faults of its own dates, whichever form the calendar takes. A calendar drawn as a graphic is drawn from the very rounds that are wrong and cannot show which of them have gone by, so the finding shall be posted beside it.
+- Those faults shall be reduced to the latest round of each kind: the last round whose moment has passed, and the last round holding an elapsed window where that is a later round than the first. A round whose moment has passed shall not also be named for the windows it missed, every one of which has elapsed too. Every earlier round is implied by the round named, a calendar moved past it having been moved past them all.
 - The report shall state how many drivers are not yet placed in a division.
 - The report shall end with the question approving the season.
 
@@ -151,6 +153,9 @@ it only to place it; the rules governing it belong to its own specification.
 - The tiers of a season's divisions shall form a sequence from 1 with no gaps.
 - Every division shall hold at least one round.
 - No two rounds of one division shall be scheduled at the same moment.
+- No round shall have a moment that has already passed, and this shall hold whatever the modules enabled. A round's result submission is armed against its own moment and is the round's one passage from awaiting its moment to awaiting its results; armed in the past it is discarded rather than run, and no command opens a submission afterwards, so the round could never take results at all and could never leave the state of not having run. The rule is the one that governs moving a round, stated at the other door so that the two cannot disagree.
+- No round shall be inside a window that one of the enabled modules configures before the round. A module disabled contributes no window; the round's own moment above is judged regardless.
+- A cancelled round shall be exempt from both, having no scheduled work left to lose. Refusing a season on account of one would leave a league unable to approve until they deleted a record they may want to keep.
 - Every team name shall be usable as the filename of that team's artwork, whether or not the image module is enabled.
 - Each enabled module shall impose its own requirements, stated in its own specification.
 - A season failing any requirement shall be refused with nothing committed, and every fault shall be named.
@@ -369,7 +374,7 @@ section states the rules it holds to.
     - A real driver shall not begin a signup. The sign-up button shall refuse them, and the command opening a signup window shall be refused.
     - A real driver shall not be placed in a team. A driver created by test mode shall still be placed freely.
 - Enabling test mode shall create and attach two ordinary points configurations, "Standard" and "Half Points", to a season standing in setup or active, unless a configuration of that name is already attached to it. They shall be created as ordinary configurations of the server and shall be indistinguishable from ones a league made itself, so that a test season passes the points requirement of approval without one being built by hand.
-- Test mode shall not relax any requirement of approval beyond the points configurations above. In particular, a season holding a round already inside one of its enabled modules' configured windows shall be refused under test mode exactly as it is refused otherwise, so a test season built in the past shall not be approvable. A test season that quietly lost its check-ins would misreport attendance precisely as a real one does, and is a worse thing to be testing against than a calendar that has to be moved forward.
+- Test mode shall not relax any requirement of approval beyond the points configurations above. In particular, a season holding a round whose moment has passed, or a round already inside one of its enabled modules' configured windows, shall be refused under test mode exactly as it is refused otherwise, so a test season built in the past shall not be approvable — and the first of those shall refuse it with every module switched off. A test season that quietly lost its check-ins would misreport attendance precisely as a real one does, and is a worse thing to be testing against than a calendar that has to be moved forward.
 - Disabling test mode shall delete every driver created by test mode upon the server, across every division.
 
 ### Fake drivers and rosters
