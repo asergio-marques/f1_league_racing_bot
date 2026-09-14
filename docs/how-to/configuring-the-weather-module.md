@@ -55,7 +55,7 @@ If you turn weather on **after** a season is already running, the bot catches up
 
 > **Switching it on can be refused.** If a season is already running and any division has no forecast channel, the bot names those divisions and does nothing. Set their channels first, then try again.
 
-Turning the module off cancels everything still to come. It does **not** delete forecasts already posted, and it does not forget your channels or your timings — turn it back on and they are still there.
+Turning the module off cancels every forecast still to come, and only those. Your result submissions and your check-ins carry on for the rest of the season exactly as before — switching weather off is not a way to quieten the other modules. It does **not** delete forecasts already posted, and it does not forget your channels or your timings — turn it back on and they are still there.
 
 ---
 
