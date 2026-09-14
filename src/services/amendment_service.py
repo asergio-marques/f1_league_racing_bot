@@ -48,7 +48,10 @@ class AmendmentService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT r.*, d.division_id, s.server_id, "
+                # ``r.*`` already carries rounds.division_id, which is the one every reader
+                # below wants. Asking ``divisions`` for a division_id of its own — that table
+                # has only ``id`` — made this statement raise on every amendment.
+                "SELECT r.*, s.server_id, "
                 "       d.forecast_channel_id, d.mention_role_id, d.tier AS division_tier, "
                 "       s.status AS season_status, s.season_number "
                 "FROM rounds r "
