@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
+from itertools import groupby
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -15,6 +16,7 @@ import discord
 from db.database import get_connection
 from models.round import RoundFormat
 from services.season_service import SeasonImmutableError
+from utils.points_ordering import ordering_message, ordering_violations
 
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
@@ -436,6 +438,47 @@ class AmendmentModifiedError(Exception):
     """Raised when disabling amendment mode while modified_flag=1."""
 
 
+class NonMonotonicAmendmentError(Exception):
+    """Raised when an amendment would install a points table that is out of order.
+
+    Carries the violations as ``errors``, in the same words the season's approval uses,
+    so the caller can hand them to a manager unchanged.
+    """
+
+    def __init__(self, errors: list[str]) -> None:
+        super().__init__("; ".join(errors))
+        self.errors = errors
+
+
+async def validate_modification_ordering(db_path: str, season_id: int) -> list[str]:
+    """Return ordering errors in the modification store, in approval's own words.
+
+    The mid-season counterpart to the season approval's ordering gate. Both guard the
+    same thing — the table a championship is scored on — and a rule that held only at
+    approval would be a rule a league could step around by amending afterwards, with
+    every round rescored against the bad table on the spot.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT config_name, session_type, position, points "
+            "FROM season_modification_entries WHERE season_id = ? "
+            "ORDER BY config_name, session_type, position",
+            (season_id,),
+        )
+        rows = await cursor.fetchall()
+
+    errors: list[str] = []
+    for (config_name, session_type), group in groupby(
+        rows, key=lambda r: (r["config_name"], r["session_type"])
+    ):
+        pairs = [(r["position"], r["points"]) for r in group]
+        errors.extend(
+            ordering_message(config_name, session_type, violation)
+            for violation in ordering_violations(pairs)
+        )
+    return errors
+
+
 async def get_amendment_state(db_path: str, season_id: int):
     """Return SeasonAmendmentState or None if no record exists."""
     from models.amendment_state import SeasonAmendmentState
@@ -677,7 +720,28 @@ async def approve_amendment(
     approved_by: int,
     bot,
 ) -> None:
-    """Atomically overwrite season points from the modification store, then recompute all standings."""
+    """Atomically overwrite season points from the modification store, then recompute all standings.
+
+    Raises :class:`NonMonotonicAmendmentError` if the staged tables are out of order,
+    having written nothing.
+
+    **Why the guard is here and not only in the command.** This function's first act is
+    to delete the season's points, and its second is to refill them from the
+    modification store. A check that lived only in `/results amend review` would leave
+    the one function that can empty a running season's points table willing to do so on
+    anybody's word — and the failure it guards against is silent: the season would be
+    rescored against the bad table immediately, every round of every division reposted
+    with the new numbers, and nothing would look wrong until somebody read the
+    championship and found second place ahead of first.
+
+    It is the mid-season half of the same rule `/season approve` holds at the start of
+    one. A rule that bound only the approval would be a rule a league could step around
+    by approving a good table and amending it afterwards.
+    """
+    ordering_errors = await validate_modification_ordering(db_path, season_id)
+    if ordering_errors:
+        raise NonMonotonicAmendmentError(ordering_errors)
+
     async with get_connection(db_path) as db:
         # Overwrite season_points_entries
         await db.execute(

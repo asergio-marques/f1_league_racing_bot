@@ -985,3 +985,171 @@ async def test_approve_amendment_still_overwrites_the_points(db_path):
     assert state is not None
     assert not state.amendment_active
     assert not state.modified_flag
+
+
+# ---------------------------------------------------------------------------
+# The ordering rule holds at the mid-season end too
+#
+# `/season approve` refuses a points table that is out of order. Approving an amendment
+# installed one without a word — deleting the season's points and refilling them from
+# the modification store, then rescoring and reposting every round of every division
+# against the new numbers. A rule that bound only the approval was a rule a league could
+# step around by approving a good table and amending it afterwards.
+# ---------------------------------------------------------------------------
+
+
+async def _seed_two_position_table(db_path: str, season_id: int) -> None:
+    """A season scoring 25 for a win and 18 for second, which is where a league starts."""
+    async with get_connection(db_path) as db:
+        for position, points in [(1, 25), (2, 18)]:
+            await db.execute(
+                "INSERT INTO season_points_entries "
+                "(season_id, config_name, session_type, position, points) "
+                "VALUES (?, 'STD', 'FEATURE_RACE', ?, ?)",
+                (season_id, position, points),
+            )
+        await db.commit()
+
+
+async def _season_points(db_path: str, season_id: int) -> dict[int, int]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT position, points FROM season_points_entries WHERE season_id = ?",
+            (season_id,),
+        )
+        return {r["position"]: r["points"] for r in await cursor.fetchall()}
+
+
+@pytest.mark.asyncio
+async def test_validate_modification_ordering_passes_a_table_running_down(db_path):
+    path, season_id = db_path
+    await _seed_two_position_table(path, season_id)
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+
+    from services.amendment_service import validate_modification_ordering
+
+    assert await validate_modification_ordering(path, season_id) == []
+
+
+@pytest.mark.asyncio
+async def test_validate_modification_ordering_names_a_staged_inversion(db_path):
+    path, season_id = db_path
+    await _seed_two_position_table(path, season_id)
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 30)
+
+    from services.amendment_service import validate_modification_ordering
+
+    errors = await validate_modification_ordering(path, season_id)
+
+    assert len(errors) == 1
+    assert "STD" in errors[0]
+    assert "FEATURE_RACE" in errors[0]
+
+
+@pytest.mark.asyncio
+async def test_validate_modification_ordering_judges_each_session_on_its_own(db_path):
+    """A qualifying table worth 1, 2, 3 is wrong; it does not make the race table wrong."""
+    path, season_id = db_path
+    await _seed_two_position_table(path, season_id)
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_QUALIFYING", 1, 1)
+    await modify_session_points(path, season_id, "STD", "FEATURE_QUALIFYING", 2, 3)
+
+    from services.amendment_service import validate_modification_ordering
+
+    errors = await validate_modification_ordering(path, season_id)
+
+    assert len(errors) == 1
+    assert "FEATURE_QUALIFYING" in errors[0]
+
+
+@pytest.mark.asyncio
+async def test_approve_amendment_refuses_a_table_out_of_order(db_path):
+    """The regression. Before the fix this amendment was applied without a word."""
+    from services.amendment_service import NonMonotonicAmendmentError, approve_amendment
+
+    path, season_id = db_path
+    await _seed_two_position_table(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 30)
+
+    with pytest.raises(NonMonotonicAmendmentError) as raised:
+        await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+
+    assert raised.value.errors, "the refusal must carry what is wrong with it"
+    assert "STD" in raised.value.errors[0]
+
+
+@pytest.mark.asyncio
+async def test_a_refused_amendment_leaves_the_season_exactly_as_it_stood(db_path):
+    """Nothing written: not the points, not the store, not the mode, and nothing reposted.
+
+    This function's first act is to delete the season's points. A guard placed even one
+    statement late would leave a running championship with no points table at all.
+    """
+    from services.amendment_service import NonMonotonicAmendmentError, approve_amendment
+
+    path, season_id = db_path
+    await _seed_two_position_table(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 30)
+
+    reposted: list[tuple] = []
+    with pytest.raises(NonMonotonicAmendmentError):
+        await approve_amendment(path, season_id, 99, _bot_recording_reposts(reposted))
+
+    assert await _season_points(path, season_id) == {1: 25, 2: 18}, "the season's points moved"
+    assert not reposted, "a refused amendment reposted a standings table"
+
+    state = await get_amendment_state(path, season_id)
+    assert state is not None
+    assert state.amendment_active, "amendment mode was switched off by a refusal"
+    assert state.modified_flag, "the staged change was thrown away"
+
+    async with get_connection(path) as db:
+        cursor = await db.execute(
+            "SELECT points FROM season_modification_entries "
+            "WHERE season_id = ? AND position = 2",
+            (season_id,),
+        )
+        row = await cursor.fetchone()
+    assert row is not None and row["points"] == 30, (
+        "the working copy must survive so the manager can repair it"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_well_ordered_amendment_still_applies(db_path):
+    """The other half: a guard that refuses everything is no better than none at all."""
+    from services.amendment_service import approve_amendment
+
+    path, season_id = db_path
+    await _seed_two_position_table(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+
+    await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+
+    assert await _season_points(path, season_id) == {1: 30, 2: 18}
+
+
+@pytest.mark.asyncio
+async def test_an_amendment_paying_nothing_below_the_points_still_applies(db_path):
+    """Trailing zeros are the ordinary shape of a table, mid-season as at the start."""
+    from services.amendment_service import approve_amendment
+
+    path, season_id = db_path
+    await _seed_two_position_table(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 3, 0)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 4, 0)
+
+    await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+
+    assert await _season_points(path, season_id) == {1: 25, 2: 18, 3: 0, 4: 0}

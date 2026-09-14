@@ -9,7 +9,7 @@ import aiosqlite
 from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from services import points_config_service
-from utils.points_ordering import Violation, ordering_violations
+from utils.points_ordering import ordering_message, ordering_violations
 
 log = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ async def validate_monotonic_ordering(db_path: str, season_id: int) -> list[str]
     ):
         pairs = [(r["position"], r["points"]) for r in group]
         errors.extend(
-            _ordering_message(config_name, session_type, violation)
+            ordering_message(config_name, session_type, violation)
             for violation in ordering_violations(pairs)
         )
     return errors
@@ -170,25 +170,11 @@ async def validate_attached_config_ordering(
             )
         for session_type in sorted(by_session):
             errors.extend(
-                _ordering_message(config_name, session_type, violation)
+                ordering_message(config_name, session_type, violation)
                 for violation in ordering_violations(by_session[session_type])
             )
     return errors
 
-
-def _ordering_message(config_name: str, session_type: str, violation: Violation) -> str:
-    """The one sentence a league reads when a points table is out of order.
-
-    Every check that applies the rule formats its errors through here, so the season's
-    approval, the mid-season amendment and a config edit all describe the same fault in
-    the same words. A manager who has read one has read all three.
-    """
-    position, points, next_position, next_points = violation
-    return (
-        f"Config '{config_name}', {session_type}: "
-        f"position {position} ({points} pts) < "
-        f"position {next_position} ({next_points} pts)"
-    )
 
 
 async def get_season_points_view(

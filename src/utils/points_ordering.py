@@ -49,3 +49,18 @@ def ordering_violations(entries: Sequence[tuple[int, int]]) -> list[Violation]:
         for i in range(len(ordered) - 1)
         if ordered[i + 1][1] > 0 and ordered[i + 1][1] >= ordered[i][1]
     ]
+
+
+def ordering_message(config_name: str, session_type: str, violation: Violation) -> str:
+    """The one sentence a league reads when a points table is out of order.
+
+    Every check that applies the rule formats its errors through here, so a season's
+    approval, a mid-season amendment and a config edit all describe the same fault in
+    the same words. A manager who has read one has read all three.
+    """
+    position, points, next_position, next_points = violation
+    return (
+        f"Config '{config_name}', {session_type}: "
+        f"position {position} ({points} pts) < "
+        f"position {next_position} ({next_points} pts)"
+    )
