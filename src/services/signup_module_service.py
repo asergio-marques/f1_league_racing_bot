@@ -155,6 +155,7 @@ class SignupModuleService:
             AvailabilitySlot(
                 id=row["id"],
                 server_id=row["server_id"],
+                slot_id=AvailabilitySlot.make_slot_id(row["day_of_week"], row["time_hhmm"]),
                 slot_sequence_id=i,
                 day_of_week=row["day_of_week"],
                 time_hhmm=row["time_hhmm"],
@@ -525,6 +526,7 @@ class SignupModuleService:
                 AvailabilitySlot(
                     id=s["id"],
                     server_id=s["server_id"],
+                    slot_id=AvailabilitySlot.make_slot_id(s["day_of_week"], s["time_hhmm"]),
                     slot_sequence_id=s["slot_sequence_id"],
                     day_of_week=s["day_of_week"],
                     time_hhmm=s["time_hhmm"],

@@ -114,6 +114,30 @@ async def db_path(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+class TestSlotIdFormat:
+    """The durable slot identity is "Mon_19_00" — see AvailabilitySlot's docstring."""
+
+    def test_slot_id_format(self):
+        from models.signup_module import AvailabilitySlot
+        assert AvailabilitySlot.make_slot_id(1, "19:00") == "Mon_19_00"
+        assert AvailabilitySlot.make_slot_id(5, "21:30") == "Fri_21_30"
+        assert AvailabilitySlot.make_slot_id(7, "09:05") == "Sun_09_05"
+
+    def test_slot_id_covers_every_weekday(self):
+        from models.signup_module import AvailabilitySlot
+        assert [AvailabilitySlot.make_slot_id(d, "12:00") for d in range(1, 8)] == [
+            "Mon_12_00", "Tue_12_00", "Wed_12_00", "Thu_12_00",
+            "Fri_12_00", "Sat_12_00", "Sun_12_00",
+        ]
+
+    async def test_get_slots_populates_slot_id(self, db_path):
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        await svc.add_slot(1, 5, "21:00")
+        slots = await svc.get_slots(1)
+        assert slots[0].slot_id == "Fri_21_00"
+
+
 class TestSlotAdd:
     async def test_add_happy_path(self, db_path):
         from services.signup_module_service import SignupModuleService

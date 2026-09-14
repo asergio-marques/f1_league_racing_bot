@@ -66,14 +66,26 @@ class AvailabilitySlot:
     """
     id               — internal surrogate PK (used for DB deletion).
     server_id        — owning server.
-    slot_sequence_id — stable per-server integer ID (never reused after removal).
+    slot_id          — the slot's durable identity, "Mon_19_00" (computed on read).
+    slot_sequence_id — temporary display ordinal, 1..N in chronological order.
     day_of_week      — 1=Mon … 7=Sun.
     time_hhmm        — "HH:MM" 24-hour.
     display_label    — e.g. "Monday 14:30 UTC" (computed on read).
+
+    **A driver's recorded availability is stored as ``slot_id``, never as
+    ``slot_sequence_id``.** The ordinal is recomputed from chronological order on
+    every read, so adding or removing a slot renumbers every slot after it; anything
+    stored against an ordinal silently comes to mean a different time (issue #126).
+    ``slot_id`` is derived from the day and time, which are unique per server, so it
+    cannot drift from the slot it names and a removed-then-re-added slot recovers its
+    own answers. The ordinal exists only so a league types ``3`` rather than
+    ``Fri_21_00``; it is converted to ``slot_id`` at the input boundary and never
+    persisted. ``test_slot_id_format`` pins the format.
     """
 
     id: int
     server_id: int
+    slot_id: str
     slot_sequence_id: int
     day_of_week: int
     time_hhmm: str
@@ -83,6 +95,12 @@ class AvailabilitySlot:
     def make_label(day_of_week: int, time_hhmm: str) -> str:
         day_name = _DAY_NAMES.get(day_of_week, f"Day{day_of_week}")
         return f"{day_name} {time_hhmm} UTC"
+
+    @staticmethod
+    def make_slot_id(day_of_week: int, time_hhmm: str) -> str:
+        """Return the slot's durable identity, e.g. "Mon_19_00" for Monday 19:00."""
+        day_abbr = _DAY_NAMES.get(day_of_week, f"Day{day_of_week}")[:3]
+        return f"{day_abbr}_{time_hhmm.replace(':', '_')}"
 
 
 @dataclass
