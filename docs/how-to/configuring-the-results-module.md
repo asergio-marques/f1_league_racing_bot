@@ -59,7 +59,9 @@ This guide covers the results & standings module only. Setting the bot up, creat
 
 It can only be done while **no season is active**, so this belongs alongside your other setup, before approval.
 
-> **Switching it off is not guarded the same way.** Enabling is refused mid-season; disabling is not. Treat the decision as one you make once per season regardless — turning the module off part-way through takes attendance with it and stops results being collected at all, and you will not get either module back until the season ends.
+> **Switching it off is not guarded the same way — it is worse than that.** Enabling is refused mid-season; disabling is not, and deliberately so: a league whose results have become unworkable must be able to stop running them. But **disabling mid-season deletes that season's results.** Every classification you have recorded goes, every standing computed from them goes, and every results and standings message already posted is removed from its channel. Every round still waiting on results, report verdicts or appeal verdicts is closed as having run without results — which is what lets you complete the season afterwards instead of being stuck with it for ever. Verdicts you have already announced stay in the verdicts channel; the bot keeps no record by which to delete them. Your points configurations and your division channels are kept, and a round whose date has not yet come is left alone until it passes.
+>
+> The bot warns you and writes nothing until you confirm, whether or not attendance is on. **None of it can be undone**, you will not get either module back until the season ends, and the championship your drivers raced is simply gone. Treat the decision as one you make once per season.
 
 Nothing happens immediately. The module needs channels to post to, a points table to score with, and an approved season to work through, which are the next three steps.
 
@@ -343,6 +345,8 @@ Worth knowing so you do not go looking for the setting.
 | Cancelling a round once its results exist | Refused, and refused while its submission channel is open. Amend the results instead |
 | Editing a running season's points tables directly | The season holds its own copy. `/results amend` is the way, and it rescores everything |
 | Attaching or detaching a configuration mid-season | Refused. Decide before approval |
+| Turning the module off mid-season | Allowed, and it deletes the season's results — see [Step 1](#step-1--switch-it-on). You confirm first, and nothing can be undone |
+| Getting the season's results back afterwards | There is no way. The module cannot even be re-enabled until the season ends |
 
 ---
 
