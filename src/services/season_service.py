@@ -7,7 +7,14 @@ from datetime import date, datetime
 
 from db.database import get_connection
 from models.division import Division
-from models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, Round, RoundFormat
+from models.round import (
+    ROUND_AWAITING_RESULTS_MODULE,
+    ROUND_CANCELLABLE,
+    ROUND_TERMINAL,
+    Round,
+    RoundFormat,
+    RoundStatus,
+)
 from models.season import Season, SeasonStatus
 from models.session import Session, SessionType, SESSIONS_BY_FORMAT
 
@@ -16,6 +23,9 @@ from models.session import Session, SessionType, SESSIONS_BY_FORMAT
 #: count varies; nothing here comes from a user.
 _TERMINAL_SQL = ", ".join(f"'{v}'" for v in sorted(ROUND_TERMINAL))
 _CANCELLABLE_SQL = ", ".join(f"'{v}'" for v in sorted(ROUND_CANCELLABLE))
+_AWAITING_RESULTS_MODULE_SQL = ", ".join(
+    f"'{v}'" for v in sorted(ROUND_AWAITING_RESULTS_MODULE)
+)
 
 log = logging.getLogger(__name__)
 
@@ -814,6 +824,93 @@ class SeasonService:
             )
             await db.commit()
             return cursor.rowcount > 0
+
+    async def end_rounds_awaiting_results(
+        self,
+        server_id: int,
+        actor_id: int,
+        actor_name: str,
+    ) -> list[dict]:
+        """Close every round of the active season that only the results module could move.
+
+        Called when the results module is switched off part-way through a season. The three
+        states in ``ROUND_AWAITING_RESULTS_MODULE`` each wait on a results command, so with the
+        module gone nothing will ever move them: the division never finishes, `/season complete`
+        refuses for the rest of the season, and — because enabling is refused while a season is
+        active — the league cannot undo it either. That was issue #167, and it left `/season
+        cancel` as the only way out.
+
+        The rounds are closed as FINAL rather than CANCELLED. They were raced; it is their
+        scoring that has been abandoned, and a cancelled round would tell the attendance module
+        that nobody was expected to turn up.
+
+        A NOT_RUN round is left where it is. It waits on the clock rather than on results, and
+        ``run_result_submission_job`` closes it as FINAL at its own moment with the module off.
+
+        Returns one dict per round closed — ``division``, ``round_number``, ``track_name`` and
+        the ``status`` it was taken from — so the caller can report what it did.
+        """
+        from datetime import timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                f"""
+                SELECT r.id, r.round_number, r.track_name, r.status,
+                       d.id AS division_id, d.name AS division
+                FROM rounds r
+                JOIN divisions d ON d.id = r.division_id
+                JOIN seasons   s ON s.id = d.season_id
+                WHERE s.server_id = ?
+                  AND s.status    = 'ACTIVE'
+                  AND d.status   != 'CANCELLED'
+                  AND r.status IN ({_AWAITING_RESULTS_MODULE_SQL})
+                ORDER BY d.name, r.round_number
+                """,
+                (server_id,),
+            )
+            rows = [dict(r) for r in await cursor.fetchall()]
+
+            for row in rows:
+                await db.execute(
+                    "UPDATE rounds SET status = ? WHERE id = ?",
+                    (RoundStatus.FINAL.value, row["id"]),
+                )
+                await db.execute(
+                    """
+                    INSERT INTO audit_entries
+                        (server_id, actor_id, actor_name, division_id, change_type,
+                         old_value, new_value, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        server_id,
+                        actor_id,
+                        actor_name,
+                        row["division_id"],
+                        "round.status",
+                        row["status"],
+                        RoundStatus.FINAL.value,
+                        now,
+                    ),
+                )
+            await db.commit()
+
+        # Each of those rounds may have been the last thing its division was waiting on, and a
+        # division finishing is what lets `/season complete` run at all (issue #154).
+        for division_id in sorted({row["division_id"] for row in rows}):
+            await self.refresh_division_status(division_id)
+
+        return [
+            {
+                "division": row["division"],
+                "round_number": row["round_number"],
+                "track_name": row["track_name"],
+                "status": row["status"],
+            }
+            for row in rows
+        ]
 
     async def all_divisions_finished(self, server_id: int) -> bool:
         """True if every division of the active season is FINISHED or CANCELLED.
