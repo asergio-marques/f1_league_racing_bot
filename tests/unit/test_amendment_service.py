@@ -651,3 +651,71 @@ async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tm
     )
 
     bot.scheduler_service.schedule_attendance_round.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# An amended round keeps its result submission — issue #133
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_amending_a_round_rearms_its_results_job_with_weather_off(tmp_path):
+    """`schedule_round` builds the weather jobs and the results job together.
+
+    So with weather switched off it was never called, and the amendment's cancel took the
+    round's results job with nothing putting it back. That job is the round's one clock-driven
+    status transition — without it the round never leaves NOT_RUN, its division never finishes,
+    and its season can never be completed.
+    """
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import MagicMock
+
+    from services.amendment_service import AmendmentService
+
+    path = str(tmp_path / "amend_results.db")
+    await run_migrations(path)
+    now = datetime.now(timezone.utc)
+    await _seed_one_round(path, now + timedelta(days=30))
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+    bot = _amend_bot_with_attendance(path, attendance=False, weather=False)
+    bot.scheduler_service.schedule_result_submission_jobs = MagicMock()
+
+    await AmendmentService(path).amend_round(
+        1, actor, [("scheduled_at", now + timedelta(days=40))], bot, now=now
+    )
+
+    bot.scheduler_service.schedule_result_submission_jobs.assert_called_once()
+    rounds = bot.scheduler_service.schedule_result_submission_jobs.call_args.args[0]
+    assert [r.id for r in rounds] == [1]
+    meta = bot.scheduler_service.schedule_result_submission_jobs.call_args.kwargs["division_meta"]
+    assert meta == {1: (3, 2)}
+
+
+@pytest.mark.asyncio
+async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
+    """With weather on, `schedule_round` has already created it — arming again would duplicate."""
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import MagicMock
+
+    from services.amendment_service import AmendmentService
+
+    path = str(tmp_path / "amend_results_weather.db")
+    await run_migrations(path)
+    now = datetime.now(timezone.utc)
+    await _seed_one_round(path, now + timedelta(days=30))
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+    bot = _amend_bot_with_attendance(path, attendance=False, weather=True)
+    bot.scheduler_service.schedule_result_submission_jobs = MagicMock()
+
+    await AmendmentService(path).amend_round(
+        1, actor, [("scheduled_at", now + timedelta(days=40))], bot, now=now
+    )
+
+    bot.scheduler_service.schedule_round.assert_called_once()
+    bot.scheduler_service.schedule_result_submission_jobs.assert_not_called()

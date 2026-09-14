@@ -278,6 +278,24 @@ class AmendmentService:
                     phase_3_hours=_wcfg.phase_3_hours,
                 )
 
+        # Arm the round's result submission again where the weather module did not (issue #133).
+        #
+        # ``schedule_round`` creates the weather jobs and the results job together, so with
+        # weather switched off it is never called and the round lost the results job that
+        # ``cancel_round`` had just taken. That job is not only the results module's:
+        # ``run_result_submission_job`` is the round's one clock-driven status transition and
+        # runs for every round whatever the modules, closing it as FINAL where results are off.
+        # Without it the round never leaves NOT_RUN, its division never finishes and its season
+        # can never be completed — which is why it is armed here whatever the results module
+        # says, exactly as ``cancel_all_weather_for_server`` refuses to cancel it.
+        if not _weather_on:
+            bot.scheduler_service.schedule_result_submission_jobs(
+                [updated_round],
+                division_meta={
+                    updated_round.division_id: (row["season_number"], row["division_tier"])
+                },
+            )
+
         # Arm the round's check-in again (issue #120).
         #
         # ``cancel_round`` above takes all eight of the round's jobs, the three the check-in runs
