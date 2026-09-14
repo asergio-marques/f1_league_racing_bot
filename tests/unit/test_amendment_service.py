@@ -829,3 +829,159 @@ async def test_a_closed_check_in_is_left_alone(tmp_path):
 
     _reposted.assert_not_awaited()
     _withdrawn.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# approve_amendment reposts what it rescored (#130)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_division_with_rounds(path: str, season_id: int):
+    """One division with two raced rounds and a third not yet run.
+
+    Returns ``(division_id, raced_round_ids, unraced_round_id)``.
+    """
+    async with get_connection(path) as db:
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id) VALUES (?, 'Alpha', 777)",
+            (season_id,),
+        )
+        division_id = cursor.lastrowid
+        await db.execute(
+            "INSERT INTO division_results_config "
+            "(division_id, results_channel_id, standings_channel_id) VALUES (?, 501, 502)",
+            (division_id,),
+        )
+        raced: list[int] = []
+        for round_number in (1, 2):
+            cursor = await db.execute(
+                "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
+                "VALUES (?, ?, 'STANDARD', 'FINAL', '2026-06-01T18:00:00')",
+                (division_id, round_number),
+            )
+            round_id = cursor.lastrowid
+            raced.append(round_id)
+            await db.execute(
+                "INSERT INTO session_results (round_id, division_id, session_type, status) "
+                "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
+                (round_id, division_id),
+            )
+        cursor = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
+            "VALUES (?, 3, 'STANDARD', 'NOT_RUN', '2026-09-01T18:00:00')",
+            (division_id,),
+        )
+        unraced_round_id = cursor.lastrowid
+        await db.commit()
+
+    return division_id, raced, unraced_round_id
+
+
+def _bot_recording_reposts(reposted: list[tuple]):
+    """A bot stub whose guild is real enough for the repost path to run."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    guild = MagicMock()
+    guild.get_member.return_value = None
+    guild.fetch_member = AsyncMock(side_effect=Exception("not found"))
+
+    def get_channel(channel_id):
+        channel = AsyncMock()
+
+        async def fake_send(content=None, **kwargs):
+            reposted.append((channel_id, content or ""))
+            msg = MagicMock()
+            msg.id = 4242
+            return msg
+
+        channel.send = fake_send
+        channel.id = channel_id
+        return channel
+
+    guild.get_channel = get_channel
+
+    bot = MagicMock()
+    bot.get_guild.return_value = guild
+    bot.output_router.post_log = AsyncMock()
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    return bot
+
+
+@pytest.mark.asyncio
+async def test_approve_amendment_reposts_every_raced_round(db_path):
+    """Approving an amendment must repost what it rescored, not only write it (#130).
+
+    The reply tells the manager "All standings recomputed and reposted". Before the fix
+    the repost raised ``TypeError`` on every round, was swallowed by the per-round
+    ``try/except``, and the league's channels kept the old points for the rest of the
+    season. No test called ``approve_amendment`` at all, which is why the suite passed.
+    """
+    from services.amendment_service import approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    division_id, raced, _unraced = await _seed_division_with_rounds(path, season_id)
+
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+
+    reposted: list[tuple] = []
+    await approve_amendment(path, season_id, 99, _bot_recording_reposts(reposted))
+
+    assert reposted, "approving an amendment reposted nothing"
+    # Both raced rounds reach the standings channel, each headed by its own round number.
+    standings = [content for channel_id, content in reposted if channel_id == 502]
+    assert len(standings) >= len(raced)
+    for round_number in (1, 2):
+        assert any(f"Round {round_number}" in content for content in standings), (
+            f"round {round_number} was not reposted: {standings}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_approve_amendment_does_not_post_for_unraced_rounds(db_path):
+    """The cascade walks every non-cancelled round; only the raced ones are reposted (#130)."""
+    from services.amendment_service import approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+
+    reposted: list[tuple] = []
+    await approve_amendment(path, season_id, 99, _bot_recording_reposts(reposted))
+
+    assert not any("Round 3" in content for _channel_id, content in reposted), (
+        "standings were posted for a round that has not been raced"
+    )
+
+
+@pytest.mark.asyncio
+async def test_approve_amendment_still_overwrites_the_points(db_path):
+    """The rescore and the repost are one operation — calling it for real proves both."""
+    from services.amendment_service import approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+
+    await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+
+    async with get_connection(path) as db:
+        row = await (
+            await db.execute(
+                "SELECT points FROM season_points_entries WHERE season_id = ? AND position = 1",
+                (season_id,),
+            )
+        ).fetchone()
+    assert row is not None and row["points"] == 30
+
+    state = await get_amendment_state(path, season_id)
+    assert state is not None
+    assert not state.amendment_active
+    assert not state.modified_flag

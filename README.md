@@ -1488,9 +1488,9 @@ Same modal and same input rules as [`/results config bulk-session`](#results-con
 ##### `/results amend review` — Review and approve modification store changes
 *Access: League manager*
 
-No parameters. Displays a diff of the staged changes against the current season points. Approve to atomically overwrite season points, recalculate all standings for every division from the first round, and switch amendment mode back off. Reject to leave the modification store and amendment mode as they are.
+No parameters. Displays a diff of the staged changes against the current season points. Approve to atomically overwrite season points, recalculate all standings for every division from the first round, repost every round's results and standings in the division's own channels, and switch amendment mode back off. Reject to leave the modification store and amendment mode as they are.
 
-> **The recalculation currently lands in the database only.** Approving reports that standings were "recomputed and reposted"; the recomputation happens, and every attempt to repost fails with an error in the log channel, so the results and standings channels keep showing the old points. Run [`/results rounds sync`](#results-rounds-sync--force-a-full-results-repost-for-a-division) and [`/results standings sync`](#results-standings-sync--force-a-full-standings-repost-for-a-division) for **each** division afterwards. Recorded in [#130](https://github.com/asergio-marques/f1_league_racing_bot/issues/130).
+> **Only rounds that have been raced are reposted**, and each one is reposted under the label it currently stands at — a round at Final Results stays "Final Results". Rounds still to come are left alone.
 
 ---
 

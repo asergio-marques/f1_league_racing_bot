@@ -193,6 +193,8 @@
 - Once one of "results amend session", "results amend fl", "results amend fl-plimit" and "results amend bulk-session" is run successfully, the modified flag is set to true.
 - <NEW COMMAND> A "results amend review" command shall be a league admin's, and will display the contents of the configurations stored in the modification store via the bot, alongside a button to approve or reject. It is seen by the member who ran it alone.
 - If approved, then the contents of the season points schema store will be overwritten by the modification store. All round results, and standings after each round result, shall be recalculated and reposted in the appropriate channels for each division. The modified flag will then be set to false, the modification store cleared, and amending mode switched off.
+    - Only a round that has results shall be reposted. A round not yet raced has nothing posted for it and shall have nothing posted for it by the recalculation, its standings included.
+    - Each round shall be reposted under the state that round has reached, as the "results standings sync" and "results rounds sync" commands do. Amending the points of a season shall not move a round to a different state nor label it as though it had.
 - If rejected, nothing happens. The modification store will remain as it is, and the amending mode will remain active.
 
 #### Viewing configs after season approval
