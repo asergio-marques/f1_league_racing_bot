@@ -260,13 +260,17 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
 
     tail = source[source.index("Server-level UNASSIGNED"):]
     assert "if approval_blockers:" in tail
-    guarded = tail[tail.index("if approval_blockers:"):]
-    fault_branch, _, approve_branch = guarded.partition("else:")
+
+    # Two independent causes withhold the button, so the offer is guarded on both rather
+    # than sitting in an `else` belonging to either one (#121, #122).
+    offer = "if not approval_blockers and not window_problems:"
+    assert offer in tail
+    fault_branch = tail[tail.index("if approval_blockers:"):tail.index(offer)]
     assert "_post_approval_prompt" not in fault_branch, (
         "the button must not be offered on a fault"
     )
     assert "image module is not correctly configured" in fault_branch
-    assert "_post_approval_prompt" in approve_branch
+    assert "_post_approval_prompt" in tail[tail.index(offer):]
 
 
 def test_the_roleless_team_warning_survives_the_graphic():
