@@ -30,7 +30,8 @@
     - By default, this value will be set to 2.
 - The input from all commands shall be validated against the current settings so that the RSVP Deadline always happens after the RSVP Notice and the RSVP Last Notice, and the RSVP Last Notice always happens after RSVP Notice. Ergo, the configuration shall follow the rule Notice\*24 > LastNotice\*24 > Deadline.
 - If there is an ongoing season (read: season approved/active), all three commands must be rejected.
-- A season holding a round whose RSVP Notice, RSVP Last Notice or RSVP Deadline has already passed shall fail validation and approval shall be refused, with nothing committed. The refusal shall name each offending round and each of its windows that has passed, and shall say when each was due.
+- A season holding a round whose RSVP Notice, RSVP Last Notice or RSVP Deadline has already passed shall fail validation. The season review shall report it and shall withhold the button approving the season; the approval shall refuse it again, with nothing committed. Each shall name every offending round and each of its windows that has passed, and shall say when each was due.
+    - Both shall read one and the same evaluation, so that the review and the approval cannot disagree. The approval shall evaluate it afresh rather than trust the review, a round being able to cross a window while the review stands.
     - A window falling exactly at the moment of approval counts as having passed.
     - A cancelled round shall not be considered, holding no work to lose.
     - The league's remedy is to reschedule the round or to shorten the window, both being decisions only the league can make. The bot shall not post the notice late, nor approve the season without it.

@@ -37,7 +37,8 @@
 - If there is an ongoing season (read: season approved/active), all three commands must be rejected.
 - Each successful command shall report the resulting values of all three deadlines, and shall be written to the log channel.
 - The deadlines in force for a season shall be those stored at the moment the season was approved.
-- A season holding a round whose Phase 1, Phase 2 or Phase 3 deadline has already passed shall fail validation and approval shall be refused, with nothing committed. The refusal shall name each offending round and each of its phases whose deadline has passed, and shall say when each was due.
+- A season holding a round whose Phase 1, Phase 2 or Phase 3 deadline has already passed shall fail validation. The season review shall report it and shall withhold the button approving the season; the approval shall refuse it again, with nothing committed. Each shall name every offending round and each of its phases whose deadline has passed, and shall say when each was due.
+    - Both shall read one and the same evaluation, so that the review and the approval cannot disagree. The approval shall evaluate it afresh rather than trust the review, a round being able to cross a window while the review stands.
     - A deadline falling exactly at the moment of approval counts as having passed.
     - A cancelled round shall not be considered, holding no work to lose.
     - The league's remedy is to reschedule the round or to shorten the deadline, both being decisions only the league can make.
