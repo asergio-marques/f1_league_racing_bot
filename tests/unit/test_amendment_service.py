@@ -358,3 +358,100 @@ async def test_amending_two_fields_amends_once(tmp_path):
     assert bot.output_router.post_log.await_count == 1
     assert bot.scheduler_service.cancel_round.call_count == 1
     assert bot.scheduler_service.schedule_round.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# A forecast that would still have run is kept
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
+    """Each phase is judged on its own, by whether it would have run under the new moment.
+
+    Every amendment used to invalidate all three phases, clear every slot and wipe all three
+    done flags, whatever had actually been drawn. So a round nudged an hour threw away a
+    forecast that was still perfectly good, and — because the flags went with it — the next
+    amendment had no record that any forecast had ever been posted, which is what the track and
+    format rules read.
+
+    Round one day out, delayed to four. Phase 1 falls five days before it and is behind us
+    either way, so it stands. Phases 2 and 3 have not come round under the new moment, so they
+    are withdrawn and armed again.
+    """
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import AsyncMock, MagicMock
+
+    from services.amendment_service import AmendmentService
+
+    path = str(tmp_path / "amend_phases.db")
+    await run_migrations(path)
+    now = datetime.now(timezone.utc)
+    scheduled_at = now + timedelta(days=1)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO server_configs "
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+            "VALUES (1, 10, 20, 30)"
+        )
+        await db.execute(
+            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
+            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 1)"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
+            "VALUES (1, 1, 'Div A', 1, 999, 555)"
+        )
+        # Phases 1 and 2 have run (their horizons, 5 and 2 days out, are behind us); 3 has not.
+        await db.execute(
+            "INSERT INTO rounds "
+            "(id, division_id, round_number, format, track_name, scheduled_at, "
+            " phase1_done, phase2_done, phase3_done) "
+            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain International Circuit', ?, 1, 1, 0)",
+            (scheduled_at.isoformat(),),
+        )
+        for phase_number in (1, 2):
+            await db.execute(
+                "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
+                "VALUES (1, ?, '{}', 'ACTIVE', ?)",
+                (phase_number, now.isoformat()),
+            )
+        await db.commit()
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+
+    bot = MagicMock()
+    bot.db_path = path
+    bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+    bot.output_router.post_forecast = AsyncMock(return_value=None)
+    bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.scheduler_service.cancel_round = MagicMock()
+    bot.scheduler_service.schedule_round = MagicMock()
+
+    await AmendmentService(path).amend_round(
+        1, actor, [("scheduled_at", now + timedelta(days=4))], bot, now=now
+    )
+
+    async with get_connection(path) as db:
+        cursor = await db.execute(
+            "SELECT phase1_done, phase2_done, phase3_done FROM rounds WHERE id = 1"
+        )
+        flags = await cursor.fetchone()
+        cursor = await db.execute(
+            "SELECT phase_number, status FROM phase_results WHERE round_id = 1 "
+            "ORDER BY phase_number"
+        )
+        results = {r["phase_number"]: r["status"] for r in await cursor.fetchall()}
+
+    # Phase 1 would still have run, so its forecast and its flag both stand.
+    assert flags["phase1_done"] == 1
+    assert results[1] == "ACTIVE"
+
+    # Phase 2 would not, so it is withdrawn and will be drawn again.
+    assert flags["phase2_done"] == 0
+    assert results[2] == "INVALIDATED"
+
+    # Phase 3 never ran and is still ahead either way.
+    assert flags["phase3_done"] == 0

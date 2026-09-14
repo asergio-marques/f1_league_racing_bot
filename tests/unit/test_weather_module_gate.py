@@ -245,14 +245,25 @@ async def test_amend_round_runs_overdue_phases_while_weather_is_enabled(tmp_path
     p3.assert_awaited_once()
 
 
+#: A round close enough that its first forecast is out, and the delay that withdraws it.
+#
+# The notice follows what the amendment actually took away, so these two tests need a round
+# where something *is* taken away: Phase 1 falls five days before the round, so at three days
+# out it has been performed, and moving the round a month out puts it back in the future — it
+# would not have run under the new moment, so the forecast drawn for it is withdrawn.
+_NOTICE_ROUND_AT = timedelta(days=3)
+_NOTICE_DELAYED_TO = timedelta(days=30)
+
+
 async def test_amend_round_posts_no_invalidation_notice_while_weather_is_disabled(tmp_path):
     """The same rule by a second route: weather on, phases run, weather off, round amended."""
     db_path = await _make_db(str(tmp_path))
-    await _seed(db_path, phase1_done=1)
+    now = datetime.now(timezone.utc)
+    await _seed(db_path, scheduled_at=now + _NOTICE_ROUND_AT, phase1_done=1)
     bot = _amend_bot(db_path, weather_enabled=False)
 
     await AmendmentService(db_path).amend_round(
-        1, _make_actor(), [("track_name", "Silverstone Circuit")], bot
+        1, _make_actor(), [("scheduled_at", now + _NOTICE_DELAYED_TO)], bot, now=now
     )
 
     bot.output_router.post_forecast.assert_not_awaited()
@@ -261,9 +272,10 @@ async def test_amend_round_posts_no_invalidation_notice_while_weather_is_disable
 
 
 async def test_amend_round_posts_the_invalidation_notice_while_weather_is_enabled(tmp_path):
-    """A league with weather on must still be told its forecasts were thrown away."""
+    """A league with weather on must still be told which forecasts were thrown away."""
     db_path = await _make_db(str(tmp_path))
-    await _seed(db_path, phase1_done=1)
+    now = datetime.now(timezone.utc)
+    await _seed(db_path, scheduled_at=now + _NOTICE_ROUND_AT, phase1_done=1)
     await _set_weather(db_path, True)
     bot = _amend_bot(db_path, weather_enabled=True)
 
@@ -271,7 +283,34 @@ async def test_amend_round_posts_the_invalidation_notice_while_weather_is_enable
         "services.phase2_service.run_phase2", new=AsyncMock()
     ), patch("services.phase3_service.run_phase3", new=AsyncMock()):
         await AmendmentService(db_path).amend_round(
-            1, _make_actor(), [("track_name", "Silverstone Circuit")], bot
+            1, _make_actor(), [("scheduled_at", now + _NOTICE_DELAYED_TO)], bot, now=now
         )
 
     bot.output_router.post_forecast.assert_awaited_once()
+
+
+async def test_amend_round_posts_no_notice_when_every_forecast_still_stands(tmp_path):
+    """Nothing withdrawn, nothing announced.
+
+    A round whose phases would all have run under its new moment loses no forecast, so the
+    division is told nothing — the one in its channel is still the one that stands. Before the
+    phases were judged one at a time, every amendment announced that the forecasts had been
+    thrown away whether or not any had.
+    """
+    db_path = await _make_db(str(tmp_path))
+    now = datetime.now(timezone.utc)
+    # An hour later on the same day: every horizon stays behind us, so nothing is withdrawn.
+    await _seed(db_path, scheduled_at=now + timedelta(hours=1), phase1_done=1)
+    await _set_weather(db_path, True)
+    bot = _amend_bot(db_path, weather_enabled=True)
+
+    with patch("services.phase1_service.run_phase1", new=AsyncMock()), patch(
+        "services.phase2_service.run_phase2", new=AsyncMock()
+    ), patch("services.phase3_service.run_phase3", new=AsyncMock()):
+        await AmendmentService(db_path).amend_round(
+            1, _make_actor(), [("scheduled_at", now + timedelta(hours=2))], bot, now=now
+        )
+
+    bot.output_router.post_forecast.assert_not_awaited()
+    # And the forecast it kept is still marked as performed.
+    assert (await _phase_state(db_path))[0] == 1
