@@ -262,8 +262,8 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
     assert "if approval_blockers:" in tail
 
     # Two independent causes withhold the button, so the offer is guarded on both rather
-    # than sitting in an `else` belonging to either one (#121, #122).
-    offer = "if not approval_blockers and not window_problems:"
+    # than sitting in an `else` belonging to either one (#121, #122, #181).
+    offer = "if not approval_blockers and not calendar_faults_found:"
     assert offer in tail
     fault_branch = tail[tail.index("if approval_blockers:"):tail.index(offer)]
     assert "_post_approval_prompt" not in fault_branch, (
@@ -279,6 +279,35 @@ def test_the_roleless_team_warning_survives_the_graphic():
     block = source[source.index("_post_review_lineup_image"):]
     drew, _, textual = block.partition("if lineup_state == REVIEW_IMAGE_DREW:")
     assert "role_warning" in textual.split("else:")[0]
+
+
+def test_the_calendar_date_faults_survive_the_graphic():
+    """#181: the same rule as the roleless-team warning above, for the calendar.
+
+    A calendar graphic is drawn from the very rounds that are wrong and says nothing about
+    which of them have gone by, so the finding has to be posted whichever form the calendar
+    took. Posted only where there is one: a healthy division gets no extra message.
+    """
+    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+    block = source[source.index("_post_review_calendar_image"):]
+
+    assert "fault_lines = self._calendar_fault_lines(" in block
+    textual, _, drew = block.partition("elif fault_lines:")
+    assert "cal_lines.extend(fault_lines)" in textual, (
+        "the text form must carry the faults"
+    )
+    assert "interaction.followup.send" in drew, (
+        "the drawn form must post them as their own message"
+    )
+
+
+def test_the_approval_windows_are_read_once_for_the_whole_season():
+    """Not per division. Eight divisions must not pay eight times for two configs."""
+    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+
+    assert source.count("await self._approval_windows(") == 1
+    setup, _, loop = source.partition("for div in db_divisions:")
+    assert "_approval_windows" in setup, "read before the per-division loop, not inside it"
 
 
 # ── Pre-generation: every graphic drawn before any is posted ──────────────

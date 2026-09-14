@@ -208,7 +208,7 @@ async def test_the_withdrawn_template_gate_is_not_called_again(db_path):
     )
 
 
-# ── Gate 2d: rounds already inside a configured window (#121, #122) ───────────
+# ── Gate 2d: rounds already run, or inside a window (#121, #122, #181) ───────
 #
 # Seeded relative to the wall clock rather than at fixed dates. The gate judges against
 # `datetime.now`, and "three days from now" means the same thing whenever the suite runs —
@@ -276,8 +276,8 @@ async def test_an_overdue_check_in_window_refuses_and_commits_nothing(db_path):
     await _run(cog, interaction)
 
     replies = _replies(interaction)
-    assert "already inside a configured window" in replies
-    assert "Check-in call" in replies
+    assert "dates that have already gone by" in replies
+    assert "check-in call" in replies
     assert "Round 1" in replies
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
@@ -301,7 +301,7 @@ async def test_an_overdue_weather_phase_refuses_on_its_own(db_path):
 
     await _run(cog, interaction)
 
-    assert "Weather Phase 1" in _replies(interaction)
+    assert "weather phase 1" in _replies(interaction)
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
@@ -327,5 +327,86 @@ async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
 
     await _run(cog, interaction)
 
-    assert "configured window" not in _replies(interaction)
+    assert "already gone by" not in _replies(interaction)
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
+# ── #181: the round's own moment, judged whatever the modules ────────────────
+#
+# The windows above are contributed by the modules that configure them. With weather and
+# attendance both off there were none, the gate had nothing to check, and a season every
+# round of which was already in the past was approved in silence — every round of it then
+# stuck at *not run* for good, with no submission channel, no results and no standings.
+
+
+async def test_a_season_in_the_past_is_refused_with_both_modules_off(db_path):
+    """#181 exactly. Before this the approval succeeded and said nothing."""
+    cog = _cog_with_rounds(db_path, [_round_in(-90)], attendance=False, weather=False)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    replies = _replies(interaction)
+    assert "dates that have already gone by" in replies
+    assert "Round 1 has already run" in replies
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_a_past_round_is_refused_with_the_modules_on_too(db_path):
+    """The rule does not turn on which modules a league happens to run.
+
+    A gate whose answer depended on enablement is the failure #181 reports, so the same
+    season must be refused with attendance on as with it off.
+    """
+    cog = _cog_with_rounds(db_path, [_round_in(-90)], attendance=True, weather=True)
+
+    await _run(cog, _interaction())
+
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_the_latest_past_round_is_the_one_named(db_path):
+    """Naming round 1 would understate what the manager has to move."""
+    rounds = [_round_in(-30, number=1), _round_in(-20, number=2), _round_in(-10, number=3)]
+    cog = _cog_with_rounds(db_path, rounds, attendance=False, weather=False)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert "Round 3 has already run" in _replies(interaction)
+
+
+async def test_the_past_round_refusal_is_private(db_path):
+    cog = _cog_with_rounds(db_path, [_round_in(-90)], attendance=False, weather=False)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert all(
+        call.kwargs.get("ephemeral") is True
+        for call in interaction.followup.send.await_args_list
+    )
+
+
+async def test_a_future_season_still_approves_with_both_modules_off(db_path):
+    """The gate must not stand in the way of an ordinary season."""
+    cog = _cog_with_rounds(db_path, [_round_in(30)], attendance=False, weather=False)
+
+    await _run(cog, _interaction())
+
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
+async def test_a_cancelled_past_round_does_not_refuse_the_season(db_path):
+    """Refusing over one would leave a league unable to approve until they deleted it."""
+    from models.round import RoundStatus
+
+    cancelled = _round_in(-90, number=1)
+    cancelled.status = RoundStatus.CANCELLED.value
+    cog = _cog_with_rounds(
+        db_path, [cancelled, _round_in(30, number=2)], attendance=False, weather=False
+    )
+
+    await _run(cog, _interaction())
+
     cog.bot.season_service.transition_to_active.assert_awaited_once()

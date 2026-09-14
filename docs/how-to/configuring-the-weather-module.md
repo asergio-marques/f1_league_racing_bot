@@ -224,7 +224,7 @@ Worth running through before the season is approved.
 |---|---|
 | No forecast at all for a division | No forecast channel set for it, or the module is off |
 | No forecast for one round only | It is a mystery round — that is intended. Otherwise the round has no track, and nothing anywhere will tell you so: check the round with `/season review` |
-| A season that will not approve | A division is missing its forecast channel, or a round is already inside one of the three deadlines. The review names which, and withholds the button |
+| A season that will not approve | A division is missing its forecast channel, or a round is already inside one of the three deadlines. The division's own calendar in the review names the latest such round, and the button is withheld |
 | The post says "5 days out" but arrived earlier or later | Known: the wording is fixed and does not follow your timing settings. The timing itself is correct |
 | A round's forecasts went back to 5 days / 2 days / 2 hours | Known: amending a round resets its timings to the standard ones, and so does restarting the bot with forecasts outstanding |
 | `/weather config` refused | Either a season is running, or the value would put the phases out of order. The reply says which |

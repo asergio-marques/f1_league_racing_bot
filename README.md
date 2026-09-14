@@ -418,13 +418,19 @@ The image subsection also lists the eight **asset directories** and the path eac
 
 **There is no `/season approve` command.** A season is approved by pressing **✅ Approve** on the report `/season review` posts, and from nowhere else. Approving commits a season, and the review is the evidence it is committed on — a command that could be run without one let a manager commit a season they had not looked at.
 
-> **A round already inside one of its windows withholds the button.** Every scheduled thing a season does happens a configured distance *before* the round — the check-in call five days out, the last notice a day out, the check-in deadline two hours out, and each weather phase at its own deadline. Review on the Thursday before Sunday's race and the five-day call is two days behind you. The review names each round and each window that has passed, says when each was due, and offers no **Approve** button.
+> **A calendar with dates already behind you withholds the button.** Two things can be wrong with a season's dates, and each division's calendar in the review says which of them it has.
+>
+> **A round that has already run.** A round's result submission opens at the round's own moment, and one armed in the past is thrown away rather than opened — the round would never take results at all, and no command opens a submission by hand. This counts **whatever modules you run**: a league with neither weather nor attendance has no windows to miss, but it has this.
+>
+> **A round already inside one of its windows.** Every scheduled thing a season does happens a configured distance *before* the round — the check-in call five days out, the last notice a day out, the check-in deadline two hours out, and each weather phase at its own deadline. Review on the Thursday before Sunday's race and the five-day call is two days behind you.
+>
+> **Only the latest round of each kind is named**, on that division's own calendar. Every earlier round is implied by it: move the calendar past the round the review names and you have moved it past all of them. A round that has already run is named once, as such, and not again for the six windows it also missed.
 >
 > The approval checks it again when the button *is* pressed, because the review stands for five minutes and a round can cross a window while it sits there. Then it is refused privately with **nothing committed**.
 >
-> Fix it by moving the round with [`/round amend`](#round-amend--amend-a-round-in-the-active-season) or by shortening the window, then run `/season review` again. Both are your call, which is exactly why the bot will not choose for you: the alternatives are posting the call late, posting nothing, or running the round with no check-in at all — and that last one records **perfect attendance for the whole division** for a round nobody was asked about.
+> Fix it by moving the round with [`/round amend`](#round-amend--amend-a-round-in-the-active-season) or, for a window, by shortening the window instead, then run `/season review` again. Both are your call, which is exactly why the bot will not choose for you: the alternatives are posting the call late, posting nothing, or running the round with no check-in at all — and that last one records **perfect attendance for the whole division** for a round nobody was asked about.
 >
-> Only the enabled modules' windows count, and a cancelled round is ignored. **Test mode is not exempt**, so a test season has to be built with its rounds beyond every configured window.
+> Only the enabled modules' windows count — but the round's own moment is judged whichever modules are on. A cancelled round is ignored either way. **Test mode is not exempt**, so a test season has to be built with its rounds still to come and beyond every configured window.
 
 Pressing it saves all pending divisions and rounds to the database and arms the weather scheduler, and — with the attendance module on — every round's check-in call, reminder and deadline.
 

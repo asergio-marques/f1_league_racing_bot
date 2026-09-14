@@ -1,6 +1,10 @@
-"""`overdue_windows` reports the configured lead times a season has already run past.
+"""What a season's approval refuses on, judged against the dates alone.
 
-These are the two reported faults, reduced to the arithmetic underneath them:
+Two halves. `overdue_windows` reports the configured lead times a season has already run
+past; `calendar_faults` reduces one division to the two rounds that bound what is wrong with
+it — the last round already run, and the last round holding an elapsed window.
+
+The first half answers the two faults below, reduced to the arithmetic underneath them:
 
 * #121 — a season approved three days before round 1, against a five-day check-in notice.
   The call was never scheduled, so the round asked nobody whether they were racing and was
@@ -17,7 +21,6 @@ from __future__ import annotations
 import os
 import sys
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
@@ -25,6 +28,7 @@ from models.round import Round, RoundFormat, RoundStatus  # noqa: E402
 from services.approval_window_service import (  # noqa: E402
     AttendanceWindows,
     WeatherWindows,
+    calendar_faults,
     overdue_windows,
 )
 
@@ -293,104 +297,226 @@ def test_a_naive_scheduled_at_is_read_as_utc():
     assert "Check-in call" in _labels(found)
 
 
-# ── The review reports it before the button is pressed ───────────────────────
+# ── `calendar_faults` — one division reduced to the rounds that bound it ──────
 #
-# `_overdue_window_problems` is the one evaluation `/season review` and the approval both
-# read, so the two cannot disagree about whether a season may be approved — the pattern the
-# portrait settings already follow. These drive that helper directly; the review's own
-# structure (that the button is withheld on it) is pinned in `test_season_review_images.py`.
+# #181: a league running neither weather nor attendance contributed no windows at all, so
+# `overdue_windows` answered empty for a season every round of which was already in the past
+# and the approval let it through. A round's own moment is judged here instead, and whatever
+# the modules are.
+#
+# The reduction is the second half of this module's job. A division's fault is the last round
+# already run and — where it is a later round — the last round holding an elapsed window, and
+# nothing else: every earlier round is implied by them, because a manager who moves the
+# calendar past the round named has moved it past all of them.
 
 
-def _cog_for_problems(*, attendance=True, weather=False, rounds=None):
-    from unittest.mock import AsyncMock
+def _faults(rounds, *, attendance=None, weather=None, now=NOW):
+    return calendar_faults(rounds, now=now, attendance=attendance, weather=weather)
 
-    from cogs.season_cog import SeasonCog
-    from models.attendance import AttendanceConfig
 
-    cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = AsyncMock()
-    cog.bot.db_path = ":memory:"
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
-    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
-    cog.bot.attendance_service.get_or_create_config = AsyncMock(
-        return_value=AttendanceConfig(
-            server_id=1,
-            module_enabled=True,
-            rsvp_notice_days=5,
-            rsvp_last_notice_hours=24,
-            rsvp_deadline_hours=2,
-            no_rsvp_penalty=1,
-            absent_penalty=1,
-            no_show_penalty=1,
-            autoreserve_threshold=None,
-            autosack_threshold=None,
-        )
+def test_a_season_wholly_in_the_past_is_a_fault_with_no_modules_at_all():
+    """#181, reduced to the arithmetic underneath it.
+
+    Both modules off, so there is not one configured window to check — and before this the
+    answer was that the season was fine. Every round would have sat at *not run* for good.
+    """
+    fault = _faults([_round(days_out=-90, number=1), _round(days_out=-60, number=2)])
+
+    assert fault is not None
+    assert fault.latest_past.round_number == 2
+    assert fault.latest_window is None
+
+
+def test_the_latest_past_round_is_named_and_not_the_first():
+    """The last one bounds the calendar. Naming round 1 would understate what must move."""
+    rounds = [_round(days_out=d, number=n) for n, d in ((1, -30), (2, -20), (3, -10), (4, 30))]
+
+    fault = _faults(rounds)
+
+    assert fault.latest_past.round_number == 3
+
+
+def test_a_later_round_inside_a_window_is_named_as_well():
+    """Two findings, because they are two different things to fix.
+
+    Round 1 has gone; round 2 is still to come but its five-day check-in call has not.
+    """
+    rounds = [_round(days_out=-1, number=1), _round(days_out=3, number=2)]
+
+    fault = _faults(rounds, attendance=DEFAULT_ATTENDANCE)
+
+    assert fault.latest_past.round_number == 1
+    assert fault.latest_window.round_number == 2
+    assert fault.latest_window.label == "Check-in call"
+
+
+def test_a_round_already_run_is_not_also_named_for_its_windows():
+    """The suppression rule. A round behind us has missed all six of its windows.
+
+    Reporting it as both the latest past round and the latest windowed round says one thing
+    twice, and the remedy — move it — is the same either way.
+    """
+    fault = _faults(
+        [_round(days_out=-1)], attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER
     )
-    if rounds is not None:
-        divisions = []
-        for name, div_id in {(n, r.division_id) for n, r in rounds}:
-            divisions.append(SimpleNamespace(id=div_id, name=name))
-        cog.bot.season_service.get_divisions = AsyncMock(return_value=divisions)
-        cog.bot.season_service.get_division_rounds = AsyncMock(
-            return_value=[r for _, r in rounds]
-        )
-    return cog
+
+    assert fault.latest_past.round_number == 1
+    assert fault.latest_window is None
 
 
-def _now_relative(days_out: float, *, number: int = 1) -> Round:
-    """A round *days_out* days from the wall clock, which the helper judges against."""
-    return Round(
-        id=number,
+def test_the_furthest_overdue_window_of_that_round_is_the_one_named():
+    """Clearing the earliest-due window clears the rest, so it sets how far the round moves.
+
+    A round three days out has missed the five-day check-in call and the five-day Phase 1,
+    but not the 24-hour last notice. The call is named, being the earliest due of them.
+    """
+    fault = _faults(
+        [_round(days_out=3)], attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER
+    )
+
+    assert fault.latest_past is None
+    assert fault.latest_window.fire_at == fault.latest_window.scheduled_at - timedelta(days=5)
+    assert fault.latest_window.label in {"Check-in call", "Weather Phase 1"}
+
+
+def test_a_healthy_calendar_is_no_fault_at_all():
+    """The gate must not stand in the way of an ordinary season."""
+    rounds = [_round(days_out=d, number=n) for n, d in ((1, 30), (2, 37), (3, 44))]
+
+    assert _faults(rounds, attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER) is None
+
+
+def test_no_rounds_at_all_is_no_fault():
+    assert _faults([], attendance=DEFAULT_ATTENDANCE) is None
+
+
+def test_a_round_exactly_now_has_already_run():
+    """``scheduled_at <= now``, the threshold `judge_amendment` refuses a backwards move on.
+
+    The two doors must agree about a round landing on this instant, or a moment `/round amend`
+    refuses would still be approvable.
+    """
+    fault = _faults([_round(days_out=0)])
+
+    assert fault.latest_past is not None
+    assert fault.latest_past.scheduled_at == NOW
+
+
+def test_a_cancelled_round_is_no_fault_however_far_behind():
+    """Refusing a season over one would leave a league unable to approve at all until they
+    deleted a round they may well want to keep a record of."""
+    rounds = [
+        _round(days_out=-30, number=1, status=RoundStatus.CANCELLED.value),
+        _round(days_out=30, number=2),
+    ]
+
+    assert _faults(rounds, attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER) is None
+
+
+def test_a_division_of_nothing_but_cancelled_rounds_is_no_fault():
+    cancelled = _round(days_out=-30, status=RoundStatus.CANCELLED.value)
+
+    assert _faults([cancelled]) is None
+
+
+def test_a_naive_scheduled_at_is_read_as_utc_here_too():
+    """Rounds come back from the database without a timezone, as they do everywhere here."""
+    naive = Round(
+        id=1,
         division_id=1,
-        round_number=number,
+        round_number=1,
         format=RoundFormat.NORMAL,
         track_name="Silverstone",
-        scheduled_at=datetime.now(timezone.utc) + timedelta(days=days_out),
+        scheduled_at=datetime(2026, 9, 1, 12, 0),  # no tzinfo, and behind NOW
+    )
+
+    fault = _faults([naive])
+
+    assert fault is not None and fault.latest_past.round_number == 1
+
+
+def test_two_rounds_at_one_moment_break_the_tie_on_round_number():
+    """Never the order a host's database handed them back in.
+
+    Two rounds of one division should never share a moment — approval refuses that too — but
+    the answer must not depend on row order while one slips through.
+    """
+    same = [_round(days_out=-1, number=2), _round(days_out=-1, number=1)]
+
+    assert _faults(same).latest_past.round_number == 2
+    assert _faults(list(reversed(same))).latest_past.round_number == 2
+
+
+# ── `_calendar_fault_lines` — the verdict as a manager reads it ───────────────
+#
+# The wording a division's calendar carries in `/season review`, and the half of the answer
+# the approval quotes back when it refuses. Driven directly; that the review posts these
+# beside the calendar whichever form it took is pinned in `test_season_review_images.py`.
+
+
+def _lines_for(rounds, *, attendance=None, weather=None):
+    from cogs.season_cog import SeasonCog
+
+    cog = SeasonCog.__new__(SeasonCog)
+    return cog._calendar_fault_lines(
+        calendar_faults(rounds, now=NOW, attendance=attendance, weather=weather)
     )
 
 
-async def test_the_review_helper_names_an_overdue_check_in():
-    cog = _cog_for_problems()
-
-    lines = await cog._overdue_window_problems(1, 7, rounds=[("Premier", _now_relative(3))])
-
-    assert any("Check-in call" in line for line in lines)
-    assert any("Round 1" in line for line in lines)
+def test_a_healthy_calendar_carries_no_lines():
+    assert _lines_for([_round(days_out=30)], attendance=DEFAULT_ATTENDANCE) == []
 
 
-async def test_the_review_helper_is_silent_on_a_healthy_season():
-    cog = _cog_for_problems()
+def test_the_past_round_line_names_the_round_and_the_remedy():
+    lines = _lines_for([_round(days_out=-5, number=3)])
 
-    lines = await cog._overdue_window_problems(1, 7, rounds=[("Premier", _now_relative(30))])
-
-    assert lines == []
-
-
-async def test_the_review_helper_reads_no_config_without_rounds():
-    """No rounds, no windows — and so nothing to pay for."""
-    cog = _cog_for_problems()
-
-    assert await cog._overdue_window_problems(1, 7, rounds=[]) == []
-    cog.bot.attendance_service.get_or_create_config.assert_not_awaited()
+    assert len(lines) == 1
+    assert "Round 3 has already run" in lines[0]
+    assert "could never take results" in lines[0]
+    assert "/round amend" in lines[0]
 
 
-async def test_the_review_helper_loads_the_rounds_when_none_are_handed_to_it():
-    """`/season review` hands over what it already read; other callers need not."""
-    rounds = [("Premier", _now_relative(3))]
-    cog = _cog_for_problems(rounds=rounds)
+def test_a_windowed_round_adds_a_second_line_naming_its_window():
+    lines = _lines_for(
+        [_round(days_out=-1, number=1), _round(days_out=3, number=2)],
+        attendance=DEFAULT_ATTENDANCE,
+    )
 
-    lines = await cog._overdue_window_problems(1, 7)
+    assert len(lines) == 2
+    assert "Round 1 has already run" in lines[0]
+    assert "Round 2 is already inside its check-in call" in lines[1]
+    assert "5 days before" in lines[1]
 
-    assert any("Check-in call" in line for line in lines)
-    cog.bot.season_service.get_divisions.assert_awaited_once()
+
+def test_a_round_already_run_yields_one_line_and_not_two():
+    """The suppression rule, seen from the message rather than the verdict."""
+    lines = _lines_for(
+        [_round(days_out=-1)], attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER
+    )
+
+    assert len(lines) == 1
+    assert "already inside" not in lines[0]
 
 
-async def test_the_report_is_capped_so_discord_keeps_it():
-    """A season built wholly in the past would otherwise run past the 2000-character limit."""
-    cog = _cog_for_problems()
-    many = [("Premier", _now_relative(-1, number=n)) for n in range(1, 21)]
+def test_a_window_alone_yields_the_window_line_alone():
+    lines = _lines_for([_round(days_out=3)], attendance=DEFAULT_ATTENDANCE)
 
-    lines = await cog._overdue_window_problems(1, 7, rounds=many)
+    assert len(lines) == 1
+    assert "already inside its check-in call" in lines[0]
 
-    assert any("further round(s) in the same state" in line for line in lines)
-    assert len("\n".join(lines)) < 2000
+
+def test_no_fault_at_all_is_no_lines():
+    from cogs.season_cog import SeasonCog
+
+    assert SeasonCog.__new__(SeasonCog)._calendar_fault_lines(None) == []
+
+
+def test_a_naive_now_is_read_as_utc_too():
+    """`overdue_windows` normalises its ``now``; this half must not diverge from it.
+
+    Nothing in the bot passes a naive one — both callers read `datetime.now(timezone.utc)` —
+    but a comparison that raises where its sibling compares is a trap for the next caller.
+    """
+    fault = calendar_faults([_round(days_out=-1)], now=NOW.replace(tzinfo=None))
+
+    assert fault is not None and fault.latest_past.round_number == 1

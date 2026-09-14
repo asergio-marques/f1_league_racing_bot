@@ -86,6 +86,8 @@ That database detection is load-bearing rather than a fallback: `/season approve
 
 > **Approval is no longer a route to such a season** (decided 2026-09-10). A season holding a round already inside one of its enabled modules' configured windows is reported by `/season review`, which withholds its button, and refused by the approval as well, and test mode is not exempt — so a test season has to be built with its rounds beyond the check-in notice and every weather phase deadline. The generator in step 2 of [A workable order](#a-workable-order) does this for you, dating its calendars in the year after the run.
 >
+> **Nor with every module switched off** (decided 2026-09-14). The windows above are contributed by the modules that configure them, so a test server running neither weather nor attendance offered none at all and a season built wholly in the past was approved in silence. A round's **own moment** is judged too, whatever the modules, and each division's calendar in the review names the latest round of it that has gone by.
+>
 > **Nor is `/round amend` a route to one any longer** (decided 2026-09-14). A round is never moved to a moment that has already passed, whatever the modules enabled — its result submission would be armed in the past, thrown away by the misfire grace, and the round could never take results at all. Moving a round *forward* is untouched.
 >
 > The database fallback above is still load-bearing all the same. A past-dated round arrives by a restored save whose rounds have since gone by, and the misfire-grace evictions it covers have nothing to do with approval at all.
@@ -241,7 +243,7 @@ Building a season to test one thing is slow, and testing the next thing usually 
 ## A workable order
 
 1. `/test-mode toggle` — before `/season approve`, so the points configurations get seeded, and before any real driver signs up, since a server holding one is refused.
-2. Build and approve a season as normal. Filling a calendar by hand is tedious, and `tools/data-generator/calendar-data/` writes one for you — random circuits, a weekday and an evening slot per division, rounds a week apart — as the XML `/round add-xml` takes. See [the generator's README](../../tools/data-generator/README.md). **Keep every round beyond the configured windows**: a first round inside the check-in notice or a weather phase deadline is refused at approval, test mode included. The generator's own dates, in the year after the run, clear them all.
+2. Build and approve a season as normal. Filling a calendar by hand is tedious, and `tools/data-generator/calendar-data/` writes one for you — random circuits, a weekday and an evening slot per division, rounds a week apart — as the XML `/round add-xml` takes. See [the generator's README](../../tools/data-generator/README.md). **Keep every round still to come, and beyond the configured windows**: a round whose moment has passed is refused at approval whatever the modules, and a first round inside the check-in notice or a weather phase deadline is refused as well, test mode included. The generator's own dates, in the year after the run, clear them all.
 3. `/test-mode roster add` until each division is seated — with a `nationality` on each if you mean to look at the graphics. `/test-mode roster list` to collect the mention strings.
 4. `/test-mode advance` repeatedly, checking each posted message as it appears.
 5. For attendance rounds, `/test-mode rsvp set-status` once the check-in has been advanced into existence.

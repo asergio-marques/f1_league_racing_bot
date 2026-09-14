@@ -1,4 +1,7 @@
-"""Which of a season's configured lead times have already elapsed.
+"""What is already behind a season on the day it is approved.
+
+Two faults, and a season can hold either. A round's **configured lead times** may have
+elapsed, and the round's **own moment** may have.
 
 A season's scheduled work is armed at approval, and every piece of it fires at some
 configured distance *before* the round: the check-in call five days out, the last notice a
@@ -16,6 +19,23 @@ This module is the check that makes both unreachable from approval. It computes 
 decides nothing about what to do; it reports which windows have passed, and `_do_approve`
 refuses on the answer. The league's remedy is to move the round or shorten the window, and
 that is a choice only they can make.
+
+**A round's own moment is judged too, and whatever the modules are** (#181, decided
+2026-09-14). The windows above are contributed by the modules that configure them, so a
+league running neither weather nor attendance offered none at all — and a season every round
+of which was already in the past was approved in silence. Nothing recovered it: a round's
+result submission is armed against the round's own moment, a job that far behind is thrown
+away by the scheduler's 300-second misfire grace rather than run, `run_result_submission_job`
+is the only route to a submission channel, and that job is the round's one clock-driven
+transition. Every round stayed at *not run* for good. `/round amend` refuses a backwards move
+on the same reasoning and in the same words (#182), so the two doors agree.
+
+**A division's faults are reduced to the latest round of each kind** (decided 2026-09-14).
+`calendar_faults` names the last round already run and, where it is a later round, the last
+round holding an elapsed window — and no more. Every earlier round is implied by them: a
+manager who moves the calendar past the round named has moved it past all of them. Naming
+each round against each window instead told a manager sixty things where two would do, and
+ran a season built wholly in the past past Discord's 2000-character limit.
 
 **The threshold is ``fire_at <= now``** — a window whose moment is exactly now counts as
 elapsed. That is precisely the complement of `schedule_attendance_round`'s own
@@ -98,8 +118,12 @@ def overdue_windows(
 
     Returns:
         One entry per elapsed window, sorted by division name, then round number, then the
-        moment the window was due. Empty when every window is still ahead — including when
+        moment the window was due. Empty when every window is still ahead, and empty when
         both modules are disabled, which leaves no windows to check at all.
+
+        That second emptiness is not a verdict that the season is fine. A round's own moment
+        is not a window and is not judged here — `calendar_faults` judges it, whatever the
+        modules. Reading this answer alone as "the season may be approved" is #181.
     """
     found: list[OverdueWindow] = []
     now = _as_utc(now)
@@ -170,6 +194,89 @@ def overdue_windows(
     # database happened to hand the rounds back in.
     found.sort(key=lambda w: (w.division_name, w.round_number, w.fire_at))
     return found
+
+
+@dataclass(frozen=True)
+class CalendarFault:
+    """What one division's calendar is refused for, reduced to the rounds that bound it.
+
+    *latest_past* is the last round whose own moment has gone by, and *latest_window* the
+    last round holding an elapsed window — given only where that is a **later** round than
+    *latest_past*, because a round already run has every one of its windows elapsed too and
+    saying so twice tells a manager nothing new.
+
+    At least one of the two is set; a division with neither yields no fault at all.
+    """
+
+    latest_past: Round | None
+    latest_window: OverdueWindow | None
+
+
+def calendar_faults(
+    rounds: list[Round],
+    *,
+    now: datetime,
+    attendance: AttendanceWindows | None = None,
+    weather: WeatherWindows | None = None,
+) -> CalendarFault | None:
+    """Reduce one division's calendar to the two rounds that bound what is wrong with it.
+
+    Args:
+        rounds:     One division's rounds, in any order.
+        now:        The moment to judge against. Required, and never the wall clock.
+        attendance: The check-in lead times, or None where the module is disabled.
+        weather:    The forecast horizons, or None where the module is disabled.
+
+    Returns:
+        The division's fault, or None where its calendar is clean.
+
+    **The threshold is ``scheduled_at <= now``**, the same one `judge_amendment` refuses a
+    backwards move on, so the approval and `/round amend` cannot disagree about a round.
+
+    Cancelled rounds are skipped, exactly as `overdue_windows` skips them and for the same
+    reason: one has no scheduled work left to lose, and refusing a season because of one
+    would leave a league unable to approve until they deleted history they may want.
+    """
+    live = [rnd for rnd in rounds if rnd.status != RoundStatus.CANCELLED.value]
+    if not live:
+        return None
+
+    # Normalised exactly as `overdue_windows` normalises it, so a naive ``now`` compares
+    # here rather than raising, and the two halves of this module cannot disagree about
+    # what moment they were asked about.
+    now = _as_utc(now)
+
+    # Ordered by moment, and by round number where two share one, so that three hosts whose
+    # databases need not agree about row order still reach the same answer.
+    def _order(rnd: Round) -> tuple[datetime, int]:
+        return (_as_utc(rnd.scheduled_at), rnd.round_number)
+
+    past = [rnd for rnd in live if _as_utc(rnd.scheduled_at) <= now]
+    latest_past = max(past, key=_order) if past else None
+
+    # The windows are the same evaluation `overdue_windows` performs for the report — asked
+    # of this one division, under a name it never shows, because only the reduction below is
+    # shown. Sharing it is what keeps the offsets in one place and under one drift guard.
+    windows = overdue_windows(
+        [("", rnd) for rnd in live], now=now, attendance=attendance, weather=weather
+    )
+    latest_window = None
+    if windows:
+        by_number = {rnd.round_number: rnd for rnd in live}
+        # The last round holding one, and of its elapsed windows the one due earliest:
+        # clearing the furthest-overdue window clears the rest, so that is the window that
+        # sets how far the round has to move.
+        latest = max(windows, key=lambda w: _order(by_number[w.round_number]))
+        latest_round = by_number[latest.round_number]
+        if latest_past is None or _order(latest_round) > _order(latest_past):
+            latest_window = min(
+                (w for w in windows if w.round_number == latest_round.round_number),
+                key=lambda w: w.fire_at,
+            )
+
+    if latest_past is None and latest_window is None:
+        return None
+    return CalendarFault(latest_past=latest_past, latest_window=latest_window)
 
 
 def _days(count: int) -> str:

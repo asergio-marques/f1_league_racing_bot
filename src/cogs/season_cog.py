@@ -1437,40 +1437,16 @@ class SeasonCog(commands.Cog):
             lines.append(f"      ⛔ {fault}")
         return lines
 
-    async def _overdue_window_problems(
-        self,
-        server_id: int,
-        season_id: int,
-        *,
-        rounds: list[tuple[str, RoundModel]] | None = None,
-    ) -> list[str]:
-        """The rounds already inside a configured window, as the lines a manager reads.
+    async def _approval_windows(self, server_id: int):
+        """The lead times the enabled modules configure, read once for a whole season.
 
-        Read by `/season review` and by the approval alike, so the two cannot disagree
-        about whether a season may be approved — the same rule that `/season review`
-        already shares with the approval for the portrait settings above.
+        Returns ``(attendance, weather)``, either of them None where that module is off.
 
-        The review reports these and withholds its button; the approval refuses on them
-        again, because between the two the review's five minutes may have carried a round
-        across a window it was on the right side of when the report was drawn.
-
-        *rounds* lets a caller that has already loaded the season's rounds hand them over
-        rather than have them read a second time. Omitted, they are loaded here.
+        Read once rather than per division: the date faults are judged a division at a time,
+        and a league with eight of them would otherwise pay eight times over for two configs
+        that cannot have changed in between.
         """
-        if rounds is None:
-            rounds = []
-            for _div in await self.bot.season_service.get_divisions(season_id):  # type: ignore[attr-defined]
-                for _rnd in await self.bot.season_service.get_division_rounds(_div.id):  # type: ignore[attr-defined]
-                    rounds.append((_div.name, _rnd))
-        # No rounds, no windows — and so no reason to pay for the configs.
-        if not rounds:
-            return []
-
-        from services.approval_window_service import (
-            AttendanceWindows,
-            WeatherWindows,
-            overdue_windows,
-        )
+        from services.approval_window_service import AttendanceWindows, WeatherWindows
 
         attendance = None
         if await self.bot.module_service.is_attendance_enabled(server_id):  # type: ignore[attr-defined]
@@ -1492,36 +1468,39 @@ class SeasonCog(commands.Cog):
                 phase_3_hours=_wx.phase_3_hours,
             )
 
-        overdue = overdue_windows(
-            rounds,
-            now=datetime.now(timezone.utc),
-            attendance=attendance,
-            weather=weather,
-        )
-        if not overdue:
+        return attendance, weather
+
+    def _calendar_fault_lines(self, fault) -> list[str]:
+        """One division's date faults, as the error lines posted with its calendar.
+
+        At most two, and they are two different things to fix: a round already run is a
+        calendar to move wholesale, while a round inside a window is one date to push out or
+        one window to shorten. Both name the **latest** round of their kind, which is the one
+        that bounds the remedy — clear that round and every earlier one is cleared with it.
+
+        Takes the verdict rather than the rounds, because `/season review` and the approval
+        reach it by different routes and must not be able to reach different answers.
+        """
+        if fault is None:
             return []
 
-        # Grouped by round, because that is the unit a manager fixes: one `/round amend`
-        # settles every window listed beneath it.
-        by_round: dict[tuple[str, int], list] = {}
-        for window in overdue:
-            by_round.setdefault((window.division_name, window.round_number), []).append(window)
-
-        # Capped, and the remainder counted. A season built wholly in the past reports six
-        # windows on every round of every division, which runs past Discord's
-        # 2000-character limit and loses the whole report rather than its tail.
         lines: list[str] = []
-        for key in list(by_round)[:8]:
-            div_name, number = key
-            first = by_round[key][0]
-            lines.append(f"• **{div_name}** — Round {number} ({discord_ts(first.scheduled_at)})")
-            for window in by_round[key]:
-                lines.append(
-                    f"    ↳ {window.label} was due {discord_ts(window.fire_at)} ({window.lead})"
-                )
-        remaining = len(by_round) - 8
-        if remaining > 0:
-            lines.append(f"• …and {remaining} further round(s) in the same state.")
+        if fault.latest_past is not None:
+            rnd = fault.latest_past
+            lines.append(
+                f"⛔ **Round {rnd.round_number} has already run** "
+                f"({discord_ts(rnd.scheduled_at)}), and so has every round before it. A "
+                f"round in the past never opens its result submission, so it could never "
+                f"take results at all. Move the calendar forward with `/round amend`."
+            )
+        if fault.latest_window is not None:
+            window = fault.latest_window
+            lines.append(
+                f"⛔ **Round {window.round_number} is already inside its "
+                f"{window.label.lower()}**, which fell due {discord_ts(window.fire_at)} "
+                f"({window.lead}). Move the round out with `/round amend`, or shorten the "
+                f"window."
+            )
         return lines
 
     @season.command(
@@ -1798,6 +1777,14 @@ class SeasonCog(commands.Cog):
                     interaction, db_divisions, rounds_by_division, cfg.season_number or None
                 )
 
+            # The lead times both date faults are judged against, read once for the season
+            # and reused by every division's calendar below.
+            _att_windows, _wx_windows = await self._approval_windows(interaction.guild_id)
+            # Raised by any division whose calendar holds a round already run, or one already
+            # inside a configured window. Collected rather than acted on in the loop, because
+            # the Approve button is decided once for the whole season after it.
+            calendar_faults_found: list[str] = []
+
             try:
                 for div in db_divisions:
                     if not div.name:
@@ -1862,6 +1849,23 @@ class SeasonCog(commands.Cog):
                             "the fault is reported above, and the section was shown as "
                             "text instead. Correct the template or the assets it names."
                         )
+                    # The division's date faults, which the graphic cannot show \u2014 a calendar
+                    # drawn from the same rounds says nothing about which of them have gone
+                    # by. Posted either way, on the roleless-team warning's reasoning below:
+                    # it is a review *finding*, and the form the calendar took does not
+                    # change whether the manager needs it.
+                    from services.approval_window_service import calendar_faults
+
+                    fault_lines = self._calendar_fault_lines(
+                        calendar_faults(
+                            rounds_db,
+                            now=datetime.now(timezone.utc),
+                            attendance=_att_windows,
+                            weather=_wx_windows,
+                        )
+                    )
+                    calendar_faults_found.extend(fault_lines)
+
                     if cal_state != REVIEW_IMAGE_DREW:
                         cal_lines: list[str] = ["\U0001f4c5 **Calendar**"]
                         for r in rounds_db:
@@ -1869,7 +1873,12 @@ class SeasonCog(commands.Cog):
                                 f"  Round {r.round_number}: {r.format.value} "
                                 f"@ {r.track_name or 'Mystery'} \u2014 {discord_ts(r.scheduled_at)}"
                             )
+                        cal_lines.extend(fault_lines)
                         await interaction.followup.send("\n".join(cal_lines), ephemeral=False)
+                    elif fault_lines:
+                        await interaction.followup.send(
+                            "\n".join(fault_lines), ephemeral=False
+                        )
 
                     # ── Message 3: lineup — the graphic, or the text ──────
                     #
@@ -1965,34 +1974,22 @@ class SeasonCog(commands.Cog):
                     f"⚠️ {_unassigned_row['cnt']} driver(s) UNASSIGNED — placement incomplete",
                     ephemeral=False,
                 )
-            # ── Rounds already inside a configured window (#121, #122) ────
-            #
-            # The same finding the approval refuses on, reported here so that a manager
-            # reads it before pressing rather than after. The rounds are the ones already
-            # loaded for the per-division blocks above, not a second read of them.
-            window_problems = await self._overdue_window_problems(
-                interaction.guild_id,
-                cfg.season_id,
-                rounds=[
-                    (_wdiv.name, _wrnd)
-                    for _wdiv in db_divisions
-                    if _wdiv.name
-                    for _wrnd in rounds_by_division.get(_wdiv.id, [])
-                ],
-            )
-            if window_problems:
-                # Its own message rather than a line in the list below, on the same
-                # reasoning as that list: these read differently and are fixed elsewhere.
-                # A template that will not draw is artwork to repair; a round inside its
-                # window is a calendar to move, and reporting the second as the first sent
-                # a manager looking for a picture that was not the problem.
+            # The season-wide report of rounds already inside a configured window is
+            # withdrawn (#181, decided 2026-09-14). It named every round against every
+            # window it had missed, capped at eight rounds — sixty lines where two would do,
+            # and past Discord's 2000-character limit for a season built wholly in the past,
+            # which lost the whole message rather than its tail. Each division's calendar
+            # now carries its own two findings, above, where the manager is already looking
+            # at the dates they would have to change.
+            if calendar_faults_found:
+                # Said once more at the end, briefly, because the per-division notes are
+                # scattered through a review running to a dozen messages and the reason the
+                # button is missing has to be findable from the bottom of it.
                 await interaction.followup.send(
-                    "\u26d4 **These rounds are already inside a configured window.**\n"
-                    + "\n".join(window_problems)
-                    + "\nTheir check-in call or forecast phase fell due before now, so the "
-                    "season is **not** offered for approval. Reschedule them with "
-                    "`/round amend`, or shorten the windows, then run `/season review` "
-                    "again.",
+                    "⛔ **This season's calendar holds dates that have already gone by.**"
+                    "\nEach division's calendar above names the round. The season is "
+                    "**not** offered for approval while that stands — put the dates right "
+                    "with `/round amend`, then run `/season review` again.",
                     ephemeral=True,
                 )
             if approval_blockers:
@@ -2007,7 +2004,7 @@ class SeasonCog(commands.Cog):
                     "Put it right, then run `/season review` again.",
                     ephemeral=True,
                 )
-            if not approval_blockers and not window_problems:
+            if not approval_blockers and not calendar_faults_found:
                 # Taken here rather than at the top of the command: the fingerprint must
                 # describe the season as the report just described it, and the report is
                 # only complete now.
@@ -4918,7 +4915,7 @@ class SeasonCog(commands.Cog):
                 await interaction.followup.send(msg, ephemeral=True)
                 return
 
-        # ── Gate 2d: no round may already be inside a configured window (#121, #122) ──
+        # ── Gate 2d: no round may already have run, nor be inside a window (#121, #122, #181)
         #
         # A season's scheduled work is armed here, and every piece of it fires at some
         # configured distance *before* the round. Approve late enough and those moments are
@@ -4928,6 +4925,15 @@ class SeasonCog(commands.Cog):
         # division, with nothing able to recover it. An overdue weather phase was armed
         # past-dated and thrown away for exceeding the scheduler's misfire grace, coming
         # back only if the host happened to restart before the race.
+        #
+        # **And the round's own moment is judged, whatever the modules** (#181). The windows
+        # above are contributed by the modules that configure them, so a league running
+        # neither weather nor attendance offered none — and a season every round of which was
+        # already in the past was approved in silence, every round of it stuck at *not run*
+        # for good, because a result-submission job armed that far behind is thrown away by
+        # the misfire grace and nothing in production opens a submission channel afterwards.
+        # `/round amend` refuses a backwards move on the same reasoning (#182), so the two
+        # doors agree about a round.
         #
         # Refused rather than caught up: the remedy is to move the round or shorten the
         # window, and choosing between posting late, posting nothing, and losing the round's
@@ -4941,17 +4947,45 @@ class SeasonCog(commands.Cog):
         # elsewhere — it seeds points configurations so a test season passes that
         # requirement — but a test season that loses its check-ins misreports attendance
         # exactly as a real one does, and is a worse thing to be testing against.
-        _window_problems = await self._overdue_window_problems(
-            cfg.server_id,
-            cfg.season_id,
-            rounds=[(_div.name, _rnd) for _div in divisions for _rnd in div_rounds[_div.id]],
-        )
-        if _window_problems:
-            _body = "\n".join(_window_problems)
+        from services.approval_window_service import calendar_faults
+
+        _att_windows, _wx_windows = await self._approval_windows(cfg.server_id)
+        _now = datetime.now(timezone.utc)
+        # One bullet per division, and at most two findings within it — the review annotates
+        # each division's calendar where the manager is looking at the dates, and the refusal
+        # gathers the same verdicts into one list, because by here there is no calendar on
+        # screen to annotate.
+        _date_problems: list[str] = []
+        for _div in divisions:
+            _fault = calendar_faults(
+                div_rounds[_div.id],
+                now=_now,
+                attendance=_att_windows,
+                weather=_wx_windows,
+            )
+            if _fault is None:
+                continue
+            _bits = []
+            if _fault.latest_past is not None:
+                _bits.append(
+                    f"Round {_fault.latest_past.round_number} has already run "
+                    f"({discord_ts(_fault.latest_past.scheduled_at)}), and so has every "
+                    f"round before it"
+                )
+            if _fault.latest_window is not None:
+                _bits.append(
+                    f"Round {_fault.latest_window.round_number} is inside its "
+                    f"{_fault.latest_window.label.lower()}, due "
+                    f"{discord_ts(_fault.latest_window.fire_at)} "
+                    f"({_fault.latest_window.lead})"
+                )
+            _date_problems.append(f"• **{_div.name}** — " + "; ".join(_bits) + ".")
+        if _date_problems:
+            _body = "\n".join(_date_problems)
             await interaction.followup.send(
-                f"❌ Season cannot be approved — these rounds are already inside a "
-                f"configured window:\n{_body}\n"
-                f"Reschedule them with `/round amend`, or shorten the windows, then run "
+                f"❌ Season cannot be approved — its calendar holds dates that have "
+                f"already gone by:\n{_body}\n"
+                f"Move those rounds with `/round amend`, or shorten the windows, then run "
                 f"`/season review` again. **Nothing has been approved.**",
                 ephemeral=True,
             )

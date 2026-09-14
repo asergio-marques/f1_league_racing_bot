@@ -337,7 +337,12 @@ A module you have not switched on has no settings to show, so its message is sim
 
 Read it properly. It is the last look you get at the season as a whole before it goes live, and it names anything that will stop approval.
 
-> **A round already inside one of its windows takes the button away.** If a round's check-in call or a weather phase deadline fell due before you ran the review, the review says so — naming each round and each window, and when each was due — and offers you no **Approve** button. Move the round with `/round amend` or shorten the window, then review again. See [Configuring the attendance module](configuring-the-attendance-module.md) and [Configuring the weather module](configuring-the-weather-module.md) for the timings this applies to.
+> **A calendar with dates behind you takes the button away.** Two things can be wrong with a season's dates, and each division's calendar in the review carries its own:
+>
+> - **A round that has already run.** It would never open its result submission, so it could never take results at all. This applies **whatever modules you run** — a league with neither weather nor attendance has no windows to miss, but it has this one.
+> - **A round already inside one of its windows** — its check-in call or a weather phase deadline fell due before you ran the review. See [Configuring the attendance module](configuring-the-attendance-module.md) and [Configuring the weather module](configuring-the-weather-module.md) for the timings this applies to.
+>
+> Only the **latest** round of each kind is named, beside that division's calendar. Every earlier round is implied by it: put that round right and you have put all of them right. Move the round with `/round amend`, or for a window shorten the window instead, then review again. Either way you get no **Approve** button until it is settled.
 >
 > The approval checks it a second time, because the review stands for five minutes and a round can cross a window while it is sitting there. So you can also meet this as a refusal on the button itself, having seen nothing wrong in the report.
 

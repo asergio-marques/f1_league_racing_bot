@@ -309,7 +309,7 @@ Worth running through before the season is approved.
 | What you see | Usually means |
 |---|---|
 | No check-in call for a division | No check-in channel set for it, or the module is off |
-| A review that names a round and a check-in window, with no Approve button | That round is already inside the window — its call fell due before you ran the review. Move the round, or shorten the notice, and review again |
+| A division's calendar names a round and a check-in window, with no Approve button | That round is already inside the window — its call fell due before you ran the review. Only the latest such round is named; put it right and the earlier ones go with it. Move the round, or shorten the notice, and review again |
 | A call that never appeared, and a loud report in the log channel | The bot could not post it. No records were opened, so the round is a free pass for the whole division |
 | No check-in for a round you moved or re-tracked | The round was moved past its own check-in deadline, so the check-in stayed closed. Check the round's time against your deadline setting |
 | A round where nobody was charged anything | The round was cancelled, or its call never posted — check the log channel, which reports a failed call loudly |
