@@ -261,12 +261,9 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
     tail = source[source.index("Server-level UNASSIGNED"):]
     assert "if approval_blockers:" in tail
 
-    # Three independent causes withhold the button, so the offer is guarded on all of them
-    # rather than sitting in an `else` belonging to any one (#121, #122, #181).
-    offer = (
-        "if not approval_blockers and not window_problems "
-        "and not calendar_faults_found:"
-    )
+    # Two independent causes withhold the button, so the offer is guarded on both rather
+    # than sitting in an `else` belonging to either one (#121, #122, #181).
+    offer = "if not approval_blockers and not calendar_faults_found:"
     assert offer in tail
     fault_branch = tail[tail.index("if approval_blockers:"):tail.index(offer)]
     assert "_post_approval_prompt" not in fault_branch, (

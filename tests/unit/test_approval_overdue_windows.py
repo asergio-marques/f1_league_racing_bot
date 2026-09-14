@@ -1,6 +1,10 @@
-"""`overdue_windows` reports the configured lead times a season has already run past.
+"""What a season's approval refuses on, judged against the dates alone.
 
-These are the two reported faults, reduced to the arithmetic underneath them:
+Two halves. `overdue_windows` reports the configured lead times a season has already run
+past; `calendar_faults` reduces one division to the two rounds that bound what is wrong with
+it — the last round already run, and the last round holding an elapsed window.
+
+The first half answers the two faults below, reduced to the arithmetic underneath them:
 
 * #121 — a season approved three days before round 1, against a five-day check-in notice.
   The call was never scheduled, so the round asked nobody whether they were racing and was
@@ -17,7 +21,6 @@ from __future__ import annotations
 import os
 import sys
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
@@ -292,109 +295,6 @@ def test_a_naive_scheduled_at_is_read_as_utc():
     found = overdue_windows([("Premier", naive)], now=NOW, attendance=DEFAULT_ATTENDANCE)
 
     assert "Check-in call" in _labels(found)
-
-
-# ── The review reports it before the button is pressed ───────────────────────
-#
-# `_overdue_window_problems` is the one evaluation `/season review` and the approval both
-# read, so the two cannot disagree about whether a season may be approved — the pattern the
-# portrait settings already follow. These drive that helper directly; the review's own
-# structure (that the button is withheld on it) is pinned in `test_season_review_images.py`.
-
-
-def _cog_for_problems(*, attendance=True, weather=False, rounds=None):
-    from unittest.mock import AsyncMock
-
-    from cogs.season_cog import SeasonCog
-    from models.attendance import AttendanceConfig
-
-    cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = AsyncMock()
-    cog.bot.db_path = ":memory:"
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
-    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
-    cog.bot.attendance_service.get_or_create_config = AsyncMock(
-        return_value=AttendanceConfig(
-            server_id=1,
-            module_enabled=True,
-            rsvp_notice_days=5,
-            rsvp_last_notice_hours=24,
-            rsvp_deadline_hours=2,
-            no_rsvp_penalty=1,
-            absent_penalty=1,
-            no_show_penalty=1,
-            autoreserve_threshold=None,
-            autosack_threshold=None,
-        )
-    )
-    if rounds is not None:
-        divisions = []
-        for name, div_id in {(n, r.division_id) for n, r in rounds}:
-            divisions.append(SimpleNamespace(id=div_id, name=name))
-        cog.bot.season_service.get_divisions = AsyncMock(return_value=divisions)
-        cog.bot.season_service.get_division_rounds = AsyncMock(
-            return_value=[r for _, r in rounds]
-        )
-    return cog
-
-
-def _now_relative(days_out: float, *, number: int = 1) -> Round:
-    """A round *days_out* days from the wall clock, which the helper judges against."""
-    return Round(
-        id=number,
-        division_id=1,
-        round_number=number,
-        format=RoundFormat.NORMAL,
-        track_name="Silverstone",
-        scheduled_at=datetime.now(timezone.utc) + timedelta(days=days_out),
-    )
-
-
-async def test_the_review_helper_names_an_overdue_check_in():
-    cog = _cog_for_problems()
-
-    lines = await cog._overdue_window_problems(1, 7, rounds=[("Premier", _now_relative(3))])
-
-    assert any("Check-in call" in line for line in lines)
-    assert any("Round 1" in line for line in lines)
-
-
-async def test_the_review_helper_is_silent_on_a_healthy_season():
-    cog = _cog_for_problems()
-
-    lines = await cog._overdue_window_problems(1, 7, rounds=[("Premier", _now_relative(30))])
-
-    assert lines == []
-
-
-async def test_the_review_helper_reads_no_config_without_rounds():
-    """No rounds, no windows — and so nothing to pay for."""
-    cog = _cog_for_problems()
-
-    assert await cog._overdue_window_problems(1, 7, rounds=[]) == []
-    cog.bot.attendance_service.get_or_create_config.assert_not_awaited()
-
-
-async def test_the_review_helper_loads_the_rounds_when_none_are_handed_to_it():
-    """`/season review` hands over what it already read; other callers need not."""
-    rounds = [("Premier", _now_relative(3))]
-    cog = _cog_for_problems(rounds=rounds)
-
-    lines = await cog._overdue_window_problems(1, 7)
-
-    assert any("Check-in call" in line for line in lines)
-    cog.bot.season_service.get_divisions.assert_awaited_once()
-
-
-async def test_the_report_is_capped_so_discord_keeps_it():
-    """A season built wholly in the past would otherwise run past the 2000-character limit."""
-    cog = _cog_for_problems()
-    many = [("Premier", _now_relative(-1, number=n)) for n in range(1, 21)]
-
-    lines = await cog._overdue_window_problems(1, 7, rounds=many)
-
-    assert any("further round(s) in the same state" in line for line in lines)
-    assert len("\n".join(lines)) < 2000
 
 
 # ── `calendar_faults` — one division reduced to the rounds that bound it ──────
