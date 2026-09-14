@@ -1437,6 +1437,72 @@ class SeasonCog(commands.Cog):
             lines.append(f"      ⛔ {fault}")
         return lines
 
+    async def _approval_windows(self, server_id: int):
+        """The lead times the enabled modules configure, read once for a whole season.
+
+        Returns ``(attendance, weather)``, either of them None where that module is off.
+
+        Read once rather than per division: the date faults are judged a division at a time,
+        and a league with eight of them would otherwise pay eight times over for two configs
+        that cannot have changed in between.
+        """
+        from services.approval_window_service import AttendanceWindows, WeatherWindows
+
+        attendance = None
+        if await self.bot.module_service.is_attendance_enabled(server_id):  # type: ignore[attr-defined]
+            _att = await self.bot.attendance_service.get_or_create_config(server_id)  # type: ignore[attr-defined]
+            attendance = AttendanceWindows(
+                notice_days=_att.rsvp_notice_days,
+                last_notice_hours=_att.rsvp_last_notice_hours,
+                deadline_hours=_att.rsvp_deadline_hours,
+            )
+
+        weather = None
+        if await self.bot.module_service.is_weather_enabled(server_id):  # type: ignore[attr-defined]
+            from services.weather_config_service import get_weather_pipeline_config
+
+            _wx = await get_weather_pipeline_config(self.bot.db_path, server_id)
+            weather = WeatherWindows(
+                phase_1_days=_wx.phase_1_days,
+                phase_2_days=_wx.phase_2_days,
+                phase_3_hours=_wx.phase_3_hours,
+            )
+
+        return attendance, weather
+
+    def _calendar_fault_lines(self, fault) -> list[str]:
+        """One division's date faults, as the error lines posted with its calendar.
+
+        At most two, and they are two different things to fix: a round already run is a
+        calendar to move wholesale, while a round inside a window is one date to push out or
+        one window to shorten. Both name the **latest** round of their kind, which is the one
+        that bounds the remedy — clear that round and every earlier one is cleared with it.
+
+        Takes the verdict rather than the rounds, because `/season review` and the approval
+        reach it by different routes and must not be able to reach different answers.
+        """
+        if fault is None:
+            return []
+
+        lines: list[str] = []
+        if fault.latest_past is not None:
+            rnd = fault.latest_past
+            lines.append(
+                f"⛔ **Round {rnd.round_number} has already run** "
+                f"({discord_ts(rnd.scheduled_at)}), and so has every round before it. A "
+                f"round in the past never opens its result submission, so it could never "
+                f"take results at all. Move the calendar forward with `/round amend`."
+            )
+        if fault.latest_window is not None:
+            window = fault.latest_window
+            lines.append(
+                f"⛔ **Round {window.round_number} is already inside its "
+                f"{window.label.lower()}**, which fell due {discord_ts(window.fire_at)} "
+                f"({window.lead}). Move the round out with `/round amend`, or shorten the "
+                f"window."
+            )
+        return lines
+
     async def _overdue_window_problems(
         self,
         server_id: int,
@@ -1798,6 +1864,14 @@ class SeasonCog(commands.Cog):
                     interaction, db_divisions, rounds_by_division, cfg.season_number or None
                 )
 
+            # The lead times both date faults are judged against, read once for the season
+            # and reused by every division's calendar below.
+            _att_windows, _wx_windows = await self._approval_windows(interaction.guild_id)
+            # Raised by any division whose calendar holds a round already run, or one already
+            # inside a configured window. Collected rather than acted on in the loop, because
+            # the Approve button is decided once for the whole season after it.
+            calendar_faults_found: list[str] = []
+
             try:
                 for div in db_divisions:
                     if not div.name:
@@ -1862,6 +1936,23 @@ class SeasonCog(commands.Cog):
                             "the fault is reported above, and the section was shown as "
                             "text instead. Correct the template or the assets it names."
                         )
+                    # The division's date faults, which the graphic cannot show \u2014 a calendar
+                    # drawn from the same rounds says nothing about which of them have gone
+                    # by. Posted either way, on the roleless-team warning's reasoning below:
+                    # it is a review *finding*, and the form the calendar took does not
+                    # change whether the manager needs it.
+                    from services.approval_window_service import calendar_faults
+
+                    fault_lines = self._calendar_fault_lines(
+                        calendar_faults(
+                            rounds_db,
+                            now=datetime.now(timezone.utc),
+                            attendance=_att_windows,
+                            weather=_wx_windows,
+                        )
+                    )
+                    calendar_faults_found.extend(fault_lines)
+
                     if cal_state != REVIEW_IMAGE_DREW:
                         cal_lines: list[str] = ["\U0001f4c5 **Calendar**"]
                         for r in rounds_db:
@@ -1869,7 +1960,12 @@ class SeasonCog(commands.Cog):
                                 f"  Round {r.round_number}: {r.format.value} "
                                 f"@ {r.track_name or 'Mystery'} \u2014 {discord_ts(r.scheduled_at)}"
                             )
+                        cal_lines.extend(fault_lines)
                         await interaction.followup.send("\n".join(cal_lines), ephemeral=False)
+                    elif fault_lines:
+                        await interaction.followup.send(
+                            "\n".join(fault_lines), ephemeral=False
+                        )
 
                     # ── Message 3: lineup — the graphic, or the text ──────
                     #
@@ -2007,7 +2103,7 @@ class SeasonCog(commands.Cog):
                     "Put it right, then run `/season review` again.",
                     ephemeral=True,
                 )
-            if not approval_blockers and not window_problems:
+            if not approval_blockers and not window_problems and not calendar_faults_found:
                 # Taken here rather than at the top of the command: the fingerprint must
                 # describe the season as the report just described it, and the report is
                 # only complete now.

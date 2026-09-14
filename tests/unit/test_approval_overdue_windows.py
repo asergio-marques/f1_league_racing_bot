@@ -545,3 +545,67 @@ def test_two_rounds_at_one_moment_break_the_tie_on_round_number():
 
     assert _faults(same).latest_past.round_number == 2
     assert _faults(list(reversed(same))).latest_past.round_number == 2
+
+
+# ── `_calendar_fault_lines` — the verdict as a manager reads it ───────────────
+#
+# The wording a division's calendar carries in `/season review`, and the half of the answer
+# the approval quotes back when it refuses. Driven directly; that the review posts these
+# beside the calendar whichever form it took is pinned in `test_season_review_images.py`.
+
+
+def _lines_for(rounds, *, attendance=None, weather=None):
+    from cogs.season_cog import SeasonCog
+
+    cog = SeasonCog.__new__(SeasonCog)
+    return cog._calendar_fault_lines(
+        calendar_faults(rounds, now=NOW, attendance=attendance, weather=weather)
+    )
+
+
+def test_a_healthy_calendar_carries_no_lines():
+    assert _lines_for([_round(days_out=30)], attendance=DEFAULT_ATTENDANCE) == []
+
+
+def test_the_past_round_line_names_the_round_and_the_remedy():
+    lines = _lines_for([_round(days_out=-5, number=3)])
+
+    assert len(lines) == 1
+    assert "Round 3 has already run" in lines[0]
+    assert "could never take results" in lines[0]
+    assert "/round amend" in lines[0]
+
+
+def test_a_windowed_round_adds_a_second_line_naming_its_window():
+    lines = _lines_for(
+        [_round(days_out=-1, number=1), _round(days_out=3, number=2)],
+        attendance=DEFAULT_ATTENDANCE,
+    )
+
+    assert len(lines) == 2
+    assert "Round 1 has already run" in lines[0]
+    assert "Round 2 is already inside its check-in call" in lines[1]
+    assert "5 days before" in lines[1]
+
+
+def test_a_round_already_run_yields_one_line_and_not_two():
+    """The suppression rule, seen from the message rather than the verdict."""
+    lines = _lines_for(
+        [_round(days_out=-1)], attendance=DEFAULT_ATTENDANCE, weather=DEFAULT_WEATHER
+    )
+
+    assert len(lines) == 1
+    assert "already inside" not in lines[0]
+
+
+def test_a_window_alone_yields_the_window_line_alone():
+    lines = _lines_for([_round(days_out=3)], attendance=DEFAULT_ATTENDANCE)
+
+    assert len(lines) == 1
+    assert "already inside its check-in call" in lines[0]
+
+
+def test_no_fault_at_all_is_no_lines():
+    from cogs.season_cog import SeasonCog
+
+    assert SeasonCog.__new__(SeasonCog)._calendar_fault_lines(None) == []
