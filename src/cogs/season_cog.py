@@ -3650,7 +3650,7 @@ class SeasonCog(commands.Cog):
 
     @round.command(
         name="amend",
-        description="Amend a round's configuration. Invalidates prior weather phases.",
+        description="Amend a round's track, moment or format. Says what it costs before it does it.",
     )
     @app_commands.describe(
         division_name="Name of the division containing this round",
@@ -3851,10 +3851,36 @@ class SeasonCog(commands.Cog):
                 return
             amendments.append(("format", new_fmt))
 
+        # Judged before anything is offered, and judged again when it is confirmed. An
+        # amendment the rules refuse never reaches a confirmation at all.
+        _verdict = await _judge_round_amendment(
+            self.bot, interaction.guild_id, rnd, amendments,
+            now=datetime.now(timezone.utc),
+        )
+        if not _verdict.allowed:
+            await interaction.followup.send(
+                f"\u26d4 **Round {rnd.round_number}** in **{div.name}** cannot be amended:\n"
+                + "\n".join(f"\u2022 {reason}" for reason in _verdict.refusals)
+                + "\n\n**Nothing has been changed.**",
+                ephemeral=True,
+            )
+            return
+
         summary_lines = [f"**Amend Round {rnd.round_number}** in division **{div.name}**:"]
         for f_name, f_val in amendments:
             summary_lines.append(f"  \u2022 `{f_name}` \u2192 `{f_val}`")
-        summary_lines.append("\n\u26a0\ufe0f This will invalidate all prior weather phases for this round.")
+
+        # Name the forecasts this actually throws away rather than claiming all of them: a
+        # phase that would still have run under the round's new moment is kept.
+        _withdrawn = sorted(n for n, phase in _verdict.phases.items() if phase.rearm)
+        if _withdrawn:
+            _named = ", ".join(f"Phase {n}" for n in _withdrawn)
+            summary_lines.append(f"\n\u26a0\ufe0f This will withdraw and redraw {_named} for this round.")
+        else:
+            summary_lines.append("\n\u26a0\ufe0f The forecasts already posted for this round will stand.")
+
+        for _warning in _verdict.warnings:
+            summary_lines.append(f"\u26a0\ufe0f {_warning}")
 
         view = _ConfirmView(
             cog=self,
@@ -5601,6 +5627,52 @@ class _ApproveView(discord.ui.View):
 # ---------------------------------------------------------------------------
 # Round amendment confirm view
 # ---------------------------------------------------------------------------
+
+
+async def _judge_round_amendment(
+    bot: Any,
+    server_id: int,
+    rnd: RoundModel,
+    amendments: list[tuple[str, object]],
+    *,
+    now: datetime,
+):
+    """Judge *amendments* against *rnd*, reading the league's own windows.
+
+    Shared by `/round amend` and its confirmation so the two cannot disagree about a round, and
+    judged afresh by each: a window can pass while the confirmation stands, and an amendment
+    allowed on the strength of a window that has since closed is the silent loss the rules exist
+    to prevent.
+
+    A module that is switched off passes no windows and so has nothing refused on its account —
+    a league without attendance has no check-in to lose.
+    """
+    from services.amendment_rules_service import judge_amendment
+    from services.approval_window_service import AttendanceWindows, WeatherWindows
+    from services.weather_config_service import get_weather_pipeline_config
+
+    attendance = None
+    if await bot.module_service.is_attendance_enabled(server_id):
+        _acfg = await bot.attendance_service.get_or_create_config(server_id)
+        attendance = AttendanceWindows(
+            notice_days=_acfg.rsvp_notice_days,
+            last_notice_hours=_acfg.rsvp_last_notice_hours,
+            deadline_hours=_acfg.rsvp_deadline_hours,
+        )
+
+    # The forecast horizons are read whatever the module's state: a forecast posted while
+    # weather was on is still posted, and whether it survives the amendment is what the track
+    # and format rules turn on.
+    _wcfg = await get_weather_pipeline_config(bot.db_path, server_id)
+    weather = WeatherWindows(
+        phase_1_days=_wcfg.phase_1_days,
+        phase_2_days=_wcfg.phase_2_days,
+        phase_3_hours=_wcfg.phase_3_hours,
+    )
+
+    return judge_amendment(
+        rnd, dict(amendments), now=now, attendance=attendance, weather=weather
+    )
 
 
 class _ConfirmView(discord.ui.View):
