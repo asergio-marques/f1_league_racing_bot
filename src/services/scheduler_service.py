@@ -38,9 +38,15 @@ log = logging.getLogger(__name__)
 _GRACE_SECONDS = 300  # 5-minute misfire grace period
 
 
-# Regex that matches the ``_s{S}_d{D}_r{R}`` suffix appended to every round-
-# scoped job ID. Used to extract the event-type prefix for dispatch.
-_JOB_SUFFIX_RE = re.compile(r"_s\d+_d\d+_r\d+$")
+# Regex that matches the ``_s{S}_d{D}_r{R}_id{round_id}`` suffix appended to every
+# round-scoped job ID. Used to extract the event-type prefix for dispatch.
+#
+# ``_id{round_id}`` is optional because the job store is a real file that outlives a
+# restart: jobs written before the id was added are still in it, and a regex that
+# insisted on the id would fail to read their prefix — which is how a job's owning
+# module is identified, so weather's disable would stop filtering and take the other
+# modules' jobs down with it.
+_JOB_SUFFIX_RE = re.compile(r"_s\d+_d\d+_r\d+(?:_id\d+)?$")
 
 # The event-type prefixes of the jobs the **weather module** owns: its three forecast
 # phases and the post-race cleanup that deletes what they posted.
@@ -50,6 +56,26 @@ _JOB_SUFFIX_RE = re.compile(r"_s\d+_d\d+_r\d+$")
 # the kwarg says which round a job belongs to and nothing about which module it is for.
 # The prefix is the only marker there is, and ``_JOB_SUFFIX_RE`` above is what exposes it.
 _WEATHER_JOB_PREFIXES = frozenset({"weather_p1", "weather_p2", "weather_p3", "cleanup"})
+
+
+def _round_job_suffix(rnd: "Round", season_number: int, division_tier: int) -> str:
+    """The ``_s{S}_d{D}_r{R}_id{round_id}`` tail every one of a round's job IDs carries.
+
+    **Why the round id is in there** — a job ID must be unique to its round for the life of
+    that round, and the season, tier and round number are not. `renumber_rounds` rewrites the
+    numbers of a whole division whenever an amendment changes the order of its rounds, and
+    nothing re-arms the jobs of the rounds that merely shifted. So a round that became number 4
+    kept jobs saying ``r5``, and the next amendment of the round that became number 5 scheduled
+    ``..._r5`` on top of them — and because every ``add_job`` here passes
+    ``replace_existing=True``, that silently destroyed the first round's entire schedule: its
+    forecasts, its result submission and its check-in, with nothing reporting it.
+
+    The round id never changes, so the collision cannot happen. The season, tier and number stay
+    in the ID because they are what makes it readable in an APScheduler admin view; they are
+    decoration, and only the id is load-bearing. A number left stale by a renumbering is
+    therefore cosmetic and is corrected the next time that round is scheduled.
+    """
+    return f"_s{season_number}_d{division_tier}_r{rnd.round_number}_id{rnd.id}"
 
 # Module-level service reference so APScheduler can pickle the job callable.
 # Set in SchedulerService.start(); always non-None when jobs fire.
@@ -425,7 +451,7 @@ class SchedulerService:
         if scheduled_at.tzinfo is None:
             scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
 
-        _suffix = f"_s{season_number}_d{division_tier}_r{rnd.round_number}"
+        _suffix = _round_job_suffix(rnd, season_number, division_tier)
 
         horizons = {
             1: scheduled_at - timedelta(days=phase_1_days),
@@ -499,7 +525,7 @@ class SchedulerService:
             scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
 
         now = datetime.now(timezone.utc)
-        _suffix = f"_s{season_number}_d{division_tier}_r{rnd.round_number}"
+        _suffix = _round_job_suffix(rnd, season_number, division_tier)
 
         # Notice job
         notice_fire_at = scheduled_at - timedelta(days=notice_days)
@@ -670,7 +696,7 @@ class SchedulerService:
             if scheduled_at.tzinfo is None:
                 scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
             season_number, division_tier = division_meta[rnd.division_id]
-            job_id = f"results_s{season_number}_d{division_tier}_r{rnd.round_number}"
+            job_id = f"results{_round_job_suffix(rnd, season_number, division_tier)}"
             self._scheduler.add_job(
                 _result_submission_job_wrapper,
                 trigger=DateTrigger(run_date=scheduled_at, timezone="UTC"),

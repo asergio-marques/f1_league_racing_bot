@@ -90,6 +90,18 @@
 - After distribution of reserves, any reserves that have confirmed attendance but remain without a seat for the round will be considered as being "on standby".
 - After standbys are determined, the post shall post a message on the check-in channel of the division mentioning the Discord users and informing them of the team they are racing for. The standby reserve drivers shall also be informed of their standby status, to be ready to jump into the race in case someone no-shows.
 
+## Changes to a round
+- Where a round is amended, the check-in work already armed for it shall be cancelled and armed again against the round's new moment, and only while the module is enabled. Nothing else arms it: a round amended and not armed again asks nobody whether they are racing, opens no attendance records, distributes no reserves, charges nobody, and is recorded afterwards as perfect attendance for the whole division.
+- The call, the last notice and the deadline shall each be judged by one question: would it have been posted already, were the round always to have stood at its new moment?
+    - Where it would not, it shall be armed for its new moment.
+    - Where it would, a moment already past shall not be honoured retroactively and nothing shall be posted in its place.
+- The check-in call already posted for an amended round shall be treated as follows.
+    - Where its window would have passed under the round's new moment and the deadline has not, the call shall be posted again carrying what changed. The call names the circuit, the sessions and the moment, and an amendment may have changed all three under it.
+    - Where its window is ahead again, the call standing shall be taken down and the armed call shall post afresh at its new moment.
+    - Where the deadline computed from the round's new moment has passed, nothing shall be posted and nothing taken down.
+- Where the call is posted again, every answer already recorded shall be carried over and drivers may change them as usual until the deadline. A driver of the division holding no recorded answer shall be recorded as not having answered, and an answer recorded for a driver no longer of the division shall be discarded.
+- The last notice and the distribution announcement posted for the round shall be taken down with the call they belong to, so that a division is never left reading a reminder or a distribution for a round that has since changed.
+
 ## Attendance
 - Once the initial round results are submitted, the attendance sheet of the round will be filled. Being listed in any of the sessions of the round will be enough to count as having attended.
 - Drivers who are reserving for that division are ignored.

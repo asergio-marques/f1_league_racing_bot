@@ -30,16 +30,39 @@ class AmendmentService:
         self,
         round_id: int,
         actor: discord.Member,
-        field: str,
-        new_value: Any,
+        changes: list[tuple[str, Any]],
         bot: "Bot",
+        now: datetime | None = None,
     ) -> None:
-        """Atomically amend *field* on *round_id*.
+        """Atomically apply every amendment in *changes* to *round_id*, as one change.
+
+        *changes* is ``[(field, new_value), ...]`` over ``track_name``, ``format`` and
+        ``scheduled_at``. Every field is validated before anything is written, all of them are
+        written in one statement, and the work that follows — the cancel, the re-arm, the
+        invalidation notice, the re-run of overdue phases — happens exactly once however many
+        fields were given.
+
+        **Why a change set rather than a field** (issue #115). This took one field and the
+        command called it once per field the manager gave, so amending a round's track *and* its
+        date ran the whole amendment twice: two audit entries were right, but two invalidation
+        notices, two cancels, two re-arms and two re-runs of every overdue phase were not, and a
+        league amending two things at once was told twice that its forecasts had been thrown
+        away. It also made the amendment rules impossible to apply, those being rules about the
+        round as it will stand once *all* the changes are in — a track change is judged against
+        the new date when one is given in the same breath.
+
+        **The rules are judged by the caller, not here** — as `approval_window_service` is judged
+        by `_do_approve` rather than by the season service. `amendment_rules_service` is pure and
+        decides; the command refuses on its answer and calls this only for an amendment that may
+        proceed. Keeping the judgement out of here is what lets a test drive an amendment the
+        rules would now refuse, which is how the issue #113 gate below is still covered: its
+        round is deliberately past-dated so the overdue phases re-run, and that is an amendment
+        `/round amend` itself would decline.
 
         Steps (inside one transaction):
         1. Load current Round.
-        2. Record AuditEntry with old/new values.
-        3. Update round field.
+        2. Record an AuditEntry per field, with old/new values.
+        3. Update every amended field at once.
         4. Invalidate all PhaseResults and clear session phase data.
         5. Reset phase done flags.
         6. Cancel and re-schedule scheduler jobs — weather only.
@@ -87,60 +110,147 @@ class AmendmentService:
                 f"Round {round_id} belongs to an archived season and cannot be amended."
             )
 
-        old_value = row[field] if field in row.keys() else None
         server_id: int = row["server_id"]
         track_name: str = row["track_name"] or "Unknown"
         any_phase_done = bool(row["phase1_done"] or row["phase2_done"] or row["phase3_done"])
 
-        now = datetime.now(timezone.utc)
+        if now is None:
+            now = datetime.now(timezone.utc)
 
-        db_value = new_value
-        if isinstance(new_value, datetime):
-            db_value = new_value.isoformat()
-        elif isinstance(new_value, RoundFormat):
-            db_value = new_value.value
-
-        async with get_connection(self._db_path) as db:
-            # 1. Audit entry
-            await db.execute(
-                """
-                INSERT INTO audit_entries
-                    (server_id, actor_id, actor_name, division_id, change_type,
-                     old_value, new_value, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    server_id,
-                    actor.id,
-                    str(actor),
-                    row["division_id"],
-                    f"round.{field}",
-                    str(old_value) if old_value is not None else "",
-                    str(db_value),
-                    now.isoformat(),
-                ),
-            )
-
-            # 2. Update round field
-            allowed = {"track_name", "format", "scheduled_at"}
+        # Validate every field before writing any of them: a change set carrying one bad field
+        # must leave the round exactly as it stood, not half-amended.
+        allowed = {"track_name", "format", "scheduled_at"}
+        if not changes:
+            raise ValueError("An amendment must carry at least one field")
+        for field, _ in changes:
             if field not in allowed:
                 raise ValueError(f"Field {field!r} is not amendable")
+
+        # (field, old value, value as the database will hold it), in the order given.
+        applied: list[tuple[str, Any, Any]] = []
+        for field, new_value in changes:
+            db_value = new_value
+            if isinstance(new_value, datetime):
+                db_value = new_value.isoformat()
+            elif isinstance(new_value, RoundFormat):
+                db_value = new_value.value
+            applied.append((field, row[field] if field in row.keys() else None, db_value))
+
+        # Which of this round's forecasts survive the amendment, judged by the one question the
+        # rules turn on: would this phase have been performed already, were the round always to
+        # have stood at its new moment? Where it would, the forecast drawn for it stands and is
+        # left alone. Where it would not, it is withdrawn and drawn again.
+        #
+        # Read the league's own horizons rather than the packaged 5/2/2, so that the answer here
+        # and the windows the phases are actually judged at cannot disagree about a round.
+        from models.round import Round as _Round
+        from services.amendment_rules_service import judge_amendment
+        from services.approval_window_service import AttendanceWindows, WeatherWindows
+        from services.weather_config_service import get_weather_pipeline_config
+
+        # Read before the verdict, because the verdict is what decides the fate of the round's
+        # check-in as well as its forecasts. The config is only fetched where the module is on:
+        # ``get_or_create_config`` writes a row, and a disabled module should leave no trace.
+        _attendance_on = await bot.module_service.is_attendance_enabled(server_id)
+        _acfg = (
+            await bot.attendance_service.get_or_create_config(server_id)
+            if _attendance_on
+            else None
+        )
+        _attendance_windows = (
+            AttendanceWindows(
+                notice_days=_acfg.rsvp_notice_days,
+                last_notice_hours=_acfg.rsvp_last_notice_hours,
+                deadline_hours=_acfg.rsvp_deadline_hours,
+            )
+            if _acfg is not None
+            else None
+        )
+
+        _wcfg = await get_weather_pipeline_config(self._db_path, server_id)
+        _verdict = judge_amendment(
+            _Round(
+                id=round_id,
+                division_id=row["division_id"],
+                round_number=row["round_number"],
+                format=RoundFormat(row["format"]),
+                track_name=row["track_name"],
+                scheduled_at=datetime.fromisoformat(row["scheduled_at"]),
+                phase1_done=bool(row["phase1_done"]),
+                phase2_done=bool(row["phase2_done"]),
+                phase3_done=bool(row["phase3_done"]),
+                status=row["status"],
+            ),
+            dict(changes),
+            now=now,
+            attendance=_attendance_windows,
+            weather=WeatherWindows(
+                phase_1_days=_wcfg.phase_1_days,
+                phase_2_days=_wcfg.phase_2_days,
+                phase_3_hours=_wcfg.phase_3_hours,
+            ),
+        )
+        # Phase number → does the forecast drawn for it survive this amendment?
+        _stands = {n: o.stands for n, o in _verdict.phases.items()}
+        _withdrawn = sorted(n for n, stands in _stands.items() if not stands)
+
+        async with get_connection(self._db_path) as db:
+            # 1. One audit entry per field
+            for field, old_value, db_value in applied:
+                await db.execute(
+                    """
+                    INSERT INTO audit_entries
+                        (server_id, actor_id, actor_name, division_id, change_type,
+                         old_value, new_value, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        server_id,
+                        actor.id,
+                        str(actor),
+                        row["division_id"],
+                        f"round.{field}",
+                        str(old_value) if old_value is not None else "",
+                        str(db_value),
+                        now.isoformat(),
+                    ),
+                )
+
+            # 2. Update every amended field at once. The column names are the validated
+            # members of ``allowed`` above and never reach here from user input.
+            _assignments = ", ".join(f"{field} = ?" for field, _, _ in applied)
+            # Only the withdrawn phases are marked not performed. A phase that still stands keeps
+            # its flag, which is what lets the rules refuse a later track change on the strength
+            # of a forecast that is genuinely still posted — before this, every amendment wiped
+            # all three flags and the next one had nothing left to read.
+            _flag_resets = "".join(f", phase{n}_done = 0" for n in _withdrawn)
             await db.execute(
-                f"UPDATE rounds SET {field} = ?, phase1_done = 0, phase2_done = 0, phase3_done = 0 WHERE id = ?",  # noqa: S608
-                (db_value, round_id),
+                f"UPDATE rounds SET {_assignments}{_flag_resets} WHERE id = ?",  # noqa: S608
+                (*[db_value for _, _, db_value in applied], round_id),
             )
 
-            # 3. Invalidate phase results
-            await db.execute(
-                "UPDATE phase_results SET status = 'INVALIDATED' WHERE round_id = ?",
-                (round_id,),
-            )
+            # 3. Invalidate the results of the withdrawn phases alone
+            if _withdrawn:
+                _marks = ", ".join("?" for _ in _withdrawn)
+                await db.execute(
+                    "UPDATE phase_results SET status = 'INVALIDATED' "  # noqa: S608
+                    f"WHERE round_id = ? AND phase_number IN ({_marks})",
+                    (round_id, *_withdrawn),
+                )
 
-            # 4. Clear session phase data
-            await db.execute(
-                "UPDATE sessions SET phase2_slot_type = NULL, phase3_slots = NULL WHERE round_id = ?",
-                (round_id,),
-            )
+            # 4. Clear the session data each withdrawn phase recorded, and no more: Phase 2
+            # chose the slot type and Phase 3 the slots, so a Phase 2 that stands keeps its
+            # choice even where Phase 3 is drawn again.
+            if 2 in _withdrawn:
+                await db.execute(
+                    "UPDATE sessions SET phase2_slot_type = NULL WHERE round_id = ?",
+                    (round_id,),
+                )
+            if 3 in _withdrawn:
+                await db.execute(
+                    "UPDATE sessions SET phase3_slots = NULL WHERE round_id = ?",
+                    (round_id,),
+                )
 
             await db.commit()
 
@@ -159,10 +269,10 @@ class AmendmentService:
             from datetime import timezone as _tz
             scheduled_at = scheduled_at.replace(tzinfo=_tz.utc)
 
-        from datetime import timedelta
-        p1_horizon = scheduled_at - timedelta(days=5)
-        p2_horizon = scheduled_at - timedelta(days=2)
-        p3_horizon = scheduled_at - timedelta(hours=2)
+        # The horizons the verdict measured, which are the league's own rather than the packaged
+        # 5 / 2 / 2, and are computed from the round's new moment — the same moment
+        # ``updated_round`` now carries.
+        p1_horizon = _verdict.phases[1].fire_at
 
         # For MYSTERY rounds, only re-schedule when T-5 is still in the future.
         # If T-5 has already passed, the invalidation notice already informed
@@ -173,59 +283,145 @@ class AmendmentService:
         if _weather_on:
             from models.round import RoundFormat as _RoundFormat
             if updated_round.format != _RoundFormat.MYSTERY or now < p1_horizon:
+                # The league's own horizons, the same ones the verdict above was measured
+                # against. Left to its defaults `schedule_round` arms at the packaged 5 / 2 / 2,
+                # so a league that had configured its own quietly got them back every time a
+                # round was amended (issue #110) — and now that the rules read the configured
+                # horizons, arming at the packaged ones would have the amendment judge a phase
+                # at one moment and schedule it at another.
                 bot.scheduler_service.schedule_round(
                     updated_round,
                     season_number=row["season_number"],
                     division_tier=row["division_tier"],
+                    phase_1_days=_wcfg.phase_1_days,
+                    phase_2_days=_wcfg.phase_2_days,
+                    phase_3_hours=_wcfg.phase_3_hours,
                 )
 
-        # Erase stored forecast messages for all phases (FR-011).
-        # delete_forecast_message respects the test-mode guard; any skipped
-        # deletions will be handled by flush_pending_deletions on toggle-off.
-        if any_phase_done:
+        # Arm the round's result submission again where the weather module did not (issue #133).
+        #
+        # ``schedule_round`` creates the weather jobs and the results job together, so with
+        # weather switched off it is never called and the round lost the results job that
+        # ``cancel_round`` had just taken. That job is not only the results module's:
+        # ``run_result_submission_job`` is the round's one clock-driven status transition and
+        # runs for every round whatever the modules, closing it as FINAL where results are off.
+        # Without it the round never leaves NOT_RUN, its division never finishes and its season
+        # can never be completed — which is why it is armed here whatever the results module
+        # says, exactly as ``cancel_all_weather_for_server`` refuses to cancel it.
+        if not _weather_on:
+            bot.scheduler_service.schedule_result_submission_jobs(
+                [updated_round],
+                division_meta={
+                    updated_round.division_id: (row["season_number"], row["division_tier"])
+                },
+            )
+
+        # Arm the round's check-in again (issue #120).
+        #
+        # ``cancel_round`` above takes all eight of the round's jobs, the three the check-in runs
+        # on included, and until now only the weather ones were put back. Nothing else arms them:
+        # ``schedule_attendance_round`` is called from ``/season approve`` and nowhere else, and
+        # that cannot be run again on an active season. So an amended round asked nobody whether
+        # they were racing, opened no attendance records, distributed no reserves and charged
+        # nobody — and was recorded afterwards as perfect attendance for the whole division.
+        #
+        # ``schedule_attendance_round`` arms only the windows still ahead, which is the same rule
+        # the verdict above holds to: a window that would have run under the round's new moment
+        # stands, and is not honoured retroactively.
+        if _attendance_on and _acfg is not None:
+            bot.scheduler_service.schedule_attendance_round(
+                updated_round,
+                season_number=row["season_number"],
+                division_tier=row["division_tier"],
+                notice_days=_acfg.rsvp_notice_days,
+                last_notice_hours=_acfg.rsvp_last_notice_hours,
+                deadline_hours=_acfg.rsvp_deadline_hours,
+            )
+
+            # What becomes of a call that has already gone out. The call names the circuit, the
+            # sessions and the moment, and the amendment can have changed all three under it.
+            #
+            #   * Its window would have passed under the round's new moment, and the check-in is
+            #     still open — the call is posted again, carrying every answer already given, so
+            #     the division sees what actually changed and may still answer.
+            #   * Its window is ahead again, the round having moved far enough — the standing
+            #     call is taken down and the job armed above posts a fresh one at the new time.
+            #   * The deadline has passed under the new moment too — nothing is posted and
+            #     nothing is taken down. The check-in is closed, the reserves are distributed
+            #     against it, and reopening it would unsettle a grid already told who is racing.
+            from services.rsvp_service import repost_rsvp_call, withdraw_rsvp_call
+
+            _division_id = row["division_id"]
+            if not _verdict.check_in_stays_closed:
+                if _verdict.check_in["call"].stands:
+                    await repost_rsvp_call(round_id, _division_id, bot)
+                else:
+                    await withdraw_rsvp_call(round_id, _division_id, bot)
+
+        # Erase the stored forecast message of each withdrawn phase, and only those (FR-011).
+        # A phase that still stands keeps its message, which is what leaves the division holding
+        # the latest forecast that survives the amendment rather than an empty channel.
+        if any_phase_done and _withdrawn:
             from services.forecast_cleanup_service import delete_forecast_message
             division_id: int = row["division_id"]
-            for phase_num in (1, 2, 3):
+            for phase_num in _withdrawn:
                 await delete_forecast_message(round_id, division_id, phase_num, bot)
 
-        # 6. Invalidation broadcast
-        if any_phase_done:
+        # 6. Invalidation broadcast — only where a forecast was actually withdrawn.
+        #
+        # Gated on what the amendment took away rather than on any phase having been performed
+        # at all. A phase that still stands has not been withdrawn and there is nothing to
+        # announce: telling a division its forecasts no longer stand while the one in its
+        # channel does is worse than saying nothing, and it is the message deletion above that
+        # this has to agree with.
+        _forecast_withdrawn = any_phase_done and bool(
+            [n for n in _withdrawn if row[f"phase{n}_done"]]
+        )
+        if _forecast_withdrawn:
             from utils.message_builder import invalidation_message
 
             class _Div:
                 forecast_channel_id = row["forecast_channel_id"]
 
-            amended_track = str(db_value) if field == "track_name" else track_name
+            amended_track = next(
+                (str(db_value) for f, _, db_value in applied if f == "track_name"),
+                track_name,
+            )
             # The notice goes to the forecast channel and is about forecasts, so it is the
             # weather module's output and waits on the module. Reachable with weather off —
             # phases run, module switched off, round amended — which is issue #113 again by a
-            # second route. The log line below is amendment audit, not weather output, and is
-            # posted either way.
+            # second route.
             if _weather_on:
                 await bot.output_router.post_forecast(
                     _Div(), invalidation_message(amended_track), server_id=server_id
                 )
-            await bot.output_router.post_log(
-                server_id,
-                f"{actor.display_name} (<@{actor.id}>) | /round amend (field) | Success\n"
-                f"  round: {updated_round.round_number}\n"
-                f"  field: {field}\n"
-                f"  old: {old_value}\n"
-                f"  new: {db_value}",
-            )
+
+        # The audit line is not weather output and does not wait on a forecast having been
+        # withdrawn: an amendment is worth recording whether or not it cost the round anything.
+        _changed = "\n".join(
+            f"  {f}: {old_value} → {db_value}" for f, old_value, db_value in applied
+        )
+        await bot.output_router.post_log(
+            server_id,
+            f"{actor.display_name} (<@{actor.id}>) | /round amend (field) | Success\n"
+            f"  round: {updated_round.round_number}\n"
+            f"{_changed}",
+        )
 
         # 7. Re-run missed phases (non-MYSTERY only, and only with weather on)
         from services.phase1_service import run_phase1
         from services.phase2_service import run_phase2
         from services.phase3_service import run_phase3
 
+        # A phase is run here only where its horizon has passed under the round's new moment
+        # *and* it was never performed — the round having been brought forward past a horizon it
+        # had not yet reached. A phase that stands was already performed and must not be drawn
+        # again; a phase that was withdrawn is now ahead of us and is armed, not run.
         if _weather_on and updated_round.format != RoundFormat.MYSTERY:
-            if now >= p1_horizon:
-                await run_phase1(round_id, bot)
-            if now >= p2_horizon:
-                await run_phase2(round_id, bot)
-            if now >= p3_horizon:
-                await run_phase3(round_id, bot)
+            _runners = {1: run_phase1, 2: run_phase2, 3: run_phase3}
+            for _number in (1, 2, 3):
+                if _stands.get(_number) and not row[f"phase{_number}_done"]:
+                    await _runners[_number](round_id, bot)
 
 
 # ===========================================================================

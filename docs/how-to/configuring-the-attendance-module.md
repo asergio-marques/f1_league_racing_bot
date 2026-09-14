@@ -240,7 +240,11 @@ Pressing one updates the roster in the message itself, so the division can see a
 
 **Amending the results afterwards puts it right.** Re-run through `/round results amend` and the bot recalculates that round's attendance, every later round's totals, reposts the sheet and re-checks the thresholds. Pardons you granted are kept. Two things to expect: the round has to be **FINAL** before `/round results amend` will touch it, so a round still sitting at post-race penalties is refused; and the recalculation happens when you *approve* the amendment, not when you submit it.
 
-> **Amending the round itself is a different thing, and it costs you the check-in.** Changing a round's date, circuit or format with `/round amend` cancels everything the bot had scheduled for it and only puts the forecasts back. The check-in call, the reminder and the deadline are gone for good, so that round never asks anybody anything and never charges anybody. Nothing warns you. If you must move a round, expect to treat it as an untracked one.
+> **Amending the round itself is a different thing, and the check-in comes with it.** Changing a round's date, circuit or format with `/round amend` re-arms the check-in against the round as it now stands. What happens to a call that has already gone out depends on how far the round moved. Move it well out and the call standing is taken down and a fresh one posted at the new time. Move it a little, or change only the circuit, and the call is posted again straight away carrying what changed — with every answer already given kept, so your drivers do not have to answer twice. A driver who joined the division since is asked afresh; one who has left drops off it.
+>
+> **Past the deadline, though, the check-in is settled.** If the round's check-in deadline has already gone by, amending the round leaves the check-in exactly as it is: nothing is reposted, nothing taken down, and no answer can be changed. The reserves have been distributed against those answers and reopening the check-in would unsettle a grid already told who is racing. Moving the round far enough out puts it back in play.
+>
+> **And you cannot move a round inside its own deadline.** On the default two-hour deadline, moving a round to less than two hours away is refused outright, because the check-in would open and close in the same instant. Move it further out, or shorten the deadline first.
 
 **Reserves are scored separately.** A reserve the bot seated for the round is charged only if they accepted and then did not appear. A reserve who was never seated is charged nothing, whatever they clicked.
 
@@ -276,7 +280,7 @@ Worth knowing so you do not go looking for the setting.
 | How reserves are ordered for a seat | By when they accepted, earliest first. Changing your answer and changing it back puts you at the back of the queue |
 | Which team a reserve lands in | Worked out from who is missing. A team with nobody at all comes first, then one whose driver declined, then one whose driver never answered, then one with an empty seat, and last a team whose only gap is a tentative driver. Every team gets one before any team gets two, and where two are equal the team further down the constructors' table is served first |
 | Marking somebody present by hand | There is no command. Presence comes from the results; correct the results with `/round results amend` |
-| Posting a check-in call yourself | There is no command for it. A call the bot skipped or failed to post cannot be reinstated, and that round goes untracked |
+| Posting a check-in call yourself | There is no command for it. A call the bot skipped or failed to post cannot be reinstated, and that round goes untracked. Amending the round is not a way round this — it reposts a call that went out, but does not post one that never did |
 | Having both auto-reserve and auto-sack | Mutually exclusive by design |
 | Where the sanction announcements go | The division's verdicts channel, alongside your penalty decisions |
 
@@ -307,8 +311,8 @@ Worth running through before the season is approved.
 | No check-in call for a division | No check-in channel set for it, or the module is off |
 | A review that names a round and a check-in window, with no Approve button | That round is already inside the window — its call fell due before you ran the review. Move the round, or shorten the notice, and review again |
 | A call that never appeared, and a loud report in the log channel | The bot could not post it. No records were opened, so the round is a free pass for the whole division |
-| No check-in for a round you moved or re-tracked | Known: `/round amend` cancels a round's check-in and never puts it back |
-| A round where nobody was charged anything | The round was cancelled, its call never posted, or the round was amended |
+| No check-in for a round you moved or re-tracked | The round was moved past its own check-in deadline, so the check-in stayed closed. Check the round's time against your deadline setting |
+| A round where nobody was charged anything | The round was cancelled, or its call never posted — check the log channel, which reports a failed call loudly |
 | `/module enable attendance` refused | Results & standings is off, or a season is already running |
 | Attendance switched off by itself, and the channels gone | Results & standings was turned off and the cascade warning confirmed, which takes attendance with it and deletes every division's channels |
 | Check-in stopped mid-season and will not come back | Attendance was switched off, directly or by turning results & standings off. It stays off until the season ends |

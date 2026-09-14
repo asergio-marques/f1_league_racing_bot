@@ -3650,7 +3650,7 @@ class SeasonCog(commands.Cog):
 
     @round.command(
         name="amend",
-        description="Amend a round's configuration. Invalidates prior weather phases.",
+        description="Amend a round's track, moment or format. Says what it costs before it does it.",
     )
     @app_commands.describe(
         division_name="Name of the division containing this round",
@@ -3851,10 +3851,36 @@ class SeasonCog(commands.Cog):
                 return
             amendments.append(("format", new_fmt))
 
+        # Judged before anything is offered, and judged again when it is confirmed. An
+        # amendment the rules refuse never reaches a confirmation at all.
+        _verdict = await _judge_round_amendment(
+            self.bot, interaction.guild_id, rnd, amendments,
+            now=datetime.now(timezone.utc),
+        )
+        if not _verdict.allowed:
+            await interaction.followup.send(
+                f"\u26d4 **Round {rnd.round_number}** in **{div.name}** cannot be amended:\n"
+                + "\n".join(f"\u2022 {reason}" for reason in _verdict.refusals)
+                + "\n\n**Nothing has been changed.**",
+                ephemeral=True,
+            )
+            return
+
         summary_lines = [f"**Amend Round {rnd.round_number}** in division **{div.name}**:"]
         for f_name, f_val in amendments:
             summary_lines.append(f"  \u2022 `{f_name}` \u2192 `{f_val}`")
-        summary_lines.append("\n\u26a0\ufe0f This will invalidate all prior weather phases for this round.")
+
+        # Name the forecasts this actually throws away rather than claiming all of them: a
+        # phase that would still have run under the round's new moment is kept.
+        _withdrawn = sorted(n for n, phase in _verdict.phases.items() if phase.rearm)
+        if _withdrawn:
+            _named = ", ".join(f"Phase {n}" for n in _withdrawn)
+            summary_lines.append(f"\n\u26a0\ufe0f This will withdraw and redraw {_named} for this round.")
+        else:
+            summary_lines.append("\n\u26a0\ufe0f The forecasts already posted for this round will stand.")
+
+        for _warning in _verdict.warnings:
+            summary_lines.append(f"\u26a0\ufe0f {_warning}")
 
         view = _ConfirmView(
             cog=self,
@@ -5603,6 +5629,52 @@ class _ApproveView(discord.ui.View):
 # ---------------------------------------------------------------------------
 
 
+async def _judge_round_amendment(
+    bot: Any,
+    server_id: int,
+    rnd: RoundModel,
+    amendments: list[tuple[str, object]],
+    *,
+    now: datetime,
+):
+    """Judge *amendments* against *rnd*, reading the league's own windows.
+
+    Shared by `/round amend` and its confirmation so the two cannot disagree about a round, and
+    judged afresh by each: a window can pass while the confirmation stands, and an amendment
+    allowed on the strength of a window that has since closed is the silent loss the rules exist
+    to prevent.
+
+    A module that is switched off passes no windows and so has nothing refused on its account —
+    a league without attendance has no check-in to lose.
+    """
+    from services.amendment_rules_service import judge_amendment
+    from services.approval_window_service import AttendanceWindows, WeatherWindows
+    from services.weather_config_service import get_weather_pipeline_config
+
+    attendance = None
+    if await bot.module_service.is_attendance_enabled(server_id):
+        _acfg = await bot.attendance_service.get_or_create_config(server_id)
+        attendance = AttendanceWindows(
+            notice_days=_acfg.rsvp_notice_days,
+            last_notice_hours=_acfg.rsvp_last_notice_hours,
+            deadline_hours=_acfg.rsvp_deadline_hours,
+        )
+
+    # The forecast horizons are read whatever the module's state: a forecast posted while
+    # weather was on is still posted, and whether it survives the amendment is what the track
+    # and format rules turn on.
+    _wcfg = await get_weather_pipeline_config(bot.db_path, server_id)
+    weather = WeatherWindows(
+        phase_1_days=_wcfg.phase_1_days,
+        phase_2_days=_wcfg.phase_2_days,
+        phase_3_hours=_wcfg.phase_3_hours,
+    )
+
+    return judge_amendment(
+        rnd, dict(amendments), now=now, attendance=attendance, weather=weather
+    )
+
+
 class _ConfirmView(discord.ui.View):
     def __init__(
         self,
@@ -5628,23 +5700,52 @@ class _ConfirmView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
 
         scheduled_at_changed = any(f == "scheduled_at" for f, _ in self._amendments)
-        errors: list[str] = []
-        for field_name, new_value in self._amendments:
-            try:
-                await self._cog.bot.amendment_service.amend_round(
-                    self._round_id,
-                    interaction.user,
-                    field_name,
-                    new_value,
-                    self._cog.bot,
-                )
-            except Exception as exc:
-                log.exception("Amendment failed for %s: %s", field_name, exc)
-                errors.append(f"`{field_name}`: {exc}")
 
-        if errors:
+        # Judged again, with a fresh moment, rather than trusting the verdict the summary was
+        # built on. This view stands for two minutes and a window can pass inside them: a round
+        # offered while its check-in deadline was still ahead can have it behind by the time the
+        # button is pressed, and applying the amendment then is exactly the silent loss the
+        # rules exist to prevent. The season approval re-evaluates its own gate for the same
+        # reason, a round being able to cross a window while the review stands.
+        _rnd_now = await self._cog.bot.season_service.get_round(self._round_id)
+        if _rnd_now is None:
             await interaction.followup.send(
-                "\u26a0\ufe0f Some amendments failed:\n" + "\n".join(errors),
+                "\u26d4 That round no longer exists. **Nothing has been changed.**", ephemeral=True
+            )
+            self.stop()
+            return
+
+        _verdict = await _judge_round_amendment(
+            self._cog.bot,
+            interaction.guild_id,
+            _rnd_now,
+            self._amendments,
+            now=datetime.now(timezone.utc),
+        )
+        if not _verdict.allowed:
+            await interaction.followup.send(
+                "\u26d4 This round can no longer be amended:\n"
+                + "\n".join(f"\u2022 {reason}" for reason in _verdict.refusals)
+                + "\n\n**Nothing has been changed.** Run `/round amend` again to start over.",
+                ephemeral=True,
+            )
+            self.stop()
+            return
+
+        # One call carrying every field, not one call per field. Amending a round's track and
+        # its date used to run the whole amendment twice \u2014 two invalidation notices, two
+        # cancels, two re-arms, two re-runs of every overdue phase (issue #115).
+        try:
+            await self._cog.bot.amendment_service.amend_round(
+                self._round_id,
+                interaction.user,
+                self._amendments,
+                self._cog.bot,
+            )
+        except Exception as exc:
+            log.exception("Amendment failed for round %s: %s", self._round_id, exc)
+            await interaction.followup.send(
+                f"\u26a0\ufe0f The amendment failed: {exc}",
                 ephemeral=True,
             )
             self.stop()

@@ -129,11 +129,16 @@
 - 24 hours after a round's scheduled start, the Phase 3 message shall be deleted from every division's forecast channel.
 
 ## Changes to a round after generation
-- Should the configuration of a round be changed once one of the phases has already been performed, all phase results for that round shall be marked invalidated, the recorded slot types and weather slots cleared, and the three phases marked as not performed.
-- The forecast messages already posted for that round shall be deleted, and the bot shall post a notice informing drivers that the previous forecasts for that round no longer stand and that an updated forecast shall follow.
-- Afterwards, the bot shall proceed to perform Phases 1, 2 and 3 depending on whether the conditions to each one have been met, and schedule those whose horizons remain in the future.
+- A round's track shall not be amended while the Phase 1 forecast drawn for it still stands, and its format shall not be amended while the Phase 2 forecast drawn for its sessions still stands. What was forecast was forecast for that circuit and those sessions and cannot be unsaid. The league's remedy is to amend the round's moment as well, which puts the phases back in question.
+- Where a round is amended, each phase shall be judged by one question: would it have been performed already, were the round always to have stood at its new moment?
+    - Where it would not, its result shall be marked invalidated, the slot type and weather slots it recorded cleared, the phase marked as not performed, the message posted for it deleted, and the phase armed again for its new horizon.
+    - Where it would, its result shall stand, its recorded slots shall stand, and the message posted for it shall stand with it.
+- A phase that would have been performed under the round's new moment but never was shall be performed at once.
+- The forecast a division holds for the round shall be the latest phase that stands. Where no phase stands, the division shall hold none until the next is performed.
+- Where any forecast has been withdrawn, the bot shall post a notice informing drivers that the forecasts for that round no longer stand and that an updated forecast shall follow. Where none has been withdrawn no notice shall be posted, the forecast the division holds being still the one that stands.
+- The phases of an amended round shall be armed at the league's own configured horizons, not at the packaged ones.
 - The notice, the scheduling and the performance of phases are this module's own output and shall happen only while the module is enabled.
-- The invalidation of the phase results, the clearing of the slots, the marking of the phases as not performed and the deletion of the forecast messages already posted shall happen whatever the module's state, since a round whose configuration has changed holds forecasts that are wrong however the module stands, and so that enabling the module later does not find that round's phases already performed.
+- The invalidation of a withdrawn phase's result, the clearing of its slots, the marking of it as not performed and the deletion of the message posted for it shall happen whatever the module's state, since a forecast that no longer stands is wrong however the module stands, and so that enabling the module later does not find that phase already performed.
 - Where a round is cancelled, all scheduled phases for it shall be cancelled and the division informed that no forecast shall be posted for that round. Forecasts already posted shall not be deleted.
 
 ## Recovery
