@@ -1114,6 +1114,32 @@ class SignupCog(commands.Cog):
         parent=signup,
     )
 
+    async def _refuse_slot_change_while_drivers_await_placement(
+        self, interaction: discord.Interaction
+    ) -> bool:
+        """Refuse a slot change while anyone still holds an unplaced signup.
+
+        Slot changes are blocked while signups are open, but that block lifts at
+        `/signup close` — which is exactly when a manager edits the list for the next
+        season, with last season's answers still on the books and still being used to
+        place drivers by hand. Removing a slot deletes the answers that named it, and
+        both directions shift the display numbers a manager reads. So the block extends
+        past closing until the placement queue is empty (issue #126).
+
+        Returns True when the command replied and must stop.
+        """
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+        waiting = await self.bot.placement_service.count_unplaced_signups(server_id)  # type: ignore[attr-defined]
+        if waiting == 0:
+            return False
+        await interaction.response.send_message(
+            f"❌ {waiting} driver(s) are waiting to be placed. Adding or removing a slot "
+            "now would change what they are recorded as being available for. Place or "
+            "clear them first — see `/signup unassigned list`.",
+            ephemeral=True,
+        )
+        return True
+
     @time_slot_group.command(name="add", description="Add an availability time slot.")
     @app_commands.describe(day="Day of week", time="Time in HH:MM 24h or 12h format (e.g. 14:30 or 2:30pm)")
     @app_commands.choices(day=_DAY_CHOICES)
@@ -1132,6 +1158,10 @@ class SignupCog(commands.Cog):
                 "❌ Slots cannot be modified while signups are open. Close signups first with `/signup close`.",
                 ephemeral=True,
             )
+            return
+
+        # Guard: nobody may be left waiting to be placed
+        if await self._refuse_slot_change_while_drivers_await_placement(interaction):
             return
 
         # Guard: max slots
@@ -1170,8 +1200,10 @@ class SignupCog(commands.Cog):
                 "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
                 "VALUES (?, ?, ?, NULL, 'SIGNUP_SLOT_ADD', '', ?, ?)",
                 (server_id, interaction.user.id, str(interaction.user),
+                 # The durable slot ID, not the display ordinal: an audit entry outlives
+                 # the list it was written against.
                  json.dumps({"day": day_int, "time": normalized,
-                             "slot_id": new_slot.slot_sequence_id if new_slot else None}), now),
+                             "slot_id": new_slot.slot_id if new_slot else None}), now),
             )
             await db.commit()
 
@@ -1200,6 +1232,10 @@ class SignupCog(commands.Cog):
             )
             return
 
+        # Guard: nobody may be left waiting to be placed
+        if await self._refuse_slot_change_while_drivers_await_placement(interaction):
+            return
+
         slots = await self.bot.signup_module_service.get_slots(server_id)
         if not slots:
             await interaction.response.send_message(
@@ -1223,7 +1259,8 @@ class SignupCog(commands.Cog):
                 "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
                 "VALUES (?, ?, ?, NULL, 'SIGNUP_SLOT_REMOVE', ?, '', ?)",
                 (server_id, interaction.user.id, str(interaction.user),
-                 json.dumps({"slot_id": slot_id, "day": target.day_of_week,
+                 # The durable slot ID, not the display ordinal the manager typed.
+                 json.dumps({"slot_id": target.slot_id, "day": target.day_of_week,
                              "time": target.time_hhmm}), now),
             )
             await db.commit()
