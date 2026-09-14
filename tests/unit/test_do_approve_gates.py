@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -205,3 +206,126 @@ async def test_the_withdrawn_template_gate_is_not_called_again(db_path):
     assert not hasattr(cog, "_image_template_problems"), (
         "the withdrawn template gate is back; the review already withholds its button"
     )
+
+
+# ── Gate 2d: rounds already inside a configured window (#121, #122) ───────────
+#
+# Seeded relative to the wall clock rather than at fixed dates. The gate judges against
+# `datetime.now`, and "three days from now" means the same thing whenever the suite runs —
+# where a pinned calendar date would silently stop testing what it claims.
+
+
+def _division(name: str = "Premier", div_id: int = 1):
+    return SimpleNamespace(id=div_id, name=name, tier=1, forecast_channel_id="9")
+
+
+def _round_in(days_out: float, *, number: int = 1, div_id: int = 1):
+    from models.round import Round, RoundFormat
+
+    return Round(
+        id=number,
+        division_id=div_id,
+        round_number=number,
+        format=RoundFormat.NORMAL,
+        track_name="Silverstone",
+        scheduled_at=datetime.now(timezone.utc) + timedelta(days=days_out),
+    )
+
+
+def _attendance_config():
+    """A real config object: the gate does arithmetic on these three numbers."""
+    from models.attendance import AttendanceConfig
+
+    return AttendanceConfig(
+        server_id=SERVER_ID,
+        module_enabled=True,
+        rsvp_notice_days=5,
+        rsvp_last_notice_hours=24,
+        rsvp_deadline_hours=2,
+        no_rsvp_penalty=1,
+        absent_penalty=1,
+        no_show_penalty=1,
+        autoreserve_threshold=None,
+        autosack_threshold=None,
+    )
+
+
+def _cog_with_rounds(db_path, rounds, *, attendance=True, weather=False):
+    cog = _cog(db_path)
+    div = _division()
+    cog.bot.season_service.get_divisions = AsyncMock(return_value=[div])
+    cog.bot.season_service.get_division_rounds = AsyncMock(return_value=rounds)
+    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
+    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
+    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
+    cog.bot.attendance_service.get_or_create_config = AsyncMock(
+        return_value=_attendance_config()
+    )
+    return cog
+
+
+async def test_an_overdue_check_in_window_refuses_and_commits_nothing(db_path):
+    """#121: round 1 three days out against a five-day notice.
+
+    Before this gate the approval succeeded, the call was never scheduled, and the division
+    was recorded as having perfect attendance for a round nobody was asked about.
+    """
+    cog = _cog_with_rounds(db_path, [_round_in(3)])
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    replies = _replies(interaction)
+    assert "already inside a configured window" in replies
+    assert "Check-in call" in replies
+    assert "Round 1" in replies
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_the_overdue_refusal_is_private(db_path):
+    cog = _cog_with_rounds(db_path, [_round_in(3)])
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert all(
+        call.kwargs.get("ephemeral") is True
+        for call in interaction.followup.send.await_args_list
+    )
+
+
+async def test_an_overdue_weather_phase_refuses_on_its_own(db_path):
+    """#122: the weather half, with attendance off, so the gate is not carried by #121."""
+    cog = _cog_with_rounds(db_path, [_round_in(3)], attendance=False, weather=True)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert "Weather Phase 1" in _replies(interaction)
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_a_season_clear_of_its_windows_still_approves(db_path):
+    """The gate must not stand in the way of an ordinary season."""
+    cog = _cog_with_rounds(db_path, [_round_in(30)])
+
+    await _run(cog, _interaction())
+
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
+async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
+    """No rounds, no windows — and so no reason to read the configs at all.
+
+    This is what keeps the rest of this file honest. Its cog answers every service with a
+    `MagicMock`, so a gate that fetched the check-in config here and subtracted it from a
+    round would raise `TypeError` instead of walking the sequence these tests exist to
+    walk. The season committing is the proof it did neither.
+    """
+    cog = _cog(db_path)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert "configured window" not in _replies(interaction)
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
