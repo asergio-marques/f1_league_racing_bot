@@ -124,6 +124,10 @@ async def _make_db(tmp_path) -> str:
 def _make_bot(db_path: str) -> MagicMock:
     bot = MagicMock()
     bot.db_path = db_path
+    # Distribution is gated on the attendance module (issue #114). These tests are about the
+    # distribution algorithm, so the module is on throughout; the gate itself is pinned in
+    # test_attendance_module_gate.py.
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     return bot
 
 

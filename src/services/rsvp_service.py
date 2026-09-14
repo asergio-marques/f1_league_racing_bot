@@ -156,6 +156,62 @@ class _RsvpButton(discord.ui.Button):
         await handle_rsvp_button(interaction, self.custom_id)
 
 
+# ── The attendance module gate ────────────────────────────────────────────────
+#
+# Every entry point below asks whether the attendance module is enabled before it does
+# anything, and returns quietly when it is not. The core specification requires it — "a
+# disabled module shall produce nothing ... whatever the path arrives at it, a scheduled
+# job, a restart, or a command" — and a gate at the entry point is the only placement that
+# holds for all three, since these functions are reached from the APScheduler callbacks in
+# ``bot.py``, from the restart recovery, and from ``/test-mode advance`` alike.
+#
+# It is deliberately a gate and **not** a job cancellation (issue #114). Cancelling the three
+# RSVP jobs when the module is switched off looks equivalent and is not: only ``/season
+# approve`` ever creates them, and it cannot be run again on an active season, so a cancel
+# loses the season's check-ins for good — the mistake issue #117 made for weather, in reverse.
+# Gated, the jobs stay booked and fire into nothing, which costs a query each and is
+# recoverable. They stay dormant for the rest of the season because ``/module enable
+# attendance`` refuses while a season is active; that is the enable guard's business, not
+# this gate's, and nothing here should try to compensate for it.
+
+
+async def _attendance_enabled_for_round(round_id: int, bot) -> bool:  # type: ignore[type-arg]
+    """Return True when *round_id*'s server has the attendance module enabled."""
+    async with get_connection(bot.db_path) as db:
+        cur = await db.execute(
+            """
+            SELECT s.server_id
+              FROM rounds r
+              JOIN divisions d ON d.id = r.division_id
+              JOIN seasons s ON s.id = d.season_id
+             WHERE r.id = ?
+            """,
+            (round_id,),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        return False
+    return await bot.module_service.is_attendance_enabled(int(row["server_id"]))
+
+
+async def _attendance_enabled_for_division(division_id: int, bot) -> bool:  # type: ignore[type-arg]
+    """Return True when *division_id*'s server has the attendance module enabled."""
+    async with get_connection(bot.db_path) as db:
+        cur = await db.execute(
+            """
+            SELECT s.server_id
+              FROM divisions d
+              JOIN seasons s ON s.id = d.season_id
+             WHERE d.id = ?
+            """,
+            (division_id,),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        return False
+    return await bot.module_service.is_attendance_enabled(int(row["server_id"]))
+
+
 # ── Roster query helper ───────────────────────────────────────────────────────
 
 
@@ -338,7 +394,16 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
     4. Post to RSVP channel.
     5. Bulk-insert driver_round_attendance rows (all drivers NO_RSVP).
     6. Store message_id + channel_id in rsvp_embed_messages.
+
+    Produces nothing while the attendance module is disabled — see the module gate above.
     """
+    if not await _attendance_enabled_for_round(round_id, bot):
+        log.info(
+            "run_rsvp_notice: attendance module disabled for round %d — no check-in call posted",
+            round_id,
+        )
+        return
+
     async with get_connection(bot.db_path) as db:
         # Get round details
         cur = await db.execute(
@@ -566,7 +631,16 @@ async def run_rsvp_last_notice(round_id: int, bot) -> None:  # type: ignore[type
     Always posts a visibility message to the RSVP channel with a Discord relative
     timestamp to the race.  When full-time drivers still have rsvp_status = 'NO_RSVP'
     they are also mentioned with a reminder to respond.
+
+    Produces nothing while the attendance module is disabled — see the module gate above.
     """
+    if not await _attendance_enabled_for_round(round_id, bot):
+        log.info(
+            "run_rsvp_last_notice: attendance module disabled for round %d — no reminder posted",
+            round_id,
+        )
+        return
+
     async with get_connection(bot.db_path) as db:
         # Round + division context
         cur = await db.execute(
@@ -668,7 +742,20 @@ async def run_rsvp_last_notice(round_id: int, bot) -> None:  # type: ignore[type
 
 
 async def run_rsvp_deadline(round_id: int, bot) -> None:  # type: ignore[type-arg]
-    """Run reserve distribution and close the RSVP embed for *round_id*."""
+    """Run reserve distribution and close the RSVP embed for *round_id*.
+
+    Produces nothing while the attendance module is disabled — see the module gate above.
+    Distribution is the costliest thing to let through: it writes ``assigned_team_id`` and
+    ``is_standby`` onto drivers, moving reserves into seats for a module the league has
+    switched off.
+    """
+    if not await _attendance_enabled_for_round(round_id, bot):
+        log.info(
+            "run_rsvp_deadline: attendance module disabled for round %d — no distribution run",
+            round_id,
+        )
+        return
+
     async with get_connection(bot.db_path) as db:
         cur = await db.execute(
             "SELECT division_id FROM rounds WHERE id = ?",
@@ -715,7 +802,19 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
     1. Collect accepted reserves ordered by accepted_at ASC.
     2. Rank non-Reserve candidate teams by priority tier (FR-020), then tie-break (FR-021).
     3. Assign reserves to vacancies one-by-one; remaining reserves become standby.
+
+    Produces nothing while the attendance module is disabled — see the module gate above.
+    Its only caller today is ``run_rsvp_deadline``, which is gated as well; the gate is
+    repeated here so a later caller cannot reach the seat writes around it.
     """
+    if not await _attendance_enabled_for_division(division_id, bot):
+        log.info(
+            "run_reserve_distribution: attendance module disabled for division %d — "
+            "no reserves distributed for round %d",
+            division_id, round_id,
+        )
+        return False
+
     async with get_connection(bot.db_path) as db:
         # Accepted reserves ordered by accepted_at ASC (FR-022 / FR-019)
         cur = await db.execute(
