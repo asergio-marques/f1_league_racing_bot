@@ -158,7 +158,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A cancelled round shall be exempt from both, having no scheduled work left to lose. Refusing a season on account of one would leave a league unable to approve until they deleted a record they may want to keep.
 - Every team name shall be usable as the filename of that team's artwork, whether or not the image module is enabled.
 - Each enabled module shall impose its own requirements, stated in its own specification.
-- A season failing any requirement shall be refused with nothing committed, and every fault shall be named.
+- A season failing any requirement shall be refused with nothing committed, and every fault shall be named, save the two date requirements above, whose faults are reduced to the latest round of each kind a division holds.
 
 #### What approval does
 - The sessions of every round shall be created.
