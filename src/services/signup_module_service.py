@@ -140,8 +140,13 @@ class SignupModuleService:
     # ── Availability slots ────────────────────────────────────────────
 
     async def get_slots(self, server_id: int) -> list[AvailabilitySlot]:
-        """Return slots ordered chronologically (Mon→Sun, time asc). Sequence IDs are
-        always 1..N matching display order, regardless of stored values."""
+        """Return slots ordered chronologically (Mon→Sun, time asc).
+
+        ``slot_sequence_id`` is the display ordinal, always 1..N in that order, and is
+        therefore **recomputed on every call** — it changes whenever the slot list does.
+        ``slot_id`` is the durable identity and is what a driver's recorded availability
+        is stored against; see ``AvailabilitySlot``.
+        """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, server_id, day_of_week, time_hhmm "
@@ -165,13 +170,18 @@ class SignupModuleService:
         ]
 
     async def add_slot(self, server_id: int, day_of_week: int, time_hhmm: str) -> AvailabilitySlot:
-        """Insert a slot and resequence all slots chronologically; raises ValueError on duplicate."""
+        """Insert a slot; raises ValueError on duplicate.
+
+        Nothing is renumbered. The display ordinals of later slots do shift, because
+        they are chronological positions computed on read, but no driver's recorded
+        availability moves with them — it names the slot itself (issue #126).
+        """
         async with get_connection(self._db_path) as db:
             try:
                 await db.execute(
                     "INSERT INTO signup_availability_slots "
-                    "(server_id, day_of_week, time_hhmm, slot_sequence_id) "
-                    "VALUES (?, ?, ?, 0)",  # 0 is a placeholder; resequence fixes it
+                    "(server_id, day_of_week, time_hhmm) "
+                    "VALUES (?, ?, ?)",
                     (server_id, day_of_week, time_hhmm),
                 )
             except Exception as exc:
@@ -180,7 +190,6 @@ class SignupModuleService:
                         f"Slot already exists: day={day_of_week} time={time_hhmm}"
                     ) from exc
                 raise
-            await self._resequence_slots(db, server_id)
             await db.commit()
 
         # Fetch the newly assigned sequence ID for the inserted slot
@@ -193,7 +202,12 @@ class SignupModuleService:
         return inserted
 
     async def remove_slot_by_rank(self, server_id: int, slot_id: int) -> bool:
-        """Remove the slot at chronological rank slot_id and resequence. Returns False if not found."""
+        """Remove the slot at chronological rank slot_id. Returns False if not found.
+
+        The rank is the display ordinal a league types, not anything stored. Removing a
+        slot renumbers nothing: every remaining slot keeps its durable identity, so the
+        answers of drivers who chose them still mean the same times.
+        """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id FROM signup_availability_slots "
@@ -209,25 +223,8 @@ class SignupModuleService:
                 "DELETE FROM signup_availability_slots WHERE id = ?",
                 (target_id,),
             )
-            await self._resequence_slots(db, server_id)
             await db.commit()
         return True
-
-    @staticmethod
-    async def _resequence_slots(db, server_id: int) -> None:
-        """Assign slot_sequence_id values 1..N in chronological order (Mon → Sun, then time)."""
-        cursor = await db.execute(
-            "SELECT id FROM signup_availability_slots "
-            "WHERE server_id = ? "
-            "ORDER BY day_of_week ASC, time_hhmm ASC",
-            (server_id,),
-        )
-        rows = await cursor.fetchall()
-        for seq, row in enumerate(rows, start=1):
-            await db.execute(
-                "UPDATE signup_availability_slots SET slot_sequence_id = ? WHERE id = ?",
-                (seq, row["id"]),
-            )
 
     # ── Window state helpers ──────────────────────────────────────────
 

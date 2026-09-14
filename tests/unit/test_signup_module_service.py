@@ -66,7 +66,6 @@ async def db_path(tmp_path):
                                      ON DELETE CASCADE,
                 day_of_week      INTEGER NOT NULL,
                 time_hhmm        TEXT NOT NULL,
-                slot_sequence_id INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(server_id, day_of_week, time_hhmm)
             );
 
@@ -207,8 +206,13 @@ class TestChronologicalRanking:
         assert slots[0].day_of_week == 1 and slots[0].slot_sequence_id == 1
         assert slots[1].day_of_week == 3 and slots[1].slot_sequence_id == 2
 
-    async def test_slot_ids_resequenced_after_remove(self, db_path):
-        """After a removal, slot sequence IDs are resequenced 1..N in chronological order."""
+    async def test_display_ordinals_recomputed_after_remove(self, db_path):
+        """Display ordinals are always 1..N chronologically, so a removal renumbers them.
+
+        That is intended: the ordinal is a display convenience, recomputed on read. What
+        must not move with it is a driver's recorded availability — see
+        ``TestDurableSlotIdentity``.
+        """
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.add_slot(1, 1, "14:30")   # Mon 14:30 → seq 1
@@ -223,6 +227,65 @@ class TestChronologicalRanking:
         assert slots[0].day_of_week == 1 and slots[0].time_hhmm == "14:30" and slots[0].slot_sequence_id == 1
         assert slots[1].day_of_week == 3 and slots[1].time_hhmm == "19:00" and slots[1].slot_sequence_id == 2
         assert slots[2].day_of_week == 5 and slots[2].time_hhmm == "18:00" and slots[2].slot_sequence_id == 3
+
+
+class TestDurableSlotIdentity:
+    """Issue #126: changing the slot list must not change what a driver said.
+
+    The ordinals shift — that is what ``test_display_ordinals_recomputed_after_remove``
+    pins — but the identity a driver's answer is stored against must not.
+    """
+
+    async def _friday_league(self, db_path):
+        """Mon 19:00 (#1), Wed 20:00 (#2), Fri 21:00 (#3) — the issue's worked example."""
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        await svc.add_slot(1, 1, "19:00")
+        await svc.add_slot(1, 3, "20:00")
+        await svc.add_slot(1, 5, "21:00")
+        return svc
+
+    async def test_removing_a_slot_does_not_change_other_slot_ids(self, db_path):
+        """A driver picks Friday (#3). Monday is removed. They are still on Friday."""
+        svc = await self._friday_league(db_path)
+        slots = await svc.get_slots(1)
+        chosen = next(s for s in slots if s.slot_sequence_id == 3).slot_id
+        assert chosen == "Fri_21_00"
+
+        await svc.remove_slot_by_rank(1, 1)   # remove Mon 19:00
+
+        remaining = await svc.get_slots(1)
+        # Friday's display ordinal has moved from 3 to 2 …
+        assert [s.slot_sequence_id for s in remaining] == [1, 2]
+        # … but the answer still names the same time, and still matches a live slot.
+        assert chosen in {s.slot_id for s in remaining}
+        assert next(s for s in remaining if s.slot_id == chosen).display_label == (
+            "Friday 21:00 UTC"
+        )
+
+    async def test_adding_an_earlier_slot_does_not_shift_stored_answers(self, db_path):
+        """Inserting a slot before the one a driver chose must not move their answer."""
+        svc = await self._friday_league(db_path)
+        chosen = next(
+            s for s in await svc.get_slots(1) if s.slot_sequence_id == 3
+        ).slot_id
+
+        await svc.add_slot(1, 1, "08:00")   # a new Monday morning slot, earliest of all
+
+        after = await svc.get_slots(1)
+        assert [s.slot_sequence_id for s in after] == [1, 2, 3, 4]
+        # Friday is now #4, yet the stored answer resolves to Friday as before.
+        assert next(s for s in after if s.slot_id == chosen).time_hhmm == "21:00"
+        assert next(s for s in after if s.slot_id == chosen).slot_sequence_id == 4
+
+    async def test_a_re_added_slot_recovers_its_own_answers(self, db_path):
+        """Remove a slot and put it back: answers naming it mean the same time again."""
+        svc = await self._friday_league(db_path)
+        await svc.remove_slot_by_rank(1, 2)   # remove Wed 20:00
+        assert "Wed_20_00" not in {s.slot_id for s in await svc.get_slots(1)}
+
+        await svc.add_slot(1, 3, "20:00")
+        assert "Wed_20_00" in {s.slot_id for s in await svc.get_slots(1)}
 
 
 class TestWindowState:

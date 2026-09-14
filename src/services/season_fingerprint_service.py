@@ -296,7 +296,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     ),
                     await _rows(
                         db,
-                        "SELECT id, day_of_week, time_hhmm, slot_sequence_id "
+                        "SELECT id, day_of_week, time_hhmm "
                         "FROM signup_availability_slots "
                         "WHERE server_id = ? ORDER BY id",
                         server_id,
