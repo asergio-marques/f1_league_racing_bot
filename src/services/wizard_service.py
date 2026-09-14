@@ -505,7 +505,7 @@ class WizardService:
                 from cogs.admin_review_cog import AdminReviewView  # type: ignore[import]
                 track_map = await self._get_track_name_map()
                 slot_labels = {
-                    s.slot_sequence_id: s.display_label
+                    s.slot_id: s.display_label
                     for s in (wizard.config_snapshot.slots if wizard.config_snapshot else [])
                 }
                 panel_text = self._format_review_panel(record, slot_labels, track_name_map=track_map)
@@ -1336,6 +1336,13 @@ class WizardService:
     async def _handle_availability(
         self, wizard: SignupWizardRecord, message: discord.Message
     ) -> None:
+        """Accept the display numbers the driver was shown, store the durable slot IDs.
+
+        The numbers are chronological positions and shift whenever the slot list
+        changes, so they are converted here, at the input boundary, and never
+        persisted (issue #126). Every message back to the driver keeps quoting the
+        numbers they typed — the stored form is not theirs to read.
+        """
         snapshot = wizard.config_snapshot
         assert snapshot is not None
         raw = message.content.strip()
@@ -1345,18 +1352,20 @@ class WizardService:
         except ValueError:
             await message.channel.send("❌ Please enter slot IDs as numbers (e.g. `1 3`).")
             return
-        valid_ids = {s.slot_sequence_id for s in snapshot.slots}
-        bad = [str(i) for i in selected_ids if i not in valid_ids]
+        by_display_number = {s.slot_sequence_id: s for s in snapshot.slots}
+        bad = [str(i) for i in selected_ids if i not in by_display_number]
         if bad:
             await message.channel.send(
                 f"❌ Unknown slot ID(s): {', '.join(bad)}. "
-                f"Valid IDs: {', '.join(str(i) for i in sorted(valid_ids))}"
+                f"Valid IDs: {', '.join(str(i) for i in sorted(by_display_number))}"
             )
             return
         if not selected_ids:
             await message.channel.send("❌ Please select at least one time slot.")
             return
-        wizard.draft_answers["availability_slot_ids"] = selected_ids
+        wizard.draft_answers["availability_slot_ids"] = [
+            by_display_number[i].slot_id for i in selected_ids
+        ]
         await self._advance_wizard(wizard, message)
 
     async def _handle_driver_type(
@@ -1560,19 +1569,19 @@ class WizardService:
     @staticmethod
     def _format_review_panel(
         record: SignupRecord,
-        slot_labels: dict[int, str] | None = None,
+        slot_labels: dict[str, str] | None = None,
         track_name_map: dict[str, str] | None = None,
     ) -> str:
-
-        if slot_labels:
+        # slot_labels is keyed by durable slot ID ("Mon_19_00"), which is a storage
+        # form no league should ever read. An answer with no label is a time that no
+        # longer exists, so it is named as such rather than printed raw.
+        if record.availability_slot_ids:
             availability_str = ", ".join(
-                slot_labels.get(i, f"#{i}") for i in record.availability_slot_ids
-            ) if record.availability_slot_ids else "None"
-        else:
-            availability_str = (
-                ", ".join(f"#{i}" for i in record.availability_slot_ids)
-                if record.availability_slot_ids else "None"
+                (slot_labels or {}).get(slot_id, "Unknown slot")
+                for slot_id in record.availability_slot_ids
             )
+        else:
+            availability_str = "None"
         teams_str = (
             ", ".join(record.preferred_teams)
             if record.preferred_teams else "No Preference"
@@ -1655,7 +1664,7 @@ class WizardService:
                     from cogs.admin_review_cog import AdminReviewView  # type: ignore[import]
                     track_map = await self._get_track_name_map()
                     slot_labels = {
-                        s.slot_sequence_id: s.display_label
+                        s.slot_id: s.display_label
                         for s in (wizard.config_snapshot.slots if wizard.config_snapshot else [])
                     }
                     await channel.send(
@@ -1719,7 +1728,7 @@ class WizardService:
                 from cogs.admin_review_cog import AdminReviewView  # type: ignore[import]
                 track_map = await self._get_track_name_map()
                 slot_labels = {
-                    s.slot_sequence_id: s.display_label
+                    s.slot_id: s.display_label
                     for s in (wizard.config_snapshot.slots if wizard.config_snapshot else [])
                 }
                 await channel.send(

@@ -125,7 +125,8 @@ class SignupRecord:
     nationality: str | None
     platform: str | None
     platform_id: str | None
-    availability_slot_ids: list[int]
+    # Durable slot IDs ("Mon_19_00"), never display ordinals — see AvailabilitySlot.
+    availability_slot_ids: list[str]
     driver_type: str | None
     preferred_teams: list[str]
     preferred_teammate: str | None
