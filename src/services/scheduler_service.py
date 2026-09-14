@@ -42,6 +42,15 @@ _GRACE_SECONDS = 300  # 5-minute misfire grace period
 # scoped job ID. Used to extract the event-type prefix for dispatch.
 _JOB_SUFFIX_RE = re.compile(r"_s\d+_d\d+_r\d+$")
 
+# The event-type prefixes of the jobs the **weather module** owns: its three forecast
+# phases and the post-race cleanup that deletes what they posted.
+#
+# Ownership can only be read from the job ID. All eight of a round's jobs — these four,
+# the result submission and the three RSVP jobs — carry the same ``round_id`` kwarg, so
+# the kwarg says which round a job belongs to and nothing about which module it is for.
+# The prefix is the only marker there is, and ``_JOB_SUFFIX_RE`` above is what exposes it.
+_WEATHER_JOB_PREFIXES = frozenset({"weather_p1", "weather_p2", "weather_p3", "cleanup"})
+
 # Module-level service reference so APScheduler can pickle the job callable.
 # Set in SchedulerService.start(); always non-None when jobs fire.
 _GLOBAL_SERVICE: "SchedulerService | None" = None
@@ -545,24 +554,61 @@ class SchedulerService:
         else:
             log.info("Skipping %s — fire time %s is in the past", deadline_job_id, deadline_fire_at.isoformat())
 
-    def cancel_round(self, round_id: int) -> None:
-        """Remove all scheduler jobs belonging to *round_id*.
+    def cancel_round(self, round_id: int, *, only: frozenset[str] | None = None) -> None:
+        """Remove scheduler jobs belonging to *round_id*.
 
         Iterates the live jobstore and removes every job whose ``round_id``
         kwarg matches.  This is format-agnostic and works with both the
         current ``<event>_s{S}_d{D}_r{R}`` ID scheme and any other jobs that
         carry ``round_id`` in their kwargs.
+
+        Args:
+            only: When given, restricts the removal to jobs whose event-type
+                prefix — the job ID with its ``_s{S}_d{D}_r{R}`` suffix stripped
+                — is in the set.  Callers cancelling a *round* want the default,
+                which takes all eight of its jobs; a caller switching **one
+                module** off wants that module's prefixes and nothing else, or
+                it takes the other modules' work down with it (issue #117).
+                A job whose ID does not carry the round suffix is left alone
+                while *only* is in force, since its owner cannot be read.
         """
         for job in self._scheduler.get_jobs():
-            if job.kwargs.get("round_id") == round_id:
-                try:
-                    self._scheduler.remove_job(job.id)
-                    log.info("Removed job %s", job.id)
-                except Exception:
-                    pass  # Already fired or removed concurrently
+            if job.kwargs.get("round_id") != round_id:
+                continue
+            if only is not None:
+                m = _JOB_SUFFIX_RE.search(job.id)
+                if m is None or job.id[: m.start()] not in only:
+                    continue
+            try:
+                self._scheduler.remove_job(job.id)
+                log.info("Removed job %s", job.id)
+            except Exception:
+                pass  # Already fired or removed concurrently
 
     async def cancel_all_weather_for_server(self, server_id: int) -> None:
-        """Cancel all weather (phase) jobs for every round in active/setup seasons of *server_id*."""
+        """Cancel the weather module's jobs for every round in active/setup seasons of *server_id*.
+
+        Only the four jobs in ``_WEATHER_JOB_PREFIXES`` are taken. The other four a round
+        carries belong to modules that are still switched on and must survive:
+
+        * ``results`` is not only the results module's. ``run_result_submission_job`` is
+          the round's one clock-driven status transition, and it runs for every round
+          whatever the modules — with results off it simply closes the round as FINAL.
+          Cancelled, the round never leaves NOT_RUN, its division never finishes and its
+          season can never be completed.
+        * ``rsvp_notice``, ``rsvp_last_notice`` and ``rsvp_deadline`` are attendance's, and
+          nothing short of ``/season approve`` recreates them — which cannot be run again
+          on an active season, so cancelling them loses the season's check-ins for good.
+
+        Do not widen this back to a whole-round cancel: that was issue #117, in which
+        switching weather off silently stopped results collection and check-ins for the
+        rest of the season while reporting that only weather jobs had been cancelled.
+
+        The weather *enable* rollback calls this too, and so leaves behind any ``results``
+        job its catch-up created. That is deliberate: a rollback that removed it would
+        destroy the round-arrival transition of a league whose results module is on, which
+        is the defect above by another route.
+        """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT r.id FROM rounds r "
@@ -573,7 +619,7 @@ class SchedulerService:
             )
             rows = await cursor.fetchall()
         for row in rows:
-            self.cancel_round(row[0])
+            self.cancel_round(row[0], only=_WEATHER_JOB_PREFIXES)
 
     def schedule_all_rounds(
         self,
