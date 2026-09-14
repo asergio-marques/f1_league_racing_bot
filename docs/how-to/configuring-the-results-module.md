@@ -309,11 +309,11 @@ Changing what a win is worth halfway through a championship is a bigger thing th
 /results amend review
 ```
 
-`toggle` opens a working copy of the season's tables. Every `session`, `fl`, `fl-plimit` and `bulk-session` change is staged into that copy and **changes nothing anybody can see**. `review` shows you the differences and asks you to approve or reject; approving overwrites the season's tables, **rescores every round of every division from the start of the season**, and switches amendment mode back off. Rejecting leaves the working copy alone so you can keep editing.
+`toggle` opens a working copy of the season's tables. Every `session`, `fl`, `fl-plimit` and `bulk-session` change is staged into that copy and **changes nothing anybody can see**. `review` shows you the differences and asks you to approve or reject; approving overwrites the season's tables, **rescores every round of every division from the start of the season**, reposts each of those rounds in the division's results and standings channels, and switches amendment mode back off. Rejecting leaves the working copy alone so you can keep editing.
 
 `/results amend revert` throws the working copy away and starts it again from the season's real tables. You cannot switch amendment mode off while changes are staged — revert or review them first, and the refusal says so.
 
-> **Approving an amendment does not update what your league can see, and says that it has.** The reply claims the standings were recomputed and reposted; the recomputation happens and the reposting fails on every round, leaving one error per round in the bot's own log file on the host — nothing appears in your log channel, so there is no sign of it anywhere you can see. Your results and standings channels keep showing the old points until you run `/results rounds sync` and `/results standings sync` **for every division**. Do that immediately after approving, and check a channel before telling anybody the championship has been rescored.
+> **Approving reposts every round that has been raced, and only those.** A round still to come is left alone, and a round that has been raced comes back under the label it already stood at — amending the points does not push a round at Final Results back to provisional. Expect a burst of posting across every division's channels: one round at a time, from the first round of the season, which on a long calendar takes a moment to work through.
 
 ### Posts that went missing
 
@@ -382,7 +382,7 @@ Worth knowing so you do not go looking for the setting.
 | Attendance charged later than expected | It is charged when the penalty stage is approved, never at provisional results |
 | `/round results amend` refused | The round has not reached Final Results yet |
 | An amendment that vanished | Known: it is one attempt. A rejection, a failure or five minutes of silence deletes the channel; the log channel holds the reason |
-| Nothing changed in your channels after an approved amendment | Known: the rescoring works and the reposting does not, whatever the reply says. Run `/results rounds sync` and `/results standings sync` for every division |
+| A round left unchanged by an approved amendment | It has not been raced, so there was nothing to repost. Only rounds with results are reposted |
 | `/results amend toggle` refused | Changes are staged. Revert or review them first |
 | Text where you expected a picture | The table worked and the drawing did not — often a drawing file with fewer rows than the division needs. The log channel names the reason |
 | `/test-mode advance` refused | A round is submitted but not settled. Finish its penalty and appeals stages |
