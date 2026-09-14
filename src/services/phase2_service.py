@@ -23,7 +23,15 @@ log = logging.getLogger(__name__)
 
 
 async def run_phase2(round_id: int, bot: "Bot") -> None:
-    """Execute Phase 2 for *round_id*."""
+    """Execute Phase 2 for *round_id*.
+
+    Produces nothing at all while the weather module is disabled for the round's server: no
+    draw, no ``phase_results`` row, no ``phase2_done``, nothing posted. The check lives in the
+    runner rather than only at its call sites because a phase computes, records *and* posts,
+    and the core specification's rule — a disabled module produces nothing, "whatever the path
+    arrives at it" — can only hold for every route in if the runner itself refuses. Guarding the
+    callers alone is what let issue #113 through.
+    """
     # --- Load context ---
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
@@ -39,6 +47,14 @@ async def run_phase2(round_id: int, bot: "Bot") -> None:
 
     if row is None:
         log.error("Phase 2: round_id=%s not found", round_id)
+        return
+
+    # The module gate — see the docstring for why it sits here.
+    if not await bot.module_service.is_weather_enabled(row["server_id"]):  # type: ignore[attr-defined]
+        log.info(
+            "Phase 2: weather module disabled for server %s — round %s left untouched.",
+            row["server_id"], round_id,
+        )
         return
 
     if row["phase2_done"]:
