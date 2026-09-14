@@ -133,6 +133,50 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
 
 
 # ---------------------------------------------------------------------------
+# Confirmation for the results → attendance cascade
+# ---------------------------------------------------------------------------
+
+
+class _ConfirmDisableResultsView(discord.ui.View):
+    """Confirm disabling results & standings when it will take attendance with it.
+
+    Only shown where attendance is enabled; with attendance already off the command
+    disables results straight away, as it always did.
+    """
+
+    def __init__(self, cog: "ModuleCog", actor_id: int, server_id: int) -> None:
+        super().__init__(timeout=120)
+        self._cog = cog
+        self._actor_id = actor_id
+        self._server_id = server_id
+
+    @discord.ui.button(label="✅ Disable both", style=discord.ButtonStyle.danger)
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if interaction.user.id != self._actor_id:
+            await interaction.response.send_message("⛔ Not your action.", ephemeral=True)
+            return
+        self.stop()
+        await interaction.response.defer(ephemeral=True)
+        await self._cog._apply_results_disable(
+            interaction, self._server_id, cascade_attendance=True
+        )
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if interaction.user.id != self._actor_id:
+            await interaction.response.send_message("⛔ Not your action.", ephemeral=True)
+            return
+        self.stop()
+        await interaction.response.send_message(
+            "Cancelled. Both modules remain enabled.", ephemeral=True
+        )
+
+
+# ---------------------------------------------------------------------------
 # ModuleCog
 # ---------------------------------------------------------------------------
 
@@ -420,14 +464,50 @@ class ModuleCog(commands.Cog):
     async def _disable_results(
         self, interaction: discord.Interaction, server_id: int
     ) -> None:
+        """Disable results & standings, warning first when it will take attendance with it.
+
+        The cascade used to happen unannounced: the reply named results alone and the league
+        was told nothing about attendance going with it, its check-in and attendance channels
+        being cleared, or its being unable to come back while the season runs. That was the
+        silent half of issue #114. Where attendance is enabled the league now confirms the
+        cascade before anything is written, and the reply that follows names both modules.
+        """
         if not await self.bot.module_service.is_results_enabled(server_id):
             await interaction.response.send_message(
                 "⚠️ Results & Standings module is already disabled.", ephemeral=True
             )
             return
 
-        await interaction.response.defer(ephemeral=True)
+        # Warn before a cascade, and write nothing until the league confirms it.
+        if await self.bot.module_service.is_attendance_enabled(server_id):
+            await interaction.response.send_message(
+                "⚠️ **Disabling Results & Standings will disable Attendance with it.**\n"
+                "Attendance depends on it and cannot run alone. If you continue:\n"
+                "• every check-in call, reminder and deadline still to come will stop;\n"
+                "• every division's check-in and attendance channels will be cleared, and "
+                "you will have to set them again;\n"
+                "• Attendance cannot be switched back on while a season is active.\n\n"
+                "Timings, penalties and thresholds are kept either way.",
+                view=_ConfirmDisableResultsView(self, interaction.user.id, server_id),
+                ephemeral=True,
+            )
+            return
 
+        await interaction.response.defer(ephemeral=True)
+        await self._apply_results_disable(interaction, server_id, cascade_attendance=False)
+
+    async def _apply_results_disable(
+        self,
+        interaction: discord.Interaction,
+        server_id: int,
+        *,
+        cascade_attendance: bool,
+    ) -> None:
+        """Write the results disable, cascade into attendance, and report what went.
+
+        *interaction* must already be deferred — this only ever sends a followup, so it
+        serves both the plain command path and the confirmation button's.
+        """
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
@@ -447,13 +527,25 @@ class ModuleCog(commands.Cog):
             server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results | Success",
         )
-        await interaction.followup.send(
-            "✅ Results & Standings module disabled.", ephemeral=True
-        )
 
         # Cascade: disable attendance if it is currently enabled
-        if await self.bot.module_service.is_attendance_enabled(server_id):
+        cascaded = (
+            cascade_attendance
+            and await self.bot.module_service.is_attendance_enabled(server_id)
+        )
+        if cascaded:
             await self._disable_attendance(interaction, cascade=True)
+            await interaction.followup.send(
+                "✅ Results & Standings module disabled.\n"
+                "✅ Attendance module disabled with it. Its per-division check-in and "
+                "attendance channels have been cleared; its timings, penalties and "
+                "thresholds are kept.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.followup.send(
+                "✅ Results & Standings module disabled.", ephemeral=True
+            )
 
     # ── Attendance enable ──────────────────────────────────────────────
 

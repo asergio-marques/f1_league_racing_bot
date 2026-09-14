@@ -400,6 +400,11 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
 
     This function is called by _RsvpButton.callback in rsvp_service.py.
     It performs all validation, locking, DB updates, and embed refresh.
+
+    It carries its own module gate. The cog's slash commands get theirs from
+    ``_guard_module_enabled``, but this is a module-level handler reached straight from a
+    button on a message that outlives the module being switched off — a call posted while
+    attendance was on, whose buttons a driver presses after it went off (issue #114).
     """
     # Parse action and round_id from custom_id: rsvp_{action}_r{round_id}
     try:
@@ -425,6 +430,15 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     bot = interaction.client
     discord_user_id = interaction.user.id
     guild_id: int = interaction.guild_id  # type: ignore[assignment]
+
+    # The module gate — see the docstring for why it sits here and not on the cog.
+    if not await bot.module_service.is_attendance_enabled(guild_id):  # type: ignore[attr-defined]
+        await interaction.response.send_message(
+            "❌ The Attendance module is switched off for this server, so check-in is "
+            "no longer running. Your answer has not been recorded.",
+            ephemeral=True,
+        )
+        return
 
     # Look up driver profile by Discord user ID (FR-011)
     async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]

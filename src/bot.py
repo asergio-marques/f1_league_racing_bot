@@ -451,6 +451,11 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
 
     T023: For any round whose rsvp_last_notice fire time has already passed,
     silently skip — do NOT fire retroactively (FR-029 edge case).
+
+    A restart is one of the three paths the core specification names, so none of this runs
+    for a server whose attendance module is switched off (issue #114). Re-arming the buttons
+    would revive check-in for a league that had turned it off, and the missed-deadline
+    catch-up would distribute its reserves into seats hours after the fact.
     """
     from services.rsvp_service import RsvpView, run_rsvp_deadline
     from db.database import get_connection as _gc
@@ -463,7 +468,34 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
         log.exception("_recover_rsvp_views_and_deadlines: failed to fetch embed messages")
         return
 
+    # The embed rows carry no server_id, so resolve the rounds whose server still has the
+    # module enabled and re-arm only those.
+    try:
+        async with _gc(bot.db_path) as db:  # type: ignore[attr-defined]
+            cur = await db.execute(
+                """
+                SELECT DISTINCT rem.round_id
+                  FROM rsvp_embed_messages rem
+                  JOIN rounds r ON r.id = rem.round_id
+                  JOIN divisions d ON d.id = r.division_id
+                  JOIN seasons s ON s.id = d.season_id
+                  JOIN attendance_config ac ON ac.server_id = s.server_id
+                 WHERE ac.module_enabled = 1
+                """
+            )
+            enabled_round_ids = {r[0] for r in await cur.fetchall()}
+    except Exception:
+        log.exception("_recover_rsvp_views_and_deadlines: failed to resolve enabled rounds")
+        return
+
     for row in embed_rows:
+        if row.round_id not in enabled_round_ids:
+            log.info(
+                "_recover_rsvp_views_and_deadlines: attendance module disabled for round %s — "
+                "view not re-armed",
+                row.round_id,
+            )
+            continue
         try:
             bot.add_view(RsvpView(round_id=row.round_id), message_id=int(row.message_id))
         except Exception as exc:
@@ -488,6 +520,7 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
                   JOIN attendance_config ac ON ac.server_id = s.server_id
                  WHERE r.status != 'CANCELLED'
                    AND s.status = 'ACTIVE'
+                   AND ac.module_enabled = 1
                 """
             )
             round_rows = await cur.fetchall()

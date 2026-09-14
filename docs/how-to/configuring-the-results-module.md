@@ -59,11 +59,11 @@ This guide covers the results & standings module only. Setting the bot up, creat
 
 It can only be done while **no season is active**, so this belongs alongside your other setup, before approval.
 
-> **Switching it off is not guarded the same way.** Enabling is refused mid-season; disabling is not, and the bot says nothing about the season that is running. Treat the decision as one you make once per season regardless — turning the module off part-way through takes attendance with it and stops results being collected at all.
+> **Switching it off is not guarded the same way.** Enabling is refused mid-season; disabling is not. Treat the decision as one you make once per season regardless — turning the module off part-way through takes attendance with it and stops results being collected at all, and you will not get either module back until the season ends.
 
 Nothing happens immediately. The module needs channels to post to, a points table to score with, and an approved season to work through, which are the next three steps.
 
-> **Turning results & standings off turns attendance off with it**, and it does so quietly — you get the one reply about results, and nothing in that reply tells you attendance went too. Only the log channel records it. Attendance also cannot be switched on until results is on, because it works out who turned up by reading your classifications. See [Setting up the attendance module](configuring-the-attendance-module.md).
+> **Turning results & standings off turns attendance off with it.** Where attendance is on, the bot stops and warns you before it does anything: it names what the cascade will take — every check-in still to come, and every division's check-in and attendance channels — and switches nothing off until you confirm. The reply that follows names both modules, and the log channel records the cascade as well. Attendance also cannot be switched on until results is on, because it works out who turned up by reading your classifications. See [Setting up the attendance module](configuring-the-attendance-module.md).
 
 ---
 
