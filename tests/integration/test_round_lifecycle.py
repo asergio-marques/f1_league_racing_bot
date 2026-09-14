@@ -290,6 +290,74 @@ async def test_zero_corrections_advances_to_final(tmp_path):
     assert await _is_channel_closed(db_path, round_id)
 
 
+# ---------------------------------------------------------------------------
+# A review pressed after the round has ended — issue #167
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_penalty_review_cannot_reopen_a_round_that_has_ended(tmp_path):
+    """Switching the results module off closes every round still awaiting a review.
+
+    The review view lives in the submission channel and outlives the round: the channel is
+    deleted, but a client already holding the message can still press the button. Unguarded,
+    that write dragged the closed round back to AWAITING_APPEAL_VERDICTS — its division would
+    un-finish, `/season complete` would refuse again, and the league would be back in the dead
+    end the disable had just got it out of.
+    """
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+    _, division_id, round_id = await _bootstrap(db_path)
+    await _insert_session_with_drivers(db_path, round_id, division_id)
+    await _insert_submission_channel(db_path, round_id)
+
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET status = 'FINAL' WHERE id = ?", (round_id,))
+        await db.commit()
+
+    state = _make_state(db_path, round_id, division_id, _make_bot())
+    interaction = _make_interaction(_make_guild())
+
+    with (
+        patch("services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
+        patch("services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
+        patch("services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
+        patch("services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
+    ):
+        from services.result_submission_service import finalize_penalty_review
+        await finalize_penalty_review(interaction, state)
+
+    assert await _get_round_status(db_path, round_id) == "FINAL"
+
+
+@pytest.mark.asyncio
+async def test_an_appeals_review_cannot_reopen_a_cancelled_round(tmp_path):
+    """The same guard the other side of it: a cancelled round must not become FINAL."""
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+    _, division_id, round_id = await _bootstrap(db_path)
+    await _insert_session_with_drivers(db_path, round_id, division_id)
+    await _insert_submission_channel(db_path, round_id)
+
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (round_id,))
+        await db.commit()
+
+    state = _make_state(db_path, round_id, division_id, _make_bot())
+    interaction = _make_interaction(_make_guild())
+
+    with (
+        patch("services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
+        patch("services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
+        patch("services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
+        patch("services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
+    ):
+        from services.result_submission_service import finalize_appeals_review
+        await finalize_appeals_review(interaction, state)
+
+    assert await _get_round_status(db_path, round_id) == "CANCELLED"
+
+
 async def test_approving_the_last_rounds_appeals_finishes_the_division(tmp_path):
     """The end-to-end link that lets a season be completed at all (issue #154).
 

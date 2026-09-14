@@ -137,18 +137,73 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
 # ---------------------------------------------------------------------------
 
 
-class _ConfirmDisableResultsView(discord.ui.View):
-    """Confirm disabling results & standings when it will take attendance with it.
+def _results_disable_warning(*, season_active: bool, attendance: bool) -> str:
+    """The warning shown before results & standings is switched off.
 
-    Only shown where attendance is enabled; with attendance already off the command
-    disables results straight away, as it always did.
+    Built from what is actually at stake rather than fixed, because the two costs are
+    independent: a running season loses its results, attendance goes wherever it is on, and a
+    league can face either, both, or — between seasons with attendance off — neither.
+    """
+    lines: list[str] = []
+
+    if season_active:
+        lines.append(
+            "⚠️ **Disabling Results & Standings destroys this season's results.**\n"
+            "The season is running, and switching the module off does not pause it. "
+            "If you continue:\n"
+            "• every classification recorded this season is deleted, and every standing "
+            "computed from them;\n"
+            "• every results and standings message already posted is removed from its "
+            "channel;\n"
+            "• every round still waiting on results, report verdicts or appeal verdicts is "
+            "closed as final with no results;\n"
+            "• no further results are collected for the rest of the season.\n"
+            "**None of this can be undone**, and the module cannot be switched back on until "
+            "the season ends.\n"
+            "Penalty and appeal verdicts already announced stay in the verdicts channel — "
+            "the bot cannot take those back. Your points configurations, the season's copy of "
+            "them, and every division's channels are kept."
+        )
+
+    if attendance:
+        lines.append(
+            "⚠️ **Attendance goes with it.** Attendance depends on Results & Standings and "
+            "cannot run alone. If you continue:\n"
+            "• every check-in call, reminder and deadline still to come will stop;\n"
+            "• every division's check-in and attendance channels will be cleared, and you "
+            "will have to set them again;\n"
+            "• Attendance cannot be switched back on while a season is active.\n"
+            "Timings, penalties and thresholds are kept either way."
+        )
+
+    return "\n\n".join(lines)
+
+
+class _ConfirmDisableResultsView(discord.ui.View):
+    """Confirm disabling results & standings before anything is written.
+
+    Shown wherever the command costs the league something it cannot get back: a running
+    season, whose results the disable destroys (issue #167), or an enabled attendance module,
+    which the disable takes with it (issue #114). With neither at stake — between seasons, with
+    attendance already off — the command disables results straight away, as it always did.
     """
 
-    def __init__(self, cog: "ModuleCog", actor_id: int, server_id: int) -> None:
+    def __init__(
+        self,
+        cog: "ModuleCog",
+        actor_id: int,
+        server_id: int,
+        *,
+        cascade_attendance: bool = True,
+    ) -> None:
         super().__init__(timeout=120)
         self._cog = cog
         self._actor_id = actor_id
         self._server_id = server_id
+        self._cascade_attendance = cascade_attendance
+        self.confirm.label = (
+            "✅ Disable both" if cascade_attendance else "✅ Disable and delete the results"
+        )
 
     @discord.ui.button(label="✅ Disable both", style=discord.ButtonStyle.danger)
     async def confirm(
@@ -160,7 +215,7 @@ class _ConfirmDisableResultsView(discord.ui.View):
         self.stop()
         await interaction.response.defer(ephemeral=True)
         await self._cog._apply_results_disable(
-            interaction, self._server_id, cascade_attendance=True
+            interaction, self._server_id, cascade_attendance=self._cascade_attendance
         )
 
     @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
@@ -172,7 +227,10 @@ class _ConfirmDisableResultsView(discord.ui.View):
             return
         self.stop()
         await interaction.response.send_message(
-            "Cancelled. Both modules remain enabled.", ephemeral=True
+            "Cancelled. Both modules remain enabled."
+            if self._cascade_attendance
+            else "Cancelled. Results & Standings remains enabled and nothing was deleted.",
+            ephemeral=True,
         )
 
 
@@ -464,13 +522,18 @@ class ModuleCog(commands.Cog):
     async def _disable_results(
         self, interaction: discord.Interaction, server_id: int
     ) -> None:
-        """Disable results & standings, warning first when it will take attendance with it.
+        """Disable results & standings, warning first wherever it costs the league something.
 
         The cascade used to happen unannounced: the reply named results alone and the league
         was told nothing about attendance going with it, its check-in and attendance channels
         being cleared, or its being unable to come back while the season runs. That was the
-        silent half of issue #114. Where attendance is enabled the league now confirms the
-        cascade before anything is written, and the reply that follows names both modules.
+        silent half of issue #114.
+
+        A running season is the other half, and was silent for longer. Disabling mid-season
+        destroys that season's results entire and closes every round still waiting on them
+        (issue #167), and a league with attendance already off was shown no warning at all
+        before it happened. So the confirmation is now owed to a running season in its own
+        right, whatever attendance is doing.
         """
         if not await self.bot.module_service.is_results_enabled(server_id):
             await interaction.response.send_message(
@@ -478,17 +541,21 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        # Warn before a cascade, and write nothing until the league confirms it.
-        if await self.bot.module_service.is_attendance_enabled(server_id):
+        # Warn before anything irreversible, and write nothing until the league confirms it.
+        active_season = await self.bot.season_service.get_active_season(server_id)
+        attendance_on = await self.bot.module_service.is_attendance_enabled(server_id)
+
+        if active_season is not None or attendance_on:
             await interaction.response.send_message(
-                "⚠️ **Disabling Results & Standings will disable Attendance with it.**\n"
-                "Attendance depends on it and cannot run alone. If you continue:\n"
-                "• every check-in call, reminder and deadline still to come will stop;\n"
-                "• every division's check-in and attendance channels will be cleared, and "
-                "you will have to set them again;\n"
-                "• Attendance cannot be switched back on while a season is active.\n\n"
-                "Timings, penalties and thresholds are kept either way.",
-                view=_ConfirmDisableResultsView(self, interaction.user.id, server_id),
+                _results_disable_warning(
+                    season_active=active_season is not None, attendance=attendance_on
+                ),
+                view=_ConfirmDisableResultsView(
+                    self,
+                    interaction.user.id,
+                    server_id,
+                    cascade_attendance=attendance_on,
+                ),
                 ephemeral=True,
             )
             return
@@ -503,10 +570,16 @@ class ModuleCog(commands.Cog):
         *,
         cascade_attendance: bool,
     ) -> None:
-        """Write the results disable, cascade into attendance, and report what went.
+        """Write the results disable, erase the season's results, and report what went.
 
         *interaction* must already be deferred — this only ever sends a followup, so it
         serves both the plain command path and the confirmation button's.
+
+        The order matters. The flag goes down first, so that nothing the erasure disturbs can
+        post again on its way out; the season's results are then deleted; and only then are the
+        rounds still awaiting results closed, because closing the last of them finishes its
+        division and a division finishing is what lets `/season complete` run. Between seasons
+        all three steps are still taken and the last two simply find nothing to do.
         """
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
@@ -523,10 +596,52 @@ class ModuleCog(commands.Cog):
             )
             await db.commit()
 
+        from services.results_purge_service import purge_season_results
+
+        purged = await purge_season_results(self.bot.db_path, server_id, self.bot)
+        closed = await self.bot.season_service.end_rounds_awaiting_results(
+            server_id, interaction.user.id, str(interaction.user)
+        )
+
+        if purged["rounds"]:
+            async with get_connection(self.bot.db_path) as db:
+                await db.execute(
+                    "INSERT INTO audit_entries "
+                    "(server_id, actor_id, actor_name, division_id, change_type, old_value, "
+                    "new_value, timestamp) "
+                    "VALUES (?, ?, ?, NULL, 'RESULTS_SEASON_PURGED', '', ?, ?)",
+                    (
+                        server_id,
+                        interaction.user.id,
+                        str(interaction.user),
+                        json.dumps({**purged, "rounds_closed": len(closed)}),
+                        now,
+                    ),
+                )
+                await db.commit()
+
         await self.bot.output_router.post_log(
             server_id,
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results | Success",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results | Success"
+            + (
+                f"\n  season results deleted: {purged['sessions']} session results, "
+                f"{purged['standings']} standings rows, {purged['messages']} messages\n"
+                f"  rounds closed with no results: {len(closed)}"
+                if purged["rounds"]
+                else ""
+            ),
         )
+
+        season_note = ""
+        if purged["rounds"]:
+            tail = f", {len(closed)} round(s) closed with no results." if closed else "."
+            season_note = (
+                f"\n🗑️ This season's results are gone: {purged['sessions']} session "
+                f"result(s) and {purged['standings']} standings row(s) deleted, "
+                f"{purged['messages']} posted message(s) removed" + tail
+                + "\nVerdicts already announced remain in the verdicts channel. Points "
+                "configurations and division channels are kept."
+            )
 
         # Cascade: disable attendance if it is currently enabled
         cascaded = (
@@ -539,12 +654,12 @@ class ModuleCog(commands.Cog):
                 "✅ Results & Standings module disabled.\n"
                 "✅ Attendance module disabled with it. Its per-division check-in and "
                 "attendance channels have been cleared; its timings, penalties and "
-                "thresholds are kept.",
+                "thresholds are kept." + season_note,
                 ephemeral=True,
             )
         else:
             await interaction.followup.send(
-                "✅ Results & Standings module disabled.", ephemeral=True
+                "✅ Results & Standings module disabled." + season_note, ephemeral=True
             )
 
     # ── Attendance enable ──────────────────────────────────────────────

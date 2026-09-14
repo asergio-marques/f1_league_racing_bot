@@ -112,6 +112,7 @@ it only to place it; the rules governing it belong to its own specification.
 - Final and cancelled are the ends of a round's life. A round is finished when it reaches either.
 - A division is finished when every one of its rounds is finished. A season may be completed when every one of its divisions is finished or cancelled.
 - A round of a league that does not run the results module shall become final when its moment passes, there being no results to await.
+- A round waiting on results, on report verdicts or on appeal verdicts shall become final if the results module is disabled while its season runs. Those three states wait upon that module alone, and a round left in one of them once the module is gone would never be finished, would hold its division open, and would leave its season unable to be completed. What else that disabling destroys is the results module's own to state.
 
 ### Building a season
 - A season shall be begun by a setup command naming the edition of the game.

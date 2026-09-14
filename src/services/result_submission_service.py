@@ -11,7 +11,7 @@ import discord
 
 from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
+from models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat, RoundStatus
 from models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
 from utils import results_formatter
 from utils.batch_notice import batch_notice
@@ -24,8 +24,9 @@ from utils.tyre_compound import (
 
 log = logging.getLogger(__name__)
 
-#: Rendered from the model's own set; see season_service for the same fragment.
+#: Rendered from the model's own sets; see season_service for the same fragment.
 _CANCELLABLE_SQL = ", ".join(f"'{v}'" for v in sorted(ROUND_CANCELLABLE))
+_TERMINAL_SQL = ", ".join(f"'{v}'" for v in sorted(ROUND_TERMINAL))
 
 # ---------------------------------------------------------------------------
 # Session ordering
@@ -521,9 +522,22 @@ async def finalize_penalty_review(
             )
 
         # Report verdicts are in; the round now waits on appeals.
+        #
+        # Guarded against a round that has already ended, as the write into
+        # AWAITING_REPORT_VERDICTS above is guarded against one that has already moved on. The
+        # review view lives in the submission channel and outlives the round: switching the
+        # results module off closes every round still awaiting a review and deletes the
+        # channel, but a client already holding the message can still press the button, and an
+        # unguarded write would drag the closed round back into an awaiting state — stranding
+        # the season all over again, which is the whole of issue #167.
+        #
+        # The guard names the terminal states rather than the state expected before this one,
+        # because that is the actual rule: a settled round must not be reopened. Pinning the
+        # prior state instead would also refuse the recovery path, which rebuilds this review
+        # from whatever state the round was left in by a crash.
         async with get_connection(db_path) as db:
             await db.execute(
-                "UPDATE rounds SET status = ? WHERE id = ?",
+                f"UPDATE rounds SET status = ? WHERE id = ? AND status NOT IN ({_TERMINAL_SQL})",
                 (RoundStatus.AWAITING_APPEAL_VERDICTS.value, round_id),
             )
             await db.commit()
@@ -770,9 +784,14 @@ async def finalize_appeals_review(
             )
 
         # Appeal verdicts are in; the results stand.
+        #
+        # Guarded against a settled round for the reason given on the same write in
+        # ``finalize_penalty_review``: a stale appeals view pressed after the results module was
+        # switched off must not reopen a round that disabling the module already closed, and a
+        # cancelled round must not be raised to FINAL by a view that outlived its cancellation.
         async with get_connection(db_path) as db:
             await db.execute(
-                "UPDATE rounds SET status = ? WHERE id = ?",
+                f"UPDATE rounds SET status = ? WHERE id = ? AND status NOT IN ({_TERMINAL_SQL})",
                 (RoundStatus.FINAL.value, round_id),
             )
             await db.commit()

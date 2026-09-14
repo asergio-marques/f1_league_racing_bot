@@ -1,12 +1,10 @@
 {
+  "enableArtifact": false,
+  "disableClaudeAiConnectors": true,
   "permissions": {
     "deny": [
       "Read(/.env)",
       "Edit(/.env)"
-      //"Read(/docs/wip-specs/**)",
-      //"Edit(/docs/wip-specs/**)",
-      //"Read(/resources/**)",
-      //"Edit(/resources/**)"
     ]
   }
 }

@@ -39,6 +39,21 @@ ROUND_TERMINAL = frozenset({RoundStatus.FINAL.value, RoundStatus.CANCELLED.value
 #: whole cancellation rule, and both the single-round command and the cascade read it from here.
 ROUND_CANCELLABLE = frozenset({RoundStatus.NOT_RUN.value, RoundStatus.AWAITING_RESULTS.value})
 
+#: The states only the results module can move a round out of. Every one of them waits on a
+#: results command — the submission wizard, the report verdicts, the appeal verdicts — so with
+#: the module switched off nothing will ever move them and the round waits for ever, its
+#: division never finishes and its season can never be completed (issue #167). Disabling the
+#: module therefore has to close these rounds itself.
+#:
+#: NOT_RUN is deliberately not among them: that round is waiting on the clock, not on results,
+#: and ``run_result_submission_job`` already closes it as FINAL when its moment arrives with the
+#: module off.
+ROUND_AWAITING_RESULTS_MODULE = frozenset({
+    RoundStatus.AWAITING_RESULTS.value,
+    RoundStatus.AWAITING_REPORT_VERDICTS.value,
+    RoundStatus.AWAITING_APPEAL_VERDICTS.value,
+})
+
 
 @dataclass
 class Round:
