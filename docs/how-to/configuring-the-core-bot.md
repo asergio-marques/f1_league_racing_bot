@@ -378,7 +378,9 @@ The review ends by asking whether you accept the configuration, with a **✅ App
 | Two rounds in a division share a date and time | Reschedule one |
 | A team name cannot be used | Rename it — the message names every offender at once |
 
-**And more, depending on what you turned on** — a missing channel for any enabled module, a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. Each is named individually with the command that fixes it. `/season review` shows you all of them before you get here.
+**And more, depending on what you turned on** — a missing channel for any enabled module, a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. Each is named individually with the command that fixes it, and `/season review` shows you most of them before you get here.
+
+> **A points table in the wrong order is the exception.** `/season approve` refuses it and names every position at fault, but `/season review` does not look — so a season that reviewed cleanly can still be refused for one. Read your tables back with `/results config view` if you built them by hand.
 
 When it goes through, the bot:
 
