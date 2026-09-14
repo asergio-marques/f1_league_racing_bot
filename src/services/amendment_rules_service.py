@@ -19,6 +19,15 @@ nothing is posted in its place; a moment already past is never honoured retroact
 would not, what was posted is withdrawn and the work armed again for its new moment. That single
 rule covers the delay, the bring-forward and the change that moves no date at all.
 
+**A round is never moved into the past**, whatever the modules enabled (decided 2026-09-14).
+A round's result submission is armed against its own moment, and a job more than the scheduler's
+misfire grace behind is discarded rather than run — so a round moved backwards silently loses the
+one clock-driven transition it has, and `run_result_submission_job` being the only route to a
+submission channel, no command in production opens one afterwards. The check-in deadline rule
+below already refused such a move where attendance was on; the refusal is stated in its own right
+so that the answer does not depend on which modules a league runs. Moving a round *forward* is
+untouched, and remains the remedy for a circuit or a format that must be corrected late.
+
 **An amendment is one change.** However many of the three fields it alters, it is judged once,
 against the round as it will stand once every change is in, and where any rule refuses any part of
 it none of it happens. That is why this takes a change set rather than a field: a track change is
@@ -168,6 +177,24 @@ def judge_amendment(
     new_moment = _amended_moment(rnd, changes) if not unknown else _as_utc(rnd.scheduled_at)
     moment_moved = "scheduled_at" in changes
 
+    # ── Where the round may be moved to ────────────────────────────────────────────────────
+    # A round is never moved into the past, whatever the modules enabled. The round's result
+    # submission is armed against its moment, and a job that far behind is thrown away by the
+    # scheduler's misfire grace rather than run — so a round moved backwards loses the one
+    # clock-driven transition it has, from awaiting its moment to awaiting its results, and
+    # `run_result_submission_job` is the only route to a submission channel. Nothing in
+    # production puts that back.
+    #
+    # Judged before the windows below and refused regardless of enablement, so that the answer
+    # does not turn on which modules a league happens to run. The check-in deadline rule
+    # already refused this where attendance was on; with it off nothing did, and the round was
+    # quietly left unable to ever take results.
+    if moment_moved and new_moment <= now:
+        refusals.append(
+            "A round cannot be moved into the past. Its result submission would never open, "
+            "and the round could never take results at all. Give it a moment still to come."
+        )
+
     # ── The check-in windows ───────────────────────────────────────────────────────────────
     check_in: dict[str, WindowOutcome] = {}
     if attendance is not None:
@@ -266,11 +293,6 @@ def judge_amendment(
     ):
         refusals.append(
             "A mystery round names no circuit. Amend its format as well to reveal it."
-        )
-
-    if moment_moved and new_moment <= now:
-        warnings.append(
-            "That moment is already in the past, so the round will be treated as having started."
         )
 
     return AmendmentVerdict(

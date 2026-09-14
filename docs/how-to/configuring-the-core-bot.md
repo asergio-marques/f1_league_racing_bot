@@ -404,7 +404,7 @@ Things change. During an active season:
 
 | Command | What it does |
 |---|---|
-| `/round amend` | Change a round's track, time or format — any combination of them, judged and applied as one change. Changing the time renumbers the division's rounds. Forecasts are thrown away only where the round has moved far enough that they would not have been drawn yet; the confirmation tells you which before you commit |
+| `/round amend` | Change a round's track, time or format — any combination of them, judged and applied as one change. Changing the time renumbers the division's rounds, and the new time must still be ahead — a round is never moved into the past. Forecasts are thrown away only where the round has moved far enough that they would not have been drawn yet; the confirmation tells you which before you commit |
 | `/round cancel` | Call off one round. Needs `CONFIRM`, and posts a notice to the division. Refused once the round's results have been entered — the drivers' reports and appeals depend on them |
 | `/division cancel` | Call off a whole division. Needs `CONFIRM`. Every round of it you have not yet raced is cancelled with it; rounds you have raced keep their results |
 | `/division calendar-sync` | Repost a division's calendar with your changes on it |

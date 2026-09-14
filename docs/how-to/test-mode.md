@@ -86,7 +86,9 @@ That database detection is load-bearing rather than a fallback: `/season approve
 
 > **Approval is no longer a route to such a season** (decided 2026-09-10). A season holding a round already inside one of its enabled modules' configured windows is reported by `/season review`, which withholds its button, and refused by the approval as well, and test mode is not exempt — so a test season has to be built with its rounds beyond the check-in notice and every weather phase deadline. The generator in step 2 of [A workable order](#a-workable-order) does this for you, dating its calendars in the year after the run.
 >
-> The database fallback above is still load-bearing. A past-dated round arrives by other routes — `/round amend` moving one backwards on a running season, or a restored save whose rounds have since gone by — and the misfire-grace evictions it covers have nothing to do with approval at all.
+> **Nor is `/round amend` a route to one any longer** (decided 2026-09-14). A round is never moved to a moment that has already passed, whatever the modules enabled — its result submission would be armed in the past, thrown away by the misfire grace, and the round could never take results at all. Moving a round *forward* is untouched.
+>
+> The database fallback above is still load-bearing all the same. A past-dated round arrives by a restored save whose rounds have since gone by, and the misfire-grace evictions it covers have nothing to do with approval at all.
 
 > `get_next_pending_phase` carries a comment claiming `schedule_round` skips the results job for `MYSTERY` rounds. It does not — it schedules one for every format. The behaviour above does not depend on the claim; only the comment is wrong. (`get_pending_advance_jobs`'s comment says something different and correct: results jobs are excluded so a past-dated auto-fired job cannot block or double-trigger the wizard.)
 

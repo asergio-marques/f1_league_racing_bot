@@ -137,6 +137,22 @@ async def test_bringing_a_round_inside_its_check_in_deadline_is_refused(tmp_path
     assert not _offered_a_confirmation(interaction)
 
 
+async def test_moving_a_round_backwards_is_refused_with_attendance_off(tmp_path):
+    """The command consults the rule, and with no module standing in for it.
+
+    Attendance off deliberately: its deadline rule refuses a backwards move as well, so a test
+    that left the module on would pass whether or not the command reached the rule at all.
+    """
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    interaction = _interaction()
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(tzinfo=None)
+
+    await _amend(_cog(path, attendance=False), interaction, scheduled_at=past.isoformat())
+
+    assert "cannot be moved into the past" in _reply(interaction)
+    assert not _offered_a_confirmation(interaction), "a refused amendment must not be offered"
+
+
 async def test_a_refusal_says_nothing_was_changed(tmp_path):
     """The manager must not be left wondering whether half of it went through."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) - timedelta(hours=1))

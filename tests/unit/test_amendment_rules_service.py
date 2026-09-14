@@ -305,6 +305,92 @@ def test_moving_a_round_forward_lets_its_track_be_amended_in_the_same_change():
     assert verdict.allowed, verdict.refusals
 
 
+# ---------------------------------------------------------------------------
+# Where a round may be moved to
+# ---------------------------------------------------------------------------
+
+
+def test_a_round_may_not_be_moved_into_the_past():
+    """The rule on its own, with no module enabled to refuse it for another reason.
+
+    Driven with both modules off deliberately: the check-in deadline rule refuses a backwards
+    move too, and a test that let it answer would pass whether or not this rule existed.
+    """
+    rnd = _round(scheduled_at=NOW + timedelta(days=30))
+    verdict = judge_amendment(rnd, {"scheduled_at": NOW - timedelta(hours=1)}, now=NOW)
+    assert not verdict.allowed
+    assert any("cannot be moved into the past" in r for r in verdict.refusals)
+
+
+@pytest.mark.parametrize(
+    "attendance,weather",
+    [
+        (None, None),
+        (DEFAULT_ATTENDANCE, None),
+        (None, DEFAULT_WEATHER),
+        (DEFAULT_ATTENDANCE, DEFAULT_WEATHER),
+    ],
+)
+def test_moving_a_round_into_the_past_is_refused_whatever_the_modules(attendance, weather):
+    """Decided 2026-09-14: the answer shall not turn on which modules a league runs.
+
+    The round's result submission is armed against its moment whatever the modules, so a
+    backwards move costs the same round the same thing in every one of these combinations.
+    """
+    rnd = _round(scheduled_at=NOW + timedelta(days=30))
+    verdict = judge_amendment(
+        rnd,
+        {"scheduled_at": NOW - timedelta(hours=1)},
+        now=NOW,
+        attendance=attendance,
+        weather=weather,
+    )
+    assert not verdict.allowed
+    assert any("cannot be moved into the past" in r for r in verdict.refusals)
+
+
+def test_a_moment_falling_exactly_now_counts_as_the_past():
+    """``<=``, the threshold every other rule here holds to, so the two cannot disagree."""
+    rnd = _round(scheduled_at=NOW + timedelta(days=30))
+    verdict = judge_amendment(rnd, {"scheduled_at": NOW}, now=NOW)
+    assert not verdict.allowed
+    assert any("cannot be moved into the past" in r for r in verdict.refusals)
+
+
+def test_a_round_already_in_the_past_may_still_be_moved_forward():
+    """The escape, and the guard against over-tightening: forward is always still open."""
+    rnd = _round(scheduled_at=NOW - timedelta(days=2))
+    verdict = judge_amendment(
+        rnd,
+        {"scheduled_at": NOW + timedelta(days=30)},
+        now=NOW,
+        attendance=DEFAULT_ATTENDANCE,
+        weather=DEFAULT_WEATHER,
+    )
+    assert verdict.allowed, verdict.refusals
+
+
+def test_the_past_refusal_is_silent_when_the_moment_is_not_amended():
+    """A track change on a round already past is refused by the started gate, not by this one.
+
+    The round is not being *moved* anywhere, so a refusal telling the manager not to move it
+    into the past would name a thing they did not ask for.
+    """
+    rnd = _round(scheduled_at=NOW - timedelta(hours=1))
+    verdict = judge_amendment(rnd, {"track_name": "Silverstone Circuit"}, now=NOW)
+    assert not verdict.allowed
+    assert any("already started" in r for r in verdict.refusals)
+    assert not any("cannot be moved into the past" in r for r in verdict.refusals)
+
+
+def test_a_round_may_not_be_moved_from_one_past_moment_to_another():
+    """Already past is not a licence to stay there — the round still loses its submission."""
+    rnd = _round(scheduled_at=NOW - timedelta(days=2))
+    verdict = judge_amendment(rnd, {"scheduled_at": NOW - timedelta(hours=1)}, now=NOW)
+    assert not verdict.allowed
+    assert any("cannot be moved into the past" in r for r in verdict.refusals)
+
+
 def test_a_mystery_round_may_not_be_given_a_track_without_a_format():
     """A mystery round names no circuit, so naming one alone would leave it in a forbidden state."""
     rnd = _round(scheduled_at=NOW + timedelta(days=30), fmt=RoundFormat.MYSTERY, track=None)
