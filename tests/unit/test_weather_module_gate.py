@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
 from services import phase1_service, phase2_service, phase3_service  # noqa: E402
+from services.amendment_service import AmendmentService  # noqa: E402
 
 SEEDED_TRACK = "Bahrain International Circuit"
 
@@ -161,3 +162,84 @@ async def test_phase_runner_runs_when_weather_is_enabled(tmp_path):
     assert phase1_done == 1
     assert results == 1
     posted.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# The gate at the amend_round call site — issue #113 as reported
+# ---------------------------------------------------------------------------
+
+def _make_actor() -> MagicMock:
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+    return actor
+
+
+def _amend_bot(db_path: str, *, weather_enabled: bool) -> MagicMock:
+    bot = _make_bot(db_path, weather_enabled=weather_enabled)
+    bot.scheduler_service.cancel_round = MagicMock()
+    bot.scheduler_service.schedule_round = MagicMock()
+    return bot
+
+
+async def test_amend_round_runs_no_overdue_phase_while_weather_is_disabled(tmp_path):
+    """The reported defect: amending a round drew and posted a forecast with weather off."""
+    db_path = await _make_db(str(tmp_path))
+    await _seed(db_path)
+    bot = _amend_bot(db_path, weather_enabled=False)
+
+    with patch(
+        "services.phase1_service.run_phase1", new=AsyncMock()
+    ) as p1, patch(
+        "services.phase2_service.run_phase2", new=AsyncMock()
+    ) as p2, patch(
+        "services.phase3_service.run_phase3", new=AsyncMock()
+    ) as p3:
+        await AmendmentService(db_path).amend_round(
+            1, _make_actor(), "track_name", "Silverstone Circuit", bot
+        )
+
+    p1.assert_not_awaited()
+    p2.assert_not_awaited()
+    p3.assert_not_awaited()
+    bot.scheduler_service.schedule_round.assert_not_called()
+
+
+async def test_amend_round_leaves_the_phases_for_a_later_enable(tmp_path):
+    """The knock-on: a phase marked done while the module was off could never be redone.
+
+    Run for real rather than with the runners patched out, so the whole path is exercised —
+    the flags must be left at 0 for the enable catch-up to pick up.
+    """
+    db_path = await _make_db(str(tmp_path))
+    await _seed(db_path)
+    bot = _amend_bot(db_path, weather_enabled=False)
+
+    await AmendmentService(db_path).amend_round(
+        1, _make_actor(), "track_name", "Silverstone Circuit", bot
+    )
+
+    assert await _phase_state(db_path) == (0, 0, 0, 0)
+
+
+async def test_amend_round_runs_overdue_phases_while_weather_is_enabled(tmp_path):
+    """The gate must not cost a league that has weather on its re-run."""
+    db_path = await _make_db(str(tmp_path))
+    await _seed(db_path)
+    await _set_weather(db_path, True)
+    bot = _amend_bot(db_path, weather_enabled=True)
+
+    with patch(
+        "services.phase1_service.run_phase1", new=AsyncMock()
+    ) as p1, patch(
+        "services.phase2_service.run_phase2", new=AsyncMock()
+    ) as p2, patch(
+        "services.phase3_service.run_phase3", new=AsyncMock()
+    ) as p3:
+        await AmendmentService(db_path).amend_round(
+            1, _make_actor(), "track_name", "Silverstone Circuit", bot
+        )
+
+    p1.assert_awaited_once()
+    p2.assert_awaited_once()
+    p3.assert_awaited_once()
