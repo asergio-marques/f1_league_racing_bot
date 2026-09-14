@@ -303,7 +303,7 @@ Worth running through before the season is approved.
 | What you see | Usually means |
 |---|---|
 | No check-in call for a division | No check-in channel set for it, or the module is off |
-| No check-in call for the first round only | The season was approved after that round's notice moment had already passed. Nothing warns you, and that round will count nothing against anyone |
+| Approval refused, naming a round and a check-in window | That round is already inside the window — its call was due before you pressed Approve. Move the round, or shorten the notice, and review again |
 | A call that never appeared, and a loud report in the log channel | The bot could not post it. No records were opened, so the round is a free pass for the whole division |
 | No check-in for a round you moved or re-tracked | Known: `/round amend` cancels a round's check-in and never puts it back |
 | A round where nobody was charged anything | The round was cancelled, its call never posted, or the round was amended |

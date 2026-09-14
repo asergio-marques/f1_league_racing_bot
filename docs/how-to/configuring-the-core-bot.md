@@ -335,7 +335,9 @@ With the image module on and the calendar or lineup output switched on, that div
 
 A module you have not switched on has no settings to show, so its message is simply not posted — six is the most you will see, not the number you should expect.
 
-Read it properly. It is the last look you get at the season as a whole before it goes live, and it names anything that will stop approval.
+Read it properly. It is the last look you get at the season as a whole before it goes live, and it names almost anything that will stop approval.
+
+> **One refusal the review does not warn you about.** If a round is already inside one of your enabled modules' configured windows — its check-in call or a weather phase deadline was due before you pressed Approve — the review shows nothing amiss and the **Approve** button refuses, naming the rounds and the windows. Nothing is committed. Move the round or shorten the window and review again. See [Configuring the attendance module](configuring-the-attendance-module.md) and [Configuring the weather module](configuring-the-weather-module.md) for the timings this applies to.
 
 Two warnings it raises that are easy to skim past:
 
