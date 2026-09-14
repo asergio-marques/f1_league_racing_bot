@@ -318,3 +318,50 @@ async def test_distribution_writes_seats_while_attendance_is_enabled(tmp_path):
     assert distributed == 1
 
 
+# ---------------------------------------------------------------------------
+# The restart recovery
+# ---------------------------------------------------------------------------
+#
+# async def throughout — these construct a discord.ui.View, and apt's discord.py 2.5.0 calls
+# asyncio.get_running_loop() in View.__init__ where the pinned 2.7.1 defers it.
+
+
+async def test_a_restart_re_arms_no_buttons_while_attendance_is_disabled(tmp_path):
+    from bot import _recover_rsvp_views_and_deadlines
+
+    # A deadline already in the past, so the catch-up would fire were it not gated.
+    db_path = await _make_db(
+        tmp_path,
+        attendance_enabled=False,
+        scheduled_at=datetime.now(timezone.utc) - timedelta(hours=1),
+    )
+    await _seed_rsvp_rows(db_path)
+    await _seed_embed_message(db_path)
+    bot = _make_bot(db_path, attendance_enabled=False)
+
+    await _recover_rsvp_views_and_deadlines(bot)
+
+    bot.add_view.assert_not_called()
+    _, _, distributed = await _counts(db_path)
+    assert distributed == 0, "a restart ran a missed deadline for a disabled module"
+
+
+async def test_a_restart_re_arms_the_buttons_while_attendance_is_enabled(tmp_path):
+    from bot import _recover_rsvp_views_and_deadlines
+
+    db_path = await _make_db(
+        tmp_path,
+        attendance_enabled=True,
+        scheduled_at=datetime.now(timezone.utc) - timedelta(hours=1),
+    )
+    await _seed_rsvp_rows(db_path)
+    await _seed_embed_message(db_path)
+    bot = _make_bot(db_path, attendance_enabled=True)
+
+    await _recover_rsvp_views_and_deadlines(bot)
+
+    bot.add_view.assert_called()
+    _, _, distributed = await _counts(db_path)
+    assert distributed == 1, "the missed deadline did not run for an enabled module"
+
+
