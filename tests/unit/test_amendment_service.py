@@ -247,6 +247,7 @@ async def test_amend_round_changes_the_field(tmp_path):
     bot = MagicMock()
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
     bot.output_router.post_forecast = AsyncMock(return_value=None)
     bot.output_router.post_log = AsyncMock(return_value=None)
     bot.scheduler_service.cancel_round = MagicMock()
@@ -323,6 +324,7 @@ async def test_amending_two_fields_amends_once(tmp_path):
     bot = MagicMock()
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
     bot.output_router.post_forecast = AsyncMock(return_value=None)
     bot.output_router.post_log = AsyncMock(return_value=None)
     bot.scheduler_service.cancel_round = MagicMock()
@@ -425,6 +427,7 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
     bot = MagicMock()
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
     bot.output_router.post_forecast = AsyncMock(return_value=None)
     bot.output_router.post_log = AsyncMock(return_value=None)
     bot.scheduler_service.cancel_round = MagicMock()
@@ -515,6 +518,7 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     bot = MagicMock()
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
     bot.output_router.post_forecast = AsyncMock(return_value=None)
     bot.output_router.post_log = AsyncMock(return_value=None)
     bot.scheduler_service.cancel_round = MagicMock()
@@ -529,3 +533,121 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     assert kwargs["phase_1_days"] == 7
     assert kwargs["phase_2_days"] == 3
     assert kwargs["phase_3_hours"] == 4
+
+
+# ---------------------------------------------------------------------------
+# An amended round keeps its check-in — issue #120
+# ---------------------------------------------------------------------------
+
+
+def _amend_bot_with_attendance(path, *, attendance: bool, weather: bool = False):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    bot = MagicMock()
+    bot.db_path = path
+    bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
+    bot.attendance_service.get_or_create_config = AsyncMock(
+        return_value=SimpleNamespace(
+            rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2
+        )
+    )
+    bot.output_router.post_forecast = AsyncMock(return_value=None)
+    bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.scheduler_service.cancel_round = MagicMock()
+    bot.scheduler_service.schedule_round = MagicMock()
+    bot.scheduler_service.schedule_attendance_round = MagicMock()
+    return bot
+
+
+async def _seed_one_round(path, scheduled_at):
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO server_configs "
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+            "VALUES (1, 10, 20, 30)"
+        )
+        await db.execute(
+            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
+            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 3)"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
+            "VALUES (1, 1, 'Div A', 2, 999, 555)"
+        )
+        await db.execute(
+            "INSERT INTO rounds "
+            "(id, division_id, round_number, format, track_name, scheduled_at) "
+            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain International Circuit', ?)",
+            (scheduled_at.isoformat(),),
+        )
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_amending_a_round_rearms_its_check_in(tmp_path):
+    """The reported defect: amending a round destroyed its check-in for good.
+
+    Cancelling the round takes all eight of its jobs, the check-in call, its reminder and its
+    deadline included, and only the weather ones were ever put back. Nothing else arms them —
+    `schedule_attendance_round` is called from `/season approve` and nowhere else, and that
+    cannot be run again on an active season. So the round asked nobody whether they were racing,
+    opened no attendance records, charged nobody, and read afterwards as perfect attendance for
+    the entire division, with nothing anywhere reporting it.
+    """
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import MagicMock
+
+    from services.amendment_service import AmendmentService
+
+    path = str(tmp_path / "amend_checkin.db")
+    await run_migrations(path)
+    now = datetime.now(timezone.utc)
+    await _seed_one_round(path, now + timedelta(days=30))
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+    bot = _amend_bot_with_attendance(path, attendance=True)
+
+    await AmendmentService(path).amend_round(
+        1, actor, [("scheduled_at", now + timedelta(days=40))], bot, now=now
+    )
+
+    bot.scheduler_service.schedule_attendance_round.assert_called_once()
+    kwargs = bot.scheduler_service.schedule_attendance_round.call_args.kwargs
+    # Armed against the league's own timings, and named for the right season and tier.
+    assert kwargs["notice_days"] == 5
+    assert kwargs["last_notice_hours"] == 24
+    assert kwargs["deadline_hours"] == 2
+    assert kwargs["season_number"] == 3
+    assert kwargs["division_tier"] == 2
+    # And against the round as amended, not as it stood.
+    armed_round = bot.scheduler_service.schedule_attendance_round.call_args.args[0]
+    assert armed_round.scheduled_at.replace(tzinfo=timezone.utc) == now + timedelta(days=40)
+
+
+@pytest.mark.asyncio
+async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tmp_path):
+    """A disabled module produces nothing, a scheduled job included."""
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import MagicMock
+
+    from services.amendment_service import AmendmentService
+
+    path = str(tmp_path / "amend_no_checkin.db")
+    await run_migrations(path)
+    now = datetime.now(timezone.utc)
+    await _seed_one_round(path, now + timedelta(days=30))
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+    bot = _amend_bot_with_attendance(path, attendance=False)
+
+    await AmendmentService(path).amend_round(
+        1, actor, [("scheduled_at", now + timedelta(days=40))], bot, now=now
+    )
+
+    bot.scheduler_service.schedule_attendance_round.assert_not_called()

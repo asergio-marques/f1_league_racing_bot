@@ -278,6 +278,29 @@ class AmendmentService:
                     phase_3_hours=_wcfg.phase_3_hours,
                 )
 
+        # Arm the round's check-in again (issue #120).
+        #
+        # ``cancel_round`` above takes all eight of the round's jobs, the three the check-in runs
+        # on included, and until now only the weather ones were put back. Nothing else arms them:
+        # ``schedule_attendance_round`` is called from ``/season approve`` and nowhere else, and
+        # that cannot be run again on an active season. So an amended round asked nobody whether
+        # they were racing, opened no attendance records, distributed no reserves and charged
+        # nobody — and was recorded afterwards as perfect attendance for the whole division.
+        #
+        # ``schedule_attendance_round`` arms only the windows still ahead, which is the same rule
+        # the verdict above holds to: a window that would have run under the round's new moment
+        # stands, and is not honoured retroactively.
+        if await bot.module_service.is_attendance_enabled(server_id):
+            _acfg = await bot.attendance_service.get_or_create_config(server_id)
+            bot.scheduler_service.schedule_attendance_round(
+                updated_round,
+                season_number=row["season_number"],
+                division_tier=row["division_tier"],
+                notice_days=_acfg.rsvp_notice_days,
+                last_notice_hours=_acfg.rsvp_last_notice_hours,
+                deadline_hours=_acfg.rsvp_deadline_hours,
+            )
+
         # Erase the stored forecast message of each withdrawn phase, and only those (FR-011).
         # A phase that still stands keeps its message, which is what leaves the division holding
         # the latest forecast that survives the amendment rather than an empty channel.

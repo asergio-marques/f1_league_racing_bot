@@ -98,6 +98,9 @@ def _make_bot(db_path: str, *, weather_enabled: bool) -> MagicMock:
     bot = MagicMock()
     bot.db_path = db_path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
+    # These tests are about the weather gate, so attendance is off throughout and the
+    # amendment's check-in re-arm has nothing to do.
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
     bot.output_router.post_forecast = AsyncMock(return_value=None)
     bot.output_router.post_log = AsyncMock(return_value=None)
     return bot
