@@ -365,3 +365,40 @@ async def test_a_restart_re_arms_the_buttons_while_attendance_is_enabled(tmp_pat
     assert distributed == 1, "the missed deadline did not run for an enabled module"
 
 
+# ---------------------------------------------------------------------------
+# The button on a call that outlived the module
+# ---------------------------------------------------------------------------
+
+
+def _make_interaction(bot: MagicMock) -> MagicMock:
+    interaction = MagicMock()
+    interaction.client = bot
+    interaction.guild_id = SERVER_ID
+    interaction.user.id = 101
+    interaction.response.send_message = AsyncMock()
+    interaction.response.edit_message = AsyncMock()
+    return interaction
+
+
+async def test_a_button_press_records_nothing_while_attendance_is_disabled(tmp_path):
+    from cogs.attendance_cog import handle_rsvp_button
+
+    db_path = await _make_db(tmp_path, attendance_enabled=False)
+    await _seed_rsvp_rows(db_path, reserve_accepted=False)
+    bot = _make_bot(db_path, attendance_enabled=False)
+    interaction = _make_interaction(bot)
+
+    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+
+    interaction.response.send_message.assert_awaited()
+    reply = interaction.response.send_message.await_args.args[0]
+    assert "switched off" in reply
+
+    async with get_connection(db_path) as db:
+        cur = await db.execute(
+            "SELECT rsvp_status FROM driver_round_attendance "
+            " WHERE round_id = ? AND driver_profile_id = 101",
+            (ROUND_ID,),
+        )
+        status = (await cur.fetchone())["rsvp_status"]
+    assert status == "DECLINED", "a disabled module recorded a check-in answer"
