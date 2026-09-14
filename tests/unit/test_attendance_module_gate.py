@@ -402,3 +402,38 @@ async def test_a_button_press_records_nothing_while_attendance_is_disabled(tmp_p
         )
         status = (await cur.fetchone())["rsvp_status"]
     assert status == "DECLINED", "a disabled module recorded a check-in answer"
+
+
+# ---------------------------------------------------------------------------
+# The test-mode bulk check-in
+# ---------------------------------------------------------------------------
+
+
+async def test_test_mode_sets_no_check_in_status_while_attendance_is_disabled(tmp_path):
+    """A call posted before the module went off leaves its embed row behind.
+
+    Without a gate the command finds that row and writes check-in answers for a module the
+    league has switched off — the same defect as the button, by a maintainer's route.
+    """
+    from cogs.test_mode_cog import TestModeCog
+
+    db_path = await _make_db(tmp_path, attendance_enabled=False)
+    await _seed_rsvp_rows(db_path, reserve_accepted=False)
+    await _seed_embed_message(db_path)
+
+    cog = TestModeCog.__new__(TestModeCog)
+    cog.bot = _make_bot(db_path, attendance_enabled=False)
+    config = MagicMock()
+    config.test_mode_active = True
+    cog.bot.config_service.get_server_config = AsyncMock(return_value=config)
+
+    interaction = _make_interaction(cog.bot)
+    interaction.response.send_modal = AsyncMock()
+
+    # The permission tier is `league_admin_only`'s business and has its own tests; call the
+    # command beneath it so this test pins the module gate and nothing else.
+    await TestModeCog.rsvp_set_status.callback.__wrapped__(cog, interaction, "Division 1")
+
+    interaction.response.send_modal.assert_not_awaited()
+    reply = interaction.response.send_message.await_args.args[0]
+    assert "Attendance module is not enabled" in reply
