@@ -787,13 +787,11 @@ Historical data is always retained. How much configuration a disable actually cl
 |---|---|
 | `signup` | The signup channel and the two roles. Its availability time slots and its three wizard settings survive and are restored on re-enabling, though the reply reports that all configuration has been cleared |
 | `attendance` | The per-division channel bindings only. The server-level notice, reminder and deadline timings and every penalty value survive |
-| `weather` | Nothing. Division forecast channels, the configured phase deadlines, recorded phase results and forecast messages already posted all survive; scheduled jobs are cancelled |
+| `weather` | Nothing. Division forecast channels, the configured phase deadlines, recorded phase results and forecast messages already posted all survive; its own scheduled jobs — the three forecast phases and the post-race cleanup, for every round still to come — are cancelled, and the result-submission and check-in jobs belonging to the other modules are left running |
 | `results` | Nothing. Channels, points configurations and season attachments all survive |
 | `images` | Nothing. It stores only filesystem paths and display preferences, none of which can go stale while it is off, so re-enabling restores the configuration exactly |
 
 > **Disabling `results` disables `attendance` with it**, where attendance is on. The reply names only results; the cascade is recorded in the log channel and audited as `ATTENDANCE_MODULE_CASCADE_DISABLED`.
-
-> **Disabling `weather` cancels more than the weather jobs.** Job cancellation is scoped by round rather than by kind, so it also removes the result-submission job and all three RSVP jobs for every remaining round of an active or setup season. Nothing recreates them short of `/season approve`. See [#117](https://github.com/asergio-marques/f1_league_racing_bot/issues/117).
 
 Enabling is guarded where disabling is not: `results` and `attendance` both refuse to be enabled while a season is ACTIVE, and neither refuses to be disabled. See [#114](https://github.com/asergio-marques/f1_league_racing_bot/issues/114).
 
