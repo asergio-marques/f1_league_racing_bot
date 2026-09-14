@@ -145,8 +145,11 @@ class TestScheduleRoundMystery:
         svc = _make_scheduler_no_db()
         svc.schedule_round(_mystery_round(round_id=42), season_number=3, division_tier=2)
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        # New format: <event>_s{season}_d{tier}_r{round_number}
-        assert any(jid == "weather_p1_s3_d2_r1" for jid in job_ids)
+        # Format: <event>_s{season}_d{tier}_r{round_number}_id{round_id}. The round id is the
+        # part that has to be there — season, tier and number are all rewritten by a
+        # renumbering, and without the id an amended round could schedule on top of a sibling's
+        # jobs and destroy them.
+        assert any(jid == "weather_p1_s3_d2_r1_id42" for jid in job_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +217,7 @@ class TestScheduleAttendanceRoundMystery:
             deadline_hours=2,
         )
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        assert "rsvp_notice_s1_d1_r1" in job_ids
+        assert "rsvp_notice_s1_d1_r1_id5" in job_ids
 
     def test_mystery_creates_rsvp_deadline_job(self):
         svc = _make_scheduler_no_db()
@@ -227,7 +230,7 @@ class TestScheduleAttendanceRoundMystery:
             deadline_hours=2,
         )
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        assert "rsvp_deadline_s1_d1_r1" in job_ids
+        assert "rsvp_deadline_s1_d1_r1_id5" in job_ids
 
     def test_mystery_creates_last_notice_job_when_enabled(self):
         svc = _make_scheduler_no_db()
@@ -240,7 +243,7 @@ class TestScheduleAttendanceRoundMystery:
             deadline_hours=2,
         )
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        assert "rsvp_last_notice_s1_d1_r1" in job_ids
+        assert "rsvp_last_notice_s1_d1_r1_id5" in job_ids
 
     def test_mystery_creates_same_rsvp_job_count_as_normal(self):
         """MYSTERY and NORMAL round must produce identical RSVP job counts."""

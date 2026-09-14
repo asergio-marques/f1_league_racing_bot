@@ -255,3 +255,80 @@ async def test_the_job_is_silent_where_no_callback_was_registered(workspace):
         await m._portrait_refresh_job(4242)  # must not raise
     finally:
         m._GLOBAL_SERVICE = None
+
+
+# ---------------------------------------------------------------------------
+# A renumbering must not let one round's jobs destroy another's
+# ---------------------------------------------------------------------------
+
+
+def _round_at(round_id: int, round_number: int):
+    from datetime import datetime, timezone
+
+    from models.round import Round, RoundFormat
+
+    return Round(
+        id=round_id,
+        division_id=1,
+        round_number=round_number,
+        format=RoundFormat.NORMAL,
+        track_name="Bahrain International Circuit",
+        scheduled_at=datetime(2099, 6, 1, 14, 0, tzinfo=timezone.utc),
+    )
+
+
+def test_renumbering_does_not_destroy_a_sibling_rounds_jobs():
+    """Two rounds that swap numbers must never share a job ID.
+
+    `renumber_rounds` rewrites the numbers of a whole division whenever an amendment changes
+    the order of its rounds, and only the amended round is re-armed — so the sibling kept jobs
+    named for a number it no longer held. The next amendment of *that* sibling then scheduled
+    onto the same ID, and because every `add_job` passes ``replace_existing=True`` it silently
+    took over the other round's entire schedule: forecasts, result submission and check-in,
+    with nothing reporting it.
+    """
+    from unittest.mock import MagicMock
+
+    from services.scheduler_service import SchedulerService
+
+    svc = SchedulerService.__new__(SchedulerService)
+    svc._phase_callbacks = {}
+    svc._mystery_notice_callback = None
+    svc._db_path = ":memory:"
+    svc._scheduler = MagicMock()
+    svc._scheduler.add_job = MagicMock()
+
+    # Round 105 was fifth and is amended to fall fourth; the renumbering then makes round 104
+    # the fifth. Both are scheduled as number 5, at different times in their lives.
+    svc.schedule_round(_round_at(105, 5), season_number=1, division_tier=1)
+    first = {c.kwargs["id"] for c in svc._scheduler.add_job.call_args_list}
+
+    svc._scheduler.add_job.reset_mock()
+    svc.schedule_round(_round_at(104, 5), season_number=1, division_tier=1)
+    second = {c.kwargs["id"] for c in svc._scheduler.add_job.call_args_list}
+
+    assert first and second
+    assert not (first & second), (
+        "two rounds scheduled under the same number share job IDs, so the second silently "
+        f"replaces the first: {sorted(first & second)}"
+    )
+
+
+def test_a_job_id_written_before_the_round_id_existed_still_reports_its_module():
+    """The job store outlives a restart, so the old ID format is still in it.
+
+    Ownership is read by stripping the round suffix off the job ID, and that is what tells a
+    module's disable which jobs are its own. A suffix pattern that insisted on the round id
+    would fail to parse the jobs already written without one — and weather's disable would stop
+    filtering and take results and the check-in down with it, which is issue #117 over again.
+    """
+    from services.scheduler_service import _JOB_SUFFIX_RE
+
+    for job_id, prefix in (
+        ("weather_p1_s1_d1_r4", "weather_p1"),          # written before the id was added
+        ("weather_p1_s1_d1_r4_id104", "weather_p1"),    # written after
+        ("rsvp_deadline_s2_d3_r11_id97", "rsvp_deadline"),
+    ):
+        match = _JOB_SUFFIX_RE.search(job_id)
+        assert match is not None, job_id
+        assert job_id[: match.start()] == prefix
