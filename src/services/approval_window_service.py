@@ -241,6 +241,11 @@ def calendar_faults(
     if not live:
         return None
 
+    # Normalised exactly as `overdue_windows` normalises it, so a naive ``now`` compares
+    # here rather than raising, and the two halves of this module cannot disagree about
+    # what moment they were asked about.
+    now = _as_utc(now)
+
     # Ordered by moment, and by round number where two share one, so that three hosts whose
     # databases need not agree about row order still reach the same answer.
     def _order(rnd: Round) -> tuple[datetime, int]:

@@ -509,3 +509,14 @@ def test_no_fault_at_all_is_no_lines():
     from cogs.season_cog import SeasonCog
 
     assert SeasonCog.__new__(SeasonCog)._calendar_fault_lines(None) == []
+
+
+def test_a_naive_now_is_read_as_utc_too():
+    """`overdue_windows` normalises its ``now``; this half must not diverge from it.
+
+    Nothing in the bot passes a naive one — both callers read `datetime.now(timezone.utc)` —
+    but a comparison that raises where its sibling compares is a trap for the next caller.
+    """
+    fault = calendar_faults([_round(days_out=-1)], now=NOW.replace(tzinfo=None))
+
+    assert fault is not None and fault.latest_past.round_number == 1
