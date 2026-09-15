@@ -137,6 +137,25 @@ erroring. A skip is
 not itself a build failure, but it is a gap in what "the suite passes" actually verified — treat
 a new one as something to justify, not a convenient way to silence a broken test.
 
+**That floor is one number for the whole repository, and a module with no tests at all can
+hide inside it.** `tools/coverage_by_module.py` groups a `coverage json` report by module so
+the thin one is visible; CI prints it into the run summary on every ubuntu run, before the
+gate, so the breakdown survives a failing build. Run it by hand as:
+
+```
+python3 -m coverage run -m pytest tests/ -q -m "not rasteriser"
+python3 -m coverage json -q -o coverage.json
+python3 tools/coverage_by_module.py coverage.json --module weather
+```
+
+It is **reported, never gated** — the gate stays one number, for the reason given above.
+It measures `src/` **only**: the suite is some 36,000 statements and is ~98% "covered" by
+construction, because a test file's lines are hit by running it, so counting it inflates
+every figure. The gate itself does not yet make that distinction, which is why the number it
+prints is far above the bot's real coverage — issue #208 tracks closing that gap. A file
+matching no rule in the tool is printed as `UNASSIGNED` rather than absorbed into `core`, so
+add new services to `RULES` when it says so.
+
 **A test must not depend on what the host happens to carry.** The suite runs on three
 materially different environments — a Windows development machine, CI's runners, and the
 Raspberry Pi 4 the bot runs on — and they differ in library versions, installed fonts and
