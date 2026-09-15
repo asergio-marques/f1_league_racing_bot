@@ -42,6 +42,23 @@ jobs:
         sys.exit(1 if failures or errors else 0)
         '
 
+    # Reported, never gated. The gate below is a single number for the whole repository,
+    # which a module with no tests at all can sit inside unnoticed — issue #161 was exactly
+    # that. This prints where the cover actually is, per module and worst last.
+    #
+    # It runs *before* the gate so the breakdown is present on a failing build, which is when
+    # it is most worth reading. It measures `src/` only; see the tool's docstring and #208.
+    - name: Coverage by module
+      run: |
+        coverage json -q -o coverage.json
+        python tools/coverage_by_module.py coverage.json | tee /tmp/by-module.txt
+        {
+          echo '### Coverage by module'
+          echo '```'
+          cat /tmp/by-module.txt
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
     - name: Github Action to retrieve coverage percentage
       id: total-coverage
       run: |
