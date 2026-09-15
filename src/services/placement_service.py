@@ -414,13 +414,40 @@ class PlacementService:
     # Image template capacity (036 / Constitution XIV.12)
     # ------------------------------------------------------------------
 
-    async def _guard_reserve_capacity(self, server_id: int, division_id: int) -> None:
+    async def _is_reserve_team(self, division_id: int, team_name: str) -> bool | None:
+        """Whether *team_name* is the division's reserve team, or None where there is no such team.
+
+        The capacity guards below measure two different populations — the reserve block and
+        the classification — and a driver joins exactly one of them. Neither guard can tell
+        which without this, and both run before ``assign_driver`` opens its own transaction,
+        where the same flag is read again from the row it needs in hand anyway.
+        """
+        async with get_connection(self._db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT is_reserve FROM team_instances "
+                    "WHERE division_id = ? AND name = ?",
+                    (division_id, team_name),
+                )
+            ).fetchone()
+        return None if row is None else bool(row["is_reserve"])
+
+    async def _guard_reserve_capacity(
+        self, server_id: int, division_id: int, team_name: str
+    ) -> None:
         """Refuse a reserve placement that would outgrow the lineup template (FR/R8).
 
         The reserve block is the one lineup collection whose slots the template fixes, so
         it is the one to which overflow applies. XIV.12 requires overflow to be rejected
         at the earliest moment it can be detected, with the change unapplied — which is
         this command, not the render.
+
+        **It bounds reserve placements and nothing else.** A driver going into an ordinary
+        race team never joins the reserve block, so a full block says nothing about them.
+        Until #140 this guard was not told which team was being filled and counted the
+        division's reserves on every assignment, which left a division carrying as many
+        reserves as its template drew slots for unable to seat anybody at all — the refusal
+        blaming the reserve block for a placement that was never part of it.
 
         Never raises for its own reasons: a fault in this check must not block a
         placement, only a genuine over-capacity may.
@@ -432,6 +459,11 @@ class PlacementService:
             from models.image_catalogues import reserve_capacity_problem
             from services.image_lineup_post import lineup_enabled
             from utils.svg_document import load_svg
+
+            # Not a reserve placement, or no such team — `assign_driver` reports a team
+            # that does not exist in its own words, and this guard stays quiet.
+            if not await self._is_reserve_team(division_id, team_name):
+                return
 
             if not await lineup_enabled(bot, server_id):
                 return
@@ -601,7 +633,7 @@ class PlacementService:
             )
 
     async def _guard_image_capacity(
-        self, server_id: int, division_id: int, season_id: int
+        self, server_id: int, division_id: int, season_id: int, team_name: str
     ) -> None:
         """Refuse a placement that would outgrow a configured image template.
 
@@ -618,7 +650,8 @@ class PlacementService:
 
         # The reserve block is guarded separately: it counts reserve drivers, not every
         # seated driver, and its capacity comes from the template rather than from here.
-        await self._guard_reserve_capacity(server_id, division_id)
+        # It needs the team, because only a placement into the reserve team joins it.
+        await self._guard_reserve_capacity(server_id, division_id, team_name)
 
         # The attendance sheet's rows are likewise counted from the template rather than
         # declared as a number, so they are invisible to ``declared_capacities()`` below.
@@ -691,7 +724,7 @@ class PlacementService:
         # FR-028). This is the single choke point through which a driver enters a
         # division, so guarding it covers the signup wizard, manual placement and bulk
         # import alike. Inert while every catalogue is empty.
-        await self._guard_image_capacity(server_id, division_id, season_id)
+        await self._guard_image_capacity(server_id, division_id, season_id, team_name)
 
         # A real driver may not be seated while the server is in test mode: the same
         # choke point keeps the manual command, the signup path and attendance's
