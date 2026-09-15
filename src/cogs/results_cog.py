@@ -655,11 +655,19 @@ class ResultsCog(commands.Cog):
             return
         try:
             await season_points_service.attach_config(
-                self.bot.db_path, season.id, name, season.status
+                self.bot.db_path, season.id, name, season.status,
+                server_id=interaction.guild_id,
             )
         except SeasonNotInSetupError:
             await interaction.followup.send(
                 "\u274c Config attachment is only allowed for seasons in SETUP.", ephemeral=True
+            )
+            return
+        except ConfigNotFoundError:
+            await interaction.followup.send(
+                f"\u274c Config **{name}** does not exist on this server, so nothing was "
+                f"attached. Check the spelling, or create it with `/results config add`.",
+                ephemeral=True,
             )
             return
         await interaction.followup.send(

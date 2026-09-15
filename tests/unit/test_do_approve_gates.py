@@ -447,7 +447,9 @@ async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> N
         await points_config_service.set_session_points(
             db_path, SERVER_ID, config_name, SessionType.FEATURE_RACE, position, pts
         )
-    await season_points_service.attach_config(db_path, SEASON_ID, config_name, "SETUP")
+    await season_points_service.attach_config(
+        db_path, SEASON_ID, config_name, "SETUP", server_id=SERVER_ID
+    )
 
 
 async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):

@@ -43,6 +43,21 @@ async def create_config(db_path: str, server_id: int, config_name: str) -> Point
     return PointsConfigStore(id=row_id, server_id=server_id, config_name=config_name)
 
 
+async def config_exists(db_path: str, server_id: int, config_name: str) -> bool:
+    """Whether the server's points store holds a configuration under this name.
+
+    Asked by :func:`season_points_service.attach_config`, which records a season's link to a
+    configuration by name into a column carrying no foreign key. Nothing beneath it objects
+    to a name that was never created, so the check has to be made above (#132).
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT 1 FROM points_config_store WHERE server_id = ? AND config_name = ?",
+            (server_id, config_name),
+        )
+        return await cursor.fetchone() is not None
+
+
 async def remove_config(db_path: str, server_id: int, config_name: str) -> None:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
