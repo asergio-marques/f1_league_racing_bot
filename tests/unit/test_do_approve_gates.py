@@ -447,7 +447,9 @@ async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> N
         await points_config_service.set_session_points(
             db_path, SERVER_ID, config_name, SessionType.FEATURE_RACE, position, pts
         )
-    await season_points_service.attach_config(db_path, SEASON_ID, config_name, "SETUP")
+    await season_points_service.attach_config(
+        db_path, SEASON_ID, config_name, "SETUP", server_id=SERVER_ID
+    )
 
 
 async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):
@@ -539,3 +541,95 @@ async def test_one_broken_position_is_named_once_however_many_checks_saw_it(db_p
     await _run(cog, interaction)
 
     assert _replies(interaction).count("Config 'BROKEN'") == 1
+
+
+# ── A points configuration attached by name and never created (#132) ──────────
+
+
+async def _attach_phantom(db_path, config_name: str) -> None:
+    """Link a name the store does not hold.
+
+    By hand, because `attach_config` refuses to make one now. The link is still reachable
+    two ways — a database written before that refusal, and a configuration removed from
+    under a season — so the gate has to cope with what the command no longer creates.
+    """
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO season_points_links (season_id, config_name) VALUES (?, ?)",
+            (SEASON_ID, config_name),
+        )
+        await db.commit()
+
+
+async def test_approve_refuses_and_names_a_phantom_points_config(db_path):
+    """The regression for #132, and the whole of what a league saw: nothing at all.
+
+    A mistyped name satisfied the "a points configuration is attached" count, and the
+    snapshot below then raised `ConfigNotFoundError` mid-command. The interaction had
+    already been deferred and the tree has no error handler, so the command ended having
+    sent no message whatever — the thinking indicator simply expired, and every retry did
+    the same. Before the gate this test does not merely fail, it raises.
+    """
+    await _attach_phantom(db_path, "Standrad")
+    cog = _cog_with_results(db_path)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    replies = _replies(interaction)
+    assert "Standrad" in replies, "the refusal must name the configuration that is missing"
+    assert "does not exist" in replies
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_a_phantom_points_config_is_refused_rather_than_raising(db_path):
+    """Said separately because the silence, not the refusal, was the reported fault."""
+    await _attach_phantom(db_path, "Standrad")
+    cog = _cog_with_results(db_path)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    interaction.followup.send.assert_awaited()
+
+
+async def test_a_phantom_alongside_a_real_config_is_still_refused(db_path):
+    """One good configuration does not excuse the one that is not there."""
+    await _attach(db_path, "GOOD", [(1, 25), (2, 18)])
+    await _attach_phantom(db_path, "Standrad")
+    cog = _cog_with_results(db_path)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert "Standrad" in _replies(interaction)
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_a_season_refused_for_a_phantom_config_takes_no_snapshot(db_path):
+    """The snapshot is what used to raise; it must not run at all now."""
+    await _attach(db_path, "GOOD", [(1, 25), (2, 18)])
+    await _attach_phantom(db_path, "Standrad")
+    cog = _cog_with_results(db_path)
+
+    await _run(cog, _interaction())
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS n FROM season_points_entries WHERE season_id = ?", (SEASON_ID,)
+        )
+        assert (await cursor.fetchone())["n"] == 0
+
+
+async def test_the_refusal_names_every_phantom_at_once(db_path):
+    """Two typos are two lines, so a manager does not approve once per mistake."""
+    await _attach_phantom(db_path, "Standrad")
+    await _attach_phantom(db_path, "Haf Points")
+    cog = _cog_with_results(db_path)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    replies = _replies(interaction)
+    assert "Standrad" in replies
+    assert "Haf Points" in replies

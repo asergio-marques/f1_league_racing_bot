@@ -45,7 +45,7 @@ This guide covers the results & standings module only. Setting the bot up, creat
 | Reading the submission channel, pasting results into it, and every button in it | The **interaction role** |
 | Anything under `/images` | See the image guide |
 
-> **Three of these cannot be undone, and they ask for more.** Deleting a points configuration removes it whether or not a season stands on it. Approving a mid-season points amendment overwrites the season's points entire. Amending a round that has already gone final overwrites the classification your drivers raced — it does not keep the old one. Those three ask for the league admin role; the rest of `/results` asks for the interaction role, which is the role that actually runs your race weekends.
+> **Three of these cannot be undone, and they ask for more.** Deleting a points configuration removes it outright, and detaches it from a season still in setup — the bot names that season and asks first, and the season then needs another configuration before it can be approved. A season already approved keeps its own copy and is unaffected. Approving a mid-season points amendment overwrites the season's points entire. Amending a round that has already gone final overwrites the classification your drivers raced — it does not keep the old one. Those three ask for the league admin role; the rest of `/results` asks for the interaction role, which is the role that actually runs your race weekends.
 >
 > The submission channel is opened to both roles, and every button in it — including the one that applies your penalties and the one that closes the round — accepts either. Pick the interaction role accordingly.
 
@@ -129,11 +129,11 @@ Building a table does **not** put it in your season. Attaching it does, and it c
 
 **Attach as many as you will need.** On race day the bot offers you the attached configurations as buttons and you pick one **per session**, which is how a race stopped at half distance gets scored differently from the qualifying session that preceded it. Attach one only, and the bot picks it for you without asking.
 
-**A season cannot be approved with nothing attached**, and nor can one whose attached tables are out of order. Those are the two things this module adds to approval beyond the channels, and both are checked against the configurations as they stand when you press Approve — not against the season's copy, which is taken only once the approval has passed every gate.
+**A season cannot be approved with nothing attached**, nor with an attached name that no longer exists, nor with a table that is out of order. Those are the three things this module adds to approval beyond the channels, and all are checked against the configurations as they stand when you press Approve — not against the season's copy, which is taken only once the approval has passed every gate.
 
 **At approval the season takes its own private copy of every attached table.** From that moment the season is sealed off: editing the server's `100%` afterwards changes nothing about the running championship, and the copy is what every round is scored against. Changing a running season's points is a separate job, described under [Correcting something afterwards](#the-points-system-itself-mid-season), and it is deliberately harder.
 
-> **A name you mistype is accepted and breaks approval silently.** `/results config append` does not check that the configuration exists, so a typo attaches nothing at all — and approval then fails **with no message whatever**, leaving the season in setup with no clue as to why. The same happens if you `/results config remove` a configuration that is still attached, because removing one does not detach it. Check `/season review`, which lists the attached names, against the names you actually built.
+> **A name you mistype is refused on the spot.** `/results config append` checks the configuration exists before attaching anything, so a typo is told to you at the moment you make it rather than becoming a season that cannot be approved. If you have an older season carrying such a name already, `/season review` names it and approval refuses on it, saying which one is missing and how to put it right.
 
 ---
 
@@ -377,6 +377,7 @@ Worth knowing so you do not go looking for the setting.
 | Season refused for a missing channel | A division is short of its results, standings or verdicts channel. The reply names each one |
 | Season refused for a points table out of order | A position is worth as much as or more than the one above it. The refusal names each one; repair them with `/results config session` and approve again |
 | Season refused for having no points configuration | Nothing is attached. `/results config append` first |
+| Season refused for a points configuration that does not exist | A name is attached that the server no longer holds — a typo from an older season, or a configuration since removed. The refusal names it; build it with `/results config add` or drop it with `/results config detach` |
 | No submission channel when a round started | The module is off, the division has no results channel, or the round was cancelled. The log channel says which |
 | No submission channel for a round you moved | `/round amend` re-arms the round's submission whatever your modules. If one still does not open, check the round actually reached its scheduled time |
 | A submission rejected over a team role | The Reserve role in a team column, three lines under one team, or a driver under a different team from the one another session of the round already records |

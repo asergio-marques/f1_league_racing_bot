@@ -69,16 +69,123 @@ async def test_attach_config_blocked_outside_setup(db_path):
     season_id = await _make_season(db_path, status="ACTIVE")
     await _make_config_with_entries(db_path, "CFG")
     with pytest.raises(SeasonNotInSetupError):
-        await attach_config(db_path, season_id=season_id, config_name="CFG", season_status="ACTIVE")
+        await attach_config(db_path, season_id=season_id, config_name="CFG", season_status="ACTIVE", server_id=1)
 
 
 @pytest.mark.asyncio
 async def test_attach_config_success_in_setup(db_path):
     season_id = await _make_season(db_path, status="SETUP")
     await _make_config_with_entries(db_path, "CFG")
-    await attach_config(db_path, season_id=season_id, config_name="CFG", season_status="SETUP")
+    await attach_config(db_path, season_id=season_id, config_name="CFG", season_status="SETUP", server_id=1)
     names = await season_points_service.get_attached_config_names(db_path, season_id)
     assert "CFG" in names
+
+
+@pytest.mark.asyncio
+async def test_attach_config_rejects_a_name_not_in_the_store(db_path):
+    """#132. A typo attached a phantom that only surfaced as silence at approval."""
+    season_id = await _make_season(db_path, status="SETUP")
+    await _make_config_with_entries(db_path, "Standard")
+
+    with pytest.raises(points_config_service.ConfigNotFoundError):
+        await attach_config(
+            db_path, season_id=season_id, config_name="Standrad",
+            season_status="SETUP", server_id=1,
+        )
+
+    assert await season_points_service.get_attached_config_names(db_path, season_id) == []
+
+
+@pytest.mark.asyncio
+async def test_attach_config_rejects_a_name_belonging_to_another_server(db_path):
+    """The store is per-server, so the check has to be too — or one league's name attaches
+    to another's season and snapshots nothing."""
+    season_id = await _make_season(db_path, status="SETUP")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs "
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+            "VALUES (999, 10, 20, 30)"
+        )
+        await db.commit()
+    await points_config_service.create_config(db_path, server_id=999, config_name="Elsewhere")
+
+    with pytest.raises(points_config_service.ConfigNotFoundError):
+        await attach_config(
+            db_path, season_id=season_id, config_name="Elsewhere",
+            season_status="SETUP", server_id=1,
+        )
+
+
+@pytest.mark.asyncio
+async def test_attach_config_checks_the_season_status_before_the_name(db_path):
+    """An active season is refused for being active, whatever was typed into it."""
+    season_id = await _make_season(db_path, status="ACTIVE")
+
+    with pytest.raises(SeasonNotInSetupError):
+        await attach_config(
+            db_path, season_id=season_id, config_name="Whatever",
+            season_status="ACTIVE", server_id=1,
+        )
+
+
+# ---------------------------------------------------------------------------
+# missing_attached_configs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_missing_attached_configs_names_only_the_phantom(db_path):
+    """What the approval gate and the review both report, so neither has to look itself."""
+    season_id = await _make_season(db_path)
+    await _make_config_with_entries(db_path, "REAL")
+    await attach_config(
+        db_path, season_id=season_id, config_name="REAL", season_status="SETUP", server_id=1
+    )
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO season_points_links (season_id, config_name) VALUES (?, 'PHANTOM')",
+            (season_id,),
+        )
+        await db.commit()
+
+    missing = await season_points_service.missing_attached_configs(
+        db_path, season_id, server_id=1
+    )
+
+    assert missing == ["PHANTOM"]
+
+
+@pytest.mark.asyncio
+async def test_missing_attached_configs_is_empty_when_every_name_is_real(db_path):
+    season_id = await _make_season(db_path)
+    await _make_config_with_entries(db_path, "REAL")
+    await attach_config(
+        db_path, season_id=season_id, config_name="REAL", season_status="SETUP", server_id=1
+    )
+
+    assert await season_points_service.missing_attached_configs(
+        db_path, season_id, server_id=1
+    ) == []
+
+
+@pytest.mark.asyncio
+async def test_missing_attached_configs_names_every_phantom_in_order(db_path):
+    """One at a time would send a manager round the loop once per typo."""
+    season_id = await _make_season(db_path)
+    async with get_connection(db_path) as db:
+        for name in ("ZULU", "ALPHA"):
+            await db.execute(
+                "INSERT INTO season_points_links (season_id, config_name) VALUES (?, ?)",
+                (season_id, name),
+            )
+        await db.commit()
+
+    missing = await season_points_service.missing_attached_configs(
+        db_path, season_id, server_id=1
+    )
+
+    assert missing == ["ALPHA", "ZULU"]
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +313,7 @@ async def _make_bad_config(db_path: str, config_name: str) -> None:
 async def test_attached_ordering_passes_a_well_built_table(db_path):
     season_id = await _make_season(db_path)
     await _make_config_with_entries(db_path, "GOOD")
-    await attach_config(db_path, season_id=season_id, config_name="GOOD", season_status="SETUP")
+    await attach_config(db_path, season_id=season_id, config_name="GOOD", season_status="SETUP", server_id=1)
 
     errors = await season_points_service.validate_attached_config_ordering(
         db_path, season_id, server_id=1
@@ -220,7 +327,7 @@ async def test_attached_ordering_catches_a_table_the_season_has_not_copied_yet(d
     """The regression. Nothing has written `season_points_entries` and the fault is found."""
     season_id = await _make_season(db_path)
     await _make_bad_config(db_path, "BAD")
-    await attach_config(db_path, season_id=season_id, config_name="BAD", season_status="SETUP")
+    await attach_config(db_path, season_id=season_id, config_name="BAD", season_status="SETUP", server_id=1)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -243,7 +350,7 @@ async def test_attached_ordering_ignores_a_config_the_season_never_attached(db_p
     season_id = await _make_season(db_path)
     await _make_config_with_entries(db_path, "GOOD")
     await _make_bad_config(db_path, "BAD")
-    await attach_config(db_path, season_id=season_id, config_name="GOOD", season_status="SETUP")
+    await attach_config(db_path, season_id=season_id, config_name="GOOD", season_status="SETUP", server_id=1)
 
     errors = await season_points_service.validate_attached_config_ordering(
         db_path, season_id, server_id=1
@@ -254,9 +361,20 @@ async def test_attached_ordering_ignores_a_config_the_season_never_attached(db_p
 
 @pytest.mark.asyncio
 async def test_attached_ordering_skips_a_name_attached_but_never_created(db_path):
-    """Issue #132's fault is left exactly as it is rather than reported from here."""
+    """A phantom link is reported by `missing_attached_configs`, not by the ordering check.
+
+    The link is seeded by hand because `attach_config` refuses to make one now (#132). It
+    can still be reached by a database written before that fix, or by a config removed from
+    under an approved season, so the ordering check must keep tolerating it — and stay
+    silent, because the fault is "there is no such config", not "its table is out of order".
+    """
     season_id = await _make_season(db_path)
-    await attach_config(db_path, season_id=season_id, config_name="TYPO", season_status="SETUP")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO season_points_links (season_id, config_name) VALUES (?, 'TYPO')",
+            (season_id,),
+        )
+        await db.commit()
 
     errors = await season_points_service.validate_attached_config_ordering(
         db_path, season_id, server_id=1
@@ -280,7 +398,7 @@ async def test_attached_ordering_judges_each_session_type_on_its_own(db_path):
             db_path, server_id=1, config_name="MIXED",
             session_type=SessionType.FEATURE_QUALIFYING, position=pos, points=pts,
         )
-    await attach_config(db_path, season_id=season_id, config_name="MIXED", season_status="SETUP")
+    await attach_config(db_path, season_id=season_id, config_name="MIXED", season_status="SETUP", server_id=1)
 
     errors = await season_points_service.validate_attached_config_ordering(
         db_path, season_id, server_id=1
@@ -297,7 +415,7 @@ async def test_attached_ordering_reports_every_attached_config(db_path):
     await _make_bad_config(db_path, "BAD-ONE")
     await _make_bad_config(db_path, "BAD-TWO")
     for name in ("BAD-ONE", "BAD-TWO"):
-        await attach_config(db_path, season_id=season_id, config_name=name, season_status="SETUP")
+        await attach_config(db_path, season_id=season_id, config_name=name, season_status="SETUP", server_id=1)
 
     errors = await season_points_service.validate_attached_config_ordering(
         db_path, season_id, server_id=1
@@ -313,7 +431,7 @@ async def test_attached_ordering_and_the_season_copy_word_a_fault_the_same_way(d
     """One rule, one sentence — whichever of the two checks found it."""
     season_id = await _make_season(db_path)
     await _make_bad_config(db_path, "SAME")
-    await attach_config(db_path, season_id=season_id, config_name="SAME", season_status="SETUP")
+    await attach_config(db_path, season_id=season_id, config_name="SAME", season_status="SETUP", server_id=1)
     await season_points_service.snapshot_configs_to_season(db_path, season_id, server_id=1)
 
     from_source = await season_points_service.validate_attached_config_ordering(

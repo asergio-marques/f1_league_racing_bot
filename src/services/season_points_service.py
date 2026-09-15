@@ -31,11 +31,29 @@ async def attach_config(
     season_id: int,
     config_name: str,
     season_status: str,
+    *,
+    server_id: int,
 ) -> None:
+    """Attach a server-level points configuration to a season in setup.
+
+    Raises :class:`points_config_service.ConfigNotFoundError` for a name the server's store
+    does not hold. **The check is here because nothing below it can make one** (#132):
+    ``season_points_links.config_name`` is bare ``TEXT`` with no foreign key, so a mistyped
+    name inserts as happily as a real one and is reported as attached by `/season review`.
+    The first thing that ever noticed was the snapshot at approval, which raised in the
+    middle of a deferred command — and with no error handler on the tree, said nothing at
+    all. Refusing at the moment the name is typed is the only place the manager still knows
+    what they meant.
+
+    ``server_id`` is keyword-only and required, so that a caller written against the older
+    signature fails loudly rather than silently checking nothing.
+    """
     if season_status != "SETUP":
         raise SeasonNotInSetupError(
             f"Config attachment is only allowed for seasons in SETUP (status: {season_status})"
         )
+    if not await points_config_service.config_exists(db_path, server_id, config_name):
+        raise points_config_service.ConfigNotFoundError(config_name)
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT OR REPLACE INTO season_points_links (season_id, config_name) VALUES (?, ?)",
@@ -72,6 +90,27 @@ async def get_attached_config_names(db_path: str, season_id: int) -> list[str]:
         )
         rows = await cursor.fetchall()
     return [r["config_name"] for r in rows]
+
+
+async def missing_attached_configs(
+    db_path: str,
+    season_id: int,
+    server_id: int,
+) -> list[str]:
+    """Every name this season is linked to that the server's points store does not hold.
+
+    `attach_config` refuses to make such a link, but two doors are still open to one: a
+    database written before that refusal existed, and `/results config remove`, which takes
+    the configuration out from under any season that is not in setup. So the approval gate
+    reads this rather than trusting the attachment to have been checked.
+
+    Sorted, so a manager fixing several typos reads them in the same order twice running.
+    """
+    missing: list[str] = []
+    for name in await get_attached_config_names(db_path, season_id):
+        if not await points_config_service.config_exists(db_path, server_id, name):
+            missing.append(name)
+    return sorted(missing)
 
 
 async def snapshot_configs_to_season(
@@ -152,8 +191,10 @@ async def validate_attached_config_ordering(
     configs, so checking those checks exactly the points the season is about to take,
     and needs nothing undone when the answer is no.
 
-    A config name attached but never created is **skipped, not raised**. That is issue
-    #132's fault to fix, and refusing here would only change which command reports it.
+    A config name attached but never created is **skipped, not raised**. It is
+    :func:`missing_attached_configs` that reports one, and the approval gate and `/season
+    review` both read that — so the fault is named as what it is rather than disguised as an
+    ordering complaint about a table that does not exist (#132).
     """
     errors: list[str] = []
     for config_name in await get_attached_config_names(db_path, season_id):

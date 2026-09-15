@@ -427,6 +427,54 @@ async def _run_xml_import(
     await _audit(f"SUCCESS: {len(payload.positions)} session(s), {len(payload.fastest_laps)} FL row(s)")
 
 
+# ---------------------------------------------------------------------------
+# Confirmation — removing a points config a season in setup stands on
+# ---------------------------------------------------------------------------
+
+
+class _ConfirmRemoveConfigView(discord.ui.View):
+    """Confirm removing a points configuration before anything is deleted.
+
+    Shown only where the removal costs the league something beyond the configuration
+    itself: a season still in setup is attached to it, and the removal detaches it (#132).
+    With nothing attached the command removes it straight away, as it always did — the
+    shape `module_cog._ConfirmDisableResultsView` already sets.
+
+    The removal is irreversible either way, so the button is a danger button and says what
+    it does rather than "Confirm".
+    """
+
+    def __init__(self, cog: "ResultsCog", actor_id: int, config_name: str) -> None:
+        super().__init__(timeout=120)
+        self._cog = cog
+        self._actor_id = actor_id
+        self._config_name = config_name
+
+    @discord.ui.button(label="\u2705 Remove it anyway", style=discord.ButtonStyle.danger)
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if interaction.user.id != self._actor_id:
+            await interaction.response.send_message("\u26d4 Not your action.", ephemeral=True)
+            return
+        self.stop()
+        await interaction.response.defer(ephemeral=True)
+        await self._cog._apply_config_remove(interaction, self._config_name)
+
+    @discord.ui.button(label="\u274c Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if interaction.user.id != self._actor_id:
+            await interaction.response.send_message("\u26d4 Not your action.", ephemeral=True)
+            return
+        self.stop()
+        await interaction.response.send_message(
+            f"Cancelled. **{self._config_name}** is untouched and still attached.",
+            ephemeral=True,
+        )
+
+
 class ResultsCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -480,21 +528,63 @@ class ResultsCog(commands.Cog):
     @app_commands.describe(name="Config name to remove")
     @league_admin_only
     async def config_remove(self, interaction: discord.Interaction, name: str) -> None:
-        """Delete a named points configuration.
+        """Delete a named points configuration, and detach it from a season being built.
 
-        **A league admin's**, unlike the rest of `/results config`. The delete is
-        unconditional — nothing checks whether the configuration is attached to the standing
-        season — and there is no undo: rebuilding one means retyping every position of every
-        session type by hand. That places it squarely under the core specification's rule
-        that a command destroying what a league is built from, where nothing puts it back,
-        is a league admin's.
+        **A league admin's**, unlike the rest of `/results config`. There is no undo:
+        rebuilding one means retyping every position of every session type by hand. That
+        places it squarely under the core specification's rule that a command destroying
+        what a league is built from, where nothing puts it back, is a league admin's.
 
         Adding, appending, detaching and editing a configuration stay a league manager's.
         Each of those has another command that reverses it.
+
+        **It asks first where a season in setup stands on the configuration** (decided
+        2026-09-15, issue #132). The removal takes the attachment with it — see
+        `points_config_service.remove_config` for why that is the season's only link to the
+        points, and why an approved season's is left alone — so the season quietly stops
+        being the season the manager built. Naming the season and waiting is the difference
+        between a deliberate teardown and a surprise found at the next `/season review`.
+        With nothing attached there is nothing to lose and the command acts straight away,
+        in the manner of `module_cog._ConfirmDisableResultsView`.
         """
         if not await self._module_gate(interaction):
             return
         await interaction.response.defer(ephemeral=True)
+
+        if not await points_config_service.config_exists(
+            self.bot.db_path, interaction.guild_id, name
+        ):
+            await interaction.followup.send(
+                f"\u274c Config **{name}** not found.", ephemeral=True
+            )
+            return
+
+        standing = await points_config_service.setup_seasons_linking(
+            self.bot.db_path, interaction.guild_id, name
+        )
+        if not standing:
+            await self._apply_config_remove(interaction, name)
+            return
+
+        seasons = ", ".join(f"**Season #{number}**" for _, number in standing)
+        await interaction.followup.send(
+            f"\u26a0\ufe0f **{name}** is attached to {seasons}, which is still being set up.\n"
+            f"Removing it deletes the configuration outright — every position of every "
+            f"session type, with no undo — and detaches it from that season, which will then "
+            f"be refused for approval until another is attached.\n"
+            f"Remove it anyway?",
+            view=_ConfirmRemoveConfigView(self, interaction.user.id, name),
+            ephemeral=True,
+        )
+
+    async def _apply_config_remove(
+        self, interaction: discord.Interaction, name: str
+    ) -> None:
+        """Remove the configuration and report it.
+
+        Shared by the straight path and the confirmation button, so the two cannot come to
+        differ about what removing one does or about what the log records.
+        """
         try:
             await points_config_service.remove_config(self.bot.db_path, interaction.guild_id, name)
         except ConfigNotFoundError:
@@ -655,11 +745,19 @@ class ResultsCog(commands.Cog):
             return
         try:
             await season_points_service.attach_config(
-                self.bot.db_path, season.id, name, season.status
+                self.bot.db_path, season.id, name, season.status,
+                server_id=interaction.guild_id,
             )
         except SeasonNotInSetupError:
             await interaction.followup.send(
                 "\u274c Config attachment is only allowed for seasons in SETUP.", ephemeral=True
+            )
+            return
+        except ConfigNotFoundError:
+            await interaction.followup.send(
+                f"\u274c Config **{name}** does not exist on this server, so nothing was "
+                f"attached. Check the spelling, or create it with `/results config add`.",
+                ephemeral=True,
             )
             return
         await interaction.followup.send(
