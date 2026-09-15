@@ -1595,14 +1595,12 @@ All commands below require the attendance module to be enabled (`/module enable 
 |-----------|------|----------|-------------|
 | `points` | Integer | ✅ | Points applied when a NO_RSVP, TENTATIVE, or DECLINED driver does not appear in results (≥ 0). Stacks with the no-RSVP penalty for NO_RSVP drivers. |
 
-#### `/attendance config rsvp-absent-penalty` — Set the no-show penalty
+#### `/attendance config no-show-penalty` — Set the no-show penalty
 *Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `points` | Integer | ✅ | Points applied when a driver RSVPs **ACCEPTED** but does not appear in session results (≥ 0) |
-
-> **Limitation:** This command does not currently work. It calls a service method that does not exist, so the interaction fails and the value is never written — the penalty stays at its default of **1** for every server and cannot be changed by any means. `/attendance config show` still reports it, correctly, as 1.
 
 #### `/attendance config autoreserve` — Set the auto-reserve threshold
 *Access: League manager*
