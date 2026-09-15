@@ -282,3 +282,164 @@ async def test_a_threshold_of_zero_disables_it(command, method):
     await _invoke(command, cog, interaction, 0)
 
     getattr(cog.bot.attendance_service, method).assert_awaited_once_with(SERVER_ID, None)
+
+
+# ---------------------------------------------------------------------------
+# The "not configured yet" refusal — issue #208
+# ---------------------------------------------------------------------------
+#
+# The three *timing* setters read the current configuration before writing, because each
+# validates against the other two. A league that has not enabled the module has no row, and
+# each must say so rather than reaching `validate_timing_invariant` with `None` and raising
+# `AttributeError` at the league — the same shape of fault as issue #119 above.
+#
+# The five penalty and threshold setters deliberately do **not**: they write a single column
+# that depends on nothing else, and the two threshold commands read the configuration only to
+# consult the *other* threshold, tolerating its absence with `if cfg and ...`. Parametrising
+# all eight here would assert a refusal five of them have no reason to make.
+
+#: The setters that validate against the rest of the configuration, and so need to read it.
+TIMING_SETTERS = [
+    (AttendanceCog.config_rsvp_notice, 7, "update_rsvp_notice_days"),
+    (AttendanceCog.config_rsvp_last_notice, 12, "update_rsvp_last_notice_hours"),
+    (AttendanceCog.config_rsvp_deadline, 3, "update_rsvp_deadline_hours"),
+]
+TIMING_SETTER_IDS = ["rsvp-notice", "rsvp-last-notice", "rsvp-deadline"]
+
+
+@pytest.mark.parametrize(
+    "command,value,method", TIMING_SETTERS, ids=TIMING_SETTER_IDS
+)
+async def test_a_timing_command_refuses_a_server_with_no_configuration(command, value, method):
+    cog = _make_cog()
+    cog.bot.attendance_service.get_config.return_value = None
+    interaction = _interaction()
+
+    await _invoke(command, cog, interaction, value)
+
+    assert "No attendance configuration found" in interaction.response.send_message.await_args.args[0]
+
+
+@pytest.mark.parametrize(
+    "command,value,method", TIMING_SETTERS, ids=TIMING_SETTER_IDS
+)
+async def test_nothing_is_written_for_a_server_with_no_configuration(command, value, method):
+    """The refusal must also be a refusal to write, not merely a message beside a write."""
+    cog = _make_cog()
+    cog.bot.attendance_service.get_config.return_value = None
+    interaction = _interaction()
+
+    await _invoke(command, cog, interaction, value)
+
+    getattr(cog.bot.attendance_service, method).assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# The lower bounds on the timing commands
+# ---------------------------------------------------------------------------
+
+
+async def test_an_rsvp_notice_of_less_than_a_day_is_refused():
+    """`attendance_module_specification.md` gives the notice in whole days, so zero days
+    would schedule the call for the round's own moment and there would be nothing to
+    notice."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _invoke(AttendanceCog.config_rsvp_notice, cog, interaction, 0)
+
+    assert "at least 1" in interaction.response.send_message.await_args.args[0]
+    cog.bot.attendance_service.update_rsvp_notice_days.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "command,method",
+    [
+        (AttendanceCog.config_rsvp_last_notice, "update_rsvp_last_notice_hours"),
+        (AttendanceCog.config_rsvp_deadline, "update_rsvp_deadline_hours"),
+    ],
+    ids=["rsvp-last-notice", "rsvp-deadline"],
+)
+async def test_a_negative_number_of_hours_is_refused(command, method):
+    """Zero is meaningful for both — it disables the last notice, and it makes the deadline
+    the round start — so the bound is below zero, not at it."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _invoke(command, cog, interaction, -1)
+
+    getattr(cog.bot.attendance_service, method).assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# `/attendance config show`
+# ---------------------------------------------------------------------------
+
+
+async def test_the_configuration_is_shown_with_every_setting_a_command_can_write():
+    """`show` is how a league checks what it has set, so a setting missing from it is a
+    setting nobody can confirm. Each of the eight is named."""
+    cog = _make_cog(
+        cfg=_config(
+            rsvp_notice_days=6,
+            rsvp_last_notice_hours=12,
+            rsvp_deadline_hours=3,
+            no_rsvp_penalty=2,
+            absent_penalty=4,
+            no_show_penalty=6,
+            autoreserve_threshold=10,
+            autosack_threshold=20,
+        )
+    )
+    interaction = _interaction()
+
+    await _invoke(AttendanceCog.config_show, cog, interaction)
+
+    shown = interaction.response.send_message.await_args.args[0]
+    for value in ("6", "12", "3", "2", "4", "10", "20"):
+        assert value in shown
+    assert "Attendance Configuration" in shown
+
+
+async def test_an_unset_threshold_is_shown_as_disabled_rather_than_none():
+    """`None` reaching a league as the word "None" reads as a bug; the thresholds are the
+    only two settings that can be unset."""
+    cog = _make_cog(cfg=_config(autoreserve_threshold=None, autosack_threshold=None))
+    interaction = _interaction()
+
+    await _invoke(AttendanceCog.config_show, cog, interaction)
+
+    shown = interaction.response.send_message.await_args.args[0]
+    assert "disabled" in shown
+    assert "None" not in shown
+
+
+async def test_a_last_notice_of_zero_is_shown_as_disabled():
+    """Zero hours is a legal value meaning "do not send one", and the league needs to be
+    able to tell that from "zero hours before the race"."""
+    cog = _make_cog(cfg=_config(rsvp_last_notice_hours=0))
+    interaction = _interaction()
+
+    await _invoke(AttendanceCog.config_show, cog, interaction)
+
+    assert "*(disabled)*" in interaction.response.send_message.await_args.args[0]
+
+
+async def test_show_refuses_a_server_with_no_configuration():
+    cog = _make_cog()
+    cog.bot.attendance_service.get_config.return_value = None
+    interaction = _interaction()
+
+    await _invoke(AttendanceCog.config_show, cog, interaction)
+
+    assert "No attendance configuration found" in interaction.response.send_message.await_args.args[0]
+
+
+async def test_show_is_refused_while_the_module_is_disabled():
+    cog = _make_cog()
+    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    interaction = _interaction()
+
+    await _invoke(AttendanceCog.config_show, cog, interaction)
+
+    cog.bot.attendance_service.get_config.assert_not_awaited()
