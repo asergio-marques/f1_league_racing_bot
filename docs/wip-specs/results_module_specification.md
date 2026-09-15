@@ -387,6 +387,8 @@ Approving stage two shall apply any staged corrections, republish the round's re
     - 3rd - If equal on wins, the number of 2nd place finishes is compared, with the tiebreaker being won by the one with the most 2nd places; 
     - 4th - If equal, then 3rd place finishes is compared, and so on until a difference arises.
     - 5th - If at the end both drivers are still tied, then the first to take the highest position will win the tie-breaker (e.g. 0 1st finishes, 1 2nd finish for both drivers, first one to have gotten 2nd wins).
+    - 6th - If both are still tied, an entry that has taken part in at least one session shall rank above one that has taken part in none.
+    - 7th - The final tiebreak, applied where every criterion above has failed to separate two entries: alphabetically by the name of the team, with the reserve team after every named team and a driver holding no seat in the division after the reserves; alphabetically by the name of the driver within a team; and, where two drivers carry the same name or two teams the same name, the smaller identifier first — the driver's Discord user ID, or the team's role. Drivers are ordered on the name the standings are drawn under, so that the order and the sheet agree. The last step is what makes the order total: display names are not unique on Discord and two drivers can genuinely share one.
     - NOTE: For countback tiebreakers, only Feature Race sessions are relevant.
 - In driver standings, all drivers that have partaken in a division are ranked according to their total accrued points and finishes in each round of said division.
 - In team standings, all teams are ranked according to the total points and finishes accrued by those driving their cars in each round of said division.
@@ -394,7 +396,7 @@ Approving stage two shall apply any staged corrections, republish the round's re
 - Both standings are recalculated after the results of each round are submitted and validated, with the points obtained in that round added to the total.
 - Beyond the postings after each round, both standings shall be posted on the two occasions that bracket a season:
     - Upon the season being approved, an **opening classification** shall be posted to the standings channel of each division, holding every driver and every team upon nought points. It is the grid as it stands before a round has been run.
-        - It shall be ordered alphabetically by the name of the team, and alphabetically by the name of the driver within a team. Nothing has been scored, so the countback above separates nobody and the order is stated rather than derived.
+        - Nothing has been scored, so the countback above separates nobody: it is ordered by the final tiebreak alone, which is the rule stated rather than derived.
     - Upon the season completing, a **final classification** shall be posted to the same channel, holding the classification of the last round of the division for which results were posted. A division which ran no round publishes none.
 - Neither posting carries message text where it is drawn as a graphic; where it is written out as text, it is headed by the phrase naming the occasion — "Opening Classification" or "Final Classification".
 - Neither posting replaces a standings message nor has its ID recorded: a standings message belongs to the round it was posted for, and neither of these stands after a round. Both are posted beside the standings of the rounds, and "results standings sync" reaches neither.
@@ -414,7 +416,6 @@ Approving stage two shall apply any staged corrections, republish the round's re
 - <NEW COMMAND> A "results standings sync" command will take as input the name of a division. It shall delete every standings message the bot holds for that division and post the standings of each round that has results afresh, in round order, each under the state that round has reached.
 - <NEW COMMAND> A "results rounds sync" command will take as input the name of a division. It shall delete every session results message the bot holds for that division and post the results of every session of every round afresh, in round order, each under the state that round has reached.
 - Every driver seated in a non-reserve seat of a division shall appear in the driver standings from the outset, on zero points, whether or not they have taken part in a round. Every non-reserve team of the division shall likewise appear in the team standings.
-- Where two entries cannot be separated on points or on countback, an entry that has taken part in at least one session shall rank above one that has taken part in none.
 - If a driver that was assigned only to the reserve team in a given division is then assigned to a configurable team, the points they have accrued as a driver will stand all-the-same, and will be reflected on their position on the standings.
 
 
