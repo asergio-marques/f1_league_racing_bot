@@ -492,3 +492,82 @@ async def test_mock_driver_is_still_drawn_under_its_test_name(tmp_path, capture_
     )
 
     assert capture_drawings["built"][0]["driver_name"] == "Mock Driver"
+
+
+# ---------------------------------------------------------------------------
+# The attendance sanction's verdict — the third call site (#141)
+# ---------------------------------------------------------------------------
+#
+# Reached from `attendance_service`, which hands over the driver's test display name. That
+# name still stands in the *textual* announcement, where the driver is a live mention and
+# Discord resolves the name itself; only the graphic, which can carry no mention, resolves
+# one of its own.
+
+
+@pytest.mark.asyncio
+async def test_autosanction_verdict_names_the_driver_not_their_id(
+    tmp_path, capture_drawings
+):
+    """A sacking names the driver as a penalty does, and never by their user id (#141)."""
+    from services.verdict_announcement_service import post_autosanction_announcement
+
+    db_path = str(tmp_path / "test.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path, signup_display_name="Signed Up Name")
+
+    channel = _Channel(_Member("Ada on Server"))
+    bot = _Bot(db_path, channel)
+
+    with patch(
+        "services.verdict_announcement_service.banner_for_round",
+        return_value=AsyncMock(),
+    ):
+        await post_autosanction_announcement(
+            bot,
+            db_path,
+            seeded["round_id"],
+            DRIVER_ID,
+            None,  # a real driver carries no test display name
+            "AUTOSACK",
+            12,
+        )
+
+    assert len(capture_drawings["built"]) == 1
+    drawn = capture_drawings["built"][0]["driver_name"]
+    assert drawn == "Ada on Server"
+    assert str(DRIVER_ID) not in drawn
+
+
+@pytest.mark.asyncio
+async def test_autosanction_message_still_carries_the_mention(tmp_path, capture_drawings):
+    """With graphics off, the textual announcement is untouched: a mention, not a name."""
+    from services.verdict_announcement_service import post_autosanction_announcement
+
+    capture_drawings["enabled"] = False
+
+    db_path = str(tmp_path / "test.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path, signup_display_name="Signed Up Name")
+
+    channel = _Channel(_Member("Ada on Server"))
+    bot = _Bot(db_path, channel)
+
+    with patch(
+        "services.verdict_announcement_service.banner_for_round",
+        return_value=AsyncMock(),
+    ):
+        await post_autosanction_announcement(
+            bot,
+            db_path,
+            seeded["round_id"],
+            DRIVER_ID,
+            "Mock Driver",
+            "AUTORESERVE",
+            12,
+        )
+
+    assert capture_drawings["built"] == []
+    content, file = channel.sent[-1]
+    assert file is None
+    assert f"<@{DRIVER_ID}> (Mock Driver)" in content
+    assert "Moved to Reserve" in content
