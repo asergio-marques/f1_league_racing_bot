@@ -94,18 +94,27 @@ async def _seed(tmp_path, *, reserves: int, regulars: int = 0, teams: int = 2):
             (division_id, RESERVE),
         )
         reserve_instance = cursor.lastrowid
-        ordinary_instances = []
+        # Each ordinary team carries its two seats, empty until a driver is seated in one —
+        # `assign_driver` needs a free seat to place into, as a real division would have.
+        ordinary_seats: list[int] = []
         for index in range(1, teams + 1):
             cursor = await db.execute(
                 "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
                 "VALUES (?, ?, 2, 0)",
                 (division_id, f"Team {index}"),
             )
-            ordinary_instances.append(cursor.lastrowid)
+            instance_id = cursor.lastrowid
+            for seat_number in (1, 2):
+                cursor = await db.execute(
+                    "INSERT INTO team_seats (team_instance_id, seat_number, "
+                    "driver_profile_id) VALUES (?, ?, NULL)",
+                    (instance_id, seat_number),
+                )
+                ordinary_seats.append(cursor.lastrowid)
 
         next_user_id = 1000
 
-        async def seat(instance_id: int, seat_number: int) -> None:
+        async def occupy(seat_id: int) -> None:
             nonlocal next_user_id
             cursor = await db.execute(
                 "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
@@ -114,21 +123,25 @@ async def _seed(tmp_path, *, reserves: int, regulars: int = 0, teams: int = 2):
             )
             next_user_id += 1
             profile_id = cursor.lastrowid
-            cursor = await db.execute(
-                "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
-                "VALUES (?, ?, ?)",
-                (instance_id, seat_number, profile_id),
+            await db.execute(
+                "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
+                (profile_id, seat_id),
             )
             await db.execute(
                 "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
                 "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
-                (profile_id, season_id, division_id, cursor.lastrowid),
+                (profile_id, season_id, division_id, seat_id),
             )
 
         for index in range(reserves):
-            await seat(reserve_instance, index + 1)
-        for index in range(regulars):
-            await seat(ordinary_instances[index // 2], index % 2 + 1)
+            cursor = await db.execute(
+                "INSERT INTO team_seats (team_instance_id, seat_number, "
+                "driver_profile_id) VALUES (?, ?, NULL)",
+                (reserve_instance, index + 1),
+            )
+            await occupy(cursor.lastrowid)
+        for seat_id in ordinary_seats[:regulars]:
+            await occupy(seat_id)
 
         # The driver every test then tries to place.
         await db.execute(
@@ -141,8 +154,12 @@ async def _seed(tmp_path, *, reserves: int, regulars: int = 0, teams: int = 2):
     return db_path, season_id, division_id
 
 
-def _bot(reports, *, toggle: bool = True):
+def _bot(db_path, reports, *, toggle: bool = True):
+    # `db_path` is not decoration: the lineup refresh `assign_driver` ends on reads
+    # `bot.db_path`, and a MagicMock there writes a file named after itself into the
+    # repo root. The suite keeps no scratch.
     bot = MagicMock()
+    bot.db_path = db_path
     bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     bot.image_config_service.get_toggles = AsyncMock(return_value={"lineup": toggle})
     bot.image_validity_service.template_reports = AsyncMock(return_value=reports)
@@ -168,7 +185,7 @@ async def test_a_placement_into_an_ordinary_team_is_not_refused_for_reserve_capa
     """#140: a full reserve block said nothing about a free seat on a race team."""
     db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=3)
-    service = _service(db_path, _bot({LINEUP: _report(template)}))
+    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
     await service._guard_reserve_capacity(SERVER_ID, division_id, ORDINARY)
 
@@ -179,7 +196,7 @@ async def test_a_placement_into_an_ordinary_team_is_not_refused_for_reserve_capa
 async def test_a_reserve_placement_past_the_slots_is_refused(tmp_path):
     db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=3)
-    service = _service(db_path, _bot({LINEUP: _report(template)}))
+    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
     with pytest.raises(ValueError) as excinfo:
         await service._guard_reserve_capacity(SERVER_ID, division_id, RESERVE)
@@ -193,7 +210,7 @@ async def test_a_reserve_placement_past_the_slots_is_refused(tmp_path):
 async def test_a_reserve_placement_within_the_slots_is_allowed(tmp_path):
     db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=5)
-    service = _service(db_path, _bot({LINEUP: _report(template)}))
+    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
     await service._guard_reserve_capacity(SERVER_ID, division_id, RESERVE)
 
@@ -202,7 +219,7 @@ async def test_drivers_on_ordinary_teams_do_not_count_towards_the_reserve_block(
     """The block bounds reserves alone, so a full grid never fills it."""
     db_path, _season_id, division_id = await _seed(tmp_path, reserves=1, regulars=4)
     template = _template_file(tmp_path, reserve_slots=2)
-    service = _service(db_path, _bot({LINEUP: _report(template)}))
+    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
     await service._guard_reserve_capacity(SERVER_ID, division_id, RESERVE)
 
@@ -214,7 +231,7 @@ async def test_an_unknown_team_is_left_to_the_check_that_reports_it(tmp_path):
     """assign_driver names a team that does not exist in its own words."""
     db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=3)
-    service = _service(db_path, _bot({LINEUP: _report(template)}))
+    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
     await service._guard_reserve_capacity(SERVER_ID, division_id, "No Such Team")
 
@@ -223,7 +240,7 @@ async def test_the_lineup_aspect_being_off_lets_every_placement_through(tmp_path
     """The ceiling exists because a graphic would drop a driver. No graphic, no ceiling."""
     db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=3)
-    service = _service(db_path, _bot({LINEUP: _report(template)}, toggle=False))
+    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}, toggle=False))
 
     await service._guard_reserve_capacity(SERVER_ID, division_id, RESERVE)
 
@@ -231,7 +248,7 @@ async def test_the_lineup_aspect_being_off_lets_every_placement_through(tmp_path
 async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
     """A fault in the check must not cost a league a placement (XIV.7)."""
     db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
-    bot = _bot({})
+    bot = _bot(db_path, {})
     bot.image_validity_service.template_reports = AsyncMock(
         side_effect=RuntimeError("boom")
     )
@@ -258,7 +275,7 @@ async def test_an_ordinary_placement_survives_a_full_reserve_block_through_assig
     """#140 as a league met it: `/driver assign` refused, citing the reserve block."""
     db_path, season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=3)
-    service = _service(db_path, _bot({LINEUP: _report(template)}))
+    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
     guild = MagicMock()
     guild.get_member.return_value = None
@@ -282,7 +299,7 @@ async def test_an_ordinary_placement_survives_a_full_reserve_block_through_assig
 async def test_a_reserve_overflow_still_reaches_the_caller_through_assign_driver(tmp_path):
     db_path, season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=3)
-    service = _service(db_path, _bot({LINEUP: _report(template)}))
+    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
     with pytest.raises(ValueError) as excinfo:
         await service.assign_driver(
