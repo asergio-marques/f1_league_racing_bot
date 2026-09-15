@@ -256,6 +256,13 @@ def capture_drawings(monkeypatch, tmp_path):
         return state["enabled"]
 
     async def _build(_bot, **kwargs):
+        """Stands in for `build_drawing` wholesale; it is not a model of it.
+
+        The resolver below names every mention after the penalised driver, which the real
+        `build_drawing` stopped doing in #142. That is harmless here — these tests assert on
+        the fallback and on what was posted, never on a name — but do not read it as the
+        production rule. tests/unit/test_image_verdict_mentions.py holds that.
+        """
         from services.image_verdict_service import VerdictDrawing, resolve_mentions
 
         state["built"].append(kwargs)
@@ -436,7 +443,13 @@ async def test_penalty_verdict_falls_back_to_the_signup_name(tmp_path, capture_d
 async def test_penalty_verdict_resolves_the_mention_in_the_justification(
     tmp_path, capture_drawings
 ):
-    """The mention a steward wrote is drawn as the driver's name, not as their id (#141)."""
+    """The mention a steward wrote is drawn as the driver's name, not as their id (#141).
+
+    Resolved through the production path rather than a lambda standing in for it. The lambda
+    this used to carry answered with the penalised driver's name whatever id it was handed,
+    which was a faithful model of `build_drawing` at the time and of the defect in it (#142):
+    a test reconstructing the code it is testing agrees with it by construction.
+    """
     db_path = str(tmp_path / "test.db")
     seeded = await _seed_round(db_path)
     await _seed_driver(db_path, signup_display_name="Signed Up Name")
@@ -449,11 +462,19 @@ async def test_penalty_verdict_resolves_the_mention_in_the_justification(
         bot, state, [_penalty_record(seeded["race_result_id"])]
     )
 
-    justification = capture_drawings["built"][0]["justification_text"]
+    built = capture_drawings["built"][0]
+    from services.image_verdict_post import _mention_names
     from services.image_verdict_service import resolve_mentions
 
+    names = await _mention_names(
+        bot,
+        channel.guild,
+        driver_discord_id=built["driver_discord_id"],
+        driver_name=built["driver_name"],
+        texts=(built["description_text"], built["justification_text"]),
+    )
     drawn = resolve_mentions(
-        justification, lambda _u: capture_drawings["built"][0]["driver_name"]
+        built["justification_text"], lambda user_id: names.get(str(user_id), str(user_id))
     )
     assert drawn == "Ada on Server was found wholly at fault."
 
