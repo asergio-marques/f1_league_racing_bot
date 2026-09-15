@@ -30,16 +30,43 @@ def _for_message(value: str) -> str:
     return f"*{NOT_PROVIDED}*" if value == NOT_PROVIDED else value
 
 
-def _graphic_name(display_name: str | None, discord_user_id: int) -> str:
+async def _graphic_name(
+    bot,
+    guild,
+    discord_user_id: int,
+    *,
+    fallback_display_name: str | None = None,
+) -> str:
     """The name the graphic draws in place of a mention (XIV.16).
 
-    Resolved by the chain every graphic of the module resolves a person by, so one driver is
-    one name wherever the module names them.
+    Resolved by the module's own reader, **called rather than restated**, so one driver is one
+    name wherever the module names them: the display name of their Discord account on the
+    server, then the names the league recorded at signup, then the test display name of a test
+    driver, and the user id only where a league holds no name at all.
+
+    Resolving from the test display name alone — the one candidate this path used to pass —
+    named every real driver by their raw user id, because a real driver has none and the chain
+    fell straight through to its last resort (#141). A mock driver drew correctly, which is
+    why it survived every pass made in test mode.
+
+    *fallback_display_name* stands in where the read fails: a name is not worth a lost
+    announcement, so an unreadable one leaves the behaviour exactly as it was before.
     """
     from services.image_lineup_service import resolve_driver_name
 
+    try:
+        from services.image_results_post import _driver_names
+
+        names = await _driver_names(bot, guild, [int(discord_user_id)])
+    except Exception as exc:  # noqa: BLE001 — a name is not worth a failed announcement
+        log.warning("verdicts: driver name unreadable for %s: %s", discord_user_id, exc)
+    else:
+        resolved = names.get(int(discord_user_id))
+        if resolved and str(resolved).strip():
+            return str(resolved).strip()
+
     return resolve_driver_name(
-        discord_user_id=discord_user_id, display_name=display_name
+        discord_user_id=discord_user_id, display_name=fallback_display_name
     )
 
 # +Ns or -Ns  (with optional sign, digits, optional 's')
@@ -472,7 +499,12 @@ async def post_penalty_announcements(
                 session_label=session_label,
                 driver_discord_id=driver_discord_id,
                 driver_display_name=test_display_name,
-                driver_name=_graphic_name(test_display_name, driver_discord_id),
+                driver_name=await _graphic_name(
+                    bot,
+                    getattr(target_channel, "guild", None),
+                    driver_discord_id,
+                    fallback_display_name=test_display_name,
+                ),
                 penalty_description=penalty_description,
                 description_text=description_text or NOT_PROVIDED,
                 justification_text=justification_text or NOT_PROVIDED,
@@ -584,7 +616,12 @@ async def post_appeal_announcements(
                 session_label=session_label,
                 driver_discord_id=driver_discord_id,
                 driver_display_name=test_display_name,
-                driver_name=_graphic_name(test_display_name, driver_discord_id),
+                driver_name=await _graphic_name(
+                    bot,
+                    getattr(target_channel, "guild", None),
+                    driver_discord_id,
+                    fallback_display_name=test_display_name,
+                ),
                 penalty_description=penalty_description,
                 description_text=description_text or NOT_PROVIDED,
                 justification_text=justification_text or NOT_PROVIDED,
@@ -697,7 +734,12 @@ async def post_autosanction_announcement(
             session_label=None,
             driver_discord_id=driver_discord_id,
             driver_display_name=driver_display_name,
-            driver_name=_graphic_name(driver_display_name, driver_discord_id),
+            driver_name=await _graphic_name(
+                bot,
+                getattr(target_channel, "guild", None),
+                driver_discord_id,
+                fallback_display_name=driver_display_name,
+            ),
             penalty_description=penalty_label,
             description_text=description_text,
             justification_text=justification_text,
