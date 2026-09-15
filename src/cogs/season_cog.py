@@ -566,6 +566,27 @@ class SeasonCog(commands.Cog):
             )
         ))
 
+    async def _missing_points_config_problems(
+        self, server_id: int, season_id: int
+    ) -> list[str]:
+        """Every points configuration this season is attached to that no longer exists.
+
+        **One helper because two surfaces ask the same question**, in the manner of
+        `_points_ordering_problems`: `/season review` reports what would block an approval
+        and `_do_approve` refuses on it, and a review that listed the name as attached while
+        the approval choked on it is what made #132 unreadable.
+
+        The fault it names used to be silence. The attachment is a row in
+        `season_points_links` carrying no foreign key, so a name that was never created
+        counted towards the "a points configuration is attached" prerequisite and passed it,
+        and the first thing to notice was `snapshot_configs_to_season` raising
+        `ConfigNotFoundError` — mid-command, after the defer, with no error handler on the
+        tree to say so. The season simply stayed in setup and nothing was ever sent.
+        """
+        return await season_points_service.missing_attached_configs(
+            self.bot.db_path, season_id, server_id  # type: ignore[attr-defined]
+        )
+
     async def _team_name_problems(self, server_id: int, season_id: int | None) -> list[str]:
         """Every team whose name cannot become an asset filename (047 FR-032).
 
@@ -4916,6 +4937,19 @@ class SeasonCog(commands.Cog):
                 count_row = await cursor.fetchone()
             if (count_row[0] if count_row else 0) == 0:
                 errors.append("no points configuration is attached to this season")
+
+            # Counting the links is not the same as having the configurations they name.
+            # A link is a bare name, so one that was mistyped — or one whose configuration
+            # has since been removed — satisfies the count above and then breaks the
+            # snapshot further down, which is exactly the silence #132 reported.
+            for phantom in await self._missing_points_config_problems(
+                cfg.server_id, cfg.season_id
+            ):
+                errors.append(
+                    f"points configuration **{phantom}** is attached to this season but "
+                    f"does not exist — create it with `/results config add`, or drop it "
+                    f"with `/results config detach {phantom}`"
+                )
 
             if errors:
                 bullet_list = "\n\u2022 ".join(errors)
