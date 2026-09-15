@@ -1172,11 +1172,24 @@ An edit warns rather than refuses because building a table in passes through sta
 All positions default to 0 points after creation.
 
 ##### `/results config remove` — Delete a named points configuration
-*Access: League manager*
+*Access: League admin*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Config name to remove |
+
+The configuration is deleted outright and nothing puts it back — rebuilding one means
+retyping every position of every session type by hand.
+
+Removing it also **detaches it from a season still in setup**, so no season is left
+attached to a configuration that does not exist. Where a season in setup stands on it, the
+command names that season and asks before deleting anything; that season will then need
+another configuration attached before it can be approved. Where nothing is attached, it is
+removed straight away.
+
+A season already **approved** keeps its attachment. It holds its own copy of the points,
+taken at approval, and that copy is what its results are scored from and what the
+submission buttons offer.
 
 ##### `/results config session` — Set points for a finishing position
 *Access: League manager*
@@ -1220,6 +1233,9 @@ Only allowed when the season is in **SETUP** status.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Config name to attach |
+
+The name must be one that exists on this server. A name that does not is refused and
+nothing is attached — a typo is never reported as a successful attachment.
 
 ##### `/results config detach` — Detach a config from the current season
 *Access: League manager*
