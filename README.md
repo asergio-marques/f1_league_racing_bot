@@ -288,7 +288,7 @@ Creates a pending season tied to today's date and enables the `/division` and `/
 | `role` | Role | ✅ | Discord role mentioned when referencing this division |
 | `tier` | Integer | ✅ | Tier number for this division (1 = top tier; must be 1 or higher, and unique within the season) |
 
-Tiers must additionally be **sequential from 1 with no gaps** across the whole season. That is checked at `/season approve`, not here, so a half-built season may hold a gap while you are still adding divisions.
+Tiers must additionally be **sequential from 1 with no gaps** across the whole season. That is checked at approval, not here, so a half-built season may hold a gap while you are still adding divisions.
 
 Division channels are not set here. Assign them afterwards with the `/division *-channel` commands.
 
@@ -347,7 +347,7 @@ Round numbers are **auto-assigned** by sorting all rounds in the division by `sc
 | `scheduled_at` | String | ✅ | Race date and time in ISO format: `YYYY-MM-DDTHH:MM:SS` (UTC) |
 | `track` | String | — | Track ID or circuit name — use the autocomplete dropdown (e.g. `12` or `Silverstone Circuit`). What the dropdown displays (`12 – Silverstone Circuit`) is accepted too, so a pasted or retyped entry works; circuit names are matched regardless of case. Required for every format except `MYSTERY`, where it must be omitted. |
 
-> **Two rounds of one division cannot share a start time.** The command refuses the second, naming the round already there. `/season approve` has always refused a season holding such a pair — this catches it at the moment you can still fix it easily.
+> **Two rounds of one division cannot share a start time.** The command refuses the second, naming the round already there. Approval has always refused a season holding such a pair — this catches it at the moment you can still fix it easily.
 
 #### `/round add-bulk` — Add many rounds at once from a pasted list
 *Access: League manager · Requires active `/season setup` session*
@@ -555,7 +555,7 @@ and from the gate on completing the season.
 | `name` | String | ✅ | Division name |
 | `channel` | Channel | ✅ | Channel where weather forecast messages are posted |
 
-Required for every division while the weather module is enabled: `/season approve` is refused until each one has a forecast channel, and a division created by `/division duplicate` does not inherit the source division's. For the rest of the module's setup, see [Configuring the weather module](docs/how-to/configuring-the-weather-module.md).
+Required for every division while the weather module is enabled: approval is refused until each one has a forecast channel, and a division created by `/division duplicate` does not inherit the source division's. For the rest of the module's setup, see [Configuring the weather module](docs/how-to/configuring-the-weather-module.md).
 
 #### `/division results-channel` — Set the results posting channel for a division
 *Access: League manager · Results & Standings module required*
@@ -573,7 +573,7 @@ Required for every division while the weather module is enabled: `/season approv
 | `name` | String | ✅ | Division name |
 | `channel` | Channel | ✅ | Channel where standings tables are posted |
 
-Required for every division while the results & standings module is enabled, along with [`/division verdicts-channel`](#division-verdicts-channel--set-the-verdicts-channel-for-a-division): `/season approve` is refused until each division has all three, and a division created by `/division duplicate` does not inherit them. For the rest of the module's setup, see [Configuring the results & standings module](docs/how-to/configuring-the-results-module.md).
+Required for every division while the results & standings module is enabled, along with [`/division verdicts-channel`](#division-verdicts-channel--set-the-verdicts-channel-for-a-division): approval is refused until each division has all three, and a division created by `/division duplicate` does not inherit them. For the rest of the module's setup, see [Configuring the results & standings module](docs/how-to/configuring-the-results-module.md).
 
 #### `/division lineup-channel` — Set the lineup posting channel for a division
 *Access: League manager*
@@ -591,7 +591,7 @@ Required for every division while the results & standings module is enabled, alo
 | `name` | String | ✅ | Division name |
 | `channel` | Channel | ✅ | Channel where the division's calendar is posted |
 
-> **Neither of these two is enforced at approval**, unlike the six module channels above. A division missing its lineup or calendar channel is silently skipped — `/season approve` neither refuses nor warns, and the division simply posts no lineup and no calendar for the whole season.
+> **Neither of these two is enforced at approval**, unlike the six module channels above. A division missing its lineup or calendar channel is silently skipped — approval neither refuses nor warns, and the division simply posts no lineup and no calendar for the whole season.
 
 #### `/division attendance-channel` — Set the attendance logging channel for a division
 *Access: League manager · Attendance module required*
@@ -881,7 +881,7 @@ Transfers an existing driver profile from one Discord account to another. Provid
 
 Places an Unassigned driver into a specific team seat within a division. Requires a season in either **SETUP** or **ACTIVE** state — placement does not wait for approval.
 
-**When roles are granted depends on the season state.** For an **ACTIVE** season the division role and the team role (if configured via `/team add`) are granted immediately. For a **SETUP** season no roles are granted at assignment; they are granted in bulk to every placed driver at `/season approve`.
+**When roles are granted depends on the season state.** For an **ACTIVE** season the division role and the team role (if configured via `/team add`) are granted immediately. For a **SETUP** season no roles are granted at assignment; they are granted in bulk to every placed driver at approval.
 
 A driver may hold at most one seat per division. Non-Reserve teams run out of seats; the Reserve team always has room.
 
@@ -1014,7 +1014,7 @@ Applies the channel's permission overwrites: `@everyone` cannot view, the base r
 |-----------|------|----------|-------------|
 | `role` | Role | ✅ | Role granted when a driver's signup is approved |
 
-All three of the above must be set before `/signup open` will run, and — while the signup module is enabled — before `/season approve` will commit a season.
+All three of the above must be set before `/signup open` will run, and — while the signup module is enabled — before approval will commit a season.
 
 #### `/signup config roles` — Set both signup roles at once
 *Access: League manager*
@@ -1151,12 +1151,12 @@ All commands below require the results module to be enabled (`/module enable res
 
 Where it is enforced differs by what you are doing:
 
-| Command | What happens to a table out of order |
+| Command or action | What happens to a table out of order |
 |---------|--------------------------------------|
 | `/results config session`, `/results config bulk-session` | Applied, with a warning naming every position at fault |
 | `/results config xml-import` | Rejected outright; the configuration is left untouched |
 | `/season review` | Reported in the points section, naming every position at fault, and the Approve button is withheld |
-| `/season approve` | Refused, naming every position at fault |
+| Pressing **Approve** | Refused, naming every position at fault |
 | `/results amend session`, `/results amend bulk-session` | Staged, with a warning naming every position at fault |
 | `/results amend review` | Refused; nothing is written and the staged changes are left to repair |
 
@@ -1536,7 +1536,7 @@ Same modal and same input rules as [`/results config bulk-session`](#results-con
 
 No parameters. Displays a diff of the staged changes against the current season points. Approve to atomically overwrite season points, recalculate all standings for every division from the first round, repost every round's results and standings in the division's own channels, and switch amendment mode back off. Reject to leave the modification store and amendment mode as they are.
 
-> **An amendment that would leave the points out of order is refused.** The diff names the positions at fault, and pressing Approve writes nothing — the season keeps the points it has, and the staged changes are left in place to repair. This is the same rule `/season approve` holds at the start of a season.
+> **An amendment that would leave the points out of order is refused.** The diff names the positions at fault, and pressing Approve writes nothing — the season keeps the points it has, and the staged changes are left in place to repair. This is the same rule approval holds at the start of a season.
 
 > **Only rounds that have been raced are reposted**, and each one is reposted under the label it currently stands at — a round at Final Results stays "Final Results". Rounds still to come are left alone.
 
@@ -1689,7 +1689,7 @@ Flips that aspect between a generated image and the text the bot has always post
 
 **Switching one on checks its drawings first.** If any drawing that aspect needs is missing or unusable, the command is **refused** — it names each fault, and the aspect stays off. That is deliberate: an aspect switched on over a broken drawing posts nothing at all where your drivers would otherwise have read text, and it withholds your season's approval besides. Switching an aspect **off** is never refused, whatever state its drawings are in: text needs no drawing, so you can always retreat to it.
 
-**A broken drawing only blocks a season if the output that draws it is on.** `/season review` and `/season approve` apply the same rule — a fault under a switched-off output is shown as a ⚠️ warning and stops nothing, because nothing would ever post it. Fix it before you switch that output on; the review names it either way so it does not catch you out later.
+**A broken drawing only blocks a season if the output that draws it is on.** `/season review` and approval apply the same rule — a fault under a switched-off output is shown as a ⚠️ warning and stops nothing, because nothing would ever post it. Fix it before you switch that output on; the review names it either way so it does not catch you out later.
 
 The choice names above are exactly the names `/images config view` and `/season review` print for the nine aspects, so a `❌` row in either report can hand you the command with the choice already named.
 
@@ -2162,7 +2162,7 @@ No parameters. Lists every setting with a validity status, and each aspect as �
 
 The report also states **how deeply templates were checked**. Layer 1 — the file resolves, parses as SVG, and declares a canvas — applies to all sixteen. Layer 2 checks that a template carries every field its image needs, and that it carries no field belonging to a different image type. Layer 3 checks that every wrapped field can actually be laid out: its rectangle exists, declares a width and a height, and the field has a line height. All three now apply to all sixteen types, the last of their field sets having been specified. A fourth layer — a trial render — is not yet in force and is reported as *not applied* rather than as passed. The report never claims a template was verified more deeply than it was.
 
-The same summary is appended to `/season review`, which additionally names each template that would block approval. **`/season approve` refuses** while any of them is unusable — the review is where you see the problem, the approval is where the season stops.
+The same summary is appended to `/season review`, which additionally names each template that would block approval. **Pressing Approve refuses** while any of them is unusable — the review is where you see the problem, the approval is where the season stops.
 
 #### `/images test` — Preview a kind against your own league
 *Access: League manager*
@@ -2191,7 +2191,7 @@ Twelve commands, one per kind of image. Each is drawn against **your own league*
 | What your server holds | What is drawn | The parameters |
 |---|---|---|
 | An **approved** season | That season | Required |
-| A season **pending approval**, and none approved | That season, drawn exactly as it will be once `/season approve` has run | Required |
+| A season **pending approval**, and none approved | That season, drawn exactly as it will be once it is approved | Required |
 | Both | The approved one | Required |
 | **No season at all** | Nothing — the command is refused | Required, but there is nothing to name |
 

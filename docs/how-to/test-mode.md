@@ -31,8 +31,8 @@ There is no on/off parameter — it flips, and the new state is persisted to `se
 
 Two side effects on **enable**, both aimed at getting to a testable season quickly:
 
-- Where a season is in SETUP or ACTIVE, **Standard** and **Half Points** are created and attached unless a config of that exact name is already linked. This runs unconditionally — a season already carrying configurations of its own gains these two on top of them, rather than being left alone. They are created as ordinary server configurations, in the same place `/results config create` puts one, so `/results config view` shows their full ladder while the season is still in setup and `/season approve` copies them into the season by the ordinary route.
-- `/season approve` performs the same seeding, so a season approved under test mode will not fail its points-configuration gate — but that path seeds only when nothing at all is attached, which the toggle path does not check.
+- Where a season is in SETUP or ACTIVE, **Standard** and **Half Points** are created and attached unless a config of that exact name is already linked. This runs unconditionally — a season already carrying configurations of its own gains these two on top of them, rather than being left alone. They are created as ordinary server configurations, in the same place `/results config create` puts one, so `/results config view` shows their full ladder while the season is still in setup and approval copies them into the season by the ordinary route.
+- Approval performs the same seeding, so a season approved under test mode will not fail its points-configuration gate — but that path seeds only when nothing at all is attached, which the toggle path does not check.
 
 Two on **disable**:
 
@@ -55,7 +55,7 @@ Runs the single next pending event and reports what it did. Run it repeatedly to
 
 > **The job store is its own file: `scheduler.db`, beside `bot.db` unless `SCHEDULER_DB_PATH` says otherwise.** It used to live inside `bot.db`; it was moved out because APScheduler writes to it synchronously, on the event loop, and sharing a file with the league data stalled everything else the bot was doing.
 >
-> This changes how you reset. **Deleting `bot.db` alone no longer clears the queue** — the jobs outlive it, and `advance` will go on offering events for rounds that no longer exist. To start genuinely clean, delete both. To clear only the queue and keep the league data, delete `scheduler.db` on its own; the bot rebuilds it empty on the next start, and `/season approve` re-creates the jobs for an approved season.
+> This changes how you reset. **Deleting `bot.db` alone no longer clears the queue** — the jobs outlive it, and `advance` will go on offering events for rounds that no longer exist. To start genuinely clean, delete both. To clear only the queue and keep the league data, delete `scheduler.db` on its own; the bot rebuilds it empty on the next start, and approval re-creates the jobs for an approved season.
 >
 > Anything that predates the split still has an `apscheduler_jobs` table inside `bot.db`. It is ignored from now on, and nothing reads it — leave it or drop it as you prefer.
 
@@ -80,7 +80,7 @@ Phase 0 never arrives from the job store: there is no mystery prefix in the job-
 
 **Result submission is the exception: it never comes from the job store.** `get_pending_advance_jobs` filters results jobs out deliberately, so that a past-dated job which already auto-fired can neither block the wizard nor trigger it twice. Phase 4 is detected from database state instead — a round with no active session results, standing at *not run* or *awaiting results*, is due for submission — and it is therefore reached for every round format, mystery included.
 
-That database detection is load-bearing rather than a fallback: `/season approve` skips scheduling result-submission jobs altogether while the test-mode flag is set, so under test mode there is no results job for the job store to hold in the first place.
+That database detection is load-bearing rather than a fallback: approval skips scheduling result-submission jobs altogether while the test-mode flag is set, so under test mode there is no results job for the job store to hold in the first place.
 
 **Database state also covers everything the job store has lost.** Before returning a scheduler job, `advance` checks every chronologically earlier round for work the scheduler cannot see: phases evicted by misfire grace, RSVP jobs never created because their round was already past-dated when they were scheduled, and result submission. Where the job store holds nothing at all, that same check drives the whole queue. This is why `advance` still works on a season most of whose jobs were never created.
 
@@ -201,7 +201,7 @@ So a season is the prerequisite, and a test season is the cheapest one to build.
 
 Seven things worth knowing when previewing against a test season:
 
-- **A test season still in SETUP draws.** It does not need approving first. It is drawn exactly as it will be once `/season approve` has run, and the reply says it is pending.
+- **A test season still in SETUP draws.** It does not need approving first. It is drawn exactly as it will be once it is approved, and the reply says it is pending.
 - **A mock driver is drawn by its `roster add` name.** It is a seated driver, not an empty seat, so no names are invented over a division seated with them.
 - **A mock driver draws the flag of the nationality `roster add` gave it**, and none where it was given none. Where the league collects nationality, a driver holding none draws **no flag**, exactly as a real posting would, and the reply counts how many were drawn that way. Blank flags on a roster built without nationalities are not a broken flag directory. With `/test-mode nationality` off, neither a preview nor a posting draws a flag for anybody, and neither reports one missing.
 - **A division with no seated driver still draws.** The bot invents drivers for the seats and says so. `roster add` is only needed when you want to see particular names, or to check a lineup drawing against your own team list.
@@ -242,7 +242,7 @@ Building a season to test one thing is slow, and testing the next thing usually 
 
 ## A workable order
 
-1. `/test-mode toggle` — before `/season approve`, so the points configurations get seeded, and before any real driver signs up, since a server holding one is refused.
+1. `/test-mode toggle` — before you approve the season, so the points configurations get seeded, and before any real driver signs up, since a server holding one is refused.
 2. Build and approve a season as normal. Filling a calendar by hand is tedious, and `tools/data-generator/calendar-data/` writes one for you — random circuits, a weekday and an evening slot per division, rounds a week apart — as the XML `/round add-xml` takes. See [the generator's README](../../tools/data-generator/README.md). **Keep every round still to come, and beyond the configured windows**: a round whose moment has passed is refused at approval whatever the modules, and a first round inside the check-in notice or a weather phase deadline is refused as well, test mode included. The generator's own dates, in the year after the run, clear them all.
 3. `/test-mode roster add` until each division is seated — with a `nationality` on each if you mean to look at the graphics. `/test-mode roster list` to collect the mention strings.
 4. `/test-mode advance` repeatedly, checking each posted message as it appears.

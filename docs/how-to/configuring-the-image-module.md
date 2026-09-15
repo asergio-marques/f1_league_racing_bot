@@ -30,7 +30,7 @@ If Inkscape is installed somewhere unusual, tell the bot where by setting `INKSC
 INKSCAPE="C:/Program Files/Inkscape/bin/inkscape.exe"
 ```
 
-**You do need a season.** A preview draws your own league — that is the whole point of it — so it needs one to draw. A season still awaiting `/season approve` is enough, and is drawn exactly as it will be once approved. With no season at all the command is refused and tells you to run `/season setup`.
+**You do need a season.** A preview draws your own league — that is the whole point of it — so it needs one to draw. A season still awaiting approval is enough, and is drawn exactly as it will be once approved. With no season at all the command is refused and tells you to run `/season setup`.
 
 Every preview takes the name of a division, and the ones drawn for a single round take its number as well. Both are required: there is nothing sensible to draw without them.
 
@@ -225,7 +225,7 @@ You can have both on at once. One of the two must stay on while the feature is e
 you try to switch off the last one, the bot refuses and changes nothing, because neither on
 would mean no photo is ever fetched — which is what `/images use-pfp toggle` already does.
 
-**`/season approve` fetches them whichever of the two you chose.** Approving a season draws
+**Approval fetches them whichever of the two you chose.** Approving a season draws
 your lineups once to check they work, and it brings the photos down first so that check is
 made on what the season will actually post — not on yesterday's overnight batch, and not on
 the placeholder for a driver you seated this morning. It is the only place that overrides
@@ -681,7 +681,7 @@ Several kinds send more than one picture: the results send one per session of th
 
 **A cancelled division still previews.** It is offered in the division list and draws like any other, deliberately — a preview posts nothing where a driver can see it, so a division you have withdrawn is a perfectly good one to check a drawing against, and often the most convenient.
 
-`/season review` shows the same summary and names anything that would stop the season. **`/season approve` refuses to run** while something is broken — review is where you spot it, approval is where it stops you.
+`/season review` shows the same summary and names anything that would stop the season. **Pressing Approve refuses** while something is broken — review is where you spot it, approval is where it stops you.
 
 It also lists your eight **asset directories** with the path each is set to, and marks any it cannot read. This is the one place in the review those paths appear, and it is worth a glance: a folder that has been moved or renamed draws placeholders everywhere, which looks exactly like artwork you never supplied. `/images config view` says what is wrong with a folder it cannot read; the review only tells you which one.
 
@@ -695,7 +695,7 @@ It also lists your eight **asset directories** with the path each is set to, and
 
 ## Checklist before a season
 
-Worth running through just before `/season approve`.
+Worth running through just before you approve.
 
 - [ ] `/images config view` shows Inkscape as installed
 - [ ] Every folder shows as found — no ⚠️ next to a folder
@@ -732,7 +732,7 @@ Worth running through just before `/season approve`.
 | A picture refused over a linked image | Something in your drawing file points at a picture file that is not on the machine. You are told which element and which file — put the file there, correct the path, or delete the element |
 | A preview refusing outright | It names why: unknown division, no such round, no team beyond Reserve, or a forecast asked of a mystery round |
 | Nothing posted at all, and nothing in the log | Usually the channel for that output is not set, or the module behind it is off. Check step 2 |
-| `/season approve` refusing over a picture | It draws every calendar and lineup the season would post before it commits anything, and stops on one that will not draw. It names the division and which picture — fix that and try again |
+| Approval refusing over a picture | It draws every calendar and lineup the season would post before it commits anything, and stops on one that will not draw. It names the division and which picture — fix that and try again |
 
 Smaller problems — a swapped typeface, a field set very small to fit, a placeholder used — are reported with the picture and written to the log channel. They never appear in a channel your drivers read.
 

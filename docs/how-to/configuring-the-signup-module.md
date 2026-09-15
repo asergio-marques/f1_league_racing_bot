@@ -90,7 +90,7 @@ Three things, and the module does nothing at all until it has all three. They as
 
 > **Do not use `/signup config channel`.** The old command is broken and fails with an error whatever you pass it. `/signup channel` is the one that works. `/signup config roles` still works and sets both roles at once, but it does not fix up the channel's permissions, so prefer the separate commands.
 
-**These three block a season.** While the signup module is on, `/season approve` refuses until all three are set, and names the ones that are missing. If you are not going to use signups this season, turn the module off rather than leaving it half-configured.
+**These three block a season.** While the signup module is on, approval is refused until all three are set, and names the ones that are missing. If you are not going to use signups this season, turn the module off rather than leaving it half-configured.
 
 ---
 
@@ -354,6 +354,6 @@ Worth running through before you open the window.
 | `/signup time-slot add` or `remove` refused, naming a number of drivers | Drivers are waiting to be placed. Place or clear them — `/signup unassigned list` is the same queue |
 | Your time slots came back after disabling the module | Known: disabling clears the channel and roles only, whatever the message says |
 | A driver stuck waiting after Request Changes | The bot restarted mid-correction, so the five-minute timer is gone and the window will never close on its own. The field buttons still work — pick one and the flow carries on. Failing that, ask them to press **Cancel Signup** and start again |
-| Roles not granted after `/driver assign` | The season is still in setup. They are all granted at `/season approve` |
+| Roles not granted after `/driver assign` | The season is still in setup. They are all granted at approval |
 | No lineup posted anywhere | That division has no lineup channel set |
 | Seeds that look meaningless | The window was opened with no tracks, so there are no lap times to sort on |
