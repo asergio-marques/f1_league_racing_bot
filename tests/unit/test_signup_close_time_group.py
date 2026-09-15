@@ -6,12 +6,15 @@ actually cleared `close_at` was `/module disable signup`, which takes the channe
 roles and every setting with it, so a league that mistyped the close time had to tear the
 module down to close signups early (issue #125).
 
-`/signup close-time add`, `cancel` and `modify` are the way out: a close time can be
-armed after the window opens, replaced when it was mistyped, and cleared outright.
+`/signup close-time add`, `cancel` and `modify` are the way out. The refusal on
+`/signup close` stays — closing early is two deliberate steps — but it now names a command
+that exists, and `test_the_close_refusal_names_a_command_that_exists` holds it to that
+against the registered command list rather than against a string a reader has to trust.
 """
 from __future__ import annotations
 
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
@@ -136,6 +139,56 @@ def _registered_signup_commands() -> set[str]:
                 yield f"/{command.qualified_name}"
 
     return set(walk(SignupCog.signup))
+
+
+# ── The defect: a refusal naming a command that does not exist ────────────
+
+
+class TestTheCloseRefusal:
+    async def test_the_close_refusal_names_a_command_that_exists(self, tmp_path):
+        """The regression test for #125.
+
+        Asserted against the registered command list, not against a literal: a refusal
+        that sends a manager somewhere is only useful if somewhere is there, and the
+        previous wording pointed at `/signup cancel-timer`, which never was.
+        """
+        cog = _cog(await _seed(tmp_path, close_at=ARMED))
+        interaction = _interaction()
+
+        await _close(cog, interaction)
+
+        named = set(re.findall(r"`(/signup [a-z- ]+)`", _reply(interaction)))
+        assert named, "the refusal names no command at all"
+        assert named <= _registered_signup_commands()
+
+    async def test_close_is_still_refused_while_a_timer_is_armed(self, tmp_path):
+        """Closing early stays two deliberate steps (decided 2026-09-15)."""
+        cog = _cog(await _seed(tmp_path, close_at=ARMED))
+        interaction = _interaction()
+
+        await _close(cog, interaction)
+
+        assert "auto-close" in _reply(interaction)
+        assert "`/signup close-time cancel`" in _reply(interaction)
+
+    async def test_cancel_unblocks_a_manual_close(self, tmp_path, monkeypatch):
+        """The whole point of the fix: after a cancel, closing by hand actually closes."""
+        from cogs import signup_cog
+
+        forced_close = AsyncMock()
+        monkeypatch.setattr(signup_cog, "execute_forced_close", forced_close)
+
+        db_path = await _seed(tmp_path, close_at=ARMED)
+        cog = _cog(db_path)
+
+        await _cancel(cog, _interaction())
+        closing = _interaction()
+        closing.response.defer = AsyncMock()
+        closing.followup.send = AsyncMock()
+        await _close(cog, closing)
+
+        forced_close.assert_awaited_once()
+        assert not closing.response.send_message.await_args_list
 
 
 # ── /signup close-time cancel ─────────────────────────────────────────────

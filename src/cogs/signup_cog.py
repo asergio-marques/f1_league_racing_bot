@@ -1712,11 +1712,17 @@ class SignupCog(commands.Cog):
             )
             return
 
-        # Guard: auto-close timer is armed — manual close is blocked (T019)
+        # Guard: auto-close timer is armed — manual close is blocked (T019).
+        # The refusal stays, so closing early remains two deliberate steps, but it names
+        # `/signup close-time cancel`, which exists; it used to name `/signup cancel-timer`,
+        # which never did, leaving `/module disable signup` as the only escape (issue #125).
         if cfg.close_at is not None:
+            armed = datetime.fromisoformat(cfg.close_at)
             await interaction.response.send_message(
-                f"❌ Signups will auto-close at `{cfg.close_at}`. "
-                "Cancel the timer first with `/signup cancel-timer` if you need to close manually.",
+                f"❌ Signups will auto-close at {discord_ts(armed)} "
+                f"({discord_ts(armed, 'R')}). Clear the timer with "
+                "`/signup close-time cancel` if you need to close manually, or move it "
+                "with `/signup close-time modify`.",
                 ephemeral=True,
             )
             return
