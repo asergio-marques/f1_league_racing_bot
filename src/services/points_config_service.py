@@ -58,7 +58,54 @@ async def config_exists(db_path: str, server_id: int, config_name: str) -> bool:
         return await cursor.fetchone() is not None
 
 
+async def setup_seasons_linking(
+    db_path: str, server_id: int, config_name: str
+) -> list[tuple[int, int]]:
+    """The ``(season_id, season_number)`` of every season in setup attached to this name.
+
+    Read before `/results config remove` acts, so the confirmation can say which seasons
+    the removal will take the configuration away from rather than asking a blind yes.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT s.id AS id, s.season_number AS season_number
+            FROM season_points_links AS l
+            JOIN seasons AS s ON s.id = l.season_id
+            WHERE l.config_name = ? AND s.server_id = ? AND s.status = 'SETUP'
+            ORDER BY s.season_number, s.id
+            """,
+            (config_name, server_id),
+        )
+        return [(r["id"], r["season_number"]) for r in await cursor.fetchall()]
+
+
 async def remove_config(db_path: str, server_id: int, config_name: str) -> None:
+    """Delete a named points configuration, and the setup-season links that named it.
+
+    **Why the links go with it, and why only those of a season in setup** (decided
+    2026-09-15, issue #132). A link is a bare name in ``season_points_links`` with no
+    foreign key, so deleting the store row on its own left a season pointing at nothing:
+    the approval's prerequisite still counted the link, and the snapshot then raised
+    `ConfigNotFoundError` mid-command. A season that was fine became unapprovable without
+    anyone touching it.
+
+    A season **in setup** has taken no copy of the configuration yet — the snapshot runs at
+    approval — so the link is the only thing that connects the two, and it is worthless once
+    the configuration is gone. A season that has been **approved** — ACTIVE, or COMPLETED
+    and kept as history — is the opposite case, and its link is deliberately left alone: it
+    scores from its own `season_points_entries` copy, taken at approval and independent of
+    the server's store from that moment, and the link is what offers that copy as a choice
+    when results are submitted. Clearing it would take a running season's points
+    configuration off the submission buttons — a live regression in place of a setup-time
+    one — and would rewrite what a finished season is recorded as having run on.
+
+    Pinned by ``test_remove_config_leaves_an_approved_seasons_link_alone``: the scoping is
+    the whole of the decision and reads like an oversight without it.
+
+    The deletes share one transaction with the store row, so a removal cannot half-happen
+    and leave the orphan it exists to prevent.
+    """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT id FROM points_config_store WHERE server_id = ? AND config_name = ?",
@@ -70,6 +117,16 @@ async def remove_config(db_path: str, server_id: int, config_name: str) -> None:
         await db.execute(
             "DELETE FROM points_config_store WHERE id = ?",
             (row["id"],),
+        )
+        await db.execute(
+            """
+            DELETE FROM season_points_links
+            WHERE config_name = ?
+              AND season_id IN (
+                  SELECT id FROM seasons WHERE server_id = ? AND status = 'SETUP'
+              )
+            """,
+            (config_name, server_id),
         )
         await db.commit()
 
