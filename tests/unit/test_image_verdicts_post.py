@@ -62,6 +62,13 @@ def stub_image_path(monkeypatch, tmp_path):
         return state["enabled"]
 
     async def _build(_bot, **kwargs):
+        """Stands in for `build_drawing` wholesale; it is not a model of it.
+
+        The resolver below names every mention after the penalised driver, which the real
+        `build_drawing` stopped doing in #142. That is harmless here — these tests assert on
+        the fallback and on what was posted, never on a name — but do not read it as the
+        production rule. tests/unit/test_image_verdict_mentions.py holds that.
+        """
         from services.image_verdict_service import VerdictDrawing, resolve_mentions
 
         state["built"].append(kwargs)

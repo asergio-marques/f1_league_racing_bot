@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from services.image_verdict_service import (  # noqa: E402
     VerdictDrawing,
     VerdictKind,
+    mention_ids,
     resolve_mentions,
     sanction_text,
     stage_label,
@@ -170,3 +171,47 @@ def test_an_unresolvable_mention_falls_back_to_the_resolver_s_answer():
 def test_an_empty_value_is_safe():
     assert resolve_mentions("", _resolver) == ""
     assert resolve_mentions(None, _resolver) == ""
+
+
+# ── The ids a text mentions, collected for one read (#142) ────────────────
+
+
+def test_the_ids_a_text_mentions_are_returned_in_the_order_they_appear():
+    assert mention_ids("<@456> was hit by <@123>.") == ["456", "123"]
+
+
+@pytest.mark.parametrize("form", ["<@123>", "<@!123>", "<@&123>"])
+def test_every_mention_form_yields_its_id(form):
+    assert mention_ids(f"{form} reached the limit.") == ["123"]
+
+
+def test_an_id_mentioned_twice_is_read_for_once():
+    assert mention_ids("<@123> and <@456> collided, and <@123> was at fault.") == [
+        "123",
+        "456",
+    ]
+
+
+def test_ids_are_collected_across_every_value_at_once():
+    """The description and the justification are one read, not two (#142)."""
+    assert mention_ids("<@123> was penalised.", "Contact with <@456> at turn 3.") == [
+        "123",
+        "456",
+    ]
+
+
+def test_a_driver_named_in_both_values_is_read_for_once():
+    assert mention_ids("<@123> was penalised.", "<@123> admitted fault.") == ["123"]
+
+
+def test_a_bracketed_name_does_not_become_an_id():
+    assert mention_ids("<@123> (Ada Lovelace) reached the limit.") == ["123"]
+
+
+def test_text_holding_no_mention_yields_nothing():
+    assert mention_ids("Nothing to resolve here.") == []
+
+
+def test_empty_values_are_safe():
+    assert mention_ids() == []
+    assert mention_ids("", None) == []

@@ -75,6 +75,26 @@ def sanction_text(penalty_type: str | None, time_seconds: int | None) -> str:
 _MENTION = re.compile(r"<@[!&]?(\d+)>(\s*\(([^)]*)\))?")
 
 
+def mention_ids(*values: str | None) -> list[str]:
+    """Every id mentioned across *values*, in the order it first appears.
+
+    `resolve_mentions` is synchronous and the name of a driver is read asynchronously, so the
+    ids a text mentions are collected before anything is substituted, resolved together, and
+    handed back as a plain lookup. One read serves however many mentions a steward wrote.
+
+    Deduplicated across all of *values* at once: a driver named in both the description and
+    the justification is read for once, not twice.
+    """
+    seen: list[str] = []
+    for value in values:
+        if not value:
+            continue
+        for match in _MENTION.finditer(value):
+            if match.group(1) not in seen:
+                seen.append(match.group(1))
+    return seen
+
+
 def resolve_mentions(value: str | None, resolver: Callable[[str], str]) -> str:
     """Replace every Discord mention in *value* with the name it addresses.
 

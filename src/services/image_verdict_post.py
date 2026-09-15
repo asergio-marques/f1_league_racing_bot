@@ -161,9 +161,60 @@ async def team_name_for_entry(
     return names.get(int(role_id))
 
 
+async def _mention_names(
+    bot, guild, *, driver_discord_id: int, driver_name: str, texts
+) -> dict[str, str]:
+    """The name each mention in *texts* is drawn as, keyed by the id it addresses (#142).
+
+    A graphic cannot carry a live mention, so a `<@id>` a steward wrote into the description
+    or the justification is swapped for a name before it is drawn. The name is **that person's**
+    — the driver the mention addresses — resolved by the module's own reader, called rather
+    than restated, so one driver is one name wherever the module names them.
+
+    Resolving every mention to the penalised driver instead, which is what this replaces, drew
+    a justification reading "contact with @Bob at turn 3" as a statement that the penalised
+    driver had collided with themselves: right as text, wrong as a picture, and confidently
+    wrong once #141 made the substituted name a real one.
+
+    Three things it holds to, each pinned in tests/unit/test_image_verdict_mentions.py:
+
+    * **The penalised driver keeps the name on the driver line.** Seeded here rather than read,
+      so a mention of them beneath their own name never draws a second rendering of it.
+    * **One read serves every mention**, the ids being collected before anything is substituted
+      — `resolve_mentions` is synchronous and could otherwise only read one mention at a time.
+    * **An unknown id draws as itself.** The chain ends at the user id anyway, and a number a
+      reader can look up beats the wrong person's name. This is also what an unreadable lookup
+      degrades to: a name is not worth a lost verdict, as `_graphic_name` already has it.
+    """
+    from services.image_verdict_service import mention_ids
+
+    names: dict[str, str] = {}
+    if driver_name and str(driver_name).strip():
+        names[str(driver_discord_id)] = str(driver_name).strip()
+
+    wanted = [user_id for user_id in mention_ids(*texts) if user_id not in names]
+    if not wanted:
+        return names
+
+    try:
+        from services.image_results_post import _driver_names
+
+        resolved = await _driver_names(bot, guild, [int(user_id) for user_id in wanted])
+    except Exception as exc:  # noqa: BLE001 — a name is not worth a failed render
+        log.warning("verdicts: mention names unreadable: %s", exc)
+        return names
+
+    for user_id in wanted:
+        value = resolved.get(int(user_id))
+        if value and str(value).strip():
+            names[user_id] = str(value).strip()
+    return names
+
+
 async def build_drawing(
     bot,
     *,
+    guild,
     db_path: str,
     round_id: int,
     kind: VerdictKind,
@@ -184,6 +235,11 @@ async def build_drawing(
     Everything here is *read*. Nothing is computed and nothing decided: the sanction is the
     rendering the announcement service produced, the session label is the one it used, and the
     name is resolved by the chain every graphic of the module resolves a person by.
+
+    *guild* is the server the verdict is posted to, and is what a mention in a steward's text
+    is resolved against. Keyword-only, as everything else here is, and required rather than
+    defaulted: a caller that forgets it should say so at the call site and not by quietly
+    naming drivers worse.
     """
     from services.image_verdict_service import resolve_mentions
 
@@ -197,10 +253,19 @@ async def build_drawing(
 
     collected = await _nationality_collected(db_path, server_id)
 
-    # A mention a person wrote into free text is resolved in place to the name it addresses;
-    # the graphic mentions nobody (XIV.16, v4.8.0).
-    def _name_for(_user_id: str) -> str:
-        return driver_name
+    # A mention a person wrote into free text is resolved in place to the name it addresses —
+    # the driver that mention names, and not the driver being sanctioned (#142). The graphic
+    # mentions nobody (XIV.16, v4.8.0).
+    names = await _mention_names(
+        bot,
+        guild,
+        driver_discord_id=driver_discord_id,
+        driver_name=driver_name,
+        texts=(description_text, justification_text),
+    )
+
+    def _name_for(user_id: str) -> str:
+        return names.get(str(user_id), str(user_id))
 
     race_name = context.get("race_name")
     if str(context.get("round_format") or "").upper() == "MYSTERY":
