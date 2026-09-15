@@ -253,7 +253,7 @@ class AttendanceCog(commands.Cog):
 
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_rsvp_absent_penalty(server_id, points)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_no_show_penalty(server_id, points)  # type: ignore[attr-defined]
         await interaction.followup.send(
             f"\u2705 RSVP-absent penalty set to **{points}** point(s).", ephemeral=True
         )
