@@ -30,6 +30,8 @@ pytestmark = pytest.mark.asyncio
 SVG_NS = "http://www.w3.org/2000/svg"
 DRIVERS = "standings_drivers_template"
 CONSTRUCTORS = "standings_constructors_template"
+ORDINARY = "Team 1"
+RESERVE = "Reserve"
 
 _ROW_SUFFIXES = ("position", "driver_name", "team_name", "points")
 
@@ -62,8 +64,15 @@ def _template_file(tmp_path, name, *, rows: int, rounds: int = 0):
     return path
 
 
-async def _seed(tmp_path, *, drivers: int, teams: int = 1, rounds: int = 1):
-    """A season holding one division of *drivers* seated drivers and *teams* real teams."""
+async def _seed(
+    tmp_path, *, drivers: int, teams: int = 1, rounds: int = 1, reserves: int = 0
+):
+    """A season holding one division of *drivers* classified drivers and *teams* real teams.
+
+    *reserves* seats that many drivers in the reserve team besides. They are assignments of
+    the division like any other, but they are **not** entries of its classification, so the
+    standings ceiling must not count them.
+    """
     from db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "capacity.db")
@@ -98,6 +107,7 @@ async def _seed(tmp_path, *, drivers: int, teams: int = 1, rounds: int = 1):
             "VALUES (?, 'Reserve', 0, 1)",
             (division_id,),
         )
+        reserve_instance_id = cursor.lastrowid
         for index in range(teams):
             cursor = await db.execute(
                 "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
@@ -106,23 +116,28 @@ async def _seed(tmp_path, *, drivers: int, teams: int = 1, rounds: int = 1):
             )
         instance_id = cursor.lastrowid
 
-        for index in range(drivers):
+        async def seat(team_instance_id: int, seat_number: int, user_id: int) -> None:
             cursor = await db.execute(
                 "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
                 "VALUES (1, ?, 'ACTIVE')",
-                (1000 + index,),
+                (user_id,),
             )
             profile_id = cursor.lastrowid
             cursor = await db.execute(
                 "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
                 "VALUES (?, ?, ?)",
-                (instance_id, index + 1, profile_id),
+                (team_instance_id, seat_number, profile_id),
             )
             await db.execute(
                 "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
                 "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
                 (profile_id, season_id, division_id, cursor.lastrowid),
             )
+
+        for index in range(drivers):
+            await seat(instance_id, index + 1, 1000 + index)
+        for index in range(reserves):
+            await seat(reserve_instance_id, index + 1, 2000 + index)
         await db.commit()
 
     return db_path, season_id, division_id
@@ -153,7 +168,7 @@ async def test_an_assignment_past_the_drivers_template_rows_is_refused(tmp_path)
     service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
 
     with pytest.raises(ValueError) as excinfo:
-        await service._guard_standings_capacity(1, division_id)
+        await service._guard_standings_capacity(1, division_id, ORDINARY)
 
     message = str(excinfo.value)
     assert "3 drivers" in message
@@ -168,7 +183,7 @@ async def test_an_assignment_within_the_rows_is_allowed(tmp_path):
     template = _template_file(tmp_path, DRIVERS, rows=5)
     service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
 
-    await service._guard_standings_capacity(1, division_id)
+    await service._guard_standings_capacity(1, division_id, ORDINARY)
 
 
 async def test_the_toggle_being_off_lets_every_assignment_through(tmp_path):
@@ -181,7 +196,7 @@ async def test_the_toggle_being_off_lets_every_assignment_through(tmp_path):
         db_path, bot=_bot(db_path, {DRIVERS: _report(template)}, toggle=False)
     )
 
-    await service._guard_standings_capacity(1, division_id)
+    await service._guard_standings_capacity(1, division_id, ORDINARY)
 
 
 async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
@@ -195,14 +210,69 @@ async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
     )
     service = PlacementService(db_path, bot=bot)
 
-    await service._guard_standings_capacity(1, division_id)
+    await service._guard_standings_capacity(1, division_id, ORDINARY)
 
 
 async def test_no_bot_means_no_guard(tmp_path):
     from services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
-    await PlacementService(db_path)._guard_standings_capacity(1, division_id)
+    await PlacementService(db_path)._guard_standings_capacity(1, division_id, ORDINARY)
+
+
+# ── The reserve team is no part of a classification (#140) ───────────────
+
+
+async def test_a_seated_reserve_is_not_counted_against_the_standings_rows(tmp_path):
+    """A reserve stands in for an absent driver and adds no car to the grid.
+
+    `standings_service` filters `ti.is_reserve = 0` out of every classification it builds,
+    so a reserve on the books occupies no row. Counting them here refused an ordinary
+    placement one seat early for each one.
+    """
+    from services.placement_service import PlacementService
+
+    db_path, _season_id, division_id = await _seed(tmp_path, drivers=1, reserves=2)
+    template = _template_file(tmp_path, DRIVERS, rows=2)
+    service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
+
+    await service._guard_standings_capacity(1, division_id, ORDINARY)
+
+
+async def test_the_rows_still_bound_the_classified_drivers(tmp_path):
+    """Excluding reserves must not disarm the ceiling for the drivers who do hold a row."""
+    from services.placement_service import PlacementService
+
+    db_path, _season_id, division_id = await _seed(tmp_path, drivers=2, reserves=2)
+    template = _template_file(tmp_path, DRIVERS, rows=2)
+    service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
+
+    with pytest.raises(ValueError) as excinfo:
+        await service._guard_standings_capacity(1, division_id, ORDINARY)
+
+    assert "3 drivers" in str(excinfo.value), "the two reserves are not among them"
+
+
+async def test_a_reserve_placement_is_not_measured_against_the_standings_rows(tmp_path):
+    """Seating a reserve grows no classification, so a full template cannot refuse it."""
+    from services.placement_service import PlacementService
+
+    db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
+    template = _template_file(tmp_path, DRIVERS, rows=2)
+    service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
+
+    await service._guard_standings_capacity(1, division_id, RESERVE)
+
+
+async def test_an_unknown_team_is_left_to_the_check_that_reports_it(tmp_path):
+    """assign_driver names a team that does not exist in its own words."""
+    from services.placement_service import PlacementService
+
+    db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
+    template = _template_file(tmp_path, DRIVERS, rows=2)
+    service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
+
+    await service._guard_standings_capacity(1, division_id, "No Such Team")
 
 
 # ── At the season review (FR-043, FR-045) ─────────────────────────────────

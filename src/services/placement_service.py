@@ -414,13 +414,40 @@ class PlacementService:
     # Image template capacity (036 / Constitution XIV.12)
     # ------------------------------------------------------------------
 
-    async def _guard_reserve_capacity(self, server_id: int, division_id: int) -> None:
+    async def _is_reserve_team(self, division_id: int, team_name: str) -> bool | None:
+        """Whether *team_name* is the division's reserve team, or None where there is no such team.
+
+        The capacity guards below measure two different populations — the reserve block and
+        the classification — and a driver joins exactly one of them. Neither guard can tell
+        which without this, and both run before ``assign_driver`` opens its own transaction,
+        where the same flag is read again from the row it needs in hand anyway.
+        """
+        async with get_connection(self._db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT is_reserve FROM team_instances "
+                    "WHERE division_id = ? AND name = ?",
+                    (division_id, team_name),
+                )
+            ).fetchone()
+        return None if row is None else bool(row["is_reserve"])
+
+    async def _guard_reserve_capacity(
+        self, server_id: int, division_id: int, team_name: str
+    ) -> None:
         """Refuse a reserve placement that would outgrow the lineup template (FR/R8).
 
         The reserve block is the one lineup collection whose slots the template fixes, so
         it is the one to which overflow applies. XIV.12 requires overflow to be rejected
         at the earliest moment it can be detected, with the change unapplied — which is
         this command, not the render.
+
+        **It bounds reserve placements and nothing else.** A driver going into an ordinary
+        race team never joins the reserve block, so a full block says nothing about them.
+        Until #140 this guard was not told which team was being filled and counted the
+        division's reserves on every assignment, which left a division carrying as many
+        reserves as its template drew slots for unable to seat anybody at all — the refusal
+        blaming the reserve block for a placement that was never part of it.
 
         Never raises for its own reasons: a fault in this check must not block a
         placement, only a genuine over-capacity may.
@@ -432,6 +459,11 @@ class PlacementService:
             from models.image_catalogues import reserve_capacity_problem
             from services.image_lineup_post import lineup_enabled
             from utils.svg_document import load_svg
+
+            # Not a reserve placement, or no such team — `assign_driver` reports a team
+            # that does not exist in its own words, and this guard stays quiet.
+            if not await self._is_reserve_team(division_id, team_name):
+                return
 
             if not await lineup_enabled(bot, server_id):
                 return
@@ -471,6 +503,17 @@ class PlacementService:
         the reserve guard does, and for the same reason: XIV.12 rejects overflow at the
         earliest moment it can be detected, with the change unapplied. That moment is this
         command. Discovering it at a posting means the league has already lost its sheet.
+
+        **It counts reserves, and that is deliberate — do not make it match the standings
+        guard.** The two look alike and measure different things. A reserve holds no row in a
+        classification ever, so ``_guard_standings_capacity`` excludes them; but the sheet
+        draws a reserve the moment one is allocated to a round, and
+        ``attendance_service`` selects on ``ti.is_reserve = 1 AND dra.assigned_team_id IS NOT
+        NULL`` to do it. In the worst case every reserve on the books is allocated and takes a
+        row, so counting them all is the correct ceiling rather than an over-count — and the
+        team being filled is likewise immaterial here, a reserve placement being exactly the
+        one that might later want a row. Pinned by
+        ``test_placement_sheet_capacity_guard.py``.
 
         Never raises for its own reasons: a fault in this check must not block a placement,
         only a genuine over-capacity may.
@@ -513,13 +556,23 @@ class PlacementService:
                 f"the sheet would silently drop a driver."
             )
 
-    async def _guard_standings_capacity(self, server_id: int, division_id: int) -> None:
+    async def _guard_standings_capacity(
+        self, server_id: int, division_id: int, team_name: str
+    ) -> None:
         """Refuse a placement that would outgrow the driver standings template (FR-044).
 
         The standings draw every driver of the division's classification, and their rows are
         counted from the file rather than declared as a number — so this reads the configured
         template exactly as the reserve and sheet guards do, and for the same reason: XIV.12
         rejects overflow at the earliest moment it can be detected, with the change unapplied.
+
+        **A reserve is not an entry of a classification.** They stand in for an absent driver
+        and add no car to the grid, and ``standings_service`` filters ``ti.is_reserve = 0`` out
+        of every classification it builds. So the count below excludes them, and a placement
+        *into* the reserve team is not measured at all — it grows no classification. Until #140
+        this guard counted every assignment of the division and added one whatever team was
+        being filled, which refused an ordinary placement one seat early for each reserve on
+        the books, and refused a reserve outright once the classified drivers filled the rows.
 
         The **constructors** ceiling is not checked here. Seating a driver adds no team, so no
         driver assignment can breach it; it is checked at ``/season review``, which is where a
@@ -537,6 +590,11 @@ class PlacementService:
             from services.image_standings_service import DRIVERS_TEMPLATE_KEY
             from utils.svg_document import load_svg
 
+            # A reserve placement adds no entry to the classification, and no such team —
+            # `assign_driver` reports a team that does not exist in its own words.
+            if await self._is_reserve_team(division_id, team_name) is not False:
+                return
+
             if not await standings_enabled(bot, server_id, DRIVERS_TEMPLATE_KEY):
                 return
 
@@ -548,8 +606,10 @@ class PlacementService:
             async with get_connection(self._db_path) as db:
                 row = await (
                     await db.execute(
-                        "SELECT COUNT(*) AS seated FROM driver_season_assignments "
-                        "WHERE division_id = ?",
+                        "SELECT COUNT(*) AS seated FROM driver_season_assignments dsa "
+                        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+                        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+                        "WHERE dsa.division_id = ? AND ti.is_reserve = 0",
                         (division_id,),
                     )
                 ).fetchone()
@@ -601,7 +661,7 @@ class PlacementService:
             )
 
     async def _guard_image_capacity(
-        self, server_id: int, division_id: int, season_id: int
+        self, server_id: int, division_id: int, season_id: int, team_name: str
     ) -> None:
         """Refuse a placement that would outgrow a configured image template.
 
@@ -618,15 +678,17 @@ class PlacementService:
 
         # The reserve block is guarded separately: it counts reserve drivers, not every
         # seated driver, and its capacity comes from the template rather than from here.
-        await self._guard_reserve_capacity(server_id, division_id)
+        # It needs the team, because only a placement into the reserve team joins it.
+        await self._guard_reserve_capacity(server_id, division_id, team_name)
 
         # The attendance sheet's rows are likewise counted from the template rather than
         # declared as a number, so they are invisible to ``declared_capacities()`` below.
         await self._guard_sheet_capacity(server_id, division_id)
 
         # And so are the driver standings' — both standings catalogues declare
-        # ``capacity=None`` and derive their rows from the file.
-        await self._guard_standings_capacity(server_id, division_id)
+        # ``capacity=None`` and derive their rows from the file. It needs the team too,
+        # because a reserve joins no classification.
+        await self._guard_standings_capacity(server_id, division_id, team_name)
 
         capacities = declared_capacities()
         if not capacities:
@@ -691,7 +753,7 @@ class PlacementService:
         # FR-028). This is the single choke point through which a driver enters a
         # division, so guarding it covers the signup wizard, manual placement and bulk
         # import alike. Inert while every catalogue is empty.
-        await self._guard_image_capacity(server_id, division_id, season_id)
+        await self._guard_image_capacity(server_id, division_id, season_id, team_name)
 
         # A real driver may not be seated while the server is in test mode: the same
         # choke point keeps the manual command, the signup path and attendance's
