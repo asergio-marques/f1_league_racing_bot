@@ -1,6 +1,57 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-15 — v9.0.0 → v9.1.0: MINOR — the out-of-channel refusal is one the member sees]
+  Version change    : 9.0.0 → 9.1.0
+  Bump rationale    : MINOR. Principle I's refusal clause is restated to say what the bot has
+                      always done, and gains a cross-reference to the exemption the same
+                      principle already carries. Nothing is removed and no league is governed
+                      differently in practice: the bot has never been silent, so the clause
+                      described a boundary that was never enforced rather than one being
+                      withdrawn now. That is materially expanded guidance, not a backward-
+                      incompatible redefinition, and MAJOR is not owed.
+
+  Modified sections :
+    - Principle I (Trusted Configuration Authority) — "The bot MUST reject out-of-channel
+      commands silently (no response)" replaced. An out-of-channel command is refused visibly,
+      the refusal seen by the invoking member alone, and the clause now names the five setup
+      commands exempted four paragraphs above it as running from any channel. The second half of
+      the sentence — a clear, actionable permission error for an unauthorized command — stands
+      unchanged.
+
+  Why the constitution is the document that moved:
+    - The bot replies ephemerally with "⛔ This command can only be used in the configured
+      interaction channel" (`_WRONG_CHANNEL` in `src/utils/channel_guard.py`).
+    - The core specification: "A command given in a channel other than the interaction channel
+      shall be refused, and the refusal shall be seen by the member alone."
+    - `docs/how-to/configuring-the-core-bot.md`: "A command run in the wrong channel is refused,
+      not ignored. You get a short message only you can see."
+    The core specification is the more recent statement and was written deliberately; the code
+    and the guide agree with it. The behaviour is pinned by
+    `test_a_tier_command_is_refused_outside_the_interaction_channel` and
+    `test_the_channel_is_checked_before_the_tier` in `tests/unit/test_permission_tiers.py`, and
+    the exemption by `test_only_the_five_setup_commands_run_outside_the_interaction_channel` in
+    `tests/unit/test_command_tiers.py`. The constitution was alone, and it was the one wrong.
+
+  Deliberately NOT changed, and settled here so the question is not raised a fourth time:
+    - The three references to `docs/wip-specs/known_issues.md` — at the time of writing on lines
+      339, 381 and 446. All three sit inside sync impact reports, which the v8.0.0 amendment
+      established are the historical record and say what was true when written. All three name
+      the same entry: P3, "a class's aspect is enforced against a league's own template as
+      strictly as against the shipped ones, and a league cannot declare a slot of another
+      shape", which was answered on 2026-09-01 and retired as no longer a defect — eight days
+      before the register was migrated to GitHub issues and deleted on 2026-09-09 (commit
+      a951c58). Every issue title and body in the tracker was searched: no GitHub issue carries
+      it, because none was ever created for it. The three lines are historical pointers to a
+      question that was settled, not dangling references to open work, and they stand.
+
+  Superseded by this report:
+    - The v9.0.0 and v8.0.0 reports below each record the out-of-channel clause and those three
+      references as still wrong, still tracked in issue #145 and out of scope there. Both notes
+      were true when written and are left untouched. Both points are settled here.
+
+  Follow-up TODOs: none.
+
 [2026-09-14 — v8.0.0 → v9.0.0: MAJOR — a round amendment is judged per phase, not all-or-nothing]
   Version change    : 8.0.0 → 9.0.0
   Bump rationale    : MAJOR. Principle IV, a NON-NEGOTIABLE principle, is redefined backward-
@@ -4089,8 +4140,10 @@ MUST be opened to the league admin role on the same terms, so that a league admi
 what they are entitled to act upon. A button offered to a driver in their own channel MUST
 ask nothing, a driver needing no role.
 
-The bot MUST reject out-of-channel commands silently (no response) and MUST reject
-unauthorized configuration commands with a clear, actionable permission error.
+The bot MUST refuse an out-of-channel command visibly, the refusal being seen by the
+invoking member alone rather than passing silently — save the five setup commands exempted
+above, which MUST run from any channel. The bot MUST reject unauthorized configuration
+commands with a clear, actionable permission error.
 
 **Rationale**: Separating "who can read weather" from "who can change the season" prevents
 casual members from accidentally triggering configuration commands, while still allowing the
@@ -7388,4 +7441,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 9.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-14
+**Version**: 9.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-15
