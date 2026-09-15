@@ -197,6 +197,10 @@ Anyone holding either of the league's two roles can press these. The driver whos
 > **Your next message in that channel becomes the reason.** After pressing Reject or Request Changes, the very next thing you type there is taken as the reason and deleted. Do not press the button and then start chatting to the driver — say your piece first, then press.
 
 > **You have five minutes to choose which field to correct.** Press Request Changes, type the reason, and a row of buttons appears for the nine fields. Leave it too long and the driver goes back to waiting for approval as though nothing happened. Start again.
+>
+> **You get pinged when that happens, in the driver's channel.** The bot names the driver, says the five minutes lapsed, and mentions you — so a window you walked away from comes back to you rather than going quiet. The driver reads that channel and will see the review has returned to you.
+>
+> **A restart sends them back too, whatever time was left.** If the bot restarts while the field buttons are up, the driver returns to waiting for approval immediately and you are pinged the same way, with the message saying the bot restarted. The five minutes cannot run while the bot is down, and you are no longer sat there choosing — so the window is closed rather than left open for a press that would never come. Press Request Changes again when you are ready.
 
 A driver who goes quiet for 24 hours at any question has their signup cancelled automatically, and their channel is tidied away 24 hours after that. Every finished signup channel goes the same way, whether it ended in approval, rejection or a timeout. A driver who leaves the server has their signup cancelled and their channel deleted at once, and the bot notes it in the log channel.
 
@@ -221,11 +225,11 @@ If nobody is mid-signup it closes immediately. Otherwise you get a confirmation 
 
 Closing ahead of the time you set is two steps on purpose — the first is hard to do by accident. If you only want to move the deadline rather than close now, use `/signup close-time modify` with the new time and leave the window running.
 
-> **One driver is invisible to that check.** Someone you have just sent back with **Request Changes**, before you have picked which field they are to redo, is not counted. If they are the only person in progress, `/signup close` closes on the spot with no confirmation at all.
-
 Closing deletes the Sign Up button, posts a **Signups are now closed** notice in the channel, and tells anyone still filling in the questionnaire that it is over.
 
-> **It drops fewer drivers than it warns you about.** The confirmation says every in-progress driver will be reset, and counts everyone still filling the form in *plus* everyone waiting on you. Only the ones still filling it in are actually dropped. Drivers waiting for your approval, or fixing something you sent back, keep their place — you can still approve them after the window has shut, and you should. See [#128](https://github.com/asergio-marques/f1_league_racing_bot/issues/128).
+> **It drops fewer drivers than it warns you about.** The confirmation says every in-progress driver will be reset, and counts everyone still filling the form in *plus* everyone waiting on you. Only the ones still filling it in are actually dropped. Drivers waiting for your approval, fixing something you sent back, or sat with the field buttons up keep their place — you can still approve them after the window has shut, and you should. See [#128](https://github.com/asergio-marques/f1_league_racing_bot/issues/128).
+>
+> **Closing is not a deadline for your own review.** Request Changes still works after the window has shut, so a driver you send back then behaves exactly as they would have before it — including the five-minute field window and the ping if you leave it.
 
 > **The confirmation expires after five minutes, silently.** Leave the dialog sitting and the buttons simply stop responding, with nothing to tell you why. Run the command again.
 
@@ -353,7 +357,7 @@ Worth running through before you open the window.
 | Drivers you expected to be dropped by a close are still there | Known: closing only drops drivers still filling the form in. Anyone waiting on you keeps their place — approve them |
 | `/signup time-slot add` or `remove` refused, naming a number of drivers | Drivers are waiting to be placed. Place or clear them — `/signup unassigned list` is the same queue |
 | Your time slots came back after disabling the module | Known: disabling clears the channel and roles only, whatever the message says |
-| A driver stuck waiting after Request Changes | The bot restarted mid-correction, so the five-minute timer is gone and the window will never close on its own. The field buttons still work — pick one and the flow carries on. Failing that, ask them to press **Cancel Signup** and start again |
+| A driver went back to waiting for approval on their own | The five-minute field window lapsed, or the bot restarted while it was open. The ping in their channel says which. Press **Request Changes** again |
 | Roles not granted after `/driver assign` | The season is still in setup. They are all granted at approval |
 | No lineup posted anywhere | That division has no lineup channel set |
 | Seeds that look meaningless | The window was opened with no tracks, so there are no lap times to sort on |

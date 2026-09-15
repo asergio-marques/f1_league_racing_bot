@@ -1728,9 +1728,14 @@ class SignupCog(commands.Cog):
             return
 
         # Query in-progress drivers
+        # AWAITING_CORRECTION_PARAMETER counts like the other two review-cycle states: the
+        # close does not touch any of them, but a manager shutting the window should see
+        # every driver mid-signup. Leaving it out meant a driver parked there alone let
+        # `/signup close` shut on the spot with no confirmation at all (issue #129).
         in_progress_states = (
             "PENDING_SIGNUP_COMPLETION",
             "PENDING_ADMIN_APPROVAL",
+            "AWAITING_CORRECTION_PARAMETER",
             "PENDING_DRIVER_CORRECTION",
         )
         async with get_connection(self.bot.db_path) as db:

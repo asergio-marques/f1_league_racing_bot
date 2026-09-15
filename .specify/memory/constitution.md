@@ -1,6 +1,67 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-15 — v9.2.0 → v9.3.0: MINOR — a restart ends the correction-parameter window]
+  Version change    : 9.2.0 → 9.3.0
+  Bump rationale    : MINOR. The permitted-transition table gave the Awaiting Correction
+                      Parameter → Pending Admin Approval transition a single trigger, the
+                      5-minute timeout. A restart is now a second, and the document had never
+                      bound that path: the timer was an in-memory task, so a restart discarded it
+                      and the driver stayed in the state for good. Binding a path the constitution
+                      had not named is materially expanded guidance, which is the same reasoning
+                      v9.2.0 applied to the weather horizons. PATCH was weighed and rejected on
+                      that precedent — the transition itself is unchanged, but what MUST cause it
+                      is not. MAJOR is not owed: nothing is removed, no transition is redefined,
+                      and no league is governed differently from what the signup specification
+                      already requires.
+
+  Modified sections :
+    - Principle VIII, Driver States — the Awaiting Correction Parameter row's "(5-minute window)"
+      now reads "(5-minute window, ended early by a bot restart)", the window no longer being the
+      only way out of the state.
+    - Principle VIII, Permitted Transitions — "5-minute timeout with no field selected" gains
+      "; or bot restart while the window is open".
+    - Principle VIII, Withdrawal — Awaiting Correction Parameter added to the states throughout
+      which the withdrawal button MUST be visible. A pre-existing omission, corrected here
+      because it concerns the same state and was verified against the code in the same pass.
+    - Principle VIII, signup close timer — Awaiting Correction Parameter added to the states that
+      retain their state through an automatic close, beside Pending Driver Correction and Pending
+      Admin Approval.
+
+  Why the constitution is the document that moved:
+    - `recover_correction_timeouts` in `src/services/wizard_service.py` returns every driver in
+      the state to Pending Admin Approval at start-up, whatever remains of their 5 minutes, and
+      mentions the league manager who asked for the correction. It is reached from
+      `recover_wizards`, which `src/bot.py` calls in `on_ready`.
+    - The revert is unconditional by decision (2026-09-15): the state exists only while a league
+      manager is mid-decision, and a manager whose bot has restarted is no longer mid-decision.
+      That is why no deadline is persisted and why a driver stranded by the old behaviour is
+      released on the same path.
+    - The signup module specification carries the rule under the correction cycle, and
+      `README.md` carries the close-confirmation state list that now names it.
+    - The withdrawal row was checked rather than assumed: `withdraw_button` in
+      `src/cogs/signup_cog.py` guards on who is pressing and not on the driver's state, and
+      `ALLOWED_TRANSITIONS` permits Awaiting Correction Parameter → Not Signed Up.
+    - Pinned by `tests/unit/test_correction_parameter_timeout.py`, whose
+      `test_a_restart_reverts_even_within_the_five_minutes` holds the unconditional half of the
+      rule and `test_a_close_leaves_a_driver_awaiting_a_correction_parameter_alone` holds the
+      close's silence on it.
+
+  Deliberately NOT changed:
+    - Earlier sync impact reports. They are the historical record and say what was true when
+      written, as v8.0.0 established.
+    - The rule that a close moves only Pending Signup Completion drivers to Not Signed Up. A
+      league manager may request changes after the window has shut, so a close is not a boundary
+      for a driver mid-review and was deliberately left not to move them (decided 2026-09-15).
+    - Principle on disabled modules producing nothing, which already binds "a scheduled job, a
+      restart, or a command" and needed no widening for the guard this work added.
+
+  Follow-up TODOs: none.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-15 — v9.1.0 → v9.2.0: MINOR — the phase horizons are the league's, on every path]
   Version change    : 9.1.0 → 9.2.0
   Bump rationale    : MINOR. Principle IV called the three weather horizons "fixed" and stated
@@ -4455,7 +4516,7 @@ their Discord User ID in server scope. The following rules are non-negotiable:
 | Not Signed Up | Inactive; eligible to initiate signup. Default when no profile exists. |
 | Pending Signup Completion | Wizard engaged; bot is collecting signup parameters. |
 | Pending Admin Approval | All parameters collected; awaiting trusted-role review. |
-| Awaiting Correction Parameter | League manager clicked "request changes"; selecting which field to re-collect (5-minute window). |
+| Awaiting Correction Parameter | League manager clicked "request changes"; selecting which field to re-collect (5-minute window, ended early by a bot restart). |
 | Pending Driver Correction | Specific field flagged; driver must re-submit that field only. |
 | Unassigned | Signup approved; not yet placed in any division-team seat. |
 | Assigned | Placed in at least one division-team seat. |
@@ -4471,7 +4532,7 @@ their Discord User ID in server scope. The following rules are non-negotiable:
 | Pending Signup Completion | Not Signed Up | Driver withdraws; or 24 h inactivity timeout |
 | Pending Admin Approval | Awaiting Correction Parameter | League manager clicks "request changes" |
 | Awaiting Correction Parameter | Pending Driver Correction | League manager selects field to correct |
-| Awaiting Correction Parameter | Pending Admin Approval | 5-minute timeout with no field selected |
+| Awaiting Correction Parameter | Pending Admin Approval | 5-minute timeout with no field selected; or bot restart while the window is open |
 | Pending Driver Correction | Pending Admin Approval | Driver submits valid corrected field |
 | Pending Driver Correction | Not Signed Up | Driver withdraws; or 24 h inactivity timeout |
 | Pending Admin Approval | Unassigned | League manager approves signup |
@@ -4694,8 +4755,8 @@ lifecycle state (Principle VIII). The following rules are non-negotiable:
   transitions to Not Signed Up; the channel is frozen (read-only); a cancellation notice is
   posted; the channel is deleted 24 hours later.
 - **Withdrawal**: A withdrawal button MUST be visible throughout the wizard while the driver is
-  in Pending Signup Completion, Pending Admin Approval, or Pending Driver Correction. Pressing
-  it transitions the driver to Not Signed Up immediately.
+  in Pending Signup Completion, Pending Admin Approval, Awaiting Correction Parameter, or
+  Pending Driver Correction. Pressing it transitions the driver to Not Signed Up immediately.
 - **Signup data persistence**: Collected answers are stored as draft data during the wizard.
   On transition to Pending Admin Approval the complete record MUST be committed atomically.
   Draft data MUST be discarded on any transition to Not Signed Up.
@@ -4714,8 +4775,9 @@ lifecycle state (Principle VIII). The following rules are non-negotiable:
   persisted on the server's signup configuration. When the timer fires, signups are closed
   automatically: only drivers in Pending Signup Completion are transitioned to Not Signed Up
   (applying the same cancellation semantics as a manually confirmed close with in-progress
-  drivers); drivers in Pending Driver Correction or Pending Admin Approval retain their
-  current state — their submitted records are preserved for admin review. The signup button
+  drivers); drivers in Pending Driver Correction, Awaiting Correction Parameter or Pending
+  Admin Approval retain their current state — their submitted records are preserved for
+  admin review. The signup button
   is removed; and a "signups closed" notice is posted in the general signup channel. The
   timer is cleared when signups are closed manually before it fires. On bot restart, any
   active close timer MUST be re-armed.
@@ -7507,4 +7569,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 9.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-15
+**Version**: 9.3.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-15

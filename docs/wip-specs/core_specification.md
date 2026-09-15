@@ -309,7 +309,7 @@ it only to place it; the rules governing it belong to its own specification.
     - Not Signed Up to Pending Signup Completion.
     - Pending Signup Completion to Pending Admin Approval, or to Not Signed Up.
     - Pending Admin Approval to Awaiting Correction Parameter, to Unassigned, or to Not Signed Up.
-    - Awaiting Correction Parameter to Pending Driver Correction, back to Pending Admin Approval where no answer is named in time, or to Not Signed Up.
+    - Awaiting Correction Parameter to Pending Driver Correction, back to Pending Admin Approval where no answer is named in time or the bot restarts, or to Not Signed Up.
     - Pending Driver Correction to Pending Admin Approval, or to Not Signed Up.
     - Unassigned to Assigned, or to Not Signed Up.
     - Assigned to Unassigned, or to Not Signed Up.
