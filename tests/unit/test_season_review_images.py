@@ -261,10 +261,16 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
     tail = source[source.index("Server-level UNASSIGNED"):]
     assert "if approval_blockers:" in tail
 
-    # Two independent causes withhold the button, so the offer is guarded on both rather
-    # than sitting in an `else` belonging to either one (#121, #122, #181).
-    offer = "if not approval_blockers and not calendar_faults_found:"
-    assert offer in tail
+    # Independent causes withhold the button, so the offer is guarded on every one of
+    # them rather than sitting in an `else` belonging to any single one (#121, #122,
+    # #181). Assembled from the causes rather than pinned as a string: a new cause is
+    # meant to be added here, and a test that only accepted the two it was written with
+    # would read as though adding a third were the mistake.
+    causes = ("approval_blockers", "calendar_faults_found", "points_faults")
+    offer = "if " + " and ".join(f"not {cause}" for cause in causes) + ":"
+    assert offer in tail, (
+        f"the approval prompt is not guarded on all of {', '.join(causes)}"
+    )
     fault_branch = tail[tail.index("if approval_blockers:"):tail.index(offer)]
     assert "_post_approval_prompt" not in fault_branch, (
         "the button must not be offered on a fault"

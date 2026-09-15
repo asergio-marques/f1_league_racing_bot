@@ -538,6 +538,34 @@ class SeasonCog(commands.Cog):
             for line in shortfall[template_key]
         ]
 
+    async def _points_ordering_problems(self, server_id: int, season_id: int) -> list[str]:
+        """Every place this season's points would score a lower position above a higher one.
+
+        **One helper because two surfaces ask the same question.** `/season review` reports
+        what would block an approval and `_do_approve` refuses on it; a review that promised
+        to surface the blockers and did not look for this one sent a manager to an approval
+        that then refused, for a fault the report had just told them nothing about.
+
+        Two checks, because the points a season will run on can arrive from two directions.
+        The attached server-level configs are what a first approval copies in, and until it
+        does the season's own table is empty — reading only that table is how this check came
+        to pass every first approval it was ever asked about (#131). The season's own table is
+        read as well, because the snapshot writes with INSERT OR REPLACE and clears nothing
+        first, so a season being approved a second time can be holding entries an earlier
+        approval left behind that no attached config would mention.
+
+        Merged rather than concatenated: a re-approval sees the same fault from both sides,
+        and a manager should read each broken position once.
+        """
+        return list(dict.fromkeys(
+            await season_points_service.validate_attached_config_ordering(
+                self.bot.db_path, season_id, server_id
+            )
+            + await season_points_service.validate_monotonic_ordering(
+                self.bot.db_path, season_id
+            )
+        ))
+
     async def _team_name_problems(self, server_id: int, season_id: int | None) -> list[str]:
         """Every team whose name cannot become an asset filename (047 FR-032).
 
@@ -1560,6 +1588,11 @@ class SeasonCog(commands.Cog):
         # is the one person able to fix it.
         approval_blockers: list[str] = []
 
+        # Kept beside it rather than inside the results branch that fills it: the block
+        # that withholds the approve button reads this whether or not the results module
+        # is on, and a season with results off has no points tables to be wrong about.
+        points_faults: list[str] = []
+
         # Load from DB to get tier and team roster data
         if cfg.season_id != 0:
             # ── Modules ───────────────────────────────────────────────
@@ -1716,6 +1749,27 @@ class SeasonCog(commands.Cog):
                     points_lines.append("**Points Configs:** *(none attached)*")
             else:
                 points_lines.append("**Points Configs:** *(none attached)*")
+
+            # ── Points ordering ───────────────────────────────────────
+            # Reported here rather than left to the approval. The refusal at
+            # `/season approve` is the one that matters, but a review whose whole purpose
+            # is to show a manager what stands in the way of approving is a review that
+            # must look at this too — read through the same helper the gate reads, so
+            # the report and the refusal cannot drift.
+            if results_on:
+                points_faults = await self._points_ordering_problems(
+                    interaction.guild_id, cfg.season_id
+                )
+                if points_faults:
+                    points_lines.append("")
+                    points_lines.append(
+                        "\u274c **Points tables out of order** — these block approval:"
+                    )
+                    points_lines += [f"  \u2022 {fault}" for fault in points_faults]
+                    points_lines.append(
+                        "  A lower position cannot be worth as much as the one above it. "
+                        "Repair them with `/results config session`, then review again."
+                    )
             points_lines.append("")
 
             # Pre-fetch role configs so we can warn about teams missing a role
@@ -2004,7 +2058,18 @@ class SeasonCog(commands.Cog):
                     "Put it right, then run `/season review` again.",
                     ephemeral=True,
                 )
-            if not approval_blockers and not calendar_faults_found:
+            if points_faults:
+                body = "\n".join(f"\u2022 {fault}" for fault in points_faults)
+                await interaction.followup.send(
+                    "\u26d4 **This season's points tables are out of order.**\n"
+                    f"{body}\n"
+                    "A lower position cannot be worth as much as the one above it. The "
+                    "season is **not** offered for approval while that stands — repair "
+                    "the tables with `/results config session`, then run `/season review` "
+                    "again.",
+                    ephemeral=True,
+                )
+            if not approval_blockers and not calendar_faults_found and not points_faults:
                 # Taken here rather than at the top of the command: the fingerprint must
                 # describe the season as the report just described it, and the report is
                 # only complete now.
@@ -4860,31 +4925,9 @@ class SeasonCog(commands.Cog):
 
             # ── Gate 2a: monotonic ordering check (FR-008) ───────────────────
             #
-            # Two checks, because the points a season will run on can arrive from two
-            # directions and this gate has to see both (#131).
-            #
-            # The attached server-level configs are the ones a first approval will copy
-            # in below, at `snapshot_configs_to_season` — and until it runs, the season's
-            # own table is empty. Reading only that table is what made this gate pass
-            # every first approval it was ever asked about, which is the whole of the
-            # defect: a league could approve a season scoring second place above first
-            # and be told nothing.
-            #
-            # The season's own table is still read as well. `snapshot_configs_to_season`
-            # writes with INSERT OR REPLACE and clears nothing first, so a season being
-            # approved a second time can still be holding entries an earlier approval
-            # left behind, and those are not in any attached config to be found.
-            # A re-approval sees the same fault from both sides, so the two lists are
-            # merged rather than concatenated — a manager reading the refusal should see
-            # each broken position once, in the order the checks found them.
-            mono_errors = list(dict.fromkeys(
-                await season_points_service.validate_attached_config_ordering(
-                    self.bot.db_path, cfg.season_id, cfg.server_id
-                )
-                + await season_points_service.validate_monotonic_ordering(
-                    self.bot.db_path, cfg.season_id
-                )
-            ))
+            # Through the same helper `/season review` reports from, so the report a
+            # manager was given and the refusal they then meet cannot disagree.
+            mono_errors = await self._points_ordering_problems(cfg.server_id, cfg.season_id)
             if mono_errors:
                 bullet_list = "\n\u2022 ".join(mono_errors)
                 msg = (
