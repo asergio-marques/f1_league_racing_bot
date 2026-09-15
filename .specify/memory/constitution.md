@@ -1,6 +1,66 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-15 — v9.1.0 → v9.2.0: MINOR — the phase horizons are the league's, on every path]
+  Version change    : 9.1.0 → 9.2.0
+  Bump rationale    : MINOR. Principle IV called the three weather horizons "fixed" and stated
+                      them as T − 5 days, T − 2 days and T − 2 hours, while already carrying, four
+                      paragraphs below, the rule that an amended round's phases are re-armed at the
+                      league's own configured horizons. The principle contradicted itself. The
+                      opening is corrected to what has been true since `/weather config` shipped,
+                      and the configured-horizon rule is widened from the amendment path alone to
+                      every path that arms a phase or judges its horizon. Widening a rule to paths
+                      it did not name is materially expanded guidance; nothing is removed and no
+                      league is governed differently from what the wip-spec already required, so
+                      MAJOR is not owed. PATCH was weighed and rejected: the new sentence governs
+                      three paths the document had never bound, which is more than a clarification.
+
+  Modified sections :
+    - Principle IV (Three-Phase Weather Pipeline) opening — "each triggered automatically at a
+      fixed horizon" replaced by a horizon that is the league's own where configured and the
+      packaged default otherwise, noting that a season runs on the values stored at approval. The
+      three phase bullets keep their horizons, now marked "by default".
+    - Principle IV, Mystery Rounds — "At the **Phase 1 horizon** (T − 5 days)" loses the
+      parenthesis, the horizon being named once above and no longer fixed.
+    - Principle IV, amendment invalidation — "Phases MUST be re-armed at the league's own
+      configured horizons, not at the packaged defaults" widened to bind every path that arms a
+      phase or judges whether its horizon has passed: approval, re-arming after an amendment, the
+      catch-up when the module is enabled, and the recovery when the bot starts. No two may reach
+      different answers about the same round.
+    - Principle IV Rationale — extended to say why: a horizon varying by the path the bot arrived
+      at it destroys predictability as surely as one chosen after the fact.
+
+  Why the constitution is the document that moved:
+    - `/weather config phase-1-deadline`, `phase-2-deadline` and `phase-3-deadline` have stored
+      per-league horizons in `weather_pipeline_config` since the command shipped, defaulting to
+      5 / 2 / 2 (`src/services/weather_config_service.py`).
+    - The weather module specification has carried "The phases of an amended round shall be armed
+      at the league's own configured horizons, not at the packaged ones" since issue #110, and now
+      carries the same rule for recovery under `## Recovery`.
+    - `README.md` states plainly that the horizons shown "are the packaged defaults, **not** fixed
+      values — each is configurable per server".
+    - Every call site reads the config: `/season approve` in `src/cogs/season_cog.py`, the enable
+      catch-up in `src/cogs/module_cog.py`, `amend_round` in `src/services/amendment_service.py`,
+      and, since issue #111, `_recover_missed_phases` in `src/bot.py`. The last of these was the
+      defect this amendment accompanies: a restart judged every league by the packaged 5 / 2 / 2,
+      so a longer Phase 1 was never published and a shorter one was published days early.
+    - The behaviour is pinned by `tests/unit/test_weather_restart_recovery_horizons.py`, whose
+      `test_a_restart_uses_each_servers_own_horizons` holds the "no two paths disagree" half of the
+      rule for two leagues recovered in one restart.
+    The constitution was alone in calling the horizons fixed, and it was the one wrong.
+
+  Deliberately NOT changed:
+    - Earlier sync impact reports naming T − 5 days and the rest. They are the historical record
+      and say what was true when written, as v8.0.0 established.
+    - The ordering invariant on the three deadlines, which is a module rule the weather spec owns
+      and which the constitution has never stated.
+
+  Follow-up TODOs: none.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-15 — v9.0.0 → v9.1.0: MINOR — the out-of-channel refusal is one the member sees]
   Version change    : 9.0.0 → 9.1.0
   Bump rationale    : MINOR. Principle I's refusal clause is restated to say what the bot has
@@ -4207,27 +4267,28 @@ without requiring a full season reset or manual data repair.
 ### IV. Three-Phase Weather Pipeline (NON-NEGOTIABLE)
 
 Weather generation for every non-Mystery round MUST follow exactly three sequential phases,
-each triggered automatically at a fixed horizon before the scheduled round start time:
+each triggered automatically at its horizon before the scheduled round start time. The three
+horizons are the league's own where it has configured them and the packaged defaults otherwise,
+and a season runs on the values stored when it was approved:
 
-- **Phase 1 — Rain Probability** (T − 5 days): Compute `Rpc` from the track base factor and
-  two independent random draws. Log all inputs and the result. Post a public probability
-  message to the division's weather forecast channel.
-- **Phase 2 — Session Type Draw** (T − 2 days): Use the `Rpc` value persisted in Phase 1 to
-  populate a 1 000-entry weighted map of Rain / Mixed / Sunny slots; draw once per session
-  in the round. Log inputs, weights, and draws. Post session-type forecasts to the division
-  channel.
-- **Phase 3 — Final Slot Generation** (T − 2 hours): Use the `Rpc` value and each session's
-  Phase 2 type to build per-session weighted maps; draw `Nslots` times (randomly chosen
-  within the session-type slot-count bounds). Log the full draw sequence. Post the final
+- **Phase 1 — Rain Probability** (T − 5 days by default): Compute `Rpc` from the track base
+  factor and two independent random draws. Log all inputs and the result. Post a public
+  probability message to the division's weather forecast channel.
+- **Phase 2 — Session Type Draw** (T − 2 days by default): Use the `Rpc` value persisted in
+  Phase 1 to populate a 1 000-entry weighted map of Rain / Mixed / Sunny slots; draw once per
+  session in the round. Log inputs, weights, and draws. Post session-type forecasts to the
+  division channel.
+- **Phase 3 — Final Slot Generation** (T − 2 hours by default): Use the `Rpc` value and each
+  session's Phase 2 type to build per-session weighted maps; draw `Nslots` times (randomly
+  chosen within the session-type slot-count bounds). Log the full draw sequence. Post the final
   weather layout to the division channel.
 
 **Mystery Rounds** are the sole exception. No draw is performed, no `Rpc` is computed, no phase
 result is written, and nothing is logged to the calculation channel. In place of the three phases:
 
-- At the **Phase 1 horizon** (T − 5 days) the bot MUST post a fixed notice to the division's
-  forecast channel stating that the weather of the round is not pre-generated. It carries no
-  forecast value and no division role mention, the conditions being unknown to every participant
-  alike. It stands in the place of the Phase 1 forecast for such a round and MUST be recorded
+- At the **Phase 1 horizon** the bot MUST post a fixed notice to the division's forecast channel
+  stating that the weather of the round is not pre-generated. It carries no forecast value and no
+  division role mention, the conditions being unknown to every participant alike. It stands in the place of the Phase 1 forecast for such a round and MUST be recorded
   distinctly from one, no forecast having been computed.
 - At the **Phase 2 and Phase 3 horizons** nothing whatever is posted.
 
@@ -4250,7 +4311,11 @@ The bot MUST post an invalidation notice to the division channel where any phase
 withdrawn, and MUST NOT post one where none has — the forecast the division holds being, in
 that case, still the one that stands. The division holds the latest phase that stands.
 
-Phases MUST be re-armed at the league's own configured horizons, not at the packaged defaults.
+Every path that arms a phase or judges whether its horizon has passed MUST use the league's own
+configured horizons, not the packaged defaults. This governs the arming of a season's phases at
+approval, the re-arming of an amended round's, the catch-up performed when the module is enabled,
+and the recovery performed when the bot starts. No two of them may reach different answers about
+the same round.
 
 Withdrawal of a phase's record — the `INVALIDATED` marker, the cleared draws, the not-performed
 flag and the deletion of its posted output — MUST happen whatever the module's enabled state, a
@@ -4259,9 +4324,10 @@ forecast that no longer stands being wrong however the module stands.
 All random draws MUST be logged with the input state at the moment of drawing so any result
 can be independently audited or challenged.
 
-**Rationale**: A locked pipeline with defined horizons gives drivers predictable information
-cadence and eliminates any window for post-hoc manipulation. The Mystery Round exception
-preserves competitive surprise by design.
+**Rationale**: A locked pipeline with horizons a league declares in advance gives drivers a
+predictable information cadence and eliminates any window for post-hoc manipulation. A horizon
+that varied by the path the bot arrived at it would destroy that predictability as surely as one
+chosen after the fact. The Mystery Round exception preserves competitive surprise by design.
 
 ### V. Observability & Change Audit Trail
 
@@ -7441,4 +7507,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 9.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-15
+**Version**: 9.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-15
