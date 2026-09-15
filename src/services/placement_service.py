@@ -504,6 +504,17 @@ class PlacementService:
         earliest moment it can be detected, with the change unapplied. That moment is this
         command. Discovering it at a posting means the league has already lost its sheet.
 
+        **It counts reserves, and that is deliberate — do not make it match the standings
+        guard.** The two look alike and measure different things. A reserve holds no row in a
+        classification ever, so ``_guard_standings_capacity`` excludes them; but the sheet
+        draws a reserve the moment one is allocated to a round, and
+        ``attendance_service`` selects on ``ti.is_reserve = 1 AND dra.assigned_team_id IS NOT
+        NULL`` to do it. In the worst case every reserve on the books is allocated and takes a
+        row, so counting them all is the correct ceiling rather than an over-count — and the
+        team being filled is likewise immaterial here, a reserve placement being exactly the
+        one that might later want a row. Pinned by
+        ``test_placement_sheet_capacity_guard.py``.
+
         Never raises for its own reasons: a fault in this check must not block a placement,
         only a genuine over-capacity may.
         """
