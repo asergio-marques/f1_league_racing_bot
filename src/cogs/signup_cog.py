@@ -65,6 +65,35 @@ def _parse_time(raw: str) -> str | None:
     return parse_time_of_day(raw)
 
 
+def _parse_close_time(
+    raw: str, *, now: datetime | None = None
+) -> tuple[str | None, str | None]:
+    """Parse an auto-close instant to a normalised ISO 8601 UTC string.
+
+    Returns ``(iso, None)`` on success and ``(None, message)`` on failure, where the
+    message is the refusal to send straight back to the manager.
+
+    One parser, two entry points. `/signup open close_time:` arms the timer as the window
+    opens and `/signup close-time add` arms it afterwards, and the rule they hold to — ISO
+    8601, a value with no timezone read as UTC, and the instant in the future — has to be
+    one rule or a league gets two answers to the same question. `close_time:` was kept on
+    `/signup open` deliberately when the close-time group was added, on the condition that
+    the two share this function (decided 2026-09-15, issue #125).
+    """
+    try:
+        parsed = datetime.fromisoformat(raw.strip())
+    except ValueError:
+        return None, (
+            "❌ `close_time` is not a valid ISO 8601 datetime "
+            "(e.g. `2025-06-15T20:00:00`)."
+        )
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    if parsed <= (now if now is not None else datetime.now(timezone.utc)):
+        return None, "❌ `close_time` must be a future datetime."
+    return parsed.astimezone(timezone.utc).isoformat(), None
+
+
 def _format_slots(slots: list) -> str:
     if not slots:
         return "No availability slots configured."
@@ -1351,25 +1380,12 @@ class SignupCog(commands.Cog):
             )
             return
 
-        # Parse close_time
+        # Parse close_time — the same rule `/signup close-time add` holds to
         close_at_iso: str | None = None
         if close_time and close_time.strip():
-            try:
-                parsed_close = datetime.fromisoformat(close_time.strip())
-                if parsed_close.tzinfo is None:
-                    parsed_close = parsed_close.replace(tzinfo=timezone.utc)
-                if parsed_close <= datetime.now(timezone.utc):
-                    await interaction.response.send_message(
-                        "❌ `close_time` must be a future datetime.", ephemeral=True
-                    )
-                    return
-                close_at_iso = parsed_close.astimezone(timezone.utc).isoformat()
-            except ValueError:
-                await interaction.response.send_message(
-                    "❌ `close_time` is not a valid ISO 8601 datetime "
-                    "(e.g. `2025-06-15T20:00:00`).",
-                    ephemeral=True,
-                )
+            close_at_iso, close_error = _parse_close_time(close_time)
+            if close_error is not None:
+                await interaction.response.send_message(close_error, ephemeral=True)
                 return
 
         # Parse track_ids
