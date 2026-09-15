@@ -1724,8 +1724,15 @@ The choice names above are exactly the names `/images config view` and `/season 
 > module is on — with it off, or where a template will not draw, you get the textual tables headed
 > `Opening Classification` or `Final Classification` instead.
 >
-> The opening grid is ordered alphabetically by team, then by driver within the team. Nothing has
-> been scored yet, so there is no classification to order it by. The opening attendance sheet takes
+> **Every tie the championship cannot settle is settled the same way.** Two entries level on
+> points, on the countback and on participation are placed alphabetically by team — the reserves
+> after every named team, and a driver holding no seat after them — then alphabetically by
+> driver within the team, and finally by ascending Discord ID where two of them carry the same
+> name. It is why a driver joining or leaving a division can never reorder two drivers who were
+> already published. The opening grid is that order and nothing else, nothing having been scored
+> yet for a classification to order it by.
+>
+> The opening attendance sheet takes
 > the place of the division's live sheet, so the first round's sheet replaces it in the ordinary
 > way; the final sheet is posted **beside** the last round's and both stay — it is the season's last
 > word and nothing should be able to replace it. Neither standings posting is touched by

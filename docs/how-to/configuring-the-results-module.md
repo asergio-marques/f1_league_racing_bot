@@ -275,7 +275,9 @@ A second prompt appears in the same channel, with the same shape: **➕ Add Corr
 
 **The fastest-lap bonus goes to the lowest lap time in the block you submitted**, provided that driver finished inside the position limit. Where two drivers share the identical time, put `FL: @Driver` on its own line above the classification to say who gets it — see [Fastest-lap tie-breaking](../../README.md#fastest-lap-tie-breaking--fl-override-header). Without it, the tie falls to whichever of them finished higher. Disqualifying the holder forfeits the bonus and gives it to nobody.
 
-**Both tables rank on points first**, then on a countback: most wins, then most seconds, then most thirds, and so on. If two are still level, the one who reached the higher position **first** wins the tie.
+**Both tables rank on points first**, then on a countback: most wins, then most seconds, then most thirds, and so on. If two are still level, the one who reached the higher position **first** wins the tie, and after that a driver who has raced at all ranks above one who has not.
+
+**When even that separates nobody, the order is stated rather than raced for.** Two drivers on nought at the start of a season is the ordinary case. They are ordered alphabetically by team — the reserve team after every named team, and a driver who holds no seat in the division after the reserves — then alphabetically by driver within the team, drivers being ordered on the name the table draws them under. Where two drivers carry the same name, or two teams do, the smaller Discord ID goes first, which is what stops the order coming out differently from one posting to the next.
 
 **The countback only counts Feature Race finishes.** A sprint win, and a pole position, add their points and nothing more — they are invisible to the tie-break. Only classified finishes count, so a retirement from second place is not a second place.
 
@@ -283,7 +285,7 @@ A second prompt appears in the same channel, with the same shape: **➕ Add Corr
 
 **Every standing is stored per round**, which is why amending round two can correct rounds three onwards without you resubmitting them, and why `/season complete` can write each driver's final position into their history.
 
-**The standings channel also gets a posting at each end of the season.** Approving the season posts an **opening classification** — every driver and team on zero, with the calendar drawn empty beside them — and `/season complete` posts a **final classification**, holding the last round that has results. Both go to the same channel as every round's standings, as drawings where you turned pictures on and as the ordinary text tables where you did not. The opening one is ordered alphabetically by team, then by driver within the team; nothing has been scored, so there is no championship to order it by.
+**The standings channel also gets a posting at each end of the season.** Approving the season posts an **opening classification** — every driver and team on zero, with the calendar drawn empty beside them — and `/season complete` posts a **final classification**, holding the last round that has results. Both go to the same channel as every round's standings, as drawings where you turned pictures on and as the ordinary text tables where you did not. Nothing has been scored when the opening one goes out, so there is no championship to order it by: it comes out under the tie-break above, by team and then by driver.
 
 Neither is a round's standings, so neither is replaced by anything and neither is touched by `/results standings sync`, which walks the rounds that have results. If a division's cannot be posted, the log channel says so, the other divisions carry on, and the season is approved or completed regardless.
 
@@ -345,6 +347,7 @@ Worth knowing so you do not go looking for the setting.
 | Skipping the appeals stage | Both stages always run. A round with nothing to appeal takes one click |
 | Fractions of a second in a penalty | Whole seconds only, at review. A submitted in-game penalty can carry a fraction; one you add cannot |
 | What a tie-break counts | Feature-race classified finishes, in order, then who got there first. Sprints and qualifying are invisible to it |
+| Two entries level on everything | Ordered by team alphabetically, reserves last, then by driver name, then by Discord ID. Not yours to set |
 | Where verdicts go | The division's verdicts channel, alongside any automatic attendance sanctions |
 | Cancelling a round once its results exist | Refused, and refused while its submission channel is open. Amend the results instead |
 | Editing a running season's points tables directly | The season holds its own copy. `/results amend` is the way, and it rescores everything |

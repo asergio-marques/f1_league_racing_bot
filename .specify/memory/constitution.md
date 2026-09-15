@@ -1,6 +1,42 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-15 — v9.3.0 → v9.4.0: MINOR — the standings ranking hierarchy is made total]
+  Version change    : 9.3.0 → 9.4.0
+  Bump rationale    : MINOR. The Standings Computation section named a hierarchy that ran out
+                      of criteria: it ended at the earliest round in which the highest diverging
+                      finish was achieved, and said nothing about two entries level on all of
+                      them. Naming what MUST then decide the order is materially expanded
+                      guidance, not a clarification, because the document previously bound
+                      nothing at all there. PATCH was weighed and rejected on that ground. MAJOR
+                      is not owed: no criterion is removed or reordered, and no entry the old
+                      hierarchy separated is separated differently now.
+
+  Modified sections :
+    - Principle XII, Standings Computation — the driver-standings hierarchy gains participation
+      as criterion (n+2), which the results specification already required and the code already
+      applied; and a new bullet states the final tiebreak, binding the order to be total.
+
+  Why the constitution is the document that moved:
+    - `compute_driver_standings` and `compute_team_standings` in
+      `src/services/standings_service.py` sorted a `set`, so what resolved a full tie was set
+      iteration over Discord snowflakes. Adding an unrelated driver to a division rehashes that
+      set and can reverse two already-published positions (issue #143).
+    - The project had already reasoned this through for the classification posted when a season
+      is approved, where nobody has scored and every criterion ties: `opening_driver_standings`
+      carries an explicit alphabetical rule. The constitution never generalised it, so the rule
+      held for one posting of a season and no other.
+    - The results module specification carries the rule in full, as criterion 7 of its ranking
+      criteria, together with the reserves-last and no-seat placements.
+
+  Deferred items    : none.
+
+  Templates         : no template reads the standings hierarchy; none required changes.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-15 — v9.2.0 → v9.3.0: MINOR — a restart ends the correction-parameter window]
   Version change    : 9.2.0 → 9.3.0
   Bump rationale    : MINOR. The permitted-transition table gave the Awaiting Correction
@@ -4931,8 +4967,16 @@ governs the **Results & Standings optional module** (Principle X).
 - **Driver standings**: all drivers who have participated in a division, ranked by (1)
   total points, (2) count of Feature Race wins, (3) count of Feature Race 2nd-place
   finishes, … (n) count of Feature Race nth-place finishes, (n+1) earliest round in which
-  the highest diverging finish was first achieved. Only Feature Race sessions are
-  authoritative for countback tiebreaking.
+  the highest diverging finish was first achieved, (n+2) participation — a driver who has
+  taken part in at least one session MUST rank above one who has taken part in none. Only
+  Feature Race sessions are authoritative for countback tiebreaking.
+- **The final tiebreak**: where every criterion above leaves two entries level, the order
+  MUST be settled by, in turn, the team — alphabetically by name, case-insensitively, with
+  the reserve team after every named team and an entry belonging to no team of the division
+  after the reserves — then, for drivers, the driver's name within the team, alphabetically
+  and case-insensitively, taken on the name the standings are posted under; then the
+  ascending identifier, the driver's Discord user ID or the team's role ID. The ordering MUST
+  be total: no pair of entries may be left for an implementation detail to separate.
 - **Team standings**: teams ranked by the same hierarchy applied to the aggregate points and
   Feature Race finishes of all drivers scoring under that team's banner in each session.
   A reserve driver's points and finishes accrue to whichever team they drove for in each
@@ -7569,4 +7613,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 9.3.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-15
+**Version**: 9.4.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-15

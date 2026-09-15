@@ -1008,3 +1008,331 @@ async def test_neither_opening_function_persists_anything(db_path):
             "SELECT COUNT(*) FROM team_standings_snapshots")).fetchone()
     assert drivers[0] == 0
     assert teams[0] == 0
+
+
+# ---------------------------------------------------------------------------
+# The final tiebreak (#143)
+#
+# Every test below ties its two entries on *every* criterion the championship scores, which
+# is what leaves the order to set iteration over snowflakes without the final tiebreak. The
+# ids are seeded to contradict the answer, so a run that happened to preserve insertion
+# order would fail.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tied_drivers_are_ordered_by_team_then_name(db_path):
+    """Nobody has scored: alphabetically by team, then by driver within the team."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=80)
+        await _seat(db, div_id, 80, "zebra", [(1, "bravo"), (2, "Alpha")])
+        await _seat(db, div_id, 80, "Aardvark", [(3, "delta"), (4, "Charlie")])
+        r1 = await _round(db, div_id, 1)
+        await db.commit()
+
+    names = {1: "bravo", 2: "Alpha", 3: "delta", 4: "Charlie"}
+    snaps = await compute_driver_standings(db_path, div_id, r1, names)
+
+    assert [s.driver_user_id for s in snaps] == [4, 3, 2, 1]
+    assert [s.standing_position for s in snaps] == [1, 2, 3, 4]
+
+
+@pytest.mark.asyncio
+async def test_an_unrelated_driver_does_not_reorder_two_tied_drivers(db_path):
+    """The symptom the league sees: a driver joining must not swap two published positions.
+
+    The same pair is computed twice, once in a division holding only them and once with
+    three unrelated drivers beside them. Without the final tiebreak the second set rehashes
+    and the pair can come out the other way round.
+    """
+    pair = [(700000000000000009, "bravo"), (700000000000000001, "alpha")]
+    others = [
+        (700000000000000002, "mike"),
+        (700000000000000003, "november"),
+        (700000000000000004, "oscar"),
+    ]
+
+    async with get_connection(db_path) as db:
+        small_id, _ = await _bootstrap(db, server_id=81)
+        await _seat(db, small_id, 81, "Alpha", pair)
+        small_round = await _round(db, small_id, 1)
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        big_id, _ = await _bootstrap(db, server_id=82)
+        await _seat(db, big_id, 82, "Alpha", pair + others)
+        big_round = await _round(db, big_id, 1)
+        await db.commit()
+
+    names = dict(pair + others)
+    small = await compute_driver_standings(db_path, small_id, small_round, names)
+    big = await compute_driver_standings(db_path, big_id, big_round, names)
+
+    uids = {uid for uid, _ in pair}
+    small_order = [s.driver_user_id for s in small if s.driver_user_id in uids]
+    big_order = [s.driver_user_id for s in big if s.driver_user_id in uids]
+
+    assert small_order == big_order, (
+        "two tied drivers were reordered by the presence of unrelated drivers"
+    )
+    assert small_order == [700000000000000001, 700000000000000009], (
+        "the pair should be ordered alphabetically: alpha before bravo"
+    )
+
+
+@pytest.mark.asyncio
+async def test_tied_drivers_on_the_reserve_team_come_after_the_named_teams(db_path):
+    """A reserve is last whatever their team's name, so 'Aardvark' does not beat 'zebra'."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=83)
+        await _seat(db, div_id, 83, "zebra", [(2, "alpha")])
+        await _seat(db, div_id, 83, "Aardvark reserves", [(1, "alpha")], is_reserve=1)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        # Both retired: nought points, no classified finish, both participants.
+        await _result_dnf(db, sr1, 2, pos=19)
+        await _result_dnf(db, sr1, 1, pos=20)
+        await db.commit()
+
+    snaps = await compute_driver_standings(db_path, div_id, r1, {1: "alpha", 2: "alpha"})
+
+    assert [s.driver_user_id for s in snaps] == [2, 1]
+
+
+@pytest.mark.asyncio
+async def test_a_tied_driver_with_no_seat_comes_after_the_reserves(db_path):
+    """Their points stand, but a driver who left a division is of no team at all."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=84)
+        await _seat(db, div_id, 84, "zebra", [(3, "alpha")])
+        await _seat(db, div_id, 84, "Reserves", [(2, "alpha")], is_reserve=1)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        await _result_dnf(db, sr1, 3, pos=18)
+        await _result_dnf(db, sr1, 2, pos=19)
+        # Driver 1 raced and holds no seat in the division any more.
+        await _result_dnf(db, sr1, 1, pos=20)
+        await db.commit()
+
+    names = {1: "alpha", 2: "alpha", 3: "alpha"}
+    snaps = await compute_driver_standings(db_path, div_id, r1, names)
+
+    assert [s.driver_user_id for s in snaps] == [3, 2, 1]
+
+
+@pytest.mark.asyncio
+async def test_tied_drivers_sharing_a_display_name_order_by_ascending_id(db_path):
+    """Display names are not unique on Discord, so the id is what makes the order total."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=85)
+        await _seat(db, div_id, 85, "Alpha", [(900, "Mika"), (800, "Mika")])
+        r1 = await _round(db, div_id, 1)
+        await db.commit()
+
+    snaps = await compute_driver_standings(db_path, div_id, r1, {900: "Mika", 800: "Mika"})
+
+    assert [s.driver_user_id for s in snaps] == [800, 900]
+
+
+@pytest.mark.asyncio
+async def test_an_unresolved_tied_driver_orders_by_their_id(db_path):
+    """No name resolved is the same fallback the opening grid takes."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=86)
+        await _seat(db, div_id, 86, "Alpha", [(2, "two"), (1, "one")])
+        r1 = await _round(db, div_id, 1)
+        await db.commit()
+
+    snaps = await compute_driver_standings(db_path, div_id, r1)
+
+    assert [s.driver_user_id for s in snaps] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_the_driver_order_reads_the_resolved_name_not_the_id(db_path):
+    """The name decides, so the order inverts when the names do — the id cannot be what won."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=87)
+        await _seat(db, div_id, 87, "Alpha", [(1, "zulu"), (2, "alpha")])
+        r1 = await _round(db, div_id, 1)
+        await db.commit()
+
+    forwards = await compute_driver_standings(db_path, div_id, r1, {1: "zulu", 2: "alpha"})
+    backwards = await compute_driver_standings(db_path, div_id, r1, {1: "alpha", 2: "zulu"})
+
+    assert [s.driver_user_id for s in forwards] == [2, 1]
+    assert [s.driver_user_id for s in backwards] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_the_final_tiebreak_never_outranks_the_countback(db_path):
+    """It is the *final* tiebreak: a driver ahead on points stays ahead of an earlier name."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=88)
+        await _seat(db, div_id, 88, "zebra", [(1, "zulu")])
+        await _seat(db, div_id, 88, "Aardvark", [(2, "alpha")])
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        await _result(db, sr1, 1, pos=1, pts=25)
+        await _result(db, sr1, 2, pos=2, pts=18)
+        await db.commit()
+
+    snaps = await compute_driver_standings(db_path, div_id, r1, {1: "zulu", 2: "alpha"})
+
+    assert [s.driver_user_id for s in snaps] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_tied_teams_are_ordered_by_name(db_path):
+    """No round has been run, so the constructors are separated by name alone."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=89)
+        await _seat(db, div_id, 89, "zebra", [(1, "one")], role_id=501)
+        await _seat(db, div_id, 89, "Aardvark", [(2, "two")], role_id=502)
+        r1 = await _round(db, div_id, 1)
+        await db.commit()
+
+    snaps = await compute_team_standings(db_path, div_id, r1)
+
+    assert [s.team_role_id for s in snaps] == [502, 501]
+
+
+@pytest.mark.asyncio
+async def test_a_tied_reserve_team_comes_after_the_named_teams(db_path):
+    """Last whatever it is called, and whatever its role id."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=90)
+        await _seat(db, div_id, 90, "zebra", [(1, "one")], role_id=602)
+        await _seat(db, div_id, 90, "Aardvark reserves", [(2, "two")],
+                    is_reserve=1, role_id=601)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        # The reserve team is only in the standings because its driver raced.
+        await _result_dnf(db, sr1, 2, pos=20, team=601)
+        await db.commit()
+
+    snaps = await compute_team_standings(db_path, div_id, r1)
+
+    assert [s.team_role_id for s in snaps] == [602, 601]
+
+
+@pytest.mark.asyncio
+async def test_tied_teams_sharing_a_name_order_by_ascending_role_id(db_path):
+    """The name is compared case-insensitively, so it can tie; the role id makes it total."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=91)
+        await _seat(db, div_id, 91, "Alpha", [(1, "one")], role_id=702)
+        await _seat(db, div_id, 91, "alpha", [(2, "two")], role_id=701)
+        r1 = await _round(db, div_id, 1)
+        await db.commit()
+
+    snaps = await compute_team_standings(db_path, div_id, r1)
+
+    assert [s.team_role_id for s in snaps] == [701, 702]
+
+
+@pytest.mark.asyncio
+async def test_a_tied_role_the_division_holds_no_team_for_ranks_last(db_path):
+    """A role that reached the standings through a result alone has no name to order on."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=93)
+        await _seat(db, div_id, 93, "zebra", [(1, "one")], role_id=752)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        await db.execute(
+            "INSERT INTO team_role_configs (server_id, team_name, role_id) "
+            "VALUES (93, 'Departed', 751)"
+        )
+        await _result_dnf(db, sr1, 1, pos=19, team=752)
+        await _result_dnf(db, sr1, 3, pos=20, team=751)
+        await db.commit()
+
+    snaps = await compute_team_standings(db_path, div_id, r1)
+
+    assert [s.team_role_id for s in snaps] == [752, 751]
+
+
+@pytest.mark.asyncio
+async def test_the_team_final_tiebreak_never_outranks_the_countback(db_path):
+    """A team ahead on points stays ahead of one with an earlier name."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=92)
+        await _seat(db, div_id, 92, "zebra", [(1, "one")], role_id=801)
+        await _seat(db, div_id, 92, "Aardvark", [(2, "two")], role_id=802)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        await _result(db, sr1, 1, pos=1, pts=25, team=801)
+        await _result(db, sr1, 2, pos=2, pts=18, team=802)
+        await db.commit()
+
+    snaps = await compute_team_standings(db_path, div_id, r1)
+
+    assert [s.team_role_id for s in snaps] == [801, 802]
+
+
+# ---------------------------------------------------------------------------
+# The snapshot stores the order the league was shown (#143)
+# ---------------------------------------------------------------------------
+
+
+async def _stored_order(db_path, division_id, round_id) -> list[int]:
+    """The persisted classification of *round_id*, by standing position."""
+    async with get_connection(db_path) as db:
+        rows = await (
+            await db.execute(
+                "SELECT driver_user_id FROM driver_standings_snapshots "
+                "WHERE division_id = ? AND round_id = ? ORDER BY standing_position",
+                (division_id, round_id),
+            )
+        ).fetchall()
+    return [int(r["driver_user_id"]) for r in rows]
+
+
+@pytest.mark.asyncio
+async def test_the_persisted_snapshot_is_ordered_on_the_names_given(db_path):
+    """A full tie is stored in the order it is posted in, not by user id."""
+    from services.standings_service import compute_and_persist_round
+
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=94)
+        await _seat(db, div_id, 94, "Alpha", [(1, "zulu"), (2, "alpha")])
+        r1 = await _round(db, div_id, 1)
+        await db.commit()
+
+    await compute_and_persist_round(db_path, r1, div_id, {1: "zulu", 2: "alpha"})
+
+    assert await _stored_order(db_path, div_id, r1) == [2, 1]
+
+
+@pytest.mark.asyncio
+async def test_the_persisted_snapshot_falls_back_to_the_id_with_no_names(db_path):
+    """Nothing to resolve a name from leaves the tie to the ascending user id."""
+    from services.standings_service import compute_and_persist_round
+
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=95)
+        await _seat(db, div_id, 95, "Alpha", [(1, "zulu"), (2, "alpha")])
+        r1 = await _round(db, div_id, 1)
+        await db.commit()
+
+    await compute_and_persist_round(db_path, r1, div_id)
+
+    assert await _stored_order(db_path, div_id, r1) == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_a_cascade_orders_every_round_it_rewrites_on_the_same_names(db_path):
+    """One resolution covers the cascade, so no round of it reverts to the id."""
+    from services.standings_service import cascade_recompute_from_round
+
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=96)
+        await _seat(db, div_id, 96, "Alpha", [(1, "zulu"), (2, "alpha")])
+        r1 = await _round(db, div_id, 1)
+        r2 = await _round(db, div_id, 2)
+        await db.commit()
+
+    await cascade_recompute_from_round(db_path, div_id, r1, {1: "zulu", 2: "alpha"})
+
+    assert await _stored_order(db_path, div_id, r1) == [2, 1]
+    assert await _stored_order(db_path, div_id, r2) == [2, 1]
