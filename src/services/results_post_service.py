@@ -166,10 +166,10 @@ async def driver_standings_for_display(
     counts.
 
     Where no bot or guild is in scope there is nothing to resolve a name from, and the single
-    pass falls back to ordering a full tie by user id. Only the posting paths resolve names —
-    the recomputation that persists a snapshot does not, so two entries tied on every
-    criterion may sit in the stored order the other way about (decided 2026-09-15). Nothing
-    a league can see depends on that: what is drawn is what this returns.
+    pass falls back to ordering a full tie by user id.
+
+    The recomputation that persists a snapshot resolves the same names, through
+    :func:`recompute_standings_from_round`, so the stored order and the drawn order agree.
     """
     snaps = await standings_service.compute_driver_standings(db_path, division_id, round_id)
     if bot is None or guild is None or not snaps:
@@ -180,6 +180,69 @@ async def driver_standings_for_display(
     names = await _driver_names(bot, guild, [s.driver_user_id for s in snaps])
     return await standings_service.compute_driver_standings(
         db_path, division_id, round_id, names
+    )
+
+
+async def standings_display_names(
+    db_path: str,
+    division_id: int,
+    guild: discord.Guild | None,
+    bot=None,
+) -> dict[int, str] | None:
+    """The names every driver the division's standings can mention would be drawn under.
+
+    Resolved across the division rather than for one round, so a cascade can order every
+    round it rewrites on one resolution. The roster only grows as a season runs, so the
+    division's last round holds every driver an earlier one could.
+
+    ``None`` where there is nothing to resolve a name from, which leaves the caller ordering
+    a full tie by user id.
+    """
+    if bot is None or guild is None:
+        return None
+
+    async with get_connection(db_path) as db:
+        row = await (
+            await db.execute(
+                """
+                SELECT id FROM rounds
+                WHERE division_id = ? AND status != 'CANCELLED'
+                ORDER BY round_number DESC LIMIT 1
+                """,
+                (division_id,),
+            )
+        ).fetchone()
+    if row is None:
+        return None
+
+    snaps = await standings_service.compute_driver_standings(db_path, division_id, row["id"])
+    if not snaps:
+        return None
+
+    from services.image_results_post import _driver_names
+
+    return await _driver_names(bot, guild, [s.driver_user_id for s in snaps])
+
+
+async def recompute_standings_from_round(
+    db_path: str,
+    division_id: int,
+    from_round_id: int,
+    guild: discord.Guild | None,
+    bot=None,
+) -> None:
+    """Cascade the standings from *from_round_id*, ordered as the postings are.
+
+    The snapshot a round stores is the order a league was shown, so the recomputation reads
+    the same names the posting does. Without it the two paths agree on everything except the
+    entries tied on every criterion, which the persisted order would settle by user id and
+    the posted order by name — and the next round's movement arrows are derived from the
+    stored order, so the disagreement would surface as an arrow against a driver who had not
+    moved (decided 2026-09-15, reversing the narrower call taken earlier the same day).
+    """
+    names = await standings_display_names(db_path, division_id, guild, bot)
+    await standings_service.cascade_recompute_from_round(
+        db_path, division_id, from_round_id, names
     )
 
 
@@ -1370,8 +1433,9 @@ async def repost_subsequent_standings(
     This is called after :func:`delete_and_repost_final_results` so that
     subsequent rounds' standings reflect any penalty-driven point changes.
     """
-    # Cascade recompute DB snapshots for all subsequent rounds
-    await standings_service.cascade_recompute_from_round(db_path, division_id, from_round_id)
+    # Cascade recompute DB snapshots for all subsequent rounds, ordered on the names the
+    # reposts below will draw.
+    await recompute_standings_from_round(db_path, division_id, from_round_id, guild, bot)
 
     # Find subsequent rounds that have standings messages posted
     async with get_connection(db_path) as db:

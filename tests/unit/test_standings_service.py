@@ -1268,3 +1268,71 @@ async def test_the_team_final_tiebreak_never_outranks_the_countback(db_path):
     snaps = await compute_team_standings(db_path, div_id, r1)
 
     assert [s.team_role_id for s in snaps] == [801, 802]
+
+
+# ---------------------------------------------------------------------------
+# The snapshot stores the order the league was shown (#143)
+# ---------------------------------------------------------------------------
+
+
+async def _stored_order(db_path, division_id, round_id) -> list[int]:
+    """The persisted classification of *round_id*, by standing position."""
+    async with get_connection(db_path) as db:
+        rows = await (
+            await db.execute(
+                "SELECT driver_user_id FROM driver_standings_snapshots "
+                "WHERE division_id = ? AND round_id = ? ORDER BY standing_position",
+                (division_id, round_id),
+            )
+        ).fetchall()
+    return [int(r["driver_user_id"]) for r in rows]
+
+
+@pytest.mark.asyncio
+async def test_the_persisted_snapshot_is_ordered_on_the_names_given(db_path):
+    """A full tie is stored in the order it is posted in, not by user id."""
+    from services.standings_service import compute_and_persist_round
+
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=94)
+        await _seat(db, div_id, 94, "Alpha", [(1, "zulu"), (2, "alpha")])
+        r1 = await _round(db, div_id, 1)
+        await db.commit()
+
+    await compute_and_persist_round(db_path, r1, div_id, {1: "zulu", 2: "alpha"})
+
+    assert await _stored_order(db_path, div_id, r1) == [2, 1]
+
+
+@pytest.mark.asyncio
+async def test_the_persisted_snapshot_falls_back_to_the_id_with_no_names(db_path):
+    """Nothing to resolve a name from leaves the tie to the ascending user id."""
+    from services.standings_service import compute_and_persist_round
+
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=95)
+        await _seat(db, div_id, 95, "Alpha", [(1, "zulu"), (2, "alpha")])
+        r1 = await _round(db, div_id, 1)
+        await db.commit()
+
+    await compute_and_persist_round(db_path, r1, div_id)
+
+    assert await _stored_order(db_path, div_id, r1) == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_a_cascade_orders_every_round_it_rewrites_on_the_same_names(db_path):
+    """One resolution covers the cascade, so no round of it reverts to the id."""
+    from services.standings_service import cascade_recompute_from_round
+
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=96)
+        await _seat(db, div_id, 96, "Alpha", [(1, "zulu"), (2, "alpha")])
+        r1 = await _round(db, div_id, 1)
+        r2 = await _round(db, div_id, 2)
+        await db.commit()
+
+    await cascade_recompute_from_round(db_path, div_id, r1, {1: "zulu", 2: "alpha"})
+
+    assert await _stored_order(db_path, div_id, r1) == [2, 1]
+    assert await _stored_order(db_path, div_id, r2) == [2, 1]

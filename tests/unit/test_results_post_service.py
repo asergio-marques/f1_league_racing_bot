@@ -672,3 +672,56 @@ async def test_the_standings_fall_back_to_the_id_with_no_bot_in_scope(tmp_path):
     )
 
     assert [s.driver_user_id for s in snaps] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
+    """The whole point of resolving names on the recomputation as well as on the posting."""
+    from db.database import get_connection
+    from services.results_post_service import (
+        driver_standings_for_display,
+        recompute_standings_from_round,
+    )
+
+    db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path, server_id=302)
+    bot = MagicMock()
+    bot.db_path = db_path
+    guild = _guild_naming({1: "zulu", 2: "alpha"})
+
+    await recompute_standings_from_round(db_path, division_id, round_id, guild, bot)
+    drawn = await driver_standings_for_display(db_path, division_id, round_id, guild, bot)
+
+    async with get_connection(db_path) as db:
+        rows = await (
+            await db.execute(
+                "SELECT driver_user_id FROM driver_standings_snapshots "
+                "WHERE division_id = ? AND round_id = ? ORDER BY standing_position",
+                (division_id, round_id),
+            )
+        ).fetchall()
+
+    stored = [int(r["driver_user_id"]) for r in rows]
+    assert stored == [s.driver_user_id for s in drawn]
+    assert stored == [2, 1], "the tie should be settled by name, not by user id"
+
+
+@pytest.mark.asyncio
+async def test_the_cascade_falls_back_to_the_id_with_no_guild(tmp_path):
+    """The one path that genuinely holds no guild still recomputes, ordered by id."""
+    from db.database import get_connection
+    from services.results_post_service import recompute_standings_from_round
+
+    db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path, server_id=303)
+
+    await recompute_standings_from_round(db_path, division_id, round_id, None, None)
+
+    async with get_connection(db_path) as db:
+        rows = await (
+            await db.execute(
+                "SELECT driver_user_id FROM driver_standings_snapshots "
+                "WHERE division_id = ? AND round_id = ? ORDER BY standing_position",
+                (division_id, round_id),
+            )
+        ).fetchall()
+
+    assert [int(r["driver_user_id"]) for r in rows] == [1, 2]

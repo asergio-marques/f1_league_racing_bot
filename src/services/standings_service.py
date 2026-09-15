@@ -664,9 +664,21 @@ async def compute_and_persist_round(
     db_path: str,
     round_id: int,
     division_id: int,
+    display_names: Mapping[int, str] | None = None,
 ) -> None:
-    """Compute and persist driver + team standings snapshots for a round."""
-    driver_snaps = await compute_driver_standings(db_path, division_id, round_id)
+    """Compute and persist driver + team standings snapshots for a round.
+
+    *display_names* are the names the final tiebreak orders a full tie on, and they are
+    passed here for the same reason the posting paths resolve them: the stored
+    ``standing_position`` is the order a league was shown, so a recomputation that ordered
+    two tied drivers by user id would leave the snapshot contradicting the sheet posted
+    beside it — and the movement arrows of the next round read the stored order. Every
+    caller holding a guild resolves them; one that does not falls back to the id
+    (decided 2026-09-15).
+    """
+    driver_snaps = await compute_driver_standings(
+        db_path, division_id, round_id, display_names
+    )
     team_snaps = await compute_team_standings(db_path, division_id, round_id)
     await persist_snapshots(db_path, driver_snaps, team_snaps)
 
@@ -675,11 +687,17 @@ async def cascade_recompute_from_round(
     db_path: str,
     division_id: int,
     from_round_id: int,
+    display_names: Mapping[int, str] | None = None,
 ) -> None:
     """Recompute and persist snapshots for all rounds from *from_round_id* onwards.
 
     Fetches all rounds >= the from_round's round_number, ordered ascending,
     and calls compute_and_persist_round for each.
+
+    *display_names* are resolved once by the caller and used for every round of the cascade,
+    rather than per round: the roster only grows as the season runs, so one resolution taken
+    across the division covers them all, and a cascade over twenty rounds should not make
+    twenty rounds of Discord lookups.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -697,7 +715,7 @@ async def cascade_recompute_from_round(
         round_rows = await cursor.fetchall()
 
     for row in round_rows:
-        await compute_and_persist_round(db_path, row["id"], division_id)
+        await compute_and_persist_round(db_path, row["id"], division_id, display_names)
 
 
 # ---------------------------------------------------------------------------
