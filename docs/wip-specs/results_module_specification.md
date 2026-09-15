@@ -187,6 +187,7 @@
 - <MODIFY COMMAND> All points configurations shall be listed when the "season review" command is invoked, identifying them by name.
 - For a given configuration and a given session type, if a higher position is configured to yield less or the same points as a lower position (e.g. 1st = 25, 2nd = 0, 3rd = 15), the approval of a season setup will fail, and the bot shall post a text message informing as to why.
     - This shall be judged on the configurations attached to the season as they stand at the moment of approval, and shall hold on a season's first approval as on any later one.
+    - The "season review" command shall report the same fault, naming every position at fault, and shall not offer the season for approval while one stands. The review and the approval shall judge this identically.
 
 #### Changing points system mid-season
 - There will be a flag denoted the modified flag that is false by default.

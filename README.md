@@ -1130,6 +1130,7 @@ Where it is enforced differs by what you are doing:
 |---------|--------------------------------------|
 | `/results config session`, `/results config bulk-session` | Applied, with a warning naming every position at fault |
 | `/results config xml-import` | Rejected outright; the configuration is left untouched |
+| `/season review` | Reported in the points section, naming every position at fault, and the Approve button is withheld |
 | `/season approve` | Refused, naming every position at fault |
 | `/results amend session`, `/results amend bulk-session` | Staged, with a warning naming every position at fault |
 | `/results amend review` | Refused; nothing is written and the staged changes are left to repair |

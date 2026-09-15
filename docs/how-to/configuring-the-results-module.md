@@ -112,7 +112,7 @@ Reads a configuration back to you privately. Positions worth nothing at the bott
 
 > **A lower position may never be worth as much as the one above it.** Give second place more points than first and the bot takes the change, then tells you the table is out of order and names the positions. The edit is not refused, because filling a table in passes through states that are momentarily wrong — setting second place before first, or repairing a table from the bottom up — and refusing them would make ordinary ways of building a table impossible to follow.
 >
-> **`/season approve` is where it is refused.** A season whose attached tables are out of order cannot be approved, and the refusal names every position at fault. Two positive values tying counts as out of order; positions worth nothing at the bottom of the table do not, being the ordinary shape of one.
+> **`/season approve` is where it is refused**, and `/season review` names it before you get there — the report lists every position at fault and the Approve button is withheld, so you are not offered an approval that would be turned down. Two positive values tying counts as out of order; positions worth nothing at the bottom of the table do not, being the ordinary shape of one.
 
 > **`/results config view` needs a season.** Between seasons there is none, and the command refuses — so a table you may want to check before starting your next season setup is unreachable until you have run `/season setup`. There is also no command that lists what configurations you hold, so keep a note of the names you chose.
 
