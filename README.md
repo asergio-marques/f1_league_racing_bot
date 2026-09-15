@@ -1098,7 +1098,32 @@ Refused unless the signup channel, base role and completion role are all set and
 
 No parameters. If drivers are currently in progress you will be prompted to confirm; the confirmation lists everyone in `PENDING_SIGNUP_COMPLETION`, `PENDING_ADMIN_APPROVAL` and `PENDING_DRIVER_CORRECTION`, but only drivers in `PENDING_SIGNUP_COMPLETION` are transitioned to Not Signed Up. Drivers awaiting approval or correction retain their state and may still be approved after the window has closed.
 
-Refused outright while an auto-close timer set by `/signup open close_time:` is armed. See [#125](https://github.com/asergio-marques/f1_league_racing_bot/issues/125).
+Refused while an auto-close time is armed. The refusal names the armed time and sends you to `/signup close-time cancel` — clear the timer and the manual close goes through. Closing ahead of the time you set is deliberately two steps.
+
+#### `/signup close-time add` — Arm an auto-close time for the open signup window
+*Access: League manager*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `close_time` | String | ✅ | Auto-close instant as an ISO 8601 UTC datetime (e.g. `2026-09-01T20:00:00`). Must be in the future; a value with no timezone is read as UTC. |
+
+Refused when a close time is already armed — use `modify` — and when signups are not open.
+
+#### `/signup close-time cancel` — Clear the auto-close time
+*Access: League manager*
+
+No parameters. The scheduled closure is cancelled and signups stay open until you run `/signup close`. Refused when no close time is armed.
+
+#### `/signup close-time modify` — Replace the armed auto-close time
+*Access: League manager*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `close_time` | String | ✅ | The new auto-close instant, on the same terms as `add`. |
+
+Refused when nothing is armed — use `add` — and when signups are not open. A rejected replacement leaves the armed time exactly as it was.
+
+> **You can set the close time when you open, or after.** `/signup open close_time:` and `/signup close-time add` arm the same value and hold to the same rule, so use whichever suits. Mistyped the day or the year? `/signup close-time modify` puts it right without touching anything else.
 
 #### `/signup unassigned list` — List all Unassigned drivers seeded by lap time
 *Access: League manager*

@@ -158,7 +158,7 @@ The bot checks things in order and stops at the first problem: test mode must be
 
 When it goes through, the bot posts a green **Driver Signups Are Open!** message in your signup channel listing your slots, the tracks, the time type, whether a screenshot is needed, whether nationality is asked, and the auto-close time if you set one. Underneath is the **Sign Up** button, and the message pings your base role.
 
-> **Setting a close time is close to irreversible.** With a timer armed, `/signup close` refuses and tells you to cancel the timer with a command that **does not exist in the bot**. Your only ways out are to let the timer run or to disable the module, which loses your channel and roles. Leave `close_time` off unless you are certain of the date. See [#125](https://github.com/asergio-marques/f1_league_racing_bot/issues/125).
+> **A close time is not a commitment.** Set one here if you like, or leave `close_time` off and add it later with `/signup close-time add`. Either way you can move it with `/signup close-time modify` or clear it outright with `/signup close-time cancel` — Step 7 covers both. Mistyping the day or the year costs you one command, not your configuration.
 
 > **No tracks means no seeding.** Open the window without `track_ids` and nobody submits a lap time, so every approved driver has no total to sort on and the queue falls back to the order you approved people in. That is fine if you never intended to rank by pace — just know that the seed numbers then mean nothing.
 
@@ -211,6 +211,15 @@ There are no reminders. The bot never chases a driver who has not signed up, and
 ```
 
 If nobody is mid-signup it closes immediately. Otherwise you get a confirmation listing who is still going, with Confirm and Cancel buttons.
+
+**If you set a close time, clear it first.** `/signup close` refuses while one is armed, names the time it is waiting for, and sends you here:
+
+```
+/signup close-time cancel
+/signup close
+```
+
+Closing ahead of the time you set is two steps on purpose — the first is hard to do by accident. If you only want to move the deadline rather than close now, use `/signup close-time modify` with the new time and leave the window running.
 
 > **One driver is invisible to that check.** Someone you have just sent back with **Request Changes**, before you have picked which field they are to redo, is not counted. If they are the only person in progress, `/signup close` closes on the spot with no confirmation at all.
 
@@ -325,7 +334,7 @@ Worth running through before you open the window.
 - [ ] You have decided about lap times, and have the track IDs to hand if you want them
 - [ ] `/signup config view` shows what you expect
 - [ ] You have run one signup end to end yourself
-- [ ] `close_time` is left off unless you are sure of the date
+- [ ] `close_time` is the date you meant, if you are setting one — `/signup close-time modify` moves it later if not
 - [ ] Each division has a lineup channel, or the lineups go nowhere
 
 ---
@@ -340,7 +349,7 @@ Worth running through before you open the window.
 | Drivers press the button and nothing happens after | The Message Content intent is off, so the bot cannot see anything they type |
 | The preferred-team question offers nothing but "No Preference" | No teams have been added yet |
 | `/signup config channel` errors out | Known: that command is broken. Use `/signup channel` |
-| `/signup close` refused, telling you to cancel a timer | Known: you set a `close_time`, and the cancel command does not exist. Wait for the timer, or disable the module and set the channel and roles again |
+| `/signup close` refused, naming an auto-close time | You set a `close_time`. Run `/signup close-time cancel`, then `/signup close` again — or `/signup close-time modify` if you only want to move the deadline |
 | Drivers you expected to be dropped by a close are still there | Known: closing only drops drivers still filling the form in. Anyone waiting on you keeps their place — approve them |
 | `/signup time-slot add` or `remove` refused, naming a number of drivers | Drivers are waiting to be placed. Place or clear them — `/signup unassigned list` is the same queue |
 | Your time slots came back after disabling the module | Known: disabling clears the channel and roles only, whatever the message says |
