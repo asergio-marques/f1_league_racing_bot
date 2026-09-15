@@ -106,7 +106,7 @@ CONFIG_SETTERS = [
     (AttendanceCog.config_rsvp_deadline, 3, "update_rsvp_deadline_hours", 3),
     (AttendanceCog.config_no_rsvp_penalty, 2, "update_no_rsvp_penalty", 2),
     (AttendanceCog.config_absent_penalty, 3, "update_absent_penalty", 3),
-    (AttendanceCog.config_rsvp_absent_penalty, 4, "update_no_show_penalty", 4),
+    (AttendanceCog.config_no_show_penalty, 4, "update_no_show_penalty", 4),
     (AttendanceCog.config_autosack, 8, "update_autosack_threshold", 8),
     (AttendanceCog.config_autoreserve, 5, "update_autoreserve_threshold", 5),
 ]
@@ -118,7 +118,7 @@ CONFIG_SETTER_IDS = [
     "rsvp-deadline",
     "no-rsvp-penalty",
     "absent-penalty",
-    "rsvp-absent-penalty",
+    "no-show-penalty",
     "autosack",
     "autoreserve",
 ]
@@ -129,7 +129,7 @@ CONFIG_SETTER_IDS = [
 # ---------------------------------------------------------------------------
 
 
-async def test_the_rsvp_absent_penalty_command_writes_the_no_show_penalty():
+async def test_the_no_show_penalty_command_writes_the_penalty():
     """Issue #119: the command called a service method that does not exist.
 
     Before the fix this raises `AttributeError: Mock object has no attribute
@@ -139,11 +139,20 @@ async def test_the_rsvp_absent_penalty_command_writes_the_no_show_penalty():
     cog = _make_cog()
     interaction = _interaction()
 
-    await _invoke(AttendanceCog.config_rsvp_absent_penalty, cog, interaction, 4)
+    await _invoke(AttendanceCog.config_no_show_penalty, cog, interaction, 4)
 
     cog.bot.attendance_service.update_no_show_penalty.assert_awaited_once_with(SERVER_ID, 4)
     interaction.followup.send.assert_awaited_once()
     assert "4" in interaction.followup.send.await_args.args[0]
+
+
+async def test_the_no_show_penalty_command_is_named_for_the_column_it_writes():
+    """The command, the service method and the column all say "no-show" (decided 2026-09-15).
+
+    It shipped as `rsvp-absent-penalty`, the name of a column that existed only between
+    migrations 034 and 038, and nothing else in the module used that vocabulary.
+    """
+    assert AttendanceCog.config_no_show_penalty.name == "no-show-penalty"
 
 
 # ---------------------------------------------------------------------------
@@ -198,9 +207,9 @@ async def test_every_config_command_is_refused_while_the_module_is_disabled(
     [
         (AttendanceCog.config_no_rsvp_penalty, "update_no_rsvp_penalty"),
         (AttendanceCog.config_absent_penalty, "update_absent_penalty"),
-        (AttendanceCog.config_rsvp_absent_penalty, "update_no_show_penalty"),
+        (AttendanceCog.config_no_show_penalty, "update_no_show_penalty"),
     ],
-    ids=["no-rsvp-penalty", "absent-penalty", "rsvp-absent-penalty"],
+    ids=["no-rsvp-penalty", "absent-penalty", "no-show-penalty"],
 )
 async def test_a_negative_penalty_is_refused_and_nothing_is_written(command, method):
     cog = _make_cog()
@@ -218,7 +227,7 @@ async def test_a_penalty_of_zero_is_written():
     cog = _make_cog()
     interaction = _interaction()
 
-    await _invoke(AttendanceCog.config_rsvp_absent_penalty, cog, interaction, 0)
+    await _invoke(AttendanceCog.config_no_show_penalty, cog, interaction, 0)
 
     cog.bot.attendance_service.update_no_show_penalty.assert_awaited_once_with(SERVER_ID, 0)
 
