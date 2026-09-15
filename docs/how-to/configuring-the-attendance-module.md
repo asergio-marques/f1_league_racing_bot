@@ -140,9 +140,9 @@ Set a penalty to `0` to stop charging for that case entirely.
 | Never answered | Yes | The no-RSVP penalty |
 | Never answered | No | The no-RSVP penalty **plus** the absent penalty |
 | Tentative or declined | No | The absent penalty |
-| Accepted | No | The accepted-and-absent penalty |
+| Accepted | No | The no-show penalty |
 
-The only line that stacks two penalties is the driver who ignored the call and then did not show, and the one your drivers will argue about is the accepted-and-absent driver — which is why it is its own setting rather than sharing the absent penalty. A reserve the bot seated for the round is only ever charged that last one; a reserve it did not seat is charged nothing.
+The only line that stacks two penalties is the driver who ignored the call and then did not show, and the one your drivers will argue about is the driver who accepted and then did not show — which is why the no-show penalty is its own setting rather than sharing the absent penalty. A reserve the bot seated for the round is only ever charged that last one; a reserve it did not seat is charged nothing.
 
 ---
 
