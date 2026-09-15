@@ -120,6 +120,7 @@ async def compute_driver_standings(
     db_path: str,
     division_id: int,
     up_to_round_id: int,
+    display_names: Mapping[int, str] | None = None,
 ) -> list[DriverStandingsSnapshot]:
     """Aggregate driver points for all rounds up to and including *up_to_round_id*.
 
@@ -128,9 +129,27 @@ async def compute_driver_standings(
     2. Feature Race P1 count DESC, Feature Race P2 count DESC, ... (all positions)
     3. For tie after all finish-counts: driver who FIRST achieved the highest
        diverging position wins (first_finish_rounds comparison).
+    4. A driver who has taken part in a session ranks above one who has taken part in none.
+    5. The final tiebreak: alphabetically by team, the reserve team after every named team
+       and a driver holding no seat after the reserves; alphabetically by driver within the
+       team; and ascending user id where even that ties.
+
+    Step 5 exists because the four above it can all come out equal — two drivers on nought
+    at the start of a season is the ordinary case — and what then decided the order was
+    ``sorted()`` falling back on set iteration over Discord snowflakes. That is not an order,
+    it just looks like one: adding an unrelated driver to the division rehashes the set and
+    can swap two already-published positions. The last step is what makes the order *total*,
+    since display names are not unique on Discord and two drivers can genuinely share one
+    (#143, and the rule ``opening_driver_standings`` already applied to the season's opening).
+
+    *display_names* are the names the output will actually draw, resolved from Discord by the
+    caller; the order is taken on the same string, as a grid ordered on one name while
+    displaying another reads as simply broken. A driver the caller could not resolve falls
+    back to their id, as everywhere else.
 
     Returns snapshots with standing_position assigned from 1.
     """
+    names = display_names or {}
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
@@ -194,23 +213,32 @@ async def compute_driver_standings(
 
     all_drivers = set(total_points) | set(finish_counts)
 
-    # Include all non-reserve drivers in the division even if they have no results yet.
+    # Every seat in the division, reserves included. Two jobs, one query: the non-reserve
+    # seats decide who joins the standings without having scored, and every seat supplies the
+    # team the final tiebreak orders on — a reserve who raced is in the set already.
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT dp.discord_user_id
+            SELECT dp.discord_user_id, ti.name AS team_name, ti.is_reserve
             FROM team_seats ts
             JOIN team_instances ti ON ti.id = ts.team_instance_id
             JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
             WHERE ti.division_id = ?
-              AND ti.is_reserve = 0
               AND ts.driver_profile_id IS NOT NULL
             """,
             (division_id,),
         )
         seated_rows = await cursor.fetchall()
+    # uid -> (team rank, team name). Rank 0 a named team, 1 the reserve team; a driver with
+    # no seat at all gets 2 below, ranking after the reserves — their points stand but they
+    # are no longer of a team (decided 2026-09-15).
+    seats: dict[int, tuple[int, str]] = {}
     for r in seated_rows:
         uid = int(r["discord_user_id"])
+        is_reserve = bool(r["is_reserve"])
+        seats[uid] = (1 if is_reserve else 0, r["team_name"] or "")
+        if is_reserve:
+            continue
         if uid not in total_points:
             total_points[uid] = 0
         all_drivers.add(uid)
@@ -232,7 +260,17 @@ async def compute_driver_standings(
         first_vec = tuple(ffr.get(p, 999999) for p in range(1, global_max_pos + 1))
         # Tiebreaker: participated in any race (even DNF) ranks above never-participated
         not_participated = 0 if uid in race_participants else 1
-        return (-pts, count_vec, first_vec, not_participated)
+        team_rank, team_name = seats.get(uid, (2, ""))
+        return (
+            -pts,
+            count_vec,
+            first_vec,
+            not_participated,
+            team_rank,
+            team_name.casefold(),
+            names.get(uid, str(uid)).casefold(),
+            uid,
+        )
 
     sorted_drivers = sorted(all_drivers, key=_sort_key)
 
