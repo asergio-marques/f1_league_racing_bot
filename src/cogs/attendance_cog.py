@@ -232,15 +232,15 @@ class AttendanceCog(commands.Cog):
             f"\u2705 Absent penalty set to **{points}** point(s).", ephemeral=True
         )
 
-    # ── /attendance config rsvp-absent-penalty ────────────────────────────────
+    # ── /attendance config no-show-penalty ────────────────────────────────────
 
     @config.command(
-        name="rsvp-absent-penalty",
+        name="no-show-penalty",
         description="Penalty for a driver who RSVP'd ACCEPTED but did not attend.",
     )
     @app_commands.describe(points="Penalty points (≥ 0)")
     @league_manager_only
-    async def config_rsvp_absent_penalty(
+    async def config_no_show_penalty(
         self, interaction: discord.Interaction, points: int
     ) -> None:
         if not await self._guard_module_enabled(interaction):
@@ -253,9 +253,9 @@ class AttendanceCog(commands.Cog):
 
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_rsvp_absent_penalty(server_id, points)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_no_show_penalty(server_id, points)  # type: ignore[attr-defined]
         await interaction.followup.send(
-            f"\u2705 RSVP-absent penalty set to **{points}** point(s).", ephemeral=True
+            f"\u2705 No-show penalty set to **{points}** point(s).", ephemeral=True
         )
 
     # ── /attendance config autosack ────────────────────────────────────────

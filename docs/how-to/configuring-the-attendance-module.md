@@ -128,7 +128,7 @@ Three penalties, all starting at 1 point, all settable at any time — these are
 |---|---|
 | `/attendance config no-rsvp-penalty` | A driver never touched the buttons at all |
 | `/attendance config absent-penalty` | A driver who did not accept — no answer, tentative or declined — is not in the results |
-| `/attendance config rsvp-absent-penalty` | A driver who accepted is not in the results |
+| `/attendance config no-show-penalty` | A driver who accepted is not in the results |
 
 Set a penalty to `0` to stop charging for that case entirely.
 
@@ -140,11 +140,9 @@ Set a penalty to `0` to stop charging for that case entirely.
 | Never answered | Yes | The no-RSVP penalty |
 | Never answered | No | The no-RSVP penalty **plus** the absent penalty |
 | Tentative or declined | No | The absent penalty |
-| Accepted | No | The accepted-and-absent penalty |
+| Accepted | No | The no-show penalty |
 
-The only line that stacks two penalties is the driver who ignored the call and then did not show, and the one your drivers will argue about is the accepted-and-absent driver — which is why it is its own setting rather than sharing the absent penalty. A reserve the bot seated for the round is only ever charged that last one; a reserve it did not seat is charged nothing.
-
-> **`/attendance config rsvp-absent-penalty` does not work.** Run it and the bot fails to respond — the setting is never written, whatever value you pass. That penalty is therefore stuck at 1 point for everybody, and `/attendance config show` will keep reporting 1 no matter what you do. The other two penalties are unaffected and set normally. This is a defect in the bot, recorded in [#119](https://github.com/asergio-marques/f1_league_racing_bot/issues/119), not something you have configured wrongly.
+The only line that stacks two penalties is the driver who ignored the call and then did not show, and the one your drivers will argue about is the driver who accepted and then did not show — which is why the no-show penalty is its own setting rather than sharing the absent penalty. A reserve the bot seated for the round is only ever charged that last one; a reserve it did not seat is charged nothing.
 
 ---
 
@@ -317,7 +315,6 @@ Worth running through before the season is approved.
 | Attendance switched off by itself, and the channels gone | Results & standings was turned off and the cascade warning confirmed, which takes attendance with it and deletes every division's channels |
 | Check-in stopped mid-season and will not come back | Attendance was switched off, directly or by turning results & standings off. It stays off until the season ends |
 | `/attendance config` on a timing refused | Either a season is running, or the value would put the three out of order. The reply says which |
-| `/attendance config rsvp-absent-penalty` fails to respond | Known: the command is broken and that penalty cannot be changed from 1 |
 | Auto-reserve or auto-sack refused | The other one is set. Set it to `0` first |
 | A driver over the threshold who was not sanctioned | Auto-reserve with no Reserve team in that division, or the driver is in it already. Nothing is posted either way — check the division's Reserve team yourself |
 | Points charged later than you expected | They are charged when post-race penalties are approved, never at provisional results |

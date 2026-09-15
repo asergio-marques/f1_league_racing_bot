@@ -449,7 +449,7 @@ async def test_pardon_validation_rules():
 # ---------------------------------------------------------------------------
 # 6. Attendance point rules — one test per spec case (US3)
 #
-# Penalty config used throughout: no_rsvp=2  absent=1  rsvp_absent=3
+# Penalty config used throughout: no_rsvp=2  absent=1  no_show=3
 #
 # Spec:
 #   Case A — NO_RSVP, attended             → no_rsvp_penalty (2)
@@ -573,7 +573,7 @@ async def test_point_distribution_all_scenarios(tmp_path):
     db_file = str(tmp_path / "test.db")
     async with aiosqlite.connect(db_file) as db:
         await _create_schema(db)
-        # Penalty config: no_rsvp=2, absent=1, rsvp_absent=3
+        # Penalty config: no_rsvp=2, absent=1, no_show=3
         await _setup_division(db)
         await db.execute("INSERT INTO rounds (id, division_id, round_number, status) VALUES (1, 10, 1, 'AWAITING_APPEAL_VERDICTS')")
 
@@ -582,7 +582,7 @@ async def test_point_distribution_all_scenarios(tmp_path):
             (1, "NO_RSVP",   1, 2),      # NO_RSVP, attended: no_rsvp only
             (2, "NO_RSVP",   0, 3),      # NO_RSVP, absent: no_rsvp + absent (2+1)
             (3, "ACCEPTED",  1, 0),      # ACCEPTED, attended: no penalty
-            (4, "ACCEPTED",  0, 3),      # ACCEPTED, absent: rsvp_absent (3)
+            (4, "ACCEPTED",  0, 3),      # ACCEPTED, absent: no_show (3)
             (5, "TENTATIVE", 0, 1),      # TENTATIVE, absent: absent_penalty (1)
             (6, "DECLINED",  0, 1),      # DECLINED, absent: absent_penalty (1)
         ]
