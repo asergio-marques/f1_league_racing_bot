@@ -1613,6 +1613,7 @@ class SeasonCog(commands.Cog):
         # that withholds the approve button reads this whether or not the results module
         # is on, and a season with results off has no points tables to be wrong about.
         points_faults: list[str] = []
+        phantom_configs: list[str] = []
 
         # Load from DB to get tier and team roster data
         if cfg.season_id != 0:
@@ -1778,6 +1779,25 @@ class SeasonCog(commands.Cog):
             # must look at this too — read through the same helper the gate reads, so
             # the report and the refusal cannot drift.
             if results_on:
+                # Named before the ordering faults, because a configuration that is not
+                # there is the reason the names above may not mean what they appear to.
+                # The list of attached names is printed from the links alone, so a mistyped
+                # one reads exactly like a real one — which is what let #132 pass a review
+                # and then stop an approval dead.
+                phantom_configs = await self._missing_points_config_problems(
+                    interaction.guild_id, cfg.season_id
+                )
+                if phantom_configs:
+                    points_lines.append("")
+                    points_lines.append(
+                        "❌ **Attached but never created** — these block approval:"
+                    )
+                    points_lines += [f"  • **{name}**" for name in phantom_configs]
+                    points_lines.append(
+                        "  The name above is attached to this season and no such "
+                        "configuration exists on the server. Build it with "
+                        "`/results config add`, or drop it with `/results config detach`."
+                    )
                 points_faults = await self._points_ordering_problems(
                     interaction.guild_id, cfg.season_id
                 )
@@ -2079,6 +2099,19 @@ class SeasonCog(commands.Cog):
                     "Put it right, then run `/season review` again.",
                     ephemeral=True,
                 )
+            if phantom_configs:
+                body = "\n".join(f"\u2022 **{name}**" for name in phantom_configs)
+                await interaction.followup.send(
+                    "\u26d4 **This season is attached to a points configuration that "
+                    "does not exist.**\n"
+                    f"{body}\n"
+                    "Nothing of that name is in the server's points store, so there is "
+                    "nothing for the approval to copy. The season is **not** offered for "
+                    "approval while that stands \u2014 build it with `/results config add`, or "
+                    "drop it with `/results config detach`, then run `/season review` "
+                    "again.",
+                    ephemeral=True,
+                )
             if points_faults:
                 body = "\n".join(f"\u2022 {fault}" for fault in points_faults)
                 await interaction.followup.send(
@@ -2090,7 +2123,12 @@ class SeasonCog(commands.Cog):
                     "again.",
                     ephemeral=True,
                 )
-            if not approval_blockers and not calendar_faults_found and not points_faults:
+            if (
+                not approval_blockers
+                and not calendar_faults_found
+                and not points_faults
+                and not phantom_configs
+            ):
                 # Taken here rather than at the top of the command: the fingerprint must
                 # describe the season as the report just described it, and the report is
                 # only complete now.
