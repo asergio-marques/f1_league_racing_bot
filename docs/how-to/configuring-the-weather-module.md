@@ -99,9 +99,9 @@ Every reply also tells you where the other two stand, which saves setting one an
 
 > **An amended round keeps the timings you set here.** It used to fall back to 5 days, 2 days and 2 hours whatever you had configured; it no longer does. A forecast is thrown away only where the round has moved far enough that it would not have been drawn yet — move a round by an hour and the forecasts already posted stand, move it by a month and they are withdrawn and drawn again. The confirmation names which before you commit.
 
-> **A round's circuit is fixed once its first forecast is out.** That forecast was drawn for that circuit and cannot be unsaid, so `/round amend` refuses a bare track change from then on — and refuses a format change once the second forecast is out, that one having been drawn for the round's sessions. Moving the round in the same change puts the forecasts back in question and lets both through, which is the way to correct a circuit late.
+> **A restart keeps them too.** When the bot starts again with forecasts still outstanding, it works out which ones it missed from your settings rather than from 5 days, 2 days and 2 hours. It used to use the standard timings, which meant a longer phase 1 was never published at all and a shorter one was published days early; it no longer does.
 
-> **So does a restart.** When the bot starts again with forecasts still outstanding, it works out which ones it missed using 5 days, 2 days and 2 hours — not your settings. A league running custom timings loses them quietly every time the bot is restarted.
+> **A round's circuit is fixed once its first forecast is out.** That forecast was drawn for that circuit and cannot be unsaid, so `/round amend` refuses a bare track change from then on — and refuses a format change once the second forecast is out, that one having been drawn for the round's sessions. Moving the round in the same change puts the forecasts back in question and lets both through, which is the way to correct a circuit late.
 
 To see what is currently set, run `/season review` — the weather block lists all three. There is no separate command for reading them back.
 
@@ -226,7 +226,6 @@ Worth running through before the season is approved.
 | No forecast for one round only | It is a mystery round — that is intended. Otherwise the round has no track, and nothing anywhere will tell you so: check the round with `/season review` |
 | A season that will not approve | A division is missing its forecast channel, or a round is already inside one of the three deadlines. The division's own calendar in the review names the latest such round, and the button is withheld |
 | The post says "5 days out" but arrived earlier or later | Known: the wording is fixed and does not follow your timing settings. The timing itself is correct |
-| A round's forecasts went back to 5 days / 2 days / 2 hours | Known: amending a round resets its timings to the standard ones, and so does restarting the bot with forecasts outstanding |
 | `/weather config` refused | Either a season is running, or the value would put the phases out of order. The reply says which |
 | Two invalidation notices for one change | Amending more than one thing at once posts one per change |
 | Text where you expected a picture | The forecast worked and the drawing did not. The log channel names the reason — most often a drawing file or the converter |
