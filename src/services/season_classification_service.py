@@ -128,7 +128,11 @@ async def post_final_classifications(bot, guild, db_path: str, season_id: int) -
     from db.database import get_connection
     from services import standings_service
     from services.attendance_service import post_attendance_sheet
-    from services.results_post_service import _get_show_reserves, post_standings
+    from services.results_post_service import (
+        _get_show_reserves,
+        driver_standings_for_display,
+        post_standings,
+    )
 
     problems: list[str] = []
     if bot is None or guild is None:
@@ -173,8 +177,8 @@ async def post_final_classifications(bot, guild, db_path: str, season_id: int) -
             continue
 
         try:
-            driver_snaps = await standings_service.compute_driver_standings(
-                db_path, division_id, round_id
+            driver_snaps = await driver_standings_for_display(
+                db_path, division_id, round_id, guild, bot
             )
             team_snaps = await standings_service.compute_team_standings(
                 db_path, division_id, round_id

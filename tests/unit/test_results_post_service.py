@@ -559,3 +559,116 @@ async def test_repost_round_results_skips_a_round_with_no_results(tmp_path):
     )
 
     assert captured == []
+
+
+# ---------------------------------------------------------------------------
+# driver_standings_for_display — the order is taken on the name that is drawn (#143)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_two_tied_drivers(tmp_path, server_id: int = 300):
+    """A division whose two drivers are level on every criterion the championship scores.
+
+    Returns ``(db_path, division_id, round_id)``. Nobody has raced, so nothing but the final
+    tiebreak can separate them.
+    """
+    from db.database import get_connection, run_migrations
+
+    db_path = str(tmp_path / "tied.db")
+    await run_migrations(db_path)
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs "
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+            "VALUES (?, 10, 20, 30)",
+            (server_id,),
+        )
+        cur = await db.execute(
+            "INSERT INTO seasons (server_id, start_date, status, season_number) "
+            "VALUES (?, '2026-01-01', 'ACTIVE', 1)",
+            (server_id,),
+        )
+        season_id = cur.lastrowid
+        cur = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id) "
+            "VALUES (?, 'Alpha', 777, 888)",
+            (season_id,),
+        )
+        division_id = cur.lastrowid
+        cur = await db.execute(
+            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
+            "VALUES (?, 'Alpha', 2, 0)",
+            (division_id,),
+        )
+        team_id = cur.lastrowid
+        for seat_number, user_id in enumerate((1, 2), start=1):
+            cur = await db.execute(
+                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
+                "VALUES (?, ?, 'ACTIVE')",
+                (server_id, user_id),
+            )
+            await db.execute(
+                "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+                "VALUES (?, ?, ?)",
+                (team_id, seat_number, cur.lastrowid),
+            )
+        cur = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
+            "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00')",
+            (division_id,),
+        )
+        round_id = cur.lastrowid
+        await db.commit()
+
+    return db_path, division_id, round_id
+
+
+def _guild_naming(names: dict[int, str]):
+    """A guild whose members carry *names*, resolved by ``get_member``."""
+    guild = MagicMock()
+
+    def _member(user_id):
+        if user_id not in names:
+            return None
+        member = MagicMock()
+        member.display_name = names[user_id]
+        return member
+
+    guild.get_member.side_effect = _member
+    guild.fetch_member = AsyncMock(return_value=None)
+    return guild
+
+
+@pytest.mark.asyncio
+async def test_the_posted_standings_are_ordered_on_the_resolved_names(tmp_path):
+    """The order inverts with the names, so it cannot be the user id deciding it."""
+    from services.results_post_service import driver_standings_for_display
+
+    db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path)
+    bot = MagicMock()
+    bot.db_path = db_path
+
+    forwards = await driver_standings_for_display(
+        db_path, division_id, round_id, _guild_naming({1: "zulu", 2: "alpha"}), bot
+    )
+    backwards = await driver_standings_for_display(
+        db_path, division_id, round_id, _guild_naming({1: "alpha", 2: "zulu"}), bot
+    )
+
+    assert [s.driver_user_id for s in forwards] == [2, 1]
+    assert [s.driver_user_id for s in backwards] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_the_standings_fall_back_to_the_id_with_no_bot_in_scope(tmp_path):
+    """Nothing to resolve a name from, so the tie falls to the ascending user id."""
+    from services.results_post_service import driver_standings_for_display
+
+    db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path, server_id=301)
+
+    snaps = await driver_standings_for_display(
+        db_path, division_id, round_id, _guild_naming({1: "zulu", 2: "alpha"}), None
+    )
+
+    assert [s.driver_user_id for s in snaps] == [1, 2]

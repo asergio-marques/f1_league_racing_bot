@@ -150,6 +150,39 @@ async def _build_member_display(
     return result
 
 
+async def driver_standings_for_display(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    guild: discord.Guild | None,
+    bot=None,
+) -> list[DriverStandingsSnapshot]:
+    """The driver standings, ordered on the names they will be posted under.
+
+    Computed twice, deliberately, and for the reason the opening classification already is:
+    the final tiebreak orders two entries level on everything alphabetically by driver, the
+    names are resolved from Discord by user id, so the roster has to be known before it can
+    be ordered. The first pass is read only for who is in it; the second is the one that
+    counts.
+
+    Where no bot or guild is in scope there is nothing to resolve a name from, and the single
+    pass falls back to ordering a full tie by user id. Only the posting paths resolve names —
+    the recomputation that persists a snapshot does not, so two entries tied on every
+    criterion may sit in the stored order the other way about (decided 2026-09-15). Nothing
+    a league can see depends on that: what is drawn is what this returns.
+    """
+    snaps = await standings_service.compute_driver_standings(db_path, division_id, round_id)
+    if bot is None or guild is None or not snaps:
+        return snaps
+
+    from services.image_results_post import _driver_names
+
+    names = await _driver_names(bot, guild, [s.driver_user_id for s in snaps])
+    return await standings_service.compute_driver_standings(
+        db_path, division_id, round_id, names
+    )
+
+
 async def _build_team_display(
     guild: discord.Guild,
     role_ids: list[int],
@@ -973,8 +1006,8 @@ async def repost_round_results(
     if standings_ch_id:
         sc = guild.get_channel(standings_ch_id)
         if sc:
-            driver_snaps = await standings_service.compute_driver_standings(
-                db_path, division_id, round_id
+            driver_snaps = await driver_standings_for_display(
+                db_path, division_id, round_id, guild, bot
             )
             team_snaps = await standings_service.compute_team_standings(
                 db_path, division_id, round_id
@@ -1189,8 +1222,8 @@ async def repost_standings_for_division(
         # championships, whichever flow posted them.
         await _clear_standings_messages(db_path, division_id, round_id, sc)
 
-        driver_snaps = await standings_service.compute_driver_standings(
-            db_path, division_id, round_id
+        driver_snaps = await driver_standings_for_display(
+            db_path, division_id, round_id, guild, bot
         )
         team_snaps = await standings_service.compute_team_standings(
             db_path, division_id, round_id
@@ -1310,8 +1343,8 @@ async def delete_and_repost_final_results(
             # Both championships' interim messages go, whichever flow posted them.
             await _clear_standings_messages(db_path, division_id, round_id, sc)
 
-            driver_snaps = await standings_service.compute_driver_standings(
-                db_path, division_id, round_id
+            driver_snaps = await driver_standings_for_display(
+                db_path, division_id, round_id, guild, bot
             )
             team_snaps = await standings_service.compute_team_standings(
                 db_path, division_id, round_id
@@ -1387,8 +1420,8 @@ async def repost_subsequent_standings(
         await _clear_standings_messages(db_path, division_id, rnd_id, sc)
 
         # Repost fresh standings
-        driver_snaps = await standings_service.compute_driver_standings(
-            db_path, division_id, rnd_id
+        driver_snaps = await driver_standings_for_display(
+            db_path, division_id, rnd_id, guild, bot
         )
         team_snaps = await standings_service.compute_team_standings(
             db_path, division_id, rnd_id

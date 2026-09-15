@@ -354,11 +354,11 @@ async def enter_penalty_state(
             if standings_ch_id:
                 sc = guild.get_channel(standings_ch_id)
                 if sc:
-                    from services.standings_service import (
-                        compute_driver_standings,
-                        compute_team_standings,
+                    from services.standings_service import compute_team_standings
+
+                    driver_snaps = await results_post_service.driver_standings_for_display(
+                        db_path, division_id, round_id, guild, bot
                     )
-                    driver_snaps = await compute_driver_standings(db_path, division_id, round_id)
                     team_snaps = await compute_team_standings(db_path, division_id, round_id)
                     _standings_label = "Provisional Results (amended)" if is_resubmission else "Provisional Results"
                     await results_post_service.post_standings(
