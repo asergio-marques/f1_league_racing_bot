@@ -309,6 +309,16 @@ async def compute_team_standings(
     Sort order mirrors driver standings (FR-029): total_points DESC then finish-count
     tiebreaks; tiebreak uses Feature Race CLASSIFIED finishes only.
 
+    The final tiebreak mirrors it too, and for the same reason (#143): alphabetically by
+    team name, the reserve team after every named team, and ascending role id where two
+    teams carry the same name. Without it two teams level on everything are ordered by set
+    iteration over role snowflakes, which the addition of an unrelated team can silently
+    reverse.
+
+    The name ordered on is the one the database holds, as ``opening_team_standings`` already
+    does — a constructor is drawn as a role mention, and no Discord lookup is needed to know
+    what the league called the team.
+
     Returns snapshots with standing_position assigned from 1.
     """
     async with get_connection(db_path) as db:
@@ -368,24 +378,33 @@ async def compute_team_standings(
 
     all_teams = set(total_points) | set(finish_counts)
 
-    # Include all non-reserve team instances in the division even if they have no results yet.
+    # Every team instance of the division, reserves included. Two jobs, one query: the
+    # non-reserve teams join the standings without having scored, and every team supplies the
+    # name the final tiebreak orders on — a reserve team whose driver scored is in the set
+    # already.
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT trc.role_id
+            SELECT trc.role_id, ti.name AS team_name, ti.is_reserve
             FROM team_instances ti
             JOIN divisions d ON d.id = ti.division_id
             JOIN seasons s ON s.id = d.season_id
             JOIN team_role_configs trc
               ON trc.server_id = s.server_id AND trc.team_name = ti.name
             WHERE ti.division_id = ?
-              AND ti.is_reserve = 0
             """,
             (division_id,),
         )
         team_rows = await cursor.fetchall()
+    # role id -> (team rank, team name). Rank 0 a named team, 1 the reserve team; a role the
+    # division holds no instance for gets 2 below and ranks after both, ordered by id alone.
+    team_meta: dict[int, tuple[int, str]] = {}
     for r in team_rows:
         tid = int(r["role_id"])
+        is_reserve = bool(r["is_reserve"])
+        team_meta[tid] = (1 if is_reserve else 0, r["team_name"] or "")
+        if is_reserve:
+            continue
         if tid not in total_points:
             total_points[tid] = 0
         all_teams.add(tid)
@@ -403,7 +422,8 @@ async def compute_team_standings(
         ffr = first_finish_rounds.get(tid, {})
         count_vec = tuple(-fc.get(p, 0) for p in range(1, global_max_pos + 1))
         first_vec = tuple(ffr.get(p, 999999) for p in range(1, global_max_pos + 1))
-        return (-pts, count_vec, first_vec)
+        team_rank, team_name = team_meta.get(tid, (2, ""))
+        return (-pts, count_vec, first_vec, team_rank, team_name.casefold(), tid)
 
     sorted_teams = sorted(all_teams, key=_sort_key)
 

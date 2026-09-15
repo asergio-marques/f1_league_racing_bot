@@ -1180,3 +1180,91 @@ async def test_the_final_tiebreak_never_outranks_the_countback(db_path):
     snaps = await compute_driver_standings(db_path, div_id, r1, {1: "zulu", 2: "alpha"})
 
     assert [s.driver_user_id for s in snaps] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_tied_teams_are_ordered_by_name(db_path):
+    """No round has been run, so the constructors are separated by name alone."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=89)
+        await _seat(db, div_id, 89, "zebra", [(1, "one")], role_id=501)
+        await _seat(db, div_id, 89, "Aardvark", [(2, "two")], role_id=502)
+        r1 = await _round(db, div_id, 1)
+        await db.commit()
+
+    snaps = await compute_team_standings(db_path, div_id, r1)
+
+    assert [s.team_role_id for s in snaps] == [502, 501]
+
+
+@pytest.mark.asyncio
+async def test_a_tied_reserve_team_comes_after_the_named_teams(db_path):
+    """Last whatever it is called, and whatever its role id."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=90)
+        await _seat(db, div_id, 90, "zebra", [(1, "one")], role_id=602)
+        await _seat(db, div_id, 90, "Aardvark reserves", [(2, "two")],
+                    is_reserve=1, role_id=601)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        # The reserve team is only in the standings because its driver raced.
+        await _result_dnf(db, sr1, 2, pos=20, team=601)
+        await db.commit()
+
+    snaps = await compute_team_standings(db_path, div_id, r1)
+
+    assert [s.team_role_id for s in snaps] == [602, 601]
+
+
+@pytest.mark.asyncio
+async def test_tied_teams_sharing_a_name_order_by_ascending_role_id(db_path):
+    """The name is compared case-insensitively, so it can tie; the role id makes it total."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=91)
+        await _seat(db, div_id, 91, "Alpha", [(1, "one")], role_id=702)
+        await _seat(db, div_id, 91, "alpha", [(2, "two")], role_id=701)
+        r1 = await _round(db, div_id, 1)
+        await db.commit()
+
+    snaps = await compute_team_standings(db_path, div_id, r1)
+
+    assert [s.team_role_id for s in snaps] == [701, 702]
+
+
+@pytest.mark.asyncio
+async def test_a_tied_role_the_division_holds_no_team_for_ranks_last(db_path):
+    """A role that reached the standings through a result alone has no name to order on."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=93)
+        await _seat(db, div_id, 93, "zebra", [(1, "one")], role_id=752)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        await db.execute(
+            "INSERT INTO team_role_configs (server_id, team_name, role_id) "
+            "VALUES (93, 'Departed', 751)"
+        )
+        await _result_dnf(db, sr1, 1, pos=19, team=752)
+        await _result_dnf(db, sr1, 3, pos=20, team=751)
+        await db.commit()
+
+    snaps = await compute_team_standings(db_path, div_id, r1)
+
+    assert [s.team_role_id for s in snaps] == [752, 751]
+
+
+@pytest.mark.asyncio
+async def test_the_team_final_tiebreak_never_outranks_the_countback(db_path):
+    """A team ahead on points stays ahead of one with an earlier name."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=92)
+        await _seat(db, div_id, 92, "zebra", [(1, "one")], role_id=801)
+        await _seat(db, div_id, 92, "Aardvark", [(2, "two")], role_id=802)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        await _result(db, sr1, 1, pos=1, pts=25, team=801)
+        await _result(db, sr1, 2, pos=2, pts=18, team=802)
+        await db.commit()
+
+    snaps = await compute_team_standings(db_path, div_id, r1)
+
+    assert [s.team_role_id for s in snaps] == [801, 802]
