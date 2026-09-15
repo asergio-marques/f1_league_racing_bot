@@ -209,7 +209,6 @@ async def apply_penalties(
     """
     import datetime
 
-    from services import standings_service
     from services import results_post_service
 
     # Map (session_type_value, driver_user_id) -> new table row id (race or qual)
@@ -440,11 +439,8 @@ async def apply_penalties(
         )
         await bot.output_router.post_log(int(srv_row["server_id"]), details_msg)
 
-    # Cascade recompute standings
-    if not _skip_post:
-        await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
-
-    # Repost results in Discord
+    # Cascade recompute standings, then repost. The guild is resolved first so the
+    # recomputation orders a full tie on the names the repost below will draw.
     if not _skip_post:
         guild = None
         async with get_connection(db_path) as db3:
@@ -455,6 +451,11 @@ async def apply_penalties(
             row3 = await cursor3.fetchone()
         if row3:
             guild = bot.get_guild(int(row3["server_id"]))
+
+        await results_post_service.recompute_standings_from_round(
+            db_path, division_id, round_id, guild, bot
+        )
+
         if guild:
             await results_post_service.repost_round_results(
                 db_path, round_id, division_id, guild, bot=bot

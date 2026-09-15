@@ -340,7 +340,14 @@ async def enter_penalty_state(
     # ------------------------------------------------------------------
     if not skip_results_post:
         try:
-            await standings_service.compute_and_persist_round(db_path, round_id, division_id)
+            # The names the standings below are posted under also order the snapshot, so
+            # the stored classification and the one the league is shown cannot disagree.
+            _names = await results_post_service.standings_display_names(
+                db_path, division_id, guild, bot
+            )
+            await standings_service.compute_and_persist_round(
+                db_path, round_id, division_id, _names
+            )
 
             if results_ch_id:
                 rc = guild.get_channel(results_ch_id)
@@ -354,10 +361,13 @@ async def enter_penalty_state(
             if standings_ch_id:
                 sc = guild.get_channel(standings_ch_id)
                 if sc:
-                    from services.standings_service import compute_team_standings
+                    from services.standings_service import (
+                        compute_driver_standings,
+                        compute_team_standings,
+                    )
 
-                    driver_snaps = await results_post_service.driver_standings_for_display(
-                        db_path, division_id, round_id, guild, bot
+                    driver_snaps = await compute_driver_standings(
+                        db_path, division_id, round_id, _names
                     )
                     team_snaps = await compute_team_standings(db_path, division_id, round_id)
                     _standings_label = "Provisional Results (amended)" if is_resubmission else "Provisional Results"

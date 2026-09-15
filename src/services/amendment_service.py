@@ -828,7 +828,7 @@ async def approve_amendment(
         )
 
     # Cascade-recompute all divisions
-    from services import standings_service, results_post_service
+    from services import results_post_service
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT id FROM divisions WHERE season_id = ?", (season_id,)
@@ -853,7 +853,9 @@ async def approve_amendment(
         if first_round_row is None:
             continue
         first_round_id = first_round_row["id"]
-        await standings_service.cascade_recompute_from_round(db_path, division_id, first_round_id)
+        await results_post_service.recompute_standings_from_round(
+            db_path, division_id, first_round_id, guild, bot
+        )
         if guild:
             # Repost for each round
             async with get_connection(db_path) as db:
