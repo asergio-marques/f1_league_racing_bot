@@ -164,6 +164,7 @@ async def team_name_for_entry(
 async def build_drawing(
     bot,
     *,
+    guild,
     db_path: str,
     round_id: int,
     kind: VerdictKind,
@@ -184,6 +185,11 @@ async def build_drawing(
     Everything here is *read*. Nothing is computed and nothing decided: the sanction is the
     rendering the announcement service produced, the session label is the one it used, and the
     name is resolved by the chain every graphic of the module resolves a person by.
+
+    *guild* is the server the verdict is posted to, and is what a mention in a steward's text
+    is resolved against. Keyword-only, as everything else here is, and required rather than
+    defaulted: a caller that forgets it should say so at the call site and not by quietly
+    naming drivers worse.
     """
     from services.image_verdict_service import resolve_mentions
 

@@ -334,6 +334,7 @@ async def _send_verdict(
         try:
             drawing = await image_verdict_post.build_drawing(
                 bot,
+                guild=getattr(target_channel, "guild", None),
                 db_path=db_path,
                 round_id=round_id,
                 kind=kind,
